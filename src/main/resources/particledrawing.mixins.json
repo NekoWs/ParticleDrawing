@@ -2,7 +2,13 @@
   "required": true,
   "package": "work.nekow.particledrawing.mixin",
   "compatibilityLevel": "JAVA_25",
+  "refmap": "particledrawing.refmap.json",
   "mixins": [],
+  "client": [
+    "ParticleEngineMixin",
+    "EntityRendererMixin",
+    "LightmapRenderStateExtractorMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   },
