@@ -114,6 +114,22 @@ class ParticleGroup(
     }
 
     /**
+     * 启动客户端预测的持续旋转。客户端从初始位置每帧计算旋转，零漂移、无网络延迟。
+     * @param axis 旋转轴（归一化）
+     * @param radiansPerTick 每 tick 旋转弧度
+     */
+    fun rotateContinuously(axis: Vec3, radiansPerTick: Double) {
+        manager.getEngine().sendContinuousRotation(id, true, axis, radiansPerTick, pivot, manager.getPlayers())
+    }
+
+    /**
+     * 停止持续旋转。
+     */
+    fun stopContinuousRotation() {
+        manager.getEngine().sendContinuousRotation(id, false, Vec3.ZERO, 0.0, pivot, manager.getPlayers())
+    }
+
+    /**
      * 销毁整个粒子组及其所有粒子。
      */
     fun remove() {

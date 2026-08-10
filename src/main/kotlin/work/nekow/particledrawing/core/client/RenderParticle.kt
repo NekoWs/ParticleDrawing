@@ -136,6 +136,9 @@ class RenderParticle(
 
     fun isSnapSync(): Boolean = snapNextSync
 
+    /** 返回缓动的目标位置（用于绝对坐标变换，避免插值漂移） */
+    fun targetPosition(): Vec3 = Vec3(tgtX, tgtY, tgtZ)
+
     /**
      * 设置发光状态。
      * @param glowing 是否发光

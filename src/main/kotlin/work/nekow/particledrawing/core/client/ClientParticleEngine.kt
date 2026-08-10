@@ -142,7 +142,8 @@ class ClientParticleEngine {
         for (memberId in members) {
             val rp = particles[memberId] ?: continue
 
-            val curPos = Vec3(rp.x(), rp.y(), rp.z())
+            // 使用目标位置而非插值位置计算变换，避免逐帧漂移
+            val curPos = rp.targetPosition()
             val newPos: Vec3
             val newColor: Color
             val newScale: Float
@@ -183,7 +184,38 @@ class ClientParticleEngine {
      * 每帧更新：驱动粒子缓动并同步到桥接粒子。
      */
     fun frameUpdate() {
+        // 持续旋转：每帧从基准位置直接计算旋转后坐标
+        for ((groupId, rot) in continuousRotations) {
+            rot.tickCounter++
+            val angle = rot.tickCounter * rot.radiansPerTick
+            val members = groups[groupId] ?: continue
+
+            for (memberId in members) {
+                val base = rotationBasePositions[memberId] ?: continue
+                val rp = particles[memberId] ?: continue
+
+                // 通用 Rodrigues 旋转公式，支持任意轴
+                val rel = base.subtract(rot.pivot)
+                val rotated = rotateAroundAxis(rel, rot.axis, angle)
+                val newPos = rot.pivot.add(rotated)
+
+                // 瞬时更新位置（无缓动，帧级平滑由 BridgeParticle 子帧插值提供）
+                rp.setPositionDirect(newPos)
+
+                val bp = bridges[memberId] ?: continue
+                bp.syncPosition(newPos.x, newPos.y, newPos.z, snap = false)
+                bp.syncColor(rp.r(), rp.g(), rp.b(), rp.a())
+                bp.syncScale(rp.scale())
+            }
+        }
+
+        // 非持续旋转粒子：标准缓动更新
         for (rp in particles.values) {
+            val inContinuousRotation = continuousRotations.any { (gid, _) ->
+                groups[gid]?.contains(rp.id()) == true
+            }
+            if (inContinuousRotation) continue
+
             val wasSnap = rp.isSnapSync()
             rp.tick()
 
@@ -226,6 +258,38 @@ class ClientParticleEngine {
             }
         }
         return glowing
+    }
+
+    // --- 持续旋转系统（客户端预测，零漂移） ---
+
+    private data class ContinuousRotation(
+        val axis: Vec3,
+        val radiansPerTick: Double,
+        val pivot: Vec3,
+        var tickCounter: Int = 0
+    )
+
+    private val continuousRotations: MutableMap<UUID, ContinuousRotation> = ConcurrentHashMap()
+    private val rotationBasePositions: MutableMap<UUID, Vec3> = ConcurrentHashMap()
+
+    fun setContinuousRotation(groupId: UUID, active: Boolean,
+                              ax: Double, ay: Double, az: Double,
+                              radiansPerTick: Double,
+                              px: Double, py: Double, pz: Double) {
+        if (active) {
+            val axis = Vec3(ax, ay, az)
+            val pivot = Vec3(px, py, pz)
+            continuousRotations[groupId] = ContinuousRotation(axis, radiansPerTick, pivot)
+
+            // 保存原始位置作为旋转基准
+            val members = groups[groupId] ?: return
+            for (memberId in members) {
+                rotationBasePositions[memberId] = particles[memberId]?.targetPosition()
+                    ?: Vec3(0.0, 0.0, 0.0)
+            }
+        } else {
+            continuousRotations.remove(groupId)
+        }
     }
 
     companion object {

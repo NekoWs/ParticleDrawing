@@ -41,5 +41,11 @@ object NetworkHandler {
             ParticleGroupTransformPayload.STREAM_CODEC,
             ClientPayloadHandler::handleGroupTransform
         )
+
+        registrar.playToClient(
+            ContinuousRotationPayload.TYPE,
+            ContinuousRotationPayload.STREAM_CODEC,
+            ClientPayloadHandler::handleContinuousRotation
+        )
     }
 }

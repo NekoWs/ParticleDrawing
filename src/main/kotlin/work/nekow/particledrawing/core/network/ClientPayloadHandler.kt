@@ -72,4 +72,19 @@ internal object ClientPayloadHandler {
             }
         }
     }
+
+    fun handleContinuousRotation(payload: ContinuousRotationPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            val engine = ClientParticleEngine.instance()
+            if (engine != null) {
+                engine.setContinuousRotation(
+                    payload.groupId,
+                    payload.active,
+                    payload.ax, payload.ay, payload.az,
+                    payload.radiansPerTick,
+                    payload.px, payload.py, payload.pz
+                )
+            }
+        }
+    }
 }
