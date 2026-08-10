@@ -219,6 +219,42 @@ object Draw {
     }
 
     /**
+     * 绘制斐波那契球面分布的粒子球体。
+     * 粒子均匀分布在球面上，顶部到底部有彩虹渐变。
+     *
+     * @param manager 粒子管理器
+     * @param center 球心位置
+     * @param radius 球体半径
+     * @param count 粒子数量
+     * @param style 粒子样式
+     * @param scale 粒子缩放
+     * @return 包含所有球面粒子的组
+     */
+    fun sphere(
+        manager: ParticleManager, center: Vec3, radius: Double, count: Int,
+        style: ParticleStyle = ParticleStyle.DUST, scale: Float = 0.2f
+    ): ParticleGroup {
+        val group = manager.createGroup(center)
+        val phi = PI * (3.0 - kotlin.math.sqrt(5.0))
+        for (i in 0 until count) {
+            val y = 1.0 - (i.toDouble() / (count - 1)) * 2.0
+            val r = kotlin.math.sqrt(1.0 - y * y)
+            val theta = phi * i
+            val x = cos(theta) * r * radius
+            val z = sin(theta) * r * radius
+
+            val hue = ((1.0 - y) / 2.0).toFloat()
+            manager.create()
+                .style(style).scale(scale)
+                .position(center.x + x, center.y + y * radius, center.z + z)
+                .color(Color.ofHsb(hue, 0.9f, 0.9f))
+                .lifetime(-1).group(group.id)
+                .spawn().also { group.add(it) }
+        }
+        return group
+    }
+
+    /**
      * 描述 2D 图形所绘制的平面。
      */
     enum class Axis {

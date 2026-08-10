@@ -13,7 +13,6 @@ import work.nekow.particledrawing.core.network.ParticleDestroyPayload
 import work.nekow.particledrawing.core.network.ParticleGroupTransformPayload
 import work.nekow.particledrawing.core.network.ParticleSpawnPayload
 import work.nekow.particledrawing.core.network.ParticleUpdatePayload
-import work.nekow.particledrawing.core.network.ContinuousRotationPayload
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.cos
@@ -399,13 +398,11 @@ class ServerParticleEngine(
         }
     }
 
-    fun sendContinuousRotation(groupId: UUID, active: Boolean,
-                                axis: Vec3, radiansPerTick: Double, pivot: Vec3,
-                                playersInDimension: Collection<ServerPlayer>) {
-        val payload = ContinuousRotationPayload(
-            groupId, active,
-            axis.x, axis.y, axis.z,
-            radiansPerTick,
+    fun sendMotion(groupId: UUID, active: Boolean, algorithmId: String,
+                    params: DoubleArray, pivot: Vec3,
+                    playersInDimension: Collection<ServerPlayer>) {
+        val payload = work.nekow.particledrawing.core.motion.MotionPayload(
+            groupId, active, algorithmId, params,
             pivot.x, pivot.y, pivot.z
         )
         for (player in playersInDimension) {

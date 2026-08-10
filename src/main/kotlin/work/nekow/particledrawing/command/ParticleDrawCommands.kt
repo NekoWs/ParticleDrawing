@@ -463,19 +463,7 @@ object ParticleDrawCommands {
                     }
 
                     DemoType.SPHERE -> {
-                        // 仅更新颜色，位置由客户端持续旋转自动计算
-                        val engine = state.manager.getEngine()
-                        val groupData = engine.getGroup(g.id) ?: continue
-                        val tick = state.tickCounter.toDouble()
-                        val players = state.manager.getPlayers()
-
-                        for ((idx, memberId) in groupData.memberIds().withIndex()) {
-                            val hue = (sin(tick * 0.03 + idx * 0.02) * 0.5 + 0.5).toFloat()
-                            engine.update(memberId)
-                                .color(Color.ofHsb(hue, 0.9f, 0.9f))
-                                .easing(EasingType.EASE_IN_OUT, 2)
-                                .send(players)
-                        }
+                        // 旋转由客户端持续旋转系统处理，无需服务端更新
                     }
                 }
             } catch (_: Exception) {
@@ -639,39 +627,15 @@ object ParticleDrawCommands {
         val player = ctx.source.playerOrException
         val level = player.level()
         val pm = ParticleManager.of(level)
-        val radius = 3.0
-        val count = 800
 
         val center = player.position().add(player.lookAngle.scale(5.0))
-        val group = pm.createGroup(center)
-
-        // 均匀分布球面: 斐波那契球 (Fibonacci sphere)
-        val phi = PI * (3.0 - sqrt(5.0)) // 黄金角
-        for (i in 0 until count) {
-            val y = 1.0 - (i.toDouble() / (count - 1)) * 2.0         // y 从 1 到 -1
-            val r = sqrt(1.0 - y * y)                                  // 对应半径
-            val theta = phi * i                                        // 黄金角递进
-
-            val x = cos(theta) * r * radius
-            val z = sin(theta) * r * radius
-
-            val handle = pm.create()
-                .style(ParticleStyle.DUST)
-                .position(center.x + x, center.y + y * radius, center.z + z)
-                .color(Color.ofHsb(i.toFloat() / count, 0.9f, 0.9f))
-                .scale(0.2f)
-                .lifetime(-1)
-                .group(group.id)
-                .spawn()
-            group.add(handle)
-        }
-
-        // 启动客户端预测旋转：X 轴每 tick 5°，零漂移
-        group.rotateContinuously(Vec3(1.0, 0.0, 0.0), Math.toRadians(5.0))
+        val group = Draw.sphere(pm, center, 3.0, 800)
+        group.rotateMotion(Math.toRadians(100.0))  // 100°/秒，不受 /tick 影响
+        group.colorByYMotion()                     // 固定表面纹理
 
         demoStates += DemoState(group, pm, DemoType.SPHERE, center)
         ctx.source.sendSuccess(
-            { Component.literal("Sphere demo! ${group.size()} particles, rotating with RGB gradient") }, false)
+            { Component.literal("Sphere demo! ${group.size()} particles, X-axis rotation") }, false)
         return group.size()
     }
 

@@ -114,19 +114,29 @@ class ParticleGroup(
     }
 
     /**
-     * 启动客户端预测的持续旋转。客户端从初始位置每帧计算旋转，零漂移、无网络延迟。
-     * @param axis 旋转轴（归一化）
-     * @param radiansPerTick 每 tick 旋转弧度
+     * 启动客户端帧级运动算法。客户端从基准位置每帧通过注册的算法函数计算。
+     *
+     * @param algorithmId 算法标识（如 "rotate", "color_by_y"）
+     * @param params 算法参数数组
      */
-    fun rotateContinuously(axis: Vec3, radiansPerTick: Double) {
-        manager.getEngine().sendContinuousRotation(id, true, axis, radiansPerTick, pivot, manager.getPlayers())
+    @JvmOverloads
+    fun addMotion(algorithmId: String, params: DoubleArray = DoubleArray(0)) {
+        manager.getEngine().sendMotion(id, true, algorithmId, params, pivot, manager.getPlayers())
     }
 
-    /**
-     * 停止持续旋转。
-     */
-    fun stopContinuousRotation() {
-        manager.getEngine().sendContinuousRotation(id, false, Vec3.ZERO, 0.0, pivot, manager.getPlayers())
+    /** 启动绕 X 轴旋转（基于实际秒数，不受 /tick 影响）。 */
+    fun rotateMotion(radiansPerSecond: Double) {
+        addMotion("rotate", doubleArrayOf(1.0, 0.0, 0.0, radiansPerSecond))
+    }
+
+    /** 便捷方法：启动按 Y 坐标着色。 */
+    fun colorByYMotion() {
+        addMotion("color_by_y")
+    }
+
+    /** 停止所有运动。 */
+    fun stopMotion() {
+        manager.getEngine().sendMotion(id, false, "", DoubleArray(0), pivot, manager.getPlayers())
     }
 
     /**
