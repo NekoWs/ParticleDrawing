@@ -6,6 +6,11 @@ import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.client.ClientParticleEngine
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
+/**
+ * 动态光源管理器。
+ * 维护活跃动态光源列表，提供光照等级查询。
+ * 每帧根据玩家距离和亮度评分筛选光源，线程安全。
+ */
 @Suppress("unused")
 object DynamicLightManager {
 
@@ -14,6 +19,12 @@ object DynamicLightManager {
     @Volatile
     private var lightCount = 0
 
+    /**
+     * 每帧渲染时更新活跃光源列表。
+     * 按亮度-距离加权评分排序后筛选光源。
+     * @param engine 客户端粒子引擎
+     * @param camera 当前相机
+     */
     @JvmStatic
     fun renderDynamicLights(engine: ClientParticleEngine, camera: Camera) {
         if (!ParticleDrawingConfig.CLIENT.enableDynamicLights.get()) {
@@ -72,6 +83,14 @@ object DynamicLightManager {
         }
     }
 
+    /**
+     * 获取指定位置的动态光照等级。
+     * 遍历所有活跃光源，应用衰减函数后取最大值。
+     * @param x X 坐标
+     * @param y Y 坐标
+     * @param z Z 坐标
+     * @return 光照等级 (0-15)
+     */
     @JvmStatic
     fun getDynamicLightLevel(x: Double, y: Double, z: Double): Int {
         if (lightCount == 0) return 0
@@ -101,6 +120,14 @@ object DynamicLightManager {
         }
     }
 
+    /**
+     * 获取指定位置的打包动态光照值。
+     * 将亮度等级同时编码到高位和低位，供渲染管线使用。
+     * @param x X 坐标
+     * @param y Y 坐标
+     * @param z Z 坐标
+     * @return 打包后的光照值
+     */
     @JvmStatic
     fun getDynamicLightPacked(x: Double, y: Double, z: Double): Int {
         val level = getDynamicLightLevel(x, y, z)
@@ -108,6 +135,10 @@ object DynamicLightManager {
         return (level shl 4) or level
     }
 
+    /**
+     * 光源条目数据类。
+     * 包含位置、颜色、亮度和加权评分。
+     */
     private class LightEntry(
         val x: Double, val y: Double, val z: Double,
         val r: Float, val g: Float, val b: Float, val a: Float,

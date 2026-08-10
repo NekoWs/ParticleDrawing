@@ -5,12 +5,12 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * High-level drawing utilities for creating particle shapes.
+ * 创建粒子形状的高级绘图工具。
  *
- * Each method returns a [ParticleGroup] that can be further
- * animated with move, rotate, recolor, and scale operations.
+ * 每个方法返回一个 [ParticleGroup]，
+ * 可进一步使用移动、旋转、重新着色和缩放操作进行动画处理。
  *
- * Examples:
+ * 示例：
  * ```
  * val circle = Draw.circle(manager, center, 5.0, 64, Draw.Axis.XZ)
  * circle.rotate(Vec3.Z, Math.PI * 2, 100, EasingType.EASE_IN_OUT)
@@ -25,13 +25,13 @@ object Draw {
     private const val DEFAULT_SCALE = 0.5f
 
     /**
-     * Draw a line of particles between two points.
+     * 在两点之间绘制一条由粒子组成的线段。
      *
-     * @param manager the particle manager
-     * @param start   start point
-     * @param end     end point
-     * @param count   number of particles along the line
-     * @return a group containing all particles on the line
+     * @param manager 粒子管理器
+     * @param start   起点
+     * @param end     终点
+     * @param count   线段上的粒子数量
+     * @return 包含线段上所有粒子的粒子组
      */
     fun line(manager: ParticleManager, start: Vec3, end: Vec3, count: Int): ParticleGroup {
         return line(manager, start, end, count, DEFAULT_COLOR, DEFAULT_STYLE, DEFAULT_SCALE)
@@ -73,13 +73,13 @@ object Draw {
     }
 
     /**
-     * Draw a circle of particles.
+     * 绘制一个由粒子组成的圆。
      *
-     * @param manager the particle manager
-     * @param center  center point of the circle
-     * @param radius  circle radius
-     * @param count   number of particles
-     * @param axis    the plane to draw on (XZ = horizontal, XY = vertical facing Z, YZ = vertical facing X)
+     * @param manager 粒子管理器
+     * @param center  圆心
+     * @param radius  圆半径
+     * @param count   粒子数量
+     * @param axis    绘制平面 (XZ = 水平, XY = 朝 Z 方向的垂直面, YZ = 朝 X 方向的垂直面)
      */
     fun circle(
         manager: ParticleManager, center: Vec3,
@@ -130,9 +130,9 @@ object Draw {
     }
 
     /**
-     * Draw a filled circle (disc) by layering concentric circles.
+     * 通过叠加同心圆绘制实心圆（圆盘）。
      *
-     * @param layers number of concentric rings from center to edge
+     * @param layers 从圆心到边缘的同心环层数
      */
     fun disc(
         manager: ParticleManager, center: Vec3,
@@ -182,10 +182,10 @@ object Draw {
     }
 
     /**
-     * Spawn particles along a parametric curve defined by a position function.
+     * 沿由位置函数定义的参数曲线生成粒子。
      *
-     * @param posFunc function taking t in [0, 1] and returning a world position
-     * @param steps   number of sampling points
+     * @param posFunc 接收 t ∈ [0, 1] 并返回世界坐标的函数
+     * @param steps   采样点数
      */
     fun curve(
         manager: ParticleManager,
@@ -218,7 +218,7 @@ object Draw {
     }
 
     /**
-     * Describes the plane on which a 2D shape is drawn.
+     * 描述 2D 图形所绘制的平面。
      */
     enum class Axis {
         XZ,

@@ -3,8 +3,8 @@ package work.nekow.particledrawing.api
 import net.minecraft.world.phys.Vec3
 
 /**
- * Describes a transform operation applied to a [ParticleGroup].
- * Immutable, designed for network serialization.
+ * 描述应用于 [ParticleGroup] 的变换操作。
+ * 不可变，为网络序列化而设计。
  */
 @Suppress("unused")
 class TransformOp private constructor(

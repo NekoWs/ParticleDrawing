@@ -6,6 +6,9 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent
 import net.neoforged.neoforge.network.registration.PayloadRegistrar
 import work.nekow.particledrawing.ParticleDrawing
 
+/**
+ * 网络数据包注册器，将粒子相关的 playToClient 数据包注册到 NeoForge 网络管道。
+ */
 @EventBusSubscriber(modid = ParticleDrawing.MODID)
 @Suppress("unused")
 object NetworkHandler {

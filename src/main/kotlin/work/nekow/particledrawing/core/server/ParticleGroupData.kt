@@ -5,6 +5,12 @@ import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 
+/**
+ * 粒子组数据，管理组成员列表和轴心。
+ *
+ * @param id 组唯一标识符
+ * @param pivot 组轴心坐标
+ */
 @Suppress("unused")
 class ParticleGroupData(
     val id: UUID,

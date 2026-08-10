@@ -9,6 +9,9 @@ import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.command.ParticleDrawCommands
 import work.nekow.particledrawing.util.ParticleUtils
 
+/**
+ * 服务端 tick 事件处理器，驱动粒子引擎每 tick 更新。
+ */
 @EventBusSubscriber(modid = ParticleDrawing.MODID)
 @Suppress("unused")
 object ServerParticleHandler {
@@ -22,7 +25,7 @@ object ServerParticleHandler {
             engine.tick(level.players())
         }
 
-        // Tick active demos
+        // 推进活跃演示的刻度
         ParticleDrawCommands.tickDemos()
     }
 

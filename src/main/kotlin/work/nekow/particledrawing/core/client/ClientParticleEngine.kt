@@ -8,7 +8,13 @@ import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.core.easing.EasingType
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.cos
+import kotlin.math.sin
 
+/**
+ * 客户端粒子引擎，管理渲染粒子的生命周期与桥接。
+ * 负责粒子的生成、更新、分组变换和每帧同步。
+ */
 @Suppress("unused")
 class ClientParticleEngine {
 
@@ -16,6 +22,22 @@ class ClientParticleEngine {
     private val bridges: MutableMap<UUID, BridgeParticle> = ConcurrentHashMap()
     private val groups: MutableMap<UUID, MutableSet<UUID>> = ConcurrentHashMap()
 
+    /**
+     * 生成一个新粒子并注册到原版粒子系统中。
+     * @param id 粒子唯一标识符
+     * @param style 粒子样式
+     * @param x 初始 X 坐标
+     * @param y 初始 Y 坐标
+     * @param z 初始 Z 坐标
+     * @param r 红色分量
+     * @param g 绿色分量
+     * @param b 蓝色分量
+     * @param a 透明度分量
+     * @param scale 初始缩放
+     * @param lifetimeTicks 存活时间（刻）
+     * @param groupId 所属分组 ID，可为 null
+     * @param glowing 是否发光
+     */
     fun spawnParticle(id: UUID, style: ParticleStyle, x: Double, y: Double, z: Double,
                       r: Float, g: Float, b: Float, a: Float, scale: Float,
                       lifetimeTicks: Int, groupId: UUID?, glowing: Boolean) {
@@ -38,6 +60,23 @@ class ClientParticleEngine {
         }
     }
 
+    /**
+     * 更新现有粒子的属性并设置缓动过渡目标。
+     * @param id 粒子唯一标识符
+     * @param x 目标 X 坐标（若 hasPos 为 true）
+     * @param y 目标 Y 坐标（若 hasPos 为 true）
+     * @param z 目标 Z 坐标（若 hasPos 为 true）
+     * @param r 目标红色分量（若 hasColor 为 true）
+     * @param g 目标绿色分量（若 hasColor 为 true）
+     * @param b 目标蓝色分量（若 hasColor 为 true）
+     * @param a 目标透明度分量（若 hasColor 为 true）
+     * @param scale 目标缩放（若 hasScale 为 true）
+     * @param hasPos 是否包含位置更新
+     * @param hasColor 是否包含颜色更新
+     * @param hasScale 是否包含缩放更新
+     * @param durationTicks 过渡持续时间（刻）
+     * @param easing 缓动类型
+     */
     fun updateParticle(id: UUID, x: Double, y: Double, z: Double,
                        r: Float, g: Float, b: Float, a: Float, scale: Float,
                        hasPos: Boolean, hasColor: Boolean, hasScale: Boolean,
@@ -53,6 +92,10 @@ class ClientParticleEngine {
         rp.setTarget(pos, color, scl, easing, durationMs)
     }
 
+    /**
+     * 销毁指定粒子并从所有分组中移除。
+     * @param ids 要销毁的粒子 ID 数组
+     */
     fun destroyParticles(ids: Array<UUID>) {
         for (id in ids) {
             particles.remove(id)
@@ -63,6 +106,28 @@ class ClientParticleEngine {
         }
     }
 
+    /**
+     * 对分组中的所有粒子应用统一变换。
+     * @param groupId 分组 ID
+     * @param transformType 变换类型：0=位移, 1=旋转, 2=颜色, 3=缩放
+     * @param dx X 位移量
+     * @param dy Y 位移量
+     * @param dz Z 位移量
+     * @param ax 旋转轴 X 分量
+     * @param ay 旋转轴 Y 分量
+     * @param az 旋转轴 Z 分量
+     * @param radians 旋转弧度
+     * @param r 目标红色分量
+     * @param g 目标绿色分量
+     * @param b 目标蓝色分量
+     * @param a 目标透明度分量
+     * @param targetScale 目标缩放
+     * @param px 旋转/缩放基准点 X
+     * @param py 旋转/缩放基准点 Y
+     * @param pz 旋转/缩放基准点 Z
+     * @param durationTicks 过渡持续时间（刻）
+     * @param easing 缓动类型
+     */
     fun applyGroupTransform(groupId: UUID, transformType: Int,
                             dx: Double, dy: Double, dz: Double,
                             ax: Double, ay: Double, az: Double, radians: Double,
@@ -114,6 +179,9 @@ class ClientParticleEngine {
         }
     }
 
+    /**
+     * 每帧更新：驱动粒子缓动并同步到桥接粒子。
+     */
     fun frameUpdate() {
         for (rp in particles.values) {
             val wasSnap = rp.isSnapSync()
@@ -140,8 +208,16 @@ class ClientParticleEngine {
         groups.values.removeIf { it.isEmpty() }
     }
 
+    /**
+     * 获取当前活跃粒子数量。
+     * @return 活跃粒子数
+     */
     fun activeCount(): Int = particles.size
 
+    /**
+     * 获取所有发光粒子的列表。
+     * @return 发光粒子列表
+     */
     fun getGlowingParticles(): List<RenderParticle> {
         val glowing = ArrayList<RenderParticle>()
         for (p in particles.values) {
@@ -162,8 +238,8 @@ class ClientParticleEngine {
         fun dispose() { INSTANCE = null }
 
         private fun rotateAroundAxis(v: Vec3, axis: Vec3, radians: Double): Vec3 {
-            val cos = Math.cos(radians)
-            val sin = Math.sin(radians)
+            val cos = cos(radians)
+            val sin = sin(radians)
             val dot = v.dot(axis)
             val cross = axis.cross(v)
             return Vec3(

@@ -1,5 +1,16 @@
 package work.nekow.particledrawing.core.easing
 
+import kotlin.math.abs
+
+/**
+ * 三次贝塞尔缓动曲线，由四个控制点参数定义。
+ * 用于在粒子动画中计算平滑的过渡效果。
+ *
+ * @param x1 第一控制点的 X 坐标
+ * @param y1 第一控制点的 Y 坐标
+ * @param x2 第二控制点的 X 坐标
+ * @param y2 第二控制点的 Y 坐标
+ */
 @Suppress("unused")
 class EasingCurve(
     val x1: Double,
@@ -8,6 +19,11 @@ class EasingCurve(
     val y2: Double
 ) {
 
+    /**
+     * 在给定进度下计算缓动值。
+     * @param t 动画进度，范围 [0, 1]
+     * @return 缓动后的值，范围 [0, 1]
+     */
     fun evaluate(t: Float): Float {
         if (t <= 0f) return 0f
         if (t >= 1f) return 1f
@@ -38,14 +54,14 @@ class EasingCurve(
         var t = x
         for (i in 0 until 8) {
             val curX = sampleCurveX(t) - x
-            if (Math.abs(curX) < EPSILON) {
+            if (abs(curX) < EPSILON) {
                 return t
             }
             val d = sampleCurveDerivativeX(t)
-            if (Math.abs(d) < 1e-6) {
+            if (abs(d) < 1e-6) {
                 break
             }
-            t = t - curX / d
+            t -= curX / d
         }
 
         var t0 = 0.0
@@ -57,7 +73,7 @@ class EasingCurve(
 
         for (i in 0 until MAX_ITERATIONS) {
             val curX = sampleCurveX(t) - x
-            if (Math.abs(curX) < EPSILON) {
+            if (abs(curX) < EPSILON) {
                 return t
             }
             if (curX > 0) {
@@ -92,6 +108,11 @@ class EasingCurve(
         private const val EPSILON = 1e-7
         private const val MAX_ITERATIONS = 20
 
+        /**
+         * 从 CSS 格式的字符串解析缓动曲线。
+         * @param css CSS cubic-bezier 格式字符串
+         * @return 解析后的 EasingCurve 实例
+         */
         fun fromCss(css: String): EasingCurve {
             val inner = css.replace("cubic-bezier(", "").replace(")", "").trim()
             val parts = inner.split(",")

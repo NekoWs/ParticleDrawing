@@ -6,8 +6,8 @@ import work.nekow.particledrawing.core.server.ParticleData
 import java.util.UUID
 
 /**
- * Handle for a spawned particle, allowing property updates and lifecycle control.
- * Created via [ParticleManager.create].
+ * 已生成粒子的句柄，支持属性更新和生命周期控制。
+ * 通过 [ParticleManager.create] 创建。
  */
 @Suppress("unused")
 class ParticleHandle(
@@ -15,7 +15,11 @@ class ParticleHandle(
     private val manager: ParticleManager
 ) {
     /**
-     * Move this particle to a new position with easing.
+     * 使用缓动将粒子移动到新位置。
+     * @param target 目标位置
+     * @param durationTicks 持续 tick 数
+     * @param easing 缓动类型
+     * @return 自身，支持链式调用
      */
     fun move(target: Vec3, durationTicks: Int, easing: EasingType): ParticleHandle {
         val engine = manager.getEngine()
@@ -29,14 +33,20 @@ class ParticleHandle(
     }
 
     /**
-     * Move this particle immediately (no easing).
+     * 立即移动粒子（无缓动）。
+     * @param target 目标位置
+     * @return 自身，支持链式调用
      */
     fun moveInstant(target: Vec3): ParticleHandle {
         return move(target, 0, EasingType.LINEAR)
     }
 
     /**
-     * Change color with easing.
+     * 使用缓动改变粒子颜色。
+     * @param color 目标颜色
+     * @param durationTicks 持续 tick 数
+     * @param easing 缓动类型
+     * @return 自身，支持链式调用
      */
     fun recolor(color: Color, durationTicks: Int, easing: EasingType): ParticleHandle {
         val engine = manager.getEngine()
@@ -50,7 +60,11 @@ class ParticleHandle(
     }
 
     /**
-     * Change scale with easing.
+     * 使用缓动改变粒子缩放。
+     * @param scale 目标缩放值
+     * @param durationTicks 持续 tick 数
+     * @param easing 缓动类型
+     * @return 自身，支持链式调用
      */
     fun resize(scale: Float, durationTicks: Int, easing: EasingType): ParticleHandle {
         val engine = manager.getEngine()
@@ -64,21 +78,22 @@ class ParticleHandle(
     }
 
     /**
-     * Destroy this particle immediately.
+     * 立即销毁此粒子。
      */
     fun remove() {
         manager.getEngine().destroyParticle(id, manager.getPlayers())
     }
 
     /**
-     * Get the current server-side state.
+     * 获取粒子当前在服务端的状态。
+     * @return 粒子数据，不存在则返回 null
      */
     fun data(): ParticleData? {
         return manager.getEngine().getParticle(id)
     }
 
     /**
-     * Builder for creating particles with a fluent API.
+     * 用于通过流式 API 创建粒子的构建器。
      */
     @Suppress("unused")
     class Builder(private val manager: ParticleManager) {
@@ -113,7 +128,8 @@ class ParticleHandle(
         fun scale(scale: Float) = apply { this.scale = scale }
 
         /**
-         * Set particle lifetime in ticks. -1 for immortal.
+         * 设置粒子生命周期（单位 tick）。-1 表示永存。
+         * @param ticks 生命周期 tick 数
          */
         fun lifetime(ticks: Int) = apply { this.lifetime = ticks }
 
@@ -124,7 +140,8 @@ class ParticleHandle(
         fun offsetFromPivot(offset: Vec3) = apply { this.offsetFromPivot = offset }
 
         /**
-         * Spawn the particle and return a handle for further control.
+         * 生成粒子并返回句柄以供后续控制。
+         * @return 生成粒子的句柄
          */
         fun spawn(): ParticleHandle {
             val engine = manager.getEngine()

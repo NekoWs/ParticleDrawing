@@ -15,7 +15,15 @@ import work.nekow.particledrawing.core.network.ParticleSpawnPayload
 import work.nekow.particledrawing.core.network.ParticleUpdatePayload
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.cos
+import kotlin.math.sin
 
+/**
+ * 服务端权威粒子引擎，每个维度一个实例。
+ * 管理粒子生命周期、可见性和网络同步。
+ *
+ * @param dimensionId 所属维度的唯一标识符
+ */
 @Suppress("unused")
 class ServerParticleEngine(
     val dimensionId: UUID
@@ -26,6 +34,20 @@ class ServerParticleEngine(
     private val visibilityManager = ParticleVisibilityManager()
     private var tickCounter: Int = 0
 
+    /**
+     * 生成粒子并广播到视野内可见的玩家。
+     *
+     * @param style 粒子视觉效果
+     * @param position 世界坐标
+     * @param color RGBA 颜色
+     * @param scale 粒子缩放
+     * @param lifetime 存活 tick 数，-1 为永生
+     * @param groupId 所属组 ID，可为 null
+     * @param glowing 是否发光
+     * @param offsetFromPivot 相对轴心的偏移，可为 null
+     * @param playersInDimension 维度内的玩家列表
+     * @return 创建的粒子数据
+     */
     @Suppress("DataFlowIssue")
     fun spawnParticle(style: ParticleStyle, position: Vec3, color: Color,
                       scale: Float, lifetime: Int, groupId: UUID?,
@@ -50,6 +72,20 @@ class ServerParticleEngine(
         return data
     }
 
+    /**
+     * 更新粒子属性（位置、颜色、缩放）并广播。
+     *
+     * @param id 粒子 ID
+     * @param position 新位置
+     * @param color 新颜色
+     * @param scale 新缩放
+     * @param updatePos 是否更新位置
+     * @param updateColor 是否更新颜色
+     * @param updateScale 是否更新缩放
+     * @param durationTicks 过渡持续 tick 数
+     * @param easing 缓动类型
+     * @param playersInDimension 维度内的玩家列表
+     */
     fun updateParticle(id: UUID, position: Vec3, color: Color, scale: Float,
                        updatePos: Boolean, updateColor: Boolean, updateScale: Boolean,
                        durationTicks: Int, easing: EasingType,
@@ -75,17 +111,20 @@ class ServerParticleEngine(
         sendToVisible(playersInDimension, data.position(), payload)
     }
 
-    // ===================================================================
-    // UpdateBuilder — 链式调用更新粒子属性
-    //
-    // 用法:
-    //   engine.update(particleId)
-    //       .position(x, y, z)
-    //       .color(Color.BLUE)
-    //       .easing(EasingType.EASE_OUT, 10)
-    //       .send(players)
-    // ===================================================================
-
+    /**
+     * 链式调用更新粒子属性。
+     *
+     * 用法:
+     * ```
+     * engine.update(particleId)
+     *     .position(x, y, z)
+     *     .color(Color.BLUE)
+     *     .easing(EasingType.EASE_OUT, 10)
+     *     .send(players)
+     * ```
+     *
+     * @param id 要更新的粒子 ID
+     */
     inner class UpdateBuilder(private val id: UUID) {
         private var pos: Vec3? = null
         private var col: Color? = null
@@ -116,8 +155,29 @@ class ServerParticleEngine(
         }
     }
 
+    /**
+     * 创建粒子的链式更新构建器。
+     *
+     * @param id 要更新的粒子 ID
+     * @return 更新构建器实例
+     */
     fun update(id: UUID) = UpdateBuilder(id)
 
+    /**
+     * 对组内所有粒子应用变换（平移、旋转、变色、缩放）。
+     *
+     * @param groupId 组 ID
+     * @param transformType 变换类型
+     * @param delta 平移向量
+     * @param axis 旋转轴
+     * @param radians 旋转弧度
+     * @param targetColor 目标颜色
+     * @param targetScale 目标缩放
+     * @param pivot 变换轴心，可为 null
+     * @param durationTicks 过渡持续 tick 数
+     * @param easing 缓动类型
+     * @param playersInDimension 维度内的玩家列表
+     */
     fun applyGroupTransform(groupId: UUID, transformType: TransformOp.Type,
                             delta: Vec3, axis: Vec3, radians: Double,
                             targetColor: Color, targetScale: Float,
@@ -185,6 +245,12 @@ class ServerParticleEngine(
         }
     }
 
+    /**
+     * 销毁单个粒子并通知所有维度内玩家。
+     *
+     * @param id 粒子 ID
+     * @param playersInDimension 维度内的玩家列表
+     */
     fun destroyParticle(id: UUID, playersInDimension: Collection<ServerPlayer>) {
         val data = particles.remove(id) ?: return
 
@@ -197,6 +263,12 @@ class ServerParticleEngine(
         sendToAllInDimension(playersInDimension, payload)
     }
 
+    /**
+     * 销毁整个粒子组及其所有成员。
+     *
+     * @param groupId 组 ID
+     * @param playersInDimension 维度内的玩家列表
+     */
     fun destroyGroup(groupId: UUID, playersInDimension: Collection<ServerPlayer>) {
         val group = groups.remove(groupId) ?: return
 
@@ -209,6 +281,11 @@ class ServerParticleEngine(
         sendToAllInDimension(playersInDimension, payload)
     }
 
+    /**
+     * 每 tick 更新：推进生命周期、移除过期粒子、更新可见性。
+     *
+     * @param playersInDimension 维度内的玩家列表
+     */
     fun tick(playersInDimension: Collection<ServerPlayer>) {
         tickCounter++
 
@@ -239,11 +316,21 @@ class ServerParticleEngine(
         }
     }
 
+    /** @return 当前活跃粒子总数 */
     fun particleCount(): Int = particles.size
+    /** @return 当前组总数 */
     fun groupCount(): Int = groups.size
 
+    /** @return 指定 ID 的组，不存在则返回 null */
     fun getGroup(groupId: UUID): ParticleGroupData? = groups[groupId]
 
+    /**
+     * 创建粒子组。
+     *
+     * @param groupId 组 ID
+     * @param pivot 组轴心
+     * @return 创建的组数据
+     */
     @Suppress("unused")
     fun createGroup(groupId: UUID, pivot: Vec3): ParticleGroupData {
         val group = ParticleGroupData.create(groupId, pivot)
@@ -251,12 +338,25 @@ class ServerParticleEngine(
         return group
     }
 
+    /** @return 指定 ID 的粒子数据，不存在则返回 null */
     fun getParticle(id: UUID): ParticleData? = particles[id]
 
+    /**
+     * 设置粒子相对轴心的偏移。
+     *
+     * @param id 粒子 ID
+     * @param offset 偏移向量
+     */
     fun setOffsetFromPivot(id: UUID, offset: Vec3) {
         particles[id]?.setOffsetFromPivot(offset)
     }
 
+    /**
+     * 清除维度内所有粒子和组，分批发送销毁通知。
+     *
+     * @param playersInDimension 维度内的玩家列表
+     * @return 清除的粒子数量
+     */
     fun clearAll(playersInDimension: Collection<ServerPlayer>): Int {
         val count = particles.size
 
@@ -266,7 +366,7 @@ class ServerParticleEngine(
 
             var offset = 0
             while (offset < allIds.size) {
-                val end = Math.min(offset + batchSize, allIds.size)
+                val end = (offset + batchSize).coerceAtMost(allIds.size)
                 val batch = java.util.Arrays.copyOfRange(allIds, offset, end)
                 val payload = ParticleDestroyPayload(batch, null)
 
@@ -299,21 +399,38 @@ class ServerParticleEngine(
     }
 
     companion object {
+        /** 全局维度引擎映射表 */
         private val DIMENSION_ENGINES: MutableMap<UUID, ServerParticleEngine> = ConcurrentHashMap()
 
+        /**
+         * 获取或创建指定维度的引擎实例。
+         *
+         * @param dimensionId 维度 ID
+         * @return 引擎实例
+         */
         fun getOrCreate(dimensionId: UUID): ServerParticleEngine {
             return DIMENSION_ENGINES.computeIfAbsent(dimensionId) { ServerParticleEngine(it) }
         }
 
+        /** @return 指定维度的引擎，不存在则返回 null */
         fun get(dimensionId: UUID): ServerParticleEngine? = DIMENSION_ENGINES[dimensionId]
 
+        /** 清除指定维度的引擎实例 */
         fun clearDimension(dimensionId: UUID) {
             DIMENSION_ENGINES.remove(dimensionId)
         }
 
+        /**
+         * 绕轴旋转向量（Rodrigues 公式）。
+         *
+         * @param v 待旋转向量
+         * @param axis 旋转轴（单位向量）
+         * @param radians 旋转弧度
+         * @return 旋转后的向量
+         */
         private fun rotateAroundAxis(v: Vec3, axis: Vec3, radians: Double): Vec3 {
-            val cos = Math.cos(radians)
-            val sin = Math.sin(radians)
+            val cos = cos(radians)
+            val sin = sin(radians)
             val dot = v.dot(axis)
             val cross = axis.cross(v)
             return Vec3(

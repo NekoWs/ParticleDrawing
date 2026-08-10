@@ -9,10 +9,10 @@ import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
 
 /**
- * Entry point for creating and managing particles.
- * Provides both high-level drawing utilities and low-level particle control.
+ * 创建和管理粒子的入口点。
+ * 同时提供高级绘图工具和底层粒子控制。
  *
- * Usage:
+ * 用法：
  * ```
  * val manager = ParticleManager.of(serverLevel)
  * val handle = manager.create()
@@ -36,12 +36,14 @@ class ParticleManager private constructor(val level: ServerLevel) {
     }
 
     /**
-     * Creates a new particle builder.
+     * 创建一个新的粒子构建器。
      */
     fun create() = ParticleHandle.Builder(this)
 
     /**
-     * Creates a new empty particle group.
+     * 创建一个新的空白粒子组。
+     * @param pivot 组的基准点
+     * @return 新创建的粒子组
      */
     fun createGroup(pivot: Vec3): ParticleGroup {
         val groupId = UUID.randomUUID()
@@ -51,7 +53,9 @@ class ParticleManager private constructor(val level: ServerLevel) {
     }
 
     /**
-     * Retrieves an existing group.
+     * 获取一个已存在的粒子组。
+     * @param groupId 粒子组 UUID
+     * @return 粒子组，不存在则返回 null
      */
     fun getGroup(groupId: UUID): ParticleGroup? {
         val engine = getEngine()

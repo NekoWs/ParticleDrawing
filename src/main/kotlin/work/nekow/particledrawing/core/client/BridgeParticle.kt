@@ -9,6 +9,20 @@ import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleStyle
 import java.util.UUID
 
+/**
+ * 连接渲染粒子与 Minecraft 粒子系统的桥接粒子。
+ * 将自定义粒子的位置、颜色和缩放属性同步到原版渲染管线中。
+ *
+ * @param particleId 粒子唯一标识符
+ * @param style 粒子样式
+ * @param level 客户端世界实例
+ * @param x 初始 X 坐标
+ * @param y 初始 Y 坐标
+ * @param z 初始 Z 坐标
+ * @param color 初始颜色
+ * @param scale 初始缩放
+ * @param isGlowing 是否发光
+ */
 @Suppress("unused")
 class BridgeParticle(
     val particleId: UUID,
@@ -35,6 +49,13 @@ class BridgeParticle(
 
     fun isGlowing(): Boolean = isGlowing
 
+    /**
+     * 同步粒子位置。
+     * @param x 目标 X 坐标
+     * @param y 目标 Y 坐标
+     * @param z 目标 Z 坐标
+     * @param snap 若为 true 则跳变到目标位置，否则平滑过渡
+     */
     fun syncPosition(x: Double, y: Double, z: Double, snap: Boolean = false) {
         if (snap) {
             this.xo = x
@@ -50,6 +71,13 @@ class BridgeParticle(
         this.z = z
     }
 
+    /**
+     * 同步粒子颜色与透明度。
+     * @param r 红色分量
+     * @param g 绿色分量
+     * @param b 蓝色分量
+     * @param a 透明度分量
+     */
     fun syncColor(r: Float, g: Float, b: Float, a: Float) {
         rCol = r
         gCol = g
@@ -57,6 +85,10 @@ class BridgeParticle(
         alpha = if (isGlowing) 0f else a
     }
 
+    /**
+     * 同步粒子缩放。
+     * @param scale 目标缩放值
+     */
     fun syncScale(scale: Float) {
         quadSize = scale
     }
@@ -84,6 +116,11 @@ class BridgeParticle(
     }
 
     companion object {
+        /**
+         * 根据粒子样式获取对应的纹理精灵。
+         * @param style 粒子样式
+         * @return 对应的纹理精灵
+         */
         private fun getSpriteForStyle(style: ParticleStyle): TextureAtlasSprite {
             val atlas = Minecraft.getInstance()
                 .atlasManager

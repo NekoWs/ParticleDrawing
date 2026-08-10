@@ -7,6 +7,18 @@ import work.nekow.particledrawing.core.easing.EasingCurve
 import work.nekow.particledrawing.core.easing.EasingType
 import java.util.UUID
 
+/**
+ * 渲染粒子，保存粒子的所有可视化状态并支持缓动过渡。
+ * 通过 setTarget 设置目标值后，每帧 tick 会根据缓动曲线自动插值。
+ *
+ * @param id 粒子唯一标识符
+ * @param style 粒子样式
+ * @param position 初始位置
+ * @param color 初始颜色
+ * @param scale 初始缩放
+ * @param glowing 是否发光
+ * @param lifetimeMs 存活时间（毫秒），0 表示永久
+ */
 @Suppress("unused")
 class RenderParticle(
     private val id: UUID,
@@ -76,6 +88,14 @@ class RenderParticle(
 
     fun isDead(): Boolean = !isAlive()
 
+    /**
+     * 设置缓动过渡的目标值。
+     * @param position 目标位置
+     * @param color 目标颜色
+     * @param scale 目标缩放
+     * @param easingType 缓动类型
+     * @param durationMs 过渡持续时间（毫秒）
+     */
     fun setTarget(position: Vec3, color: Color, scale: Float, easingType: EasingType, durationMs: Long) {
         tgtX = position.x
         tgtY = position.y
@@ -91,6 +111,10 @@ class RenderParticle(
         if (durationMs == 0L) snapNextSync = true
     }
 
+    /**
+     * 直接设置位置，不经过缓动。
+     * @param position 目标位置
+     */
     fun setPositionDirect(position: Vec3) {
         curX = position.x; tgtX = position.x
         curY = position.y; tgtY = position.y
@@ -98,6 +122,10 @@ class RenderParticle(
         easeStartTime = 0
     }
 
+    /**
+     * 直接设置颜色，不经过缓动。
+     * @param color 目标颜色
+     */
     fun setColorDirect(color: Color) {
         curR = color.r; tgtR = color.r
         curG = color.g; tgtG = color.g
@@ -108,14 +136,25 @@ class RenderParticle(
 
     fun isSnapSync(): Boolean = snapNextSync
 
+    /**
+     * 设置发光状态。
+     * @param glowing 是否发光
+     */
     fun setGlowing(glowing: Boolean) {
         this.glowing = glowing
     }
 
+    /**
+     * 设置存活时间。
+     * @param lifetimeMs 存活时间（毫秒），0 表示永久
+     */
     fun setLifetime(lifetimeMs: Long) {
         deathTime = if (lifetimeMs > 0) System.nanoTime() + lifetimeMs * 1_000_000L else 0
     }
 
+    /**
+     * 每帧更新：根据缓动曲线插值当前位置、颜色和缩放。
+     */
     fun tick() {
         if (easeStartTime == 0L) return
 

@@ -1,5 +1,11 @@
 package work.nekow.particledrawing.core.easing
 
+import kotlin.math.abs
+
+/**
+ * 缓动类型，可为预设或自定义三次贝塞尔曲线。
+ * 支持序列化与反序列化以便网络传输。
+ */
 @Suppress("unused")
 class EasingType private constructor(
     val name: String?,
@@ -7,10 +13,23 @@ class EasingType private constructor(
     val curve: EasingCurve
 ) {
 
+    /**
+     * 在给定进度下计算缓动值。
+     * @param t 动画进度，范围 [0, 1]
+     * @return 缓动后的值
+     */
     fun evaluate(t: Float): Float = curve.evaluate(t)
 
+    /**
+     * 判断当前是否为预设缓动类型。
+     * @return 若为预设则返回 true
+     */
     fun isPreset(): Boolean = ordinal >= 0
 
+    /**
+     * 序列化为双精度数组以便网络传输。
+     * @return 包含类型标识与控制点参数的数组
+     */
     fun serialize(): DoubleArray {
         return if (isPreset()) {
             doubleArrayOf(ordinal.toDouble(), 0.0, 0.0, 0.0, 0.0)
@@ -60,10 +79,26 @@ class EasingType private constructor(
         )
         private val PRESET_ARRAY: Array<EasingType> = PRESETS.toTypedArray()
 
+        /**
+         * 使用自定义贝塞尔控制点创建缓动类型。
+         * @param x1 第一控制点的 X 坐标
+         * @param y1 第一控制点的 Y 坐标
+         * @param x2 第二控制点的 X 坐标
+         * @param y2 第二控制点的 Y 坐标
+         * @return 自定义 EasingType 实例
+         */
         fun custom(x1: Double, y1: Double, x2: Double, y2: Double): EasingType {
             return EasingType(null, -1, EasingCurve(x1, y1, x2, y2))
         }
 
+        /**
+         * 根据控制点匹配最近的预设，若无匹配则创建自定义类型。
+         * @param x1 第一控制点的 X 坐标
+         * @param y1 第一控制点的 Y 坐标
+         * @param x2 第二控制点的 X 坐标
+         * @param y2 第二控制点的 Y 坐标
+         * @return 匹配的预设或自定义 EasingType 实例
+         */
         fun fromCurve(x1: Double, y1: Double, x2: Double, y2: Double): EasingType {
             for (preset in PRESETS) {
                 val c = preset.curve
@@ -75,16 +110,21 @@ class EasingType private constructor(
             return custom(x1, y1, x2, y2)
         }
 
+        /**
+         * 从序列化数据反序列化缓动类型。
+         * @param data 包含类型标识与控制点参数的数组
+         * @return 反序列化后的 EasingType 实例
+         */
         fun deserialize(data: DoubleArray): EasingType {
             val ordinal = data[0].toInt()
-            if (ordinal in 0 until PRESET_ARRAY.size) {
+            if (ordinal in PRESET_ARRAY.indices) {
                 return PRESET_ARRAY[ordinal]
             }
             return custom(data[1], data[2], data[3], data[4])
         }
 
         private fun closeEnough(a: Double, b: Double): Boolean {
-            return Math.abs(a - b) < 1e-6
+            return abs(a - b) < 1e-6
         }
     }
 }

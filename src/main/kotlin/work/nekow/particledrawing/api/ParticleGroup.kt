@@ -5,8 +5,8 @@ import work.nekow.particledrawing.core.easing.EasingType
 import java.util.UUID
 
 /**
- * A collection of particles that can be transformed together.
- * Created via [Draw] utilities or [ParticleManager.createGroup].
+ * 一组可同时变换的粒子集合。
+ * 通过 [Draw] 工具或 [ParticleManager.createGroup] 创建。
  */
 @Suppress("unused")
 class ParticleGroup(
@@ -15,7 +15,9 @@ class ParticleGroup(
     internal val manager: ParticleManager
 ) {
     /**
-     * Set the pivot point for future transforms.
+     * 设置后续变换的基准点。
+     * @param pivot 新的基准点
+     * @return 自身，支持链式调用
      */
     fun setPivot(pivot: Vec3): ParticleGroup {
         this.pivot = pivot
@@ -25,7 +27,11 @@ class ParticleGroup(
     }
 
     /**
-     * Translate all particles in the group with easing.
+     * 使用缓动平移组内所有粒子。
+     * @param delta 平移向量
+     * @param durationTicks 缓动持续时间 (tick)
+     * @param easing 缓动曲线类型
+     * @return 自身，支持链式调用
      */
     @Suppress("unused")
     fun move(delta: Vec3, durationTicks: Int, easing: EasingType): ParticleGroup {
@@ -39,9 +45,12 @@ class ParticleGroup(
     }
 
     /**
-     * Rotate all particles around the pivot with easing.
-     * @param axis normalized rotation axis (e.g. Vec3.Z for Z-axis)
-     * @param radians rotation angle in radians
+     * 绕基准点旋转组内所有粒子。
+     * @param axis 归一化的旋转轴 (如 Vec3.Z 为 Z 轴)
+     * @param radians 旋转角度 (弧度)
+     * @param durationTicks 缓动持续时间 (tick)
+     * @param easing 缓动曲线类型
+     * @return 自身，支持链式调用
      */
     @Suppress("unused")
     fun rotate(axis: Vec3, radians: Double, durationTicks: Int, easing: EasingType): ParticleGroup {
@@ -54,7 +63,11 @@ class ParticleGroup(
     }
 
     /**
-     * Recolor all particles in the group with easing.
+     * 使用缓动重新着色组内所有粒子。
+     * @param targetColor 目标颜色
+     * @param durationTicks 缓动持续时间 (tick)
+     * @param easing 缓动曲线类型
+     * @return 自身，支持链式调用
      */
     @Suppress("unused")
     fun recolor(targetColor: Color, durationTicks: Int, easing: EasingType): ParticleGroup {
@@ -67,7 +80,11 @@ class ParticleGroup(
     }
 
     /**
-     * Scale all particles relative to the pivot with easing.
+     * 相对于基准点缩放组内所有粒子。
+     * @param targetScale 目标缩放值
+     * @param durationTicks 缓动持续时间 (tick)
+     * @param easing 缓动曲线类型
+     * @return 自身，支持链式调用
      */
     fun scale(targetScale: Float, durationTicks: Int, easing: EasingType): ParticleGroup {
         manager.getEngine().applyGroupTransform(
@@ -79,7 +96,8 @@ class ParticleGroup(
     }
 
     /**
-     * Add a particle to this group.
+     * 向该组添加一个粒子。
+     * @param handle 粒子的句柄
      */
     fun add(handle: ParticleHandle) {
         val group = manager.getEngine().getGroup(id)
@@ -87,7 +105,8 @@ class ParticleGroup(
     }
 
     /**
-     * Get the member count.
+     * 获取组内成员数量。
+     * @return 粒子数量
      */
     fun size(): Int {
         val group = manager.getEngine().getGroup(id)
@@ -95,7 +114,7 @@ class ParticleGroup(
     }
 
     /**
-     * Destroy the entire group and all its particles.
+     * 销毁整个粒子组及其所有粒子。
      */
     fun remove() {
         manager.getEngine().destroyGroup(id, manager.getPlayers())

@@ -4,6 +4,9 @@ import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.codec.StreamCodec
 import java.util.UUID
 
+/**
+ * 网络流编解码工具集，提供 UUID 和非空类型 UUID 的读写方法。
+ */
 internal object StreamCodecs {
 
     val UUID_CODEC: StreamCodec<FriendlyByteBuf, UUID> =

@@ -5,6 +5,9 @@ import net.minecraft.world.phys.Vec3
 import java.util.HashMap
 import java.util.UUID
 
+/**
+ * 粒子可见性管理器，基于距离判定粒子是否对玩家可见。
+ */
 @Suppress("unused")
 class ParticleVisibilityManager {
 

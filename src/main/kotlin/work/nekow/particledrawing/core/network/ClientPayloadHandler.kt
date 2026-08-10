@@ -3,6 +3,9 @@ package work.nekow.particledrawing.core.network
 import net.neoforged.neoforge.network.handling.IPayloadContext
 import work.nekow.particledrawing.core.client.ClientParticleEngine
 
+/**
+ * 客户端数据包处理器，将网络数据包路由到对应客户端引擎方法。
+ */
 internal object ClientPayloadHandler {
 
     fun handleSpawn(payload: ParticleSpawnPayload, context: IPayloadContext) {

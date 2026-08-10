@@ -9,6 +9,18 @@ import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleStyle
 import java.util.UUID
 
+/**
+ * 粒子生成数据包，包含粒子的视觉和位置等所有属性。
+ *
+ * @param particleId 粒子唯一 ID
+ * @param style 粒子视觉效果
+ * @param x/y/z 世界坐标
+ * @param r/g/b/a RGBA 颜色分量
+ * @param scale 渲染缩放
+ * @param lifetime 存活 tick 数
+ * @param groupId 所属组 ID，可为 null
+ * @param glowing 是否发光
+ */
 @Suppress("unused")
 data class ParticleSpawnPayload(
     val particleId: UUID,

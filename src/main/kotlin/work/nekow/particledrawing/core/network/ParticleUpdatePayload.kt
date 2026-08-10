@@ -8,6 +8,19 @@ import net.minecraft.resources.Identifier
 import work.nekow.particledrawing.core.easing.EasingType
 import java.util.UUID
 
+/**
+ * 粒子更新数据包，支持增量更新位置、颜色或缩放，可附带缓动参数。
+ *
+ * @param particleId 粒子 ID
+ * @param x/y/z 目标位置
+ * @param r/g/b/a 目标颜色
+ * @param scale 目标缩放
+ * @param durationTicks 过渡持续 tick 数
+ * @param hasPosition 是否包含位置更新
+ * @param hasColor 是否包含颜色更新
+ * @param hasScale 是否包含缩放更新
+ * @param e0..e4 缓动参数序列化数组
+ */
 data class ParticleUpdatePayload(
     val particleId: UUID,
     val x: Double, val y: Double, val z: Double,

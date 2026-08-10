@@ -5,6 +5,20 @@ import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleStyle
 import java.util.UUID
 
+/**
+ * 粒子运行时数据，存储位置、颜色、缩放、生命周期等信息。
+ *
+ * @param id 唯一标识符
+ * @param style 粒子视觉效果
+ * @param position 世界坐标
+ * @param color RGBA 颜色
+ * @param scale 渲染缩放
+ * @param lifetime 当前剩余 tick 数，-1 为永生
+ * @param maxLifetime 初始总 tick 数
+ * @param groupId 所属组 ID，可为 null
+ * @param glowing 是否发光
+ * @param offsetFromPivot 相对轴心的偏移
+ */
 @Suppress("unused")
 class ParticleData(
     val id: UUID,

@@ -6,6 +6,12 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
 import java.util.UUID
 
+/**
+ * 粒子销毁数据包，支持单个、批量和组的销毁。
+ *
+ * @param particleIds 要销毁的粒子 ID 数组
+ * @param groupId 组 ID（组销毁时使用），可为 null
+ */
 data class ParticleDestroyPayload(
     val particleIds: Array<UUID>,
     val groupId: UUID?

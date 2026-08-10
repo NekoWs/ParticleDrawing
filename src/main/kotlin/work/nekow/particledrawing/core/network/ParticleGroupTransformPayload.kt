@@ -8,6 +8,20 @@ import net.minecraft.resources.Identifier
 import work.nekow.particledrawing.core.easing.EasingType
 import java.util.UUID
 
+/**
+ * 组变换数据包，对整组粒子应用平移/旋转/变色/缩放。
+ *
+ * @param groupId 组 ID
+ * @param transformType 变换类型（0=平移, 1=旋转, 2=变色, 3=缩放）
+ * @param dx/dy/dz 平移增量
+ * @param ax/ay/az 旋转轴
+ * @param radians 旋转弧度
+ * @param r/g/b/a 目标颜色
+ * @param targetScale 目标缩放
+ * @param px/py/pz 变换轴心
+ * @param durationTicks 过渡持续 tick 数
+ * @param e0..e4 缓动参数序列化数组
+ */
 data class ParticleGroupTransformPayload(
     val groupId: UUID,
     val transformType: Int,

@@ -11,6 +11,11 @@ import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.client.RenderParticle
 import kotlin.math.roundToInt
 
+/**
+ * 动态光源引擎。
+ * 通过替换服务端方块为光源方块实现动态光照。
+ * 每 tick 同步发光粒子与光照引擎：根据粒子亮度放置/更新/移除光源方块。
+ */
 @Suppress("unused")
 object DynamicLightEngine {
 
@@ -18,6 +23,11 @@ object DynamicLightEngine {
     private val placedLights = HashMap<BlockPos, BlockState>()
     private val originalBlocks = HashMap<BlockPos, BlockState>()
 
+    /**
+     * 每 tick 处理动态光照。
+     * 按距离排序粒子，限制数量与距离，计算亮度等级后放置或更新光源方块。
+     * @param glowingParticles 当前活跃的发光粒子列表
+     */
     fun tick(glowingParticles: List<RenderParticle>) {
         tickCounter++
 
@@ -73,6 +83,9 @@ object DynamicLightEngine {
         }
     }
 
+    /**
+     * 清除所有已放置的动态光源，恢复原始方块。
+     */
     fun clearAll() {
         val mc = Minecraft.getInstance()
         if (mc.level == null) return
@@ -87,6 +100,12 @@ object DynamicLightEngine {
         placedLights.clear()
     }
 
+    /**
+     * 检查指定位置是否可以放置光源方块。
+     * @param level 服务端世界实例
+     * @param pos 目标方块位置
+     * @return 如果可以放置则返回 true
+     */
     private fun canPlace(level: ServerLevel, pos: BlockPos): Boolean {
         if (!level.hasChunk(pos.x shr 4, pos.z shr 4)) return false
         val current = level.getBlockState(pos)
@@ -95,6 +114,13 @@ object DynamicLightEngine {
         return current.canBeReplaced() && current.fluidState.isEmpty
     }
 
+    /**
+     * 在指定位置放置指定亮度的光源方块。
+     * 保存原始方块以便后续恢复。
+     * @param level 服务端世界实例
+     * @param pos 目标方块位置
+     * @param lightLevel 光源亮度等级 (0-15)
+     */
     private fun placeLight(level: ServerLevel, pos: BlockPos, lightLevel: Int) {
         val current = level.getBlockState(pos)
         val lightState = Blocks.LIGHT.defaultBlockState()
@@ -108,6 +134,11 @@ object DynamicLightEngine {
         level.setBlock(pos, lightState, Block.UPDATE_ALL)
     }
 
+    /**
+     * 恢复指定位置的原始方块。
+     * @param level 服务端世界实例
+     * @param pos 目标方块位置
+     */
     private fun restoreBlock(level: ServerLevel, pos: BlockPos) {
         DynamicLightPositions.remove(pos)
         val original = originalBlocks.remove(pos)

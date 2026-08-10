@@ -3,7 +3,7 @@ package work.nekow.particledrawing.api
 import net.minecraft.resources.Identifier
 
 /**
- * Defines the visual style of a particle, mapping to a vanilla particle render type and sprite.
+ * 定义粒子的视觉样式，映射到原版粒子渲染类型和精灵图。
  */
 @Suppress("unused")
 enum class ParticleStyle(
