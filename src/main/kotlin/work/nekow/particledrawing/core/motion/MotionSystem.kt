@@ -10,6 +10,7 @@ import work.nekow.particledrawing.core.motion.algorithms.RotateAlgorithm
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
+@Suppress("unused")
 object MotionSystem {
 
     private val algorithms: MutableMap<String, MotionAlgorithm.Factory> = ConcurrentHashMap()

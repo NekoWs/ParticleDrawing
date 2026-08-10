@@ -6,7 +6,7 @@ import work.nekow.particledrawing.core.motion.MotionAlgorithm
 
 /**
  * 跟随玩家移动，带指数平滑。
- * params = [smoothFactor], 默认 0.06
+ * params = [ smoothFactor ], 默认 0.06
  */
 class FollowPlayerAlgorithm(override val params: DoubleArray) : MotionAlgorithm {
     override val id = "follow_player"

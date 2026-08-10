@@ -17,7 +17,6 @@ import work.nekow.particledrawing.core.server.ServerParticleEngine
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
-import kotlin.math.sqrt
 
 /**
  * ParticleDraw 命令注册与演示系统。
