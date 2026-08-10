@@ -48,6 +48,7 @@ public final class ServerParticleEngine {
     /**
      * Spawn a single particle and broadcast to visible players.
      */
+    @SuppressWarnings("DataFlowIssue")
     public ParticleData spawnParticle(ParticleStyle style, Vec3 position, Color color,
                                        float scale, int lifetime, UUID groupId,
                                        boolean glowing, Vec3 offsetFromPivot,
@@ -260,6 +261,7 @@ public final class ServerParticleEngine {
         return groups.get(groupId);
     }
 
+    @SuppressWarnings("unused")
     public ParticleGroupData createGroup(UUID groupId, Vec3 pivot) {
         ParticleGroupData group = ParticleGroupData.create(groupId, pivot);
         groups.put(groupId, group);

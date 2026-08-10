@@ -11,6 +11,7 @@ import work.nekow.particledrawing.api.ParticleStyle;
 import java.util.UUID;
 
 @SuppressWarnings("unused")
+@org.jspecify.annotations.NullMarked
 public record ParticleSpawnPayload(
     UUID particleId,
     ParticleStyle style,

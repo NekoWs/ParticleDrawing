@@ -59,6 +59,7 @@ public record ParticleDestroyPayload(
         return new ParticleDestroyPayload(memberIds.toArray(new UUID[0]), groupId);
     }
 
+    @SuppressWarnings("unused")
     public static ParticleDestroyPayload batch(Collection<UUID> ids) {
         return new ParticleDestroyPayload(ids.toArray(new UUID[0]), null);
     }

@@ -61,6 +61,7 @@ public final class ParticleData {
         return lifetime == 0;
     }
 
+    @SuppressWarnings("unused")
     public int tick() {
         if (lifetime > 0) {
             lifetime--;

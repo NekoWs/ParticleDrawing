@@ -26,6 +26,7 @@ public final class DynamicLightPositions {
     /**
      * Remove ALL light blocks from the world. Called on shutdown/load.
      */
+    @SuppressWarnings("deprecation")
     public static void clearAll(ServerLevel level) {
         for (BlockPos pos : POSITIONS) {
             try {

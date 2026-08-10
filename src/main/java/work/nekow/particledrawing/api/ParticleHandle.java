@@ -170,7 +170,7 @@ public final class ParticleHandle {
                 manager.getPlayers()
             );
 
-            if (data != null && offsetFromPivot != Vec3.ZERO) {
+            if (offsetFromPivot != Vec3.ZERO) {
                 engine.setOffsetFromPivot(data.id(), offsetFromPivot);
             }
 

@@ -5,6 +5,7 @@ import net.minecraft.network.codec.StreamCodec;
 
 import java.util.UUID;
 
+@org.jspecify.annotations.NullMarked
 final class StreamCodecs {
 
     static final StreamCodec<FriendlyByteBuf, UUID> UUID_CODEC = new StreamCodec<>() {
@@ -20,7 +21,9 @@ final class StreamCodecs {
         }
     };
 
+    @SuppressWarnings("NullMarked")
     static final StreamCodec<FriendlyByteBuf, UUID> NULLABLE_UUID_CODEC = new StreamCodec<>() {
+        @SuppressWarnings("all")
         @Override
         public UUID decode(FriendlyByteBuf buf) {
             if (buf.readBoolean()) {
@@ -30,7 +33,7 @@ final class StreamCodecs {
         }
 
         @Override
-        public void encode(FriendlyByteBuf buf, UUID id) {
+        public void encode(FriendlyByteBuf buf, @org.jspecify.annotations.Nullable UUID id) {
             buf.writeBoolean(id != null);
             if (id != null) {
                 buf.writeLong(id.getMostSignificantBits());

@@ -148,15 +148,10 @@ public final class Color {
     }
 
     private static float clamp(float v) {
-        if (v < 0f) return 0f;
-        if (v > 1f) return 1f;
-        return v;
+        return Math.clamp(v, 0f, 1f);
     }
 
     private static int clampToInt(float v) {
-        int i = (int) v;
-        if (i < 0) return 0;
-        if (i > 255) return 255;
-        return i;
+        return Math.clamp((int) v, 0, 255);
     }
 }

@@ -28,9 +28,7 @@ public final class RenderParticle {
     private float tgtScale;
 
     private boolean glowing;
-    private long birthTime;      // System.nanoTime at creation
     private long deathTime;      // System.nanoTime when this expires (0 = immortal)
-    private long fadeOutStart;   // fade-out window start
 
     private EasingCurve easing;
     private long easeDurationNs;
@@ -49,8 +47,7 @@ public final class RenderParticle {
         this.curA = this.tgtA = color.a();
         this.curScale = this.tgtScale = scale;
         this.glowing = glowing;
-        this.birthTime = System.nanoTime();
-        this.deathTime = lifetimeMs > 0 ? birthTime + lifetimeMs * 1_000_000L : 0;
+        this.deathTime = lifetimeMs > 0 ? System.nanoTime() + lifetimeMs * 1_000_000L : 0;
         this.easing = EasingCurvePresets.LINEAR;
         this.easeDurationNs = 0;
         this.easeStartTime = 0;

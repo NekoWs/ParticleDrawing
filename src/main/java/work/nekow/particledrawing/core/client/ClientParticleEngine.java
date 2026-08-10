@@ -43,14 +43,12 @@ public final class ClientParticleEngine {
         particles.put(id, rp);
 
         ParticleEngine pe = Minecraft.getInstance().particleEngine;
-        if (pe != null) {
-            var level = Minecraft.getInstance().level;
-            if (level != null) {
-                BridgeParticle bp = new BridgeParticle(id, style, level, x, y, z,
-                    Color.of(r, g, b, a), scale, glowing);
-                pe.add(bp);
-                bridges.put(id, bp);
-            }
+        var level = Minecraft.getInstance().level;
+        if (level != null) {
+            BridgeParticle bp = new BridgeParticle(id, style, level, x, y, z,
+                Color.of(r, g, b, a), scale, glowing);
+            pe.add(bp);
+            bridges.put(id, bp);
         }
 
         if (groupId != null) {

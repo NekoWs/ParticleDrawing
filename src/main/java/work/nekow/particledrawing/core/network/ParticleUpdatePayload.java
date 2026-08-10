@@ -9,6 +9,7 @@ import work.nekow.particledrawing.core.easing.EasingType;
 
 import java.util.UUID;
 
+@org.jspecify.annotations.NullMarked
 public record ParticleUpdatePayload(
     UUID particleId,
     double x, double y, double z,

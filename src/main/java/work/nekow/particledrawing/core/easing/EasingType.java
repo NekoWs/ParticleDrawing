@@ -1,7 +1,5 @@
 package work.nekow.particledrawing.core.easing;
 
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -46,13 +44,13 @@ public final class EasingType {
         EASE_IN_ELASTIC  = new EasingType("EASE_IN_ELASTIC",  12, new EasingCurve(0.56,  0.01,  0.73, 1.61));
         EASE_OUT_ELASTIC = new EasingType("EASE_OUT_ELASTIC", 13, new EasingCurve(0.25, -0.61,  0.44, 0.99));
 
-        PRESETS = Collections.unmodifiableList(Arrays.asList(
+        PRESETS = List.of(
             LINEAR, EASE_IN, EASE_OUT, EASE_IN_OUT,
             EASE_IN_QUAD, EASE_OUT_QUAD, EASE_IN_OUT_QUAD,
             EASE_IN_CUBIC, EASE_OUT_CUBIC, EASE_IN_OUT_CUBIC,
             EASE_IN_BOUNCE, EASE_OUT_BOUNCE,
             EASE_IN_ELASTIC, EASE_OUT_ELASTIC
-        ));
+        );
         PRESET_ARRAY = PRESETS.toArray(new EasingType[0]);
     }
 

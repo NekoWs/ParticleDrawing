@@ -40,6 +40,7 @@ public final class ParticleGroup {
     /**
      * Translate all particles in the group with easing.
      */
+    @SuppressWarnings("unused")
     public ParticleGroup move(Vec3 delta, int durationTicks, EasingType easing) {
         manager.getEngine().applyGroupTransform(
             id, TransformOp.Type.TRANSLATE,
@@ -55,6 +56,7 @@ public final class ParticleGroup {
      * @param axis normalized rotation axis (e.g. Vec3.Z for Z-axis)
      * @param radians rotation angle in radians
      */
+    @SuppressWarnings("unused")
     public ParticleGroup rotate(Vec3 axis, double radians, int durationTicks, EasingType easing) {
         manager.getEngine().applyGroupTransform(
             id, TransformOp.Type.ROTATE,
@@ -67,6 +69,7 @@ public final class ParticleGroup {
     /**
      * Recolor all particles in the group with easing.
      */
+    @SuppressWarnings("unused")
     public ParticleGroup recolor(Color targetColor, int durationTicks, EasingType easing) {
         manager.getEngine().applyGroupTransform(
             id, TransformOp.Type.RECOLOR,

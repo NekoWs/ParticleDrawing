@@ -39,10 +39,11 @@ public final class DynamicLightEngine {
 
         double maxDist = ParticleDrawingConfig.CLIENT.dynamicLightMaxDistance.get();
         int maxLights = ParticleDrawingConfig.CLIENT.maxDynamicLights.get();
+        var player = mc.player;
 
         List<RenderParticle> sorted = new ArrayList<>(glowingParticles);
         sorted.sort(Comparator.comparingDouble(p ->
-            mc.player.distanceToSqr(p.x(), p.y(), p.z())));
+            player.distanceToSqr(p.x(), p.y(), p.z())));
 
         Map<BlockPos, Integer> desiredLevels = new HashMap<>();
 
@@ -50,13 +51,13 @@ public final class DynamicLightEngine {
             if (desiredLevels.size() >= maxLights) break;
             if (!p.isAlive() || p.a() < 0.01f) continue;
 
-            double distSq = mc.player.distanceToSqr(p.x(), p.y(), p.z());
+            double distSq = player.distanceToSqr(p.x(), p.y(), p.z());
             if (distSq > maxDist * maxDist) continue;
 
             float lum = Math.max(p.r(), Math.max(p.g(), p.b())) * p.a();
             if (lum < 0.05f) continue;
 
-            int light = Math.max(8, Math.min(15, Math.round(lum * 15)));
+            int light = Math.clamp(Math.round(lum * 15), 8, 15);
             BlockPos pos = BlockPos.containing(p.x(), p.y(), p.z());
 
             if (canPlace(level, pos)) {
@@ -104,13 +105,13 @@ public final class DynamicLightEngine {
         placedLights.clear();
     }
 
+    @SuppressWarnings("deprecation")
     private static boolean canPlace(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos)) return false;
         BlockState current = level.getBlockState(pos);
         if (current.isAir()) return true;
         if (current.is(Blocks.LIGHT)) return true;
-        if (current.canBeReplaced() && !current.liquid()) return true;
-        return false;
+        return current.canBeReplaced() && current.getFluidState().isEmpty();
     }
 
     private static void placeLight(ServerLevel level, BlockPos pos, int lightLevel) {
