@@ -10,12 +10,14 @@ import work.nekow.particledrawing.lighting.DynamicLightEngine
 import work.nekow.particledrawing.lighting.DynamicLightManager
 
 @EventBusSubscriber(modid = ParticleDrawing.MODID, value = [Dist.CLIENT])
+@Suppress("unused")
 object ParticleRenderHandler {
 
     private var engineInitialized = false
 
     @SubscribeEvent
     @JvmStatic
+    @Suppress("UNUSED_PARAMETER")
     fun onClientTick(event: ClientTickEvent.Post) {
         if (!engineInitialized) {
             ClientParticleEngine.init()

@@ -2,10 +2,8 @@ package work.nekow.particledrawing.lighting
 
 import net.minecraft.client.Camera
 import net.minecraft.client.Minecraft
-import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.client.ClientParticleEngine
-import work.nekow.particledrawing.core.client.RenderParticle
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
 @Suppress("unused")

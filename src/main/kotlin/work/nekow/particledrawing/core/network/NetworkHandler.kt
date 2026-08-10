@@ -7,6 +7,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar
 import work.nekow.particledrawing.ParticleDrawing
 
 @EventBusSubscriber(modid = ParticleDrawing.MODID)
+@Suppress("unused")
 object NetworkHandler {
 
     @SubscribeEvent

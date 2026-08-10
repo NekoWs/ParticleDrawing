@@ -16,7 +16,6 @@ object DynamicLightPositions {
     fun contains(pos: BlockPos): Boolean = POSITIONS.contains(pos)
     fun all(): Set<BlockPos> = POSITIONS.toSet()
 
-    @Suppress("deprecation")
     fun clearAll(level: ServerLevel) {
         for (pos in POSITIONS) {
             try {

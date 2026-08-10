@@ -45,7 +45,7 @@ object DynamicLightEngine {
             val lum = maxOf(p.r(), maxOf(p.g(), p.b())) * p.a()
             if (lum < 0.05f) continue
 
-            val light = Math.round(lum * 15).toInt().coerceIn(8, 15)
+            val light = Math.round(lum * 15).coerceIn(8, 15)
             val pos = BlockPos.containing(p.x(), p.y(), p.z())
 
             if (canPlace(level, pos)) {
@@ -86,7 +86,6 @@ object DynamicLightEngine {
         placedLights.clear()
     }
 
-    @Suppress("deprecation")
     private fun canPlace(level: ServerLevel, pos: BlockPos): Boolean {
         if (!level.hasChunkAt(pos)) return false
         val current = level.getBlockState(pos)

@@ -9,12 +9,13 @@ import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.lighting.DynamicLightPositions
 
 @EventBusSubscriber(modid = ParticleDrawing.MODID)
+@Suppress("unused")
 object DynamicLightCleanup {
 
     @SubscribeEvent
     @JvmStatic
     fun onServerStopping(event: ServerStoppingEvent) {
-        for (level in event.server.getAllLevels()) {
+        for (level in event.server.allLevels) {
             DynamicLightPositions.clearAll(level)
         }
     }
@@ -22,8 +23,8 @@ object DynamicLightCleanup {
     @SubscribeEvent
     @JvmStatic
     fun onLevelUnload(event: LevelEvent.Unload) {
-        if (event.getLevel() is ServerLevel) {
-            DynamicLightPositions.clearAll(event.getLevel() as ServerLevel)
+        if (event.level is ServerLevel) {
+            DynamicLightPositions.clearAll(event.level as ServerLevel)
         }
     }
 }

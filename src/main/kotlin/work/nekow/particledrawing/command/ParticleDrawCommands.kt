@@ -1,15 +1,11 @@
 package work.nekow.particledrawing.command
 
-import com.mojang.brigadier.CommandDispatcher
 import com.mojang.brigadier.arguments.FloatArgumentType
 import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.context.CommandContext
-import com.mojang.brigadier.exceptions.CommandSyntaxException
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
 import net.minecraft.network.chat.Component
-import net.minecraft.server.level.ServerLevel
-import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.phys.Vec3
 import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
@@ -18,8 +14,11 @@ import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.api.*
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.server.ServerParticleEngine
+import kotlin.math.cos
+import kotlin.math.sin
 
 @EventBusSubscriber(modid = ParticleDrawing.MODID)
+@Suppress("unused")
 object ParticleDrawCommands {
 
     @SubscribeEvent
@@ -141,8 +140,8 @@ object ParticleDrawCommands {
         val center = player.position().add(player.lookAngle.scale(3.0))
         for (i in 0 until count) {
             val angle = 2.0 * Math.PI * i / count
-            val x = center.x + Math.cos(angle) * 2.5
-            val z = center.z + Math.sin(angle) * 2.5
+            val x = center.x + cos(angle) * 2.5
+            val z = center.z + sin(angle) * 2.5
             val hue = i.toFloat() / count
 
             pm.create()
@@ -175,8 +174,8 @@ object ParticleDrawCommands {
             for (i in 0 until toSpawn) {
                 val angle = (batch + i).toDouble() / count * 2.0 * Math.PI
                 val dist = 2.0 + Math.random() * 8.0
-                val x = center.x + Math.cos(angle) * dist
-                val z = center.z + Math.sin(angle) * dist
+                val x = center.x + cos(angle) * dist
+                val z = center.z + sin(angle) * dist
                 val y = center.y + Math.random() * 4.0
                 val hue = (batch + i).toFloat() / count
 

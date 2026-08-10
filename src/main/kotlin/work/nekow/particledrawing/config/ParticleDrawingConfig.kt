@@ -1,7 +1,6 @@
 package work.nekow.particledrawing.config
 
 import net.neoforged.neoforge.common.ModConfigSpec
-import org.apache.commons.lang3.tuple.Pair
 
 object ParticleDrawingConfig {
 

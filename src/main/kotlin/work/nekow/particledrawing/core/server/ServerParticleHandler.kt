@@ -9,13 +9,14 @@ import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.util.ParticleUtils
 
 @EventBusSubscriber(modid = ParticleDrawing.MODID)
+@Suppress("unused")
 object ServerParticleHandler {
 
     @SubscribeEvent
     @JvmStatic
     fun onServerTick(event: ServerTickEvent.Post) {
         val server = event.server
-        for (level in server.getAllLevels()) {
+        for (level in server.allLevels) {
             val engine = ServerParticleEngine.getOrCreate(ParticleUtils.dimensionUUID(level))
             engine.tick(level.players())
         }
@@ -24,8 +25,8 @@ object ServerParticleHandler {
     @SubscribeEvent
     @JvmStatic
     fun onLevelUnload(event: LevelEvent.Unload) {
-        if (event.getLevel() is ServerLevel) {
-            ServerParticleEngine.clearDimension(ParticleUtils.dimensionUUID(event.getLevel() as ServerLevel))
+        if (event.level is ServerLevel) {
+            ServerParticleEngine.clearDimension(ParticleUtils.dimensionUUID(event.level as ServerLevel))
         }
     }
 }
