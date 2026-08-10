@@ -1,5 +1,7 @@
 package work.nekow.particledrawing.lighting
 
+import kotlin.math.round
+import kotlin.math.sqrt
 import net.minecraft.client.Camera
 import net.minecraft.client.Minecraft
 import work.nekow.particledrawing.config.ParticleDrawingConfig
@@ -60,7 +62,7 @@ object DynamicLightManager {
             val dx = p.x() - camPos.x
             val dy = p.y() - camPos.y
             val dz = p.z() - camPos.z
-            val dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+            val dist = sqrt(dx * dx + dy * dy + dz * dz)
             if (dist > maxDist) continue
 
             val brightness = p.r() * 0.3f + p.g() * 0.59f + p.b() * 0.11f
@@ -104,7 +106,7 @@ object DynamicLightManager {
                 val dx = x - light.x
                 val dy = y - light.y
                 val dz = z - light.z
-                val dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+                val dist = sqrt(dx * dx + dy * dy + dz * dz)
                 if (dist > maxDistConfig) continue
 
                 val atten = LightAttenuation.SMOOTHSTEP.evaluate(dist.toFloat(), maxDistConfig.toFloat())
@@ -114,7 +116,7 @@ object DynamicLightManager {
                 }
             }
 
-            return Math.round(maxContrib).toInt()
+            return round(maxContrib).toInt()
         } finally {
             LOCK.readLock().unlock()
         }

@@ -19,7 +19,7 @@ import java.util.UUID
  * @param hasPosition 是否包含位置更新
  * @param hasColor 是否包含颜色更新
  * @param hasScale 是否包含缩放更新
- * @param e0..e4 缓动参数序列化数组
+ * @param e0-e4 缓动曲线序列化参数
  */
 data class ParticleUpdatePayload(
     val particleId: UUID,

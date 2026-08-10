@@ -367,7 +367,7 @@ class ServerParticleEngine(
             var offset = 0
             while (offset < allIds.size) {
                 val end = (offset + batchSize).coerceAtMost(allIds.size)
-                val batch = java.util.Arrays.copyOfRange(allIds, offset, end)
+                val batch = allIds.copyOfRange(offset, end)
                 val payload = ParticleDestroyPayload(batch, null)
 
                 for (player in playersInDimension) {

@@ -20,7 +20,7 @@ import java.util.UUID
  * @param targetScale 目标缩放
  * @param px/py/pz 变换轴心
  * @param durationTicks 过渡持续 tick 数
- * @param e0..e4 缓动参数序列化数组
+ * @param e0-e4 缓动曲线序列化参数
  */
 data class ParticleGroupTransformPayload(
     val groupId: UUID,

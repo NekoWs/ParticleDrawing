@@ -14,6 +14,7 @@ import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.api.*
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.server.ServerParticleEngine
+import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -198,7 +199,7 @@ object ParticleDrawCommands {
 
         val center = player.position().add(player.lookAngle.scale(3.0))
         for (i in 0 until count) {
-            val angle = 2.0 * Math.PI * i / count
+            val angle = 2.0 * PI * i / count
             val x = center.x + cos(angle) * 2.5
             val z = center.z + sin(angle) * 2.5
             val hue = i.toFloat() / count
@@ -237,7 +238,7 @@ object ParticleDrawCommands {
         while (batch < count) {
             val toSpawn = minOf(batchSize, count - batch)
             for (i in 0 until toSpawn) {
-                val angle = (batch + i).toDouble() / count * 2.0 * Math.PI
+                val angle = (batch + i).toDouble() / count * 2.0 * PI
                 val dist = 2.0 + Math.random() * 8.0
                 val x = center.x + cos(angle) * dist
                 val z = center.z + sin(angle) * dist
@@ -295,7 +296,7 @@ object ParticleDrawCommands {
             ctx.source.sendFailure(Component.literal("No test group! Run /particledraw group first."))
             return 0
         }
-        testGroup!!.rotate(Vec3(0.0, 1.0, 0.0), Math.PI * 2, 80, EasingType.EASE_IN_OUT)
+        testGroup!!.rotate(Vec3(0.0, 1.0, 0.0), PI * 2, 80, EasingType.EASE_IN_OUT)
         ctx.source.sendSuccess(
             { Component.literal("Rotating group 360 deg over 80 ticks") }, false)
         return 1
@@ -419,7 +420,7 @@ object ParticleDrawCommands {
                         var idx = 0
                         for (memberId in groupData.memberIds()) {
                             val data = engine.getParticle(memberId) ?: continue
-                            val angle = 2.0 * Math.PI * idx / groupData.size()
+                            val angle = 2.0 * PI * idx / groupData.size()
                             val newY = state.origin.y + sin(tick * 0.5 + angle * 4.0) * 0.5
 
                             engine.update(memberId)
@@ -440,7 +441,7 @@ object ParticleDrawCommands {
                             val newY = data.position().y - 0.15
 
                             if (newY < state.origin.y - 3.5) {
-                                val angle = Math.random() * 2.0 * Math.PI
+                                val angle = Math.random() * 2.0 * PI
                                 val dist = Math.random() * 3.0
                                 engine.update(memberId)
                                     .position(
@@ -586,7 +587,7 @@ object ParticleDrawCommands {
         val group = pm.createGroup(center)
 
         for (i in 0 until 80) {
-            val angle = Math.random() * 2.0 * Math.PI
+            val angle = Math.random() * 2.0 * PI
             val dist = Math.random() * 3.0
             val x = center.x + cos(angle) * dist
             val y = center.y - 3.0 + Math.random() * 3.5
