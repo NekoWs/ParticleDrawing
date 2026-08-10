@@ -1,7 +1,6 @@
 package work.nekow.particledrawing.core.server;
 
 import net.minecraft.world.phys.Vec3;
-import work.nekow.particledrawing.api.Color;
 
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;

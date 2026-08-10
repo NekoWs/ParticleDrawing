@@ -2,6 +2,7 @@ package work.nekow.particledrawing.lighting;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 
 import java.util.Collections;
@@ -28,7 +29,7 @@ public final class DynamicLightPositions {
         for (BlockPos pos : POSITIONS) {
             try {
                 if (level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.LIGHT)) {
-                    level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+                    level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
                 }
             } catch (Exception ignored) {}
         }

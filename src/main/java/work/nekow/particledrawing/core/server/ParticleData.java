@@ -19,7 +19,7 @@ public final class ParticleData {
     private float scale;
     private int lifetime;          // remaining ticks
     private final int maxLifetime; // original lifetime, for progress calcs
-    private UUID groupId;
+    private final UUID groupId;
     private boolean glowing;
     private Vec3 offsetFromPivot;  // offset at creation time, for group transforms
 

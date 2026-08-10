@@ -1,9 +1,6 @@
 package work.nekow.particledrawing.api;
 
 import net.minecraft.world.phys.Vec3;
-import work.nekow.particledrawing.core.easing.EasingType;
-
-import java.util.UUID;
 
 /**
  * High-level drawing utilities for creating particle shapes.

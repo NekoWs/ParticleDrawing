@@ -1,7 +1,6 @@
 package work.nekow.particledrawing.lighting;
 
 import net.minecraft.client.Camera;
-import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.Vec3;
 import work.nekow.particledrawing.config.ParticleDrawingConfig;
 import work.nekow.particledrawing.core.client.ClientParticleEngine;

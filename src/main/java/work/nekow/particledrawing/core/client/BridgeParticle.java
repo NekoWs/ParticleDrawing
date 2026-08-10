@@ -1,17 +1,10 @@
 package work.nekow.particledrawing.core.client;
 
-import com.mojang.blaze3d.pipeline.BlendFunction;
-import com.mojang.blaze3d.pipeline.ColorTargetState;
-import com.mojang.blaze3d.PrimitiveTopology;
-import com.mojang.blaze3d.pipeline.RenderPipeline;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.SingleQuadParticle;
-import net.minecraft.client.renderer.RenderPipelines;
-import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.data.AtlasIds;
-import net.minecraft.resources.Identifier;
-import work.nekow.particledrawing.ParticleDrawing;
+import org.jspecify.annotations.NonNull;
 import work.nekow.particledrawing.api.Color;
 import work.nekow.particledrawing.api.ParticleStyle;
 
@@ -72,8 +65,8 @@ public final class BridgeParticle extends SingleQuadParticle {
     }
 
     @Override
-    protected Layer getLayer() {
-        if (this.alpha < 1.0f || (this.sprite != null && this.sprite.transparency().hasTranslucent())) {
+    protected @NonNull Layer getLayer() {
+        if (this.alpha < 1.0f || this.sprite.transparency().hasTranslucent()) {
             return Layer.TRANSLUCENT;
         }
         return Layer.OPAQUE;

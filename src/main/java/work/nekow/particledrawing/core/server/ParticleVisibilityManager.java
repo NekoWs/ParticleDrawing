@@ -1,7 +1,6 @@
 package work.nekow.particledrawing.core.server;
 
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.Collection;
@@ -29,8 +28,8 @@ public final class ParticleVisibilityManager {
         for (ServerPlayer player : players) {
             UUID playerId = player.getUUID();
             PlayerVisibilityState state = playerStates.computeIfAbsent(
-                playerId, k -> new PlayerVisibilityState());
-            state.update(player, allParticles, radius);
+                playerId, _ -> new PlayerVisibilityState());
+            state.update(player);
         }
     }
 
@@ -48,9 +47,8 @@ public final class ParticleVisibilityManager {
 
     private static final class PlayerVisibilityState {
         Vec3 lastPosition = Vec3.ZERO;
-        long lastUpdateTick = 0;
 
-        void update(ServerPlayer player, Collection<ParticleData> allParticles, double radius) {
+        void update(ServerPlayer player) {
             lastPosition = player.position();
         }
     }

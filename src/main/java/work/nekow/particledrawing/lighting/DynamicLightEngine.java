@@ -4,10 +4,10 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.world.level.material.Fluids;
 import work.nekow.particledrawing.config.ParticleDrawingConfig;
 import work.nekow.particledrawing.core.client.RenderParticle;
 
@@ -126,18 +126,18 @@ public final class DynamicLightEngine {
         }
         DynamicLightPositions.add(pos);
         placedLights.put(pos, lightState);
-        level.setBlock(pos, lightState, 3);
+        level.setBlock(pos, lightState, Block.UPDATE_ALL);
     }
 
     private static void restoreBlock(ServerLevel level, BlockPos pos) {
         DynamicLightPositions.remove(pos);
         BlockState original = originalBlocks.remove(pos);
         if (original != null) {
-            level.setBlock(pos, original, 3);
+            level.setBlock(pos, original, Block.UPDATE_ALL);
         } else {
             BlockState current = level.getBlockState(pos);
             if (current.is(Blocks.LIGHT)) {
-                level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+                level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
             }
         }
     }

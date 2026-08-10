@@ -1,10 +1,10 @@
 package work.nekow.particledrawing.core.network;
 
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
+import org.jspecify.annotations.NonNull;
 
 import java.util.*;
 
@@ -20,7 +20,7 @@ public record ParticleDestroyPayload(
     public static final StreamCodec<FriendlyByteBuf, ParticleDestroyPayload> STREAM_CODEC =
         new StreamCodec<>() {
             @Override
-            public ParticleDestroyPayload decode(FriendlyByteBuf buf) {
+            public @NonNull ParticleDestroyPayload decode(FriendlyByteBuf buf) {
                 int count = buf.readVarInt();
                 UUID[] ids = new UUID[count];
                 for (int i = 0; i < count; i++) {
@@ -47,7 +47,7 @@ public record ParticleDestroyPayload(
         };
 
     @Override
-    public Type<? extends CustomPacketPayload> type() {
+    public @NonNull Type<? extends CustomPacketPayload> type() {
         return TYPE;
     }
 
