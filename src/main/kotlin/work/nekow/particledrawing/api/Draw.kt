@@ -255,6 +255,53 @@ object Draw {
     }
 
     /**
+     * 绘制正三角形。
+     * @param group 可选，若提供则粒子归入该组而非创建新组
+     */
+    fun triangle(
+        manager: ParticleManager, center: Vec3, radius: Double, segmentsPerEdge: Int = 30,
+        rotationOffset: Double = 0.0, axis: Axis = Axis.XZ,
+        color: Color = Color.WHITE, style: ParticleStyle = ParticleStyle.DUST, scale: Float = 0.2f,
+        group: ParticleGroup? = null
+    ): ParticleGroup {
+        val g = group ?: manager.createGroup(center)
+        for (v in 0..2) {
+            val a1 = rotationOffset + 2.0 * PI * v / 3.0
+            val a2 = rotationOffset + 2.0 * PI * (v + 1) / 3.0
+            for (j in 0 until segmentsPerEdge) {
+                val t = j.toDouble() / segmentsPerEdge
+                val x = (cos(a1) * (1 - t) + cos(a2) * t) * radius
+                val z = (sin(a1) * (1 - t) + sin(a2) * t) * radius
+                val pos = when (axis) {
+                    Axis.XZ -> Vec3(center.x + x, center.y, center.z + z)
+                    Axis.XY -> Vec3(center.x + x, center.y + z, center.z)
+                    Axis.YZ -> Vec3(center.x, center.y + x, center.z + z)
+                }
+                manager.create().style(style).scale(scale)
+                    .position(pos).color(color).lifetime(-1).group(g.id)
+                    .spawn().also { g.add(it) }
+            }
+        }
+        return g
+    }
+
+    /**
+     * 绘制六芒星（两个三角形旋转 60° 叠加）。
+     */
+    fun hexagram(
+        manager: ParticleManager, center: Vec3, radius: Double, segmentsPerEdge: Int = 40,
+        axis: Axis = Axis.XZ,
+        color1: Color = Color.WHITE,
+        color2: Color = Color.WHITE,
+        style: ParticleStyle = ParticleStyle.DUST, scale: Float = 0.2f
+    ): ParticleGroup {
+        val group = manager.createGroup(center)
+        triangle(manager, center, radius, segmentsPerEdge, 0.0, axis, color1, style, scale, group)
+        triangle(manager, center, radius, segmentsPerEdge, PI / 3.0, axis, color2, style, scale, group)
+        return group
+    }
+
+    /**
      * 描述 2D 图形所绘制的平面。
      */
     enum class Axis {

@@ -102,14 +102,14 @@ object ParticleDrawCommands {
                     .executes(::showStatus))
                 .then(Commands.literal("demo")
                     .executes(::startDemo)
-                    .then(Commands.literal("ring")
-                        .executes(::startRingDemo))
                     .then(Commands.literal("wave")
                         .executes(::startWaveDemo))
                     .then(Commands.literal("rain")
                         .executes(::startRainDemo))
                     .then(Commands.literal("sphere")
-                        .executes(::startSphereDemo)))
+                        .executes(::startSphereDemo))
+                    .then(Commands.literal("magic")
+                        .executes(::startMagicCircleDemo)))
                 .then(Commands.literal("clear")
                     .executes(::clearAll))
         )
@@ -377,7 +377,7 @@ object ParticleDrawCommands {
     )
 
     /** 演示类型枚举 */
-    enum class DemoType { CIRCLE, RING, WAVE, RAIN, SPHERE }
+    enum class DemoType { CIRCLE, WAVE, RAIN, SPHERE, MAGIC_CIRCLE }
 
     /** 当前活跃的演示状态列表 */
     @JvmField
@@ -400,15 +400,6 @@ object ParticleDrawCommands {
                         g.rotate(
                             Vec3(0.0, 1.0, 0.0),
                             Math.toRadians(3.0),
-                            0,
-                            EasingType.LINEAR
-                        )
-                    }
-
-                    DemoType.RING -> {
-                        g.rotate(
-                            Vec3(1.0, 0.0, 0.0),
-                            Math.toRadians(6.0),
                             0,
                             EasingType.LINEAR
                         )
@@ -465,6 +456,9 @@ object ParticleDrawCommands {
                     DemoType.SPHERE -> {
                         // 旋转由客户端持续旋转系统处理，无需服务端更新
                     }
+                    DemoType.MAGIC_CIRCLE -> {
+                        // 运动由 MotionSystem 客户端预测处理
+                    }
                 }
             } catch (_: Exception) {
                 it.remove()
@@ -508,31 +502,6 @@ object ParticleDrawCommands {
         demoStates += DemoState(group, pm, DemoType.CIRCLE, center)
         ctx.source.sendSuccess(
             { Component.literal("Circle demo! ${group.size()} particles, XZ plane, rotating") }, false)
-        return group.size()
-    }
-
-    /**
-     * RING 演示: 超大水平环 500 粒子, 绕 X 轴翻滚。
-     *
-     * 对比 CIRCLE:
-     * - 半径大 2 倍 (6 格) + 粒子多 4 倍 (500) → 测试大幅移动是否掉帧
-     * - 旋转轴为 X 轴 (1,0,0) → 垂直翻滚
-     *
-     * @param ctx 命令上下文
-     * @return 组中粒子数量
-     */
-    fun startRingDemo(ctx: CommandContext<CommandSourceStack>): Int {
-        val player = ctx.source.playerOrException
-        val level = player.level()
-        val pm = ParticleManager.of(level)
-
-        val center = player.position().add(player.lookAngle.scale(7.0))
-        val group = Draw.circle(pm, center, 6.0, 500, Draw.Axis.XZ,
-            Color.ofHsb(0.08f, 1.0f, 1.0f), ParticleStyle.DUST, 0.25f)
-
-        demoStates += DemoState(group, pm, DemoType.RING, center)
-        ctx.source.sendSuccess(
-            { Component.literal("Orbit demo! ${group.size()} particles, large ring orbiting") }, false)
         return group.size()
     }
 
@@ -637,6 +606,50 @@ object ParticleDrawCommands {
         ctx.source.sendSuccess(
             { Component.literal("Sphere demo! ${group.size()} particles, X-axis rotation") }, false)
         return group.size()
+    }
+
+    /**
+     * 法阵演示: 六芒星 + 内外圆 + 跟随玩家。
+     * 多个组叠加，各自独立运动算法。
+     */
+    fun startMagicCircleDemo(ctx: CommandContext<CommandSourceStack>): Int {
+        val player = ctx.source.playerOrException
+        val level = player.level()
+        val pm = ParticleManager.of(level)
+        val center = player.position()
+        val radius = 2.5
+        val steps = 200
+        var total = 0
+
+        // --- 六芒星 (两个三角叠加) ---
+        val starGroup = Draw.hexagram(pm, center, radius, segmentsPerEdge = 40,
+            color1 = Color.ofHsb(0.10f, 1.0f, 0.9f),
+            color2 = Color.ofHsb(0.60f, 1.0f, 0.9f))
+        starGroup.addMotion("follow_player")
+        starGroup.addMotion("rotate", doubleArrayOf(0.0, 1.0, 0.0, Math.toRadians(-45.0)))
+        demoStates += DemoState(starGroup, pm, DemoType.MAGIC_CIRCLE, center)
+        total += starGroup.size()
+
+        // --- 外圆 (贴六芒星顶点, 逆时针) ---
+        val outerGroup = Draw.circle(pm, center, radius, steps, Draw.Axis.XZ,
+            Color.ofHsb(0.85f, 1.0f, 0.8f), ParticleStyle.DUST, 0.2f)
+        outerGroup.addMotion("follow_player")
+        outerGroup.addMotion("rotate", doubleArrayOf(0.0, 1.0, 0.0, Math.toRadians(30.0)))  // Y轴逆时针
+        demoStates += DemoState(outerGroup, pm, DemoType.MAGIC_CIRCLE, center)
+        total += steps
+
+        // --- 内圆 (贴六芒星内六边形, 逆时针) ---
+        val innerR = radius * cos(PI / 6.0)
+        val innerGroup = Draw.circle(pm, center, innerR, steps / 2, Draw.Axis.XZ,
+            Color.ofHsb(0.85f, 1.0f, 0.8f), ParticleStyle.DUST, 0.2f)
+        innerGroup.addMotion("follow_player")
+        innerGroup.addMotion("rotate", doubleArrayOf(0.0, 1.0, 0.0, Math.toRadians(30.0)))  // Y轴逆时针
+        demoStates += DemoState(innerGroup, pm, DemoType.MAGIC_CIRCLE, center)
+        total += steps / 2
+
+        ctx.source.sendSuccess(
+            { Component.literal("Magic circle! $total particles, hexagram + circles following player") }, false)
+        return total
     }
 
     /**

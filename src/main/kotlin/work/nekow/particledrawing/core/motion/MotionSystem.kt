@@ -5,17 +5,11 @@ import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.core.client.BridgeParticle
 import work.nekow.particledrawing.core.client.RenderParticle
 import work.nekow.particledrawing.core.motion.algorithms.ColorByYAlgorithm
+import work.nekow.particledrawing.core.motion.algorithms.FollowPlayerAlgorithm
 import work.nekow.particledrawing.core.motion.algorithms.RotateAlgorithm
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * 客户端运动系统。基于实际耗时驱动，不受 /tick 影响。
- *
- * 用法:
- *   MotionSystem.start(groupId, "rotate", params, pivot, basePositions) // 服务端触发
- *   MotionSystem.tick(groups, particles, bridges)                       // 每帧调用
- */
 object MotionSystem {
 
     private val algorithms: MutableMap<String, MotionAlgorithm.Factory> = ConcurrentHashMap()
@@ -23,12 +17,13 @@ object MotionSystem {
     init {
         register(RotateAlgorithm.Factory)
         register(ColorByYAlgorithm.Factory)
+        register(FollowPlayerAlgorithm.Factory)
     }
 
     fun register(factory: MotionAlgorithm.Factory) { algorithms[factory.id] = factory }
 
     private data class GroupMotion(
-        val pivot: Vec3,
+        var pivot: Vec3,
         val basePositions: Map<UUID, Vec3>,
         val motions: MutableList<MotionAlgorithm> = mutableListOf(),
         val startTimeNanos: Long = System.nanoTime()
@@ -54,26 +49,33 @@ object MotionSystem {
         bridges: Map<UUID, BridgeParticle>
     ) {
         for ((groupId, group) in activeGroups) {
-            val elapsedSeconds = (System.nanoTime() - group.startTimeNanos) / 1_000_000_000.0
+            val s = (System.nanoTime() - group.startTimeNanos) / 1_000_000_000.0
             val members = groupMembers[groupId] ?: continue
 
+            // 第一遍：收集需要更新 pivot 的算法
+            val firstBase = group.basePositions.values.firstOrNull()
+            for (motion in group.motions) {
+                if (firstBase == null) break
+                val r = motion.compute(firstBase, group.pivot, s)
+                if (r.newPivot != null) group.pivot = r.newPivot
+            }
+
+            // 第二遍：逐粒子应用所有算法
             for (memberId in members) {
                 val base = group.basePositions[memberId] ?: continue
                 val rp = renderParticles[memberId] ?: continue
                 val bp = bridges[memberId] ?: continue
-
                 var curPos = base
                 var curColor: Color? = null
 
                 for (motion in group.motions) {
-                    val (newPos, newColor) = motion.compute(curPos, group.pivot, elapsedSeconds)
-                    if (newPos != null) curPos = newPos
-                    if (newColor != null) curColor = newColor
+                    val r = motion.compute(curPos, group.pivot, s)
+                    if (r.position != null) curPos = r.position
+                    if (r.color != null) curColor = r.color
                 }
 
                 rp.setPositionDirect(curPos)
                 if (curColor != null) rp.setColorDirect(curColor)
-
                 bp.syncPosition(curPos.x, curPos.y, curPos.z, snap = false)
                 bp.syncColor(rp.r(), rp.g(), rp.b(), rp.a())
                 bp.syncScale(rp.scale())
