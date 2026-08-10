@@ -381,7 +381,7 @@ object ParticleDrawCommands {
     var demoStates: MutableList<DemoState> = mutableListOf()
 
     /**
-     * 由 [ServerParticleHandler.onServerTick] 每 tick 调用。
+     * 由 [work.nekow.particledrawing.core.server.ServerParticleHandler.onServerTick] 每 tick 调用。
      * 根据 DemoType 推进动画: 旋转组、更新粒子 Y 坐标等。
      */
     @JvmStatic
@@ -470,8 +470,8 @@ object ParticleDrawCommands {
      */
     @JvmStatic
     fun stopDemos() {
-        for (state in demoStates) {
-            try { state.manager.getEngine().destroyGroup(state.group.id, state.manager.getPlayers()) }
+        for ((group, manager) in demoStates) {
+            try { manager.getEngine().destroyGroup(group.id, manager.getPlayers()) }
             catch (_: Exception) {}
         }
         demoStates.clear()
@@ -607,7 +607,7 @@ object ParticleDrawCommands {
         demoStates += DemoState(group, pm, DemoType.RAIN, center)
         ctx.source.sendSuccess(
             { Component.literal("Rain demo! ${group.size()} particles, cloud with falling rain") }, false)
-        return group.size() ?: 0
+        return group.size()
     }
 
     /**
