@@ -9,6 +9,7 @@ import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.client.RenderParticle
+import kotlin.math.roundToInt
 
 @Suppress("unused")
 object DynamicLightEngine {
@@ -45,7 +46,7 @@ object DynamicLightEngine {
             val lum = maxOf(p.r(), maxOf(p.g(), p.b())) * p.a()
             if (lum < 0.05f) continue
 
-            val light = Math.round(lum * 15).coerceIn(8, 15)
+            val light = (lum * 15).roundToInt().coerceIn(8, 15)
             val pos = BlockPos.containing(p.x(), p.y(), p.z())
 
             if (canPlace(level, pos)) {
@@ -87,7 +88,7 @@ object DynamicLightEngine {
     }
 
     private fun canPlace(level: ServerLevel, pos: BlockPos): Boolean {
-        if (!level.hasChunkAt(pos)) return false
+        if (!level.hasChunk(pos.x shr 4, pos.z shr 4)) return false
         val current = level.getBlockState(pos)
         if (current.isAir) return true
         if (current.`is`(Blocks.LIGHT)) return true

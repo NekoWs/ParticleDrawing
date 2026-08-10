@@ -19,7 +19,7 @@ object DynamicLightPositions {
     fun clearAll(level: ServerLevel) {
         for (pos in POSITIONS) {
             try {
-                if (level.hasChunkAt(pos) && level.getBlockState(pos).`is`(Blocks.LIGHT)) {
+                if (level.hasChunk(pos.x shr 4, pos.z shr 4) && level.getBlockState(pos).`is`(Blocks.LIGHT)) {
                     level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
                 }
             } catch (ignored: Exception) {
