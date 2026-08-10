@@ -7,6 +7,7 @@ import net.neoforged.fml.config.ModConfig
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 
 @Mod(ParticleDrawing.MODID)
+@Suppress("unused")
 class ParticleDrawing(bus: IEventBus, container: ModContainer) {
     companion object {
         const val MODID = "particledrawing"
