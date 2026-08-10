@@ -1,12 +1,10 @@
 package work.nekow.particledrawing.api;
 
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 import work.nekow.particledrawing.core.easing.EasingType;
 import work.nekow.particledrawing.core.server.ParticleData;
 import work.nekow.particledrawing.core.server.ServerParticleEngine;
 
-import java.util.Collection;
 import java.util.UUID;
 
 /**

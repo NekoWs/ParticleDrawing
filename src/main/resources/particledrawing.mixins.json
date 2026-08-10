@@ -5,7 +5,6 @@
   "refmap": "particledrawing.refmap.json",
   "mixins": [],
   "client": [
-    "ParticleEngineMixin",
     "EntityRendererMixin",
     "LightmapRenderStateExtractorMixin"
   ],

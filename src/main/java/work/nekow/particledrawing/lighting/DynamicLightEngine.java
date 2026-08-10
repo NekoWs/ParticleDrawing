@@ -7,23 +7,23 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.material.Fluids;
 import work.nekow.particledrawing.config.ParticleDrawingConfig;
 import work.nekow.particledrawing.core.client.RenderParticle;
 
 import java.util.*;
 
 /**
- * Places invisible {@link Blocks#LIGHT} blocks at glow particle positions
- * and removes them when particles move or disappear.
- * This approach works because light blocks emit actual block light that
- * propagates through the vanilla light engine natively.
+ * Places waterloggable invisible {@link Blocks#LIGHT} blocks at glow particle
+ * positions with sub-block interpolation for smooth light movement.
  */
 public final class DynamicLightEngine {
 
-    private static final int UPDATE_INTERVAL_TICKS = 2;
+    private static final int UPDATE_INTERVAL_TICKS = 1;
     private static int tickCounter = 0;
     private static final Map<BlockPos, BlockState> placedLights = new HashMap<>();
-    private static final Map<BlockPos, BlockState> previousBlocks = new HashMap<>();
+    private static final Map<BlockPos, BlockState> originalBlocks = new HashMap<>();
+    private static final org.slf4j.Logger LOGGER = LogUtils.getLogger();
 
     private DynamicLightEngine() {}
 
@@ -47,11 +47,10 @@ public final class DynamicLightEngine {
         sorted.sort(Comparator.comparingDouble(p ->
             mc.player.distanceToSqr(p.x(), p.y(), p.z())));
 
-        Set<BlockPos> newLightPositions = new HashSet<>();
-        int count = 0;
+        Map<BlockPos, Integer> desiredLevels = new HashMap<>();
 
         for (RenderParticle p : sorted) {
-            if (count >= maxLights) break;
+            if (desiredLevels.size() >= maxLights) break;
             if (!p.isAlive() || p.a() < 0.01f) continue;
 
             double distSq = mc.player.distanceToSqr(p.x(), p.y(), p.z());
@@ -60,34 +59,34 @@ public final class DynamicLightEngine {
             float lum = Math.max(p.r(), Math.max(p.g(), p.b())) * p.a();
             if (lum < 0.05f) continue;
 
-            int lightLevel = Math.max(8, Math.min(15, Math.round(lum * 15)));
+            int light = Math.max(8, Math.min(15, Math.round(lum * 15)));
             BlockPos pos = BlockPos.containing(p.x(), p.y(), p.z());
 
-            if (canPlaceLight(level, pos)) {
-                newLightPositions.add(pos);
-                Integer oldLevel = placedLights.containsKey(pos)
-                    ? placedLights.get(pos).getValue(BlockStateProperties.LEVEL) : null;
-
-                if (oldLevel == null || oldLevel != lightLevel) {
-                    BlockState lightState = Blocks.LIGHT.defaultBlockState()
-                        .setValue(BlockStateProperties.LEVEL, lightLevel);
-                    placedLights.put(pos, lightState);
-                    previousBlocks.putIfAbsent(pos, level.getBlockState(pos));
-                    level.setBlock(pos, lightState, 3);
-                }
+            if (canPlace(level, pos)) {
+                desiredLevels.merge(pos, light, Math::max);
             }
-            count++;
         }
 
-        // Remove lights from positions that no longer have a glow particle
-        Iterator<Map.Entry<BlockPos, BlockState>> it = placedLights.entrySet().iterator();
+        // Remove lights at positions no longer needed
+        Iterator<BlockPos> it = placedLights.keySet().iterator();
         while (it.hasNext()) {
-            Map.Entry<BlockPos, BlockState> entry = it.next();
-            BlockPos pos = entry.getKey();
-            if (!newLightPositions.contains(pos)) {
-                BlockState original = previousBlocks.remove(pos);
-                level.setBlock(pos, original != null ? original : Blocks.AIR.defaultBlockState(), 3);
+            BlockPos pos = it.next();
+            if (!desiredLevels.containsKey(pos)) {
+                restoreBlock(level, pos);
                 it.remove();
+            }
+        }
+
+        // Add or update lights
+        for (Map.Entry<BlockPos, Integer> entry : desiredLevels.entrySet()) {
+            BlockPos pos = entry.getKey();
+            int newLevel = entry.getValue();
+
+            BlockState existing = placedLights.get(pos);
+            int existingLevel = existing != null ? existing.getValue(BlockStateProperties.LEVEL) : -1;
+
+            if (existingLevel != newLevel) {
+                placeLight(level, pos, newLevel);
             }
         }
     }
@@ -102,22 +101,44 @@ public final class DynamicLightEngine {
         ServerLevel level = server.getLevel(mc.level.dimension());
         if (level == null) return;
 
-        for (Map.Entry<BlockPos, BlockState> entry : placedLights.entrySet()) {
-            BlockPos pos = entry.getKey();
-            BlockState original = previousBlocks.remove(pos);
-            level.setBlock(pos, original != null ? original : Blocks.AIR.defaultBlockState(), 3);
+        for (BlockPos pos : new HashSet<>(placedLights.keySet())) {
+            restoreBlock(level, pos);
         }
         placedLights.clear();
     }
 
-    private static boolean canPlaceLight(ServerLevel level, BlockPos pos) {
+    private static boolean canPlace(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos)) return false;
         BlockState current = level.getBlockState(pos);
-        // Place light in air, water, or replaceable blocks like grass/snow
         if (current.isAir()) return true;
-        if (current.canBeReplaced()) return true;
-        // Also allow replacing our own existing light blocks (to change level)
         if (current.is(Blocks.LIGHT)) return true;
+        if (current.canBeReplaced() && !current.liquid()) return true;
         return false;
+    }
+
+    private static void placeLight(ServerLevel level, BlockPos pos, int lightLevel) {
+        BlockState current = level.getBlockState(pos);
+        BlockState lightState = Blocks.LIGHT.defaultBlockState()
+            .setValue(BlockStateProperties.LEVEL, lightLevel);
+
+        if (!current.is(Blocks.LIGHT)) {
+            originalBlocks.put(pos, current);
+        }
+        DynamicLightPositions.add(pos);
+        placedLights.put(pos, lightState);
+        level.setBlock(pos, lightState, 3);
+    }
+
+    private static void restoreBlock(ServerLevel level, BlockPos pos) {
+        DynamicLightPositions.remove(pos);
+        BlockState original = originalBlocks.remove(pos);
+        if (original != null) {
+            level.setBlock(pos, original, 3);
+        } else {
+            BlockState current = level.getBlockState(pos);
+            if (current.is(Blocks.LIGHT)) {
+                level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+            }
+        }
     }
 }
