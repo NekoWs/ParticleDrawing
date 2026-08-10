@@ -1,6 +1,5 @@
 package work.nekow.particledrawing.lighting;
 
-import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -17,19 +16,17 @@ import java.util.*;
  * Places waterloggable invisible {@link Blocks#LIGHT} blocks at glow particle
  * positions with sub-block interpolation for smooth light movement.
  */
+@SuppressWarnings("unused")
 public final class DynamicLightEngine {
 
-    private static final int UPDATE_INTERVAL_TICKS = 1;
     private static int tickCounter = 0;
     private static final Map<BlockPos, BlockState> placedLights = new HashMap<>();
     private static final Map<BlockPos, BlockState> originalBlocks = new HashMap<>();
-    private static final org.slf4j.Logger LOGGER = LogUtils.getLogger();
 
     private DynamicLightEngine() {}
 
     public static void tick(List<RenderParticle> glowingParticles) {
         tickCounter++;
-        if (tickCounter % UPDATE_INTERVAL_TICKS != 0) return;
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null) return;

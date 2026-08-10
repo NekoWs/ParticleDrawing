@@ -28,6 +28,7 @@ import java.util.UUID;
  * circle.rotate(Vec3.Z, Math.PI / 4, EasingType.EASE_IN_OUT.duration(40));
  * }</pre>
  */
+@SuppressWarnings("unused")
 public final class ParticleManager {
 
     private final UUID dimensionId;

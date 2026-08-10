@@ -5,6 +5,7 @@ import net.minecraft.resources.Identifier;
 /**
  * Defines the visual style of a particle, mapping to a vanilla particle render type and sprite.
  */
+@SuppressWarnings("unused")
 public enum ParticleStyle {
 
     DUST(

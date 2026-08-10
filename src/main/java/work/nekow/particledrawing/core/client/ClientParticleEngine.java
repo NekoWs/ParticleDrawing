@@ -15,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Uses {@link RenderParticle} for easing/interpolation state,
  * and {@link BridgeParticle} (via vanilla {@link ParticleEngine}) for batched rendering.
  */
+@SuppressWarnings("unused")
 public final class ClientParticleEngine {
 
     private static ClientParticleEngine INSTANCE;

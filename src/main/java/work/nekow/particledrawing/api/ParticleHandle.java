@@ -11,6 +11,7 @@ import java.util.UUID;
  * Handle for a spawned particle, allowing property updates and lifecycle control.
  * Created via {@link ParticleManager#create()}.
  */
+@SuppressWarnings("unused")
 public final class ParticleHandle {
 
     private final UUID id;
@@ -86,6 +87,7 @@ public final class ParticleHandle {
     /**
      * Builder for creating particles with a fluent API.
      */
+    @SuppressWarnings("unused")
     public static final class Builder {
 
         private final ParticleManager manager;

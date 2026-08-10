@@ -15,6 +15,7 @@ import net.minecraft.world.phys.Vec3;
  * circle.recolor(Color.RED, 40, EasingType.EASE_OUT);
  * }</pre>
  */
+@SuppressWarnings("unused")
 public final class Draw {
 
     private Draw() {}

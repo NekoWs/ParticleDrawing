@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Tracks all dynamic light block positions across game sessions.
  * Positions are NOT persisted to disk — they're rebuilt each session.
  */
+@SuppressWarnings("unused")
 public final class DynamicLightPositions {
 
     private static final Set<BlockPos> POSITIONS = ConcurrentHashMap.newKeySet();

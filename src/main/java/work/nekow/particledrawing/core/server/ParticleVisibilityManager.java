@@ -12,6 +12,7 @@ import java.util.UUID;
  * Manages per-player particle visibility using frustum-style culling.
  * Only sends particles that a player can potentially see, reducing network traffic.
  */
+@SuppressWarnings("unused")
 public final class ParticleVisibilityManager {
 
     private final Map<UUID, PlayerVisibilityState> playerStates;

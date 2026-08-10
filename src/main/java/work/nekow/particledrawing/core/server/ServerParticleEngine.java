@@ -18,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Server-authoritative particle engine, one instance per dimension.
  * Manages particle lifecycle, visibility, and network synchronization.
  */
+@SuppressWarnings("unused")
 public final class ServerParticleEngine {
 
     private static final Map<UUID, ServerParticleEngine> DIMENSION_ENGINES = new ConcurrentHashMap<>();
@@ -161,7 +162,6 @@ public final class ServerParticleEngine {
 
         // Build network payload
         ParticleGroupTransformPayload payload;
-        double[] ser = easing.serialize();
         switch (transformType) {
             case TRANSLATE -> payload = ParticleGroupTransformPayload.translate(
                 groupId, delta.x, delta.y, delta.z,

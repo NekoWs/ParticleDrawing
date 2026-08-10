@@ -9,6 +9,7 @@ import java.util.UUID;
  * A collection of particles that can be transformed together.
  * Created via {@link Draw} utilities or {@link ParticleManager#createGroup(Vec3)}.
  */
+@SuppressWarnings("unused")
 public final class ParticleGroup {
 
     private final UUID id;

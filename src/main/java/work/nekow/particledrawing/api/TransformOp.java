@@ -6,6 +6,7 @@ import net.minecraft.world.phys.Vec3;
  * Describes a transform operation applied to a {@link ParticleGroup}.
  * Immutable, designed for network serialization.
  */
+@SuppressWarnings("unused")
 public final class TransformOp {
 
     private final Type type;

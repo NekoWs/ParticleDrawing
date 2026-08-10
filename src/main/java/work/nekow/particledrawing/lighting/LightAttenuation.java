@@ -4,6 +4,7 @@ package work.nekow.particledrawing.lighting;
  * Defines how dynamic light brightness attenuates over distance.
  * Implementations must be thread-safe and fast (called per-light-source per-frame).
  */
+@SuppressWarnings("unused")
 @FunctionalInterface
 public interface LightAttenuation {
 

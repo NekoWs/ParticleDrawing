@@ -7,6 +7,7 @@ package work.nekow.particledrawing.core.easing;
  *
  * <p>Evaluation uses bisection with Newton-Raphson refinement for O(log N) precision.
  */
+@SuppressWarnings("unused")
 public final class EasingCurve {
 
     private static final double EPSILON = 1e-7;

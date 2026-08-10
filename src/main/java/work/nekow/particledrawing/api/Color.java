@@ -5,6 +5,7 @@ package work.nekow.particledrawing.api;
  * All components are in the [0, 1] range.
  * Designed for efficient use in rendering and network serialization.
  */
+@SuppressWarnings("unused")
 public final class Color {
 
     public static final Color WHITE       = new Color(1.0f, 1.0f, 1.0f, 1.0f);

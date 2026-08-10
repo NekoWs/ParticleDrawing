@@ -10,6 +10,7 @@ import java.util.UUID;
  * Server-authoritative particle state.
  * Lives on the server thread, mutated by tick logic and API calls.
  */
+@SuppressWarnings("unused")
 public final class ParticleData {
 
     private final UUID id;

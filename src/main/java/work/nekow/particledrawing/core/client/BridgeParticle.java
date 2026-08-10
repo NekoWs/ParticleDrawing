@@ -10,6 +10,7 @@ import work.nekow.particledrawing.api.ParticleStyle;
 
 import java.util.UUID;
 
+@SuppressWarnings("unused")
 public final class BridgeParticle extends SingleQuadParticle {
 
     private final UUID id;

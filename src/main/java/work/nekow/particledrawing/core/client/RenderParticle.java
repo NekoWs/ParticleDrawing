@@ -12,6 +12,7 @@ import java.util.UUID;
  * Client-side particle state, updated every frame on the render thread.
  * Interpolates between current state and target state using an easing curve.
  */
+@SuppressWarnings("unused")
 public final class RenderParticle {
 
     private final UUID id;

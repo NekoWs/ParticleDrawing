@@ -9,6 +9,7 @@ import java.util.List;
  * Predefined presets cover CSS-standard curves; use {@link #custom(double, double, double, double)}
  * for arbitrary cubic-bezier.
  */
+@SuppressWarnings("unused")
 public final class EasingType {
 
     private static final List<EasingType> PRESETS;

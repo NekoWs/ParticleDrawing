@@ -24,7 +24,7 @@ public abstract class LightmapRenderStateExtractorMixin {
         at = @At("HEAD"),
         require = 1
     )
-    private void refreshDynamicLights(LightmapRenderState state, float partialTick, CallbackInfo ci) {
+    private void refreshDynamicLights(LightmapRenderState renderState, float partialTicks, CallbackInfo ci) {
         var engine = ClientParticleEngine.instance();
         if (engine != null) {
             var camera = Minecraft.getInstance().gameRenderer.mainCamera();

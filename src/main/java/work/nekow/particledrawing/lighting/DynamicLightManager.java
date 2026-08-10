@@ -16,6 +16,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * <p>Thread safety: writes happen on the render thread; reads may happen
  * on the chunk building thread (LightEngine) via mixin calls.
  */
+@SuppressWarnings("unused")
 public final class DynamicLightManager {
 
     private static final ReentrantReadWriteLock LOCK = new ReentrantReadWriteLock();

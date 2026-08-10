@@ -25,7 +25,7 @@ public abstract class EntityRendererMixin<T extends Entity> {
         cancellable = true,
         require = 1
     )
-    private void injectDynamicLightForEntity(T entity, float partialTicks,
+    private void injectDynamicLightForEntity(T entity, float partialTickTime,
                                               CallbackInfoReturnable<Integer> cir) {
         int packed = cir.getReturnValue();
         double ey = entity.getEyeY();

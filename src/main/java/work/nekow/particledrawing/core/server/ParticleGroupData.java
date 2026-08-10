@@ -9,6 +9,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * Holds a group of particles that can be transformed together.
  * The pivot is the reference point for rotations and scaling.
  */
+@SuppressWarnings("unused")
 public final class ParticleGroupData {
 
     private final UUID id;
