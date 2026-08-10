@@ -75,6 +75,49 @@ class ServerParticleEngine(
         sendToVisible(playersInDimension, data.position(), payload)
     }
 
+    // ===================================================================
+    // UpdateBuilder — 链式调用更新粒子属性
+    //
+    // 用法:
+    //   engine.update(particleId)
+    //       .position(x, y, z)
+    //       .color(Color.BLUE)
+    //       .easing(EasingType.EASE_OUT, 10)
+    //       .send(players)
+    // ===================================================================
+
+    inner class UpdateBuilder(private val id: UUID) {
+        private var pos: Vec3? = null
+        private var col: Color? = null
+        private var scl: Float? = null
+        private var dur: Int = 0
+        private var ease: EasingType = EasingType.LINEAR
+
+        fun position(x: Double, y: Double, z: Double): UpdateBuilder {
+            pos = Vec3(x, y, z); return this
+        }
+        fun position(v: Vec3): UpdateBuilder { pos = v; return this }
+        fun color(c: Color): UpdateBuilder { col = c; return this }
+        fun scale(s: Float): UpdateBuilder { scl = s; return this }
+        fun easing(e: EasingType, durationTicks: Int): UpdateBuilder { ease = e; dur = durationTicks; return this }
+        fun duration(ticks: Int): UpdateBuilder { dur = ticks; return this }
+
+        fun send(players: Collection<ServerPlayer>) {
+            val data = particles[id] ?: return
+            val p = pos ?: data.position()
+            val c = col ?: data.color()
+            val s = scl ?: data.scale()
+            updateParticle(id, p, c, s,
+                updatePos = pos != null,
+                updateColor = col != null,
+                updateScale = scl != null,
+                durationTicks = dur, easing = ease,
+                playersInDimension = players)
+        }
+    }
+
+    fun update(id: UUID) = UpdateBuilder(id)
+
     fun applyGroupTransform(groupId: UUID, transformType: TransformOp.Type,
                             delta: Vec3, axis: Vec3, radians: Double,
                             targetColor: Color, targetScale: Float,
