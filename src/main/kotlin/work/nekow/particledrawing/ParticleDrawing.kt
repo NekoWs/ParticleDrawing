@@ -7,7 +7,7 @@ import net.neoforged.fml.common.Mod
 import org.slf4j.Logger
 
 @Mod(ParticleDrawing.MODID)
-class ParticleDrawing(modEventBus: IEventBus, modContainer: ModContainer) {
+class ParticleDrawing(bus: IEventBus, container: ModContainer) {
     companion object {
         const val MODID = "particledrawing"
         private val LOGGER: Logger = LogUtils.getLogger()
