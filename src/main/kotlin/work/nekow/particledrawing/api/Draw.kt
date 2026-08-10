@@ -1,6 +1,8 @@
 package work.nekow.particledrawing.api
 
 import net.minecraft.world.phys.Vec3
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * High-level drawing utilities for creating particle shapes.
@@ -102,8 +104,8 @@ object Draw {
 
         for (i in 0 until count) {
             val angle = 2.0 * Math.PI * i / count
-            val u = Math.cos(angle) * radius
-            val v = Math.sin(angle) * radius
+            val u = cos(angle) * radius
+            val v = sin(angle) * radius
 
             val pos = when (axis) {
                 Axis.XZ -> Vec3(center.x + u, center.y, center.z + v)
@@ -153,8 +155,8 @@ object Draw {
             val n = maxOf(1, (perimeterCount * r / maxOf(0.001, radius)).toInt())
             for (i in 0 until n) {
                 val angle = 2.0 * Math.PI * i / n
-                val u = Math.cos(angle) * r
-                val v = Math.sin(angle) * r
+                val u = cos(angle) * r
+                val v = sin(angle) * r
 
                 val pos = when (axis) {
                     Axis.XZ -> Vec3(center.x + u, center.y, center.z + v)

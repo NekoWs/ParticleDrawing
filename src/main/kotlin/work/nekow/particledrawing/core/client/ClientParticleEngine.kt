@@ -116,11 +116,12 @@ class ClientParticleEngine {
 
     fun frameUpdate() {
         for (rp in particles.values) {
+            val wasSnap = rp.isSnapSync()
             rp.tick()
 
             val bp = bridges[rp.id()]
             if (bp != null) {
-                bp.syncPosition(rp.x(), rp.y(), rp.z())
+                bp.syncPosition(rp.x(), rp.y(), rp.z(), wasSnap)
                 bp.syncColor(rp.r(), rp.g(), rp.b(), rp.a())
                 bp.syncScale(rp.scale())
             }

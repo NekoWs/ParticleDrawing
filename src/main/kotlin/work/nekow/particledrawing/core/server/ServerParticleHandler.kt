@@ -6,6 +6,7 @@ import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.event.level.LevelEvent
 import net.neoforged.neoforge.event.tick.ServerTickEvent
 import work.nekow.particledrawing.ParticleDrawing
+import work.nekow.particledrawing.command.ParticleDrawCommands
 import work.nekow.particledrawing.util.ParticleUtils
 
 @EventBusSubscriber(modid = ParticleDrawing.MODID)
@@ -20,6 +21,9 @@ object ServerParticleHandler {
             val engine = ServerParticleEngine.getOrCreate(ParticleUtils.dimensionUUID(level))
             engine.tick(level.players())
         }
+
+        // Tick active demos
+        ParticleDrawCommands.tickDemos()
     }
 
     @SubscribeEvent

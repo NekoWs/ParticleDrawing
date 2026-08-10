@@ -41,6 +41,7 @@ class RenderParticle(
     private var easing: EasingCurve
     private var easeDurationNs: Long
     private var easeStartTime: Long
+    private var snapNextSync: Boolean = false
 
     init {
         curX = position.x; tgtX = position.x
@@ -87,6 +88,7 @@ class RenderParticle(
         easing = easingType.curve
         easeDurationNs = durationMs * 1_000_000L
         easeStartTime = System.nanoTime()
+        if (durationMs == 0L) snapNextSync = true
     }
 
     fun setPositionDirect(position: Vec3) {
@@ -103,6 +105,8 @@ class RenderParticle(
         curA = color.a; tgtA = color.a
         easeStartTime = 0
     }
+
+    fun isSnapSync(): Boolean = snapNextSync
 
     fun setGlowing(glowing: Boolean) {
         this.glowing = glowing
@@ -123,6 +127,7 @@ class RenderParticle(
             curR = tgtR; curG = tgtG; curB = tgtB; curA = tgtA
             curScale = tgtScale
             easeStartTime = 0
+            snapNextSync = false
             return
         }
 

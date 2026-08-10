@@ -73,6 +73,14 @@ object ParticleDrawCommands {
                         .executes(::recolorGroup)))
                 .then(Commands.literal("status")
                     .executes(::showStatus))
+                .then(Commands.literal("demo")
+                    .executes(::startDemo)
+                    .then(Commands.literal("ring")
+                        .executes(::startRingDemo))
+                    .then(Commands.literal("wave")
+                        .executes(::startWaveDemo))
+                    .then(Commands.literal("rain")
+                        .executes(::startRainDemo)))
                 .then(Commands.literal("clear")
                     .executes(::clearAll))
         )
@@ -268,7 +276,188 @@ object ParticleDrawCommands {
         return serverCount
     }
 
+    // --- Demo system ---
+
+    data class DemoState(
+        val group: ParticleGroup,
+        val manager: ParticleManager,
+        val type: DemoType,
+        val origin: Vec3,
+        var tickCounter: Int = 0
+    )
+
+    enum class DemoType { CIRCLE, RING, WAVE, RAIN }
+
+    @JvmField
+    var demoStates: MutableList<DemoState> = mutableListOf()
+
+    @JvmStatic
+    fun tickDemos() {
+        val it = demoStates.iterator()
+        while (it.hasNext()) {
+            val state = it.next()
+            val g = state.group
+            state.tickCounter++
+            try {
+                when (state.type) {
+                    DemoType.CIRCLE -> {
+                        g.rotate(Vec3(0.0, 1.0, 0.0), Math.toRadians(3.0), 0, EasingType.LINEAR)
+                    }
+                    DemoType.RING -> {
+                        g.rotate(Vec3(1.0, 0.0, 0.0), Math.toRadians(6.0), 0, EasingType.LINEAR)
+                    }
+                    DemoType.WAVE -> {
+                        val tick = state.tickCounter.toDouble()
+                        val engine = state.manager.getEngine()
+                        val groupData = engine.getGroup(g.id) ?: continue
+                        var idx = 0
+                        for (memberId in groupData.memberIds()) {
+                            val data = engine.getParticle(memberId) ?: continue
+                            val angle = 2.0 * Math.PI * idx / groupData.size()
+                            val newY = state.origin.y + sin(tick * 0.5 + angle * 4.0) * 0.5
+                            engine.updateParticle(
+                                memberId,
+                                Vec3(data.position().x, newY, data.position().z),
+                                data.color(), data.scale(),
+                                updatePos = true,
+                                updateColor = false,
+                                updateScale = false,
+                                durationTicks = 2,
+                                easing = EasingType.EASE_IN_OUT,
+                                playersInDimension = state.manager.getPlayers()
+                            )
+                            idx++
+                        }
+                    }
+                    DemoType.RAIN -> {
+                        val engine = state.manager.getEngine()
+                        val groupData = engine.getGroup(g.id) ?: continue
+                        for (memberId in groupData.memberIds()) {
+                            val data = engine.getParticle(memberId) ?: continue
+                            val newY = data.position().y - 0.15
+                            if (newY < state.origin.y - 3.5) {
+                                val angle = Math.random() * 2.0 * Math.PI
+                                val dist = Math.random() * 3.0
+                                engine.updateParticle(
+                                    memberId,
+                                    Vec3(
+                                        state.origin.x + cos(angle) * dist,
+                                        state.origin.y + Math.random() * 2.5,
+                                        state.origin.z + sin(angle) * dist
+                                    ),
+                                    data.color(), data.scale(),
+                                    true, false, false, 0, EasingType.LINEAR,
+                                    state.manager.getPlayers()
+                                )
+                            } else {
+                                engine.updateParticle(
+                                    memberId,
+                                    Vec3(data.position().x, newY, data.position().z),
+                                    data.color(), data.scale(),
+                                    true, false, false, 2, EasingType.EASE_IN_OUT,
+                                    state.manager.getPlayers()
+                                )
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                it.remove()
+            }
+        }
+    }
+
+    @JvmStatic
+    fun stopDemos() {
+        for (state in demoStates) {
+            try { state.manager.getEngine().destroyGroup(state.group.id, state.manager.getPlayers()) }
+            catch (_: Exception) {}
+        }
+        demoStates.clear()
+    }
+
+    fun startDemo(ctx: CommandContext<CommandSourceStack>): Int {
+        val player = ctx.source.playerOrException
+        val level = player.level()
+        val pm = ParticleManager.of(level)
+
+        val center = player.position().add(player.lookAngle.scale(4.0))
+        val group = Draw.circle(pm, center, 3.0, 120, Draw.Axis.XZ,
+            Color.WHITE, ParticleStyle.DUST, 0.35f)
+
+        demoStates += DemoState(group, pm, DemoType.CIRCLE, center)
+
+        ctx.source.sendSuccess(
+            { Component.literal("Circle demo! ${group.size()} particles, XZ plane, rotating") }, false)
+        return group.size()
+    }
+
+    fun startRingDemo(ctx: CommandContext<CommandSourceStack>): Int {
+        val player = ctx.source.playerOrException
+        val level = player.level()
+        val pm = ParticleManager.of(level)
+
+        val center = player.position().add(player.lookAngle.scale(7.0))
+        val group = Draw.circle(pm, center, 6.0, 500, Draw.Axis.XZ,
+            Color.ofHsb(0.08f, 1.0f, 1.0f), ParticleStyle.DUST, 0.25f)
+
+        demoStates += DemoState(group, pm, DemoType.RING, center)
+
+        ctx.source.sendSuccess(
+            { Component.literal("Orbit demo! ${group.size()} particles, large ring orbiting") }, false)
+        return group.size()
+    }
+
+    fun startWaveDemo(ctx: CommandContext<CommandSourceStack>): Int {
+        val player = ctx.source.playerOrException
+        val level = player.level()
+        val pm = ParticleManager.of(level)
+
+        val center = player.position().add(player.lookAngle.scale(4.0))
+        val group = Draw.circle(pm, center, 2.5, 80, Draw.Axis.XZ,
+            Color.ofHsb(0.55f, 1.0f, 1.0f), ParticleStyle.DUST, 0.3f)
+
+        demoStates += DemoState(group, pm, DemoType.WAVE, center)
+
+        ctx.source.sendSuccess(
+            { Component.literal("Wave demo! ${group.size()} particles with sine wave animation") }, false)
+        return group.size()
+    }
+
+    fun startRainDemo(ctx: CommandContext<CommandSourceStack>): Int {
+        val player = ctx.source.playerOrException
+        val level = player.level()
+        val pm = ParticleManager.of(level)
+
+        val center = player.position().add(0.0, 2.5, 0.0)
+        val group = pm.createGroup(center)
+
+        for (i in 0 until 80) {
+            val angle = Math.random() * 2.0 * Math.PI
+            val dist = Math.random() * 3.0
+            val x = center.x + cos(angle) * dist
+            val y = center.y - 3.0 + Math.random() * 3.5
+            val z = center.z + sin(angle) * dist
+            val handle = pm.create()
+                .style(ParticleStyle.DUST)
+                .position(x, y, z)
+                .color(Color.ofHsb(0.55f, 0.8f, 0.9f))
+                .scale(0.15f)
+                .lifetime(-1)
+                .group(group.id)
+                .spawn()
+            group.add(handle)
+        }
+
+        demoStates += DemoState(group, pm, DemoType.RAIN, center)
+
+        ctx.source.sendSuccess(
+            { Component.literal("Rain demo! $group particles, cloud with falling rain") }, false)
+        return group.size() ?: 0
+    }
+
     private fun clearAll(ctx: CommandContext<CommandSourceStack>): Int {
+        stopDemos()
         val player = ctx.source.playerOrException
         val level = player.level()
         val dimId = work.nekow.particledrawing.util.ParticleUtils.dimensionUUID(level)

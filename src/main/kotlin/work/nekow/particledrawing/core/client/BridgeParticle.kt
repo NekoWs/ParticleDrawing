@@ -35,10 +35,16 @@ class BridgeParticle(
 
     fun isGlowing(): Boolean = isGlowing
 
-    fun syncPosition(x: Double, y: Double, z: Double) {
-        xo = this.x
-        yo = this.y
-        zo = this.z
+    fun syncPosition(x: Double, y: Double, z: Double, snap: Boolean = false) {
+        if (snap) {
+            this.xo = x
+            this.yo = y
+            this.zo = z
+        } else {
+            this.xo = this.x
+            this.yo = this.y
+            this.zo = this.z
+        }
         this.x = x
         this.y = y
         this.z = z

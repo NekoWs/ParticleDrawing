@@ -12,7 +12,7 @@ import java.util.UUID
 class ParticleGroup(
     val id: UUID,
     var pivot: Vec3,
-    private val manager: ParticleManager
+    internal val manager: ParticleManager
 ) {
     /**
      * Set the pivot point for future transforms.
