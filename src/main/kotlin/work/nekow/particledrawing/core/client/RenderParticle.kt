@@ -134,6 +134,11 @@ class RenderParticle(
         easeStartTime = 0
     }
 
+    /** 直接设置缩放。 */
+    fun setScaleDirect(scale: Float) {
+        curScale = scale; tgtScale = scale
+    }
+
     fun isSnapSync(): Boolean = snapNextSync
 
     /** 返回缓动的目标位置（用于绝对坐标变换，避免插值漂移） */

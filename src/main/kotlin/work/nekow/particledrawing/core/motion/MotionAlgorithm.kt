@@ -8,7 +8,8 @@ interface MotionAlgorithm {
     val id: String
     val params: DoubleArray
 
-    data class Result(val position: Vec3? = null, val color: Color? = null, val newPivot: Vec3? = null)
+    data class Result(val position: Vec3? = null, val color: Color? = null,
+                       val newPivot: Vec3? = null, val scale: Float? = null)
 
     fun compute(basePos: Vec3, pivot: Vec3, elapsedSeconds: Double): Result
 

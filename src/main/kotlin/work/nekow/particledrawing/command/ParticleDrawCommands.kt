@@ -108,7 +108,9 @@ object ParticleDrawCommands {
                     .then(Commands.literal("sphere")
                         .executes(::startSphereDemo))
                     .then(Commands.literal("magic")
-                        .executes(::startMagicCircleDemo)))
+                        .executes(::startMagicCircleDemo))
+                    .then(Commands.literal("matrix")
+                        .executes(::startMatrixDemo)))
                 .then(Commands.literal("clear")
                     .executes(::clearAll))
         )
@@ -376,7 +378,7 @@ object ParticleDrawCommands {
     )
 
     /** 演示类型枚举 */
-    enum class DemoType { CIRCLE, WAVE, RAIN, SPHERE, MAGIC_CIRCLE }
+    enum class DemoType { CIRCLE, WAVE, RAIN, SPHERE, MAGIC_CIRCLE, MATRIX }
 
     /** 当前活跃的演示状态列表 */
     @JvmField
@@ -456,6 +458,9 @@ object ParticleDrawCommands {
                         // 旋转由客户端持续旋转系统处理，无需服务端更新
                     }
                     DemoType.MAGIC_CIRCLE -> {
+                        // 运动由 MotionSystem 客户端预测处理
+                    }
+                    DemoType.MATRIX -> {
                         // 运动由 MotionSystem 客户端预测处理
                     }
                 }
@@ -648,6 +653,48 @@ object ParticleDrawCommands {
 
         ctx.source.sendSuccess(
             { Component.literal("Magic circle! $total particles, hexagram + circles following player") }, false)
+        return total
+    }
+
+    /**
+     * 粒子矩阵演示：静态立方体网格，粒子大小随玩家距离动态变化。
+     * 越近粒子越大填满格子，越远越小至默认尺寸。
+     */
+    fun startMatrixDemo(ctx: CommandContext<CommandSourceStack>): Int {
+        val player = ctx.source.playerOrException
+        val level = player.level()
+        val pm = ParticleManager.of(level)
+        val center = player.position()
+        val size = 9.0                // 总边长
+        val perAxis = 15              // 每维粒子数
+        val spacing = size / (perAxis - 1) // 格子间距
+        val half = size / 2.0
+
+        val group = pm.createGroup(center)
+
+        for (ix in 0 until perAxis) {
+            for (iy in 0 until perAxis) {
+                for (iz in 0 until perAxis) {
+                    val x = center.x - half + ix * spacing
+                    val y = center.y - half + iy * spacing
+                    val z = center.z - half + iz * spacing
+                    val hue = (ix + iy + iz).toFloat() / (perAxis * 3)
+                    pm.create().style(ParticleStyle.DUST)
+                        .position(x, y, z)
+                        .color(Color.ofHsb(hue, 0.7f, 0.9f))
+                        .scale(0.05f)
+                        .lifetime(-1).group(group.id)
+                        .spawn().also { group.add(it) }
+                }
+            }
+        }
+
+        group.addMotion("scale_by_distance", doubleArrayOf(spacing * 1.3, 0.03, 10.0))
+        demoStates += DemoState(group, pm, DemoType.MATRIX, center)
+
+        val total = perAxis * perAxis * perAxis
+        ctx.source.sendSuccess(
+            { Component.literal("Matrix demo! $total particles, size $size, distance-based scale") }, false)
         return total
     }
 

@@ -7,6 +7,7 @@ import work.nekow.particledrawing.core.client.RenderParticle
 import work.nekow.particledrawing.core.motion.algorithms.ColorByYAlgorithm
 import work.nekow.particledrawing.core.motion.algorithms.FollowPlayerAlgorithm
 import work.nekow.particledrawing.core.motion.algorithms.RotateAlgorithm
+import work.nekow.particledrawing.core.motion.algorithms.ScaleByDistanceAlgorithm
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -19,6 +20,7 @@ object MotionSystem {
         register(RotateAlgorithm.Factory)
         register(ColorByYAlgorithm.Factory)
         register(FollowPlayerAlgorithm.Factory)
+        register(ScaleByDistanceAlgorithm.Factory)
     }
 
     fun register(factory: MotionAlgorithm.Factory) { algorithms[factory.id] = factory }
@@ -68,15 +70,19 @@ object MotionSystem {
                 val bp = bridges[memberId] ?: continue
                 var curPos = base
                 var curColor: Color? = null
+                var curScale: Float? = null
 
                 for (motion in group.motions) {
                     val r = motion.compute(curPos, group.pivot, s)
                     if (r.position != null) curPos = r.position
                     if (r.color != null) curColor = r.color
+                    if (r.scale != null) curScale = r.scale
                 }
 
                 rp.setPositionDirect(curPos)
                 if (curColor != null) rp.setColorDirect(curColor)
+                if (curScale != null) rp.setScaleDirect(curScale)
+
                 bp.syncPosition(curPos.x, curPos.y, curPos.z, snap = false)
                 bp.syncColor(rp.r(), rp.g(), rp.b(), rp.a())
                 bp.syncScale(rp.scale())
