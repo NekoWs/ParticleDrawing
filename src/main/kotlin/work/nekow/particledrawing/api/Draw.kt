@@ -302,6 +302,68 @@ object Draw {
     }
 
     /**
+     * 绘制 3D 长方体粒子网格。
+     */
+    fun cuboid(
+        manager: ParticleManager, center: Vec3,
+        width: Double, height: Double, depth: Double,
+        particlesPerAxis: Int = 15, hollow: Boolean = false,
+        color: Color = Color.WHITE, style: ParticleStyle = ParticleStyle.DUST, scale: Float = 0.2f
+    ): ParticleGroup {
+        val group = manager.createGroup(center)
+        val hw = width / 2; val hh = height / 2; val hd = depth / 2
+        val sp = maxOf(width, maxOf(height, depth)) / (particlesPerAxis - 1)
+        val nx = (width / sp).toInt() + 1; val ny = (height / sp).toInt() + 1; val nz = (depth / sp).toInt() + 1
+
+        for (ix in 0..nx) {
+            val x = center.x - hw + ix * sp
+            for (iy in 0..ny) {
+                val y = center.y - hh + iy * sp
+                for (iz in 0..nz) {
+                    val z = center.z - hd + iz * sp
+                    if (hollow && ix > 0 && ix < nx && iy > 0 && iy < ny && iz > 0 && iz < nz) continue
+                    manager.create().style(style).scale(scale)
+                        .position(x, y, z).color(color).lifetime(-1).group(group.id)
+                        .spawn().also { group.add(it) }
+                }
+            }
+        }
+        return group
+    }
+
+    /**
+     * 绘制 2D 矩形网格。
+     */
+    fun rect(
+        manager: ParticleManager, center: Vec3,
+        width: Double, height: Double, particlesPerAxis: Int = 15,
+        hollow: Boolean = false, axis: Axis = Axis.XZ,
+        color: Color = Color.WHITE, style: ParticleStyle = ParticleStyle.DUST, scale: Float = 0.2f
+    ): ParticleGroup {
+        val group = manager.createGroup(center)
+        val hw = width / 2; val hh = height / 2
+        val sp = maxOf(width, height) / (particlesPerAxis - 1)
+        val nu = (width / sp).toInt() + 1; val nv = (height / sp).toInt() + 1
+
+        for (iu in 0..nu) {
+            for (iv in 0..nv) {
+                val u = center.x - hw + iu * sp
+                val v = center.y - hh + iv * sp
+                if (hollow && iu > 0 && iu < nu && iv > 0 && iv < nv) continue
+                val pos = when (axis) {
+                    Axis.XZ -> Vec3(u, center.y, v)
+                    Axis.XY -> Vec3(u, v, center.z)
+                    Axis.YZ -> Vec3(center.x, u, v)
+                }
+                manager.create().style(style).scale(scale)
+                    .position(pos).color(color).lifetime(-1).group(group.id)
+                    .spawn().also { group.add(it) }
+            }
+        }
+        return group
+    }
+
+    /**
      * 描述 2D 图形所绘制的平面。
      */
     enum class Axis {

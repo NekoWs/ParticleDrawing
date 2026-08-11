@@ -665,34 +665,17 @@ object ParticleDrawCommands {
         val level = player.level()
         val pm = ParticleManager.of(level)
         val center = player.position()
-        val size = 9.0                // 总边长
-        val perAxis = 15              // 每维粒子数
-        val spacing = size / (perAxis - 1) // 格子间距
-        val half = size / 2.0
+        val size = 9.0
+        val perAxis = 20
 
-        val group = pm.createGroup(center)
+        val group = Draw.cuboid(pm, center, size, size, size, perAxis, hollow = false,
+            color = Color.WHITE, style = ParticleStyle.DUST, scale = 0.05f)
 
-        for (ix in 0 until perAxis) {
-            for (iy in 0 until perAxis) {
-                for (iz in 0 until perAxis) {
-                    val x = center.x - half + ix * spacing
-                    val y = center.y - half + iy * spacing
-                    val z = center.z - half + iz * spacing
-                    val hue = (ix + iy + iz).toFloat() / (perAxis * 3)
-                    pm.create().style(ParticleStyle.DUST)
-                        .position(x, y, z)
-                        .color(Color.ofHsb(hue, 0.7f, 0.9f))
-                        .scale(0.05f)
-                        .lifetime(-1).group(group.id)
-                        .spawn().also { group.add(it) }
-                }
-            }
-        }
-
+        val spacing = size / (perAxis - 1)
         group.addMotion("scale_by_distance", doubleArrayOf(spacing * 1.3, 0.03, 10.0))
         demoStates += DemoState(group, pm, DemoType.MATRIX, center)
 
-        val total = perAxis * perAxis * perAxis
+        val total = group.size()
         ctx.source.sendSuccess(
             { Component.literal("Matrix demo! $total particles, size $size, distance-based scale") }, false)
         return total
