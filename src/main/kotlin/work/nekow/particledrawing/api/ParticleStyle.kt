@@ -17,12 +17,6 @@ enum class ParticleStyle(
         true
     ),
 
-    END_ROD(
-        Identifier.withDefaultNamespace("generic_7"),
-        ParticleRenderStyle.TRANSLUCENT,
-        false
-    ),
-
     FLAME(
         Identifier.withDefaultNamespace("flame"),
         ParticleRenderStyle.LIT,
@@ -35,32 +29,14 @@ enum class ParticleStyle(
         false
     ),
 
-    PORTAL(
-        Identifier.withDefaultNamespace("generic_1"),
-        ParticleRenderStyle.TRANSLUCENT,
-        false
-    ),
-
-    ENCHANT(
-        Identifier.withDefaultNamespace("generic_2"),
-        ParticleRenderStyle.TRANSLUCENT,
-        false
-    ),
-
-    WITCH(
-        Identifier.withDefaultNamespace("generic_3"),
-        ParticleRenderStyle.TRANSLUCENT,
-        false
-    ),
-
     NOTE(
-        Identifier.withDefaultNamespace("generic_4"),
+        Identifier.withDefaultNamespace("note"),
         ParticleRenderStyle.OPAQUE,
         true
     ),
 
     HEART(
-        Identifier.withDefaultNamespace("generic_5"),
+        Identifier.withDefaultNamespace("heart"),
         ParticleRenderStyle.TRANSLUCENT,
         false
     ),
@@ -91,12 +67,6 @@ enum class ParticleStyle(
 
     SMOKE(
         Identifier.withDefaultNamespace("generic_7"),
-        ParticleRenderStyle.TRANSLUCENT,
-        false
-    ),
-
-    CLOUD(
-        Identifier.withDefaultNamespace("generic_5"),
         ParticleRenderStyle.TRANSLUCENT,
         false
     );

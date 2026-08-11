@@ -99,6 +99,8 @@ object ParticleDrawCommands {
                         .executes(::recolorGroup)))
                 .then(Commands.literal("status")
                     .executes(::showStatus))
+                .then(Commands.literal("styles")
+                    .executes(::showAllStyles))
                 .then(Commands.literal("demo")
                     .executes(::startDemo)
                     .then(Commands.literal("wave")
@@ -362,6 +364,39 @@ object ParticleDrawCommands {
                 "Server: $serverCount particles, $serverGroups groups | "
                         + "Client: $clientCount particles") }, false)
         return serverCount
+    }
+
+    /**
+     * 在面前排列显示所有粒子样式。
+     */
+    private fun showAllStyles(ctx: CommandContext<CommandSourceStack>): Int {
+        val player = ctx.source.playerOrException
+        val level = player.level()
+        val pm = ParticleManager.of(level)
+
+        val styles = ParticleStyle.entries.toTypedArray()
+        val base = player.position().add(player.lookAngle.scale(4.0))
+        val right = player.lookAngle.cross(Vec3(0.0, 1.0, 0.0)).normalize()
+        val cols = 5
+        val spacing = 2.0
+
+        for ((i, style) in styles.withIndex()) {
+            val row = i / cols
+            val col = i % cols
+            val pos = base.add(right.scale(col * spacing)).add(0.0, -row * spacing, 0.0)
+
+            pm.create()
+                .style(style)
+                .position(pos)
+                .color(if (style.supportsColor) Color.ofHsb(i.toFloat() / styles.size, 0.9f, 0.9f) else Color.WHITE)
+                .scale(0.5f)
+                .lifetime(600)
+                .spawn()
+        }
+
+        ctx.source.sendSuccess(
+            { Component.literal("Showing ${styles.size} particle styles ahead") }, false)
+        return styles.size
     }
 
     /**
