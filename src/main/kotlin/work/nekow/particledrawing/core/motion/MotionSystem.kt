@@ -17,13 +17,13 @@ object MotionSystem {
     private val algorithms: MutableMap<String, MotionAlgorithm.Factory> = ConcurrentHashMap()
 
     init {
-        register(RotateAlgorithm.Factory)
-        register(ColorByYAlgorithm.Factory)
-        register(FollowPlayerAlgorithm.Factory)
-        register(ScaleByDistanceAlgorithm.Factory)
+        register(RotateAlgorithm.ID, ::RotateAlgorithm)
+        register(ColorByYAlgorithm.ID, ::ColorByYAlgorithm)
+        register(FollowPlayerAlgorithm.ID, ::FollowPlayerAlgorithm)
+        register(ScaleByDistanceAlgorithm.ID, ::ScaleByDistanceAlgorithm)
     }
 
-    fun register(factory: MotionAlgorithm.Factory) { algorithms[factory.id] = factory }
+    fun register(id: String, factory: MotionAlgorithm.Factory) { algorithms[id] = factory }
 
     private data class GroupMotion(
         var pivot: Vec3,
@@ -39,7 +39,7 @@ object MotionSystem {
         val factory = algorithms[algoId] ?: return
         val group = activeGroups.getOrPut(groupId) { GroupMotion(pivot, basePositions) }
         group.motions.removeAll { it.id == algoId }
-        group.motions.add(factory.create(params))
+        group.motions.add(factory(params))
     }
 
     fun stop(groupId: UUID) { activeGroups.remove(groupId) }

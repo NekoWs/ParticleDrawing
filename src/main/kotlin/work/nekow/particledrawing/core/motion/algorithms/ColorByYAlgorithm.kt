@@ -5,8 +5,8 @@ import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.core.motion.MotionAlgorithm
 
 /** 按 Y 坐标映射色相。 */
-class ColorByYAlgorithm(override val params: DoubleArray) : MotionAlgorithm {
-    override val id = "color_by_y"
+class ColorByYAlgorithm(params: DoubleArray) : MotionAlgorithm {
+    override val id = ID
 
     override fun compute(basePos: Vec3, pivot: Vec3, elapsedSeconds: Double): MotionAlgorithm.Result {
         val rel = basePos.subtract(pivot)
@@ -16,8 +16,7 @@ class ColorByYAlgorithm(override val params: DoubleArray) : MotionAlgorithm {
         return MotionAlgorithm.Result(color = Color.ofHsb(hue, 0.9f, 0.9f))
     }
 
-    companion object Factory : MotionAlgorithm.Factory {
-        override val id = "color_by_y"
-        override fun create(params: DoubleArray) = ColorByYAlgorithm(params)
+    companion object {
+        const val ID = "color_by_y"
     }
 }

@@ -2,6 +2,10 @@ package work.nekow.particledrawing.api
 
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.motion.algorithms.ColorByYAlgorithm
+import work.nekow.particledrawing.core.motion.algorithms.FollowPlayerAlgorithm
+import work.nekow.particledrawing.core.motion.algorithms.RotateAlgorithm
+import work.nekow.particledrawing.core.motion.algorithms.ScaleByDistanceAlgorithm
 import java.util.UUID
 
 /**
@@ -126,12 +130,22 @@ class ParticleGroup(
 
     /** 启动绕 X 轴旋转（基于实际秒数，不受 /tick 影响）。 */
     fun rotateMotion(radiansPerSecond: Double) {
-        addMotion("rotate", doubleArrayOf(1.0, 0.0, 0.0, radiansPerSecond))
+        addMotion(RotateAlgorithm.ID, doubleArrayOf(1.0, 0.0, 0.0, radiansPerSecond))
     }
 
     /** 便捷方法：启动按 Y 坐标着色。 */
     fun colorByYMotion() {
-        addMotion("color_by_y")
+        addMotion(ColorByYAlgorithm.ID)
+    }
+
+    /** 便捷方法：跟随玩家移动，带指数平滑。 */
+    fun followPlayerMotion(smoothFactor: Double = 0.06) {
+        addMotion(FollowPlayerAlgorithm.ID, doubleArrayOf(smoothFactor))
+    }
+
+    /** 便捷方法：基于玩家距离缩放粒子。 */
+    fun scaleByDistanceMotion(maxScale: Double = 1.0, minScale: Double = 0.05, maxDistance: Double = 6.0) {
+        addMotion(ScaleByDistanceAlgorithm.ID, doubleArrayOf(maxScale, minScale, maxDistance))
     }
 
     /** 停止所有运动。 */

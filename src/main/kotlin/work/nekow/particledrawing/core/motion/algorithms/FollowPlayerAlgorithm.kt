@@ -3,14 +3,15 @@ package work.nekow.particledrawing.core.motion.algorithms
 import net.minecraft.client.Minecraft
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.core.motion.MotionAlgorithm
+import work.nekow.particledrawing.core.motion.at
 
 /**
  * 跟随玩家移动，带指数平滑。
- * params = [ smoothFactor ], 默认 0.06
+ * params = [ smoothFactor ]
  */
-class FollowPlayerAlgorithm(override val params: DoubleArray) : MotionAlgorithm {
-    override val id = "follow_player"
-    private val factor = if (params.isNotEmpty()) params[0] else 0.06
+class FollowPlayerAlgorithm(params: DoubleArray) : MotionAlgorithm {
+    override val id = ID
+    private val factor = params.at(0, 0.02)
     private var smoothPivot: Vec3? = null
     private val offsets: MutableMap<Vec3, Vec3> = mutableMapOf()
 
@@ -34,8 +35,7 @@ class FollowPlayerAlgorithm(override val params: DoubleArray) : MotionAlgorithm 
         )
     }
 
-    companion object Factory : MotionAlgorithm.Factory {
-        override val id = "follow_player"
-        override fun create(params: DoubleArray) = FollowPlayerAlgorithm(params)
+    companion object {
+        const val ID = "follow_player"
     }
 }

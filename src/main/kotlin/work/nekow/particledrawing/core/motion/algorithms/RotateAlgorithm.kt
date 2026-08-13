@@ -2,17 +2,19 @@ package work.nekow.particledrawing.core.motion.algorithms
 
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.core.motion.MotionAlgorithm
+import work.nekow.particledrawing.core.motion.at
 import kotlin.math.cos
 import kotlin.math.sin
 
 /** 绕任意轴旋转。params = [ax, ay, az, radiansPerSecond] */
-class RotateAlgorithm(override val params: DoubleArray) : MotionAlgorithm {
-    override val id = "rotate"
+class RotateAlgorithm(params: DoubleArray) : MotionAlgorithm {
+    override val id = ID
+
+    private val axis = Vec3(params.at(0), params.at(1), params.at(2))
+    private val radiansPerSecond = params.at(3)
 
     override fun compute(basePos: Vec3, pivot: Vec3, elapsedSeconds: Double): MotionAlgorithm.Result {
-        val ax = params[0]; val ay = params[1]; val az = params[2]
-        val angle = elapsedSeconds * params[3]
-        val axis = Vec3(ax, ay, az)
+        val angle = elapsedSeconds * radiansPerSecond
         val rel = basePos.subtract(pivot)
         val c = cos(angle); val s = sin(angle)
         val dot = rel.dot(axis); val cross = axis.cross(rel)
@@ -24,8 +26,7 @@ class RotateAlgorithm(override val params: DoubleArray) : MotionAlgorithm {
         return MotionAlgorithm.Result(position = pivot.add(rotated))
     }
 
-    companion object Factory : MotionAlgorithm.Factory {
-        override val id = "rotate"
-        override fun create(params: DoubleArray) = RotateAlgorithm(params)
+    companion object {
+        const val ID = "rotate"
     }
 }
