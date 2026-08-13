@@ -8,6 +8,8 @@ import work.nekow.particledrawing.core.motion.algorithms.ColorGradientAlgorithm
 import work.nekow.particledrawing.core.motion.algorithms.FollowPlayerAlgorithm
 import work.nekow.particledrawing.core.motion.algorithms.RotateAlgorithm
 import work.nekow.particledrawing.core.motion.algorithms.ScaleByDistanceAlgorithm
+import work.nekow.particledrawing.core.motion.algorithms.SwirlAlgorithm
+import work.nekow.particledrawing.core.motion.algorithms.VortexAlgorithm
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -21,6 +23,8 @@ object MotionSystem {
         register(ColorGradientAlgorithm.ID, ::ColorGradientAlgorithm)
         register(FollowPlayerAlgorithm.ID, ::FollowPlayerAlgorithm)
         register(ScaleByDistanceAlgorithm.ID, ::ScaleByDistanceAlgorithm)
+        register(SwirlAlgorithm.ID, ::SwirlAlgorithm)
+        register(VortexAlgorithm.ID, ::VortexAlgorithm)
     }
 
     fun register(id: String, factory: MotionAlgorithm.Factory) { algorithms[id] = factory }

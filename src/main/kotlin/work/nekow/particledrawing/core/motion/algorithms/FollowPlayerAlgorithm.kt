@@ -13,9 +13,10 @@ class FollowPlayerAlgorithm(params: DoubleArray) : MotionAlgorithm {
     override val id = ID
     private val factor = params.at(0, 0.02)
     private var smoothPivot: Vec3? = null
-    private val offsets: MutableMap<Vec3, Vec3> = mutableMapOf()
+    private var originPivot: Vec3? = null
 
     override fun compute(basePos: Vec3, pivot: Vec3, elapsedSeconds: Double): MotionAlgorithm.Result {
+        val origin = originPivot ?: pivot.also { originPivot = it }
         if (smoothPivot == null) smoothPivot = pivot
         val player = Minecraft.getInstance().player ?: return MotionAlgorithm.Result()
         val target = player.position()
@@ -26,11 +27,8 @@ class FollowPlayerAlgorithm(params: DoubleArray) : MotionAlgorithm {
             smoothPivot!!.z + (target.z - smoothPivot!!.z) * factor
         )
 
-        offsets.putIfAbsent(basePos, basePos.subtract(pivot))
-        val offset = offsets[basePos] ?: basePos.subtract(pivot)
-
         return MotionAlgorithm.Result(
-            position = smoothPivot!!.add(offset),
+            position = smoothPivot!!.add(basePos.subtract(origin)),
             newPivot = smoothPivot
         )
     }
