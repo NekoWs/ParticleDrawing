@@ -32,15 +32,22 @@ import kotlin.math.sqrt
 class ColorGradientAlgorithm(params: DoubleArray) : MotionAlgorithm {
     override val id = ID
 
-    private val axis = params.at(0, 1.0).toInt()
     private val mode = params.at(1, 0.0).toInt()
     private val min = params.at(2, -1.0)
     private val max = params.at(3, 1.0)
     private val alpha = params.at(10, 1.0).toFloat()
-
-    private val dirX = params.at(11, 0.0)
-    private val dirY = params.at(12, 1.0)
-    private val dirZ = params.at(13, 0.0)
+    private val direction: Vec3 = when (params.at(0, 1.0).toInt()) {
+        AXIS_X -> Vec3(1.0, 0.0, 0.0)
+        AXIS_Z -> Vec3(0.0, 0.0, 1.0)
+        AXIS_CUSTOM -> {
+            val dx = params.at(11, 0.0)
+            val dy = params.at(12, 1.0)
+            val dz = params.at(13, 0.0)
+            val len = sqrt(dx * dx + dy * dy + dz * dz)
+            if (len < 1e-6) Vec3(0.0, 1.0, 0.0) else Vec3(dx / len, dy / len, dz / len)
+        }
+        else -> Vec3(0.0, 1.0, 0.0)
+    }
 
     // HSB 模式参数
     private val hueStart = params.at(4, 0.0)
@@ -54,18 +61,8 @@ class ColorGradientAlgorithm(params: DoubleArray) : MotionAlgorithm {
     private val endColor = Color.of(
         params.at(7, 0.0).toFloat(), params.at(8, 0.0).toFloat(), params.at(9, 1.0).toFloat())
 
-    private fun direction(): Vec3 = when (axis) {
-        AXIS_X -> Vec3(1.0, 0.0, 0.0)
-        AXIS_Z -> Vec3(0.0, 0.0, 1.0)
-        AXIS_CUSTOM -> {
-            val len = sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ)
-            if (len < 1e-6) Vec3(0.0, 1.0, 0.0) else Vec3(dirX / len, dirY / len, dirZ / len)
-        }
-        else -> Vec3(0.0, 1.0, 0.0)
-    }
-
-    override fun compute(basePos: Vec3, pivot: Vec3, elapsedSeconds: Double): MotionAlgorithm.Result {
-        val v = basePos.subtract(pivot).dot(direction())
+    override fun compute(basePos: Vec3, pivot: Vec3, elapsedSeconds: Double, target: Vec3?): MotionAlgorithm.Result {
+        val v = basePos.subtract(pivot).dot(direction)
         val span = max - min
         val t = if (span != 0.0) ((v - min) / span).coerceIn(0.0, 1.0) else 0.5
 

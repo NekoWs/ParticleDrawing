@@ -33,10 +33,6 @@ class ParticleData(
     private var offsetFromPivot: Vec3 = Vec3.ZERO
 ) {
 
-    init {
-        this.offsetFromPivot = offsetFromPivot.let { if (it != Vec3.ZERO) it else Vec3.ZERO }
-    }
-
     fun position(): Vec3 = position
     fun color(): Color = color
     fun scale(): Float = scale

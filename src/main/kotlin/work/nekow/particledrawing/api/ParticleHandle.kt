@@ -27,7 +27,8 @@ class ParticleHandle(
 
         engine.updateParticle(
             id, target, data.color(), data.scale(),
-            true, false, false, durationTicks, easing, manager.getPlayers()
+            updatePos = true, updateColor = false, updateScale = false,
+            durationTicks, easing, manager.getPlayers()
         )
         return this
     }
@@ -54,7 +55,8 @@ class ParticleHandle(
 
         engine.updateParticle(
             id, data.position(), color, data.scale(),
-            false, true, false, durationTicks, easing, manager.getPlayers()
+            updatePos = false, updateColor = true, updateScale = false,
+            durationTicks, easing, manager.getPlayers()
         )
         return this
     }
@@ -72,7 +74,8 @@ class ParticleHandle(
 
         engine.updateParticle(
             id, data.position(), data.color(), scale,
-            false, false, true, durationTicks, easing, manager.getPlayers()
+            updatePos = false, updateColor = false, updateScale = true,
+            durationTicks, easing, manager.getPlayers()
         )
         return this
     }
@@ -150,11 +153,6 @@ class ParticleHandle(
                 groupId, glowing, offsetFromPivot,
                 manager.getPlayers()
             )
-
-            if (offsetFromPivot != Vec3.ZERO) {
-                engine.setOffsetFromPivot(data.id, offsetFromPivot)
-            }
-
             return ParticleHandle(data.id, manager)
         }
     }

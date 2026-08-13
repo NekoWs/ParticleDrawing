@@ -129,7 +129,7 @@ object DynamicLightEngine {
         if (!current.`is`(Blocks.LIGHT)) {
             originalBlocks[pos] = current
         }
-        DynamicLightPositions.add(pos)
+        DynamicLightPositions.add(level, pos)
         placedLights[pos] = lightState
         level.setBlock(pos, lightState, Block.UPDATE_ALL)
     }
@@ -140,7 +140,7 @@ object DynamicLightEngine {
      * @param pos 目标方块位置
      */
     private fun restoreBlock(level: ServerLevel, pos: BlockPos) {
-        DynamicLightPositions.remove(pos)
+        DynamicLightPositions.remove(level, pos)
         val original = originalBlocks.remove(pos)
         if (original != null) {
             level.setBlock(pos, original, Block.UPDATE_ALL)

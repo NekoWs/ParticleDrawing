@@ -31,23 +31,18 @@ class EasingCurve(
     }
 
     private fun sampleCurveX(t: Double): Double {
-        return ((1 - t) * (1 - t) * (1 - t) * 0)
-            .plus(3 * (1 - t) * (1 - t) * t * x1)
-            .plus(3 * (1 - t) * t * t * x2)
-            .plus(t * t * t * 1)
+        val u = 1 - t
+        return 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t
     }
 
     private fun sampleCurveY(t: Double): Double {
-        return ((1 - t) * (1 - t) * (1 - t) * 0)
-            .plus(3 * (1 - t) * (1 - t) * t * y1)
-            .plus(3 * (1 - t) * t * t * y2)
-            .plus(t * t * t * 1)
+        val u = 1 - t
+        return 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t
     }
 
     private fun sampleCurveDerivativeX(t: Double): Double {
-        return 3 * (1 - t) * (1 - t) * (x1 - 0)
-            .plus(6 * (1 - t) * t * (x2 - x1))
-            .plus(3 * t * t * (1 - x2))
+        val u = 1 - t
+        return 3 * u * u * x1 + 6 * u * t * (x2 - x1) + 3 * t * t * (1 - x2)
     }
 
     private fun solveTForX(x: Double): Double {
@@ -61,29 +56,19 @@ class EasingCurve(
             if (abs(d) < 1e-6) {
                 break
             }
-            t -= curX / d
+            t = (t - curX / d).coerceIn(0.0, 1.0)
         }
 
         var t0 = 0.0
         var t1 = 1.0
-        t = x
-
-        if (t < t0) return t0
-        if (t > t1) return t1
-
         for (i in 0 until MAX_ITERATIONS) {
-            val curX = sampleCurveX(t) - x
-            if (abs(curX) < EPSILON) {
-                return t
-            }
-            if (curX > 0) {
-                t1 = t
-            } else {
-                t0 = t
-            }
             t = (t0 + t1) / 2.0
+            if (sampleCurveX(t) - x < 0) {
+                t0 = t
+            } else {
+                t1 = t
+            }
         }
-
         return t
     }
 

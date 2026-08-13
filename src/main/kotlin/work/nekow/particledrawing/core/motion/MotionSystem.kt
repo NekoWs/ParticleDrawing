@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.core.motion
 
+import net.minecraft.client.Minecraft
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.core.client.BridgeParticle
@@ -18,6 +19,10 @@ object MotionSystem {
 
     private val algorithms: MutableMap<String, MotionAlgorithm.Factory> = ConcurrentHashMap()
 
+    /** 目标点提供者（默认为本地玩家位置），可替换以泛化算法用途。 */
+    @Volatile
+    var targetProvider: () -> Vec3? = { Minecraft.getInstance().player?.position() }
+
     init {
         register(RotateAlgorithm.ID, ::RotateAlgorithm)
         register(ColorGradientAlgorithm.ID, ::ColorGradientAlgorithm)
@@ -29,11 +34,12 @@ object MotionSystem {
 
     fun register(id: String, factory: MotionAlgorithm.Factory) { algorithms[id] = factory }
 
-    private data class GroupMotion(
+    private class MotionInstance(val algorithm: MotionAlgorithm, val startTimeNanos: Long = System.nanoTime())
+
+    private class GroupMotion(
         var pivot: Vec3,
         val basePositions: Map<UUID, Vec3>,
-        val motions: MutableList<MotionAlgorithm> = mutableListOf(),
-        val startTimeNanos: Long = System.nanoTime()
+        val motions: MutableList<MotionInstance> = mutableListOf()
     )
 
     private val activeGroups: MutableMap<UUID, GroupMotion> = ConcurrentHashMap()
@@ -42,8 +48,8 @@ object MotionSystem {
               basePositions: Map<UUID, Vec3>) {
         val factory = algorithms[algoId] ?: return
         val group = activeGroups.getOrPut(groupId) { GroupMotion(pivot, basePositions) }
-        group.motions.removeAll { it.id == algoId }
-        group.motions.add(factory(params))
+        group.motions.removeAll { it.algorithm.id == algoId }
+        group.motions.add(MotionInstance(factory(params)))
     }
 
     fun stop(groupId: UUID) { activeGroups.remove(groupId) }
@@ -55,16 +61,16 @@ object MotionSystem {
         renderParticles: Map<UUID, RenderParticle>,
         bridges: Map<UUID, BridgeParticle>
     ) {
-        for ((groupId, group) in activeGroups) {
-            val s = (System.nanoTime() - group.startTimeNanos) / 1_000_000_000.0
-            val members = groupMembers[groupId] ?: continue
+        val target = targetProvider()
+        val now = System.nanoTime()
 
-            // 第一遍：收集需要更新 pivot 的算法
-            val firstBase = group.basePositions.values.firstOrNull()
-            for (motion in group.motions) {
-                if (firstBase == null) break
-                val r = motion.compute(firstBase, group.pivot, s)
-                if (r.newPivot != null) group.pivot = r.newPivot
+        for ((groupId, group) in activeGroups) {
+            val members = groupMembers[groupId] ?: continue
+            val states = group.motions.map { it.algorithm to (now - it.startTimeNanos) / 1_000_000_000.0 }
+
+            // 第一遍：更新 pivot（每个算法一次）
+            for ((algorithm, s) in states) {
+                group.pivot = algorithm.updatePivot(group.pivot, s, target)
             }
 
             // 第二遍：逐粒子应用所有算法
@@ -76,8 +82,8 @@ object MotionSystem {
                 var curColor: Color? = null
                 var curScale: Float? = null
 
-                for (motion in group.motions) {
-                    val r = motion.compute(curPos, group.pivot, s)
+                for ((algorithm, s) in states) {
+                    val r = algorithm.compute(curPos, group.pivot, s, target)
                     if (r.position != null) curPos = r.position
                     if (r.color != null) curColor = r.color
                     if (r.scale != null) curScale = r.scale

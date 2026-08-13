@@ -4,6 +4,7 @@ import net.minecraft.world.phys.Vec3
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * 创建粒子形状的高级绘图工具。
@@ -58,7 +59,7 @@ object Draw {
             val pos = start.add(dir.scale(t))
             val offset = pos.subtract(pivot)
 
-            val handle = manager.create()
+            manager.create()
                 .style(style)
                 .position(pos)
                 .color(color)
@@ -67,7 +68,6 @@ object Draw {
                 .group(group.id)
                 .offsetFromPivot(offset)
                 .spawn()
-            group.add(handle)
         }
 
         return group
@@ -115,7 +115,7 @@ object Draw {
             }
             val offset = pos.subtract(center)
 
-            val handle = manager.create()
+            manager.create()
                 .style(style)
                 .position(pos)
                 .color(color)
@@ -124,7 +124,6 @@ object Draw {
                 .group(group.id)
                 .offsetFromPivot(offset)
                 .spawn()
-            group.add(handle)
         }
 
         return group
@@ -166,7 +165,7 @@ object Draw {
                 }
                 val offset = pos.subtract(center)
 
-                val handle = manager.create()
+                manager.create()
                     .style(style)
                     .position(pos)
                     .color(color)
@@ -175,7 +174,6 @@ object Draw {
                     .group(group.id)
                     .offsetFromPivot(offset)
                     .spawn()
-                group.add(handle)
             }
         }
 
@@ -203,7 +201,7 @@ object Draw {
             val pos = posFunc(t)
             val offset = pos.subtract(pivot)
 
-            val handle = manager.create()
+            manager.create()
                 .style(style)
                 .position(pos)
                 .color(color)
@@ -212,7 +210,6 @@ object Draw {
                 .group(group.id)
                 .offsetFromPivot(offset)
                 .spawn()
-            group.add(handle)
         }
 
         return group
@@ -235,10 +232,10 @@ object Draw {
         style: ParticleStyle = ParticleStyle.DUST, scale: Float = 0.2f
     ): ParticleGroup {
         val group = manager.createGroup(center)
-        val phi = PI * (3.0 - kotlin.math.sqrt(5.0))
+        val phi = PI * (3.0 - sqrt(5.0))
         for (i in 0 until count) {
-            val y = 1.0 - (i.toDouble() / (count - 1)) * 2.0
-            val r = kotlin.math.sqrt(1.0 - y * y)
+            val y = 1.0 - (i.toDouble() / maxOf(1, count - 1)) * 2.0
+            val r = sqrt(1.0 - y * y)
             val theta = phi * i
             val x = cos(theta) * r * radius
             val z = sin(theta) * r * radius
@@ -249,7 +246,7 @@ object Draw {
                 .position(center.x + x, center.y + y * radius, center.z + z)
                 .color(Color.ofHsb(hue, 0.9f, 0.9f))
                 .lifetime(-1).group(group.id)
-                .spawn().also { group.add(it) }
+                .spawn()
         }
         return group
     }
@@ -279,7 +276,7 @@ object Draw {
                 }
                 manager.create().style(style).scale(scale)
                     .position(pos).color(color).lifetime(-1).group(g.id)
-                    .spawn().also { g.add(it) }
+                    .spawn()
             }
         }
         return g
@@ -324,7 +321,7 @@ object Draw {
                     if (hollow && ix > 0 && ix < nx && iy > 0 && iy < ny && iz > 0 && iz < nz) continue
                     manager.create().style(style).scale(scale)
                         .position(x, y, z).color(color).lifetime(-1).group(group.id)
-                        .spawn().also { group.add(it) }
+                        .spawn()
                 }
             }
         }
@@ -357,7 +354,7 @@ object Draw {
                 }
                 manager.create().style(style).scale(scale)
                     .position(pos).color(color).lifetime(-1).group(group.id)
-                    .spawn().also { group.add(it) }
+                    .spawn()
             }
         }
         return group

@@ -9,14 +9,14 @@ import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.api.TransformOp
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.motion.MotionPayload
+import work.nekow.particledrawing.core.motion.rotateAround
 import work.nekow.particledrawing.core.network.ParticleDestroyPayload
 import work.nekow.particledrawing.core.network.ParticleGroupTransformPayload
 import work.nekow.particledrawing.core.network.ParticleSpawnPayload
 import work.nekow.particledrawing.core.network.ParticleUpdatePayload
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
  * 服务端权威粒子引擎，每个维度一个实例。
@@ -31,8 +31,6 @@ class ServerParticleEngine(
 
     private val particles: MutableMap<UUID, ParticleData> = ConcurrentHashMap()
     private val groups: MutableMap<UUID, ParticleGroupData> = ConcurrentHashMap()
-    private val visibilityManager = ParticleVisibilityManager()
-    private var tickCounter: Int = 0
 
     /**
      * 生成粒子并广播到视野内可见的玩家。
@@ -202,7 +200,7 @@ class ServerParticleEngine(
                 val nAxis = axis.normalize()
                 for (p in groupParticles) {
                     val rel = p.position().subtract(groupPivot)
-                    val rotated = rotateAroundAxis(rel, nAxis, radians)
+                    val rotated = rel.rotateAround(nAxis, radians)
                     p.setPosition(groupPivot.add(rotated))
                     p.setOffsetFromPivot(rotated)
                 }
@@ -282,13 +280,11 @@ class ServerParticleEngine(
     }
 
     /**
-     * 每 tick 更新：推进生命周期、移除过期粒子、更新可见性。
+     * 每 tick 更新：推进生命周期、移除过期粒子。
      *
      * @param playersInDimension 维度内的玩家列表
      */
     fun tick(playersInDimension: Collection<ServerPlayer>) {
-        tickCounter++
-
         val it = particles.entries.iterator()
         while (it.hasNext()) {
             val entry = it.next()
@@ -300,20 +296,12 @@ class ServerParticleEngine(
                     groups[groupId]?.removeMember(entry.key)
                 }
                 val payload = ParticleDestroyPayload.single(entry.key)
-                if (playersInDimension.isNotEmpty()) {
-                    sendToAllInDimension(playersInDimension, payload)
-                }
+                sendToAllInDimension(playersInDimension, payload)
                 it.remove()
             }
         }
 
         groups.entries.removeIf { it.value.isEmpty() }
-
-        val interval = ParticleDrawingConfig.SERVER.visibilityCheckInterval.get()
-        if (tickCounter % interval == 0) {
-            visibilityManager.updateVisibility(particles.values, playersInDimension,
-                ParticleDrawingConfig.SERVER.visibilityRadius.get())
-        }
     }
 
     /** @return 当前活跃粒子总数 */
@@ -386,7 +374,7 @@ class ServerParticleEngine(
                               payload: CustomPacketPayload) {
         val radius = ParticleDrawingConfig.SERVER.visibilityRadius.get()
         for (player in players) {
-            if (visibilityManager.isWithinRange(player, position, radius)) {
+            if (ParticleVisibilityManager.isWithinRange(player, position, radius)) {
                 PacketDistributor.sendToPlayer(player, payload)
             }
         }
@@ -401,13 +389,9 @@ class ServerParticleEngine(
     fun sendMotion(groupId: UUID, active: Boolean, algorithmId: String,
                     params: DoubleArray, pivot: Vec3,
                     playersInDimension: Collection<ServerPlayer>) {
-        val payload = work.nekow.particledrawing.core.motion.MotionPayload(
-            groupId, active, algorithmId, params,
-            pivot.x, pivot.y, pivot.z
-        )
-        for (player in playersInDimension) {
-            PacketDistributor.sendToPlayer(player, payload)
-        }
+        val payload = MotionPayload(groupId, active, algorithmId, params,
+            pivot.x, pivot.y, pivot.z)
+        sendToAllInDimension(playersInDimension, payload)
     }
 
     companion object {
@@ -430,26 +414,6 @@ class ServerParticleEngine(
         /** 清除指定维度的引擎实例 */
         fun clearDimension(dimensionId: UUID) {
             DIMENSION_ENGINES.remove(dimensionId)
-        }
-
-        /**
-         * 绕轴旋转向量（Rodrigues 公式）。
-         *
-         * @param v 待旋转向量
-         * @param axis 旋转轴（单位向量）
-         * @param radians 旋转弧度
-         * @return 旋转后的向量
-         */
-        private fun rotateAroundAxis(v: Vec3, axis: Vec3, radians: Double): Vec3 {
-            val cos = cos(radians)
-            val sin = sin(radians)
-            val dot = v.dot(axis)
-            val cross = axis.cross(v)
-            return Vec3(
-                v.x * cos + cross.x * sin + axis.x * dot * (1 - cos),
-                v.y * cos + cross.y * sin + axis.y * dot * (1 - cos),
-                v.z * cos + cross.z * sin + axis.z * dot * (1 - cos)
-            )
         }
     }
 }

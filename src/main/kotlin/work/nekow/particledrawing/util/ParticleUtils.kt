@@ -1,6 +1,5 @@
 package work.nekow.particledrawing.util
 
-import kotlin.math.abs
 import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerLevel
 import java.util.UUID
@@ -18,12 +17,10 @@ object ParticleUtils {
     fun dimensionUUID(level: ServerLevel): UUID = dimensionUUID(level.dimension().identifier())
 
     /**
-     * 根据资源标识符生成维度 UUID。
+     * 根据资源标识符生成确定性 UUID（基于名称哈希）。
      * @param location 维度的资源标识符
      * @return 维度对应的 UUID
      */
-    fun dimensionUUID(location: Identifier): UUID {
-        val hash = location.toString().hashCode().toLong()
-        return if (hash < 0) UUID(0, abs(hash)) else UUID(hash, 0)
-    }
+    fun dimensionUUID(location: Identifier): UUID =
+        UUID.nameUUIDFromBytes(location.toString().encodeToByteArray())
 }

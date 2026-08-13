@@ -6,10 +6,10 @@ import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.motion.MotionSystem
+import work.nekow.particledrawing.core.motion.rotateAround
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
  * 客户端粒子引擎，管理渲染粒子的生命周期与桥接。
@@ -157,7 +157,7 @@ class ClientParticleEngine {
                 1 -> {
                     val rel = curPos.subtract(pivot)
                     val axis = Vec3(ax, ay, az).normalize()
-                    val rotated = rotateAroundAxis(rel, axis, radians)
+                    val rotated = rel.rotateAround(axis, radians)
                     newPos = pivot.add(rotated)
                     newColor = Color.of(rp.r(), rp.g(), rp.b(), rp.a())
                     newScale = rp.scale()
@@ -184,12 +184,11 @@ class ClientParticleEngine {
      * 每帧更新：驱动粒子缓动并同步到桥接粒子。
      */
     fun frameUpdate() {
-        work.nekow.particledrawing.core.motion.MotionSystem.tick(groups, particles, bridges)
-        val motionGroupIds = work.nekow.particledrawing.core.motion.MotionSystem.activeGroupIds()
+        MotionSystem.tick(groups, particles, bridges)
+        val motionParticles = motionParticleIds()
 
         for (rp in particles.values) {
-            val inMotion = motionGroupIds.any { gid -> groups[gid]?.contains(rp.id()) == true }
-            if (inMotion) continue
+            if (rp.id() in motionParticles) continue
 
             val wasSnap = rp.isSnapSync()
             rp.tick()
@@ -236,6 +235,15 @@ class ClientParticleEngine {
 
     // --- 运动系统委托 ---
 
+    /** 收集所有处于运动算法控制下的粒子 ID。 */
+    private fun motionParticleIds(): Set<UUID> {
+        val ids = HashSet<UUID>()
+        for (gid in MotionSystem.activeGroupIds()) {
+            groups[gid]?.let { ids.addAll(it) }
+        }
+        return ids
+    }
+
     fun addMotion(groupId: UUID, active: Boolean, algorithmId: String,
                   params: DoubleArray, px: Double, py: Double, pz: Double) {
         if (active) {
@@ -244,13 +252,14 @@ class ClientParticleEngine {
             groups[groupId]?.forEach { id ->
                 particles[id]?.targetPosition()?.let { snapshot[id] = it }
             }
-            work.nekow.particledrawing.core.motion.MotionSystem.start(groupId, algorithmId, params, pivot, snapshot)
+            MotionSystem.start(groupId, algorithmId, params, pivot, snapshot)
         } else {
-            work.nekow.particledrawing.core.motion.MotionSystem.stop(groupId)
+            MotionSystem.stop(groupId)
         }
     }
 
     companion object {
+        @Volatile
         private var INSTANCE: ClientParticleEngine? = null
 
         fun init() { INSTANCE = ClientParticleEngine() }
@@ -258,17 +267,5 @@ class ClientParticleEngine {
         fun instance(): ClientParticleEngine? = INSTANCE
         @JvmStatic
         fun dispose() { INSTANCE = null }
-
-        private fun rotateAroundAxis(v: Vec3, axis: Vec3, radians: Double): Vec3 {
-            val cos = cos(radians)
-            val sin = sin(radians)
-            val dot = v.dot(axis)
-            val cross = axis.cross(v)
-            return Vec3(
-                v.x * cos + cross.x * sin + axis.x * dot * (1 - cos),
-                v.y * cos + cross.y * sin + axis.y * dot * (1 - cos),
-                v.z * cos + cross.z * sin + axis.z * dot * (1 - cos)
-            )
-        }
     }
 }
