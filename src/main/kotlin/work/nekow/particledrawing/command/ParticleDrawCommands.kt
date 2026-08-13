@@ -639,7 +639,7 @@ object ParticleDrawCommands {
         val center = player.position().add(player.lookAngle.scale(5.0))
         val group = Draw.sphere(pm, center, 3.0, 800)
         group.rotateMotion(Math.toRadians(100.0))  // 100°/秒，不受 /tick 影响
-        group.colorByYMotion()                     // 固定表面纹理
+        group.colorGradientMotion()                     // 固定表面纹理
 
         demoStates += DemoState(group, pm, DemoType.SPHERE, center)
         ctx.source.sendSuccess(

@@ -4,7 +4,7 @@ import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.core.client.BridgeParticle
 import work.nekow.particledrawing.core.client.RenderParticle
-import work.nekow.particledrawing.core.motion.algorithms.ColorByYAlgorithm
+import work.nekow.particledrawing.core.motion.algorithms.ColorGradientAlgorithm
 import work.nekow.particledrawing.core.motion.algorithms.FollowPlayerAlgorithm
 import work.nekow.particledrawing.core.motion.algorithms.RotateAlgorithm
 import work.nekow.particledrawing.core.motion.algorithms.ScaleByDistanceAlgorithm
@@ -18,7 +18,7 @@ object MotionSystem {
 
     init {
         register(RotateAlgorithm.ID, ::RotateAlgorithm)
-        register(ColorByYAlgorithm.ID, ::ColorByYAlgorithm)
+        register(ColorGradientAlgorithm.ID, ::ColorGradientAlgorithm)
         register(FollowPlayerAlgorithm.ID, ::FollowPlayerAlgorithm)
         register(ScaleByDistanceAlgorithm.ID, ::ScaleByDistanceAlgorithm)
     }

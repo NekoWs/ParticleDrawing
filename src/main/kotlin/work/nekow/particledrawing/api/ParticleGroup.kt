@@ -2,7 +2,7 @@ package work.nekow.particledrawing.api
 
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.core.easing.EasingType
-import work.nekow.particledrawing.core.motion.algorithms.ColorByYAlgorithm
+import work.nekow.particledrawing.core.motion.algorithms.ColorGradientAlgorithm
 import work.nekow.particledrawing.core.motion.algorithms.FollowPlayerAlgorithm
 import work.nekow.particledrawing.core.motion.algorithms.RotateAlgorithm
 import work.nekow.particledrawing.core.motion.algorithms.ScaleByDistanceAlgorithm
@@ -120,7 +120,7 @@ class ParticleGroup(
     /**
      * 启动客户端帧级运动算法。客户端从基准位置每帧通过注册的算法函数计算。
      *
-     * @param algorithmId 算法标识（如 "rotate", "color_by_y"）
+     * @param algorithmId 算法标识（如 "rotate", "color_gradient"）
      * @param params 算法参数数组
      */
     @JvmOverloads
@@ -133,9 +133,14 @@ class ParticleGroup(
         addMotion(RotateAlgorithm.ID, doubleArrayOf(1.0, 0.0, 0.0, radiansPerSecond))
     }
 
-    /** 便捷方法：启动按 Y 坐标着色。 */
-    fun colorByYMotion() {
-        addMotion(ColorByYAlgorithm.ID)
+    /** 便捷方法：启动渐变着色（HSB 色相渐变，默认参数）。 */
+    fun colorGradientMotion() {
+        addMotion(ColorGradientAlgorithm.ID)
+    }
+
+    /** 便捷方法：启动自定义参数的渐变着色。参数可由 [ColorGradientAlgorithm.hsbParams] / [ColorGradientAlgorithm.rgbParams] 构造。 */
+    fun colorGradientMotion(params: DoubleArray) {
+        addMotion(ColorGradientAlgorithm.ID, params)
     }
 
     /** 便捷方法：跟随玩家移动，带指数平滑。 */
