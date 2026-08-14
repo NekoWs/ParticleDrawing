@@ -32,11 +32,11 @@ jobs:
       - name: Import GPG key and unlock
         run: |
           set -e
-          mkdir -p ~/.gnupg
-          chmod 700 ~/.gnupg
-          printf 'pinentry-mode loopback\nuse-agent\n' > ~/.gnupg/gpg.conf
-          printf 'allow-loopback-pinentry\ndefault-cache-ttl 900\nmax-cache-ttl 3600\n' > ~/.gnupg/gpg-agent.conf
-          gpgconf --kill gpg-agent || true
+          GNUPGHOME="$(mktemp -d /tmp/gnupg-XXXXXX)"
+          export GNUPGHOME
+          chmod 700 "$GNUPGHOME"
+          printf 'pinentry-mode loopback\nuse-agent\n' > "$GNUPGHOME/gpg.conf"
+          printf 'allow-loopback-pinentry\ndefault-cache-ttl 900\nmax-cache-ttl 3600\n' > "$GNUPGHOME/gpg-agent.conf"
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
           echo '=== list-secret-keys ==='
           gpg --batch --list-secret-keys --keyid-format LONG
@@ -49,10 +49,11 @@ jobs:
             echo "ERROR: could not resolve GPG key id" >&2
             exit 1
           fi
-          echo "default-key $KEY_ID" >> ~/.gnupg/gpg.conf
+          echo "default-key $KEY_ID" >> "$GNUPGHOME/gpg.conf"
           if [ -n "$GPG_PASSPHRASE" ]; then
             echo "unlock" | gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --local-user "$KEY_ID" --armor --sign --output /dev/null
           fi
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
