@@ -3,12 +3,12 @@
 本项目已配置好自动发布到 [Maven Central](https://central.sonatype.com/)（通过 Central Portal publisher API）。发布坐标：
 
 ```
-group    : work.nekow.particledrawing
+group    : work.nekow
 artifact : particledrawing
 version  : 1.0.0（来自 gradle.properties 的 mod_version）
 ```
 
-> groupId `work.nekow.particledrawing` 属于已注册的 namespace `work.nekow` 之下。
+> groupId `work.nekow` 与已注册/验证的 namespace `work.nekow` 完全一致。
 
 ## 前提条件
 
@@ -78,7 +78,7 @@ git push origin v1.0.0
 发布成功后，可在 Maven Central 中检索到：
 
 ```
-https://central.sonatype.com/artifact/work.nekow.particledrawing/particledrawing
+https://central.sonatype.com/artifact/work.nekow/particledrawing
 ```
 
 ## 本地测试（不发布到 Central）
