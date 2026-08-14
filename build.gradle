@@ -152,10 +152,6 @@ signing {
     def signingKey = findProperty('signingKey')
     if (signingKey != null && !signingKey.toString().trim().isEmpty()) {
         useGpgCmd()
-        def pass = findProperty('signingPassword')?.toString()
-        if (pass != null && !pass.isEmpty()) {
-            password.set(pass)
-        }
         sign publishing.publications.mavenJava
     }
 }

@@ -29,15 +29,21 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Import GPG key
+      - name: Import GPG key and unlock
         run: |
+          set -e
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
-          echo "pinentry-mode loopback" > ~/.gnupg/gpg.conf
-          echo "use-agent" >> ~/.gnupg/gpg.conf
+          printf 'pinentry-mode loopback\nuse-agent\n' > ~/.gnupg/gpg.conf
+          printf 'allow-loopback-pinentry\n' > ~/.gnupg/gpg-agent.conf
+          gpgconf --kill gpg-agent || true
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          if [ -n "$GPG_PASSPHRASE" ]; then
+            echo "unlock" | gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --armor --sign --output /dev/null
+          fi
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
       - name: Publish to Maven Central
         run: ./gradlew publishMavenJavaPublicationToCentralRepository -Pmod_version="${GITHUB_REF_NAME#v}"
