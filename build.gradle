@@ -2,6 +2,7 @@ plugins {
     id 'java-library'
     id 'maven-publish'
     id 'signing'
+    id 'com.vanniktech.maven.publish' version '0.30.0'
     id 'net.neoforged.gradle.userdev' version '7.1.38'
     id 'org.jetbrains.kotlin.jvm'
 }
@@ -99,60 +100,40 @@ tasks.withType(ProcessResources).configureEach {
     }
 }
 
-publishing {
-    publications {
-        register('mavenJava', MavenPublication) {
-            from components.java
-
-            artifactId = mod_id
-
-            pom {
-                name = mod_name
-                description = 'A high-performance server-authoritative particle effects library for NeoForge.'
-                url = 'https://github.com/NekoWs/ParticleDrawing'
-                licenses {
-                    license {
-                        name = 'Apache License, Version 2.0'
-                        url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
-                    }
-                }
-                developers {
-                    developer {
-                        id = 'NekoWs'
-                        name = 'NekoWs'
-                    }
-                }
-                scm {
-                    connection = 'scm:git:https://github.com/NekoWs/ParticleDrawing.git'
-                    developerConnection = 'scm:git:ssh://git@github.com/NekoWs/ParticleDrawing.git'
-                    url = 'https://github.com/NekoWs/ParticleDrawing'
-                }
-            }
-        }
-    }
-    repositories {
-        // 本地测试仓库
-        maven {
-            name = 'local'
-            url = file("${project.projectDir}/repo")
-        }
-        // Maven Central（Central Portal publisher API）
-        maven {
-            name = 'central'
-            url = uri('https://central.sonatype.com/api/v1/publisher')
-            credentials {
-                username = System.getenv('MAVEN_CENTRAL_USERNAME') ?: findProperty('centralUsername')
-                password = System.getenv('MAVEN_CENTRAL_TOKEN') ?: findProperty('centralPassword')
-            }
-        }
-    }
+signing {
+    useGpgCmd()
 }
 
-signing {
-    def signingKey = findProperty('signingKey')
-    if (signingKey != null && !signingKey.toString().trim().isEmpty()) {
-        useGpgCmd()
-        sign publishing.publications.mavenJava
+mavenPublishing {
+    publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL)
+    if (findProperty('signingKey') != null && !findProperty('signingKey').toString().trim().isEmpty()) {
+        signAllPublications()
+    }
+
+    coordinates(mod_group_id, mod_id, mod_version)
+
+    pom {
+        name = mod_name
+        description = 'A high-performance server-authoritative particle effects library for NeoForge.'
+        url = 'https://github.com/NekoWs/ParticleDrawing'
+        licenses {
+            license {
+                name = 'Apache License, Version 2.0'
+                url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+                distribution = 'repo'
+            }
+        }
+        developers {
+            developer {
+                id = 'NekoWs'
+                name = 'NekoWs'
+            }
+        }
+        scm {
+            connection = 'scm:git:https://github.com/NekoWs/ParticleDrawing.git'
+            developerConnection = 'scm:git:ssh://git@github.com/NekoWs/ParticleDrawing.git'
+            url = 'https://github.com/NekoWs/ParticleDrawing'
+        }
     }
 }
 

@@ -83,17 +83,17 @@ https://central.sonatype.com/artifact/work.nekow/particledrawing
 
 ## 本地测试（不发布到 Central）
 
-本地验证产物与 POM（不签名、不上传）：
+本地验证产物与 POM（不签名、不上传，用 Maven Local 仓库）：
 
 ```bash
 # Windows
-.\gradlew.bat publishMavenJavaPublicationToLocalRepository
+.\gradlew.bat publishToMavenLocal
 
 # Linux / macOS
-./gradlew publishMavenJavaPublicationToLocalRepository
+./gradlew publishToMavenLocal
 ```
 
-产物输出到项目根目录的 `repo/` 目录。
+产物输出到本机 Maven 本地仓库（`~/.m2/repository/work/nekow/particledrawing`）。
 
 ## 常见问题
 
