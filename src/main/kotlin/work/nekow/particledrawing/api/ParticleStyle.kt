@@ -12,9 +12,16 @@ enum class ParticleStyle(
     val renderStyle: ParticleRenderStyle,
     val supportsColor: Boolean
 ) {
-    /** 普通灰尘粒子。 */
-    DUST(
+    /** 点粒子。 */
+    DOT(
         Identifier.withDefaultNamespace("generic_0"),
+        ParticleRenderStyle.OPAQUE,
+        true
+    ),
+
+    /** 灰尘粒子。 */
+    DUST(
+        Identifier.withDefaultNamespace("generic_7"),
         ParticleRenderStyle.OPAQUE,
         true
     ),
@@ -47,9 +54,9 @@ enum class ParticleStyle(
         false
     ),
 
-    /** 火花粒子。 */
+    /** 星型粒子。 */
     SPARK(
-        Identifier.withDefaultNamespace("generic_6"),
+        Identifier.withDefaultNamespace("glow"),
         ParticleRenderStyle.TRANSLUCENT,
         false
     ),
@@ -66,13 +73,6 @@ enum class ParticleStyle(
         Identifier.withDefaultNamespace("bubble"),
         ParticleRenderStyle.TRANSLUCENT,
         false
-    ),
-
-    /** 龙息粒子。 */
-    DRAGON_BREATH(
-        Identifier.withDefaultNamespace("generic_0"),
-        ParticleRenderStyle.OPAQUE,
-        true
     ),
 
     /** 烟雾粒子。 */
