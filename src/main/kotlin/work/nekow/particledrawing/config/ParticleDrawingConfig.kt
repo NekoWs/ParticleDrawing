@@ -3,7 +3,7 @@ package work.nekow.particledrawing.config
 import net.neoforged.neoforge.common.ModConfigSpec
 
 /**
- * 粒子绘制的服务端与客户端配置。
+ * Server and client configuration for ParticleDrawing.
  */
 object ParticleDrawingConfig {
 
@@ -24,7 +24,7 @@ object ParticleDrawingConfig {
     }
 
     /**
-     * 服务端配置，控制粒子限制与可见性。
+     * Server configuration, controlling particle limits and visibility.
      */
     class ServerConfig(builder: ModConfigSpec.Builder) {
         val maxParticlesPerDimension: ModConfigSpec.IntValue
@@ -35,26 +35,26 @@ object ParticleDrawingConfig {
         init {
             builder.push("particle_limits")
             maxParticlesPerDimension = builder
-                .comment("每个维度中同时存活的最大粒子总数。")
+                .comment("The maximum total number of particles alive at once per dimension.")
                 .defineInRange("maxParticlesPerDimension", 100_000, 1, 1_000_000)
             maxParticlesPerPlayer = builder
-                .comment("单个玩家同时可见的最大粒子数。")
+                .comment("The maximum number of particles visible to a single player at once.")
                 .defineInRange("maxParticlesPerPlayer", 20_000, 1, 100_000)
             builder.pop()
 
             builder.push("visibility")
             visibilityRadius = builder
-                .comment("向玩家发送粒子的最大距离（格）。")
+                .comment("The maximum distance (in blocks) to send particles to a player.")
                 .defineInRange("visibilityRadius", 128.0, 16.0, 512.0)
             visibilityCheckInterval = builder
-                .comment("重新检查每个玩家粒子可见性的刻间隔。")
+                .comment("The interval in ticks to re-check particle visibility for each player.")
                 .defineInRange("visibilityCheckInterval", 10, 1, 100)
             builder.pop()
         }
     }
 
     /**
-     * 客户端配置，控制动态光照与渲染参数。
+     * Client configuration, controlling dynamic lighting and rendering parameters.
      */
     class ClientConfig(builder: ModConfigSpec.Builder) {
         val maxDynamicLights: ModConfigSpec.IntValue
@@ -66,22 +66,22 @@ object ParticleDrawingConfig {
         init {
             builder.push("dynamic_lights")
             enableDynamicLights = builder
-                .comment("启用来自发光粒子的动态照明。")
+                .comment("Enable dynamic lighting from glowing particles.")
                 .define("enableDynamicLights", true)
             maxDynamicLights = builder
-                .comment("同时存在的动态光源最大数量。")
+                .comment("The maximum number of dynamic light sources active at once.")
                 .defineInRange("maxDynamicLights", 256, 0, 1024)
             dynamicLightMaxDistance = builder
-                .comment("动态光照影响世界的最大距离。")
+                .comment("The maximum distance dynamic lighting affects the world.")
                 .defineInRange("dynamicLightMaxDistance", 16.0, 1.0, 64.0)
             builder.pop()
 
             builder.push("rendering")
             maxRenderParticles = builder
-                .comment("每帧渲染的最大粒子数。")
+                .comment("The maximum number of particles rendered per frame.")
                 .defineInRange("maxRenderParticles", 50_000, 1, 200_000)
             particleBatchSize = builder
-                .comment("单次绘制调用中批处理的粒子数量。")
+                .comment("The number of particles batched in a single draw call.")
                 .defineInRange("particleBatchSize", 4096, 64, 65536)
             builder.pop()
         }
