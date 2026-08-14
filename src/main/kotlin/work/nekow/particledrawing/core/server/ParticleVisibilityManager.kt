@@ -15,6 +15,7 @@ object ParticleVisibilityManager {
      * @param radius 可见半径（格）
      * @return 在范围内返回 true
      */
+    @JvmStatic
     fun isWithinRange(player: ServerPlayer, particlePos: Vec3, radius: Double): Boolean {
         val dx = player.x - particlePos.x
         val dy = player.y - particlePos.y

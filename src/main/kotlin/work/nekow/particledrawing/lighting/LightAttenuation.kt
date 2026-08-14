@@ -19,13 +19,13 @@ fun interface LightAttenuation {
 
     companion object {
         /** 线性衰减: 距离越远越暗 */
-        val LINEAR = LightAttenuation { distance, maxDistance ->
+        @JvmField val LINEAR = LightAttenuation { distance, maxDistance ->
             if (distance >= maxDistance) 0f
             else 1f - (distance / maxDistance)
         }
 
         /** 平方反比衰减: 模拟真实物理光照 */
-        val INVERSE_SQUARE = LightAttenuation { distance, maxDistance ->
+        @JvmField val INVERSE_SQUARE = LightAttenuation { distance, maxDistance ->
             if (distance >= maxDistance) 0f
             else {
                 val t = distance / maxDistance
@@ -34,7 +34,7 @@ fun interface LightAttenuation {
         }
 
         /** 平滑阶梯衰减: 使用 S 曲线过渡 */
-        val SMOOTHSTEP = LightAttenuation { distance, maxDistance ->
+        @JvmField val SMOOTHSTEP = LightAttenuation { distance, maxDistance ->
             if (distance >= maxDistance) 0f
             else {
                 val t = distance / maxDistance
@@ -43,7 +43,7 @@ fun interface LightAttenuation {
         }
 
         /** 反比线性衰减: 近距离衰减快，远距离保持微弱光照 */
-        val INVERSE_LINEAR = LightAttenuation { distance, maxDistance ->
+        @JvmField val INVERSE_LINEAR = LightAttenuation { distance, maxDistance ->
             if (distance >= maxDistance) 0f
             else 1f / (1f + distance * 2f)
         }
@@ -56,6 +56,7 @@ fun interface LightAttenuation {
          * @param y2 控制点2 Y
          * @return 自定义衰减函数
          */
+        @JvmStatic
         fun bezier(x1: Double, y1: Double, x2: Double, y2: Double): LightAttenuation {
             val curve = EasingCurve(x1, y1, x2, y2)
             return LightAttenuation { distance, maxDistance ->

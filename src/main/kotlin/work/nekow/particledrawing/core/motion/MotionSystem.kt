@@ -24,6 +24,7 @@ object MotionSystem {
 
     /** 目标点提供者（默认为本地玩家位置），可替换以泛化算法用途。 */
     @Volatile
+    @JvmStatic
     var targetProvider: () -> Vec3? = { Minecraft.getInstance().player?.position() }
     init {
         register(RotateAlgorithm.ID, ::RotateAlgorithm)
@@ -34,6 +35,7 @@ object MotionSystem {
         register(VortexAlgorithm.ID, ::VortexAlgorithm)
     }
 
+    @JvmStatic
     fun register(id: String, factory: MotionAlgorithm.Factory) { algorithms[id] = factory }
 
     private class MotionInstance(val algorithm: MotionAlgorithm, val startTimeNanos: Long = System.nanoTime())
@@ -46,6 +48,7 @@ object MotionSystem {
 
     private val activeGroups: MutableMap<UUID, GroupMotion> = ConcurrentHashMap()
 
+    @JvmStatic
     fun start(groupId: UUID, algoId: String, params: DoubleArray, pivot: Vec3,
               basePositions: Map<UUID, Vec3>) {
         val factory = algorithms[algoId] ?: return
@@ -54,10 +57,16 @@ object MotionSystem {
         group.motions.add(MotionInstance(factory(params)))
     }
 
+    @JvmStatic
     fun stop(groupId: UUID) { activeGroups.remove(groupId) }
+
+    @JvmStatic
     fun clear() { activeGroups.clear() }
+
+    @JvmStatic
     fun activeGroupIds(): Set<UUID> = activeGroups.keys
 
+    @JvmStatic
     fun tick(
         groupMembers: Map<UUID, Set<UUID>>,
         renderParticles: Map<UUID, RenderParticle>,

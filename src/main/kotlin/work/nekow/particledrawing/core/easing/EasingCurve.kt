@@ -98,6 +98,7 @@ class EasingCurve(
          * @param css CSS cubic-bezier 格式字符串
          * @return 解析后的 EasingCurve 实例
          */
+        @JvmStatic
         fun fromCss(css: String): EasingCurve {
             val inner = css.replace("cubic-bezier(", "").replace(")", "").trim()
             val parts = inner.split(",")

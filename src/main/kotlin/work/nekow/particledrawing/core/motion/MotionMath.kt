@@ -1,3 +1,5 @@
+@file:JvmName("MotionMath")
+
 package work.nekow.particledrawing.core.motion
 
 import net.minecraft.world.phys.Vec3

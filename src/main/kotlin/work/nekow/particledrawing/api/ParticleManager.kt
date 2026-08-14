@@ -58,8 +58,10 @@ class ParticleManager private constructor(val level: ServerLevel) {
     internal fun getPlayers(): Collection<ServerPlayer> = level.players()
 
     companion object {
+        @JvmStatic
         fun of(level: ServerLevel) = ParticleManager(level)
 
+        @JvmStatic
         fun of(level: Level): ParticleManager {
             if (level !is ServerLevel) {
                 throw IllegalArgumentException("ParticleManager requires a ServerLevel")

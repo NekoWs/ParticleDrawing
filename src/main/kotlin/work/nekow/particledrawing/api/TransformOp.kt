@@ -30,18 +30,22 @@ class TransformOp private constructor(
     override fun toString() = "TransformOp{$type}"
 
     companion object {
+        @JvmStatic
         fun translate(delta: Vec3, pivot: Vec3?): TransformOp {
             return TransformOp(Type.TRANSLATE, delta, null, 0.0, pivot, null, 0f)
         }
 
+        @JvmStatic
         fun rotate(axis: Vec3, radians: Double, pivot: Vec3?): TransformOp {
             return TransformOp(Type.ROTATE, null, axis.normalize(), radians, pivot, null, 0f)
         }
 
+        @JvmStatic
         fun recolor(targetColor: Color): TransformOp {
             return TransformOp(Type.RECOLOR, null, null, 0.0, null, targetColor, 0f)
         }
 
+        @JvmStatic
         fun scale(targetScale: Float, pivot: Vec3?): TransformOp {
             return TransformOp(Type.SCALE, null, null, 0.0, pivot, null, targetScale)
         }

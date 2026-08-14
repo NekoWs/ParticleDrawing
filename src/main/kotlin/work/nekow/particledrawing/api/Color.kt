@@ -73,30 +73,35 @@ class Color private constructor(
 
     companion object {
         // 预设颜色常量
-        val WHITE = Color(1.0f, 1.0f, 1.0f, 1.0f)
-        val BLACK = Color(0.0f, 0.0f, 0.0f, 1.0f)
-        val RED = Color(1.0f, 0.0f, 0.0f, 1.0f)
-        val GREEN = Color(0.0f, 1.0f, 0.0f, 1.0f)
-        val BLUE = Color(0.0f, 0.0f, 1.0f, 1.0f)
-        val YELLOW = Color(1.0f, 1.0f, 0.0f, 1.0f)
-        val CYAN = Color(0.0f, 1.0f, 1.0f, 1.0f)
-        val MAGENTA = Color(1.0f, 0.0f, 1.0f, 1.0f)
-        val ORANGE = Color(1.0f, 0.5f, 0.0f, 1.0f)
-        val TRANSPARENT = Color(0.0f, 0.0f, 0.0f, 0.0f)
+        @JvmField val WHITE = Color(1.0f, 1.0f, 1.0f, 1.0f)
+        @JvmField val BLACK = Color(0.0f, 0.0f, 0.0f, 1.0f)
+        @JvmField val RED = Color(1.0f, 0.0f, 0.0f, 1.0f)
+        @JvmField val GREEN = Color(0.0f, 1.0f, 0.0f, 1.0f)
+        @JvmField val BLUE = Color(0.0f, 0.0f, 1.0f, 1.0f)
+        @JvmField val YELLOW = Color(1.0f, 1.0f, 0.0f, 1.0f)
+        @JvmField val CYAN = Color(0.0f, 1.0f, 1.0f, 1.0f)
+        @JvmField val MAGENTA = Color(1.0f, 0.0f, 1.0f, 1.0f)
+        @JvmField val ORANGE = Color(1.0f, 0.5f, 0.0f, 1.0f)
+        @JvmField val TRANSPARENT = Color(0.0f, 0.0f, 0.0f, 0.0f)
 
         /** 由浮点分量创建不透明颜色，分量范围 [0,1]。 */
+        @JvmStatic
         fun of(r: Float, g: Float, b: Float) = Color(r, g, b, 1.0f)
 
         /** 由浮点分量创建颜色（含透明度），分量范围 [0,1]。 */
+        @JvmStatic
         fun of(r: Float, g: Float, b: Float, a: Float) = Color(r, g, b, a)
 
         /** 由整数分量创建不透明颜色，分量范围 [0,255]。 */
+        @JvmStatic
         fun ofInt(r: Int, g: Int, b: Int) = Color(r / 255f, g / 255f, b / 255f, 1.0f)
 
         /** 由整数分量创建颜色（含透明度），分量范围 [0,255]。 */
+        @JvmStatic
         fun ofInt(r: Int, g: Int, b: Int, a: Int) = Color(r / 255f, g / 255f, b / 255f, a / 255f)
 
         /** 从 ABGR 打包整型还原颜色。 */
+        @JvmStatic
         fun ofPacked(abgr: Int): Color {
             val a = ((abgr shr 24) and 0xFF) / 255f
             val b = ((abgr shr 16) and 0xFF) / 255f
@@ -106,6 +111,7 @@ class Color private constructor(
         }
 
         /** 由 HSB（色相/饱和度/亮度）创建不透明颜色。hue 自动取模，sat/bri 自动 clamp 到 [0,1]。 */
+        @JvmStatic
         fun ofHsb(hue: Float, saturation: Float, brightness: Float): Color {
             val rgb = java.awt.Color.HSBtoRGB(hue % 1.0f, clamp(saturation), clamp(brightness))
             return Color(
@@ -117,6 +123,7 @@ class Color private constructor(
         }
 
         /** 由 HSB（色相/饱和度/亮度）创建颜色（含透明度）。 */
+        @JvmStatic
         fun ofHsb(hue: Float, saturation: Float, brightness: Float, alpha: Float): Color {
             val c = ofHsb(hue, saturation, brightness)
             return Color(c.r, c.g, c.b, alpha)

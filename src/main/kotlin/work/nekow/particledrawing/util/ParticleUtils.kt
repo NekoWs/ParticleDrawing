@@ -14,6 +14,7 @@ object ParticleUtils {
      * @param level 服务端世界实例
      * @return 维度对应的 UUID
      */
+    @JvmStatic
     fun dimensionUUID(level: ServerLevel): UUID = dimensionUUID(level.dimension().identifier())
 
     /**
@@ -21,6 +22,7 @@ object ParticleUtils {
      * @param location 维度的资源标识符
      * @return 维度对应的 UUID
      */
+    @JvmStatic
     fun dimensionUUID(location: Identifier): UUID =
         UUID.nameUUIDFromBytes(location.toString().encodeToByteArray())
 }

@@ -25,14 +25,17 @@ object Draw {
      * @param count   线段上的粒子数量
      * @return 包含线段上所有粒子的粒子组
      */
+    @JvmStatic
     fun line(manager: ParticleManager, start: Vec3, end: Vec3, count: Int): ParticleGroup {
         return line(manager, start, end, count, DEFAULT_COLOR, DEFAULT_STYLE, DEFAULT_SCALE)
     }
 
+    @JvmStatic
     fun line(manager: ParticleManager, start: Vec3, end: Vec3, count: Int, color: Color): ParticleGroup {
         return line(manager, start, end, count, color, DEFAULT_STYLE, DEFAULT_SCALE)
     }
 
+    @JvmStatic
     fun line(
         manager: ParticleManager, start: Vec3, end: Vec3,
         count: Int, color: Color, style: ParticleStyle, scale: Float
@@ -72,6 +75,7 @@ object Draw {
      * @param count   粒子数量
      * @param axis    绘制平面 (XZ = 水平, XY = 朝 Z 方向的垂直面, YZ = 朝 X 方向的垂直面)
      */
+    @JvmStatic
     fun circle(
         manager: ParticleManager, center: Vec3,
         radius: Double, count: Int, axis: Axis
@@ -79,6 +83,7 @@ object Draw {
         return circle(manager, center, radius, count, axis, DEFAULT_COLOR, DEFAULT_STYLE, DEFAULT_SCALE)
     }
 
+    @JvmStatic
     fun circle(
         manager: ParticleManager, center: Vec3,
         radius: Double, count: Int, axis: Axis, color: Color
@@ -86,6 +91,7 @@ object Draw {
         return circle(manager, center, radius, count, axis, color, DEFAULT_STYLE, DEFAULT_SCALE)
     }
 
+    @JvmStatic
     fun circle(
         manager: ParticleManager, center: Vec3,
         radius: Double, count: Int, axis: Axis,
@@ -129,6 +135,7 @@ object Draw {
      * @param layers 从圆心到边缘的同心环层数
      * @param axis 绘制平面
      */
+    @JvmStatic
     fun disc(
         manager: ParticleManager, center: Vec3,
         radius: Double, perimeterCount: Int, layers: Int,
@@ -138,6 +145,7 @@ object Draw {
             DEFAULT_COLOR, DEFAULT_STYLE, DEFAULT_SCALE)
     }
 
+    @JvmStatic
     fun disc(
         manager: ParticleManager, center: Vec3,
         radius: Double, perimeterCount: Int, layers: Int,
@@ -181,6 +189,7 @@ object Draw {
      * @param posFunc 接收 t ∈ [0, 1] 并返回世界坐标的函数
      * @param steps   采样点数
      */
+    @JvmStatic
     fun curve(
         manager: ParticleManager,
         posFunc: (Double) -> Vec3,
@@ -222,6 +231,8 @@ object Draw {
      * @param scale 粒子缩放
      * @return 包含所有球面粒子的组
      */
+    @JvmStatic
+    @JvmOverloads
     fun sphere(
         manager: ParticleManager, center: Vec3, radius: Double, count: Int,
         style: ParticleStyle = ParticleStyle.DUST, scale: Float = 0.2f
@@ -253,6 +264,8 @@ object Draw {
      * @param rotationOffset 整体旋转偏移（弧度）
      * @param group 可选，若提供则粒子归入该组而非创建新组
      */
+    @JvmStatic
+    @JvmOverloads
     fun triangle(
         manager: ParticleManager, center: Vec3, radius: Double, segmentsPerEdge: Int = 30,
         rotationOffset: Double = 0.0, axis: Axis = Axis.XZ,
@@ -286,6 +299,8 @@ object Draw {
      * @param color1 第一个三角形的颜色
      * @param color2 第二个（旋转 60°）三角形的颜色
      */
+    @JvmStatic
+    @JvmOverloads
     fun hexagram(
         manager: ParticleManager, center: Vec3, radius: Double, segmentsPerEdge: Int = 40,
         axis: Axis = Axis.XZ,
@@ -305,6 +320,8 @@ object Draw {
      * @param particlesPerAxis 每条边期望的粒子数（用于推导网格间距）
      * @param hollow 为 true 时只绘制表面，否则填充内部
      */
+    @JvmStatic
+    @JvmOverloads
     fun cuboid(
         manager: ParticleManager, center: Vec3,
         width: Double, height: Double, depth: Double,
@@ -340,6 +357,8 @@ object Draw {
      * @param hollow 为 true 时只绘制边框，否则填充内部
      * @param axis 矩形所在平面
      */
+    @JvmStatic
+    @JvmOverloads
     fun rect(
         manager: ParticleManager, center: Vec3,
         width: Double, height: Double, particlesPerAxis: Int = 15,

@@ -563,14 +563,17 @@ class ServerParticleEngine(
          * @param dimensionId 维度 ID
          * @return 引擎实例
          */
+        @JvmStatic
         fun getOrCreate(dimensionId: UUID): ServerParticleEngine {
             return DIMENSION_ENGINES.computeIfAbsent(dimensionId) { ServerParticleEngine(it) }
         }
 
         /** @return 指定维度的引擎，不存在则返回 null */
+        @JvmStatic
         fun get(dimensionId: UUID): ServerParticleEngine? = DIMENSION_ENGINES[dimensionId]
 
         /** 清除指定维度的引擎实例 */
+        @JvmStatic
         fun clearDimension(dimensionId: UUID) {
             DIMENSION_ENGINES.remove(dimensionId)
         }

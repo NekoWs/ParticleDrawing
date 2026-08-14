@@ -85,6 +85,8 @@ class ColorGradientAlgorithm(params: DoubleArray) : MotionAlgorithm {
         const val AXIS_CUSTOM = 3
 
         /** 构造 HSB 色相渐变的参数。可通过 [axis] 指定坐标轴，或通过 [direction] 指定任意渐变方向。 */
+        @JvmStatic
+        @JvmOverloads
         fun hsbParams(
             axis: Int = AXIS_Y,
             direction: Vec3? = null,
@@ -108,6 +110,8 @@ class ColorGradientAlgorithm(params: DoubleArray) : MotionAlgorithm {
         }
 
         /** 构造 RGB 双色渐变的参数。可通过 [axis] 指定坐标轴，或通过 [direction] 指定任意渐变方向。 */
+        @JvmStatic
+        @JvmOverloads
         fun rgbParams(
             axis: Int = AXIS_Y,
             direction: Vec3? = null,

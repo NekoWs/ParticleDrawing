@@ -161,11 +161,13 @@ class ParticleGroup(
     }
 
     /** 跟随玩家移动，带指数平滑。 */
+    @JvmOverloads
     fun followPlayerMotion(smoothFactor: Double = 0.06) {
         addMotion(FollowPlayerAlgorithm.ID, doubleArrayOf(smoothFactor))
     }
 
     /** 基于玩家距离缩放粒子。 */
+    @JvmOverloads
     fun scaleByDistanceMotion(maxScale: Double = 1.0, minScale: Double = 0.05, maxDistance: Double = 6.0) {
         addMotion(ScaleByDistanceAlgorithm.ID, doubleArrayOf(maxScale, minScale, maxDistance))
     }
