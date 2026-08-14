@@ -150,8 +150,13 @@ publishing {
 
 signing {
     def signingKey = findProperty('signingKey')
-    if (signingKey) {
-        useInMemoryPgpKeys(signingKey as String, (findProperty('signingPassword') ?: '') as String)
+    def signingPassword = findProperty('signingPassword')
+    if (signingKey != null && !signingKey.toString().trim().isEmpty()) {
+        def key = signingKey.toString()
+        if (!key.contains('PRIVATE KEY')) {
+            throw new GradleException('signingKey 必须是 GPG 私钥（-----BEGIN PGP PRIVATE KEY BLOCK-----），不能是公钥')
+        }
+        useInMemoryPgpKeys(key, signingPassword?.toString() ?: '')
         sign publishing.publications.mavenJava
     }
 }
