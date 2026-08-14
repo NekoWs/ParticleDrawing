@@ -29,12 +29,15 @@ class AnimParticle(
 )
 
 /**
- * 一条关键帧轨道，作用于一组粒子（按 id 或 "all"）的某个属性。
+ * 一条关键帧轨道，作用于一组粒子（按 id 或 "g:name" 或 "all"）的某个属性。
+ *
+ * @param mode SET=关键帧值为绝对值（所有成员设为该值）；OP=关键帧值为增量（叠加到每个成员的基础值上）
  */
 class AnimTrack(
     val property: Property,
     val ids: List<String>,
-    val keyframes: List<AnimKeyframe>
+    val keyframes: List<AnimKeyframe>,
+    val mode: Mode
 ) {
     enum class Property {
         POSITION,
@@ -49,6 +52,8 @@ class AnimTrack(
             }
         }
     }
+
+    enum class Mode { SET, OP }
 }
 
 /**

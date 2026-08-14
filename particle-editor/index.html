@@ -12,23 +12,28 @@
       <div class="menu">
         <button class="menu-btn" data-menu="file">文件</button>
         <div class="dropdown" id="menu-file">
-          <button id="btn-open" class="dd-item">打开…</button>
-          <button id="btn-save" class="dd-item">保存</button>
-          <button id="btn-saveas" class="dd-item">另存为…</button>
+          <button id="btn-open" class="dd-item"><span>打开…</span><kbd>Ctrl+O</kbd></button>
+          <button id="btn-save" class="dd-item"><span>保存</span><kbd>Ctrl+S</kbd></button>
+          <button id="btn-saveas" class="dd-item"><span>另存为…</span></button>
           <div class="dd-sep"></div>
-          <button id="btn-export" class="dd-item">导出 JSON</button>
-          <button id="btn-import" class="dd-item">导入 JSON</button>
+          <button id="btn-export" class="dd-item"><span>导出 JSON</span></button>
+          <button id="btn-import" class="dd-item"><span>导入 JSON</span></button>
           <div class="dd-sep"></div>
-          <button id="btn-clear" class="dd-item danger">清空</button>
+          <button id="btn-clear" class="dd-item danger"><span>清空</span></button>
         </div>
       </div>
       <div class="menu">
         <button class="menu-btn" data-menu="edit">编辑</button>
         <div class="dropdown" id="menu-edit">
-          <button id="btn-selall" class="dd-item">全选 (A)</button>
-          <button id="btn-delete-selected" class="dd-item danger">删除选中 (X)</button>
+          <button id="btn-undo" class="dd-item"><span>撤回</span><kbd>Ctrl+Z</kbd></button>
+          <button id="btn-redo" class="dd-item"><span>重做</span><kbd>Ctrl+Y</kbd></button>
           <div class="dd-sep"></div>
-          <button id="btn-group" class="dd-item">建立组 (Ctrl+G)</button>
+          <button id="btn-selall" class="dd-item"><span>全选</span><kbd>Ctrl+A</kbd></button>
+          <button id="btn-delete-selected" class="dd-item danger"><span>删除选中</span><kbd>Delete</kbd></button>
+          <div class="dd-sep"></div>
+          <button id="btn-group" class="dd-item"><span>建立组</span><kbd>Ctrl+G</kbd></button>
+          <div class="dd-sep"></div>
+          <button id="btn-loop" class="dd-item"><span>循环</span><span id="loop-indicator" class="dd-check">✓</span></button>
         </div>
       </div>
       <div class="menu">
@@ -38,35 +43,33 @@
           <div class="dd-text">导出 JSON 供模组 /test play 播放</div>
         </div>
       </div>
-      <input id="anim-name" type="text" value="my_animation" />
-      <label class="chk"><input id="loop-toggle" type="checkbox" checked />循环</label>
     </nav>
   </header>
 
   <main class="layout">
-    <aside class="left-panel">
+    <aside class="left-panel" id="left-panel">
       <div class="panel-title">粒子列表</div>
       <div id="particle-tree" class="particle-tree"></div>
     </aside>
+    <div class="resize-handle" id="resize-handle"></div>
 
     <section id="viewport" class="viewport">
       <canvas id="axis-gizmo"></canvas>
       <div id="box-overlay"></div>
+      <div class="toolbar" id="tools">
+        <button class="tool active" data-tool="select" title="选择（框选）"><svg viewBox="0 0 18 18"><path d="M4 2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 2"/></svg></button>
+        <button class="tool" data-tool="pencil" title="铅笔（点按放置）"><svg viewBox="0 0 18 18"><path d="M3 15l1-4 9-9 3 3-9 9-4 1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>
+        <button class="tool" data-tool="line" title="直线"><svg viewBox="0 0 18 18"><path d="M3 15L15 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+        <button class="tool" data-tool="circle" title="圆"><svg viewBox="0 0 18 18"><circle cx="9" cy="9" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+        <button class="tool" data-tool="rect" title="矩形"><svg viewBox="0 0 18 18"><rect x="3" y="4" width="12" height="10" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+        <button class="tool" data-tool="freehand" title="手绘"><svg viewBox="0 0 18 18"><path d="M2 12c2-4 4-4 3-1s-1 5-3 5 1-5 4-5 5 2 2 3-4-1-4-3 3-4 6-2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+        <button class="tool" data-tool="erase" title="橡皮（点按删除）"><svg viewBox="0 0 18 18"><path d="M7 14h9M4 11l7-7 3 3-7 7H4v-3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>
+      </div>
     </section>
 
     <aside class="sidebar">
       <details open>
-        <summary>工具</summary>
-        <p class="hint">中键旋转 · Shift+中键平移 · 滚轮缩放 · 左键框选 · G 移动 · S 缩放 · X 删除 · A 全选 · Esc 取消</p>
-        <div class="tools" id="tools">
-          <button class="tool active" data-tool="select" title="框选 / 拖动粒子">选择</button>
-          <button class="tool" data-tool="pencil" title="点按放置粒子">铅笔</button>
-          <button class="tool" data-tool="line" title="拖拽画线段">直线</button>
-          <button class="tool" data-tool="circle" title="拖拽画圆">圆</button>
-          <button class="tool" data-tool="rect" title="拖拽画矩形">矩形</button>
-          <button class="tool" data-tool="freehand" title="按住自由绘制">手绘</button>
-          <button class="tool" data-tool="erase" title="点按删除粒子">橡皮</button>
-        </div>
+        <summary>绘制</summary>
         <label class="row">绘制平面
           <select id="draw-plane">
             <option value="XZ" selected>XZ（水平）</option>
@@ -77,11 +80,7 @@
         <label class="chk"><input id="snap-toggle" type="checkbox" />吸附（整格）</label>
         <label class="row">放置高度 <input id="height-y" type="number" step="0.1" value="0" /></label>
         <label class="row">粒子数量 <input id="shape-count" type="number" min="2" value="30" /></label>
-      </details>
-
-      <details>
-        <summary>组</summary>
-        <div id="group-list" class="group-list"></div>
+        <p class="hint">中键旋转 · Shift+中键平移 · 滚轮缩放 · 左键框选 · S 缩放 · Delete 删除 · Ctrl+A 全选 · Ctrl+D 取消选中 · 空格 播放</p>
       </details>
 
       <details>
@@ -144,7 +143,7 @@
     <div class="tl-controls">
       <button id="btn-play" class="btn">▶ 播放</button>
       <label class="chk"><input id="tl-loop" type="checkbox" checked />循环</label>
-      <select id="tl-easing"></select>
+      <button id="tl-easing" class="ease-btn" title="缓动函数"></button>
       <button id="btn-capture" class="btn">捕获关键帧</button>
       <input id="tl-time" type="number" min="0" step="1" value="0" />
       <span class="ticks">tick / <span id="tl-max">0</span></span>

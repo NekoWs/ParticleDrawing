@@ -50,7 +50,14 @@ const PROPERTY_DEFS = [
 ];
 
 const DEFAULT_EASING = 3;
-const SNAP_STEP = 0.5;
+const SNAP_STEP = 1.0;
+
+// 组的属性（轨道级）：位置/颜色/缩放，支持「设置(set)」或「操作(op)」两种模式
+const GROUP_PROP_DEFS = [
+  { key: 'pos', label: '位置', size: 3, labels: ['X', 'Y', 'Z'] },
+  { key: 'col', label: '颜色', size: 4, labels: ['R', 'G', 'B', 'A'] },
+  { key: 'scl', label: '缩放', size: 1, labels: ['缩放'] },
+];
 
 /* =========================================================================
  * 状态
@@ -73,14 +80,26 @@ const state = {
   time: 0,
   playing: false,
   defaultEasing: DEFAULT_EASING,
-  idCounter: 0,
-  groupCounter: 0,
 };
 
-function nextId() { return 'p' + (state.idCounter++); }
-function nextGroupName() { return 'g' + (state.groupCounter++); }
+function nextId() {
+  let n = 0;
+  while (state.particles.some(p => p.id === 'p' + n)) n++;
+  return 'p' + n;
+}
+function nextGroupName() {
+  let n = 0;
+  while (('g' + n) in state.groups) n++;
+  return 'g' + n;
+}
 function getParticle(id) { return state.particles.find(p => p.id === id); }
 function findTrack(prop, id) { return state.tracks.find(tr => tr.pr === prop && tr.ids.length === 1 && tr.ids[0] === id); }
+
+function nextFreeTime(tr, startTime) {
+  let t = Math.max(0, Math.round(startTime));
+  while (tr.kf.some(k => k[0] === t)) t += 5;
+  return t;
+}
 
 /* =========================================================================
  * 缓动求值
@@ -229,6 +248,20 @@ function makeSquareTexture() {
   return tex;
 }
 
+// 选中描边用方框贴图（中心透明，露出粒子本色，形状与粒子一致）
+function makeRingTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const ctx = c.getContext('2d');
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(2, 2, 28, 28);
+  const tex = new THREE.CanvasTexture(c);
+  tex.minFilter = THREE.NearestFilter;
+  tex.magFilter = THREE.NearestFilter;
+  return tex;
+}
+
 function focalLengthPx() {
   const h = renderer.domElement.clientHeight || 1;
   return h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
@@ -257,19 +290,19 @@ const pointsMaterial = new THREE.ShaderMaterial({
     }
   `,
   transparent: true,
-  depthWrite: false,
+  depthWrite: true,
   blending: THREE.NormalBlending,
 });
 
-// 选中描边（橙色方框，略大）
+// 选中描边（方形边框，中心透明露出粒子本色）
 const selectedMaterial = new THREE.ShaderMaterial({
-  uniforms: { uMap: { value: makeSquareTexture() }, uPixelScale: { value: focalLengthPx() } },
+  uniforms: { uMap: { value: makeRingTexture() }, uPixelScale: { value: focalLengthPx() } },
   vertexShader: `
     uniform float uPixelScale;
     attribute float aSize;
     void main() {
       vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-      gl_PointSize = aSize * uPixelScale / max(0.1, -mvPosition.z) * 1.25;
+      gl_PointSize = aSize * uPixelScale / max(0.1, -mvPosition.z) * 1.35;
       gl_Position = projectionMatrix * mvPosition;
     }
   `,
@@ -277,7 +310,7 @@ const selectedMaterial = new THREE.ShaderMaterial({
     uniform sampler2D uMap;
     void main() {
       vec4 tex = texture2D(uMap, gl_PointCoord);
-      gl_FragColor = vec4(1.0, 0.6, 0.25, 1.0) * tex;
+      gl_FragColor = vec4(1.0, 0.6, 0.25, 1.0) * tex.a;
     }
   `,
   transparent: true,
@@ -288,6 +321,9 @@ const selectedMaterial = new THREE.ShaderMaterial({
 let points = new THREE.Points(new THREE.BufferGeometry(), pointsMaterial);
 let selectedPoints = new THREE.Points(new THREE.BufferGeometry(), selectedMaterial);
 let previewPoints = new THREE.Points(new THREE.BufferGeometry(), pointsMaterial);
+points.renderOrder = 0;
+selectedPoints.renderOrder = 1;
+previewPoints.renderOrder = 0;
 scene.add(points);
 scene.add(selectedPoints);
 scene.add(previewPoints);
@@ -295,11 +331,31 @@ scene.add(previewPoints);
 const gizmoGroup = new THREE.Group();
 scene.add(gizmoGroup);
 gizmoGroup.visible = false;
+// 旋转控制器：三个轴向的彩色圆环
+const gizmoRings = {};
+(function buildRotateRings() {
+  const defs = { X: [0xff5555, new THREE.Vector3(0, Math.PI / 2, 0)], Y: [0x55ff55, new THREE.Vector3(Math.PI / 2, 0, 0)], Z: [0x5588ff, new THREE.Vector3(0, 0, 0)] };
+  for (const [axis, [color, rot]] of Object.entries(defs)) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.26, 0.045, 10, 48),
+      new THREE.MeshBasicMaterial({ color })
+    );
+    ring.rotation.set(rot.x, rot.y, rot.z);
+    ring.name = axis;
+    ring.renderOrder = 10;
+    ring.material.depthWrite = false;
+    gizmoRings[axis] = ring;
+    gizmoGroup.add(ring);
+  }
+})();
 (function buildGizmo() {
   const defs = { X: [1, 0, 0, 0xff5555], Y: [0, 1, 0, 0x55ff55], Z: [0, 0, 1, 0x5588ff] };
   for (const [axis, [x, y, z, color]] of Object.entries(defs)) {
-    const arrow = new THREE.ArrowHelper(new THREE.Vector3(x, y, z), new THREE.Vector3(0, 0, 0), 1.2, color, 0.25, 0.12);
+    const arrow = new THREE.ArrowHelper(new THREE.Vector3(x, y, z), new THREE.Vector3(0, 0, 0), 1.5, color, 0.32, 0.16);
     arrow.name = axis;
+    arrow.renderOrder = 10;
+    arrow.line.material.depthWrite = false;
+    arrow.cone.material.depthWrite = false;
     gizmoGroup.add(arrow);
   }
 })();
@@ -316,10 +372,36 @@ function baseValue(p, prop) {
   return [p.scale];
 }
 
+function zeroArray(prop) {
+  if (prop === 'pos') return [0, 0, 0];
+  if (prop === 'col') return [0, 0, 0, 0];
+  return [0];
+}
+
+function addArrays(a, b) {
+  const out = new Array(a.length);
+  for (let i = 0; i < a.length; i++) out[i] = a[i] + b[i];
+  return out;
+}
+
+function trackValueAt(tr, T, fallback) {
+  const kfs = tr.kf;
+  if (T < kfs[0][0]) return fallback;
+  if (T >= kfs[kfs.length - 1][0]) return kfs[kfs.length - 1][1];
+  for (let i = 0; i < kfs.length - 1; i++) {
+    const a = kfs[i], b = kfs[i + 1];
+    if (T >= a[0] && T <= b[0]) {
+      const dur = b[0] - a[0];
+      return lerpArray(a[1], b[1], easeVal(dur === 0 ? 1 : (T - a[0]) / dur, a[2]));
+    }
+  }
+  return fallback;
+}
+
 function tracksForParticle(prop, pId) {
-  for (const tr of state.tracks) if (tr.pr === prop && tr.ids.length === 1 && tr.ids[0] === pId) return tr;
+  for (const tr of state.tracks) if (tr.pr === prop && tr.m !== 'op' && tr.ids.length === 1 && tr.ids[0] === pId) return tr;
   for (const tr of state.tracks) {
-    if (tr.pr !== prop) continue;
+    if (tr.pr !== prop || tr.m === 'op') continue;
     for (const id of tr.ids) {
       if (id.startsWith('g:')) {
         const members = state.groups[id.slice(2)];
@@ -330,21 +412,31 @@ function tracksForParticle(prop, pId) {
   return null;
 }
 
+function groupOpDelta(p, prop, T) {
+  let delta = null;
+  for (const tr of state.tracks) {
+    if (tr.pr !== prop || tr.m !== 'op' || tr.kf.length === 0) continue;
+    for (const id of tr.ids) {
+      if (id.startsWith('g:')) {
+        const members = state.groups[id.slice(2)];
+        if (members && members.includes(p.id)) {
+          const d = trackValueAt(tr, T, zeroArray(prop));
+          delta = delta ? addArrays(delta, d) : d.slice();
+        }
+      }
+    }
+  }
+  return delta;
+}
+
 function particleValueAt(p, prop, T) {
   const tr = tracksForParticle(prop, p.id);
   const base = baseValue(p, prop);
-  if (!tr || tr.kf.length === 0) return base;
-  const kfs = tr.kf;
-  if (T < kfs[0][0]) return base;
-  if (T >= kfs[kfs.length - 1][0]) return kfs[kfs.length - 1][1];
-  for (let i = 0; i < kfs.length - 1; i++) {
-    const a = kfs[i], b = kfs[i + 1];
-    if (T >= a[0] && T <= b[0]) {
-      const dur = b[0] - a[0];
-      return lerpArray(a[1], b[1], easeVal(dur === 0 ? 1 : (T - a[0]) / dur, a[2]));
-    }
-  }
-  return base;
+  let value = base;
+  if (tr && tr.kf.length > 0) value = trackValueAt(tr, T, base);
+  const op = groupOpDelta(p, prop, T);
+  if (op) value = addArrays(value, op);
+  return value;
 }
 
 function lerpArray(a, b, t) {
@@ -438,7 +530,7 @@ function setValueAtTime(ids, prop, values) {
     if (!p) continue;
     let tr = findTrack(prop, id);
     if (!tr) {
-      tr = { pr: prop, ids: [id], kf: [[0, baseValue(p, prop).slice(), state.defaultEasing]] };
+      tr = { pr: prop, m: 'set', ids: [id], kf: [[0, baseValue(p, prop).slice(), state.defaultEasing]] };
       state.tracks.push(tr);
     }
     const idx = tr.kf.findIndex(k => k[0] === t);
@@ -453,10 +545,11 @@ function setValueAtTime(ids, prop, values) {
 function setComponentValue(particleId, comp, time, value) {
   const p = getParticle(particleId);
   if (!p) return;
+  pushUndo();
   const prop = comp.track;
   let tr = findTrack(prop, particleId);
   if (!tr) {
-    tr = { pr: prop, ids: [particleId], kf: [[0, baseValue(p, prop).slice(), state.defaultEasing]] };
+    tr = { pr: prop, m: 'set', ids: [particleId], kf: [[0, baseValue(p, prop).slice(), state.defaultEasing]] };
     state.tracks.push(tr);
   }
   let kf = tr.kf.find(k => k[0] === time);
@@ -476,25 +569,60 @@ function updateKeyframeTime(particleId, prop, oldT, newT) {
   const tr = findTrack(prop, particleId);
   const kf = tr && tr.kf.find(k => k[0] === oldT);
   if (!kf) return;
+  pushUndo();
   kf[0] = Math.max(0, newT);
   tr.kf.sort((a, b) => a[0] - b[0]);
   rebuildPoints();
   refreshParticleTree();
 }
 
-function updateKeyframeEasing(particleId, prop, t, easingIdx) {
+function updateKeyframeEasing(particleId, prop, t, easing) {
   const tr = findTrack(prop, particleId);
   const kf = tr && tr.kf.find(k => k[0] === t);
   if (!kf) return;
-  kf[2] = easingIdx;
+  pushUndo();
+  kf[2] = easing;
   rebuildPoints();
 }
 
 function removeKeyframe(particleId, prop, t) {
   const tr = findTrack(prop, particleId);
   if (!tr) return;
+  pushUndo();
   tr.kf = tr.kf.filter(k => k[0] !== t);
   if (tr.kf.length === 0) state.tracks = state.tracks.filter(x => x !== tr);
+  rebuildPoints();
+  refreshParticleTree();
+}
+
+/* =========================================================================
+ * 组：操作/设置 关键帧
+ * ======================================================================= */
+
+function findGroupTrack(prop, groupName) {
+  return state.tracks.find(tr => tr.pr === prop && tr.ids.length === 1 && tr.ids[0] === 'g:' + groupName);
+}
+
+function setGroupTrackValue(groupName, prop, mode, time, value) {
+  let tr = findGroupTrack(prop, groupName);
+  if (!tr) {
+    tr = { pr: prop, m: mode, ids: ['g:' + groupName], kf: [[0, zeroArray(prop).slice(), state.defaultEasing]] };
+    state.tracks.push(tr);
+  } else {
+    tr.m = mode;
+  }
+  let kf = tr.kf.find(k => k[0] === time);
+  if (!kf) { kf = [time, value.slice(), state.defaultEasing]; tr.kf.push(kf); tr.kf.sort((a, b) => a[0] - b[0]); }
+  else kf[1] = value.slice();
+  rebuildPoints();
+  refreshParticleTree();
+}
+
+function setGroupTrackMode(groupName, prop, mode) {
+  const tr = findGroupTrack(prop, groupName);
+  if (!tr) return;
+  pushUndo();
+  tr.m = mode;
   rebuildPoints();
   refreshParticleTree();
 }
@@ -505,13 +633,152 @@ function addParticle(base) {
   return p;
 }
 
+function autoGroup(ids) {
+  if (!ids || ids.length === 0) return null;
+  const name = nextGroupName();
+  state.groups[name] = ids.slice();
+  return name;
+}
+
+function removeGroupAndTracks(name) {
+  const members = state.groups[name] || [];
+  for (const id of members) {
+    const idx = state.particles.findIndex(p => p.id === id);
+    if (idx >= 0) state.particles.splice(idx, 1);
+    state.tracks = state.tracks.filter(tr => !tr.ids.includes(id));
+  }
+  delete state.groups[name];
+  state.tracks = state.tracks.filter(tr => !tr.ids.includes('g:' + name));
+  if (state.selectedGroup === name) state.selectedGroup = null;
+}
+
+function renameParticle(oldId, newId) {
+  newId = (newId || '').trim();
+  if (!newId || newId === oldId || getParticle(newId)) return false;
+  pushUndo();
+  const p = getParticle(oldId);
+  p.id = newId;
+  for (const g in state.groups) {
+    const m = state.groups[g];
+    const idx = m.indexOf(oldId);
+    if (idx >= 0) m[idx] = newId;
+  }
+  for (const tr of state.tracks) {
+    const idx = tr.ids.indexOf(oldId);
+    if (idx >= 0) tr.ids[idx] = newId;
+  }
+  if (state.selected.has(oldId)) { state.selected.delete(oldId); state.selected.add(newId); }
+  if (state.expandedParticles.has(oldId)) { state.expandedParticles.delete(oldId); state.expandedParticles.add(newId); }
+  rebuildPoints();
+  refreshParticleTree();
+  return true;
+}
+
+function renameGroup(oldName, newName) {
+  newName = (newName || '').trim();
+  if (!newName || newName === oldName || newName in state.groups) return false;
+  pushUndo();
+  state.groups[newName] = state.groups[oldName];
+  delete state.groups[oldName];
+  for (const tr of state.tracks) {
+    const idx = tr.ids.indexOf('g:' + oldName);
+    if (idx >= 0) tr.ids[idx] = 'g:' + newName;
+  }
+  if (state.selectedGroup === oldName) state.selectedGroup = newName;
+  if (state.expandedParticles.has('g:' + oldName)) { state.expandedParticles.delete('g:' + oldName); state.expandedParticles.add('g:' + newName); }
+  refreshParticleTree();
+  return true;
+}
+
+function moveParticlesToGroup(ids, groupName) {
+  if (ids.length === 0) return;
+  pushUndo();
+  const set = new Set(state.groups[groupName] || []);
+  for (const id of ids) set.add(id);
+  state.groups[groupName] = [...set];
+  rebuildPoints();
+  refreshParticleTree();
+}
+
+function removeParticlesFromGroups(ids) {
+  if (ids.length === 0) return;
+  pushUndo();
+  for (const g in state.groups) {
+    state.groups[g] = state.groups[g].filter(id => !ids.includes(id));
+    if (state.groups[g].length === 0) delete state.groups[g];
+  }
+  rebuildPoints();
+  refreshParticleTree();
+}
+
+/* =========================================================================
+ * 撤回 / 重做
+ * ======================================================================= */
+
+const undoStack = [];
+const redoStack = [];
+
+function snapshot() {
+  return {
+    particles: state.particles.map(p => ({ ...p, color: p.color.slice(), pos: p.pos.slice() })),
+    tracks: state.tracks.map(tr => ({ pr: tr.pr, m: tr.m, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], k[1].slice(), k[2]]) })),
+    groups: JSON.parse(JSON.stringify(state.groups)),
+    name: state.name,
+    loop: state.loop,
+    selected: [...state.selected],
+    selectedGroup: state.selectedGroup,
+  };
+}
+
+function restore(s) {
+  state.particles = s.particles.map(p => ({ ...p, color: p.color.slice(), pos: p.pos.slice() }));
+  state.tracks = s.tracks.map(tr => ({ pr: tr.pr, m: tr.m, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], k[1].slice(), k[2]]) }));
+  state.groups = JSON.parse(JSON.stringify(s.groups));
+  state.name = s.name;
+  state.loop = s.loop;
+  state.selected = new Set(s.selected);
+  state.selectedGroup = s.selectedGroup;
+  document.getElementById('tl-loop').checked = state.loop;
+  updateLoopIndicator();
+  rebuildPoints();
+  refreshParticleTree();
+}
+
+function pushUndo() {
+  undoStack.push(snapshot());
+  if (undoStack.length > 100) undoStack.shift();
+  redoStack.length = 0;
+}
+
+function popUndo() { undoStack.pop(); }
+
+let continuousDirty = false;
+function beginContinuous() { if (!continuousDirty) { pushUndo(); continuousDirty = true; } }
+function endContinuous() { continuousDirty = false; }
+
+function undo() {
+  if (undoStack.length === 0) return;
+  redoStack.push(snapshot());
+  restore(undoStack.pop());
+}
+
+function redo() {
+  if (redoStack.length === 0) return;
+  undoStack.push(snapshot());
+  restore(redoStack.pop());
+}
+
 /* =========================================================================
  * 吸附
  * ======================================================================= */
 
+function snapValue(v) {
+  if (!state.snap) return v;
+  return Math.round(v / SNAP_STEP) * SNAP_STEP;
+}
+
 function snapPos(p) {
-  if (!state.snap) return p;
-  return p.map(v => Math.round(v / SNAP_STEP) * SNAP_STEP);
+  return p.map(snapValue);
 }
 
 /* =========================================================================
@@ -531,6 +798,9 @@ function updateGizmo() {
   if (!c) { gizmoGroup.visible = false; return; }
   gizmoGroup.visible = true;
   gizmoGroup.position.set(c[0], c[1], c[2]);
+  const dist = camera.position.distanceTo(gizmoGroup.position);
+  gizmoGroup.scale.setScalar(dist * 0.18);
+  setGizmoHover(null);
 }
 
 /* =========================================================================
@@ -591,17 +861,18 @@ const shapeCount = () => Math.max(2, parseInt(document.getElementById('shape-cou
 function computeShapePositions(mode, u0, v0, u1, v1, off) {
   const toWorld = PLANES[state.drawPlane].toWorld;
   const out = [];
-  const push = (u, v) => { const [x, y, z] = toWorld(u, v, off); out.push(snapPos([x, y, z])); };
+  const push = (u, v) => { const [x, y, z] = toWorld(snapValue(u), snapValue(v), off); out.push([x, y, z]); };
+  const sU0 = snapValue(u0), sV0 = snapValue(v0), sU1 = snapValue(u1), sV1 = snapValue(v1);
   if (mode === 'line') {
     const n = shapeCount();
-    for (let i = 0; i < n; i++) { const t = n === 1 ? 0.5 : i / (n - 1); push(u0 + (u1 - u0) * t, v0 + (v1 - v0) * t); }
+    for (let i = 0; i < n; i++) { const t = n === 1 ? 0.5 : i / (n - 1); push(sU0 + (sU1 - sU0) * t, sV0 + (sV1 - sV0) * t); }
   } else if (mode === 'circle') {
-    const r = Math.hypot(u1 - u0, v1 - v0);
+    const r = Math.hypot(sU1 - sU0, sV1 - sV0);
     const n = shapeCount();
-    for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; push(u0 + Math.cos(a) * r, v0 + Math.sin(a) * r); }
+    for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; push(sU0 + Math.cos(a) * r, sV0 + Math.sin(a) * r); }
   } else if (mode === 'rect') {
     const n = Math.max(2, Math.round(Math.sqrt(shapeCount())));
-    const uMin = Math.min(u0, u1), uMax = Math.max(u0, u1), vMin = Math.min(v0, v1), vMax = Math.max(v0, v1);
+    const uMin = Math.min(sU0, sU1), uMax = Math.max(sU0, sU1), vMin = Math.min(sV0, sV1), vMax = Math.max(sV0, sV1);
     for (let i = 0; i <= n; i++) for (let j = 0; j <= n; j++) push(uMin + (uMax - uMin) * i / n, vMin + (vMax - vMin) * j / n);
   }
   return out;
@@ -614,35 +885,72 @@ function computeShapePositions(mode, u0, v0, u1, v1, off) {
 let drag = null;
 let modal = null;
 let boxSel = null;
+let dragIds = null;
 const lastMouse = { x: 0, y: 0 };
 
 function currentSelected() { return state.particles.filter(p => state.selected.has(p.id)); }
 
+function selectedGroupName() {
+  return state.selectedGroup && state.groups[state.selectedGroup] ? state.selectedGroup : null;
+}
+
+function rotateVector(v, axis, angle) {
+  const c = Math.cos(angle), s = Math.sin(angle);
+  const dot = v[0] * axis[0] + v[1] * axis[1] + v[2] * axis[2];
+  return [
+    v[0] * c + (axis[1] * v[2] - axis[2] * v[1]) * s + axis[0] * dot * (1 - c),
+    v[1] * c + (axis[2] * v[0] - axis[0] * v[2]) * s + axis[1] * dot * (1 - c),
+    v[2] * c + (axis[0] * v[1] - axis[1] * v[0]) * s + axis[2] * dot * (1 - c),
+  ];
+}
+
 function enterGrab(clientX, clientY) {
   if (state.selected.size === 0) return;
+  pushUndo();
   const origins = new Map();
   for (const p of currentSelected()) origins.set(p.id, currentVisual(p).pos.slice());
   const c = selectionCentroid();
   const pt = planePointAt(clientX, clientY);
-  modal = { type: 'grab', origins, axis: null, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: clientX, y: clientY }, y: c ? c[1] : 0 };
+  modal = { type: 'grab', groupName: selectedGroupName(), origins, axis: null, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: clientX, y: clientY }, y: c ? c[1] : 0 };
   controls.enabled = false;
 }
 
 function enterScale(clientX) {
   if (state.selected.size === 0) return;
+  pushUndo();
   const origins = new Map();
   for (const p of currentSelected()) origins.set(p.id, currentVisual(p).scale);
   modal = { type: 'scale', origins, startClient: { x: clientX } };
   controls.enabled = false;
 }
 
+const AXIS_VECTORS = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] };
+
+function enterRotate(clientX, axis) {
+  if (state.selected.size === 0) return;
+  pushUndo();
+  const origins = new Map();
+  for (const p of currentSelected()) origins.set(p.id, currentVisual(p).pos.slice());
+  const c = selectionCentroid();
+  const ax = AXIS_VECTORS[axis] || AXIS_VECTORS.Y;
+  modal = { type: 'rotate', origins, centroid: c, axis: ax, startClient: { x: clientX } };
+  controls.enabled = false;
+}
+
 function cancelModal() {
   if (!modal) return;
-  if (modal.type === 'grab') for (const [id, orig] of modal.origins) setValueAtTime([id], 'pos', orig);
-  else if (modal.type === 'scale') for (const [id, orig] of modal.origins) setValueAtTime([id], 'scl', [orig]);
+  if (modal.type === 'grab') {
+    if (modal.groupName) setGroupTrackValue(modal.groupName, 'pos', 'op', Math.round(state.time), [0, 0, 0]);
+    else for (const [id, orig] of modal.origins) setValueAtTime([id], 'pos', orig);
+  } else if (modal.type === 'scale') {
+    for (const [id, orig] of modal.origins) setValueAtTime([id], 'scl', [orig]);
+  } else if (modal.type === 'rotate') {
+    for (const [id, orig] of modal.origins) setValueAtTime([id], 'pos', orig);
+  }
   modal = null;
   controls.enabled = true;
   rebuildPoints();
+  popUndo();
 }
 
 function confirmModal() { modal = null; controls.enabled = true; }
@@ -663,9 +971,13 @@ function updateGrab(clientX, clientY) {
   if (m.axis === 'X') dz = 0;
   else if (m.axis === 'Z') dx = 0;
   else if (m.axis === 'Y') { dx = 0; dz = 0; dy = -(clientY - m.startClient.y) * 0.02; }
-  for (const [id, orig] of m.origins) {
-    const p = snapPos([orig[0] + dx, orig[1] + dy, orig[2] + dz]);
-    setValueAtTime([id], 'pos', p);
+  const sdx = snapValue(dx), sdy = snapValue(dy), sdz = snapValue(dz);
+  if (m.groupName) {
+    setGroupTrackValue(m.groupName, 'pos', 'op', Math.round(state.time), [sdx, sdy, sdz]);
+  } else {
+    for (const [id, orig] of m.origins) {
+      setValueAtTime([id], 'pos', [orig[0] + sdx, orig[1] + sdy, orig[2] + sdz]);
+    }
   }
 }
 
@@ -676,7 +988,20 @@ function updateScale(clientX) {
   for (const [id, orig] of m.origins) setValueAtTime([id], 'scl', [orig * factor]);
 }
 
+function updateRotate(clientX) {
+  const m = modal;
+  if (!m || m.type !== 'rotate') return;
+  const angle = (clientX - m.startClient.x) * 0.01;
+  for (const [id, orig] of m.origins) {
+    const rel = [orig[0] - m.centroid[0], orig[1] - m.centroid[1], orig[2] - m.centroid[2]];
+    const r = rotateVector(rel, m.axis, angle);
+    setValueAtTime([id], 'pos', [m.centroid[0] + r[0], m.centroid[1] + r[1], m.centroid[2] + r[2]]);
+  }
+}
+
 function deleteSelected() {
+  if (state.selected.size === 0) return;
+  pushUndo();
   for (const id of state.selected) {
     const idx = state.particles.findIndex(p => p.id === id);
     if (idx >= 0) state.particles.splice(idx, 1);
@@ -684,11 +1009,10 @@ function deleteSelected() {
   }
   for (const g in state.groups) {
     state.groups[g] = state.groups[g].filter(id => state.particles.some(p => p.id === id));
-    if (state.groups[g].length === 0) delete state.groups[g];
+    if (state.groups[g].length === 0) removeGroupAndTracks(g);
   }
   state.selected.clear();
   state.selectedGroup = null;
-  refreshGroupList();
   rebuildPoints();
   refreshParticleTree();
 }
@@ -705,29 +1029,63 @@ function hitGizmoAxis(clientX, clientY) {
   if (!c) return null;
   const rect = renderer.domElement.getBoundingClientRect();
   const px = clientX - rect.left, py = clientY - rect.top;
-  for (const [axis, v] of Object.entries({ X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] })) {
+  const scale = gizmoGroup.scale.x || 1;
+  for (const [axis, v] of Object.entries(AXIS_VECTORS)) {
     const s = projectToScreen(c[0], c[1], c[2]);
-    const e = projectToScreen(c[0] + v[0] * 1.2, c[1] + v[1] * 1.2, c[2] + v[2] * 1.2);
+    const e = projectToScreen(c[0] + v[0] * 1.5 * scale, c[1] + v[1] * 1.5 * scale, c[2] + v[2] * 1.5 * scale);
     if (distToSegment(px, py, s.x, s.y, e.x, e.y) < 10) return axis;
   }
   return null;
 }
 
+function hitGizmoRotate(clientX, clientY) {
+  if (state.selected.size === 0) return null;
+  screenToNdc(clientX, clientY);
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects(Object.values(gizmoRings));
+  if (hits.length === 0) return null;
+  for (const [axis, ring] of Object.entries(gizmoRings)) {
+    if (hits[0].object === ring) return axis;
+  }
+  return null;
+}
+
+const AXIS_COLORS = { X: 0xff5555, Y: 0x55ff55, Z: 0x5588ff };
+function setGizmoHover(axis) {
+  if (!gizmoGroup.visible) return;
+  for (const [ax, ring] of Object.entries(gizmoRings)) {
+    ring.material.color.set(axis === ax ? 0xffffff : AXIS_COLORS[ax]);
+  }
+  for (const child of gizmoGroup.children) {
+    if (child.isArrowHelper && child.name) {
+      const c = child.name === axis ? 0xffffff : AXIS_COLORS[child.name];
+      child.line.material.color.set(c);
+      child.cone.material.color.set(c);
+    }
+  }
+}
+
 renderer.domElement.addEventListener('pointerdown', (ev) => {
   lastMouse.x = ev.clientX; lastMouse.y = ev.clientY;
-  if (ev.button === 1 || ev.button === 2) return;
+  if (ev.button === 1 || ev.button === 2) { renderer.domElement.style.cursor = 'grabbing'; return; }
   if (ev.button !== 0) return;
   if (modal) { confirmModal(); return; }
 
   if (state.tool === 'select') {
     const axis = hitGizmoAxis(ev.clientX, ev.clientY);
     if (axis) {
+      pushUndo();
       const origins = new Map();
       for (const p of currentSelected()) origins.set(p.id, currentVisual(p).pos.slice());
       const c = selectionCentroid();
       const pt = planePointAt(ev.clientX, ev.clientY);
-      modal = { type: 'grab', origins, axis, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: ev.clientX, y: ev.clientY }, y: c ? c[1] : 0 };
+      modal = { type: 'grab', groupName: selectedGroupName(), origins, axis, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: ev.clientX, y: ev.clientY }, y: c ? c[1] : 0 };
       controls.enabled = false;
+      return;
+    }
+    const rotAxis = hitGizmoRotate(ev.clientX, ev.clientY);
+    if (rotAxis) {
+      enterRotate(ev.clientX, rotAxis);
       return;
     }
     const idx = pickParticleAt(ev.clientX, ev.clientY);
@@ -751,9 +1109,10 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
   if (state.tool === 'pencil') {
     const pt = planePointAt(ev.clientX, ev.clientY);
     if (pt) {
+      pushUndo();
       const [u, v] = worldToUV(pt);
-      const [x, y, z] = PLANES[state.drawPlane].toWorld(u, v, planeInfo().off);
-      addParticle({ pos: snapPos([x, y, z]) });
+      const [x, y, z] = PLANES[state.drawPlane].toWorld(snapValue(u), snapValue(v), planeInfo().off);
+      addParticle({ pos: [x, y, z] });
       rebuildPoints(); refreshParticleTree();
     }
     return;
@@ -762,6 +1121,7 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
     const idx = pickParticleAt(ev.clientX, ev.clientY);
     const p = particleAt(idx);
     if (p) {
+      pushUndo();
       state.particles.splice(idx, 1);
       state.selected.delete(p.id);
       state.tracks = state.tracks.filter(tr => !tr.ids.includes(p.id));
@@ -774,10 +1134,11 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
     if (!pt) return;
     const [u, v] = worldToUV(pt);
     controls.enabled = false;
-    drag = { mode: state.tool, start: { u, v }, off: planeInfo().off, last: { u, v } };
+    drag = { mode: state.tool, start: { u, v }, off: planeInfo().off, last: { u, v }, startIndex: state.particles.length };
     if (state.tool === 'freehand') {
-      const [x, y, z] = PLANES[state.drawPlane].toWorld(u, v, drag.off);
-      addParticle({ pos: snapPos([x, y, z]) });
+      pushUndo();
+      const [x, y, z] = PLANES[state.drawPlane].toWorld(snapValue(u), snapValue(v), drag.off);
+      addParticle({ pos: [x, y, z] });
       rebuildPoints(); refreshParticleTree();
     }
     return;
@@ -790,10 +1151,19 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
   if (modal) {
     if (modal.type === 'grab') updateGrab(ev.clientX, ev.clientY);
     else if (modal.type === 'scale') updateScale(ev.clientX);
+    else if (modal.type === 'rotate') updateRotate(ev.clientX);
     return;
   }
   if (boxSel) { boxSel.x1 = ev.clientX; boxSel.y1 = ev.clientY; updateBoxOverlay(); return; }
-  if (!drag) return;
+  if (!drag) {
+    // 悬停高亮方向轴控制器
+    if (state.tool === 'select' && state.selected.size > 0) {
+      setGizmoHover(hitGizmoAxis(ev.clientX, ev.clientY) || hitGizmoRotate(ev.clientX, ev.clientY));
+    } else {
+      setGizmoHover(null);
+    }
+    return;
+  }
 
   if (drag.mode === 'freehand') {
     const pt = planePointAt(ev.clientX, ev.clientY);
@@ -801,8 +1171,8 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
     const [u, v] = worldToUV(pt);
     const d = Math.hypot(u - drag.last.u, v - drag.last.v);
     if (d >= 0.25) {
-      const [x, y, z] = PLANES[state.drawPlane].toWorld(u, v, drag.off);
-      addParticle({ pos: snapPos([x, y, z]) });
+      const [x, y, z] = PLANES[state.drawPlane].toWorld(snapValue(u), snapValue(v), drag.off);
+      addParticle({ pos: [x, y, z] });
       drag.last = { u, v };
       rebuildPoints(); refreshParticleTree();
     }
@@ -834,8 +1204,13 @@ renderer.domElement.addEventListener('pointerup', (ev) => {
     if (pt) {
       const [u, v] = worldToUV(pt);
       const positions = computeShapePositions(drag.mode, drag.start.u, drag.start.v, u, v, drag.off);
+      pushUndo();
+      const startIndex = state.particles.length;
       for (const pos of positions) addParticle({ pos });
+      autoGroup(state.particles.slice(startIndex).map(p => p.id));
     }
+  } else if (drag.mode === 'freehand') {
+    autoGroup(state.particles.slice(drag.startIndex).map(p => p.id));
   }
   drag = null;
   controls.enabled = true;
@@ -845,6 +1220,7 @@ renderer.domElement.addEventListener('pointerup', (ev) => {
 });
 
 renderer.domElement.addEventListener('contextmenu', (ev) => { ev.preventDefault(); if (modal) cancelModal(); });
+window.addEventListener('pointerup', () => { renderer.domElement.style.cursor = ''; });
 
 window.addEventListener('keydown', (ev) => {
   if (ev.target && ev.target.matches && ev.target.matches('input,select,textarea')) return;
@@ -855,11 +1231,14 @@ window.addEventListener('keydown', (ev) => {
     else if (modal.type === 'grab' && (k === 'x' || k === 'y' || k === 'z')) modal.axis = modal.axis === k.toUpperCase() ? null : k.toUpperCase();
     return;
   }
-  if (ev.ctrlKey && k === 'g') { ev.preventDefault(); createGroup(); }
-  else if (k === 'g') enterGrab(lastMouse.x, lastMouse.y);
+  if (ev.ctrlKey && k === 'z') { ev.preventDefault(); if (ev.shiftKey) redo(); else undo(); }
+  else if (ev.ctrlKey && k === 'y') { ev.preventDefault(); redo(); }
+  else if (ev.ctrlKey && k === 'g') { ev.preventDefault(); createGroup(); }
+  else if (ev.ctrlKey && k === 'a') { ev.preventDefault(); selectAll(); }
+  else if (ev.ctrlKey && k === 'd') { ev.preventDefault(); state.selected.clear(); state.selectedGroup = null; rebuildPoints(); }
   else if (k === 's') enterScale(lastMouse.x);
-  else if (k === 'a') { ev.preventDefault(); selectAll(); }
-  else if (k === 'x' || k === 'delete' || k === 'backspace') deleteSelected();
+  else if (k === 'delete' || k === 'backspace') deleteSelected();
+  else if (k === ' ') { ev.preventDefault(); togglePlay(); }
   else if (k === 'escape') { state.selected.clear(); state.selectedGroup = null; rebuildPoints(); }
 });
 
@@ -895,11 +1274,25 @@ function applyBoxSelection() {
 const gizmoCanvas = document.getElementById('axis-gizmo');
 const gizmoCtx = gizmoCanvas.getContext('2d');
 gizmoCanvas.width = 96; gizmoCanvas.height = 96;
+let gizmoOrbit = null;
 
 function drawAxisGizmo() {
   const c = gizmoCtx;
   c.clearRect(0, 0, 96, 96);
   const cx = 48, cy = 48;
+  // 中心旋转球（三色圆环，与选中控制器一致）
+  const ringColors = [['#ff5555', 0], ['#55ff55', 2 * Math.PI / 3], ['#5588ff', 4 * Math.PI / 3]];
+  c.lineWidth = 3;
+  for (const [color, start] of ringColors) {
+    c.strokeStyle = color;
+    c.beginPath();
+    c.arc(cx, cy, 10, start, start + 2 * Math.PI / 3);
+    c.stroke();
+  }
+  c.fillStyle = '#1c1f27';
+  c.beginPath();
+  c.arc(cx, cy, 3, 0, Math.PI * 2);
+  c.fill();
   const inv = new THREE.Quaternion().copy(camera.quaternion).invert();
   const axes = [
     { dir: new THREE.Vector3(1, 0, 0), color: '#ff5555', label: 'X' },
@@ -918,9 +1311,32 @@ function drawAxisGizmo() {
   c.globalAlpha = 1;
 }
 
+function orbitCamera(dx, dy) {
+  const offset = camera.position.clone().sub(controls.target);
+  const radius = Math.max(0.5, offset.length());
+  let theta = Math.atan2(offset.x, offset.z);
+  let phi = Math.acos(Math.max(-1, Math.min(1, offset.y / radius)));
+  theta -= dx * 0.01;
+  phi = Math.max(0.05, Math.min(Math.PI - 0.05, phi - dy * 0.01));
+  const sp = Math.sin(phi);
+  camera.position.set(
+    controls.target.x + radius * sp * Math.sin(theta),
+    controls.target.y + radius * Math.cos(phi),
+    controls.target.z + radius * sp * Math.cos(theta)
+  );
+  camera.lookAt(controls.target);
+  controls.update();
+}
+
 gizmoCanvas.addEventListener('pointerdown', (ev) => {
   const rect = gizmoCanvas.getBoundingClientRect();
   const px = ev.clientX - rect.left, py = ev.clientY - rect.top;
+  if (Math.hypot(px - 48, py - 48) < 12) {
+    gizmoOrbit = { x: ev.clientX, y: ev.clientY };
+    gizmoCanvas.setPointerCapture(ev.pointerId);
+    gizmoCanvas.style.cursor = 'grabbing';
+    return;
+  }
   const inv = new THREE.Quaternion().copy(camera.quaternion).invert();
   let best = null, bestD = 16;
   for (const ax of [{ dir: new THREE.Vector3(1, 0, 0) }, { dir: new THREE.Vector3(0, 1, 0) }, { dir: new THREE.Vector3(0, 0, 1) }]) {
@@ -931,12 +1347,32 @@ gizmoCanvas.addEventListener('pointerdown', (ev) => {
   if (best) orientToAxis(best.dir);
 });
 
+gizmoCanvas.addEventListener('pointermove', (ev) => {
+  if (!gizmoOrbit) return;
+  const dx = ev.clientX - gizmoOrbit.x, dy = ev.clientY - gizmoOrbit.y;
+  gizmoOrbit.x = ev.clientX; gizmoOrbit.y = ev.clientY;
+  orbitCamera(dx, dy);
+});
+gizmoCanvas.addEventListener('pointerup', () => { gizmoOrbit = null; gizmoCanvas.style.cursor = ''; });
+
+function slerp(a, b, t) {
+  const dot = Math.min(1, Math.max(-1, a.dot(b)));
+  const theta = Math.acos(dot);
+  if (theta < 1e-6) return a.clone();
+  const sinTheta = Math.sin(theta);
+  const wa = Math.sin((1 - t) * theta) / sinTheta;
+  const wb = Math.sin(t * theta) / sinTheta;
+  return a.clone().multiplyScalar(wa).addScaledVector(b, wb);
+}
+
 function orientToAxis(dir) {
   const dist = camera.position.distanceTo(controls.target);
-  const d = dir.clone().normalize();
-  const endPos = controls.target.clone().sub(d.clone().multiplyScalar(dist));
+  const target = controls.target.clone();
+  const startDir = camera.position.clone().sub(target).normalize();
+  const endPos = target.clone().sub(dir.clone().normalize().multiplyScalar(dist));
+  const endDir = endPos.clone().sub(target).normalize();
   const endUp = Math.abs(dir.y) > 0.9 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
-  camTransition = { startPos: camera.position.clone(), startUp: camera.up.clone(), endPos, endUp, target: controls.target.clone(), t0: performance.now(), dur: 320 };
+  camTransition = { startDir, endDir, startUp: camera.up.clone(), endUp, target, dist, t0: performance.now(), dur: 320 };
   if (Math.abs(dir.x) > 0.5) state.drawPlane = 'YZ';
   else if (Math.abs(dir.y) > 0.5) state.drawPlane = 'XZ';
   else state.drawPlane = 'XY';
@@ -949,45 +1385,44 @@ function orientToAxis(dir) {
 
 function createGroup() {
   if (state.selected.size < 1) { alert('请先选中粒子'); return; }
+  pushUndo();
   const name = nextGroupName();
   state.groups[name] = [...state.selected];
   state.selectedGroup = name;
-  refreshGroupList();
+  refreshParticleTree();
 }
 
-function refreshGroupList() {
-  const box = document.getElementById('group-list');
-  box.innerHTML = '';
-  for (const [name, members] of Object.entries(state.groups)) {
-    const row = document.createElement('div');
-    row.className = 'group-row' + (state.selectedGroup === name ? ' active' : '');
-    row.innerHTML = `<span>${name}</span><span class="count">${members.length}</span>`;
-    row.onclick = () => {
-      state.selected = new Set(members.filter(id => state.particles.some(p => p.id === id)));
-      state.selectedGroup = name;
-      rebuildPoints();
-    };
-    const del = document.createElement('button');
-    del.className = 'del-x'; del.textContent = '×';
-    del.onclick = (e) => { e.stopPropagation(); delete state.groups[name]; if (state.selectedGroup === name) state.selectedGroup = null; refreshGroupList(); };
-    row.appendChild(del);
-    box.appendChild(row);
-  }
+function deleteGroup(name) {
+  pushUndo();
+  removeGroupAndTracks(name);
+  rebuildPoints();
+  refreshParticleTree();
 }
 
 /* =========================================================================
  * 粒子列表（树状时间轴）
  * ======================================================================= */
 
+function groupedIds() {
+  const ids = new Set();
+  for (const members of Object.values(state.groups)) for (const id of members) ids.add(id);
+  return ids;
+}
+
 function refreshParticleTree() {
   const box = document.getElementById('particle-tree');
   if (!box) return;
   box.innerHTML = '';
-  if (state.particles.length === 0) {
+  if (state.particles.length === 0 && Object.keys(state.groups).length === 0) {
     box.innerHTML = '<div class="hint" style="padding:8px">暂无粒子，请使用右侧工具绘制</div>';
     return;
   }
-  for (const p of state.particles) box.appendChild(renderParticleNode(p));
+  const grouped = groupedIds();
+  for (const p of state.particles) {
+    if (grouped.has(p.id)) continue; // 组内粒子折叠进组中
+    box.appendChild(renderParticleNode(p));
+  }
+  for (const name of Object.keys(state.groups)) box.appendChild(renderGroupNode(name));
 }
 
 function refreshTreeSelection() {
@@ -1003,6 +1438,13 @@ function renderParticleNode(p) {
   const head = document.createElement('div');
   head.className = 'ptree-head' + (state.selected.has(p.id) ? ' selected' : '');
   head.dataset.pid = p.id;
+  head.draggable = true;
+  head.addEventListener('dragstart', (e) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', p.id);
+    dragIds = state.selected.has(p.id) ? [...state.selected] : [p.id];
+  });
+  head.addEventListener('dragend', () => { dragIds = null; });
   const arrow = document.createElement('span');
   arrow.className = 'arrow';
   arrow.textContent = expanded ? '▾' : '▸';
@@ -1013,6 +1455,11 @@ function renderParticleNode(p) {
   };
   const pid = document.createElement('span');
   pid.className = 'pid'; pid.textContent = p.id;
+  pid.title = '双击重命名';
+  pid.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    startRename(pid, (v) => renameParticle(p.id, v), () => refreshParticleTree());
+  });
   const style = document.createElement('span');
   style.className = 'pstyle'; style.textContent = p.style;
   head.appendChild(arrow); head.appendChild(pid); head.appendChild(style);
@@ -1022,6 +1469,13 @@ function renderParticleNode(p) {
     state.selectedGroup = null;
     rebuildPoints();
   };
+  head.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    showContextMenu(e.clientX, e.clientY, [
+      { label: '删除粒子', danger: true, action: () => { state.selected = new Set([p.id]); deleteSelected(); } },
+    ]);
+  });
   root.appendChild(head);
 
   if (expanded) {
@@ -1032,6 +1486,49 @@ function renderParticleNode(p) {
   }
   return root;
 }
+
+function startRename(el, onCommit, onCancel) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = el.textContent;
+  input.className = 'rename-input';
+  el.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const commit = () => { if (done) return; done = true; onCommit(input.value); };
+  const cancel = () => { if (done) return; done = true; onCancel(); };
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') commit();
+    else if (e.key === 'Escape') cancel();
+  });
+}
+
+/* 右键菜单 */
+function closeContextMenu() {
+  const m = document.getElementById('context-menu');
+  if (m) m.remove();
+}
+function showContextMenu(x, y, items) {
+  closeContextMenu();
+  const menu = document.createElement('div');
+  menu.id = 'context-menu';
+  menu.className = 'context-menu';
+  for (const item of items) {
+    if (item === null) { const sep = document.createElement('div'); sep.className = 'cm-sep'; menu.appendChild(sep); continue; }
+    const btn = document.createElement('button');
+    btn.className = 'cm-item' + (item.danger ? ' danger' : '');
+    btn.textContent = item.label;
+    btn.onclick = () => { closeContextMenu(); item.action(); };
+    menu.appendChild(btn);
+  }
+  document.body.appendChild(menu);
+  menu.style.left = Math.min(x, window.innerWidth - 160) + 'px';
+  menu.style.top = Math.min(y, window.innerHeight - items.length * 32 - 12) + 'px';
+}
+window.addEventListener('pointerdown', (e) => { if (!e.target.closest('#context-menu')) closeContextMenu(); });
 
 let evShift = () => false; // 占位，稍后在 initUI 中通过 window 事件设置
 
@@ -1056,7 +1553,11 @@ function renderPropNode(p, comp) {
     const add = document.createElement('button');
     add.className = 'kf-add';
     add.textContent = '+ 添加节点';
-    add.onclick = () => setComponentValue(p.id, comp, Math.round(state.time), componentValueAt(p, comp, state.time));
+    add.onclick = () => {
+      let tr = findTrack(comp.track, p.id);
+      const t = tr ? nextFreeTime(tr, Math.round(state.time)) : Math.round(state.time);
+      setComponentValue(p.id, comp, t, componentValueAt(p, comp, t));
+    };
     kfs.appendChild(add);
     wrap.appendChild(kfs);
   }
@@ -1072,19 +1573,383 @@ function renderKfRow(p, comp, kf) {
   row.className = 'kf-row';
   const tIn = document.createElement('input');
   tIn.className = 'kf-t'; tIn.type = 'number'; tIn.value = kf[0];
+  tIn.title = '时间 (tick)';
   tIn.onchange = () => updateKeyframeTime(p.id, comp.track, kf[0], parseInt(tIn.value) || 0);
   const vIn = document.createElement('input');
   vIn.className = 'kf-v'; vIn.type = 'number'; vIn.step = '0.01'; vIn.value = r3(kf[1][comp.index]);
+  vIn.title = comp.label + ' 值';
   vIn.onchange = () => setComponentValue(p.id, comp, kf[0], parseFloat(vIn.value) || 0);
-  const easeSel = document.createElement('select');
-  for (let i = 0; i < EASINGS.length; i++) { const o = document.createElement('option'); o.value = i; o.textContent = EASINGS[i][0]; easeSel.appendChild(o); }
-  easeSel.value = Array.isArray(kf[2]) ? DEFAULT_EASING : kf[2];
-  easeSel.onchange = () => updateKeyframeEasing(p.id, comp.track, kf[0], parseInt(easeSel.value));
-  const del = document.createElement('button');
-  del.className = 'del-x'; del.textContent = '×';
-  del.onclick = () => removeKeyframe(p.id, comp.track, kf[0]);
-  row.appendChild(tIn); row.appendChild(vIn); row.appendChild(easeSel); row.appendChild(del);
+  const easeBtn = makeEasingBtn(kf[2], (easing) => updateKeyframeEasing(p.id, comp.track, kf[0], easing));
+  row.appendChild(tIn); row.appendChild(vIn); row.appendChild(easeBtn);
+  row.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    showContextMenu(e.clientX, e.clientY, [
+      { label: '删除节点', danger: true, action: () => removeKeyframe(p.id, comp.track, kf[0]) },
+    ]);
+  });
   return row;
+}
+
+function renderGroupNode(name) {
+  const root = document.createElement('div');
+  root.className = 'ptree-particle';
+  const members = state.groups[name] || [];
+  const expanded = state.expandedParticles.has('g:' + name);
+  const head = document.createElement('div');
+  head.className = 'ptree-head group';
+  head.addEventListener('dragover', (e) => {
+    if (dragIds) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; head.classList.add('drop-hint'); }
+  });
+  head.addEventListener('dragleave', () => head.classList.remove('drop-hint'));
+  head.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    head.classList.remove('drop-hint');
+    if (dragIds) moveParticlesToGroup(dragIds, name);
+    dragIds = null;
+  });
+  const arrow = document.createElement('span');
+  arrow.className = 'arrow';
+  arrow.textContent = expanded ? '▾' : '▸';
+  arrow.onclick = (e) => {
+    e.stopPropagation();
+    if (expanded) state.expandedParticles.delete('g:' + name); else state.expandedParticles.add('g:' + name);
+    refreshParticleTree();
+  };
+  const label = document.createElement('span');
+  label.className = 'pid';
+  label.textContent = name;
+  label.title = '双击重命名';
+  label.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    startRename(label, (v) => renameGroup(name, v), () => refreshParticleTree());
+  });
+  const count = document.createElement('span');
+  count.className = 'pstyle';
+  count.textContent = members.length + ' 成员';
+  head.appendChild(arrow); head.appendChild(label); head.appendChild(count);
+  head.onclick = () => {
+    state.selected = new Set(members.filter(id => state.particles.some(p => p.id === id)));
+    state.selectedGroup = name;
+    rebuildPoints();
+  };
+  head.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    showContextMenu(e.clientX, e.clientY, [
+      { label: '删除组及其粒子', danger: true, action: () => deleteGroup(name) },
+    ]);
+  });
+  root.appendChild(head);
+  if (expanded) {
+    const section = document.createElement('div');
+    section.className = 'ptree-sub';
+
+    const propsTitle = document.createElement('div');
+    propsTitle.className = 'ptree-subhead';
+    propsTitle.textContent = '属性';
+    section.appendChild(propsTitle);
+    const props = document.createElement('div');
+    props.className = 'ptree-props';
+    for (const def of GROUP_PROP_DEFS) props.appendChild(renderGroupPropNode(name, def));
+    section.appendChild(props);
+
+    section.appendChild(renderGroupMembersNode(name, members));
+    root.appendChild(section);
+  }
+  return root;
+}
+
+function renderGroupMembersNode(name, members) {
+  const wrap = document.createElement('div');
+  wrap.className = 'ptree-sub';
+  const key = 'g:' + name + '|@members';
+  const expanded = state.expandedProps.has(key);
+  const head = document.createElement('div');
+  head.className = 'ptree-subhead';
+  const arrow = document.createElement('span');
+  arrow.className = 'arrow';
+  arrow.textContent = expanded ? '▾' : '▸';
+  const label = document.createElement('span');
+  label.textContent = '粒子列表 (' + members.length + ')';
+  head.appendChild(arrow); head.appendChild(label);
+  head.onclick = () => {
+    if (expanded) state.expandedProps.delete(key); else state.expandedProps.add(key);
+    refreshParticleTree();
+  };
+  wrap.appendChild(head);
+  if (expanded) {
+    const list = document.createElement('div');
+    list.className = 'ptree-members';
+    for (const id of members) {
+      const p = getParticle(id);
+      if (!p) continue;
+      list.appendChild(renderParticleNode(p));
+    }
+    wrap.appendChild(list);
+  }
+  return wrap;
+}
+
+function renderGroupPropNode(name, def) {
+  const wrap = document.createElement('div');
+  wrap.className = 'ptree-prop';
+  const key = 'g:' + name + '|' + def.key;
+  const expanded = state.expandedProps.has(key);
+  const tr = findGroupTrack(def.key, name);
+  const head = document.createElement('div');
+  head.className = 'ptree-prop-head';
+  const arrow = document.createElement('span');
+  arrow.className = 'arrow';
+  arrow.textContent = expanded ? '▾' : '▸';
+  const plabel = document.createElement('span');
+  plabel.className = 'plabel';
+  plabel.textContent = def.label;
+  const modeSel = document.createElement('select');
+  modeSel.className = 'mode-sel';
+  const mSet = document.createElement('option'); mSet.value = 'set'; mSet.textContent = '设置';
+  const mOp = document.createElement('option'); mOp.value = 'op'; mOp.textContent = '操作';
+  modeSel.appendChild(mSet); modeSel.appendChild(mOp);
+  modeSel.value = tr ? tr.m : 'op';
+  modeSel.onchange = () => setGroupTrackMode(name, def.key, modeSel.value);
+  modeSel.onclick = (e) => e.stopPropagation();
+  const pval = document.createElement('span');
+  pval.className = 'pval';
+  pval.textContent = tr ? tr.kf.length + ' 节点' : '—';
+  head.appendChild(arrow); head.appendChild(plabel); head.appendChild(modeSel); head.appendChild(pval);
+  head.onclick = (e) => {
+    if (e.target === modeSel) return;
+    if (expanded) state.expandedProps.delete(key); else state.expandedProps.add(key);
+    refreshParticleTree();
+  };
+  wrap.appendChild(head);
+  if (expanded) {
+    const kfs = document.createElement('div');
+    kfs.className = 'ptree-kfs';
+    const mode = tr ? tr.m : 'op';
+    if (tr) for (const kf of tr.kf) kfs.appendChild(renderGroupKfRow(name, def, mode, kf));
+    const add = document.createElement('button');
+    add.className = 'kf-add';
+    add.textContent = '+ 添加节点';
+    add.onclick = () => {
+      const cur = mode === 'op' ? zeroArray(def.key).slice() : groupCentroidValue(name, def.key);
+      const t = tr ? nextFreeTime(tr, Math.round(state.time)) : Math.round(state.time);
+      pushUndo();
+      setGroupTrackValue(name, def.key, mode, t, cur);
+    };
+    kfs.appendChild(add);
+    wrap.appendChild(kfs);
+  }
+  return wrap;
+}
+
+function groupCentroidValue(name, prop) {
+  const members = (state.groups[name] || []).map(getParticle).filter(Boolean);
+  if (members.length === 0) return zeroArray(prop);
+  const sum = zeroArray(prop);
+  for (const m of members) {
+    const v = baseValue(m, prop);
+    for (let i = 0; i < sum.length; i++) sum[i] += v[i];
+  }
+  return sum.map(v => r3(v / members.length));
+}
+
+function renderGroupKfRow(name, def, mode, kf) {
+  const row = document.createElement('div');
+  row.className = 'kf-row';
+  const tIn = document.createElement('input');
+  tIn.className = 'kf-t'; tIn.type = 'number'; tIn.value = kf[0];
+  tIn.title = '时间 (tick)';
+  tIn.onchange = () => updateKeyframeTime('g:' + name, def.key, kf[0], parseInt(tIn.value) || 0);
+  row.appendChild(tIn);
+  for (let i = 0; i < def.size; i++) {
+    const vIn = document.createElement('input');
+    vIn.className = 'kf-v'; vIn.type = 'number'; vIn.step = '0.01'; vIn.value = r3(kf[1][i]);
+    vIn.title = def.labels ? def.labels[i] + (mode === 'op' ? ' 增量' : ' 值') : def.key;
+    vIn.onchange = () => {
+      const v = kf[1].slice();
+      v[i] = parseFloat(vIn.value) || 0;
+      pushUndo();
+      setGroupTrackValue(name, def.key, mode, kf[0], v);
+    };
+    row.appendChild(vIn);
+  }
+  const easeBtn = makeEasingBtn(kf[2], (easing) => updateKeyframeEasing('g:' + name, def.key, kf[0], easing));
+  row.appendChild(easeBtn);
+  row.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    showContextMenu(e.clientX, e.clientY, [
+      { label: '删除节点', danger: true, action: () => removeKeyframe('g:' + name, def.key, kf[0]) },
+    ]);
+  });
+  return row;
+}
+
+/* =========================================================================
+ * 缓动函数编辑器
+ * ======================================================================= */
+
+function easingToBezier(easing) {
+  if (Array.isArray(easing)) return easing.slice(0, 4);
+  const p = EASINGS[easing] || EASINGS[0];
+  return [p[1], p[2], p[3], p[4]];
+}
+
+function easingCurveSVG(easing) {
+  const w = 28, h = 16;
+  let d = '';
+  for (let i = 0; i <= 24; i++) {
+    const t = i / 24;
+    const y = easeVal(t, easing);
+    const x = t * w, yy = h - 1 - y * (h - 2);
+    d += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + yy.toFixed(1);
+  }
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><path d="${d}" fill="none" stroke="#5b9dff" stroke-width="1.6"/></svg>`;
+}
+
+function makeEasingBtn(easing, applyFn) {
+  const btn = document.createElement('button');
+  btn.className = 'ease-btn';
+  btn.innerHTML = easingCurveSVG(easing);
+  btn.title = '编辑缓动函数';
+  btn.onclick = (e) => { e.stopPropagation(); openEasingEditor(easing, applyFn, btn); };
+  return btn;
+}
+
+let easingEditor = null;
+
+function openEasingEditor(easing, applyFn, anchor) {
+  closeEasingEditor();
+  easingEditor = { bezier: easingToBezier(easing), apply: applyFn, anchor, dragging: -1 };
+  const pop = document.createElement('div');
+  pop.id = 'easing-editor';
+  pop.className = 'easing-editor';
+  const title = document.createElement('div');
+  title.className = 'ee-title';
+  title.textContent = '缓动函数编辑器';
+  pop.appendChild(title);
+  const canvas = document.createElement('canvas');
+  canvas.className = 'ee-canvas';
+  canvas.width = 208; canvas.height = 132;
+  pop.appendChild(canvas);
+  const presetSel = document.createElement('select');
+  presetSel.className = 'ee-presets';
+  const opt0 = document.createElement('option');
+  opt0.value = ''; opt0.textContent = '预设…';
+  presetSel.appendChild(opt0);
+  for (let i = 0; i < EASINGS.length; i++) {
+    const o = document.createElement('option');
+    o.value = i; o.textContent = EASINGS[i][0];
+    presetSel.appendChild(o);
+  }
+  presetSel.onchange = () => {
+    if (presetSel.value === '') return;
+    easingEditor.apply(parseInt(presetSel.value));
+    closeEasingEditor();
+    refreshParticleTree();
+  };
+  pop.appendChild(presetSel);
+  document.body.appendChild(pop);
+  const r = anchor.getBoundingClientRect();
+  pop.style.left = Math.min(r.left, window.innerWidth - 230) + 'px';
+  pop.style.top = Math.min(r.bottom + 6, window.innerHeight - 360) + 'px';
+  drawEasingEditor();
+  canvas.addEventListener('pointerdown', onEasingPointerDown);
+  canvas.addEventListener('pointermove', onEasingPointerMove);
+  canvas.addEventListener('pointerup', () => { if (easingEditor) { easingEditor.dragging = -1; refreshParticleTree(); } });
+  setTimeout(() => document.addEventListener('pointerdown', onEasingDocPointerDown), 0);
+}
+
+function onEasingDocPointerDown(e) {
+  if (easingEditor && !e.target.closest('#easing-editor')) { closeEasingEditor(); refreshParticleTree(); }
+}
+
+function closeEasingEditor() {
+  easingEditor = null;
+  const pop = document.getElementById('easing-editor');
+  if (pop) pop.remove();
+  document.removeEventListener('pointerdown', onEasingDocPointerDown);
+}
+
+function cubicBezierX(t, x1, x2) {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+  return ((ax * t + bx) * t + cx) * t;
+}
+
+function drawEasingEditor() {
+  const pop = document.getElementById('easing-editor');
+  if (!pop || !easingEditor) return;
+  const canvas = pop.querySelector('.ee-canvas');
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height, pad = 12;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#171a20';
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = '#323848';
+  ctx.strokeRect(pad, pad, w - 2 * pad, h - 2 * pad);
+  const [x1, y1, x2, y2] = easingEditor.bezier;
+  const px = (x) => pad + Math.min(1, Math.max(0, x)) * (w - 2 * pad);
+  const py = (y) => pad + (1 - Math.min(1, Math.max(0, y))) * (h - 2 * pad);
+  ctx.strokeStyle = '#5b9dff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i <= 48; i++) {
+    const t = i / 48;
+    const bx = pad + cubicBezierX(t, x1, x2) * (w - 2 * pad);
+    const by = pad + (1 - cubicBezier(t, x1, y1, x2, y2)) * (h - 2 * pad);
+    if (i === 0) ctx.moveTo(bx, by); else ctx.lineTo(bx, by);
+  }
+  ctx.stroke();
+  ctx.strokeStyle = '#4a5568';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad, h - pad); ctx.lineTo(px(x1), py(y1));
+  ctx.moveTo(w - pad, pad); ctx.lineTo(px(x2), py(y2));
+  ctx.stroke();
+  drawPoint(ctx, px(x1), py(y1), '#ff6b6b');
+  drawPoint(ctx, px(x2), py(y2), '#6ba7ff');
+}
+
+function drawPoint(ctx, x, y, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+function onEasingPointerDown(e) {
+  if (!easingEditor) return;
+  const canvas = document.getElementById('easing-editor').querySelector('.ee-canvas');
+  const rect = canvas.getBoundingClientRect();
+  const w = canvas.width, h = canvas.height, pad = 12;
+  const mx = (e.clientX - rect.left - pad) / (w - 2 * pad);
+  const my = 1 - (e.clientY - rect.top - pad) / (h - 2 * pad);
+  const [x1, y1, x2, y2] = easingEditor.bezier;
+  const d1 = Math.hypot(mx - x1, my - y1);
+  const d2 = Math.hypot(mx - x2, my - y2);
+  easingEditor.dragging = d1 < d2 ? 0 : 1;
+  canvas.setPointerCapture(e.pointerId);
+}
+
+function onEasingPointerMove(e) {
+  if (!easingEditor || easingEditor.dragging < 0) return;
+  const canvas = document.getElementById('easing-editor').querySelector('.ee-canvas');
+  const rect = canvas.getBoundingClientRect();
+  const w = canvas.width, h = canvas.height, pad = 12;
+  let mx = (e.clientX - rect.left - pad) / (w - 2 * pad);
+  let my = 1 - (e.clientY - rect.top - pad) / (h - 2 * pad);
+  mx = Math.min(1, Math.max(0, mx));
+  my = Math.min(1, Math.max(0, my));
+  const b = easingEditor.bezier;
+  if (easingEditor.dragging === 0) { b[0] = mx; b[1] = my; }
+  else { b[2] = mx; b[3] = my; }
+  drawEasingEditor();
+  easingEditor.apply(b.slice());
 }
 
 /* =========================================================================
@@ -1127,6 +1992,8 @@ function generateFunction() {
   const fs = document.getElementById('fn-s').value.trim(), fglow = document.getElementById('fn-glow').value.trim(), flight = document.getElementById('fn-light').value.trim();
   const animPos = fx && fy && fz, animCol = fr && fg && fb, animScl = fs !== '';
   try {
+    pushUndo();
+    const startIndex = state.particles.length;
     for (let i = 0; i < count; i++) {
       const env0 = { t: 0, i, n: count, ...vars };
       const pos = [evalOr(fx, env0, 0), evalOr(fy, env0, 0), evalOr(fz, env0, 0)];
@@ -1143,12 +2010,13 @@ function generateFunction() {
           if (animCol) colKf.push([t, [evaluate(fr, env), evaluate(fg, env), evaluate(fb, env), evalOr(fa, env, 1)], state.defaultEasing]);
           if (animScl) sclKf.push([t, [evaluate(fs, env)], state.defaultEasing]);
         }
-        if (posKf.length) state.tracks.push({ pr: 'pos', ids: [p.id], kf: [[0, pos.slice(), state.defaultEasing], ...posKf] });
-        if (colKf.length) state.tracks.push({ pr: 'col', ids: [p.id], kf: [[0, color.slice(), state.defaultEasing], ...colKf] });
-        if (sclKf.length) state.tracks.push({ pr: 'scl', ids: [p.id], kf: [[0, [scale], state.defaultEasing], ...sclKf] });
+        if (posKf.length) state.tracks.push({ pr: 'pos', m: 'set', ids: [p.id], kf: [[0, pos.slice(), state.defaultEasing], ...posKf] });
+        if (colKf.length) state.tracks.push({ pr: 'col', m: 'set', ids: [p.id], kf: [[0, color.slice(), state.defaultEasing], ...colKf] });
+        if (sclKf.length) state.tracks.push({ pr: 'scl', m: 'set', ids: [p.id], kf: [[0, [scale], state.defaultEasing], ...sclKf] });
       }
     }
   } catch (e) { alert('表达式错误：' + e.message); return; }
+  autoGroup(state.particles.slice(startIndex).map(p => p.id));
   rebuildPoints();
   refreshParticleTree();
 }
@@ -1220,12 +2088,15 @@ function generateFourier() {
   const omega = parseFloat(document.getElementById('four-omega').value) || 1;
   const count = Math.max(2, parseInt(document.getElementById('four-count').value) || 200);
   const constant = parseFloat(document.getElementById('four-' + plane.constant)?.value) || 0;
+  pushUndo();
+  const startIndex = state.particles.length;
   for (let i = 0; i < count; i++) {
     const t = (i / count) * (Math.PI * 2 / omega);
     const val = { X: constant, Y: constant, Z: constant };
     for (const axis of plane.axes) val[axis] = evalFourier(axis, omega, t);
     addParticle({ pos: [val.X, val.Y, val.Z] });
   }
+  autoGroup(state.particles.slice(startIndex).map(p => p.id));
   rebuildPoints();
   refreshParticleTree();
 }
@@ -1266,6 +2137,9 @@ function hexToRgb(hex) {
  * 时间轴（底部：仅播放进度）
  * ======================================================================= */
 
+const TL_PX_PER_TICK = 4;
+let timelineViewStart = 0;
+
 function drawTimeline() {
   const canvas = document.getElementById('timeline');
   if (!canvas) return;
@@ -1275,25 +2149,25 @@ function drawTimeline() {
   const ctx = canvas.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
-  const mx = Math.max(100, maxTick());
-  const pxPerTick = (w - 40) / mx;
+  const pxPerTick = TL_PX_PER_TICK;
+  const viewEnd = timelineViewStart + w / pxPerTick;
   ctx.fillStyle = '#1f222a'; ctx.fillRect(0, 0, w, h);
   ctx.strokeStyle = '#3a3f4b'; ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
-  const step = niceStep(mx);
+  const step = niceStep(viewEnd - timelineViewStart);
   ctx.fillStyle = '#9aa0ad'; ctx.font = '10px sans-serif'; ctx.textBaseline = 'top';
-  for (let t = 0; t <= mx; t += step) {
-    const x = 40 + t * pxPerTick;
-    ctx.fillText(t, x + 2, 2);
+  for (let t = Math.floor(timelineViewStart / step) * step; t <= viewEnd; t += step) {
+    const x = (t - timelineViewStart) * pxPerTick;
+    ctx.fillText(Math.round(t), x + 2, 2);
     ctx.strokeStyle = '#3a3f4b'; ctx.beginPath(); ctx.moveTo(x, h / 2 - 6); ctx.lineTo(x, h / 2 + 6); ctx.stroke();
   }
-  const phx = 40 + state.time * pxPerTick;
+  const phx = (state.time - timelineViewStart) * pxPerTick;
   ctx.strokeStyle = '#ffcc55'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(phx, 0); ctx.lineTo(phx, h); ctx.stroke();
   ctx.fillStyle = '#ffcc55'; ctx.beginPath(); ctx.moveTo(phx - 5, 0); ctx.lineTo(phx + 5, 0); ctx.lineTo(phx, 8); ctx.closePath(); ctx.fill();
 }
 
-function niceStep(mx) {
-  const rough = mx / 10;
+function niceStep(range) {
+  const rough = Math.max(1, range / 10);
   const pow = Math.pow(10, Math.floor(Math.log10(rough)));
   const norm = rough / pow;
   return (norm < 1.5 ? 1 : norm < 3.5 ? 2 : norm < 7.5 ? 5 : 10) * pow;
@@ -1302,9 +2176,7 @@ function niceStep(mx) {
 function timelineXToTick(clientX) {
   const canvas = document.getElementById('timeline');
   const rect = canvas.getBoundingClientRect();
-  const mx = Math.max(100, maxTick());
-  const pxPerTick = (canvas.clientWidth - 40) / mx;
-  return Math.max(0, Math.round((clientX - rect.left - 40) / pxPerTick));
+  return timelineViewStart + (clientX - rect.left) / TL_PX_PER_TICK;
 }
 
 /* =========================================================================
@@ -1317,31 +2189,35 @@ function encodeEasing(e) { return Array.isArray(e) ? e.map(r3) : e; }
 
 function exportJSON() {
   const p = state.particles.map(pt => ({ id: pt.id, s: pt.style, c: roundArr(pt.color), sc: r3(pt.scale), g: pt.glow ? 1 : 0, l: pt.lightLevel, pos: roundArr(pt.pos) }));
-  const t = state.tracks.map(tr => ({ pr: tr.pr, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], roundArr(k[1]), encodeEasing(k[2])]) }));
+  const t = state.tracks.map(tr => {
+    const o = { pr: tr.pr, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], roundArr(k[1]), encodeEasing(k[2])]) };
+    if (tr.m === 'op') o.m = 'op';
+    return o;
+  });
   const g = {};
   for (const [name, members] of Object.entries(state.groups)) if (members.length) g[name] = members.slice();
   return { v: 1, loop: state.loop, g, p, t };
 }
 
 function importJSON(obj) {
+  pushUndo();
   state.particles = (obj.p || []).map(pt => ({
     id: pt.id || nextId(), style: STYLES.includes(pt.s) ? pt.s : 'DUST',
     color: (pt.c || [1, 1, 1, 1]).slice(0, 4), scale: pt.sc != null ? pt.sc : 1,
     glow: !!pt.g, lightLevel: pt.l || 0, pos: (pt.pos || [0, 0, 0]).slice(0, 3),
   }));
-  state.idCounter = state.particles.length;
   state.groups = {};
   for (const [name, members] of Object.entries(obj.g || {})) state.groups[name] = members.slice();
-  state.groupCounter = Object.keys(state.groups).length;
   state.tracks = (obj.t || []).map(tr => ({
     pr: ['pos', 'col', 'scl'].includes(tr.pr) ? tr.pr : 'pos',
+    m: tr.m === 'op' ? 'op' : 'set',
     ids: (tr.ids || []).slice(),
     kf: (tr.kf || []).map(k => [k[0], k[1].slice(), Array.isArray(k[2]) ? k[2].slice() : (Number.isInteger(k[2]) ? k[2] : DEFAULT_EASING)]),
   }));
   state.loop = !!obj.loop;
   state.selected.clear(); state.selectedGroup = null; state.time = 0;
   state.expandedParticles.clear(); state.expandedProps.clear();
-  updateTimeUI(); refreshGroupList(); rebuildPoints(); refreshParticleTree();
+  updateTimeUI(); rebuildPoints(); refreshParticleTree();
 }
 
 function download(json, filename) {
@@ -1361,7 +2237,6 @@ async function openFile() {
       const f = await h.getFile();
       importJSON(JSON.parse(await f.text()));
       state.name = f.name.replace(/\.json$/i, '');
-      document.getElementById('anim-name').value = state.name;
       return;
     } catch (e) { /* 取消或失败则回退 */ }
   }
@@ -1391,8 +2266,7 @@ async function saveFileAs() {
       return;
     } catch (e) { /* 取消或失败则回退 */ }
   }
-  const name = prompt('文件名', state.name + '.json');
-  if (name) download(json, name);
+  download(json, (state.name || 'my_animation') + '.json');
 }
 
 /* =========================================================================
@@ -1404,6 +2278,16 @@ function updateTimeUI() {
   document.getElementById('tl-max').textContent = maxTick();
 }
 
+function updateLoopIndicator() {
+  const el = document.getElementById('loop-indicator');
+  if (el) el.style.opacity = state.loop ? '1' : '0.25';
+}
+
+function togglePlay() {
+  state.playing = !state.playing;
+  document.getElementById('btn-play').textContent = state.playing ? '⏸ 暂停' : '▶ 播放';
+}
+
 let shiftHeld = false;
 window.addEventListener('keydown', (e) => { if (e.key === 'Shift') shiftHeld = true; });
 window.addEventListener('keyup', (e) => { if (e.key === 'Shift') shiftHeld = false; });
@@ -1412,29 +2296,35 @@ evShift = () => shiftHeld;
 function initUI() {
   const styleSel = document.getElementById('prop-style');
   STYLES.forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = s; styleSel.appendChild(o); });
-  const easeSel = document.getElementById('tl-easing');
-  EASINGS.forEach((e, i) => { const o = document.createElement('option'); o.value = i; o.textContent = e[0]; easeSel.appendChild(o); });
-  easeSel.value = DEFAULT_EASING;
+  const tlEase = document.getElementById('tl-easing');
+  tlEase.innerHTML = easingCurveSVG(state.defaultEasing);
+  tlEase.onclick = () => openEasingEditor(state.defaultEasing, (e) => {
+    state.defaultEasing = e;
+    tlEase.innerHTML = easingCurveSVG(e);
+  }, tlEase);
 
-  // 菜单
-  document.querySelectorAll('.menu-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const menu = btn.closest('.menu');
-      const wasOpen = menu.classList.contains('open');
+  // 菜单（悬停展开）
+  document.querySelectorAll('.menu').forEach(menu => {
+    menu.addEventListener('mouseenter', () => {
       document.querySelectorAll('.menu').forEach(m => m.classList.remove('open'));
-      if (!wasOpen) menu.classList.add('open');
+      menu.classList.add('open');
     });
-  });
-  document.addEventListener('click', (ev) => {
-    if (!ev.target.closest('.menu')) document.querySelectorAll('.menu').forEach(m => m.classList.remove('open'));
+    menu.addEventListener('mouseleave', () => menu.classList.remove('open'));
   });
   const closeMenus = () => document.querySelectorAll('.menu').forEach(m => m.classList.remove('open'));
   document.getElementById('btn-open').addEventListener('click', () => { closeMenus(); openFile(); });
   document.getElementById('btn-save').addEventListener('click', () => { closeMenus(); saveFile(); });
   document.getElementById('btn-saveas').addEventListener('click', () => { closeMenus(); saveFileAs(); });
-  document.getElementById('btn-export').addEventListener('click', () => { closeMenus(); state.name = document.getElementById('anim-name').value.trim() || 'my_animation'; download(JSON.stringify(exportJSON()), state.name + '.json'); });
+  document.getElementById('btn-export').addEventListener('click', () => { closeMenus(); download(JSON.stringify(exportJSON()), (state.name || 'my_animation') + '.json'); });
   document.getElementById('btn-import').addEventListener('click', () => { closeMenus(); document.getElementById('file-import').click(); });
   document.getElementById('btn-clear').addEventListener('click', () => { closeMenus(); clearAll(); });
+  document.getElementById('btn-undo').addEventListener('click', () => { closeMenus(); undo(); });
+  document.getElementById('btn-redo').addEventListener('click', () => { closeMenus(); redo(); });
+  document.getElementById('btn-loop').addEventListener('click', () => {
+    state.loop = !state.loop;
+    document.getElementById('tl-loop').checked = state.loop;
+    updateLoopIndicator();
+  });
   document.getElementById('btn-selall').addEventListener('click', () => { closeMenus(); selectAll(); });
   document.getElementById('btn-delete-selected').addEventListener('click', () => { closeMenus(); deleteSelected(); });
   document.getElementById('btn-group').addEventListener('click', () => { closeMenus(); createGroup(); });
@@ -1456,26 +2346,29 @@ function initUI() {
   document.getElementById('four-plane').addEventListener('change', renderFourierInputs);
 
   // 属性
-  document.getElementById('prop-style').addEventListener('change', (ev) => { currentSelected().forEach(p => { p.style = ev.target.value; }); rebuildPoints(); });
-  document.getElementById('prop-glow').addEventListener('change', (ev) => { currentSelected().forEach(p => { p.glow = ev.target.checked; }); rebuildPoints(); });
-  document.getElementById('prop-light').addEventListener('input', (ev) => { document.getElementById('light-val').textContent = ev.target.value; currentSelected().forEach(p => { p.lightLevel = parseInt(ev.target.value); }); rebuildPoints(); });
-  document.getElementById('prop-alpha').addEventListener('input', (ev) => { document.getElementById('alpha-val').textContent = parseFloat(ev.target.value).toFixed(2); applyColorFromInputs(); });
-  document.getElementById('prop-color').addEventListener('input', applyColorFromInputs);
-  document.getElementById('prop-scale').addEventListener('input', (ev) => { setValueAtTime([...state.selected], 'scl', [parseFloat(ev.target.value) || 1]); });
-  ['prop-posx', 'prop-posy', 'prop-posz'].forEach(id => document.getElementById(id).addEventListener('input', applyPositionFromInputs));
+  document.getElementById('prop-style').addEventListener('change', (ev) => { pushUndo(); currentSelected().forEach(p => { p.style = ev.target.value; }); rebuildPoints(); });
+  document.getElementById('prop-glow').addEventListener('change', (ev) => { pushUndo(); currentSelected().forEach(p => { p.glow = ev.target.checked; }); rebuildPoints(); });
+  document.getElementById('prop-light').addEventListener('input', (ev) => { beginContinuous(); document.getElementById('light-val').textContent = ev.target.value; currentSelected().forEach(p => { p.lightLevel = parseInt(ev.target.value); }); rebuildPoints(); });
+  document.getElementById('prop-light').addEventListener('change', endContinuous);
+  document.getElementById('prop-alpha').addEventListener('input', (ev) => { beginContinuous(); document.getElementById('alpha-val').textContent = parseFloat(ev.target.value).toFixed(2); applyColorFromInputs(); });
+  document.getElementById('prop-alpha').addEventListener('change', endContinuous);
+  document.getElementById('prop-color').addEventListener('input', (ev) => { beginContinuous(); applyColorFromInputs(); });
+  document.getElementById('prop-color').addEventListener('change', endContinuous);
+  document.getElementById('prop-scale').addEventListener('input', (ev) => { beginContinuous(); setValueAtTime([...state.selected], 'scl', [parseFloat(ev.target.value) || 1]); });
+  document.getElementById('prop-scale').addEventListener('change', endContinuous);
+  ['prop-posx', 'prop-posy', 'prop-posz'].forEach(id => {
+    document.getElementById(id).addEventListener('input', (ev) => { beginContinuous(); applyPositionFromInputs(); });
+    document.getElementById(id).addEventListener('change', endContinuous);
+  });
 
   // 时间轴
-  document.getElementById('btn-play').addEventListener('click', () => {
-    state.playing = !state.playing;
-    document.getElementById('btn-play').textContent = state.playing ? '⏸ 暂停' : '▶ 播放';
-  });
+  document.getElementById('btn-play').addEventListener('click', togglePlay);
   document.getElementById('tl-time').addEventListener('input', (ev) => { state.time = parseFloat(ev.target.value) || 0; updateTimeUI(); rebuildPoints(); });
-  document.getElementById('tl-loop').addEventListener('change', (ev) => { state.loop = ev.target.checked; });
-  document.getElementById('loop-toggle').addEventListener('change', (ev) => { state.loop = ev.target.checked; document.getElementById('tl-loop').checked = ev.target.checked; });
-  document.getElementById('tl-easing').addEventListener('change', (ev) => { state.defaultEasing = parseInt(ev.target.value); });
+  document.getElementById('tl-loop').addEventListener('change', (ev) => { state.loop = ev.target.checked; updateLoopIndicator(); });
   document.getElementById('btn-capture').addEventListener('click', () => {
     const ids = [...state.selected];
     if (ids.length === 0) { alert('请先选择粒子'); return; }
+    pushUndo();
     for (const id of ids) {
       const p = getParticle(id);
       if (!p) continue;
@@ -1490,17 +2383,46 @@ function initUI() {
   document.getElementById('file-import').addEventListener('change', (ev) => {
     const f = ev.target.files[0];
     if (!f) return;
-    f.text().then(txt => { importJSON(JSON.parse(txt)); state.name = f.name.replace(/\.json$/i, ''); document.getElementById('anim-name').value = state.name; });
+    f.text().then(txt => { importJSON(JSON.parse(txt)); state.name = f.name.replace(/\.json$/i, ''); });
     ev.target.value = '';
   });
-  document.getElementById('anim-name').addEventListener('input', (ev) => { state.name = ev.target.value.trim() || 'my_animation'; });
 
   // 时间轴点击/拖动
   const tlCanvas = document.getElementById('timeline');
-  let tlDragging = false;
-  tlCanvas.addEventListener('pointerdown', (ev) => { tlDragging = true; tlCanvas.setPointerCapture(ev.pointerId); state.time = timelineXToTick(ev.clientX); updateTimeUI(); rebuildPoints(); });
-  tlCanvas.addEventListener('pointermove', (ev) => { if (tlDragging) { state.time = timelineXToTick(ev.clientX); updateTimeUI(); rebuildPoints(); } });
-  tlCanvas.addEventListener('pointerup', () => { tlDragging = false; });
+  let tlDrag = null; // { mode: 'scrub' | 'pan', lastX }
+  tlCanvas.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0 && ev.button !== 1) return;
+    ev.preventDefault();
+    tlCanvas.setPointerCapture(ev.pointerId);
+    if (ev.button === 1) { // 中键：平移视图
+      tlDrag = { mode: 'pan', lastX: ev.clientX };
+    } else {
+      tlDrag = { mode: 'scrub', lastX: ev.clientX };
+      state.time = Math.max(0, timelineXToTick(ev.clientX));
+      updateTimeUI();
+      rebuildPoints();
+    }
+  });
+  tlCanvas.addEventListener('pointermove', (ev) => {
+    if (!tlDrag) return;
+    if (tlDrag.mode === 'pan') {
+      timelineViewStart -= (ev.clientX - tlDrag.lastX) / TL_PX_PER_TICK;
+    } else {
+      state.time = Math.max(0, timelineXToTick(ev.clientX));
+      updateTimeUI();
+    }
+    tlDrag.lastX = ev.clientX;
+    drawTimeline();
+    if (tlDrag.mode === 'scrub') rebuildPoints();
+  });
+  tlCanvas.addEventListener('pointerup', () => { tlDrag = null; });
+  tlCanvas.addEventListener('pointerleave', () => { tlDrag = null; });
+  tlCanvas.addEventListener('wheel', (ev) => {
+    ev.preventDefault();
+    timelineViewStart += ev.deltaY / TL_PX_PER_TICK;
+    timelineViewStart = Math.max(0, timelineViewStart);
+    drawTimeline();
+  }, { passive: false });
 
   renderFourierInputs();
   addVarRow('speed', '0.2');
@@ -1509,11 +2431,12 @@ function initUI() {
 }
 
 function clearAll() {
+  pushUndo();
   state.particles = []; state.tracks = []; state.groups = {};
   state.selected.clear(); state.selectedGroup = null;
   state.expandedParticles.clear(); state.expandedProps.clear();
-  state.time = 0; state.idCounter = 0; state.groupCounter = 0;
-  refreshGroupList(); updateTimeUI(); rebuildPoints(); refreshParticleTree();
+  state.time = 0;
+  updateTimeUI(); rebuildPoints(); refreshParticleTree();
 }
 
 function applyColorFromInputs() {
@@ -1529,6 +2452,37 @@ function applyPositionFromInputs() {
   if ([x, y, z].some(isNaN)) return;
   setValueAtTime([...state.selected], 'pos', snapPos([x, y, z]));
 }
+
+/* 左侧面板拖拽缩放 + 拖拽移出组 */
+(function setupPanelResizeAndDrop() {
+  const tree = document.getElementById('particle-tree');
+  tree.addEventListener('dragover', (e) => { if (dragIds) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } });
+  tree.addEventListener('drop', (e) => {
+    if (dragIds && !e.target.closest('.ptree-head.group')) {
+      e.preventDefault();
+      removeParticlesFromGroups(dragIds);
+    }
+    dragIds = null;
+  });
+
+  const handle = document.getElementById('resize-handle');
+  let resizing = false;
+  handle.addEventListener('pointerdown', (e) => {
+    resizing = true;
+    handle.classList.add('dragging');
+    handle.setPointerCapture(e.pointerId);
+  });
+  handle.addEventListener('pointermove', (e) => {
+    if (!resizing) return;
+    const layout = document.querySelector('.layout');
+    const rect = layout.getBoundingClientRect();
+    let w = e.clientX - rect.left;
+    w = Math.max(220, Math.min(600, w));
+    layout.style.setProperty('--left-w', w + 'px');
+    resize();
+  });
+  handle.addEventListener('pointerup', () => { resizing = false; handle.classList.remove('dragging'); });
+})();
 
 function resize() {
   const w = viewport.clientWidth, h = viewport.clientHeight;
@@ -1551,7 +2505,8 @@ function animate(now) {
   if (camTransition) {
     const t = Math.min(1, (now - camTransition.t0) / camTransition.dur);
     const e = easeInOut(t);
-    camera.position.lerpVectors(camTransition.startPos, camTransition.endPos, e);
+    const dir = slerp(camTransition.startDir, camTransition.endDir, e);
+    camera.position.copy(camTransition.target).addScaledVector(dir, camTransition.dist);
     camera.up.lerpVectors(camTransition.startUp, camTransition.endUp, e).normalize();
     camera.lookAt(camTransition.target);
     if (t >= 1) camTransition = null;

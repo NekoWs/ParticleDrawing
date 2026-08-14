@@ -78,10 +78,11 @@ object AnimationLoader {
     private fun parseTrack(o: com.google.gson.JsonObject): AnimTrack {
         val property = AnimTrack.Property.from(o.get("pr").asString)
         val ids = o.get("ids").asJsonArray.map { it.asString }
+        val mode = if (o.get("m")?.asString == "op") AnimTrack.Mode.OP else AnimTrack.Mode.SET
         val keyframes = o.get("kf").asJsonArray
             .map { parseKeyframe(it.asJsonArray) }
             .sortedBy { it.tick }
-        return AnimTrack(property, ids, keyframes)
+        return AnimTrack(property, ids, keyframes, mode)
     }
 
     private fun parseKeyframe(arr: JsonArray): AnimKeyframe {

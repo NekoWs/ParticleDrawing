@@ -17,6 +17,9 @@ class AnimationPlayer(
 ) {
 
     private val idMap = HashMap<String, UUID>()
+    private val basePos = HashMap<String, Vec3>()
+    private val baseColor = HashMap<String, Color>()
+    private val baseScale = HashMap<String, Float>()
     private var currentTick = 0
     private var finished = false
     private val maxTick: Int = animation.tracks.flatMap { it.keyframes }.maxOfOrNull { it.tick } ?: 0
@@ -28,6 +31,9 @@ class AnimationPlayer(
                 -1, null, p.glowing, p.lightLevel, null, players
             ) ?: continue
             idMap[p.id] = data.id
+            basePos[p.id] = p.pos
+            baseColor[p.id] = p.color
+            baseScale[p.id] = p.scale
         }
     }
 
@@ -91,13 +97,40 @@ class AnimationPlayer(
         if (duration <= 0) return
 
         val v = next.value
+        val op = track.mode == AnimTrack.Mode.OP
         for (id in resolveIds(track)) {
             val uuid = idMap[id] ?: continue
             val b = engine.update(uuid)
             when (track.property) {
-                AnimTrack.Property.POSITION -> b.position(origin.x + v[0], origin.y + v[1], origin.z + v[2])
-                AnimTrack.Property.COLOR -> b.color(Color.of(v[0].toFloat(), v[1].toFloat(), v[2].toFloat(), v[3].toFloat()))
-                AnimTrack.Property.SCALE -> b.scale(v[0].toFloat())
+                AnimTrack.Property.POSITION -> {
+                    if (op) {
+                        val base = basePos[id] ?: Vec3.ZERO
+                        b.position(origin.x + base.x + v[0], origin.y + base.y + v[1], origin.z + base.z + v[2])
+                    } else {
+                        b.position(origin.x + v[0], origin.y + v[1], origin.z + v[2])
+                    }
+                }
+                AnimTrack.Property.COLOR -> {
+                    if (op) {
+                        val base = baseColor[id] ?: Color.BLACK
+                        b.color(Color.of(
+                            (base.r + v[0].toFloat()).coerceIn(0f, 1f),
+                            (base.g + v[1].toFloat()).coerceIn(0f, 1f),
+                            (base.b + v[2].toFloat()).coerceIn(0f, 1f),
+                            (base.a + v[3].toFloat()).coerceIn(0f, 1f)
+                        ))
+                    } else {
+                        b.color(Color.of(v[0].toFloat(), v[1].toFloat(), v[2].toFloat(), v[3].toFloat()))
+                    }
+                }
+                AnimTrack.Property.SCALE -> {
+                    if (op) {
+                        val base = baseScale[id] ?: 1f
+                        b.scale((base + v[0].toFloat()).coerceAtLeast(0.01f))
+                    } else {
+                        b.scale(v[0].toFloat())
+                    }
+                }
             }
             b.easing(kfs[i].easing, duration).send(players)
         }
