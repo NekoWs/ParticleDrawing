@@ -35,10 +35,20 @@ jobs:
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
           printf 'pinentry-mode loopback\nuse-agent\n' > ~/.gnupg/gpg.conf
-          printf 'allow-loopback-pinentry\n' > ~/.gnupg/gpg-agent.conf
+          printf 'allow-loopback-pinentry\ndefault-cache-ttl 900\nmax-cache-ttl 3600\n' > ~/.gnupg/gpg-agent.conf
           gpgconf --kill gpg-agent || true
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
-          KEY_ID=$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^sec:/ {print $5; exit}')
+          echo '=== list-secret-keys ==='
+          gpg --batch --list-secret-keys --keyid-format LONG
+          KEY_ID=$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1=="sec" {print $5; exit}')
+          if [ -z "$KEY_ID" ]; then
+            KEY_ID=$(gpg --batch --with-colons --list-keys | awk -F: '$1=="pub" {print $5; exit}')
+          fi
+          echo "Resolved KEY_ID=[$KEY_ID]"
+          if [ -z "$KEY_ID" ]; then
+            echo "ERROR: could not resolve GPG key id" >&2
+            exit 1
+          fi
           echo "default-key $KEY_ID" >> ~/.gnupg/gpg.conf
           if [ -n "$GPG_PASSPHRASE" ]; then
             echo "unlock" | gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --local-user "$KEY_ID" --armor --sign --output /dev/null
