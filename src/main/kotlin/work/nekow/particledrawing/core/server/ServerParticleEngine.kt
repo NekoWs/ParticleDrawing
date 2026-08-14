@@ -290,9 +290,7 @@ class ServerParticleEngine(
                 durationTicks, easing)
         }
 
-        for (player in playersInDimension) {
-            PacketDistributor.sendToPlayer(player, payload)
-        }
+        sendToTracked(playersInDimension, group.memberIds(), payload)
     }
 
     /**
@@ -310,7 +308,7 @@ class ServerParticleEngine(
         }
 
         val payload = ParticleDestroyPayload.single(id)
-        sendToAllInDimension(playersInDimension, payload)
+        sendToTracked(playersInDimension, listOf(id), payload)
         untrackParticle(id)
     }
 
@@ -329,7 +327,7 @@ class ServerParticleEngine(
         }
 
         val payload = ParticleDestroyPayload.group(groupId, ids)
-        sendToAllInDimension(playersInDimension, payload)
+        sendToTracked(playersInDimension, ids, payload)
         untrackParticles(ids)
     }
 
@@ -354,7 +352,7 @@ class ServerParticleEngine(
                     groups[groupId]?.removeMember(entry.key)
                 }
                 val payload = ParticleDestroyPayload.single(entry.key)
-                sendToAllInDimension(playersInDimension, payload)
+                sendToTracked(playersInDimension, listOf(entry.key), payload)
                 untrackParticle(entry.key)
                 it.remove()
             }
@@ -427,9 +425,7 @@ class ServerParticleEngine(
                 val batch = allIds.copyOfRange(offset, end)
                 val payload = ParticleDestroyPayload(batch, null)
 
-                for (player in playersInDimension) {
-                    PacketDistributor.sendToPlayer(player, payload)
-                }
+                sendToTracked(playersInDimension, batch.toList(), payload)
                 offset += batchSize
             }
         }
@@ -557,18 +553,33 @@ class ServerParticleEngine(
         }
     }
 
-    private fun sendToAllInDimension(players: Collection<ServerPlayer>, payload: CustomPacketPayload) {
+    /**
+     * 仅向已追踪了指定粒子的玩家发送数据包。
+     *
+     * 组变换与运动指令等数据包携带世界坐标（轴心），必须只发给实际拥有这些粒子的玩家，
+     * 否则会向不可见这些粒子的玩家泄露坐标信息（无政府服务器可利用此获取他人位置）。
+     */
+    private fun sendToTracked(players: Collection<ServerPlayer>, particleIds: Collection<UUID>, payload: CustomPacketPayload) {
+        val recipients = HashSet<UUID>()
+        for (id in particleIds) {
+            visibleTo[id]?.let { recipients.addAll(it) }
+        }
+        if (recipients.isEmpty()) return
+
         for (player in players) {
-            PacketDistributor.sendToPlayer(player, payload)
+            if (player.uuid in recipients) {
+                PacketDistributor.sendToPlayer(player, payload)
+            }
         }
     }
 
     fun sendMotion(groupId: UUID, active: Boolean, algorithmId: String,
                     params: DoubleArray, pivot: Vec3,
                     playersInDimension: Collection<ServerPlayer>) {
+        val group = groups[groupId] ?: return
         val payload = MotionPayload(groupId, active, algorithmId, params,
             pivot.x, pivot.y, pivot.z)
-        sendToAllInDimension(playersInDimension, payload)
+        sendToTracked(playersInDimension, group.memberIds(), payload)
     }
 
     companion object {
