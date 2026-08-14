@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ParticleDrawing 粒子动画编辑器</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <nav class="menubar">
+      <div class="menu">
+        <button class="menu-btn" data-menu="file">文件</button>
+        <div class="dropdown" id="menu-file">
+          <button id="btn-open" class="dd-item">打开…</button>
+          <button id="btn-save" class="dd-item">保存</button>
+          <button id="btn-saveas" class="dd-item">另存为…</button>
+          <div class="dd-sep"></div>
+          <button id="btn-export" class="dd-item">导出 JSON</button>
+          <button id="btn-import" class="dd-item">导入 JSON</button>
+          <div class="dd-sep"></div>
+          <button id="btn-clear" class="dd-item danger">清空</button>
+        </div>
+      </div>
+      <div class="menu">
+        <button class="menu-btn" data-menu="edit">编辑</button>
+        <div class="dropdown" id="menu-edit">
+          <button id="btn-selall" class="dd-item">全选 (A)</button>
+          <button id="btn-delete-selected" class="dd-item danger">删除选中 (X)</button>
+          <div class="dd-sep"></div>
+          <button id="btn-group" class="dd-item">建立组 (Ctrl+G)</button>
+        </div>
+      </div>
+      <div class="menu">
+        <button class="menu-btn" data-menu="about">关于</button>
+        <div class="dropdown" id="menu-about">
+          <div class="dd-text">ParticleDrawing 粒子动画编辑器</div>
+          <div class="dd-text">导出 JSON 供模组 /test play 播放</div>
+        </div>
+      </div>
+      <input id="anim-name" type="text" value="my_animation" />
+      <label class="chk"><input id="loop-toggle" type="checkbox" checked />循环</label>
+    </nav>
+  </header>
+
+  <main class="layout">
+    <aside class="left-panel">
+      <div class="panel-title">粒子列表</div>
+      <div id="particle-tree" class="particle-tree"></div>
+    </aside>
+
+    <section id="viewport" class="viewport">
+      <canvas id="axis-gizmo"></canvas>
+      <div id="box-overlay"></div>
+    </section>
+
+    <aside class="sidebar">
+      <details open>
+        <summary>工具</summary>
+        <p class="hint">中键旋转 · Shift+中键平移 · 滚轮缩放 · 左键框选 · G 移动 · S 缩放 · X 删除 · A 全选 · Esc 取消</p>
+        <div class="tools" id="tools">
+          <button class="tool active" data-tool="select" title="框选 / 拖动粒子">选择</button>
+          <button class="tool" data-tool="pencil" title="点按放置粒子">铅笔</button>
+          <button class="tool" data-tool="line" title="拖拽画线段">直线</button>
+          <button class="tool" data-tool="circle" title="拖拽画圆">圆</button>
+          <button class="tool" data-tool="rect" title="拖拽画矩形">矩形</button>
+          <button class="tool" data-tool="freehand" title="按住自由绘制">手绘</button>
+          <button class="tool" data-tool="erase" title="点按删除粒子">橡皮</button>
+        </div>
+        <label class="row">绘制平面
+          <select id="draw-plane">
+            <option value="XZ" selected>XZ（水平）</option>
+            <option value="XY">XY</option>
+            <option value="YZ">YZ</option>
+          </select>
+        </label>
+        <label class="chk"><input id="snap-toggle" type="checkbox" />吸附（整格）</label>
+        <label class="row">放置高度 <input id="height-y" type="number" step="0.1" value="0" /></label>
+        <label class="row">粒子数量 <input id="shape-count" type="number" min="2" value="30" /></label>
+      </details>
+
+      <details>
+        <summary>组</summary>
+        <div id="group-list" class="group-list"></div>
+      </details>
+
+      <details>
+        <summary>函数生成</summary>
+        <p class="hint">t = 该粒子运行时长(tick)，i = 粒子序号，可引用下方变量</p>
+        <div class="vars-head"><span>变量</span><button id="btn-var-add" class="mini">+</button></div>
+        <div id="var-list"></div>
+        <label class="row">粒子数 <input id="fn-count" type="number" min="1" value="30" /></label>
+        <label class="row">时长(tick) <input id="fn-duration" type="number" min="0" value="100" /></label>
+        <label class="row">采样间隔 <input id="fn-step" type="number" min="1" value="5" /></label>
+        <p class="hint">位置</p>
+        <label class="row">X <input id="fn-x" type="text" value="cos(t*0.1 + i*0.2)*4" /></label>
+        <label class="row">Y <input id="fn-y" type="text" value="sin(t*0.05)*1.5" /></label>
+        <label class="row">Z <input id="fn-z" type="text" value="sin(t*0.1 + i*0.2)*4" /></label>
+        <p class="hint">颜色(0..1)</p>
+        <label class="row">R <input id="fn-r" type="text" value="" /></label>
+        <label class="row">G <input id="fn-g" type="text" value="" /></label>
+        <label class="row">B <input id="fn-b" type="text" value="" /></label>
+        <label class="row">透明度 <input id="fn-a" type="text" value="" /></label>
+        <p class="hint">其它</p>
+        <label class="row">缩放 <input id="fn-s" type="text" value="0.3" /></label>
+        <label class="row">发光 <input id="fn-glow" type="text" value="1" /></label>
+        <label class="row">光照等级 <input id="fn-light" type="text" value="12" /></label>
+        <button id="btn-fn" class="btn">生成</button>
+      </details>
+
+      <details>
+        <summary>傅里叶级数</summary>
+        <label class="row">平面
+          <select id="four-plane">
+            <option value="XZ" selected>XZ（水平）</option>
+            <option value="XY">XY</option>
+            <option value="YZ">YZ</option>
+          </select>
+        </label>
+        <div id="four-coeffs"></div>
+        <label class="row">基频 ω <input id="four-omega" type="number" step="0.1" value="1" /></label>
+        <label class="row">采样数 <input id="four-count" type="number" min="2" value="200" /></label>
+        <button id="btn-four" class="btn">生成傅里叶曲线</button>
+      </details>
+
+      <details open>
+        <summary>属性（作用于选中）</summary>
+        <label class="row">样式
+          <select id="prop-style"></select>
+        </label>
+        <label class="row">颜色 <input id="prop-color" type="color" value="#ffffff" /></label>
+        <label class="row">透明度 <input id="prop-alpha" type="range" min="0" max="1" step="0.01" value="1" /><span id="alpha-val">1.00</span></label>
+        <label class="row">缩放 <input id="prop-scale" type="number" min="0.05" step="0.05" value="1" /></label>
+        <label class="chk"><input id="prop-glow" type="checkbox" />发光</label>
+        <label class="row">光照等级 <input id="prop-light" type="range" min="0" max="15" step="1" value="15" /><span id="light-val">15</span></label>
+        <label class="row">X <input id="prop-posx" type="number" step="0.1" value="0" /></label>
+        <label class="row">Y <input id="prop-posy" type="number" step="0.1" value="0" /></label>
+        <label class="row">Z <input id="prop-posz" type="number" step="0.1" value="0" /></label>
+      </details>
+    </aside>
+  </main>
+
+  <footer class="timeline">
+    <div class="tl-controls">
+      <button id="btn-play" class="btn">▶ 播放</button>
+      <label class="chk"><input id="tl-loop" type="checkbox" checked />循环</label>
+      <select id="tl-easing"></select>
+      <button id="btn-capture" class="btn">捕获关键帧</button>
+      <input id="tl-time" type="number" min="0" step="1" value="0" />
+      <span class="ticks">tick / <span id="tl-max">0</span></span>
+    </div>
+    <canvas id="timeline"></canvas>
+  </footer>
+
+  <input id="file-import" type="file" accept=".json" hidden />
+  <script src="./vendor/three.min.js"></script>
+  <script src="./vendor/OrbitControls.js"></script>
+  <script src="./editor.js"></script>
+</body>
+</html>
