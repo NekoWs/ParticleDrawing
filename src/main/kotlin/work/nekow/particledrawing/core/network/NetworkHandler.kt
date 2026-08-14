@@ -25,5 +25,6 @@ object NetworkHandler {
         registrar.playToClient(ParticleGroupTransformPayload.TYPE, ParticleGroupTransformPayload.STREAM_CODEC, ClientPayloadHandler::handleGroupTransform)
         registrar.playToClient(MotionPayload.TYPE, MotionPayload.STREAM_CODEC, ClientPayloadHandler::handleMotion)
         registrar.playToClient(ParticleVelocityPayload.TYPE, ParticleVelocityPayload.STREAM_CODEC, ClientPayloadHandler::handleVelocity)
+        registrar.playToClient(ParticleLightLevelPayload.TYPE, ParticleLightLevelPayload.STREAM_CODEC, ClientPayloadHandler::handleLightLevel)
     }
 }

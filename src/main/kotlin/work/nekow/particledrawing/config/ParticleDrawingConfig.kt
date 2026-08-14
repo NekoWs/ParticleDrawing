@@ -31,7 +31,6 @@ object ParticleDrawingConfig {
     class ServerConfig(builder: ModConfigSpec.Builder) {
         val maxParticlesPerDimension: ModConfigSpec.IntValue
         val maxParticlesPerPlayer: ModConfigSpec.IntValue
-        val visibilityRadius: ModConfigSpec.DoubleValue
         val visibilityCheckInterval: ModConfigSpec.IntValue
 
         init {
@@ -45,11 +44,8 @@ object ParticleDrawingConfig {
             builder.pop()
 
             builder.push("visibility")
-            visibilityRadius = builder
-                .comment("The maximum distance (in blocks) to send particles to a player.")
-                .defineInRange("visibilityRadius", 128.0, 16.0, 512.0)
             visibilityCheckInterval = builder
-                .comment("The interval in ticks to re-check particle visibility for each player.")
+                .comment("The interval in ticks to re-check particle visibility for each player (particles are synced within the player's render distance).")
                 .defineInRange("visibilityCheckInterval", 10, 1, 100)
             builder.pop()
         }

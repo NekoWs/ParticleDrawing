@@ -13,6 +13,7 @@ import work.nekow.particledrawing.core.motion.MotionPayload
 import work.nekow.particledrawing.core.motion.rotateAround
 import work.nekow.particledrawing.core.network.ParticleDestroyPayload
 import work.nekow.particledrawing.core.network.ParticleGroupTransformPayload
+import work.nekow.particledrawing.core.network.ParticleLightLevelPayload
 import work.nekow.particledrawing.core.network.ParticleSpawnPayload
 import work.nekow.particledrawing.core.network.ParticleUpdatePayload
 import work.nekow.particledrawing.core.network.ParticleVelocityPayload
@@ -53,6 +54,7 @@ class ServerParticleEngine(
      * @param lifetime 存活 tick 数，-1 为永生
      * @param groupId 所属组 ID，可为 null
      * @param glowing 是否发光
+     * @param lightLevel 发光粒子向外发出的光照等级 (0-15)
      * @param offsetFromPivot 相对轴心的偏移，可为 null
      * @param playersInDimension 维度内的玩家列表
      * @return 创建的粒子数据；达到维度上限时为 null
@@ -60,7 +62,7 @@ class ServerParticleEngine(
     @Suppress("DataFlowIssue")
     fun spawnParticle(style: ParticleStyle, position: Vec3, color: Color,
                       scale: Float, lifetime: Int, groupId: UUID?,
-                      glowing: Boolean, offsetFromPivot: Vec3?,
+                      glowing: Boolean, lightLevel: Int, offsetFromPivot: Vec3?,
                       playersInDimension: Collection<ServerPlayer>): ParticleData? {
         val maxTotal = ParticleDrawingConfig.SERVER.maxParticlesPerDimension.get()
         if (particles.size >= maxTotal) {
@@ -70,7 +72,7 @@ class ServerParticleEngine(
 
         val id = UUID.randomUUID()
         val data = ParticleData.create(id, style, position, color, scale,
-            lifetime, groupId, glowing, offsetFromPivot)
+            lifetime, groupId, glowing, lightLevel, offsetFromPivot)
         particles[id] = data
 
         if (groupId != null) {
@@ -80,7 +82,7 @@ class ServerParticleEngine(
         val payload = ParticleSpawnPayload(
             id, style, position.x, position.y, position.z,
             color.r, color.g, color.b, color.a,
-            scale, lifetime, groupId, glowing
+            scale, lifetime, groupId, glowing, lightLevel
         )
 
         broadcastSpawn(playersInDimension, position, id, payload)
@@ -141,6 +143,20 @@ class ServerParticleEngine(
     }
 
     /**
+     * 动态修改粒子的发光光照等级并广播。
+     * @param id 粒子 ID
+     * @param lightLevel 目标光照等级 (0-15)
+     * @param playersInDimension 维度内的玩家列表
+     */
+    fun setLightLevel(id: UUID, lightLevel: Int, playersInDimension: Collection<ServerPlayer>) {
+        val data = particles[id] ?: return
+        data.setLightLevel(lightLevel)
+
+        val payload = ParticleLightLevelPayload(id, data.lightLevel())
+        sendToVisible(playersInDimension, data.position(), payload)
+    }
+
+    /**
      * 链式调用更新粒子属性。
      *
      * 用法:
@@ -158,6 +174,7 @@ class ServerParticleEngine(
         private var pos: Vec3? = null
         private var col: Color? = null
         private var scl: Float? = null
+        private var lvl: Int? = null
         private var dur: Int = 0
         private var ease: EasingType = EasingType.LINEAR
 
@@ -167,6 +184,7 @@ class ServerParticleEngine(
         fun position(v: Vec3): UpdateBuilder { pos = v; return this }
         fun color(c: Color): UpdateBuilder { col = c; return this }
         fun scale(s: Float): UpdateBuilder { scl = s; return this }
+        fun lightLevel(level: Int): UpdateBuilder { lvl = level; return this }
         fun easing(e: EasingType, durationTicks: Int): UpdateBuilder { ease = e; dur = durationTicks; return this }
         fun duration(ticks: Int): UpdateBuilder { dur = ticks; return this }
 
@@ -175,6 +193,9 @@ class ServerParticleEngine(
             val p = pos ?: data.position()
             val c = col ?: data.color()
             val s = scl ?: data.scale()
+            if (lvl != null) {
+                setLightLevel(id, lvl!!, players)
+            }
             updateParticle(id, p, c, s,
                 updatePos = pos != null,
                 updateColor = col != null,
@@ -438,11 +459,10 @@ class ServerParticleEngine(
 
     private fun broadcastSpawn(players: Collection<ServerPlayer>, position: Vec3,
                                particleId: UUID, payload: CustomPacketPayload) {
-        val radius = ParticleDrawingConfig.SERVER.visibilityRadius.get()
         val maxPerPlayer = ParticleDrawingConfig.SERVER.maxParticlesPerPlayer.get()
 
         for (player in players) {
-            if (!ParticleVisibilityManager.isWithinRange(player, position, radius)) continue
+            if (!ParticleVisibilityManager.isWithinViewDistance(player, position)) continue
 
             val trackedCount = playerParticles[player.uuid]?.size ?: 0
             if (trackedCount >= maxPerPlayer) continue
@@ -454,7 +474,6 @@ class ServerParticleEngine(
 
     private fun recheckVisibility(players: Collection<ServerPlayer>) {
         if (players.isEmpty()) return
-        val radius = ParticleDrawingConfig.SERVER.visibilityRadius.get()
         val maxPerPlayer = ParticleDrawingConfig.SERVER.maxParticlesPerPlayer.get()
 
         for (player in players) {
@@ -463,7 +482,7 @@ class ServerParticleEngine(
             val toRemove = ArrayList<UUID>()
             for (particleId in tracked) {
                 val data = particles[particleId]
-                if (data == null || !ParticleVisibilityManager.isWithinRange(player, data.position(), radius)) {
+                if (data == null || !ParticleVisibilityManager.isWithinViewDistance(player, data.position())) {
                     toRemove.add(particleId)
                 }
             }
@@ -478,7 +497,7 @@ class ServerParticleEngine(
                 for ((particleId, data) in particles) {
                     if (count >= maxPerPlayer) break
                     if (tracked.contains(particleId)) continue
-                    if (!ParticleVisibilityManager.isWithinRange(player, data.position(), radius)) continue
+                    if (!ParticleVisibilityManager.isWithinViewDistance(player, data.position())) continue
 
                     PacketDistributor.sendToPlayer(player, spawnPayload(data))
                     track(player.uuid, particleId)
@@ -493,7 +512,7 @@ class ServerParticleEngine(
             data.id, data.style,
             data.position().x, data.position().y, data.position().z,
             data.color().r, data.color().g, data.color().b, data.color().a,
-            data.scale(), data.lifetime(), data.groupId, data.glowing()
+            data.scale(), data.lifetime(), data.groupId, data.glowing(), data.lightLevel()
         )
     }
 
@@ -531,9 +550,8 @@ class ServerParticleEngine(
 
     private fun sendToVisible(players: Collection<ServerPlayer>, position: Vec3,
                               payload: CustomPacketPayload) {
-        val radius = ParticleDrawingConfig.SERVER.visibilityRadius.get()
         for (player in players) {
-            if (ParticleVisibilityManager.isWithinRange(player, position, radius)) {
+            if (ParticleVisibilityManager.isWithinViewDistance(player, position)) {
                 PacketDistributor.sendToPlayer(player, payload)
             }
         }

@@ -17,6 +17,7 @@ import java.util.UUID
  * @param maxLifetime 初始总 tick 数
  * @param groupId 所属组 ID，可为 null
  * @param glowing 是否发光
+ * @param lightLevel 发光粒子向外发出的光照等级 (0-15)
  * @param offsetFromPivot 相对轴心的偏移
  */
 @Suppress("unused")
@@ -30,6 +31,7 @@ class ParticleData(
     val maxLifetime: Int,
     val groupId: UUID?,
     private var glowing: Boolean,
+    private var lightLevel: Int,
     private var offsetFromPivot: Vec3 = Vec3.ZERO
 ) {
 
@@ -40,6 +42,7 @@ class ParticleData(
     fun scale(): Float = scale
     fun lifetime(): Int = lifetime
     fun glowing(): Boolean = glowing
+    fun lightLevel(): Int = lightLevel
     fun offsetFromPivot(): Vec3 = offsetFromPivot
     fun velocity(): Vec3 = velocity
 
@@ -48,6 +51,7 @@ class ParticleData(
     fun setScale(scale: Float) { this.scale = scale }
     fun setLifetime(lifetime: Int) { this.lifetime = lifetime }
     fun setGlowing(glowing: Boolean) { this.glowing = glowing }
+    fun setLightLevel(lightLevel: Int) { this.lightLevel = lightLevel.coerceIn(0, 15) }
     fun setOffsetFromPivot(offset: Vec3) { this.offsetFromPivot = offset }
     fun setVelocity(velocity: Vec3) { this.velocity = velocity }
 
@@ -67,7 +71,7 @@ class ParticleData(
     }
 
     fun toSnapshot(): ParticleSnapshot {
-        return ParticleSnapshot(id, style, position, color, scale, glowing)
+        return ParticleSnapshot(id, style, position, color, scale, glowing, lightLevel)
     }
 
     data class ParticleSnapshot(
@@ -76,15 +80,17 @@ class ParticleData(
         val position: Vec3,
         val color: Color,
         val scale: Float,
-        val glowing: Boolean
+        val glowing: Boolean,
+        val lightLevel: Int
     )
 
     companion object {
         fun create(id: UUID, style: ParticleStyle, position: Vec3,
                    color: Color, scale: Float, lifetime: Int,
-                   groupId: UUID?, glowing: Boolean, offsetFromPivot: Vec3?): ParticleData {
+                   groupId: UUID?, glowing: Boolean, lightLevel: Int,
+                   offsetFromPivot: Vec3?): ParticleData {
             return ParticleData(id, style, position, color, scale, lifetime, lifetime,
-                groupId, glowing, offsetFromPivot ?: Vec3.ZERO)
+                groupId, glowing, lightLevel, offsetFromPivot ?: Vec3.ZERO)
         }
     }
 

@@ -16,6 +16,7 @@ import java.util.UUID
  * @param color 初始颜色
  * @param scale 初始缩放
  * @param glowing 是否发光
+ * @param lightLevel 发光粒子向外发出的光照等级 (0-15)，仅在 glowing 为 true 时生效
  * @param lifetimeMs 存活时间（毫秒），0 表示永久
  */
 @Suppress("unused")
@@ -26,6 +27,7 @@ class RenderParticle(
     color: Color,
     scale: Float,
     private var glowing: Boolean,
+    private var lightLevel: Int,
     lifetimeMs: Long
 ) {
 
@@ -80,11 +82,13 @@ class RenderParticle(
         curA = color.a; tgtA = color.a
         curScale = scale; tgtScale = scale
         deathTime = if (lifetimeMs > 0) System.nanoTime() + lifetimeMs * 1_000_000L else 0
+        this.lightLevel = lightLevel.coerceIn(0, 15)
         easing = LINEAR
     }
 
     fun id(): UUID = id
     fun glowing(): Boolean = glowing
+    fun lightLevel(): Int = lightLevel
 
     fun x(): Double = curX
     fun y(): Double = curY
@@ -224,6 +228,14 @@ class RenderParticle(
      */
     fun setGlowing(glowing: Boolean) {
         this.glowing = glowing
+    }
+
+    /**
+     * 设置发光粒子向外发出的光照等级 (0-15)。
+     * @param level 光照等级，自动钳制到 [0, 15]
+     */
+    fun setLightLevel(level: Int) {
+        this.lightLevel = level.coerceIn(0, 15)
     }
 
     /**

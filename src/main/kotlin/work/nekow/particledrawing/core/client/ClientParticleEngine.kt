@@ -44,12 +44,12 @@ class ClientParticleEngine {
      */
     fun spawnParticle(id: UUID, style: ParticleStyle, x: Double, y: Double, z: Double,
                       r: Float, g: Float, b: Float, a: Float, scale: Float,
-                      lifetimeTicks: Int, groupId: UUID?, glowing: Boolean) {
+                      lifetimeTicks: Int, groupId: UUID?, glowing: Boolean, lightLevel: Int) {
         if (particles.size >= ParticleDrawingConfig.CLIENT.maxRenderParticles.get()) return
 
         val lifetimeMs = if (lifetimeTicks > 0) lifetimeTicks * 50L else 0L
         val rp = RenderParticle(id, style, Vec3(x, y, z),
-            Color.of(r, g, b, a), scale, glowing, lifetimeMs)
+            Color.of(r, g, b, a), scale, glowing, lightLevel, lifetimeMs)
         particles[id] = rp
 
         val pe: ParticleEngine = Minecraft.getInstance().particleEngine
@@ -115,6 +115,15 @@ class ClientParticleEngine {
      */
     fun setVelocity(id: UUID, vx: Double, vy: Double, vz: Double) {
         particles[id]?.setVelocity(Vec3(vx, vy, vz))
+    }
+
+    /**
+     * 动态修改粒子的发光光照等级 (0-15)。
+     * @param id 粒子唯一标识符
+     * @param level 目标光照等级，自动钳制到 [0, 15]
+     */
+    fun setLightLevel(id: UUID, level: Int) {
+        particles[id]?.setLightLevel(level)
     }
 
     /**
@@ -282,7 +291,7 @@ class ClientParticleEngine {
     fun getGlowingParticles(): List<RenderParticle> {
         val glowing = ArrayList<RenderParticle>()
         for (p in particles.values) {
-            if (p.glowing() && p.isAlive() && p.a() > 0.01f) {
+            if (p.glowing() && p.lightLevel() > 0 && p.isAlive() && p.a() > 0.01f) {
                 glowing.add(p)
             }
         }

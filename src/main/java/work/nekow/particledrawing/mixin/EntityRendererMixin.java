@@ -9,16 +9,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import work.nekow.particledrawing.lighting.DynamicLightManager;
 
 /**
- * Fixes entity rendering to account for dynamic light sources.
- * Without this, entities near glowing particles would appear dark
- * while surrounding blocks are lit.
+ * 修正实体渲染以计入动态光照，避免实体在发光粒子附近显得过暗。
+ * <p>
+ * 与方块光照保持一致：调用 [DynamicLightManager] 将动态光照以小数精度合并进打包光坐标。
  */
 @Mixin(EntityRenderer.class)
 public abstract class EntityRendererMixin<T extends Entity> {
 
-    /**
-     * Adds dynamic light to the packed light coordinates used for entity rendering.
-     */
     @Inject(
         method = "getPackedLightCoords(Lnet/minecraft/world/entity/Entity;F)I",
         at = @At("RETURN"),
@@ -29,13 +26,10 @@ public abstract class EntityRendererMixin<T extends Entity> {
                                               CallbackInfoReturnable<Integer> cir) {
         int packed = cir.getReturnValue();
         double ey = entity.getEyeY();
-        int dynamic = DynamicLightManager.getDynamicLightLevel(
-            entity.getX(), ey, entity.getZ());
-        if (dynamic > 0) {
-            int skyLight = (packed >> 20) & 0xF;
-            int blockLight = (packed >> 4) & 0xF;
-            int newBlock = Math.min(15, blockLight + dynamic);
-            cir.setReturnValue((skyLight << 20) | (newBlock << 4));
+        int merged = DynamicLightManager.getLightmapWithDynamicLight(
+            packed, entity.getX(), ey, entity.getZ());
+        if (merged != packed) {
+            cir.setReturnValue(merged);
         }
     }
 }

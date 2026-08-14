@@ -115,6 +115,13 @@ object ParticleDrawCommands {
                         .executes(::startShockwaveDemo))
                     .then(Commands.literal("sine")
                         .executes(::startSineDemo)))
+                .then(Commands.literal("light")
+                    .then(Commands.literal("orbit")
+                        .executes(::startLightOrbitDemo))
+                    .then(Commands.literal("swing")
+                        .executes(::startLightSwingDemo))
+                    .then(Commands.literal("rush")
+                        .executes(::startLightRushDemo)))
                 .then(Commands.literal("clear")
                     .executes(::clearAll))
         )
@@ -416,7 +423,7 @@ object ParticleDrawCommands {
     )
 
     /** 演示类型枚举 */
-    enum class DemoType { CIRCLE, WAVE, RAIN, SPHERE, MAGIC_CIRCLE, MATRIX, TORNADO, VORTEX, HEART, HELIX, SPIRAL, SHOCKWAVE }
+    enum class DemoType { CIRCLE, WAVE, RAIN, SPHERE, MAGIC_CIRCLE, MATRIX, TORNADO, VORTEX, HEART, HELIX, SPIRAL, SHOCKWAVE, LIGHT_ORBIT, LIGHT_SWING, LIGHT_RUSH }
 
     /** 当前活跃的演示状态列表 */
     @JvmField
@@ -605,6 +612,78 @@ object ParticleDrawCommands {
                                     .easing(EasingType.LINEAR, 2)
                                     .send(players)
                             }
+                        }
+                    }
+
+                    DemoType.LIGHT_ORBIT -> {
+                        val tick = state.tickCounter.toDouble()
+                        val engine = state.manager.getEngine()
+                        val groupData = engine.getGroup(g.id) ?: continue
+                        val players = state.manager.getPlayers()
+                        val n = groupData.size()
+
+                        var idx = 0
+                        for (memberId in groupData.memberIds()) {
+                            if (engine.getParticle(memberId) == null) continue
+                            val phase = idx.toDouble() / n * 2.0 * PI
+                            val ang = tick * 0.16 + phase
+                            val radius = 6.5 + sin(tick * 0.045 + phase) * 1.3
+                            val x = state.origin.x + cos(ang) * radius
+                            val z = state.origin.z + sin(ang) * radius
+                            val y = state.origin.y + sin(tick * 0.10 + phase) * 2.6
+                            engine.update(memberId)
+                                .position(x, y, z)
+                                .easing(EasingType.LINEAR, 1)
+                                .send(players)
+                            idx++
+                        }
+                    }
+
+                    DemoType.LIGHT_SWING -> {
+                        val tick = state.tickCounter.toDouble()
+                        val engine = state.manager.getEngine()
+                        val groupData = engine.getGroup(g.id) ?: continue
+                        val players = state.manager.getPlayers()
+                        val n = groupData.size()
+
+                        var idx = 0
+                        for (memberId in groupData.memberIds()) {
+                            if (engine.getParticle(memberId) == null) continue
+                            val phase = idx.toDouble() / n * 2.0 * PI
+                            val ang = tick * 0.085 + phase
+                            val x = state.origin.x + 9.0 * sin(ang)
+                            val y = state.origin.y + 3.2 * cos(ang)
+                            val z = state.origin.z
+                            engine.update(memberId)
+                                .position(x, y, z)
+                                .easing(EasingType.LINEAR, 1)
+                                .send(players)
+                            idx++
+                        }
+                    }
+
+                    DemoType.LIGHT_RUSH -> {
+                        val tick = state.tickCounter.toDouble()
+                        val engine = state.manager.getEngine()
+                        val groupData = engine.getGroup(g.id) ?: continue
+                        val players = state.manager.getPlayers()
+                        val span = 22.0
+
+                        var idx = 0
+                        for (memberId in groupData.memberIds()) {
+                            if (engine.getParticle(memberId) == null) continue
+                            val speed = 0.34 + idx * 0.07
+                            val lane = (idx - 1) * 2.5
+                            val period = span * 2.0
+                            val phase = (tick * speed) % period
+                            val u = if (phase < span) phase else period - phase
+                            val x = state.origin.x - span / 2.0 + u
+                            val y = state.origin.y + sin(tick * 0.18 + idx) * 1.1
+                            val z = state.origin.z + lane
+                            engine.update(memberId)
+                                .position(x, y, z)
+                                .send(players)
+                            idx++
                         }
                     }
                 }
@@ -1301,6 +1380,114 @@ object ParticleDrawCommands {
         ctx.source.sendSuccess(
             { Component.literal("Shockwave demo! $total particles, radar pulse rings") }, false)
         return total
+    }
+
+    /**
+     * 光环轨道演示：多个发光粒子以大半径绕中心高速公转并上下浮动，
+     * 用于观察动态光照在大范围移动时的平滑过渡与区块重建。
+     */
+    fun startLightOrbitDemo(ctx: CommandContext<CommandSourceStack>): Int {
+        val player = ctx.source.playerOrException
+        val level = player.level()
+        val pm = ParticleManager.of(level)
+
+        val center = player.position().add(player.lookAngle.scale(7.0)).add(0.0, 1.5, 0.0)
+        val group = pm.createGroup(center)
+
+        val hues = floatArrayOf(0.0f, 0.13f, 0.35f, 0.58f, 0.82f)
+        val levels = intArrayOf(15, 13, 15, 11, 14)
+        val count = hues.size
+
+        for (i in 0 until count) {
+            val handle = pm.create()
+                .style(ParticleStyle.GLOW)
+                .position(center)
+                .color(Color.ofHsb(hues[i], 1.0f, 1.0f))
+                .scale(0.9f)
+                .lifetime(-1)
+                .group(group.id)
+                .glowing(true)
+                .lightLevel(levels[i])
+                .spawn()
+            group.add(handle)
+        }
+
+        demoStates += DemoState(group, pm, DemoType.LIGHT_ORBIT, center)
+        ctx.source.sendSuccess(
+            { Component.literal("Light orbit! $count orbs circling at radius ~6.5") }, false)
+        return count
+    }
+
+    /**
+     * 摆锤扫光演示：发光粒子沿大椭圆轨迹大幅摆动，
+     * 观察光照在水平大跨度上的平滑扫动。
+     */
+    fun startLightSwingDemo(ctx: CommandContext<CommandSourceStack>): Int {
+        val player = ctx.source.playerOrException
+        val level = player.level()
+        val pm = ParticleManager.of(level)
+
+        val center = player.position().add(player.lookAngle.scale(5.0)).add(0.0, 2.5, 0.0)
+        val group = pm.createGroup(center)
+
+        val hues = floatArrayOf(0.12f, 0.5f, 0.95f)
+        val levels = intArrayOf(14, 12, 15)
+        val count = hues.size
+
+        for (i in 0 until count) {
+            val handle = pm.create()
+                .style(ParticleStyle.GLOW)
+                .position(center)
+                .color(Color.ofHsb(hues[i], 1.0f, 1.0f))
+                .scale(1.0f)
+                .lifetime(-1)
+                .group(group.id)
+                .glowing(true)
+                .lightLevel(levels[i])
+                .spawn()
+            group.add(handle)
+        }
+
+        demoStates += DemoState(group, pm, DemoType.LIGHT_SWING, center)
+        ctx.source.sendSuccess(
+            { Component.literal("Light swing! $count orbs sweeping a 18x6 ellipse") }, false)
+        return count
+    }
+
+    /**
+     * 光箭穿梭演示：发光粒子沿横向高速往返穿梭（ping-pong），
+     * 观察快速移动光源下的动态光照刷新与平滑度。
+     */
+    fun startLightRushDemo(ctx: CommandContext<CommandSourceStack>): Int {
+        val player = ctx.source.playerOrException
+        val level = player.level()
+        val pm = ParticleManager.of(level)
+
+        val center = player.position().add(player.lookAngle.scale(6.0)).add(0.0, 1.5, 0.0)
+        val group = pm.createGroup(center)
+
+        val hues = floatArrayOf(0.0f, 0.18f, 0.55f, 0.85f)
+        val levels = intArrayOf(15, 15, 14, 15)
+        val count = hues.size
+
+        for (i in 0 until count) {
+            val handle = pm.create()
+                .style(ParticleStyle.GLOW)
+                .position(center)
+                .color(Color.ofHsb(hues[i], 1.0f, 1.0f))
+                .scale(0.85f)
+                .lifetime(-1)
+                .group(group.id)
+                .glowing(true)
+                .lightLevel(levels[i])
+                .spawn()
+            group.add(handle)
+        }
+
+        demoStates += DemoState(group, pm, DemoType.LIGHT_RUSH, center)
+        ctx.source.sendSuccess(
+            { Component.literal("Light rush! $count comets streaking across 22 blocks") }, false)
+        return count
     }
 
     /**

@@ -5,8 +5,8 @@
   "refmap": "particledrawing.refmap.json",
   "mixins": [],
   "client": [
-    "EntityRendererMixin",
-    "LightmapRenderStateExtractorMixin"
+    "BrightnessGetterMixin",
+    "EntityRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 1

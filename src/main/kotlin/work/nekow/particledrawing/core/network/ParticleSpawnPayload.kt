@@ -20,6 +20,7 @@ import java.util.UUID
  * @param lifetime 存活 tick 数
  * @param groupId 所属组 ID，可为 null
  * @param glowing 是否发光
+ * @param lightLevel 发光粒子向外发出的光照等级 (0-15)
  */
 @Suppress("unused")
 data class ParticleSpawnPayload(
@@ -30,7 +31,8 @@ data class ParticleSpawnPayload(
     val scale: Float,
     val lifetime: Int,
     val groupId: UUID?,
-    val glowing: Boolean
+    val glowing: Boolean,
+    val lightLevel: Int
 ) : CustomPacketPayload {
 
     companion object {
@@ -56,7 +58,8 @@ data class ParticleSpawnPayload(
                     val lifetime = buf.readVarInt()
                     val gid = StreamCodecs.readNullableUUID(buf)
                     val glw = buf.readBoolean()
-                    return ParticleSpawnPayload(pid, sty, x, y, z, r, g, b, a, scale, lifetime, gid, glw)
+                    val light = buf.readVarInt()
+                    return ParticleSpawnPayload(pid, sty, x, y, z, r, g, b, a, scale, lifetime, gid, glw, light)
                 }
 
                 override fun encode(buf: FriendlyByteBuf, p: ParticleSpawnPayload) {
@@ -73,6 +76,7 @@ data class ParticleSpawnPayload(
                     buf.writeVarInt(p.lifetime)
                     StreamCodecs.writeNullableUUID(buf, p.groupId)
                     buf.writeBoolean(p.glowing)
+                    buf.writeVarInt(p.lightLevel)
                 }
             }
     }

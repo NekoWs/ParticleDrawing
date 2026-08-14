@@ -76,6 +76,16 @@ class ParticleHandle(
     }
 
     /**
+     * 动态修改粒子的发光光照等级 (0-15)，并同步到客户端。
+     * @param level 目标光照等级，自动钳制到 [0, 15]
+     * @return 自身，支持链式调用
+     */
+    fun lightLevel(level: Int): ParticleHandle {
+        manager.getEngine().setLightLevel(id, level, manager.getPlayers())
+        return this
+    }
+
+    /**
      * 使用缓动改变粒子颜色。
      * @param color 目标颜色
      * @param durationTicks 持续 tick 数
@@ -141,6 +151,7 @@ class ParticleHandle(
         private var lifetime: Int = -1
         private var groupId: UUID? = null
         private var glowing: Boolean = false
+        private var lightLevel: Int = 15
         private var offsetFromPivot: Vec3 = Vec3.ZERO
 
         /** 设置粒子视觉样式。 */
@@ -182,6 +193,12 @@ class ParticleHandle(
         /** 标记为发光粒子。 */
         fun glowing(glowing: Boolean) = apply { this.glowing = glowing }
 
+        /**
+         * 设置发光粒子向外发出的光照等级 (0-15)，仅当 [glowing] 为 true 时生效。
+         * @param level 光照等级，自动钳制到 [0, 15]
+         */
+        fun lightLevel(level: Int) = apply { this.lightLevel = level.coerceIn(0, 15) }
+
         /** 设置相对组轴心的偏移。 */
         fun offsetFromPivot(offset: Vec3) = apply { this.offsetFromPivot = offset }
 
@@ -198,7 +215,7 @@ class ParticleHandle(
             val engine = manager.getEngine()
             val data = engine.spawnParticle(
                 style, position, color, scale, lifetime,
-                groupId, glowing, offsetFromPivot,
+                groupId, glowing, lightLevel, offsetFromPivot,
                 manager.getPlayers()
             ) ?: return null
             return ParticleHandle(data.id, manager)

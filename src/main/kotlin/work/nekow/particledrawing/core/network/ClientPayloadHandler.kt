@@ -16,7 +16,7 @@ internal object ClientPayloadHandler {
                 payload.x, payload.y, payload.z,
                 payload.r, payload.g, payload.b, payload.a,
                 payload.scale, payload.lifetime,
-                payload.groupId, payload.glowing
+                payload.groupId, payload.glowing, payload.lightLevel
             )
         }
     }
@@ -68,6 +68,14 @@ internal object ClientPayloadHandler {
         context.enqueueWork {
             ClientParticleEngine.instance()?.setVelocity(
                 payload.particleId, payload.vx, payload.vy, payload.vz
+            )
+        }
+    }
+
+    fun handleLightLevel(payload: ParticleLightLevelPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientParticleEngine.instance()?.setLightLevel(
+                payload.particleId, payload.lightLevel
             )
         }
     }
