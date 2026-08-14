@@ -1,6 +1,7 @@
 plugins {
     id 'java-library'
     id 'maven-publish'
+    id 'signing'
     id 'net.neoforged.gradle.userdev' version '7.1.38'
     id 'org.jetbrains.kotlin.jvm'
 }
@@ -28,6 +29,16 @@ base {
 }
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(25)
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.addStringOption('Xdoclint:none', '-quiet')
+    options.encoding = 'UTF-8'
+}
 
 runs {
     configureEach {
@@ -92,12 +103,56 @@ publishing {
     publications {
         register('mavenJava', MavenPublication) {
             from components.java
+
+            artifactId = mod_id
+
+            pom {
+                name = mod_name
+                description = 'A high-performance server-authoritative particle effects library for NeoForge.'
+                url = 'https://github.com/NekoWs/ParticleDrawing'
+                licenses {
+                    license {
+                        name = 'Apache License, Version 2.0'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'NekoWs'
+                        name = 'NekoWs'
+                    }
+                }
+                scm {
+                    connection = 'scm:git:https://github.com/NekoWs/ParticleDrawing.git'
+                    developerConnection = 'scm:git:ssh://git@github.com/NekoWs/ParticleDrawing.git'
+                    url = 'https://github.com/NekoWs/ParticleDrawing'
+                }
+            }
         }
     }
     repositories {
+        // 本地测试仓库
         maven {
-            url "file://${project.projectDir}/repo"
+            name = 'local'
+            url = file("${project.projectDir}/repo")
         }
+        // Maven Central（Central Portal publisher API）
+        maven {
+            name = 'central'
+            url = uri('https://central.sonatype.com/api/v1/publisher')
+            credentials {
+                username = System.getenv('MAVEN_CENTRAL_USERNAME') ?: findProperty('centralUsername')
+                password = System.getenv('MAVEN_CENTRAL_TOKEN') ?: findProperty('centralPassword')
+            }
+        }
+    }
+}
+
+signing {
+    def signingKey = findProperty('signingKey')
+    if (signingKey) {
+        useInMemoryPgpKeys(signingKey as String, (findProperty('signingPassword') ?: '') as String)
+        sign publishing.publications.mavenJava
     }
 }
 
