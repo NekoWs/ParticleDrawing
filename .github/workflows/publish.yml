@@ -38,8 +38,10 @@ jobs:
           printf 'allow-loopback-pinentry\n' > ~/.gnupg/gpg-agent.conf
           gpgconf --kill gpg-agent || true
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          KEY_ID=$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^sec:/ {print $5; exit}')
+          echo "default-key $KEY_ID" >> ~/.gnupg/gpg.conf
           if [ -n "$GPG_PASSPHRASE" ]; then
-            echo "unlock" | gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --armor --sign --output /dev/null
+            echo "unlock" | gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --local-user "$KEY_ID" --armor --sign --output /dev/null
           fi
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
