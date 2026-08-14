@@ -19,8 +19,10 @@ version  : 1.0.0（来自 gradle.properties 的 mod_version）
 
 ## 第 1 步：生成并导出 GPG 密钥
 
+> 建议使用 **RSA 3072/4096** 密钥（Gpg4win 默认的 Ed25519/Curve25519 可能不被部分 Maven 工具链解析）。本项目签名走系统 `gpg` 命令，兼容性最好；但用 RSA 最稳妥。
+
 ```bash
-# 生成密钥（交互式，需设置 passphrase）
+# 生成密钥（交互式，需设置 passphrase，类型选 RSA 3072/4096）
 gpg --full-generate-key
 
 # 查看密钥 ID（8 位十六进制）
@@ -95,7 +97,8 @@ https://central.sonatype.com/artifact/work.nekow.particledrawing/particledrawing
 
 ## 常见问题
 
-- **签名失败 / 找不到密钥**：确认 `GPG_PRIVATE_KEY` 是完整的 ASCII-armored 私钥，且 `GPG_PASSPHRASE` 正确（无 passphrase 则设为空字符串）。
+- **签名失败：`Cannot query the value of this provider because it has no value available`**：通常是 Gradle 内置解析器不识别密钥算法（Gpg4win 默认的 Ed25519）。本项目已改用系统 `gpg` 命令签名（`useGpgCmd()`），可兼容所有算法；若仍想用最稳方案，重新生成一个 RSA 3072/4096 密钥。
+- **签名失败 / 找不到密钥**：确认 `GPG_PRIVATE_KEY` 是完整的 ASCII-armored 私钥（CI 会把它 `gpg --import` 到密钥环），且 `GPG_PASSPHRASE` 正确（无 passphrase 则设为空字符串）。
 - **401 认证失败**：检查 `MAVEN_CENTRAL_USERNAME` / `MAVEN_CENTRAL_TOKEN` 是否正确。
 - **校验失败：缺少 license / developers / scm**：这些已在 `build.gradle` 的 POM 中配置，无需改动。
 - **依赖 `net.neoforged:neoforge` 不在 Central**：该依赖由 NeoForge 官方仓库提供，Central 允许声明外部仓库依赖；消费方通过模组加载器解析即可。
