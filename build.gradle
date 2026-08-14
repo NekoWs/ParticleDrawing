@@ -31,11 +31,6 @@ base {
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(25)
 
-java {
-    withSourcesJar()
-    withJavadocJar()
-}
-
 tasks.withType(Javadoc).configureEach {
     options.addStringOption('Xdoclint:none', '-quiet')
     options.encoding = 'UTF-8'
