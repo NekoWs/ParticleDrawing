@@ -49,6 +49,15 @@ class RenderParticle(
     private var curScale: Float
     private var tgtScale: Float
 
+    private var startX: Double = 0.0
+    private var startY: Double = 0.0
+    private var startZ: Double = 0.0
+    private var startR: Float = 0f
+    private var startG: Float = 0f
+    private var startB: Float = 0f
+    private var startA: Float = 0f
+    private var startScale: Float = 0f
+
     private var deathTime: Long
     private var easing: EasingCurve
     private var easeDurationNs: Long
@@ -97,6 +106,15 @@ class RenderParticle(
      * @param durationMs 过渡持续时间（毫秒）
      */
     fun setTarget(position: Vec3, color: Color, scale: Float, easingType: EasingType, durationMs: Long) {
+        startX = curX
+        startY = curY
+        startZ = curZ
+        startR = curR
+        startG = curG
+        startB = curB
+        startA = curA
+        startScale = curScale
+
         tgtX = position.x
         tgtY = position.y
         tgtZ = position.z
@@ -181,14 +199,14 @@ class RenderParticle(
         val t = elapsed.toFloat() / easeDurationNs
         val easedT = easing.evaluate(t)
 
-        curX = lerp(curX, tgtX, easedT)
-        curY = lerp(curY, tgtY, easedT)
-        curZ = lerp(curZ, tgtZ, easedT)
-        curR = lerp(curR, tgtR, easedT)
-        curG = lerp(curG, tgtG, easedT)
-        curB = lerp(curB, tgtB, easedT)
-        curA = lerp(curA, tgtA, easedT)
-        curScale = lerp(curScale, tgtScale, easedT)
+        curX = lerp(startX, tgtX, easedT)
+        curY = lerp(startY, tgtY, easedT)
+        curZ = lerp(startZ, tgtZ, easedT)
+        curR = lerp(startR, tgtR, easedT)
+        curG = lerp(startG, tgtG, easedT)
+        curB = lerp(startB, tgtB, easedT)
+        curA = lerp(startA, tgtA, easedT)
+        curScale = lerp(startScale, tgtScale, easedT)
     }
 
     companion object {

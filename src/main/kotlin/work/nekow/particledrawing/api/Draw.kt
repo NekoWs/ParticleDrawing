@@ -309,7 +309,8 @@ object Draw {
     ): ParticleGroup {
         val group = manager.createGroup(center)
         val hw = width / 2; val hh = height / 2; val hd = depth / 2
-        val sp = maxOf(width, maxOf(height, depth)) / (particlesPerAxis - 1)
+        val step = particlesPerAxis.coerceAtLeast(2)
+        val sp = maxOf(width, maxOf(height, depth)) / (step - 1)
         val nx = (width / sp).toInt() + 1; val ny = (height / sp).toInt() + 1; val nz = (depth / sp).toInt() + 1
 
         for (ix in 0..nx) {
@@ -339,7 +340,8 @@ object Draw {
     ): ParticleGroup {
         val group = manager.createGroup(center)
         val hw = width / 2; val hh = height / 2
-        val sp = maxOf(width, height) / (particlesPerAxis - 1)
+        val step = particlesPerAxis.coerceAtLeast(2)
+        val sp = maxOf(width, height) / (step - 1)
         val nu = (width / sp).toInt() + 1; val nv = (height / sp).toInt() + 1
 
         for (iu in 0..nu) {

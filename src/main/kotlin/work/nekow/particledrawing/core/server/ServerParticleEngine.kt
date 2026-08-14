@@ -17,6 +17,10 @@ import work.nekow.particledrawing.core.network.ParticleSpawnPayload
 import work.nekow.particledrawing.core.network.ParticleUpdatePayload
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import org.apache.logging.log4j.LogManager
+import org.apache.logging.log4j.Logger
+
+private val LOGGER: Logger = LogManager.getLogger("ParticleDrawing")
 
 /**
  * 服务端权威粒子引擎，每个维度一个实例。
@@ -32,6 +36,12 @@ class ServerParticleEngine(
     private val particles: MutableMap<UUID, ParticleData> = ConcurrentHashMap()
     private val groups: MutableMap<UUID, ParticleGroupData> = ConcurrentHashMap()
 
+    // 粒子 -> 已同步的玩家集合；玩家 -> 已同步的粒子集合（用于每玩家粒子数限制与可见性重检）
+    private val visibleTo: MutableMap<UUID, MutableSet<UUID>> = ConcurrentHashMap()
+    private val playerParticles: MutableMap<UUID, MutableSet<UUID>> = ConcurrentHashMap()
+    private var visibilityTickCounter = 0
+    private var lastCapacityWarnNanos = 0L
+
     /**
      * 生成粒子并广播到视野内可见的玩家。
      *
@@ -44,13 +54,19 @@ class ServerParticleEngine(
      * @param glowing 是否发光
      * @param offsetFromPivot 相对轴心的偏移，可为 null
      * @param playersInDimension 维度内的玩家列表
-     * @return 创建的粒子数据
+     * @return 创建的粒子数据；达到维度上限时为 null
      */
     @Suppress("DataFlowIssue")
     fun spawnParticle(style: ParticleStyle, position: Vec3, color: Color,
                       scale: Float, lifetime: Int, groupId: UUID?,
                       glowing: Boolean, offsetFromPivot: Vec3?,
-                      playersInDimension: Collection<ServerPlayer>): ParticleData {
+                      playersInDimension: Collection<ServerPlayer>): ParticleData? {
+        val maxTotal = ParticleDrawingConfig.SERVER.maxParticlesPerDimension.get()
+        if (particles.size >= maxTotal) {
+            warnWhenOverCapacity()
+            return null
+        }
+
         val id = UUID.randomUUID()
         val data = ParticleData.create(id, style, position, color, scale,
             lifetime, groupId, glowing, offsetFromPivot)
@@ -66,7 +82,7 @@ class ServerParticleEngine(
             scale, lifetime, groupId, glowing
         )
 
-        sendToVisible(playersInDimension, position, payload)
+        broadcastSpawn(playersInDimension, position, id, payload)
         return data
     }
 
@@ -259,6 +275,7 @@ class ServerParticleEngine(
 
         val payload = ParticleDestroyPayload.single(id)
         sendToAllInDimension(playersInDimension, payload)
+        untrackParticle(id)
     }
 
     /**
@@ -277,6 +294,7 @@ class ServerParticleEngine(
 
         val payload = ParticleDestroyPayload.group(groupId, ids)
         sendToAllInDimension(playersInDimension, payload)
+        untrackParticles(ids)
     }
 
     /**
@@ -297,11 +315,22 @@ class ServerParticleEngine(
                 }
                 val payload = ParticleDestroyPayload.single(entry.key)
                 sendToAllInDimension(playersInDimension, payload)
+                untrackParticle(entry.key)
                 it.remove()
             }
         }
 
         groups.entries.removeIf { it.value.isEmpty() }
+
+        // 周期性可见性重检：补发新进入范围的粒子、回收已越界的粒子
+        visibilityTickCounter++
+        if (visibilityTickCounter >= ParticleDrawingConfig.SERVER.visibilityCheckInterval.get().coerceAtLeast(1)) {
+            visibilityTickCounter = 0
+            recheckVisibility(playersInDimension)
+        }
+
+        // 清理已离开维度的玩家追踪记录
+        pruneStalePlayers(playersInDimension)
     }
 
     /** @return 当前活跃粒子总数 */
@@ -367,7 +396,118 @@ class ServerParticleEngine(
 
         particles.clear()
         groups.clear()
+        playerParticles.clear()
+        visibleTo.clear()
         return count
+    }
+
+    private fun track(playerId: UUID, particleId: UUID) {
+        playerParticles.computeIfAbsent(playerId) { ConcurrentHashMap.newKeySet() }.add(particleId)
+        visibleTo.computeIfAbsent(particleId) { ConcurrentHashMap.newKeySet() }.add(playerId)
+    }
+
+    private fun untrackParticle(particleId: UUID) {
+        val playerIds = visibleTo.remove(particleId) ?: return
+        for (playerId in playerIds) {
+            playerParticles[playerId]?.remove(particleId)
+        }
+    }
+
+    private fun untrackParticles(particleIds: Collection<UUID>) {
+        for (particleId in particleIds) untrackParticle(particleId)
+    }
+
+    private fun broadcastSpawn(players: Collection<ServerPlayer>, position: Vec3,
+                               particleId: UUID, payload: CustomPacketPayload) {
+        val radius = ParticleDrawingConfig.SERVER.visibilityRadius.get()
+        val maxPerPlayer = ParticleDrawingConfig.SERVER.maxParticlesPerPlayer.get()
+
+        for (player in players) {
+            if (!ParticleVisibilityManager.isWithinRange(player, position, radius)) continue
+
+            val trackedCount = playerParticles[player.uuid]?.size ?: 0
+            if (trackedCount >= maxPerPlayer) continue
+
+            PacketDistributor.sendToPlayer(player, payload)
+            track(player.uuid, particleId)
+        }
+    }
+
+    private fun recheckVisibility(players: Collection<ServerPlayer>) {
+        if (players.isEmpty()) return
+        val radius = ParticleDrawingConfig.SERVER.visibilityRadius.get()
+        val maxPerPlayer = ParticleDrawingConfig.SERVER.maxParticlesPerPlayer.get()
+
+        for (player in players) {
+            val tracked = playerParticles[player.uuid] ?: continue
+
+            val toRemove = ArrayList<UUID>()
+            for (particleId in tracked) {
+                val data = particles[particleId]
+                if (data == null || !ParticleVisibilityManager.isWithinRange(player, data.position(), radius)) {
+                    toRemove.add(particleId)
+                }
+            }
+            for (particleId in toRemove) {
+                tracked.remove(particleId)
+                visibleTo[particleId]?.remove(player.uuid)
+                PacketDistributor.sendToPlayer(player, ParticleDestroyPayload.single(particleId))
+            }
+
+            var count = tracked.size
+            if (count < maxPerPlayer) {
+                for ((particleId, data) in particles) {
+                    if (count >= maxPerPlayer) break
+                    if (tracked.contains(particleId)) continue
+                    if (!ParticleVisibilityManager.isWithinRange(player, data.position(), radius)) continue
+
+                    PacketDistributor.sendToPlayer(player, spawnPayload(data))
+                    track(player.uuid, particleId)
+                    count++
+                }
+            }
+        }
+    }
+
+    private fun spawnPayload(data: ParticleData): ParticleSpawnPayload {
+        return ParticleSpawnPayload(
+            data.id, data.style,
+            data.position().x, data.position().y, data.position().z,
+            data.color().r, data.color().g, data.color().b, data.color().a,
+            data.scale(), data.lifetime(), data.groupId, data.glowing()
+        )
+    }
+
+    private fun pruneStalePlayers(players: Collection<ServerPlayer>) {
+        if (players.isEmpty()) {
+            playerParticles.clear()
+            visibleTo.clear()
+            return
+        }
+        val active = HashSet<UUID>(players.size)
+        for (player in players) active.add(player.uuid)
+
+        val it = playerParticles.keys.iterator()
+        while (it.hasNext()) {
+            val playerId = it.next()
+            if (playerId !in active) {
+                val ids = playerParticles.remove(playerId)
+                if (ids != null) {
+                    for (particleId in ids) {
+                        visibleTo[particleId]?.remove(playerId)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun warnWhenOverCapacity() {
+        val now = System.nanoTime()
+        if (now - lastCapacityWarnNanos > 1_000_000_000L) {
+            lastCapacityWarnNanos = now
+            LOGGER.warn("Particle limit reached in dimension {}: cannot spawn more than {} particles",
+                dimensionId, ParticleDrawingConfig.SERVER.maxParticlesPerDimension.get())
+        }
     }
 
     private fun sendToVisible(players: Collection<ServerPlayer>, position: Vec3,

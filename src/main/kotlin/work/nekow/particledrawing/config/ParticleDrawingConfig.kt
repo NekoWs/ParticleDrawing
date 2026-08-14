@@ -78,10 +78,10 @@ object ParticleDrawingConfig {
 
             builder.push("rendering")
             maxRenderParticles = builder
-                .comment("The maximum number of particles rendered per frame.")
+                .comment("The maximum number of particles the client keeps in its render pipeline.")
                 .defineInRange("maxRenderParticles", 50_000, 1, 200_000)
             particleBatchSize = builder
-                .comment("The number of particles batched in a single draw call.")
+                .comment("The number of particles whose eased state is synchronized to the renderer per frame (fair round-robin batch).")
                 .defineInRange("particleBatchSize", 4096, 64, 65536)
             builder.pop()
         }

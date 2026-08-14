@@ -39,12 +39,14 @@ class ParticleGroup(
      */
     @Suppress("unused")
     fun move(delta: Vec3, durationTicks: Int, easing: EasingType): ParticleGroup {
+        val newPivot = pivot.add(delta)
         manager.getEngine().applyGroupTransform(
             id, TransformOp.Type.TRANSLATE,
             delta, Vec3.ZERO, 0.0, Color.WHITE, 0f, pivot,
             durationTicks, easing, manager.getPlayers()
         )
-        pivot = pivot.add(delta)
+        pivot = newPivot
+        manager.getEngine().getGroup(id)?.setPivot(newPivot)
         return this
     }
 
@@ -101,9 +103,10 @@ class ParticleGroup(
 
     /**
      * 向该组添加一个粒子。
-     * @param handle 粒子的句柄
+     * @param handle 粒子的句柄，可为 null（粒子因达到上限被拒绝时）
      */
-    fun add(handle: ParticleHandle) {
+    fun add(handle: ParticleHandle?) {
+        if (handle == null) return
         val group = manager.getEngine().getGroup(id)
         group?.addMember(handle.id)
     }

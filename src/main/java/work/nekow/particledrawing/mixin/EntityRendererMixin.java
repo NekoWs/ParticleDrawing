@@ -33,7 +33,7 @@ public abstract class EntityRendererMixin<T extends Entity> {
             entity.getX(), ey, entity.getZ());
         if (dynamic > 0) {
             int skyLight = (packed >> 20) & 0xF;
-            int blockLight = (packed & 0xFFFF) & 0xF;
+            int blockLight = (packed >> 4) & 0xF;
             int newBlock = Math.min(15, blockLight + dynamic);
             cir.setReturnValue((skyLight << 20) | (newBlock << 4));
         }

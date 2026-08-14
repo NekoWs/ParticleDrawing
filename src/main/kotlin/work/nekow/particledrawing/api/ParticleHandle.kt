@@ -144,15 +144,15 @@ class ParticleHandle(
 
         /**
          * 生成粒子并返回句柄以供后续控制。
-         * @return 生成粒子的句柄
+         * @return 生成粒子的句柄；因达到维度粒子上限被拒绝时为 null
          */
-        fun spawn(): ParticleHandle {
+        fun spawn(): ParticleHandle? {
             val engine = manager.getEngine()
             val data = engine.spawnParticle(
                 style, position, color, scale, lifetime,
                 groupId, glowing, offsetFromPivot,
                 manager.getPlayers()
-            )
+            ) ?: return null
             return ParticleHandle(data.id, manager)
         }
     }

@@ -5,6 +5,7 @@ import net.minecraft.client.particle.ParticleEngine
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleStyle
+import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.motion.MotionSystem
 import work.nekow.particledrawing.core.motion.rotateAround
@@ -21,6 +22,10 @@ class ClientParticleEngine {
     private val particles: MutableMap<UUID, RenderParticle> = ConcurrentHashMap()
     private val bridges: MutableMap<UUID, BridgeParticle> = ConcurrentHashMap()
     private val groups: MutableMap<UUID, MutableSet<UUID>> = ConcurrentHashMap()
+
+    private var syncCursor = 0
+    private var cachedIds: Array<UUID> = emptyArray()
+    private var cachedSize = -1
 
     /**
      * 生成一个新粒子并注册到原版粒子系统中。
@@ -41,6 +46,8 @@ class ClientParticleEngine {
     fun spawnParticle(id: UUID, style: ParticleStyle, x: Double, y: Double, z: Double,
                       r: Float, g: Float, b: Float, a: Float, scale: Float,
                       lifetimeTicks: Int, groupId: UUID?, glowing: Boolean) {
+        if (particles.size >= ParticleDrawingConfig.CLIENT.maxRenderParticles.get()) return
+
         val lifetimeMs = if (lifetimeTicks > 0) lifetimeTicks * 50L else 0L
         val rp = RenderParticle(id, style, Vec3(x, y, z),
             Color.of(r, g, b, a), scale, glowing, lifetimeMs)
@@ -187,7 +194,50 @@ class ClientParticleEngine {
         MotionSystem.tick(groups, particles, bridges)
         val motionParticles = motionParticleIds()
 
-        for (rp in particles.values) {
+        syncParticlesInBatches(motionParticles)
+
+        val deadIds = ArrayList<UUID>()
+        val it = particles.entries.iterator()
+        while (it.hasNext()) {
+            val entry = it.next()
+            if (entry.value.isDead()) {
+                val id = entry.key
+                bridges.remove(id)?.remove()
+                deadIds.add(id)
+                it.remove()
+            }
+        }
+        if (deadIds.isNotEmpty()) {
+            for (memberSet in groups.values) {
+                for (id in deadIds) memberSet.remove(id)
+            }
+        }
+
+        groups.values.removeIf { it.isEmpty() }
+    }
+
+    /**
+     * 以 particleBatchSize 为每帧批次上限，按轮转顺序推进并同步非运动粒子的缓动状态。
+     * 处于运动算法控制下的粒子由 MotionSystem 每帧直接驱动，不占用此批次预算。
+     */
+    private fun syncParticlesInBatches(motionParticles: Set<UUID>) {
+        if (particles.size != cachedSize) {
+            cachedIds = particles.keys.toTypedArray()
+            cachedSize = particles.size
+            if (syncCursor >= cachedIds.size) syncCursor = 0
+        }
+
+        val n = cachedIds.size
+        if (n == 0) return
+
+        val batch = ParticleDrawingConfig.CLIENT.particleBatchSize.get().coerceAtLeast(1)
+        var processed = 0
+        while (processed < batch) {
+            val id = cachedIds[syncCursor % n]
+            syncCursor = (syncCursor + 1) % n
+            processed++
+
+            val rp = particles[id] ?: continue
             if (rp.id() in motionParticles) continue
 
             val wasSnap = rp.isSnapSync()
@@ -199,18 +249,6 @@ class ClientParticleEngine {
                 bp.syncScale(rp.scale())
             }
         }
-
-        val it = particles.entries.iterator()
-        while (it.hasNext()) {
-            val entry = it.next()
-            if (entry.value.isDead()) {
-                val id = entry.key
-                bridges.remove(id)?.remove()
-                it.remove()
-            }
-        }
-
-        groups.values.removeIf { it.isEmpty() }
     }
 
     /**
