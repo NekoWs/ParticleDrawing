@@ -43,6 +43,24 @@ class ParticleHandle(
     }
 
     /**
+     * 设置粒子的速度向量（blocks/tick）。
+     * @param velocity 速度向量
+     * @return 自身，支持链式调用
+     */
+    fun setVelocity(velocity: Vec3): ParticleHandle {
+        manager.getEngine().setVelocity(id, velocity, manager.getPlayers())
+        return this
+    }
+
+    /**
+     * 获取粒子当前在服务端的速度向量。
+     * @return 速度向量，不存在则返回 null
+     */
+    fun velocity(): Vec3? {
+        return manager.getEngine().getParticle(id)?.velocity()
+    }
+
+    /**
      * 使用缓动改变粒子颜色。
      * @param color 目标颜色
      * @param durationTicks 持续 tick 数
@@ -110,24 +128,31 @@ class ParticleHandle(
         private var glowing: Boolean = false
         private var offsetFromPivot: Vec3 = Vec3.ZERO
 
+        /** 设置粒子视觉样式。 */
         fun style(style: ParticleStyle) = apply { this.style = style }
 
+        /** 设置粒子位置。 */
         fun position(pos: Vec3) = apply { this.position = pos }
 
+        /** 设置粒子位置。 */
         fun position(x: Double, y: Double, z: Double) = apply {
             this.position = Vec3(x, y, z)
         }
 
+        /** 设置粒子颜色。 */
         fun color(color: Color) = apply { this.color = color }
 
+        /** 设置粒子颜色（整数分量）。 */
         fun color(r: Int, g: Int, b: Int) = apply {
             this.color = Color.ofInt(r, g, b)
         }
 
+        /** 设置粒子颜色（整数分量，含透明度）。 */
         fun color(r: Int, g: Int, b: Int, a: Int) = apply {
             this.color = Color.ofInt(r, g, b, a)
         }
 
+        /** 设置粒子缩放。 */
         fun scale(scale: Float) = apply { this.scale = scale }
 
         /**
@@ -136,10 +161,13 @@ class ParticleHandle(
          */
         fun lifetime(ticks: Int) = apply { this.lifetime = ticks }
 
+        /** 关联到指定粒子组。 */
         fun group(groupId: UUID) = apply { this.groupId = groupId }
 
+        /** 标记为发光粒子。 */
         fun glowing(glowing: Boolean) = apply { this.glowing = glowing }
 
+        /** 设置相对组轴心的偏移。 */
         fun offsetFromPivot(offset: Vec3) = apply { this.offsetFromPivot = offset }
 
         /**

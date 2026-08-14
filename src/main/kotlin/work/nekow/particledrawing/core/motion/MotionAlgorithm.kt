@@ -7,11 +7,8 @@ import work.nekow.particledrawing.api.Color
  * 运动算法接口。
  *
  * 每个 tick 按两阶段执行：
- * 1. [updatePivot] —— 每个算法调用一次，用于更新组轴心（可有内部状态）；
- * 2. [compute] —— 对组内每个粒子调用一次，应为纯计算（无副作用）。
- *
- * 算法不直接依赖 Minecraft 环境：目标点由 [MotionSystem.targetProvider]
- * 提供（默认为本地玩家位置），可替换以泛化用途。
+ * 1. [updatePivot] —— 每个算法调用一次，用于更新组轴心；
+ * 2. [compute] —— 对组内每个粒子调用一次，应为纯计算。
  */
 interface MotionAlgorithm {
     val id: String

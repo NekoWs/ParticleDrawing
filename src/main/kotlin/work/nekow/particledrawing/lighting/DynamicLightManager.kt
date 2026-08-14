@@ -9,9 +9,7 @@ import work.nekow.particledrawing.core.client.ClientParticleEngine
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
 /**
- * 动态光源管理器。
- * 维护活跃动态光源列表，提供光照等级查询。
- * 每帧根据玩家距离和亮度评分筛选光源，线程安全。
+ * 动态光源管理器：维护活跃光源列表并提供光照等级查询。
  */
 @Suppress("unused")
 object DynamicLightManager {
@@ -22,8 +20,7 @@ object DynamicLightManager {
     private var lightCount = 0
 
     /**
-     * 每帧渲染时更新活跃光源列表。
-     * 按亮度-距离加权评分排序后筛选光源。
+     * 每帧更新活跃光源列表。
      * @param engine 客户端粒子引擎
      * @param camera 当前相机
      */
@@ -86,8 +83,7 @@ object DynamicLightManager {
     }
 
     /**
-     * 获取指定位置的动态光照等级。
-     * 遍历所有活跃光源，应用衰减函数后取最大值。
+     * 获取指定位置的动态光照等级（0-15）。
      * @param x X 坐标
      * @param y Y 坐标
      * @param z Z 坐标
@@ -124,7 +120,6 @@ object DynamicLightManager {
 
     /**
      * 获取指定位置的打包动态光照值。
-     * 将亮度等级同时编码到高位和低位，供渲染管线使用。
      * @param x X 坐标
      * @param y Y 坐标
      * @param z Z 坐标

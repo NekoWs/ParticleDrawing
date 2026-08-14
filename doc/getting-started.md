@@ -81,7 +81,7 @@ fun spawnDemo(serverLevel: ServerLevel) {
 /particledraw clear
 ```
 
-完整的命令列表见 [命令与演示](./commands.md)。
+完整的命令列表见代码注释中的 `ParticleDrawCommands` 类，或 [类索引](./README.md)。
 
 ## 常见问题
 

@@ -8,6 +8,15 @@ import net.minecraft.resources.Identifier
 import work.nekow.particledrawing.ParticleDrawing
 import java.util.UUID
 
+/**
+ * 运动指令数据包，用于启动/停止客户端帧级运动算法。
+ *
+ * @param groupId 目标粒子组 ID
+ * @param active true=启动算法，false=停止该组所有运动
+ * @param algorithmId 算法 ID（如 "rotate"、"vortex"）
+ * @param params 算法参数数组（各算法的参数布局见对应算法类）
+ * @param px/py/pz 组轴心坐标
+ */
 data class MotionPayload(
     val groupId: UUID,
     val active: Boolean,

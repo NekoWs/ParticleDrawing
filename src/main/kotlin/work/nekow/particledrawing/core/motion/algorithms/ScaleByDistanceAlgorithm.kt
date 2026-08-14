@@ -5,9 +5,7 @@ import work.nekow.particledrawing.core.motion.MotionAlgorithm
 import work.nekow.particledrawing.core.motion.at
 
 /**
- * 基于目标点（默认玩家位置）距离缩放粒子。越近越大，越远越小。
- * 目标点由 MotionSystem.targetProvider 提供，可替换为任意参照点。
- *
+ * 基于目标点（默认玩家位置）距离缩放粒子。
  * params = [maxScale, minScale, maxDistance], 默认 [1.0, 0.05, 6.0]
  */
 class ScaleByDistanceAlgorithm(params: DoubleArray) : MotionAlgorithm {

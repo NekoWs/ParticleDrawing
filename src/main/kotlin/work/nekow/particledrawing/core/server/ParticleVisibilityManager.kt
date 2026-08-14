@@ -8,6 +8,13 @@ import net.minecraft.world.phys.Vec3
  */
 object ParticleVisibilityManager {
 
+    /**
+     * 判断玩家与粒子之间的欧氏距离是否在给定半径内。
+     * @param player 目标玩家
+     * @param particlePos 粒子世界坐标
+     * @param radius 可见半径（格）
+     * @return 在范围内返回 true
+     */
     fun isWithinRange(player: ServerPlayer, particlePos: Vec3, radius: Double): Boolean {
         val dx = player.x - particlePos.x
         val dy = player.y - particlePos.y

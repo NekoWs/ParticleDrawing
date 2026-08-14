@@ -7,17 +7,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * 创建粒子形状的高级绘图工具。
- *
- * 每个方法返回一个 [ParticleGroup]，
- * 可进一步使用移动、旋转、重新着色和缩放操作进行动画处理。
- *
- * 示例：
- * ```
- * val circle = Draw.circle(manager, center, 5.0, 64, Draw.Axis.XZ)
- * circle.rotate(Vec3.Z, Math.PI * 2, 100, EasingType.EASE_IN_OUT)
- * circle.recolor(Color.RED, 40, EasingType.EASE_OUT)
- * ```
+ * 创建粒子形状的绘图工具，每个方法返回一个 [ParticleGroup]。
  */
 @Suppress("unused")
 object Draw {
@@ -132,7 +122,12 @@ object Draw {
     /**
      * 通过叠加同心圆绘制实心圆（圆盘）。
      *
+     * @param manager 粒子管理器
+     * @param center 圆心
+     * @param radius 圆盘半径
+     * @param perimeterCount 最外层圆周的粒子数（内层按半径比例递减）
      * @param layers 从圆心到边缘的同心环层数
+     * @param axis 绘制平面
      */
     fun disc(
         manager: ParticleManager, center: Vec3,
@@ -252,7 +247,10 @@ object Draw {
     }
 
     /**
-     * 绘制正三角形。
+     * 绘制正三角形（三个顶点两两连线的轮廓）。
+     *
+     * @param segmentsPerEdge 每条边细分的粒子段数
+     * @param rotationOffset 整体旋转偏移（弧度）
      * @param group 可选，若提供则粒子归入该组而非创建新组
      */
     fun triangle(
@@ -283,7 +281,10 @@ object Draw {
     }
 
     /**
-     * 绘制六芒星（两个三角形旋转 60° 叠加）。
+     * 绘制六芒星（两个正三角形旋转 60° 叠加）。
+     *
+     * @param color1 第一个三角形的颜色
+     * @param color2 第二个（旋转 60°）三角形的颜色
      */
     fun hexagram(
         manager: ParticleManager, center: Vec3, radius: Double, segmentsPerEdge: Int = 40,
@@ -299,7 +300,10 @@ object Draw {
     }
 
     /**
-     * 绘制 3D 长方体粒子网格。
+     * 绘制 3D 长方体粒子网格（表面或实心）。
+     *
+     * @param particlesPerAxis 每条边期望的粒子数（用于推导网格间距）
+     * @param hollow 为 true 时只绘制表面，否则填充内部
      */
     fun cuboid(
         manager: ParticleManager, center: Vec3,
@@ -330,7 +334,11 @@ object Draw {
     }
 
     /**
-     * 绘制 2D 矩形网格。
+     * 绘制 2D 矩形网格（边框或填充）。
+     *
+     * @param particlesPerAxis 每条边期望的粒子数（用于推导网格间距）
+     * @param hollow 为 true 时只绘制边框，否则填充内部
+     * @param axis 矩形所在平面
      */
     fun rect(
         manager: ParticleManager, center: Vec3,
@@ -366,8 +374,11 @@ object Draw {
      * 描述 2D 图形所绘制的平面。
      */
     enum class Axis {
+        /** 水平面（默认，Y 为法线，图形铺在 XZ 平面） */
         XZ,
+        /** 朝 Z 方向的垂直面（图形铺在 XY 平面） */
         XY,
+        /** 朝 X 方向的垂直面（图形铺在 YZ 平面） */
         YZ
     }
 }

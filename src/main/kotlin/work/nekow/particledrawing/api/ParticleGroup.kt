@@ -121,9 +121,8 @@ class ParticleGroup(
     }
 
     /**
-     * 启动客户端帧级运动算法。客户端从基准位置每帧通过注册的算法函数计算。
-     *
-     * @param algorithmId 算法标识（如 "rotate", "color_gradient"）
+     * 启动帧级运动算法。
+     * @param algorithmId 算法标识（如 "rotate"、"color_gradient"）
      * @param params 算法参数数组
      */
     @JvmOverloads
@@ -131,27 +130,27 @@ class ParticleGroup(
         manager.getEngine().sendMotion(id, true, algorithmId, params, pivot, manager.getPlayers())
     }
 
-    /** 启动绕 X 轴旋转（基于实际秒数，不受 /tick 影响）。 */
+    /** 启动绕 X 轴旋转。 */
     fun rotateMotion(radiansPerSecond: Double) {
         addMotion(RotateAlgorithm.ID, doubleArrayOf(1.0, 0.0, 0.0, radiansPerSecond))
     }
 
-    /** 便捷方法：启动渐变着色（HSB 色相渐变，默认参数）。 */
+    /** 启动渐变着色（HSB 色相渐变，默认参数）。 */
     fun colorGradientMotion() {
         addMotion(ColorGradientAlgorithm.ID)
     }
 
-    /** 便捷方法：启动自定义参数的渐变着色。参数可由 [ColorGradientAlgorithm.hsbParams] / [ColorGradientAlgorithm.rgbParams] 构造。 */
+    /** 启动自定义参数的渐变着色。参数可由 [ColorGradientAlgorithm.hsbParams] / [ColorGradientAlgorithm.rgbParams] 构造。 */
     fun colorGradientMotion(params: DoubleArray) {
         addMotion(ColorGradientAlgorithm.ID, params)
     }
 
-    /** 便捷方法：跟随玩家移动，带指数平滑。 */
+    /** 跟随玩家移动，带指数平滑。 */
     fun followPlayerMotion(smoothFactor: Double = 0.06) {
         addMotion(FollowPlayerAlgorithm.ID, doubleArrayOf(smoothFactor))
     }
 
-    /** 便捷方法：基于玩家距离缩放粒子。 */
+    /** 基于玩家距离缩放粒子。 */
     fun scaleByDistanceMotion(maxScale: Double = 1.0, minScale: Double = 0.05, maxDistance: Double = 6.0) {
         addMotion(ScaleByDistanceAlgorithm.ID, doubleArrayOf(maxScale, minScale, maxDistance))
     }

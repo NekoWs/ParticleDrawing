@@ -8,8 +8,7 @@ import work.nekow.particledrawing.core.easing.EasingType
 import java.util.UUID
 
 /**
- * 渲染粒子，保存粒子的所有可视化状态并支持缓动过渡。
- * 通过 setTarget 设置目标值后，每帧 tick 会根据缓动曲线自动插值。
+ * 渲染粒子，保存粒子的可视化状态并支持缓动过渡与速度积分。
  *
  * @param id 粒子唯一标识符
  * @param style 粒子样式
@@ -59,10 +58,17 @@ class RenderParticle(
     private var startScale: Float = 0f
 
     private var deathTime: Long
+
+    // 位置缓动与颜色/缩放缓动使用独立计时器
     private var easing: EasingCurve
-    private var easeDurationNs: Long
-    private var easeStartTime: Long
+    private var posEaseStartTime: Long = 0L
+    private var posEaseDurationNs: Long = 0L
+    private var colEaseStartTime: Long = 0L
+    private var colEaseDurationNs: Long = 0L
     private var snapNextSync: Boolean = false
+
+    // 速度向量（blocks/tick）
+    private var velocity: Vec3 = Vec3.ZERO
 
     init {
         curX = position.x; tgtX = position.x
@@ -75,8 +81,6 @@ class RenderParticle(
         curScale = scale; tgtScale = scale
         deathTime = if (lifetimeMs > 0) System.nanoTime() + lifetimeMs * 1_000_000L else 0
         easing = LINEAR
-        easeDurationNs = 0
-        easeStartTime = 0
     }
 
     fun id(): UUID = id
@@ -97,15 +101,9 @@ class RenderParticle(
 
     fun isDead(): Boolean = !isAlive()
 
-    /**
-     * 设置缓动过渡的目标值。
-     * @param position 目标位置
-     * @param color 目标颜色
-     * @param scale 目标缩放
-     * @param easingType 缓动类型
-     * @param durationMs 过渡持续时间（毫秒）
-     */
+    /** 设置位置、颜色与缩放的缓动目标。 */
     fun setTarget(position: Vec3, color: Color, scale: Float, easingType: EasingType, durationMs: Long) {
+        velocity = Vec3.ZERO
         startX = curX
         startY = curY
         startZ = curZ
@@ -124,32 +122,85 @@ class RenderParticle(
         tgtA = color.a
         tgtScale = scale
         easing = easingType.curve
-        easeDurationNs = durationMs * 1_000_000L
-        easeStartTime = System.nanoTime()
+        val now = System.nanoTime()
+        posEaseStartTime = now
+        posEaseDurationNs = durationMs * 1_000_000L
+        colEaseStartTime = now
+        colEaseDurationNs = durationMs * 1_000_000L
         if (durationMs == 0L) snapNextSync = true
     }
 
-    /**
-     * 直接设置位置，不经过缓动。
-     * @param position 目标位置
-     */
+    /** 仅设置颜色与缩放的缓动目标。 */
+    fun setTargetColorScale(color: Color, scale: Float, easingType: EasingType, durationMs: Long) {
+        startR = curR
+        startG = curG
+        startB = curB
+        startA = curA
+        startScale = curScale
+
+        tgtR = color.r
+        tgtG = color.g
+        tgtB = color.b
+        tgtA = color.a
+        tgtScale = scale
+        easing = easingType.curve
+        colEaseStartTime = System.nanoTime()
+        colEaseDurationNs = durationMs * 1_000_000L
+        if (durationMs == 0L) snapNextSync = true
+    }
+
+    /** 设置速度向量（blocks/tick）。 */
+    fun setVelocity(velocity: Vec3) {
+        this.velocity = velocity
+        if (velocity.x != 0.0 || velocity.y != 0.0 || velocity.z != 0.0) {
+            posEaseStartTime = 0L
+        }
+    }
+
+    /** 当前速度向量。 */
+    fun velocity(): Vec3 = velocity
+
+    /** 设置位置的缓动目标。 */
+    fun setPositionTarget(x: Double, y: Double, z: Double, easingType: EasingType, durationMs: Long) {
+        velocity = Vec3.ZERO
+        startX = curX
+        startY = curY
+        startZ = curZ
+        tgtX = x
+        tgtY = y
+        tgtZ = z
+        easing = easingType.curve
+        posEaseStartTime = System.nanoTime()
+        posEaseDurationNs = durationMs * 1_000_000L
+        if (durationMs == 0L) snapNextSync = true
+    }
+
+    /** 立即跳变到目标位置。 */
+    fun snapPosition(x: Double, y: Double, z: Double) {
+        curX = x; tgtX = x
+        curY = y; tgtY = y
+        curZ = z; tgtZ = z
+        posEaseStartTime = 0L
+        snapNextSync = true
+    }
+
+    /** 直接设置位置，不经过缓动。 */
     fun setPositionDirect(position: Vec3) {
         curX = position.x; tgtX = position.x
         curY = position.y; tgtY = position.y
         curZ = position.z; tgtZ = position.z
-        easeStartTime = 0
+        posEaseStartTime = 0L
     }
 
     /**
      * 直接设置颜色，不经过缓动。
-     * @param color 目标颜色
      */
     fun setColorDirect(color: Color) {
         curR = color.r; tgtR = color.r
         curG = color.g; tgtG = color.g
         curB = color.b; tgtB = color.b
         curA = color.a; tgtA = color.a
-        easeStartTime = 0
+        colEaseStartTime = 0L
     }
 
     /** 直接设置缩放。 */
@@ -157,9 +208,14 @@ class RenderParticle(
         curScale = scale; tgtScale = scale
     }
 
-    fun isSnapSync(): Boolean = snapNextSync
+    /** 读取并清除「下一次同步应跳变」标记。 */
+    fun consumeSnap(): Boolean {
+        val s = snapNextSync
+        snapNextSync = false
+        return s
+    }
 
-    /** 返回缓动的目标位置（用于绝对坐标变换，避免插值漂移） */
+    /** 返回缓动的目标位置。 */
     fun targetPosition(): Vec3 = Vec3(tgtX, tgtY, tgtZ)
 
     /**
@@ -178,35 +234,44 @@ class RenderParticle(
         deathTime = if (lifetimeMs > 0) System.nanoTime() + lifetimeMs * 1_000_000L else 0
     }
 
-    /**
-     * 每帧更新：根据缓动曲线插值当前位置、颜色和缩放。
-     */
+    /** 每帧更新：推进速度积分与缓动插值。 */
     fun tick() {
-        if (easeStartTime == 0L) return
-
         val now = System.nanoTime()
-        val elapsed = now - easeStartTime
 
-        if (elapsed >= easeDurationNs) {
-            curX = tgtX; curY = tgtY; curZ = tgtZ
-            curR = tgtR; curG = tgtG; curB = tgtB; curA = tgtA
-            curScale = tgtScale
-            easeStartTime = 0
-            snapNextSync = false
-            return
+        if (velocity.x != 0.0 || velocity.y != 0.0 || velocity.z != 0.0) {
+            curX += velocity.x; tgtX += velocity.x
+            curY += velocity.y; tgtY += velocity.y
+            curZ += velocity.z; tgtZ += velocity.z
+        } else if (posEaseStartTime != 0L) {
+            val elapsed = now - posEaseStartTime
+            if (elapsed >= posEaseDurationNs) {
+                curX = tgtX; curY = tgtY; curZ = tgtZ
+                posEaseStartTime = 0L
+            } else {
+                val t = elapsed.toFloat() / posEaseDurationNs
+                val e = easing.evaluate(t)
+                curX = lerp(startX, tgtX, e)
+                curY = lerp(startY, tgtY, e)
+                curZ = lerp(startZ, tgtZ, e)
+            }
         }
 
-        val t = elapsed.toFloat() / easeDurationNs
-        val easedT = easing.evaluate(t)
-
-        curX = lerp(startX, tgtX, easedT)
-        curY = lerp(startY, tgtY, easedT)
-        curZ = lerp(startZ, tgtZ, easedT)
-        curR = lerp(startR, tgtR, easedT)
-        curG = lerp(startG, tgtG, easedT)
-        curB = lerp(startB, tgtB, easedT)
-        curA = lerp(startA, tgtA, easedT)
-        curScale = lerp(startScale, tgtScale, easedT)
+        if (colEaseStartTime != 0L) {
+            val elapsed = now - colEaseStartTime
+            if (elapsed >= colEaseDurationNs) {
+                curR = tgtR; curG = tgtG; curB = tgtB; curA = tgtA
+                curScale = tgtScale
+                colEaseStartTime = 0L
+            } else {
+                val t = elapsed.toFloat() / colEaseDurationNs
+                val e = easing.evaluate(t)
+                curR = lerp(startR, tgtR, e)
+                curG = lerp(startG, tgtG, e)
+                curB = lerp(startB, tgtB, e)
+                curA = lerp(startA, tgtA, e)
+                curScale = lerp(startScale, tgtScale, e)
+            }
+        }
     }
 
     companion object {

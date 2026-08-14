@@ -6,8 +6,7 @@ import work.nekow.particledrawing.core.motion.at
 import work.nekow.particledrawing.core.motion.rotateAround
 
 /**
- * 螺旋扭转算法：粒子绕轴旋转，角速度随沿轴高度线性增大，
- * 模拟龙卷风/涡柱的剪切扭转。
+ * 螺旋扭转算法：粒子绕轴旋转，角速度随沿轴高度线性增大。
  *
  * 参数布局（DoubleArray，缺省值见括号）：
  * ```

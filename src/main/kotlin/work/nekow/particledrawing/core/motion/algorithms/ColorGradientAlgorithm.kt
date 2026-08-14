@@ -7,9 +7,7 @@ import work.nekow.particledrawing.core.motion.at
 import kotlin.math.sqrt
 
 /**
- * 通用渐变着色算法：将粒子相对 pivot 的坐标沿渐变方向投影，映射到颜色渐变。
- *
- * 渐变方向支持三种坐标轴（X / Y / Z）或任意自定义方向向量，可自由调整渐变角度。
+ * 渐变着色算法：将粒子相对 pivot 的坐标沿渐变方向投影，映射到颜色渐变。
  *
  * 参数布局（DoubleArray，缺省值见括号）：
  * ```

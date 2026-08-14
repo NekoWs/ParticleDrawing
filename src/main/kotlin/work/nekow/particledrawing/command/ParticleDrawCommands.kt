@@ -25,25 +25,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * ParticleDraw 命令注册与演示系统。
- *
- * 架构概览:
- * - ParticleManager —— 入口门面，每个维度一个实例
- *   - .create() → ParticleHandle.Builder → .spawn() (单粒子: style / position / color / scale / lifetime)
- *   - .createGroup(pivot) → ParticleGroup (粒子组: move / rotate / recolor / remove)
- *   - Draw.line/circle/disc/curve(...) → ParticleGroup (快捷绘图，自动创建粒子并加入组)
- * - EasingType —— 缓动曲线 (LINEAR / EASE_IN / EASE_OUT / EASE_IN_OUT / custom(x1,y1,x2,y2))
- * - ParticleGroup —— 组操作
- *   - g.rotate(axis, radians, durationTicks, easing)
- *   - g.move(delta, durationTicks, easing)
- *   - g.recolor(color, durationTicks, easing)
- *   - durationTicks=0 → 瞬移（无动画）
- *   - axis: Vec3(0,1,0)=Y轴, Vec3(1,0,0)=X轴, Vec3(0,0,1)=Z轴
- * - ServerParticleEngine —— 底层引擎
- *   - engine.update(id) → UpdateBuilder (.position / .color / .scale / .easing / .send)
- *   - engine.destroyGroup(id, players) / engine.clearAll(players)
- *
- * 数据流: 服务端计算 → 网络发送 → 客户端缓动插值 → 渲染
+ * /particledraw 命令注册与内置演示。
  */
 @EventBusSubscriber(modid = ParticleDrawing.MODID)
 @Suppress("unused")
@@ -130,7 +112,9 @@ object ParticleDrawCommands {
                     .then(Commands.literal("spiral")
                         .executes(::startSpiralDemo))
                     .then(Commands.literal("shockwave")
-                        .executes(::startShockwaveDemo)))
+                        .executes(::startShockwaveDemo))
+                    .then(Commands.literal("sine")
+                        .executes(::startSineDemo)))
                 .then(Commands.literal("clear")
                     .executes(::clearAll))
         )
@@ -509,20 +493,20 @@ object ParticleDrawCommands {
                     }
 
                     DemoType.SPHERE -> {
-                        // 旋转由客户端持续旋转系统处理，无需服务端更新
+                        // 旋转由 MotionSystem 处理
                     }
                     DemoType.MAGIC_CIRCLE -> {
-                        // 运动由 MotionSystem 客户端预测处理
+                        // 运动由 MotionSystem 处理
                     }
                     DemoType.MATRIX -> {
-                        // 运动由 MotionSystem 客户端预测处理
+                        // 运动由 MotionSystem 处理
                     }
                     DemoType.TORNADO -> {
-                        // 扭转由 SwirlAlgorithm 客户端帧级计算
+                        // 扭转由 SwirlAlgorithm 处理
                     }
 
                     DemoType.VORTEX -> {
-                        // 涡旋由 VortexAlgorithm 客户端帧级计算
+                        // 涡旋由 VortexAlgorithm 处理
                     }
 
                     DemoType.HEART -> {
@@ -579,10 +563,10 @@ object ParticleDrawCommands {
                     }
 
                     DemoType.HELIX -> {
-                        // 旋转由 MotionSystem 客户端预测处理
+                        // 旋转由 MotionSystem 处理
                     }
                     DemoType.SPIRAL -> {
-                        // 旋转与跟随由 MotionSystem 客户端预测处理
+                        // 旋转与跟随由 MotionSystem 处理
                     }
 
                     DemoType.SHOCKWAVE -> {
@@ -640,17 +624,70 @@ object ParticleDrawCommands {
             catch (_: Exception) {}
         }
         demoStates.clear()
+
+        for ((handle) in sineDemos) {
+            try { handle.remove() } catch (_: Exception) {}
+        }
+        sineDemos.clear()
+    }
+
+    /** 单粒子正弦轨迹演示状态。 */
+    data class SineDemoState(
+        val handle: ParticleHandle,
+        val manager: ParticleManager,
+        val origin: Vec3,
+        var tickCounter: Long = 0
+    )
+
+    /** 当前活跃的单粒子正弦演示列表。 */
+    @JvmField
+    var sineDemos: MutableList<SineDemoState> = mutableListOf()
+
+    /**
+     * SINE 演示：单个粒子沿 x=t, y=sin(t) 轨迹移动。
+     * @param ctx 命令上下文
+     * @return 生成的粒子数（1 或 0）
+     */
+    fun startSineDemo(ctx: CommandContext<CommandSourceStack>): Int {
+        val player = ctx.source.playerOrException
+        val level = player.level()
+        val pm = ParticleManager.of(level)
+
+        val origin = player.position().add(player.lookAngle.scale(4.0))
+        val handle = pm.create()
+            .style(ParticleStyle.GLOW)
+            .position(origin)
+            .color(Color.ofHsb(0.55f, 1.0f, 1.0f))
+            .scale(0.5f)
+            .lifetime(-1)
+            .spawn() ?: return 0
+
+        sineDemos += SineDemoState(handle, pm, origin)
+        ctx.source.sendSuccess(
+            { Component.literal("Sine demo! Single particle on x=t, y=sin(t), driven by velocity") }, false)
+        return 1
+    }
+
+    /** 每 tick 计算正弦轨迹的速度向量并下发。 */
+    @JvmStatic
+    fun tickSineDemos() {
+        val it = sineDemos.iterator()
+        while (it.hasNext()) {
+            val s = it.next()
+            s.tickCounter++
+            val t = s.tickCounter.toDouble()
+            // x = t * 0.2 -> dx/dt = 0.2 ; y = sin(t) -> dy/dt = cos(t)
+            val velocity = Vec3(0.2, cos(t), 0.0)
+            try {
+                s.handle.setVelocity(velocity)
+            } catch (_: Exception) {
+                it.remove()
+            }
+        }
     }
 
     /**
-     * CIRCLE 演示: XZ 平面水平圆环, 绕 Y 轴旋转。
-     *
-     * API 流程:
-     * 1. ParticleManager.of(ServerLevel) —— 获取维度入口
-     * 2. Draw.circle(manager, center, radius, count, Axis, color, style, scale)
-     *    —— 在指定平面等间距排列 count 个粒子, 返回 ParticleGroup
-     * 3. 将 group 存入 DemoState, 由 tickDemos() 驱动旋转
-     *
+     * CIRCLE 演示：XZ 平面水平圆环，绕 Y 轴旋转。
      * @param ctx 命令上下文
      * @return 组中粒子数量
      */
@@ -670,15 +707,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * WAVE 演示: 80 粒子圆环, 每个粒子独立 Y 轴正弦波动 + 绕中心旋转。
-     *
-     * API 流程:
-     * 1. Draw.circle() → 创建圆环, 返回 ParticleGroup
-     * 2. tickDemos() 通过 groupData.memberIds() 遍历每个粒子
-     * 3. engine.update() 只更新 Y 坐标
-     *    不影响颜色和缩放
-     * 4. durationTicks=2 → Y 变化 2 tick 缓动, 丝滑
-     *
+     * WAVE 演示：每个粒子独立 Y 轴正弦波动 + 绕中心旋转。
      * @param ctx 命令上下文
      * @return 组中粒子数量
      */
@@ -698,23 +727,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * RAIN 演示: 玩家头顶 2.5 格处 80 个蓝色粒子持续下落。
-     *
-     * API 流程:
-     * 1. ParticleManager.createGroup(center) —— 创建空粒子组 (pivot=center)
-     * 2. ParticleManager.create() (Builder 模式)
-     *        .style(ParticleStyle.DUST)
-     *        .position(x, y, z)        —— 必填
-     *        .color(Color.ofHsb(...))  —— 可选, 默认白色
-     *        .scale(0.15f)             —— 可选, 默认 1.0
-     *        .lifetime(-1)             —— -1 = 永生 (不自动过期)
-     *        .group(group.id)          —— 关联到组
-     *        .spawn()                  —— 实际创建粒子, 返回 ParticleHandle
-     * 3. group.add(handle) —— 将粒子加入组 (可用组操作统一管理)
-     * 4. tickDemos() 每 tick 更新 Y:
-     *    - 下落: durationTicks=2 → 平滑
-     *    - 触底: durationTicks=0 → 瞬移复位, 无动画
-     *
+     * RAIN 演示：蓝色粒子持续下落，触底复位。
      * @param ctx 命令上下文
      * @return 组中粒子数量
      */
@@ -751,10 +764,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * 球体 Demo: 半径 3 格的球面分布粒子，随旋转 RGB 渐变。
-     *
-     * 使用球坐标均匀分布 300 个粒子于球面。
-     * 每 tick 绕 Y 轴旋转并基于时间和粒子位置循环色相。
+     * 球体演示：球面分布粒子，随旋转渐变。
      */
     fun startSphereDemo(ctx: CommandContext<CommandSourceStack>): Int {
         val player = ctx.source.playerOrException
@@ -763,7 +773,7 @@ object ParticleDrawCommands {
 
         val center = player.position().add(player.lookAngle.scale(5.0))
         val group = Draw.sphere(pm, center, 3.0, 800)
-        group.rotateMotion(Math.toRadians(100.0))  // 100°/秒，不受 /tick 影响
+        group.rotateMotion(Math.toRadians(100.0))  // 100°/秒
         group.colorGradientMotion()                     // 固定表面纹理
 
         demoStates += DemoState(group, pm, DemoType.SPHERE, center)
@@ -773,8 +783,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * 法阵演示: 六芒星 + 内外圆 + 跟随玩家。
-     * 多个组叠加，各自独立运动算法。
+     * 法阵演示：六芒星 + 内外圆 + 跟随玩家。
      */
     fun startMagicCircleDemo(ctx: CommandContext<CommandSourceStack>): Int {
         val player = ctx.source.playerOrException
@@ -817,8 +826,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * 粒子矩阵演示：静态立方体网格，粒子大小随玩家距离动态变化。
-     * 越近粒子越大填满格子，越远越小至默认尺寸。
+     * 粒子矩阵演示：静态立方体网格，粒子大小随玩家距离变化。
      */
     fun startMatrixDemo(ctx: CommandContext<CommandSourceStack>): Int {
         val player = ctx.source.playerOrException
@@ -842,8 +850,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * 龙卷风演示: 24 条螺旋线沿漏斗轮廓上升 (底部窄、顶部喇叭口) + 底部旋转碎屑 + 发光核心。
-     * 扭转由 SwirlAlgorithm 客户端帧级计算 (角速度随高度增大), 零网络开销, ~7k 粒子。
+     * 龙卷风演示：24 条螺旋线沿漏斗轮廓上升 + 底部旋转碎屑 + 发光核心。
      */
     fun startTornadoDemo(ctx: CommandContext<CommandSourceStack>): Int {
         val player = ctx.source.playerOrException
@@ -917,8 +924,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * 涡旋演示: 填充圆盘 + 发光外环, 粒子螺旋内卷至中心后从外缘循环再生,
-     * 叠加向外扩散的波纹、差分旋转与螺旋色相, 由 VortexAlgorithm 客户端帧级计算。
+     * 涡旋演示：填充圆盘 + 发光外环，粒子螺旋内卷至中心后从外缘循环再生。
      */
     fun startVortexDemo(ctx: CommandContext<CommandSourceStack>): Int {
         val player = ctx.source.playerOrException
@@ -954,8 +960,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * 爱心演示: 静态大爱心 (8.5 格高, 正对玩家视线) —
-     * 双层轮廓心跳缩放、发光粒子雨循环上升、星光闪烁, 全部由服务端 tick 驱动。
+     * 爱心演示：双层轮廓心跳缩放、发光粒子雨循环上升、星光闪烁。
      */
     fun startHeartDemo(ctx: CommandContext<CommandSourceStack>): Int {
         val player = ctx.source.playerOrException
@@ -1050,8 +1055,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * DNA 双螺旋演示: 两股相位差 π 的细长螺旋 (7.5 格高) + 金色/青白交替碱基横档 + 发光中心轴,
-     * 缓慢绕 Y 轴旋转便于观察结构, 由客户端 RotateAlgorithm 驱动。
+     * DNA 双螺旋演示：两股螺旋 + 碱基横档 + 发光中心轴。
      */
     fun startHelixDemo(ctx: CommandContext<CommandSourceStack>): Int {
         val player = ctx.source.playerOrException
@@ -1131,8 +1135,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * 星系演示: 倾斜盘面的 4 条翘曲旋臂 (金色核心 → 蓝白尖端) + 发光核球 + 扁球星系晕
-     * + 外层星尘, 整体绕 Y 轴旋转, 由客户端 MotionSystem 驱动。
+     * 星系演示：4 条翘曲旋臂 + 发光核球 + 星系晕 + 外层星尘。
      */
     fun startSpiralDemo(ctx: CommandContext<CommandSourceStack>): Int {
         val player = ctx.source.playerOrException
@@ -1249,8 +1252,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * 雷达波演示: 8 环同心粒子持续外扩, 波前亮白放大、渐远衰减缩小,
-     * 越界环回收至中心重新扩散; 中心白色核心做缩放呼吸。
+     * 雷达波演示：同心环粒子持续外扩，越界回收至中心重新扩散。
      */
     fun startShockwaveDemo(ctx: CommandContext<CommandSourceStack>): Int {
         val player = ctx.source.playerOrException

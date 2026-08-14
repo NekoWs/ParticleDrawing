@@ -10,21 +10,6 @@ import java.util.UUID
 
 /**
  * 创建和管理粒子的入口点。
- * 同时提供高级绘图工具和底层粒子控制。
- *
- * 用法：
- * ```
- * val manager = ParticleManager.of(serverLevel)
- * val handle = manager.create()
- *     .style(ParticleStyle.DUST)
- *     .position(0.0, 64.0, 0.0)
- *     .color(Color.RED)
- *     .lifetime(100)
- *     .spawn()
- *
- * val circle = Draw.circle(manager, center, 5.0, 64)
- * circle.rotate(Vec3.Z, Math.PI / 4, EasingType.EASE_IN_OUT.duration(40))
- * ```
  */
 @Suppress("unused")
 class ParticleManager private constructor(val level: ServerLevel) {

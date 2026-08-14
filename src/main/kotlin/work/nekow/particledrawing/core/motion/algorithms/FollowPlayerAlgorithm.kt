@@ -6,8 +6,6 @@ import work.nekow.particledrawing.core.motion.at
 
 /**
  * 跟随目标点（默认玩家位置）移动，带指数平滑。
- * 目标点由 MotionSystem.targetProvider 提供，可替换为任意移动体。
- *
  * params = [ smoothFactor ]，默认 0.02
  */
 class FollowPlayerAlgorithm(params: DoubleArray) : MotionAlgorithm {

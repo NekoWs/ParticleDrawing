@@ -17,9 +17,13 @@ class TransformOp private constructor(
     val targetScale: Float
 ) {
     enum class Type {
+        /** 平移 */
         TRANSLATE,
+        /** 绕轴旋转 */
         ROTATE,
+        /** 重着色 */
         RECOLOR,
+        /** 缩放 */
         SCALE
     }
 

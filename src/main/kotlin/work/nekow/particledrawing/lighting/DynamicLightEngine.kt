@@ -12,9 +12,7 @@ import work.nekow.particledrawing.core.client.RenderParticle
 import kotlin.math.roundToInt
 
 /**
- * 动态光源引擎。
- * 通过替换服务端方块为光源方块实现动态光照。
- * 每 tick 同步发光粒子与光照引擎：根据粒子亮度放置/更新/移除光源方块。
+ * 动态光源引擎：根据发光粒子放置/移除光源方块。
  */
 @Suppress("unused")
 object DynamicLightEngine {
@@ -24,8 +22,7 @@ object DynamicLightEngine {
     private val originalBlocks = HashMap<BlockPos, BlockState>()
 
     /**
-     * 每 tick 处理动态光照。
-     * 按距离排序粒子，限制数量与距离，计算亮度等级后放置或更新光源方块。
+     * 每 tick 根据发光粒子更新光源方块。
      * @param glowingParticles 当前活跃的发光粒子列表
      */
     fun tick(glowingParticles: List<RenderParticle>) {

@@ -14,6 +14,9 @@ import work.nekow.particledrawing.core.motion.algorithms.VortexAlgorithm
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * 客户端帧级运动系统：注册、启动运动算法并每帧计算粒子的位置/颜色/缩放。
+ */
 @Suppress("unused")
 object MotionSystem {
 
@@ -22,7 +25,6 @@ object MotionSystem {
     /** 目标点提供者（默认为本地玩家位置），可替换以泛化算法用途。 */
     @Volatile
     var targetProvider: () -> Vec3? = { Minecraft.getInstance().player?.position() }
-
     init {
         register(RotateAlgorithm.ID, ::RotateAlgorithm)
         register(ColorGradientAlgorithm.ID, ::ColorGradientAlgorithm)

@@ -4,6 +4,9 @@ import net.neoforged.neoforge.network.handling.IPayloadContext
 import work.nekow.particledrawing.core.client.ClientParticleEngine
 import work.nekow.particledrawing.core.motion.MotionPayload
 
+/**
+ * 客户端数据包处理器，将各类数据包分发到 [ClientParticleEngine] 的对应方法。
+ */
 internal object ClientPayloadHandler {
 
     fun handleSpawn(payload: ParticleSpawnPayload, context: IPayloadContext) {
@@ -57,6 +60,14 @@ internal object ClientPayloadHandler {
                 payload.groupId, payload.active,
                 payload.algorithmId, payload.params,
                 payload.px, payload.py, payload.pz
+            )
+        }
+    }
+
+    fun handleVelocity(payload: ParticleVelocityPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientParticleEngine.instance()?.setVelocity(
+                payload.particleId, payload.vx, payload.vy, payload.vz
             )
         }
     }

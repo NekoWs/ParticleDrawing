@@ -7,6 +7,9 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar
 import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.core.motion.MotionPayload
 
+/**
+ * 网络包注册处理器：注册所有 `playToClient` 数据包。
+ */
 @EventBusSubscriber(modid = ParticleDrawing.MODID)
 @Suppress("unused")
 object NetworkHandler {
@@ -21,5 +24,6 @@ object NetworkHandler {
         registrar.playToClient(ParticleDestroyPayload.TYPE, ParticleDestroyPayload.STREAM_CODEC, ClientPayloadHandler::handleDestroy)
         registrar.playToClient(ParticleGroupTransformPayload.TYPE, ParticleGroupTransformPayload.STREAM_CODEC, ClientPayloadHandler::handleGroupTransform)
         registrar.playToClient(MotionPayload.TYPE, MotionPayload.STREAM_CODEC, ClientPayloadHandler::handleMotion)
+        registrar.playToClient(ParticleVelocityPayload.TYPE, ParticleVelocityPayload.STREAM_CODEC, ClientPayloadHandler::handleVelocity)
     }
 }

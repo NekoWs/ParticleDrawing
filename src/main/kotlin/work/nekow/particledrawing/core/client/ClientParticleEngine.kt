@@ -13,8 +13,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 客户端粒子引擎，管理渲染粒子的生命周期与桥接。
- * 负责粒子的生成、更新、分组变换和每帧同步。
+ * 客户端粒子引擎，管理渲染粒子的生命周期、桥接与每帧同步。
  */
 @Suppress("unused")
 class ClientParticleEngine {
@@ -90,13 +89,32 @@ class ClientParticleEngine {
                        durationTicks: Int, easing: EasingType) {
         val rp = particles[id] ?: return
 
-        val durationMs = durationTicks * 50L
-        val pos = Vec3(if (hasPos) x else rp.x(), if (hasPos) y else rp.y(), if (hasPos) z else rp.z())
-        val color = Color.of(
-            if (hasColor) r else rp.r(), if (hasColor) g else rp.g(),
-            if (hasColor) b else rp.b(), if (hasColor) a else rp.a())
-        val scl = if (hasScale) scale else rp.scale()
-        rp.setTarget(pos, color, scl, easing, durationMs)
+        if (hasPos) {
+            if (durationTicks == 0) {
+                rp.snapPosition(x, y, z)
+            } else {
+                rp.setPositionTarget(x, y, z, easing, durationTicks * 50L)
+            }
+        }
+
+        if (hasColor || hasScale) {
+            val color = Color.of(
+                if (hasColor) r else rp.r(), if (hasColor) g else rp.g(),
+                if (hasColor) b else rp.b(), if (hasColor) a else rp.a())
+            val scl = if (hasScale) scale else rp.scale()
+            rp.setTargetColorScale(color, scl, easing, durationTicks * 50L)
+        }
+    }
+
+    /**
+     * 设置粒子的速度向量（blocks/tick）。
+     * @param id 粒子唯一标识符
+     * @param vx X 速度分量
+     * @param vy Y 速度分量
+     * @param vz Z 速度分量
+     */
+    fun setVelocity(id: UUID, vx: Double, vy: Double, vz: Double) {
+        particles[id]?.setVelocity(Vec3(vx, vy, vz))
     }
 
     /**
@@ -149,7 +167,7 @@ class ClientParticleEngine {
         for (memberId in members) {
             val rp = particles[memberId] ?: continue
 
-            // 使用目标位置而非插值位置计算变换，避免逐帧漂移
+            // 使用目标位置计算变换
             val curPos = rp.targetPosition()
             val newPos: Vec3
             val newColor: Color
@@ -217,8 +235,7 @@ class ClientParticleEngine {
     }
 
     /**
-     * 以 particleBatchSize 为每帧批次上限，按轮转顺序推进并同步非运动粒子的缓动状态。
-     * 处于运动算法控制下的粒子由 MotionSystem 每帧直接驱动，不占用此批次预算。
+     * 按轮转顺序分批推进非运动粒子的缓动同步。
      */
     private fun syncParticlesInBatches(motionParticles: Set<UUID>) {
         if (particles.size != cachedSize) {
@@ -231,8 +248,9 @@ class ClientParticleEngine {
         if (n == 0) return
 
         val batch = ParticleDrawingConfig.CLIENT.particleBatchSize.get().coerceAtLeast(1)
+        val limit = minOf(batch, n)
         var processed = 0
-        while (processed < batch) {
+        while (processed < limit) {
             val id = cachedIds[syncCursor % n]
             syncCursor = (syncCursor + 1) % n
             processed++
@@ -240,7 +258,7 @@ class ClientParticleEngine {
             val rp = particles[id] ?: continue
             if (rp.id() in motionParticles) continue
 
-            val wasSnap = rp.isSnapSync()
+            val wasSnap = rp.consumeSnap()
             rp.tick()
             val bp = bridges[rp.id()]
             if (bp != null) {

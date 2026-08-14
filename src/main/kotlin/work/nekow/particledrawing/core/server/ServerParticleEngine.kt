@@ -15,6 +15,7 @@ import work.nekow.particledrawing.core.network.ParticleDestroyPayload
 import work.nekow.particledrawing.core.network.ParticleGroupTransformPayload
 import work.nekow.particledrawing.core.network.ParticleSpawnPayload
 import work.nekow.particledrawing.core.network.ParticleUpdatePayload
+import work.nekow.particledrawing.core.network.ParticleVelocityPayload
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import org.apache.logging.log4j.LogManager
@@ -23,8 +24,8 @@ import org.apache.logging.log4j.Logger
 private val LOGGER: Logger = LogManager.getLogger("ParticleDrawing")
 
 /**
- * 服务端权威粒子引擎，每个维度一个实例。
- * 管理粒子生命周期、可见性和网络同步。
+ * 服务端权威粒子引擎，每个维度一个实例（通过 [getOrCreate] 获取），
+ * 负责粒子与粒子组的生命周期与网络同步。
  *
  * @param dimensionId 所属维度的唯一标识符
  */
@@ -122,6 +123,20 @@ class ServerParticleEngine(
             else -> ParticleUpdatePayload.scaleOnly(id, scale, durationTicks, easing)
         }
 
+        sendToVisible(playersInDimension, data.position(), payload)
+    }
+
+    /**
+     * 设置粒子的速度向量并广播。
+     * @param id 粒子 ID
+     * @param velocity 速度向量（blocks/tick）
+     * @param playersInDimension 维度内的玩家列表
+     */
+    fun setVelocity(id: UUID, velocity: Vec3, playersInDimension: Collection<ServerPlayer>) {
+        val data = particles[id] ?: return
+        data.setVelocity(velocity)
+
+        val payload = ParticleVelocityPayload(id, velocity.x, velocity.y, velocity.z)
         sendToVisible(playersInDimension, data.position(), payload)
     }
 
@@ -307,6 +322,10 @@ class ServerParticleEngine(
         while (it.hasNext()) {
             val entry = it.next()
             val data = entry.value
+            val vel = data.velocity()
+            if (vel.x != 0.0 || vel.y != 0.0 || vel.z != 0.0) {
+                data.setPosition(data.position().add(vel))
+            }
             data.tick()
             if (data.isExpired()) {
                 val groupId = data.groupId

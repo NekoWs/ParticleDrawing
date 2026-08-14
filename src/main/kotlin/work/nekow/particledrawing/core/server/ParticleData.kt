@@ -33,12 +33,15 @@ class ParticleData(
     private var offsetFromPivot: Vec3 = Vec3.ZERO
 ) {
 
+    private var velocity: Vec3 = Vec3.ZERO
+
     fun position(): Vec3 = position
     fun color(): Color = color
     fun scale(): Float = scale
     fun lifetime(): Int = lifetime
     fun glowing(): Boolean = glowing
     fun offsetFromPivot(): Vec3 = offsetFromPivot
+    fun velocity(): Vec3 = velocity
 
     fun setPosition(position: Vec3) { this.position = position }
     fun setColor(color: Color) { this.color = color }
@@ -46,6 +49,7 @@ class ParticleData(
     fun setLifetime(lifetime: Int) { this.lifetime = lifetime }
     fun setGlowing(glowing: Boolean) { this.glowing = glowing }
     fun setOffsetFromPivot(offset: Vec3) { this.offsetFromPivot = offset }
+    fun setVelocity(velocity: Vec3) { this.velocity = velocity }
 
     fun isExpired(): Boolean = lifetime == 0
 

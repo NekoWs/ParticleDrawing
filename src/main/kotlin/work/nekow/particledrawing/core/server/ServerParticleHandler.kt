@@ -27,6 +27,7 @@ object ServerParticleHandler {
 
         // 推进活跃演示的刻度
         ParticleDrawCommands.tickDemos()
+        ParticleDrawCommands.tickSineDemos()
     }
 
     @SubscribeEvent
