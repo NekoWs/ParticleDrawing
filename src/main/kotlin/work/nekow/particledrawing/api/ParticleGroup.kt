@@ -30,6 +30,11 @@ class ParticleGroup(
         return this
     }
 
+    /** [setPivot] 的分量重载。 */
+    fun setPivot(x: Number, y: Number, z: Number): ParticleGroup {
+        return setPivot(Vec3(x.toDouble(), y.toDouble(), z.toDouble()))
+    }
+
     /**
      * 使用缓动平移组内所有粒子。
      * @param delta 平移向量
@@ -50,6 +55,11 @@ class ParticleGroup(
         return this
     }
 
+    /** [move] 的分量重载。 */
+    fun move(x: Number, y: Number, z: Number, durationTicks: Int, easing: EasingType): ParticleGroup {
+        return move(Vec3(x.toDouble(), y.toDouble(), z.toDouble()), durationTicks, easing)
+    }
+
     /**
      * 绕基准点旋转组内所有粒子。
      * @param axis 归一化的旋转轴 (如 Vec3.Z 为 Z 轴)
@@ -66,6 +76,11 @@ class ParticleGroup(
             durationTicks, easing, manager.getPlayers()
         )
         return this
+    }
+
+    /** [rotate] 的分量重载。 */
+    fun rotate(x: Number, y: Number, z: Number, radians: Double, durationTicks: Int, easing: EasingType): ParticleGroup {
+        return rotate(Vec3(x.toDouble(), y.toDouble(), z.toDouble()), radians, durationTicks, easing)
     }
 
     /**

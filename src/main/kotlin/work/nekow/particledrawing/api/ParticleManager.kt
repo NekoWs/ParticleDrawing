@@ -37,6 +37,11 @@ class ParticleManager private constructor(val level: ServerLevel) {
         return ParticleGroup(groupId, pivot, this)
     }
 
+    /** [createGroup] 的分量重载。 */
+    fun createGroup(x: Number, y: Number, z: Number): ParticleGroup {
+        return createGroup(Vec3(x.toDouble(), y.toDouble(), z.toDouble()))
+    }
+
     /**
      * 获取一个已存在的粒子组。
      * @param groupId 粒子组 UUID

@@ -33,6 +33,11 @@ class ParticleHandle(
         return this
     }
 
+    /** [move] 的分量重载。 */
+    fun move(x: Number, y: Number, z: Number, durationTicks: Int, easing: EasingType): ParticleHandle {
+        return move(Vec3(x.toDouble(), y.toDouble(), z.toDouble()), durationTicks, easing)
+    }
+
     /**
      * 立即移动粒子（无缓动）。
      * @param target 目标位置
@@ -40,6 +45,11 @@ class ParticleHandle(
      */
     fun moveInstant(target: Vec3): ParticleHandle {
         return move(target, 0, EasingType.LINEAR)
+    }
+
+    /** [moveInstant] 的分量重载。 */
+    fun moveInstant(x: Number, y: Number, z: Number): ParticleHandle {
+        return moveInstant(Vec3(x.toDouble(), y.toDouble(), z.toDouble()))
     }
 
     /**
@@ -50,6 +60,11 @@ class ParticleHandle(
     fun setVelocity(velocity: Vec3): ParticleHandle {
         manager.getEngine().setVelocity(id, velocity, manager.getPlayers())
         return this
+    }
+
+    /** [setVelocity] 的分量重载。 */
+    fun setVelocity(x: Number, y: Number, z: Number): ParticleHandle {
+        return setVelocity(Vec3(x.toDouble(), y.toDouble(), z.toDouble()))
     }
 
     /**
@@ -135,8 +150,8 @@ class ParticleHandle(
         fun position(pos: Vec3) = apply { this.position = pos }
 
         /** 设置粒子位置。 */
-        fun position(x: Double, y: Double, z: Double) = apply {
-            this.position = Vec3(x, y, z)
+        fun position(x: Number, y: Number, z: Number) = apply {
+            this.position = Vec3(x.toDouble(), y.toDouble(), z.toDouble())
         }
 
         /** 设置粒子颜色。 */
@@ -169,6 +184,11 @@ class ParticleHandle(
 
         /** 设置相对组轴心的偏移。 */
         fun offsetFromPivot(offset: Vec3) = apply { this.offsetFromPivot = offset }
+
+        /** 设置相对组轴心的偏移。 */
+        fun offsetFromPivot(x: Number, y: Number, z: Number) = apply {
+            this.offsetFromPivot = Vec3(x.toDouble(), y.toDouble(), z.toDouble())
+        }
 
         /**
          * 生成粒子并返回句柄以供后续控制。
