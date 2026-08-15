@@ -72,6 +72,18 @@ internal object ClientPayloadHandler {
         }
     }
 
+    fun handleRotation(payload: ParticleRotationPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientParticleEngine.instance()?.rotateParticle(
+                payload.particleId,
+                payload.px, payload.py, payload.pz,
+                payload.ox, payload.oy, payload.oz,
+                payload.rx, payload.ry, payload.rz,
+                payload.durationTicks, payload.easingType()
+            )
+        }
+    }
+
     fun handleLightLevel(payload: ParticleLightLevelPayload, context: IPayloadContext) {
         context.enqueueWork {
             ClientParticleEngine.instance()?.setLightLevel(

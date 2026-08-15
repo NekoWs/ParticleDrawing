@@ -25,7 +25,8 @@ class AnimParticle(
     val scale: Float,
     val glowing: Boolean,
     val lightLevel: Int,
-    val pos: Vec3
+    val pos: Vec3,
+    val vel: Vec3
 )
 
 /**
@@ -41,11 +42,15 @@ class AnimTrack(
 ) {
     enum class Property {
         POSITION,
+        ROTATION,
+        VELOCITY,
         COLOR,
         SCALE;
 
         companion object {
             fun from(wire: String): Property = when (wire) {
+                "rot" -> ROTATION
+                "vel" -> VELOCITY
                 "col" -> COLOR
                 "scl" -> SCALE
                 else -> POSITION

@@ -40,7 +40,7 @@ class BridgeParticle(
         zo = z
 
         setColor(color.r, color.g, color.b)
-        alpha = if (isGlowing) 0f else color.a
+        alpha = color.a
         quadSize = scale
         lifetime = Int.MAX_VALUE
         gravity = 0f
@@ -82,7 +82,7 @@ class BridgeParticle(
         rCol = r
         gCol = g
         bCol = b
-        alpha = if (isGlowing) 0f else a
+        alpha = a
     }
 
     /**

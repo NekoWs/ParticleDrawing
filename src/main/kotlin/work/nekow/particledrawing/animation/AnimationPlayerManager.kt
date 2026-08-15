@@ -22,11 +22,8 @@ object AnimationPlayerManager {
     @JvmStatic
     fun tick(dimensionId: UUID, players: Collection<ServerPlayer>) {
         val list = byDimension[dimensionId] ?: return
-        val it = list.iterator()
-        while (it.hasNext()) {
-            val p = it.next()
-            if (!p.tick(players)) it.remove()
-        }
+        // CopyOnWriteArrayList 的迭代器不支持 remove()，改用 removeIf 原子移除已结束的播放器
+        list.removeIf { !it.tick(players) }
     }
 
     /** 停止并清理指定维度的全部动画。 */

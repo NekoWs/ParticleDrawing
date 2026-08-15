@@ -32,8 +32,6 @@
           <button id="btn-delete-selected" class="dd-item danger"><span>删除选中</span><kbd>Delete</kbd></button>
           <div class="dd-sep"></div>
           <button id="btn-group" class="dd-item"><span>建立组</span><kbd>Ctrl+G</kbd></button>
-          <div class="dd-sep"></div>
-          <button id="btn-loop" class="dd-item"><span>循环</span><span id="loop-indicator" class="dd-check">✓</span></button>
         </div>
       </div>
       <div class="menu">
@@ -77,10 +75,9 @@
             <option value="YZ">YZ</option>
           </select>
         </label>
-        <label class="chk"><input id="snap-toggle" type="checkbox" />吸附（整格）</label>
         <label class="row">放置高度 <input id="height-y" type="number" step="0.1" value="0" /></label>
         <label class="row">粒子数量 <input id="shape-count" type="number" min="2" value="30" /></label>
-        <p class="hint">中键旋转 · Shift+中键平移 · 滚轮缩放 · 左键框选 · S 缩放 · Delete 删除 · Ctrl+A 全选 · Ctrl+D 取消选中 · 空格 播放</p>
+        <p class="hint">中键旋转 · Shift+中键平移 · 滚轮缩放 · 左键框选 · S 缩放 · Delete 删除 · Ctrl+A 全选 · Ctrl+D 取消选中 · 空格 播放 · Shift+拖动方向轴=吸附整格 · Ctrl+C/V 复制粘贴</p>
       </details>
 
       <details>
@@ -136,13 +133,20 @@
         <label class="row">Y <input id="prop-posy" type="number" step="0.1" value="0" /></label>
         <label class="row">Z <input id="prop-posz" type="number" step="0.1" value="0" /></label>
       </details>
+
+      <details open>
+        <summary>关键帧</summary>
+        <button id="btn-kf-add" class="btn">为选中粒子添加关键帧</button>
+        <p class="hint">在当前时间捕获选中粒子的位置/颜色/缩放/速度</p>
+      </details>
     </aside>
   </main>
 
   <footer class="timeline">
     <div class="tl-controls">
       <button id="btn-play" class="btn">▶ 播放</button>
-      <label class="chk"><input id="tl-loop" type="checkbox" checked />循环</label>
+      <label class="row" style="margin:0">速度 <input id="tl-speed" type="number" min="0.1" step="0.1" value="1" style="width:56px" /></label>
+      <label class="chk tl-loop"><input id="tl-loop" type="checkbox" checked />循环</label>
       <button id="tl-easing" class="ease-btn" title="缓动函数"></button>
       <button id="btn-capture" class="btn">捕获关键帧</button>
       <input id="tl-time" type="number" min="0" step="1" value="0" />

@@ -160,7 +160,7 @@ body {
 .viewport { position: relative; background: radial-gradient(circle at 50% 40%, #242936, #12141a); overflow: hidden; }
 .viewport canvas { display: block; }
 
-#axis-gizmo { position: absolute; top: 10px; right: 10px; width: 96px; height: 96px; pointer-events: auto; cursor: pointer; }
+#axis-gizmo { position: absolute; top: 10px; right: 10px; width: 128px; height: 128px; pointer-events: auto; cursor: pointer; }
 #box-overlay { position: absolute; border: 1px dashed var(--accent); background: var(--accent-soft); display: none; pointer-events: none; }
 
 .sidebar { overflow-y: auto; background: var(--panel); border-left: 1px solid var(--border); padding: 10px; }
@@ -311,8 +311,9 @@ body {
   transition: border-color 0.12s ease;
 }
 .kf-row input:focus { border-color: var(--accent); outline: none; }
-.kf-row input.kf-t { width: 46px; flex: none; margin-right: 4px; }
-.kf-row input.kf-v { flex: 1; }
+.kf-row input.kf-t { width: 38px; flex: none; margin-right: 4px; }
+.kf-row input.kf-v { flex: 1; min-width: 30px; }
+.kf-row input.kf-color { width: 30px; flex: none; padding: 0 2px; cursor: pointer; }
 .kf-row select {
   background: var(--panel-3); border: 1px solid var(--border); color: var(--text);
   border-radius: 5px; font-size: 12px; height: 30px; padding: 0 6px;
@@ -340,7 +341,15 @@ body {
   border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; box-shadow: var(--shadow);
 }
 .ee-title { font-weight: 600; margin-bottom: 8px; }
-.ee-canvas { display: block; border-radius: 5px; cursor: crosshair; }
+.ee-inputs { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.ee-input-row { display: flex; align-items: center; gap: 4px; }
+.ee-input-label { width: 22px; flex: none; font-size: 11px; color: var(--muted); font-weight: 600; }
+.ee-input-row input {
+  flex: 1; min-width: 0; background: var(--panel-2); border: 1px solid var(--border);
+  color: var(--text); border-radius: 4px; padding: 3px 5px; font-size: 11px; height: 24px;
+}
+.ee-input-row input:focus { border-color: var(--accent); outline: none; }
+.ee-canvas { display: block; margin: 0 auto; border-radius: 5px; cursor: crosshair; }
 .ee-presets {
   width: 100%; margin-top: 8px; background: var(--panel-2); border: 1px solid var(--border);
   color: var(--text); border-radius: 5px; padding: 6px 8px; font-size: 12px;
@@ -383,7 +392,7 @@ body {
 }
 .tl-controls { display: flex; align-items: center; gap: 10px; }
 .tl-controls input[type="number"] {
-  width: 72px; background: var(--panel-2); border: 1px solid var(--border);
+  width: 56px; margin-right: 10px; background: var(--panel-2); border: 1px solid var(--border);
   color: var(--text); border-radius: var(--radius-sm); padding: 7px 9px;
 }
 .tl-controls input[type="number"]:focus { border-color: var(--accent); outline: none; }
@@ -394,3 +403,10 @@ body {
 .tl-controls select:focus { border-color: var(--accent); outline: none; }
 .ticks { color: var(--muted); }
 #timeline { flex: 1; width: 100%; min-height: 0; margin-top: 6px; cursor: crosshair; border-radius: var(--radius-sm); }
+.tl-loop {
+  margin: 0; padding: 4px 10px; gap: 6px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--panel-2); transition: all 0.12s ease;
+}
+.tl-loop:hover { border-color: var(--accent); }
+.tl-loop input { width: 14px; height: 14px; }

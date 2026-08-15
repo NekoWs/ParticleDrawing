@@ -10,8 +10,8 @@ const OrbitControls = THREE.OrbitControls;
  * ======================================================================= */
 
 const STYLES = [
-  'DUST', 'FLAME', 'SOUL_FIRE', 'NOTE', 'HEART', 'SPARK',
-  'GLOW', 'BUBBLE', 'DRAGON_BREATH', 'SMOKE',
+  'DOT', 'DUST', 'FLAME', 'SOUL_FIRE', 'NOTE', 'HEART', 'SPARK',
+  'GLOW', 'BUBBLE', 'SMOKE',
 ];
 
 const EASINGS = [
@@ -37,24 +37,23 @@ const PLANES = {
   YZ: { axes: ['Y', 'Z'], constant: 'X', normal: new THREE.Vector3(1, 0, 0), toWorld: (u, v, o) => [o, u, v] },
 };
 
-// 粒子可动画属性分量（树状时间轴的叶子节点）
-const PROPERTY_DEFS = [
-  { key: 'x', label: 'X', track: 'pos', index: 0 },
-  { key: 'y', label: 'Y', track: 'pos', index: 1 },
-  { key: 'z', label: 'Z', track: 'pos', index: 2 },
-  { key: 'r', label: 'R', track: 'col', index: 0 },
-  { key: 'g', label: 'G', track: 'col', index: 1 },
-  { key: 'b', label: 'B', track: 'col', index: 2 },
-  { key: 'a', label: 'A', track: 'col', index: 3 },
-  { key: 'scl', label: '缩放', track: 'scl', index: 0 },
+// 粒子可动画轨道（与组一致：位置/颜色/缩放，多分量合并在同一节点内）
+const PARTICLE_TRACK_DEFS = [
+  { key: 'pos', label: '位置', labels: ['X', 'Y', 'Z'] },
+  { key: 'vel', label: '速度', labels: ['X', 'Y', 'Z'] },
+  { key: 'col', label: '颜色', labels: ['R', 'G', 'B', 'A'] },
+  { key: 'scl', label: '缩放', labels: ['缩放'] },
 ];
 
 const DEFAULT_EASING = 3;
 const SNAP_STEP = 1.0;
+const ROT_SNAP = Math.PI / 4; // 按住 Shift 时旋转吸附的步长（45°）
+const PARTICLE_SIZE_FACTOR = 0.25; // 编辑器渲染缩放（与游戏内 quad 的可见点大小一致）
 
-// 组的属性（轨道级）：位置/颜色/缩放，支持「设置(set)」或「操作(op)」两种模式
+// 组的属性（轨道级）：位置/旋转/颜色/缩放，支持「设置(set)」或「操作(op)」两种模式
 const GROUP_PROP_DEFS = [
   { key: 'pos', label: '位置', size: 3, labels: ['X', 'Y', 'Z'] },
+  { key: 'rot', label: '旋转', size: 3, labels: ['X', 'Y', 'Z'] },
   { key: 'col', label: '颜色', size: 4, labels: ['R', 'G', 'B', 'A'] },
   { key: 'scl', label: '缩放', size: 1, labels: ['缩放'] },
 ];
@@ -79,6 +78,7 @@ const state = {
   fileHandle: null,
   time: 0,
   playing: false,
+  playSpeed: 1,
   defaultEasing: DEFAULT_EASING,
 };
 
@@ -235,30 +235,36 @@ grid.position.y = 0;
 scene.add(grid);
 scene.add(new THREE.AxesHelper(4));
 
-// 无模糊小方形贴图（2D 广告牌，始终朝向摄像头）
+// 柔和圆点贴图（2D 广告牌，始终朝向摄像头，匹配游戏内 DOT 粒子）
 function makeSquareTexture() {
   const c = document.createElement('canvas');
-  c.width = c.height = 16;
+  c.width = c.height = 64;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(1, 1, 14, 14);
+  const g = ctx.createRadialGradient(32, 32, 4, 32, 32, 31);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.65, 'rgba(255,255,255,1)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
   const tex = new THREE.CanvasTexture(c);
-  tex.minFilter = THREE.NearestFilter;
-  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   return tex;
 }
 
-// 选中描边用方框贴图（中心透明，露出粒子本色，形状与粒子一致）
+// 选中描边用圆环贴图（中心透明，露出粒子本色，形状与粒子一致）
 function makeRingTexture() {
   const c = document.createElement('canvas');
-  c.width = c.height = 32;
+  c.width = c.height = 64;
   const ctx = c.getContext('2d');
   ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(2, 2, 28, 28);
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(32, 32, 28, 0, Math.PI * 2);
+  ctx.stroke();
   const tex = new THREE.CanvasTexture(c);
-  tex.minFilter = THREE.NearestFilter;
-  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   return tex;
 }
 
@@ -302,7 +308,7 @@ const selectedMaterial = new THREE.ShaderMaterial({
     attribute float aSize;
     void main() {
       vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-      gl_PointSize = aSize * uPixelScale / max(0.1, -mvPosition.z) * 1.35;
+      gl_PointSize = aSize * uPixelScale / max(0.1, -mvPosition.z) * 1.1;
       gl_Position = projectionMatrix * mvPosition;
     }
   `,
@@ -331,36 +337,49 @@ scene.add(previewPoints);
 const gizmoGroup = new THREE.Group();
 scene.add(gizmoGroup);
 gizmoGroup.visible = false;
-// 旋转控制器：三个轴向的彩色圆环
+const GIZMO_RING_RENDER_ORDER = 10;
+const GIZMO_ARROW_RENDER_ORDER = 11;
+// 旋转控制器：三个轴向的彩色圆环（环面垂直对应轴，DoubleSide 保证完整圆环）
 const gizmoRings = {};
 (function buildRotateRings() {
   const defs = { X: [0xff5555, new THREE.Vector3(0, Math.PI / 2, 0)], Y: [0x55ff55, new THREE.Vector3(Math.PI / 2, 0, 0)], Z: [0x5588ff, new THREE.Vector3(0, 0, 0)] };
   for (const [axis, [color, rot]] of Object.entries(defs)) {
     const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(0.26, 0.045, 10, 48),
-      new THREE.MeshBasicMaterial({ color })
+      new THREE.TorusGeometry(0.5, 0.018, 16, 96),
+      new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: true, transparent: true, side: THREE.DoubleSide })
     );
     ring.rotation.set(rot.x, rot.y, rot.z);
     ring.name = axis;
-    ring.renderOrder = 10;
-    ring.material.depthWrite = false;
+    ring.renderOrder = GIZMO_RING_RENDER_ORDER;
     gizmoRings[axis] = ring;
     gizmoGroup.add(ring);
   }
 })();
-(function buildGizmo() {
+// 移动控制器：柱身 + 锥头
+const gizmoArrows = {};
+(function buildMoveArrows() {
   const defs = { X: [1, 0, 0, 0xff5555], Y: [0, 1, 0, 0x55ff55], Z: [0, 0, 1, 0x5588ff] };
+  const up = new THREE.Vector3(0, 1, 0);
+  const shaftLen = 1.28, shaftR = 0.014, headH = 0.22, headR = 0.07;
   for (const [axis, [x, y, z, color]] of Object.entries(defs)) {
-    const arrow = new THREE.ArrowHelper(new THREE.Vector3(x, y, z), new THREE.Vector3(0, 0, 0), 1.5, color, 0.32, 0.16);
-    arrow.name = axis;
-    arrow.renderOrder = 10;
-    arrow.line.material.depthWrite = false;
-    arrow.cone.material.depthWrite = false;
-    gizmoGroup.add(arrow);
+    const dir = new THREE.Vector3(x, y, z);
+    const group = new THREE.Group();
+    group.name = axis;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(shaftR, shaftR, shaftLen, 10), new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: true, transparent: true }));
+    shaft.position.y = shaftLen / 2;
+    const head = new THREE.Mesh(new THREE.ConeGeometry(headR, headH, 14), new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: true, transparent: true }));
+    head.position.y = shaftLen + headH / 2;
+    group.add(shaft); group.add(head);
+    group.quaternion.setFromUnitVectors(up, dir);
+    shaft.renderOrder = GIZMO_ARROW_RENDER_ORDER;
+    head.renderOrder = GIZMO_ARROW_RENDER_ORDER;
+    gizmoArrows[axis] = { group, shaft, head };
+    gizmoGroup.add(group);
   }
 })();
 
 let camTransition = null;
+let planePulse = null; // 绘制平面切换时的脉动动画 { mesh, t0, dur }
 
 /* =========================================================================
  * 动画状态查询
@@ -369,11 +388,12 @@ let camTransition = null;
 function baseValue(p, prop) {
   if (prop === 'pos') return p.pos;
   if (prop === 'col') return p.color;
+  if (prop === 'vel') return p.vel;
   return [p.scale];
 }
 
 function zeroArray(prop) {
-  if (prop === 'pos') return [0, 0, 0];
+  if (prop === 'pos' || prop === 'rot' || prop === 'vel') return [0, 0, 0];
   if (prop === 'col') return [0, 0, 0, 0];
   return [0];
 }
@@ -429,7 +449,45 @@ function groupOpDelta(p, prop, T) {
   return delta;
 }
 
+function groupRotationInfo(p, T) {
+  for (const tr of state.tracks) {
+    if (tr.pr !== 'rot' || tr.kf.length === 0) continue;
+    for (const id of tr.ids) {
+      if (id.startsWith('g:')) {
+        const gname = id.slice(2);
+        const members = state.groups[gname];
+        if (members && members.includes(p.id)) {
+          return { rot: trackValueAt(tr, T, [0, 0, 0]), pivot: groupCentroidValue(gname, 'pos') };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function applyGroupRotation(p, value, T) {
+  const info = groupRotationInfo(p, T);
+  if (!info) return value;
+  const rot = info.rot;
+  if (rot[0] === 0 && rot[1] === 0 && rot[2] === 0) return value;
+  const pivot = info.pivot;
+  let r = [value[0] - pivot[0], value[1] - pivot[1], value[2] - pivot[2]];
+  r = rotateVector(r, [1, 0, 0], rot[0]);
+  r = rotateVector(r, [0, 1, 0], rot[1]);
+  r = rotateVector(r, [0, 0, 1], rot[2]);
+  return [pivot[0] + r[0], pivot[1] + r[1], pivot[2] + r[2]];
+}
+
 function particleValueAt(p, prop, T) {
+  if (prop === 'pos') {
+    const tr = tracksForParticle('pos', p.id);
+    let value = baseValue(p, 'pos');
+    if (tr && tr.kf.length > 0) value = trackValueAt(tr, T, value);
+    value = applyGroupRotation(p, value, T);
+    const op = groupOpDelta(p, 'pos', T);
+    if (op) value = addArrays(value, op);
+    return value;
+  }
   const tr = tracksForParticle(prop, p.id);
   const base = baseValue(p, prop);
   let value = base;
@@ -481,7 +539,7 @@ function rebuildPoints() {
     const v = currentVisual(p);
     positions[i * 3] = v.pos[0]; positions[i * 3 + 1] = v.pos[1]; positions[i * 3 + 2] = v.pos[2];
     colors[i * 4] = v.color[0]; colors[i * 4 + 1] = v.color[1]; colors[i * 4 + 2] = v.color[2]; colors[i * 4 + 3] = v.color[3];
-    sizes[i] = Math.max(0.02, v.scale);
+    sizes[i] = Math.max(0.02, v.scale * PARTICLE_SIZE_FACTOR);
   }
   setPointsGeometry(points, positions, colors, sizes);
 
@@ -490,7 +548,7 @@ function rebuildPoints() {
   for (let i = 0; i < sel.length; i++) {
     const v = currentVisual(sel[i]);
     spos[i * 3] = v.pos[0]; spos[i * 3 + 1] = v.pos[1]; spos[i * 3 + 2] = v.pos[2];
-    ssiz[i] = Math.max(0.02, v.scale);
+    ssiz[i] = Math.max(0.02, v.scale * PARTICLE_SIZE_FACTOR);
   }
   setPointsGeometry(selectedPoints, spos, new Float32Array(sel.length * 4), ssiz);
 
@@ -506,7 +564,7 @@ function setPreview(positions) {
   for (let i = 0; i < n; i++) {
     pos[i * 3] = positions[i][0]; pos[i * 3 + 1] = positions[i][1]; pos[i * 3 + 2] = positions[i][2];
     col[i * 4] = 1; col[i * 4 + 1] = 1; col[i * 4 + 2] = 1; col[i * 4 + 3] = 0.6;
-    siz[i] = 0.4;
+    siz[i] = 1 * PARTICLE_SIZE_FACTOR;
   }
   setPointsGeometry(previewPoints, pos, col, siz);
 }
@@ -520,6 +578,7 @@ function clearPreview() { setPointsGeometry(previewPoints, new Float32Array(0), 
 function applyBaseValue(p, prop, value) {
   if (prop === 'pos') p.pos = value.slice(0, 3);
   else if (prop === 'col') p.color = value.slice(0, 4);
+  else if (prop === 'vel') p.vel = value.slice(0, 3);
   else p.scale = value[0];
 }
 
@@ -540,6 +599,20 @@ function setValueAtTime(ids, prop, values) {
   }
   rebuildPoints();
   refreshParticleTree();
+}
+
+// 直接修改基础值（不创建关键帧），并同步 t=0 关键帧（若存在）
+function editBaseValue(ids, prop, values) {
+  for (const id of ids) {
+    const p = getParticle(id);
+    if (!p) continue;
+    applyBaseValue(p, prop, values);
+    const tr = findTrack(prop, id);
+    if (tr) {
+      const kf0 = tr.kf.find(k => k[0] === 0);
+      if (kf0) kf0[1] = values.slice();
+    }
+  }
 }
 
 function setComponentValue(particleId, comp, time, value) {
@@ -628,7 +701,7 @@ function setGroupTrackMode(groupName, prop, mode) {
 }
 
 function addParticle(base) {
-  const p = Object.assign({ id: nextId(), style: 'DUST', color: [1, 1, 1, 1], scale: 1, glow: false, lightLevel: 0, pos: [0, 0, 0] }, base);
+  const p = Object.assign({ id: nextId(), style: 'DOT', color: [1, 1, 1, 1], scale: 1, glow: false, lightLevel: 0, pos: [0, 0, 0], vel: [0, 0, 0] }, base);
   state.particles.push(p);
   return p;
 }
@@ -637,6 +710,7 @@ function autoGroup(ids) {
   if (!ids || ids.length === 0) return null;
   const name = nextGroupName();
   state.groups[name] = ids.slice();
+  state.expandedParticles.delete('g:' + name); // 新建组默认折叠
   return name;
 }
 
@@ -650,6 +724,9 @@ function removeGroupAndTracks(name) {
   delete state.groups[name];
   state.tracks = state.tracks.filter(tr => !tr.ids.includes('g:' + name));
   if (state.selectedGroup === name) state.selectedGroup = null;
+  state.expandedParticles.delete('g:' + name);
+  state.expandedProps.delete('g:' + name + '|@members');
+  state.expandedProps.delete('g:' + name + '|@props');
 }
 
 function renameParticle(oldId, newId) {
@@ -693,6 +770,12 @@ function renameGroup(oldName, newName) {
 function moveParticlesToGroup(ids, groupName) {
   if (ids.length === 0) return;
   pushUndo();
+  const idSet = new Set(ids);
+  for (const g in state.groups) {
+    if (g === groupName) continue;
+    state.groups[g] = state.groups[g].filter(id => !idSet.has(id));
+    if (state.groups[g].length === 0) delete state.groups[g];
+  }
   const set = new Set(state.groups[groupName] || []);
   for (const id of ids) set.add(id);
   state.groups[groupName] = [...set];
@@ -720,7 +803,7 @@ const redoStack = [];
 
 function snapshot() {
   return {
-    particles: state.particles.map(p => ({ ...p, color: p.color.slice(), pos: p.pos.slice() })),
+    particles: state.particles.map(p => ({ ...p, color: p.color.slice(), pos: p.pos.slice(), vel: p.vel ? p.vel.slice() : [0, 0, 0] })),
     tracks: state.tracks.map(tr => ({ pr: tr.pr, m: tr.m, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], k[1].slice(), k[2]]) })),
     groups: JSON.parse(JSON.stringify(state.groups)),
     name: state.name,
@@ -731,7 +814,7 @@ function snapshot() {
 }
 
 function restore(s) {
-  state.particles = s.particles.map(p => ({ ...p, color: p.color.slice(), pos: p.pos.slice() }));
+  state.particles = s.particles.map(p => ({ ...p, color: p.color.slice(), pos: p.pos.slice(), vel: p.vel ? p.vel.slice() : [0, 0, 0] }));
   state.tracks = s.tracks.map(tr => ({ pr: tr.pr, m: tr.m, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], k[1].slice(), k[2]]) }));
   state.groups = JSON.parse(JSON.stringify(s.groups));
   state.name = s.name;
@@ -798,8 +881,7 @@ function updateGizmo() {
   if (!c) { gizmoGroup.visible = false; return; }
   gizmoGroup.visible = true;
   gizmoGroup.position.set(c[0], c[1], c[2]);
-  const dist = camera.position.distanceTo(gizmoGroup.position);
-  gizmoGroup.scale.setScalar(dist * 0.18);
+  gizmoGroup.scale.setScalar(2); // 固定世界尺寸，随相机远近自然缩放（越远越小）
   setGizmoHover(null);
 }
 
@@ -817,6 +899,31 @@ function planeInfo() {
   const def = PLANES[state.drawPlane] || PLANES.XZ;
   const off = parseFloat(document.getElementById('height-y').value) || 0;
   return { def, plane: new THREE.Plane(def.normal, -off), off };
+}
+
+// 绘制平面切换时：在原点显示一个逐渐变大、变透明的浅白色平面
+function triggerDrawPlanePulse() {
+  if (planePulse) {
+    scene.remove(planePulse.mesh);
+    planePulse.mesh.geometry.dispose();
+    planePulse.mesh.material.dispose();
+  }
+  const def = PLANES[state.drawPlane] || PLANES.XZ;
+  const off = parseFloat(document.getElementById('height-y').value) || 0;
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide })
+  );
+  if (state.drawPlane === 'XZ') mesh.rotation.x = -Math.PI / 2;
+  else if (state.drawPlane === 'YZ') mesh.rotation.y = Math.PI / 2;
+  mesh.position.set(
+    def.constant === 'X' ? off : 0,
+    def.constant === 'Y' ? off : 0,
+    def.constant === 'Z' ? off : 0
+  );
+  mesh.renderOrder = 5;
+  scene.add(mesh);
+  planePulse = { mesh, t0: performance.now(), dur: 600 };
 }
 
 function planePointAt(clientX, clientY) {
@@ -925,27 +1032,70 @@ function enterScale(clientX) {
 }
 
 const AXIS_VECTORS = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] };
+const AXIS_INDEX = { X: 0, Y: 1, Z: 2 };
 
-function enterRotate(clientX, axis) {
+// 将鼠标射线与「过质心、法线为旋转轴」的平面求交，返回交点（世界坐标）
+function rayOnAxisPlane(clientX, clientY, axisVec, centroid) {
+  screenToNdc(clientX, clientY);
+  raycaster.setFromCamera(pointer, camera);
+  const normal = new THREE.Vector3(axisVec[0], axisVec[1], axisVec[2]);
+  const origin = new THREE.Vector3(centroid[0], centroid[1], centroid[2]);
+  const plane = new THREE.Plane(normal, -normal.dot(origin));
+  const hit = new THREE.Vector3();
+  return raycaster.ray.intersectPlane(plane, hit) ? hit : null;
+}
+
+function angleInBasis(point, centroid, u, v) {
+  const rel = point.clone().sub(new THREE.Vector3(centroid[0], centroid[1], centroid[2]));
+  return Math.atan2(rel.dot(v), rel.dot(u));
+}
+
+function groupRotationValueAt(gname, T) {
+  const tr = findGroupTrack('rot', gname);
+  if (tr && tr.kf.length > 0) return trackValueAt(tr, T, [0, 0, 0]);
+  return [0, 0, 0];
+}
+
+function enterRotate(clientX, clientY, axis) {
   if (state.selected.size === 0) return;
+  const gname = selectedGroupName();
   pushUndo();
-  const origins = new Map();
-  for (const p of currentSelected()) origins.set(p.id, currentVisual(p).pos.slice());
   const c = selectionCentroid();
-  const ax = AXIS_VECTORS[axis] || AXIS_VECTORS.Y;
-  modal = { type: 'rotate', origins, centroid: c, axis: ax, startClient: { x: clientX } };
+  const axArr = AXIS_VECTORS[axis] || AXIS_VECTORS.Y;
+  const a = new THREE.Vector3(axArr[0], axArr[1], axArr[2]);
+  let u = new THREE.Vector3(1, 0, 0);
+  if (Math.abs(a.dot(u)) > 0.9) u.set(0, 1, 0);
+  u.crossVectors(a, u).normalize();
+  const v = new THREE.Vector3().crossVectors(a, u).normalize();
+  const p0 = rayOnAxisPlane(clientX, clientY, axArr, c);
+  const startAngle = p0 ? angleInBasis(p0, c, u, v) : 0;
+  if (gname) {
+    modal = {
+      type: 'group-rotate', gname, centroid: c, axis: axArr,
+      axisIndex: AXIS_INDEX[axis] || 1,
+      startRot: groupRotationValueAt(gname, Math.round(state.time)),
+      u, v, startAngle,
+    };
+  } else {
+    const origins = new Map();
+    for (const p of currentSelected()) origins.set(p.id, currentVisual(p).pos.slice());
+    modal = {
+      type: 'rotate', origins, centroid: c, axis: axArr, u, v, startAngle,
+    };
+  }
   controls.enabled = false;
 }
 
 function cancelModal() {
   if (!modal) return;
   if (modal.type === 'grab') {
-    if (modal.groupName) setGroupTrackValue(modal.groupName, 'pos', 'op', Math.round(state.time), [0, 0, 0]);
-    else for (const [id, orig] of modal.origins) setValueAtTime([id], 'pos', orig);
+    for (const [id, orig] of modal.origins) editBaseValue([id], 'pos', orig);
   } else if (modal.type === 'scale') {
-    for (const [id, orig] of modal.origins) setValueAtTime([id], 'scl', [orig]);
+    for (const [id, orig] of modal.origins) editBaseValue([id], 'scl', [orig]);
   } else if (modal.type === 'rotate') {
-    for (const [id, orig] of modal.origins) setValueAtTime([id], 'pos', orig);
+    for (const [id, orig] of modal.origins) editBaseValue([id], 'pos', orig);
+  } else if (modal.type === 'group-rotate') {
+    setGroupTrackValue(modal.gname, 'rot', 'op', Math.round(state.time), modal.startRot);
   }
   modal = null;
   controls.enabled = true;
@@ -971,32 +1121,44 @@ function updateGrab(clientX, clientY) {
   if (m.axis === 'X') dz = 0;
   else if (m.axis === 'Z') dx = 0;
   else if (m.axis === 'Y') { dx = 0; dz = 0; dy = -(clientY - m.startClient.y) * 0.02; }
-  const sdx = snapValue(dx), sdy = snapValue(dy), sdz = snapValue(dz);
-  if (m.groupName) {
-    setGroupTrackValue(m.groupName, 'pos', 'op', Math.round(state.time), [sdx, sdy, sdz]);
-  } else {
-    for (const [id, orig] of m.origins) {
-      setValueAtTime([id], 'pos', [orig[0] + sdx, orig[1] + sdy, orig[2] + sdz]);
-    }
+  const doSnap = shiftHeld;
+  const sdx = doSnap ? Math.round(dx / SNAP_STEP) * SNAP_STEP : dx;
+  const sdy = doSnap ? Math.round(dy / SNAP_STEP) * SNAP_STEP : dy;
+  const sdz = doSnap ? Math.round(dz / SNAP_STEP) * SNAP_STEP : dz;
+  for (const [id, orig] of m.origins) {
+    editBaseValue([id], 'pos', [orig[0] + sdx, orig[1] + sdy, orig[2] + sdz]);
   }
+  rebuildPoints();
 }
 
 function updateScale(clientX) {
   const m = modal;
   if (!m || m.type !== 'scale') return;
   const factor = Math.max(0.02, 1 + (clientX - m.startClient.x) * 0.01);
-  for (const [id, orig] of m.origins) setValueAtTime([id], 'scl', [orig * factor]);
+  for (const [id, orig] of m.origins) editBaseValue([id], 'scl', [orig * factor]);
+  rebuildPoints();
 }
 
-function updateRotate(clientX) {
+function updateRotate(clientX, clientY) {
   const m = modal;
-  if (!m || m.type !== 'rotate') return;
-  const angle = (clientX - m.startClient.x) * 0.01;
-  for (const [id, orig] of m.origins) {
-    const rel = [orig[0] - m.centroid[0], orig[1] - m.centroid[1], orig[2] - m.centroid[2]];
-    const r = rotateVector(rel, m.axis, angle);
-    setValueAtTime([id], 'pos', [m.centroid[0] + r[0], m.centroid[1] + r[1], m.centroid[2] + r[2]]);
+  if (!m || (m.type !== 'rotate' && m.type !== 'group-rotate')) return;
+  const p1 = rayOnAxisPlane(clientX, clientY, m.axis, m.centroid);
+  if (!p1) return;
+  let angle = angleInBasis(p1, m.centroid, m.u, m.v) - m.startAngle;
+  if (shiftHeld) angle = Math.round(angle / ROT_SNAP) * ROT_SNAP;
+  if (m.type === 'group-rotate') {
+    const newRot = m.startRot.slice();
+    newRot[m.axisIndex] = m.startRot[m.axisIndex] + angle;
+    setGroupTrackValue(m.gname, 'rot', 'op', Math.round(state.time), newRot);
+    return;
   }
+  const c = m.centroid;
+  for (const [id, orig] of m.origins) {
+    const rel = [orig[0] - c[0], orig[1] - c[1], orig[2] - c[2]];
+    const r = rotateVector(rel, m.axis, angle);
+    editBaseValue([id], 'pos', [c[0] + r[0], c[1] + r[1], c[2] + r[2]]);
+  }
+  rebuildPoints();
 }
 
 function deleteSelected() {
@@ -1022,6 +1184,29 @@ function selectAll() {
   else state.selected = new Set(state.particles.map(p => p.id));
   state.selectedGroup = null;
   rebuildPoints();
+}
+
+let clipboard = null;
+function copySelected() {
+  const sel = currentSelected();
+  if (sel.length === 0) return;
+  clipboard = sel.map(p => ({
+    style: p.style, color: p.color.slice(), scale: p.scale, glow: p.glow,
+    lightLevel: p.lightLevel, pos: currentVisual(p).pos.slice(), vel: (p.vel || [0, 0, 0]).slice(),
+  }));
+}
+function pasteClipboard() {
+  if (!clipboard || clipboard.length === 0) return;
+  pushUndo();
+  const newIds = [];
+  for (const item of clipboard) {
+    const p = addParticle({ ...item, pos: [item.pos[0] + 1, item.pos[1], item.pos[2] + 1], color: item.color.slice(), vel: item.vel.slice() });
+    newIds.push(p.id);
+  }
+  state.selected = new Set(newIds);
+  state.selectedGroup = null;
+  rebuildPoints();
+  refreshParticleTree();
 }
 
 function hitGizmoAxis(clientX, clientY) {
@@ -1056,12 +1241,10 @@ function setGizmoHover(axis) {
   for (const [ax, ring] of Object.entries(gizmoRings)) {
     ring.material.color.set(axis === ax ? 0xffffff : AXIS_COLORS[ax]);
   }
-  for (const child of gizmoGroup.children) {
-    if (child.isArrowHelper && child.name) {
-      const c = child.name === axis ? 0xffffff : AXIS_COLORS[child.name];
-      child.line.material.color.set(c);
-      child.cone.material.color.set(c);
-    }
+  for (const [ax, a] of Object.entries(gizmoArrows)) {
+    const c = ax === axis ? 0xffffff : AXIS_COLORS[ax];
+    a.shaft.material.color.set(c);
+    a.head.material.color.set(c);
   }
 }
 
@@ -1085,7 +1268,7 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
     }
     const rotAxis = hitGizmoRotate(ev.clientX, ev.clientY);
     if (rotAxis) {
-      enterRotate(ev.clientX, rotAxis);
+      enterRotate(ev.clientX, ev.clientY, rotAxis);
       return;
     }
     const idx = pickParticleAt(ev.clientX, ev.clientY);
@@ -1151,7 +1334,7 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
   if (modal) {
     if (modal.type === 'grab') updateGrab(ev.clientX, ev.clientY);
     else if (modal.type === 'scale') updateScale(ev.clientX);
-    else if (modal.type === 'rotate') updateRotate(ev.clientX);
+    else if (modal.type === 'rotate' || modal.type === 'group-rotate') updateRotate(ev.clientX, ev.clientY);
     return;
   }
   if (boxSel) { boxSel.x1 = ev.clientX; boxSel.y1 = ev.clientY; updateBoxOverlay(); return; }
@@ -1223,22 +1406,28 @@ renderer.domElement.addEventListener('contextmenu', (ev) => { ev.preventDefault(
 window.addEventListener('pointerup', () => { renderer.domElement.style.cursor = ''; });
 
 window.addEventListener('keydown', (ev) => {
-  if (ev.target && ev.target.matches && ev.target.matches('input,select,textarea')) return;
   const k = ev.key.toLowerCase();
+  const isTextInput = ev.target && ev.target.matches && ev.target.matches('input[type="text"], textarea, input[type="search"], .rename-input');
+  // 全局快捷键：无论焦点在何处都生效
+  if (ev.ctrlKey && k === 'z') { ev.preventDefault(); if (ev.shiftKey) redo(); else undo(); return; }
+  if (ev.ctrlKey && k === 'y') { ev.preventDefault(); redo(); return; }
+  if (ev.ctrlKey && k === 's') { ev.preventDefault(); saveFile(); return; }
+  if (ev.ctrlKey && k === 'o') { ev.preventDefault(); openFile(); return; }
+  if (ev.ctrlKey && k === 'g') { ev.preventDefault(); createGroup(); return; }
+  if (ev.ctrlKey && k === 'a') { ev.preventDefault(); selectAll(); return; }
+  if (ev.ctrlKey && k === 'd') { ev.preventDefault(); state.selected.clear(); state.selectedGroup = null; rebuildPoints(); return; }
+  if (ev.ctrlKey && k === 'c') { ev.preventDefault(); copySelected(); return; }
+  if (ev.ctrlKey && k === 'v') { ev.preventDefault(); pasteClipboard(); return; }
+  if (k === ' ') { ev.preventDefault(); togglePlay(); return; }
+  if (isTextInput) return;
   if (modal) {
     if (k === 'escape') cancelModal();
     else if (k === 'enter') confirmModal();
     else if (modal.type === 'grab' && (k === 'x' || k === 'y' || k === 'z')) modal.axis = modal.axis === k.toUpperCase() ? null : k.toUpperCase();
     return;
   }
-  if (ev.ctrlKey && k === 'z') { ev.preventDefault(); if (ev.shiftKey) redo(); else undo(); }
-  else if (ev.ctrlKey && k === 'y') { ev.preventDefault(); redo(); }
-  else if (ev.ctrlKey && k === 'g') { ev.preventDefault(); createGroup(); }
-  else if (ev.ctrlKey && k === 'a') { ev.preventDefault(); selectAll(); }
-  else if (ev.ctrlKey && k === 'd') { ev.preventDefault(); state.selected.clear(); state.selectedGroup = null; rebuildPoints(); }
-  else if (k === 's') enterScale(lastMouse.x);
+  if (k === 's') enterScale(lastMouse.x);
   else if (k === 'delete' || k === 'backspace') deleteSelected();
-  else if (k === ' ') { ev.preventDefault(); togglePlay(); }
   else if (k === 'escape') { state.selected.clear(); state.selectedGroup = null; rebuildPoints(); }
 });
 
@@ -1273,42 +1462,71 @@ function applyBoxSelection() {
 
 const gizmoCanvas = document.getElementById('axis-gizmo');
 const gizmoCtx = gizmoCanvas.getContext('2d');
-gizmoCanvas.width = 96; gizmoCanvas.height = 96;
-let gizmoOrbit = null;
+const GIZMO_SIZE = 128;
+gizmoCanvas.width = GIZMO_SIZE; gizmoCanvas.height = GIZMO_SIZE;
+const GIZMO_CENTER = GIZMO_SIZE / 2;
+const GIZMO_RING_R = 42;
+let gizmoDrag = null;
+let gizmoHoverAxis = null;
+const gizmoRingPolys = { X: [], Y: [], Z: [] };
+
+const GIZMO_RING_DEFS = [
+  { key: 'X', axis: new THREE.Vector3(1, 0, 0), color: '#ff5555' },
+  { key: 'Y', axis: new THREE.Vector3(0, 1, 0), color: '#55ff55' },
+  { key: 'Z', axis: new THREE.Vector3(0, 0, 1), color: '#5588ff' },
+];
+
+// 采样垂直于某轴的世界圆环并转换到相机空间（z<0 为朝向相机的一侧）
+function gizmoRingWorld(axisVec, inv, N) {
+  const a = axisVec.clone().normalize();
+  let u = new THREE.Vector3(1, 0, 0);
+  if (Math.abs(a.dot(u)) > 0.9) u.set(0, 1, 0);
+  u.crossVectors(a, u).normalize();
+  const v = new THREE.Vector3().crossVectors(a, u).normalize();
+  const pts = [];
+  for (let i = 0; i <= N; i++) {
+    const t = (i / N) * Math.PI * 2;
+    const p = new THREE.Vector3().addScaledVector(u, Math.cos(t)).addScaledVector(v, Math.sin(t));
+    p.applyQuaternion(inv);
+    pts.push(p);
+  }
+  return pts;
+}
 
 function drawAxisGizmo() {
   const c = gizmoCtx;
-  c.clearRect(0, 0, 96, 96);
-  const cx = 48, cy = 48;
-  // 中心旋转球（三色圆环，与选中控制器一致）
-  const ringColors = [['#ff5555', 0], ['#55ff55', 2 * Math.PI / 3], ['#5588ff', 4 * Math.PI / 3]];
-  c.lineWidth = 3;
-  for (const [color, start] of ringColors) {
-    c.strokeStyle = color;
-    c.beginPath();
-    c.arc(cx, cy, 10, start, start + 2 * Math.PI / 3);
-    c.stroke();
-  }
-  c.fillStyle = '#1c1f27';
-  c.beginPath();
-  c.arc(cx, cy, 3, 0, Math.PI * 2);
-  c.fill();
+  const cx = GIZMO_CENTER, cy = GIZMO_CENTER;
+  c.clearRect(0, 0, GIZMO_SIZE, GIZMO_SIZE);
   const inv = new THREE.Quaternion().copy(camera.quaternion).invert();
-  const axes = [
-    { dir: new THREE.Vector3(1, 0, 0), color: '#ff5555', label: 'X' },
-    { dir: new THREE.Vector3(0, 1, 0), color: '#55ff55', label: 'Y' },
-    { dir: new THREE.Vector3(0, 0, 1), color: '#5588ff', label: 'Z' },
-  ];
-  for (const ax of axes) {
-    const v = ax.dir.clone().applyQuaternion(inv);
-    const front = v.z < 0;
-    const sx = cx + v.x * 34, sy = cy - v.y * 34;
-    c.strokeStyle = ax.color; c.globalAlpha = front ? 1 : 0.35; c.lineWidth = 2.5;
-    c.beginPath(); c.moveTo(cx, cy); c.lineTo(sx, sy); c.stroke();
-    c.fillStyle = ax.color; c.font = 'bold 11px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
-    c.fillText(ax.label, sx + (sx - cx) * 0.15, sy + (sy - cy) * 0.15);
+  c.lineWidth = 2.5;
+  for (const def of GIZMO_RING_DEFS) {
+    const world = gizmoRingWorld(def.axis, inv, 72);
+    const poly = world.map(p => [cx + p.x * GIZMO_RING_R, cy - p.y * GIZMO_RING_R]);
+    gizmoRingPolys[def.key] = poly;
+    for (let i = 0; i < poly.length - 1; i++) {
+      const [ax, ay] = poly[i], [bx, by] = poly[i + 1];
+      const front = (world[i].z + world[i + 1].z) / 2 < 0;
+      c.strokeStyle = def.key === gizmoHoverAxis ? '#ffffff' : def.color;
+      c.globalAlpha = def.key === gizmoHoverAxis ? 1 : (front ? 1 : 0.32);
+      c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
+    }
   }
   c.globalAlpha = 1;
+  // 中心：自由旋转原点
+  c.fillStyle = '#dfe5f0';
+  c.beginPath(); c.arc(cx, cy, 5, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = '#12141a'; c.lineWidth = 1.5; c.stroke();
+}
+
+function hitAxisRing(px, py) {
+  let best = null, bestD = 11;
+  for (const [key, poly] of Object.entries(gizmoRingPolys)) {
+    for (let i = 0; i < poly.length - 1; i++) {
+      const d = distToSegment(px, py, poly[i][0], poly[i][1], poly[i + 1][0], poly[i + 1][1]);
+      if (d < bestD) { bestD = d; best = key; }
+    }
+  }
+  return best;
 }
 
 function orbitCamera(dx, dy) {
@@ -1328,32 +1546,64 @@ function orbitCamera(dx, dy) {
   controls.update();
 }
 
+function orbitAroundAxis(axisKey, angle) {
+  const ax = GIZMO_RING_DEFS.find(d => d.key === axisKey);
+  if (!ax) return;
+  const off = camera.position.clone().sub(controls.target);
+  off.applyAxisAngle(ax.axis, angle);
+  camera.position.copy(controls.target).add(off);
+  camera.lookAt(controls.target);
+  controls.update();
+}
+
 gizmoCanvas.addEventListener('pointerdown', (ev) => {
   const rect = gizmoCanvas.getBoundingClientRect();
-  const px = ev.clientX - rect.left, py = ev.clientY - rect.top;
-  if (Math.hypot(px - 48, py - 48) < 12) {
-    gizmoOrbit = { x: ev.clientX, y: ev.clientY };
-    gizmoCanvas.setPointerCapture(ev.pointerId);
-    gizmoCanvas.style.cursor = 'grabbing';
-    return;
+  const px = (ev.clientX - rect.left) * (GIZMO_SIZE / rect.width);
+  const py = (ev.clientY - rect.top) * (GIZMO_SIZE / rect.height);
+  gizmoCanvas.setPointerCapture(ev.pointerId);
+  gizmoCanvas.style.cursor = 'grabbing';
+  const ring = hitAxisRing(px, py);
+  if (ring) {
+    gizmoDrag = { mode: 'axis', axis: ring, startAngle: Math.atan2(py - GIZMO_CENTER, px - GIZMO_CENTER), moved: false };
+  } else {
+    gizmoDrag = { mode: 'free', x: ev.clientX, y: ev.clientY, moved: false };
   }
-  const inv = new THREE.Quaternion().copy(camera.quaternion).invert();
-  let best = null, bestD = 16;
-  for (const ax of [{ dir: new THREE.Vector3(1, 0, 0) }, { dir: new THREE.Vector3(0, 1, 0) }, { dir: new THREE.Vector3(0, 0, 1) }]) {
-    const v = ax.dir.clone().applyQuaternion(inv);
-    const d = Math.hypot(px - (48 + v.x * 34), py - (48 - v.y * 34));
-    if (d < bestD) { bestD = d; best = ax; }
-  }
-  if (best) orientToAxis(best.dir);
 });
 
 gizmoCanvas.addEventListener('pointermove', (ev) => {
-  if (!gizmoOrbit) return;
-  const dx = ev.clientX - gizmoOrbit.x, dy = ev.clientY - gizmoOrbit.y;
-  gizmoOrbit.x = ev.clientX; gizmoOrbit.y = ev.clientY;
-  orbitCamera(dx, dy);
+  const rect = gizmoCanvas.getBoundingClientRect();
+  const px = (ev.clientX - rect.left) * (GIZMO_SIZE / rect.width);
+  const py = (ev.clientY - rect.top) * (GIZMO_SIZE / rect.height);
+  if (!gizmoDrag) {
+    gizmoHoverAxis = hitAxisRing(px, py);
+    gizmoCanvas.style.cursor = gizmoHoverAxis ? 'pointer' : 'default';
+    return;
+  }
+  if (gizmoDrag.mode === 'free') {
+    const dx = ev.clientX - gizmoDrag.x, dy = ev.clientY - gizmoDrag.y;
+    gizmoDrag.x = ev.clientX; gizmoDrag.y = ev.clientY;
+    if (Math.abs(dx) + Math.abs(dy) > 2) gizmoDrag.moved = true;
+    orbitCamera(dx, dy);
+  } else {
+    const ang = Math.atan2(py - GIZMO_CENTER, px - GIZMO_CENTER);
+    let d = ang - gizmoDrag.startAngle;
+    if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI;
+    if (Math.abs(d) > 0.02) gizmoDrag.moved = true;
+    orbitAroundAxis(gizmoDrag.axis, d);
+    gizmoDrag.startAngle = ang;
+  }
 });
-gizmoCanvas.addEventListener('pointerup', () => { gizmoOrbit = null; gizmoCanvas.style.cursor = ''; });
+gizmoCanvas.addEventListener('pointerleave', () => { gizmoHoverAxis = null; });
+gizmoCanvas.addEventListener('pointerup', () => {
+  if (!gizmoDrag) return;
+  const info = gizmoDrag;
+  gizmoDrag = null;
+  gizmoCanvas.style.cursor = '';
+  if (info.mode === 'axis' && !info.moved) {
+    const def = GIZMO_RING_DEFS.find(d => d.key === info.axis);
+    if (def) orientToAxis(def.axis);
+  }
+});
 
 function slerp(a, b, t) {
   const dot = Math.min(1, Math.max(-1, a.dot(b)));
@@ -1464,8 +1714,21 @@ function renderParticleNode(p) {
   style.className = 'pstyle'; style.textContent = p.style;
   head.appendChild(arrow); head.appendChild(pid); head.appendChild(style);
   head.onclick = () => {
-    if (!evShift(head)) { state.selected.clear(); }
-    state.selected.add(p.id);
+    if (evShift()) {
+      const anchorIdx = treeAnchorId ? state.particles.findIndex(x => x.id === treeAnchorId) : -1;
+      const idx = state.particles.findIndex(x => x.id === p.id);
+      if (anchorIdx >= 0 && idx >= 0 && anchorIdx !== idx) {
+        const a = Math.min(anchorIdx, idx), b = Math.max(anchorIdx, idx);
+        state.selected.clear();
+        for (let i = a; i <= b; i++) state.selected.add(state.particles[i].id);
+      } else {
+        state.selected.add(p.id);
+      }
+    } else {
+      state.selected.clear();
+      state.selected.add(p.id);
+      treeAnchorId = p.id;
+    }
     state.selectedGroup = null;
     rebuildPoints();
   };
@@ -1481,7 +1744,7 @@ function renderParticleNode(p) {
   if (expanded) {
     const props = document.createElement('div');
     props.className = 'ptree-props';
-    for (const comp of PROPERTY_DEFS) props.appendChild(renderPropNode(p, comp));
+    for (const def of PARTICLE_TRACK_DEFS) props.appendChild(renderParticleTrackNode(p, def));
     root.appendChild(props);
   }
   return root;
@@ -1531,16 +1794,35 @@ function showContextMenu(x, y, items) {
 window.addEventListener('pointerdown', (e) => { if (!e.target.closest('#context-menu')) closeContextMenu(); });
 
 let evShift = () => false; // 占位，稍后在 initUI 中通过 window 事件设置
+let treeAnchorId = null; // 树状列表 Shift 范围选择的锚点
 
-function renderPropNode(p, comp) {
+function makeColorSwatch(kf, onCommit) {
+  const inp = document.createElement('input');
+  inp.type = 'color';
+  inp.className = 'kf-color';
+  inp.value = rgbToHex(kf[1][0], kf[1][1], kf[1][2]);
+  inp.title = '取色';
+  inp.addEventListener('input', (e) => {
+    beginContinuous();
+    const [r, g, b] = hexToRgb(e.target.value);
+    onCommit(r, g, b);
+  });
+  inp.addEventListener('change', () => {
+    endContinuous();
+    refreshParticleTree();
+  });
+  return inp;
+}
+
+function renderParticleTrackNode(p, def) {
   const wrap = document.createElement('div');
   wrap.className = 'ptree-prop';
-  const key = p.id + '|' + comp.key;
+  const key = p.id + '|' + def.key;
   const expanded = state.expandedProps.has(key);
-  const tr = findTrack(comp.track, p.id);
+  const tr = findTrack(def.key, p.id);
   const head = document.createElement('div');
   head.className = 'ptree-prop-head';
-  head.innerHTML = `<span class="arrow">${expanded ? '▾' : '▸'}</span><span class="plabel">${comp.label}</span><span class="pval">${tr ? tr.kf.length + ' 节点' : '—'}</span>`;
+  head.innerHTML = `<span class="arrow">${expanded ? '▾' : '▸'}</span><span class="plabel">${def.label}</span><span class="pval">${tr ? tr.kf.length + ' 节点' : '—'}</span>`;
   head.onclick = () => {
     if (expanded) state.expandedProps.delete(key); else state.expandedProps.add(key);
     refreshParticleTree();
@@ -1549,14 +1831,21 @@ function renderPropNode(p, comp) {
   if (expanded) {
     const kfs = document.createElement('div');
     kfs.className = 'ptree-kfs';
-    if (tr) for (const kf of tr.kf) kfs.appendChild(renderKfRow(p, comp, kf));
+    if (tr) for (const kf of tr.kf) kfs.appendChild(renderParticleKfRow(p, def, kf));
     const add = document.createElement('button');
     add.className = 'kf-add';
     add.textContent = '+ 添加节点';
     add.onclick = () => {
-      let tr = findTrack(comp.track, p.id);
-      const t = tr ? nextFreeTime(tr, Math.round(state.time)) : Math.round(state.time);
-      setComponentValue(p.id, comp, t, componentValueAt(p, comp, t));
+      pushUndo();
+      let tr = findTrack(def.key, p.id);
+      if (!tr) {
+        tr = { pr: def.key, m: 'set', ids: [p.id], kf: [[0, baseValue(p, def.key).slice(), state.defaultEasing]] };
+        state.tracks.push(tr);
+      }
+      const t = nextFreeTime(tr, Math.round(state.time));
+      tr.kf.push([t, particleValueAt(p, def.key, t).slice(), state.defaultEasing]);
+      tr.kf.sort((a, b) => a[0] - b[0]);
+      rebuildPoints(); refreshParticleTree();
     };
     kfs.appendChild(add);
     wrap.appendChild(kfs);
@@ -1564,28 +1853,35 @@ function renderPropNode(p, comp) {
   return wrap;
 }
 
-function componentValueAt(p, comp, T) {
-  return particleValueAt(p, comp.track, T)[comp.index];
-}
-
-function renderKfRow(p, comp, kf) {
+function renderParticleKfRow(p, def, kf) {
   const row = document.createElement('div');
   row.className = 'kf-row';
   const tIn = document.createElement('input');
   tIn.className = 'kf-t'; tIn.type = 'number'; tIn.value = kf[0];
   tIn.title = '时间 (tick)';
-  tIn.onchange = () => updateKeyframeTime(p.id, comp.track, kf[0], parseInt(tIn.value) || 0);
-  const vIn = document.createElement('input');
-  vIn.className = 'kf-v'; vIn.type = 'number'; vIn.step = '0.01'; vIn.value = r3(kf[1][comp.index]);
-  vIn.title = comp.label + ' 值';
-  vIn.onchange = () => setComponentValue(p.id, comp, kf[0], parseFloat(vIn.value) || 0);
-  const easeBtn = makeEasingBtn(kf[2], (easing) => updateKeyframeEasing(p.id, comp.track, kf[0], easing));
-  row.appendChild(tIn); row.appendChild(vIn); row.appendChild(easeBtn);
+  tIn.onchange = () => updateKeyframeTime(p.id, def.key, kf[0], parseInt(tIn.value) || 0);
+  row.appendChild(tIn);
+  if (def.key === 'col') {
+    row.appendChild(makeColorSwatch(kf, (r, g, b) => {
+      kf[1][0] = r; kf[1][1] = g; kf[1][2] = b;
+      if (kf[0] === 0) applyBaseValue(p, def.key, kf[1]);
+      rebuildPoints();
+    }));
+  }
+  for (let i = 0; i < def.labels.length; i++) {
+    const vIn = document.createElement('input');
+    vIn.className = 'kf-v'; vIn.type = 'number'; vIn.step = '0.01'; vIn.value = r3(kf[1][i]);
+    vIn.title = def.labels[i] + ' 值';
+    vIn.onchange = () => setComponentValue(p.id, { track: def.key, index: i }, kf[0], parseFloat(vIn.value) || 0);
+    row.appendChild(vIn);
+  }
+  const easeBtn = makeEasingBtn(kf[2], (easing) => updateKeyframeEasing(p.id, def.key, kf[0], easing));
+  row.appendChild(easeBtn);
   row.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     e.stopPropagation();
     showContextMenu(e.clientX, e.clientY, [
-      { label: '删除节点', danger: true, action: () => removeKeyframe(p.id, comp.track, kf[0]) },
+      { label: '删除节点', danger: true, action: () => removeKeyframe(p.id, def.key, kf[0]) },
     ]);
   });
   return row;
@@ -1645,25 +1941,42 @@ function renderGroupNode(name) {
   if (expanded) {
     const section = document.createElement('div');
     section.className = 'ptree-sub';
-
-    const propsTitle = document.createElement('div');
-    propsTitle.className = 'ptree-subhead';
-    propsTitle.textContent = '属性';
-    section.appendChild(propsTitle);
-    const props = document.createElement('div');
-    props.className = 'ptree-props';
-    for (const def of GROUP_PROP_DEFS) props.appendChild(renderGroupPropNode(name, def));
-    section.appendChild(props);
-
+    section.appendChild(renderGroupPropsNode(name));
     section.appendChild(renderGroupMembersNode(name, members));
     root.appendChild(section);
   }
   return root;
 }
 
+function renderGroupPropsNode(name) {
+  const wrap = document.createElement('div');
+  const key = 'g:' + name + '|@props';
+  // 「属性」默认展开：记录 key 表示已收起
+  const collapsed = state.expandedProps.has(key);
+  const head = document.createElement('div');
+  head.className = 'ptree-subhead';
+  const arrow = document.createElement('span');
+  arrow.className = 'arrow';
+  arrow.textContent = collapsed ? '▸' : '▾';
+  const label = document.createElement('span');
+  label.textContent = '属性';
+  head.appendChild(arrow); head.appendChild(label);
+  head.onclick = () => {
+    if (collapsed) state.expandedProps.delete(key); else state.expandedProps.add(key);
+    refreshParticleTree();
+  };
+  wrap.appendChild(head);
+  if (!collapsed) {
+    const props = document.createElement('div');
+    props.className = 'ptree-props';
+    for (const def of GROUP_PROP_DEFS) props.appendChild(renderGroupPropNode(name, def));
+    wrap.appendChild(props);
+  }
+  return wrap;
+}
+
 function renderGroupMembersNode(name, members) {
   const wrap = document.createElement('div');
-  wrap.className = 'ptree-sub';
   const key = 'g:' + name + '|@members';
   const expanded = state.expandedProps.has(key);
   const head = document.createElement('div');
@@ -1706,20 +2019,23 @@ function renderGroupPropNode(name, def) {
   const plabel = document.createElement('span');
   plabel.className = 'plabel';
   plabel.textContent = def.label;
+  head.appendChild(arrow); head.appendChild(plabel);
   const modeSel = document.createElement('select');
   modeSel.className = 'mode-sel';
   const mSet = document.createElement('option'); mSet.value = 'set'; mSet.textContent = '设置';
   const mOp = document.createElement('option'); mOp.value = 'op'; mOp.textContent = '操作';
   modeSel.appendChild(mSet); modeSel.appendChild(mOp);
-  modeSel.value = tr ? tr.m : 'op';
+  const defaultMode = def.key === 'col' ? 'set' : 'op';
+  modeSel.value = tr ? tr.m : defaultMode;
   modeSel.onchange = () => setGroupTrackMode(name, def.key, modeSel.value);
   modeSel.onclick = (e) => e.stopPropagation();
+  head.appendChild(modeSel);
   const pval = document.createElement('span');
   pval.className = 'pval';
   pval.textContent = tr ? tr.kf.length + ' 节点' : '—';
-  head.appendChild(arrow); head.appendChild(plabel); head.appendChild(modeSel); head.appendChild(pval);
+  head.appendChild(pval);
   head.onclick = (e) => {
-    if (e.target === modeSel) return;
+    if (e.target.tagName === 'SELECT') return;
     if (expanded) state.expandedProps.delete(key); else state.expandedProps.add(key);
     refreshParticleTree();
   };
@@ -1727,16 +2043,26 @@ function renderGroupPropNode(name, def) {
   if (expanded) {
     const kfs = document.createElement('div');
     kfs.className = 'ptree-kfs';
-    const mode = tr ? tr.m : 'op';
-    if (tr) for (const kf of tr.kf) kfs.appendChild(renderGroupKfRow(name, def, mode, kf));
+    if (tr) for (const kf of tr.kf) kfs.appendChild(renderGroupKfRow(name, def, tr.m, kf));
     const add = document.createElement('button');
     add.className = 'kf-add';
     add.textContent = '+ 添加节点';
     add.onclick = () => {
-      const cur = mode === 'op' ? zeroArray(def.key).slice() : groupCentroidValue(name, def.key);
-      const t = tr ? nextFreeTime(tr, Math.round(state.time)) : Math.round(state.time);
       pushUndo();
-      setGroupTrackValue(name, def.key, mode, t, cur);
+      const mode = modeSel.value;
+      let track = findGroupTrack(def.key, name);
+      if (!track) {
+        const base = mode === 'op' ? zeroArray(def.key).slice() : groupCentroidValue(name, def.key);
+        track = { pr: def.key, m: mode, ids: ['g:' + name], kf: [[0, base, state.defaultEasing]] };
+        state.tracks.push(track);
+      } else {
+        track.m = mode;
+      }
+      const t = nextFreeTime(track, Math.round(state.time));
+      const cur = mode === 'op' ? zeroArray(def.key).slice() : groupCentroidValue(name, def.key);
+      track.kf.push([t, cur, state.defaultEasing]);
+      track.kf.sort((a, b) => a[0] - b[0]);
+      rebuildPoints(); refreshParticleTree();
     };
     kfs.appendChild(add);
     wrap.appendChild(kfs);
@@ -1745,6 +2071,7 @@ function renderGroupPropNode(name, def) {
 }
 
 function groupCentroidValue(name, prop) {
+  if (prop === 'rot') return [0, 0, 0];
   const members = (state.groups[name] || []).map(getParticle).filter(Boolean);
   if (members.length === 0) return zeroArray(prop);
   const sum = zeroArray(prop);
@@ -1763,10 +2090,18 @@ function renderGroupKfRow(name, def, mode, kf) {
   tIn.title = '时间 (tick)';
   tIn.onchange = () => updateKeyframeTime('g:' + name, def.key, kf[0], parseInt(tIn.value) || 0);
   row.appendChild(tIn);
+  if (def.key === 'col' && mode !== 'op') {
+    row.appendChild(makeColorSwatch(kf, (r, g, b) => {
+      kf[1][0] = r; kf[1][1] = g; kf[1][2] = b;
+      rebuildPoints();
+    }));
+  }
   for (let i = 0; i < def.size; i++) {
     const vIn = document.createElement('input');
     vIn.className = 'kf-v'; vIn.type = 'number'; vIn.step = '0.01'; vIn.value = r3(kf[1][i]);
-    vIn.title = def.labels ? def.labels[i] + (mode === 'op' ? ' 增量' : ' 值') : def.key;
+    vIn.title = def.labels
+      ? (def.key === 'rot' ? def.labels[i] + ' (弧度)' : def.labels[i] + (mode === 'op' ? ' 增量' : ' 值'))
+      : def.key;
     vIn.onchange = () => {
       const v = kf[1].slice();
       v[i] = parseFloat(vIn.value) || 0;
@@ -1822,7 +2157,8 @@ let easingEditor = null;
 
 function openEasingEditor(easing, applyFn, anchor) {
   closeEasingEditor();
-  easingEditor = { bezier: easingToBezier(easing), apply: applyFn, anchor, dragging: -1 };
+  const bezier = easingToBezier(easing);
+  easingEditor = { bezier, apply: applyFn, anchor, dragging: -1, inputs: {} };
   const pop = document.createElement('div');
   pop.id = 'easing-editor';
   pop.className = 'easing-editor';
@@ -1830,9 +2166,41 @@ function openEasingEditor(easing, applyFn, anchor) {
   title.className = 'ee-title';
   title.textContent = '缓动函数编辑器';
   pop.appendChild(title);
+
+  const inputs = document.createElement('div');
+  inputs.className = 'ee-inputs';
+  const mkRow = (label, idxX, idxY) => {
+    const row = document.createElement('div');
+    row.className = 'ee-input-row';
+    const lab = document.createElement('span');
+    lab.className = 'ee-input-label';
+    lab.textContent = label;
+    row.appendChild(lab);
+    const mkInp = (idx) => {
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.step = '0.01';
+      inp.min = '0'; inp.max = '1';
+      inp.value = bezier[idx].toFixed(3);
+      inp.addEventListener('input', () => {
+        const v = Math.min(1, Math.max(0, parseFloat(inp.value) || 0));
+        easingEditor.bezier[idx] = v;
+        easingEditor.apply(easingEditor.bezier.slice());
+        drawEasingEditor();
+      });
+      easingEditor.inputs[idx] = inp;
+      row.appendChild(inp);
+    };
+    mkInp(idxX); mkInp(idxY);
+    return row;
+  };
+  inputs.appendChild(mkRow('P1', 0, 1));
+  inputs.appendChild(mkRow('P2', 2, 3));
+  pop.appendChild(inputs);
+
   const canvas = document.createElement('canvas');
   canvas.className = 'ee-canvas';
-  canvas.width = 208; canvas.height = 132;
+  canvas.width = 196; canvas.height = 132;
   pop.appendChild(canvas);
   const presetSel = document.createElement('select');
   presetSel.className = 'ee-presets';
@@ -1846,20 +2214,32 @@ function openEasingEditor(easing, applyFn, anchor) {
   }
   presetSel.onchange = () => {
     if (presetSel.value === '') return;
+    easingEditor.bezier = easingToBezier(parseInt(presetSel.value));
     easingEditor.apply(parseInt(presetSel.value));
-    closeEasingEditor();
-    refreshParticleTree();
+    syncEasingInputs();
+    drawEasingEditor();
   };
   pop.appendChild(presetSel);
   document.body.appendChild(pop);
   const r = anchor.getBoundingClientRect();
-  pop.style.left = Math.min(r.left, window.innerWidth - 230) + 'px';
-  pop.style.top = Math.min(r.bottom + 6, window.innerHeight - 360) + 'px';
+  pop.style.left = Math.min(r.left, window.innerWidth - 236) + 'px';
+  const popH = pop.offsetHeight || 260;
+  let top = r.bottom + 6;
+  if (top + popH > window.innerHeight - 8) top = Math.max(8, r.top - popH - 6);
+  pop.style.top = top + 'px';
   drawEasingEditor();
   canvas.addEventListener('pointerdown', onEasingPointerDown);
   canvas.addEventListener('pointermove', onEasingPointerMove);
   canvas.addEventListener('pointerup', () => { if (easingEditor) { easingEditor.dragging = -1; refreshParticleTree(); } });
   setTimeout(() => document.addEventListener('pointerdown', onEasingDocPointerDown), 0);
+}
+
+function syncEasingInputs() {
+  if (!easingEditor) return;
+  for (let i = 0; i < 4; i++) {
+    const inp = easingEditor.inputs[i];
+    if (inp && document.activeElement !== inp) inp.value = easingEditor.bezier[i].toFixed(3);
+  }
 }
 
 function onEasingDocPointerDown(e) {
@@ -1881,6 +2261,8 @@ function cubicBezierX(t, x1, x2) {
 function drawEasingEditor() {
   const pop = document.getElementById('easing-editor');
   if (!pop || !easingEditor) return;
+  const [x1, y1, x2, y2] = easingEditor.bezier;
+  syncEasingInputs();
   const canvas = pop.querySelector('.ee-canvas');
   const ctx = canvas.getContext('2d');
   const w = canvas.width, h = canvas.height, pad = 12;
@@ -1889,7 +2271,6 @@ function drawEasingEditor() {
   ctx.fillRect(0, 0, w, h);
   ctx.strokeStyle = '#323848';
   ctx.strokeRect(pad, pad, w - 2 * pad, h - 2 * pad);
-  const [x1, y1, x2, y2] = easingEditor.bezier;
   const px = (x) => pad + Math.min(1, Math.max(0, x)) * (w - 2 * pad);
   const py = (y) => pad + (1 - Math.min(1, Math.max(0, y))) * (h - 2 * pad);
   ctx.strokeStyle = '#5b9dff';
@@ -2108,19 +2489,49 @@ function generateFourier() {
 function updatePropPanel() {
   const sel = currentSelected();
   if (sel.length === 0) return;
-  const p = sel[0];
-  document.getElementById('prop-style').value = p.style;
-  document.getElementById('prop-color').value = rgbToHex(p.color[0], p.color[1], p.color[2]);
-  document.getElementById('prop-alpha').value = p.color[3];
-  document.getElementById('alpha-val').textContent = p.color[3].toFixed(2);
-  document.getElementById('prop-scale').value = p.scale;
-  document.getElementById('prop-glow').checked = p.glow;
-  document.getElementById('prop-light').value = p.lightLevel;
-  document.getElementById('light-val').textContent = p.lightLevel;
-  const pos = currentVisual(p).pos;
-  document.getElementById('prop-posx').value = pos[0].toFixed(2);
-  document.getElementById('prop-posy').value = pos[1].toFixed(2);
-  document.getElementById('prop-posz').value = pos[2].toFixed(2);
+  const first = sel[0];
+  const same = (fn) => sel.every(q => fn(q) === fn(first));
+  const styleSel = document.getElementById('prop-style');
+  const styleSame = same(q => q.style);
+  let mixedOpt = styleSel.querySelector('option[value="__mixed__"]');
+  if (!styleSame) {
+    if (!mixedOpt) { mixedOpt = document.createElement('option'); mixedOpt.value = '__mixed__'; mixedOpt.textContent = '-'; styleSel.appendChild(mixedOpt); }
+    styleSel.value = '__mixed__';
+  } else {
+    styleSel.value = first.style;
+  }
+
+  const colorSame = same(q => q.color[0] + ',' + q.color[1] + ',' + q.color[2]);
+  document.getElementById('prop-color').value = colorSame ? rgbToHex(first.color[0], first.color[1], first.color[2]) : '#808080';
+
+  const aSame = same(q => q.color[3]);
+  const aInput = document.getElementById('prop-alpha');
+  if (aSame) { aInput.value = first.color[3]; document.getElementById('alpha-val').textContent = first.color[3].toFixed(2); }
+  else { aInput.value = 0.5; document.getElementById('alpha-val').textContent = '-'; }
+
+  const sSame = same(q => q.scale);
+  const sInput = document.getElementById('prop-scale');
+  sInput.value = sSame ? first.scale : '';
+  sInput.placeholder = sSame ? '' : '-';
+
+  const gSame = same(q => q.glow);
+  const gInput = document.getElementById('prop-glow');
+  gInput.checked = gSame ? first.glow : false;
+  gInput.indeterminate = !gSame;
+
+  const lSame = same(q => q.lightLevel);
+  const lInput = document.getElementById('prop-light');
+  if (lSame) { lInput.value = first.lightLevel; document.getElementById('light-val').textContent = first.lightLevel; }
+  else { lInput.value = 0; document.getElementById('light-val').textContent = '-'; }
+
+  const pos = currentVisual(first).pos;
+  const setPos = (id, val, sameVal) => { const el = document.getElementById(id); el.value = sameVal ? val : ''; el.placeholder = sameVal ? '' : '-'; };
+  const xSame = same(q => currentVisual(q).pos[0].toFixed(2) === pos[0].toFixed(2));
+  const ySame = same(q => currentVisual(q).pos[1].toFixed(2) === pos[1].toFixed(2));
+  const zSame = same(q => currentVisual(q).pos[2].toFixed(2) === pos[2].toFixed(2));
+  setPos('prop-posx', pos[0].toFixed(2), xSame);
+  setPos('prop-posy', pos[1].toFixed(2), ySame);
+  setPos('prop-posz', pos[2].toFixed(2), zSame);
 }
 
 function rgbToHex(r, g, b) {
@@ -2156,6 +2567,7 @@ function drawTimeline() {
   const step = niceStep(viewEnd - timelineViewStart);
   ctx.fillStyle = '#9aa0ad'; ctx.font = '10px sans-serif'; ctx.textBaseline = 'top';
   for (let t = Math.floor(timelineViewStart / step) * step; t <= viewEnd; t += step) {
+    if (t < 0) continue;
     const x = (t - timelineViewStart) * pxPerTick;
     ctx.fillText(Math.round(t), x + 2, 2);
     ctx.strokeStyle = '#3a3f4b'; ctx.beginPath(); ctx.moveTo(x, h / 2 - 6); ctx.lineTo(x, h / 2 + 6); ctx.stroke();
@@ -2188,7 +2600,7 @@ const roundArr = a => a.map(r3);
 function encodeEasing(e) { return Array.isArray(e) ? e.map(r3) : e; }
 
 function exportJSON() {
-  const p = state.particles.map(pt => ({ id: pt.id, s: pt.style, c: roundArr(pt.color), sc: r3(pt.scale), g: pt.glow ? 1 : 0, l: pt.lightLevel, pos: roundArr(pt.pos) }));
+  const p = state.particles.map(pt => ({ id: pt.id, s: pt.style, c: roundArr(pt.color), sc: r3(pt.scale), g: pt.glow ? 1 : 0, l: pt.lightLevel, pos: roundArr(pt.pos), vel: roundArr(pt.vel || [0, 0, 0]) }));
   const t = state.tracks.map(tr => {
     const o = { pr: tr.pr, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], roundArr(k[1]), encodeEasing(k[2])]) };
     if (tr.m === 'op') o.m = 'op';
@@ -2202,14 +2614,15 @@ function exportJSON() {
 function importJSON(obj) {
   pushUndo();
   state.particles = (obj.p || []).map(pt => ({
-    id: pt.id || nextId(), style: STYLES.includes(pt.s) ? pt.s : 'DUST',
+    id: pt.id || nextId(), style: STYLES.includes(pt.s) ? pt.s : 'DOT',
     color: (pt.c || [1, 1, 1, 1]).slice(0, 4), scale: pt.sc != null ? pt.sc : 1,
     glow: !!pt.g, lightLevel: pt.l || 0, pos: (pt.pos || [0, 0, 0]).slice(0, 3),
+    vel: (pt.vel || [0, 0, 0]).slice(0, 3),
   }));
   state.groups = {};
   for (const [name, members] of Object.entries(obj.g || {})) state.groups[name] = members.slice();
   state.tracks = (obj.t || []).map(tr => ({
-    pr: ['pos', 'col', 'scl'].includes(tr.pr) ? tr.pr : 'pos',
+    pr: ['pos', 'rot', 'vel', 'col', 'scl'].includes(tr.pr) ? tr.pr : 'pos',
     m: tr.m === 'op' ? 'op' : 'set',
     ids: (tr.ids || []).slice(),
     kf: (tr.kf || []).map(k => [k[0], k[1].slice(), Array.isArray(k[2]) ? k[2].slice() : (Number.isInteger(k[2]) ? k[2] : DEFAULT_EASING)]),
@@ -2320,11 +2733,6 @@ function initUI() {
   document.getElementById('btn-clear').addEventListener('click', () => { closeMenus(); clearAll(); });
   document.getElementById('btn-undo').addEventListener('click', () => { closeMenus(); undo(); });
   document.getElementById('btn-redo').addEventListener('click', () => { closeMenus(); redo(); });
-  document.getElementById('btn-loop').addEventListener('click', () => {
-    state.loop = !state.loop;
-    document.getElementById('tl-loop').checked = state.loop;
-    updateLoopIndicator();
-  });
   document.getElementById('btn-selall').addEventListener('click', () => { closeMenus(); selectAll(); });
   document.getElementById('btn-delete-selected').addEventListener('click', () => { closeMenus(); deleteSelected(); });
   document.getElementById('btn-group').addEventListener('click', () => { closeMenus(); createGroup(); });
@@ -2336,8 +2744,7 @@ function initUI() {
     state.tool = btn.dataset.tool;
     document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b === btn));
   });
-  document.getElementById('draw-plane').addEventListener('change', (ev) => { state.drawPlane = ev.target.value; });
-  document.getElementById('snap-toggle').addEventListener('change', (ev) => { state.snap = ev.target.checked; });
+  document.getElementById('draw-plane').addEventListener('change', (ev) => { state.drawPlane = ev.target.value; triggerDrawPlanePulse(); });
 
   // 函数 / 傅里叶 / 变量
   document.getElementById('btn-var-add').addEventListener('click', () => addVarRow());
@@ -2346,7 +2753,7 @@ function initUI() {
   document.getElementById('four-plane').addEventListener('change', renderFourierInputs);
 
   // 属性
-  document.getElementById('prop-style').addEventListener('change', (ev) => { pushUndo(); currentSelected().forEach(p => { p.style = ev.target.value; }); rebuildPoints(); });
+  document.getElementById('prop-style').addEventListener('change', (ev) => { if (ev.target.value === '__mixed__') return; pushUndo(); currentSelected().forEach(p => { p.style = ev.target.value; }); rebuildPoints(); });
   document.getElementById('prop-glow').addEventListener('change', (ev) => { pushUndo(); currentSelected().forEach(p => { p.glow = ev.target.checked; }); rebuildPoints(); });
   document.getElementById('prop-light').addEventListener('input', (ev) => { beginContinuous(); document.getElementById('light-val').textContent = ev.target.value; currentSelected().forEach(p => { p.lightLevel = parseInt(ev.target.value); }); rebuildPoints(); });
   document.getElementById('prop-light').addEventListener('change', endContinuous);
@@ -2354,7 +2761,7 @@ function initUI() {
   document.getElementById('prop-alpha').addEventListener('change', endContinuous);
   document.getElementById('prop-color').addEventListener('input', (ev) => { beginContinuous(); applyColorFromInputs(); });
   document.getElementById('prop-color').addEventListener('change', endContinuous);
-  document.getElementById('prop-scale').addEventListener('input', (ev) => { beginContinuous(); setValueAtTime([...state.selected], 'scl', [parseFloat(ev.target.value) || 1]); });
+  document.getElementById('prop-scale').addEventListener('input', (ev) => { beginContinuous(); editBaseValue([...state.selected], 'scl', [parseFloat(ev.target.value) || 1]); rebuildPoints(); });
   document.getElementById('prop-scale').addEventListener('change', endContinuous);
   ['prop-posx', 'prop-posy', 'prop-posz'].forEach(id => {
     document.getElementById(id).addEventListener('input', (ev) => { beginContinuous(); applyPositionFromInputs(); });
@@ -2363,6 +2770,7 @@ function initUI() {
 
   // 时间轴
   document.getElementById('btn-play').addEventListener('click', togglePlay);
+  document.getElementById('tl-speed').addEventListener('change', (ev) => { state.playSpeed = Math.max(0.1, parseFloat(ev.target.value) || 1); });
   document.getElementById('tl-time').addEventListener('input', (ev) => { state.time = parseFloat(ev.target.value) || 0; updateTimeUI(); rebuildPoints(); });
   document.getElementById('tl-loop').addEventListener('change', (ev) => { state.loop = ev.target.checked; updateLoopIndicator(); });
   document.getElementById('btn-capture').addEventListener('click', () => {
@@ -2376,6 +2784,21 @@ function initUI() {
       setValueAtTime([id], 'pos', v.pos);
       setValueAtTime([id], 'col', v.color);
       setValueAtTime([id], 'scl', [v.scale]);
+      setValueAtTime([id], 'vel', p.vel || [0, 0, 0]);
+    }
+  });
+  document.getElementById('btn-kf-add').addEventListener('click', () => {
+    const ids = [...state.selected];
+    if (ids.length === 0) { alert('请先选择粒子'); return; }
+    pushUndo();
+    for (const id of ids) {
+      const p = getParticle(id);
+      if (!p) continue;
+      const v = currentVisual(p);
+      setValueAtTime([id], 'pos', v.pos);
+      setValueAtTime([id], 'col', v.color);
+      setValueAtTime([id], 'scl', [v.scale]);
+      setValueAtTime([id], 'vel', p.vel || [0, 0, 0]);
     }
   });
 
@@ -2407,6 +2830,7 @@ function initUI() {
     if (!tlDrag) return;
     if (tlDrag.mode === 'pan') {
       timelineViewStart -= (ev.clientX - tlDrag.lastX) / TL_PX_PER_TICK;
+      timelineViewStart = Math.max(-25, timelineViewStart);
     } else {
       state.time = Math.max(0, timelineXToTick(ev.clientX));
       updateTimeUI();
@@ -2420,7 +2844,7 @@ function initUI() {
   tlCanvas.addEventListener('wheel', (ev) => {
     ev.preventDefault();
     timelineViewStart += ev.deltaY / TL_PX_PER_TICK;
-    timelineViewStart = Math.max(0, timelineViewStart);
+    timelineViewStart = Math.max(-25, timelineViewStart);
     drawTimeline();
   }, { passive: false });
 
@@ -2442,7 +2866,8 @@ function clearAll() {
 function applyColorFromInputs() {
   const rgb = hexToRgb(document.getElementById('prop-color').value);
   const a = parseFloat(document.getElementById('prop-alpha').value);
-  setValueAtTime([...state.selected], 'col', [rgb[0], rgb[1], rgb[2], a]);
+  editBaseValue([...state.selected], 'col', [rgb[0], rgb[1], rgb[2], a]);
+  rebuildPoints();
 }
 
 function applyPositionFromInputs() {
@@ -2450,7 +2875,8 @@ function applyPositionFromInputs() {
   const y = parseFloat(document.getElementById('prop-posy').value);
   const z = parseFloat(document.getElementById('prop-posz').value);
   if ([x, y, z].some(isNaN)) return;
-  setValueAtTime([...state.selected], 'pos', snapPos([x, y, z]));
+  editBaseValue([...state.selected], 'pos', [x, y, z]);
+  rebuildPoints();
 }
 
 /* 左侧面板拖拽缩放 + 拖拽移出组 */
@@ -2463,6 +2889,13 @@ function applyPositionFromInputs() {
       removeParticlesFromGroups(dragIds);
     }
     dragIds = null;
+  });
+  tree.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('.ptree-head')) return;
+    e.preventDefault();
+    showContextMenu(e.clientX, e.clientY, [
+      { label: '添加粒子', action: () => { pushUndo(); addParticle({}); rebuildPoints(); refreshParticleTree(); } },
+    ]);
   });
 
   const handle = document.getElementById('resize-handle');
@@ -2513,8 +2946,21 @@ function animate(now) {
     controls.update();
   }
 
+  if (planePulse) {
+    const t = (now - planePulse.t0) / planePulse.dur;
+    if (t >= 1) {
+      scene.remove(planePulse.mesh);
+      planePulse.mesh.geometry.dispose();
+      planePulse.mesh.material.dispose();
+      planePulse = null;
+    } else {
+      planePulse.mesh.scale.setScalar(0.5 + t * 20);
+      planePulse.mesh.material.opacity = 0.35 * (1 - t);
+    }
+  }
+
   if (state.playing) {
-    state.time += dt * 20;
+    state.time += dt * 20 * state.playSpeed;
     const mx = maxTick();
     if (state.time >= mx && mx > 0) {
       if (state.loop) state.time = 0;

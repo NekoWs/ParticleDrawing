@@ -118,6 +118,19 @@ class ClientParticleEngine {
     }
 
     /**
+     * 设置粒子的旋转目标（绕轴心做圆弧运动）。
+     */
+    fun rotateParticle(id: UUID, px: Double, py: Double, pz: Double,
+                       ox: Double, oy: Double, oz: Double,
+                       rx: Double, ry: Double, rz: Double,
+                       durationTicks: Int, easing: EasingType) {
+        particles[id]?.setRotation(
+            Vec3(px, py, pz), Vec3(ox, oy, oz),
+            doubleArrayOf(rx, ry, rz), easing, durationTicks * 50L
+        )
+    }
+
+    /**
      * 动态修改粒子的发光光照等级 (0-15)。
      * @param id 粒子唯一标识符
      * @param level 目标光照等级，自动钳制到 [0, 15]

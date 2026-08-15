@@ -20,6 +20,7 @@ class AnimationPlayer(
     private val basePos = HashMap<String, Vec3>()
     private val baseColor = HashMap<String, Color>()
     private val baseScale = HashMap<String, Float>()
+    private val groupPivot = HashMap<String, Vec3>()
     private var currentTick = 0
     private var finished = false
     private val maxTick: Int = animation.tracks.flatMap { it.keyframes }.maxOfOrNull { it.tick } ?: 0
@@ -34,6 +35,17 @@ class AnimationPlayer(
             basePos[p.id] = p.pos
             baseColor[p.id] = p.color
             baseScale[p.id] = p.scale
+            if (p.vel.x != 0.0 || p.vel.y != 0.0 || p.vel.z != 0.0) {
+                engine.setVelocity(data.id, p.vel, players)
+            }
+        }
+        for ((name, members) in animation.groups) {
+            var sx = 0.0; var sy = 0.0; var sz = 0.0; var n = 0
+            for (id in members) {
+                val pos = basePos[id] ?: continue
+                sx += pos.x; sy += pos.y; sz += pos.z; n++
+            }
+            if (n > 0) groupPivot[name] = Vec3(sx / n, sy / n, sz / n)
         }
     }
 
@@ -98,8 +110,19 @@ class AnimationPlayer(
 
         val v = next.value
         val op = track.mode == AnimTrack.Mode.OP
+        val pivot = track.ids.firstOrNull { it.startsWith("g:") }
+            ?.let { groupPivot[it.substring(2)] } ?: Vec3.ZERO
         for (id in resolveIds(track)) {
             val uuid = idMap[id] ?: continue
+            if (track.property == AnimTrack.Property.VELOCITY) {
+                engine.setVelocity(uuid, Vec3(v[0], v[1], v[2]), players)
+                continue
+            }
+            if (track.property == AnimTrack.Property.ROTATION) {
+                val base = basePos[id] ?: Vec3.ZERO
+                engine.rotateParticle(uuid, origin.add(pivot), base.subtract(pivot), v, duration, kfs[i].easing, players)
+                continue
+            }
             val b = engine.update(uuid)
             when (track.property) {
                 AnimTrack.Property.POSITION -> {

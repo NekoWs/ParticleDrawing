@@ -72,7 +72,9 @@ object AnimationLoader {
         val lightLevel = o.get("l")?.asInt ?: 0
         val p = o.get("pos").asJsonArray
         val pos = Vec3(p[0].asDouble, p[1].asDouble, p[2].asDouble)
-        return AnimParticle(id, style, color, scale, glowing, lightLevel, pos)
+        val velArr = o.get("vel")?.asJsonArray
+        val vel = if (velArr != null) Vec3(velArr[0].asDouble, velArr[1].asDouble, velArr[2].asDouble) else Vec3.ZERO
+        return AnimParticle(id, style, color, scale, glowing, lightLevel, pos, vel)
     }
 
     private fun parseTrack(o: com.google.gson.JsonObject): AnimTrack {

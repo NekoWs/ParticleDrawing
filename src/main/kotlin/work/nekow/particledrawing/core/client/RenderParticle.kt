@@ -5,6 +5,7 @@ import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.core.easing.EasingCurve
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.motion.rotateAround
 import java.util.UUID
 
 /**
@@ -72,6 +73,17 @@ class RenderParticle(
     // 速度向量（blocks/tick）
     private var velocity: Vec3 = Vec3.ZERO
 
+    // 旋转插值状态（绕轴心做圆弧运动，避免线性插值位置导致的收缩失真）
+    private var rotActive = false
+    private var rotPivot = Vec3.ZERO
+    private var rotOffset = Vec3.ZERO
+    private var startRot = DoubleArray(3)
+    private var tgtRot = DoubleArray(3)
+    private var curRot = DoubleArray(3)
+    private var rotEaseStartTime = 0L
+    private var rotEaseDurationNs = 0L
+    private var rotEasing: EasingCurve = LINEAR
+
     init {
         curX = position.x; tgtX = position.x
         curY = position.y; tgtY = position.y
@@ -108,6 +120,7 @@ class RenderParticle(
     /** 设置位置、颜色与缩放的缓动目标。 */
     fun setTarget(position: Vec3, color: Color, scale: Float, easingType: EasingType, durationMs: Long) {
         velocity = Vec3.ZERO
+        rotActive = false
         startX = curX
         startY = curY
         startZ = curZ
@@ -156,9 +169,26 @@ class RenderParticle(
     /** 设置速度向量（blocks/tick）。 */
     fun setVelocity(velocity: Vec3) {
         this.velocity = velocity
+        rotActive = false
         if (velocity.x != 0.0 || velocity.y != 0.0 || velocity.z != 0.0) {
             posEaseStartTime = 0L
         }
+    }
+
+    /**
+     * 设置旋转目标：绕 [pivot] 轴心将偏移 [offset] 旋转到 [targetRot] 欧拉角（X→Y→Z）。
+     */
+    fun setRotation(pivot: Vec3, offset: Vec3, targetRot: DoubleArray, easingType: EasingType, durationMs: Long) {
+        rotPivot = pivot
+        rotOffset = offset
+        startRot = curRot.copyOf()
+        tgtRot = targetRot.copyOf()
+        rotEasing = easingType.curve
+        rotEaseStartTime = System.nanoTime()
+        rotEaseDurationNs = durationMs * 1_000_000L
+        rotActive = true
+        velocity = Vec3.ZERO
+        posEaseStartTime = 0L
     }
 
     /** 当前速度向量。 */
@@ -167,6 +197,7 @@ class RenderParticle(
     /** 设置位置的缓动目标。 */
     fun setPositionTarget(x: Double, y: Double, z: Double, easingType: EasingType, durationMs: Long) {
         velocity = Vec3.ZERO
+        rotActive = false
         startX = curX
         startY = curY
         startZ = curZ
@@ -181,6 +212,7 @@ class RenderParticle(
 
     /** 立即跳变到目标位置。 */
     fun snapPosition(x: Double, y: Double, z: Double) {
+        rotActive = false
         curX = x; tgtX = x
         curY = y; tgtY = y
         curZ = z; tgtZ = z
@@ -190,6 +222,7 @@ class RenderParticle(
 
     /** 直接设置位置，不经过缓动。 */
     fun setPositionDirect(position: Vec3) {
+        rotActive = false
         curX = position.x; tgtX = position.x
         curY = position.y; tgtY = position.y
         curZ = position.z; tgtZ = position.z
@@ -250,7 +283,21 @@ class RenderParticle(
     fun tick() {
         val now = System.nanoTime()
 
-        if (velocity.x != 0.0 || velocity.y != 0.0 || velocity.z != 0.0) {
+        if (rotActive) {
+            val elapsed = now - rotEaseStartTime
+            if (elapsed >= rotEaseDurationNs) {
+                curRot = tgtRot.copyOf()
+                rotActive = false
+            } else {
+                val t = elapsed.toFloat() / rotEaseDurationNs
+                val e = rotEasing.evaluate(t)
+                for (i in 0..2) curRot[i] = lerp(startRot[i], tgtRot[i], e)
+            }
+            val pos = rotPivot.add(rotateEuler(rotOffset, curRot[0], curRot[1], curRot[2]))
+            curX = pos.x; tgtX = pos.x
+            curY = pos.y; tgtY = pos.y
+            curZ = pos.z; tgtZ = pos.z
+        } else if (velocity.x != 0.0 || velocity.y != 0.0 || velocity.z != 0.0) {
             curX += velocity.x; tgtX += velocity.x
             curY += velocity.y; tgtY += velocity.y
             curZ += velocity.z; tgtZ += velocity.z
@@ -284,6 +331,15 @@ class RenderParticle(
                 curScale = lerp(startScale, tgtScale, e)
             }
         }
+    }
+
+    /** 按 X→Y→Z 顺序旋转偏移向量（与编辑器一致）。 */
+    private fun rotateEuler(v: Vec3, rx: Double, ry: Double, rz: Double): Vec3 {
+        var r = v
+        if (rx != 0.0) r = r.rotateAround(Vec3(1.0, 0.0, 0.0), rx)
+        if (ry != 0.0) r = r.rotateAround(Vec3(0.0, 1.0, 0.0), ry)
+        if (rz != 0.0) r = r.rotateAround(Vec3(0.0, 0.0, 1.0), rz)
+        return r
     }
 
     companion object {

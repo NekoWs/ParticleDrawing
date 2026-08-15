@@ -14,6 +14,7 @@ import work.nekow.particledrawing.core.motion.rotateAround
 import work.nekow.particledrawing.core.network.ParticleDestroyPayload
 import work.nekow.particledrawing.core.network.ParticleGroupTransformPayload
 import work.nekow.particledrawing.core.network.ParticleLightLevelPayload
+import work.nekow.particledrawing.core.network.ParticleRotationPayload
 import work.nekow.particledrawing.core.network.ParticleSpawnPayload
 import work.nekow.particledrawing.core.network.ParticleUpdatePayload
 import work.nekow.particledrawing.core.network.ParticleVelocityPayload
@@ -139,6 +140,21 @@ class ServerParticleEngine(
         data.setVelocity(velocity)
 
         val payload = ParticleVelocityPayload(id, velocity.x, velocity.y, velocity.z)
+        sendToVisible(playersInDimension, data.position(), payload)
+    }
+
+    /**
+     * 设置粒子的旋转（绕轴心做圆弧运动）并广播。
+     * @param id 粒子 ID
+     * @param pivot 旋转轴心（绝对世界坐标）
+     * @param offset 粒子相对轴心的偏移向量
+     * @param rot 目标欧拉角（弧度，X→Y→Z）
+     */
+    fun rotateParticle(id: UUID, pivot: Vec3, offset: Vec3, rot: DoubleArray,
+                       durationTicks: Int, easing: EasingType,
+                       playersInDimension: Collection<ServerPlayer>) {
+        val data = particles[id] ?: return
+        val payload = ParticleRotationPayload.of(id, pivot, offset, rot, durationTicks, easing)
         sendToVisible(playersInDimension, data.position(), payload)
     }
 
