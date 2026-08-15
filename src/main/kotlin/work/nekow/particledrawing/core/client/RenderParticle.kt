@@ -8,8 +8,21 @@ import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.motion.rotateAround
 import java.util.UUID
 
+private val LINEAR = EasingCurve(0.0, 0.0, 1.0, 1.0)
+
+/** 缓动三元组：当前值 / 目标值 / 缓动起点。 */
+private class EaseVar<T>(var cur: T, var tgt: T, var start: T)
+
+/** 缓动计时状态。 */
+private class EaseState(
+    var active: Boolean = false,
+    var startTime: Long = 0L,
+    var durationNs: Long = 0L,
+    var easing: EasingCurve = LINEAR
+)
+
 /**
- * 渲染粒子，保存粒子的可视化状态并支持缓动过渡与速度积分。
+ * 渲染粒子：保存可视化状态并支持缓动过渡与速度积分。
  *
  * @param id 粒子唯一标识符
  * @param style 粒子样式
@@ -32,219 +45,142 @@ class RenderParticle(
     lifetimeMs: Long
 ) {
 
-    private var curX: Double
-    private var curY: Double
-    private var curZ: Double
-    private var tgtX: Double
-    private var tgtY: Double
-    private var tgtZ: Double
+    // 位置 / 颜色 / 缩放（直接缓动）
+    private val pos = EaseVar(Vec3.ZERO, Vec3.ZERO, Vec3.ZERO)
+    private val col = EaseVar(Color.BLACK, Color.BLACK, Color.BLACK)
+    private val scl = EaseVar(0f, 0f, 0f)
 
-    private var curR: Float
-    private var curG: Float
-    private var curB: Float
-    private var curA: Float
-    private var tgtR: Float
-    private var tgtG: Float
-    private var tgtB: Float
-    private var tgtA: Float
+    // 旋转 / 平移 / 偏移（绕轴心独立缓动后叠加）
+    private val rot = EaseVar(DoubleArray(3), DoubleArray(3), DoubleArray(3))
+    private val trans = EaseVar(Vec3.ZERO, Vec3.ZERO, Vec3.ZERO)
+    private val off = EaseVar(Vec3.ZERO, Vec3.ZERO, Vec3.ZERO)
 
-    private var curScale: Float
-    private var tgtScale: Float
+    private val posEase = EaseState()
+    private val colEase = EaseState()
+    private val rotEase = EaseState()
+    private val transEase = EaseState()
+    private val offEase = EaseState()
 
-    private var startX: Double = 0.0
-    private var startY: Double = 0.0
-    private var startZ: Double = 0.0
-    private var startR: Float = 0f
-    private var startG: Float = 0f
-    private var startB: Float = 0f
-    private var startA: Float = 0f
-    private var startScale: Float = 0f
-
-    private var deathTime: Long
-
-    // 位置缓动与颜色/缩放缓动使用独立计时器
-    private var easing: EasingCurve
-    private var posEaseStartTime: Long = 0L
-    private var posEaseDurationNs: Long = 0L
-    private var colEaseStartTime: Long = 0L
-    private var colEaseDurationNs: Long = 0L
-    private var snapNextSync: Boolean = false
-
-    // 速度向量（blocks/tick）
-    private var velocity: Vec3 = Vec3.ZERO
-
-    // 旋转插值状态（绕轴心做圆弧运动，避免线性插值位置导致的收缩失真）
-    private var rotActive = false
     private var rotPivot = Vec3.ZERO
-    private var startRot = DoubleArray(3)
-    private var tgtRot = DoubleArray(3)
-    private var curRot = DoubleArray(3)
-    private var rotEaseStartTime = 0L
-    private var rotEaseDurationNs = 0L
-    private var rotEasing: EasingCurve = LINEAR
-
-    // 平移插值状态（组 op 位置增量，与旋转独立缓动后叠加）
-    private var translateActive = false
-    private var curTranslate = Vec3.ZERO
-    private var tgtTranslate = Vec3.ZERO
-    private var startTranslate = Vec3.ZERO
-    private var translateEaseStartTime = 0L
-    private var translateEaseDurationNs = 0L
-    private var translateEasing: EasingCurve = LINEAR
-
-    // 偏移插值状态（相对轴心的未旋转位置；op 模式恒为 base-pivot，set 模式位置轨道会改变它）
-    private var offsetActive = false
-    private var curOffset = Vec3.ZERO
-    private var tgtOffset = Vec3.ZERO
-    private var startOffset = Vec3.ZERO
-    private var offsetEaseStartTime = 0L
-    private var offsetEaseDurationNs = 0L
-    private var offsetEasing: EasingCurve = LINEAR
+    private var velocity = Vec3.ZERO
+    private var deathTime: Long
+    private var snapNextSync = false
 
     init {
-        curX = position.x; tgtX = position.x
-        curY = position.y; tgtY = position.y
-        curZ = position.z; tgtZ = position.z
-        curR = color.r; tgtR = color.r
-        curG = color.g; tgtG = color.g
-        curB = color.b; tgtB = color.b
-        curA = color.a; tgtA = color.a
-        curScale = scale; tgtScale = scale
+        pos.cur = position
+        pos.tgt = position
+        col.cur = color
+        col.tgt = color
+        scl.cur = scale
+        scl.tgt = scale
         deathTime = if (lifetimeMs > 0) System.nanoTime() + lifetimeMs * 1_000_000L else 0
         this.lightLevel = lightLevel.coerceIn(0, 15)
-        easing = LINEAR
     }
 
     fun id(): UUID = id
     fun glowing(): Boolean = glowing
     fun lightLevel(): Int = lightLevel
 
-    fun x(): Double = curX
-    fun y(): Double = curY
-    fun z(): Double = curZ
-    fun r(): Float = curR
-    fun g(): Float = curG
-    fun b(): Float = curB
-    fun a(): Float = curA
-    fun scale(): Float = curScale
+    fun x(): Double = pos.cur.x
+    fun y(): Double = pos.cur.y
+    fun z(): Double = pos.cur.z
+    fun r(): Float = col.cur.r
+    fun g(): Float = col.cur.g
+    fun b(): Float = col.cur.b
+    fun a(): Float = col.cur.a
+    fun scale(): Float = scl.cur
 
-    fun isAlive(): Boolean {
-        return deathTime == 0L || System.nanoTime() < deathTime
-    }
-
+    fun isAlive(): Boolean = deathTime == 0L || System.nanoTime() < deathTime
     fun isDead(): Boolean = !isAlive()
 
-    /** 设置位置、颜色与缩放的缓动目标。 */
+    /** 设置位置/颜色/缩放的缓动目标。 */
     fun setTarget(position: Vec3, color: Color, scale: Float, easingType: EasingType, durationMs: Long) {
         velocity = Vec3.ZERO
-        rotActive = false
-        translateActive = false
-        offsetActive = false
-        startX = curX
-        startY = curY
-        startZ = curZ
-        startR = curR
-        startG = curG
-        startB = curB
-        startA = curA
-        startScale = curScale
-
-        tgtX = position.x
-        tgtY = position.y
-        tgtZ = position.z
-        tgtR = color.r
-        tgtG = color.g
-        tgtB = color.b
-        tgtA = color.a
-        tgtScale = scale
-        easing = easingType.curve
+        rotEase.active = false
+        transEase.active = false
+        offEase.active = false
+        pos.start = pos.cur
+        col.start = col.cur
+        scl.start = scl.cur
+        pos.tgt = position
+        col.tgt = color
+        scl.tgt = scale
+        posEase.easing = easingType.curve
+        colEase.easing = easingType.curve
         val now = System.nanoTime()
-        posEaseStartTime = now
-        posEaseDurationNs = durationMs * 1_000_000L
-        colEaseStartTime = now
-        colEaseDurationNs = durationMs * 1_000_000L
+        posEase.startTime = now
+        posEase.durationNs = durationMs * 1_000_000L
+        colEase.startTime = now
+        colEase.durationNs = durationMs * 1_000_000L
         if (durationMs == 0L) snapNextSync = true
     }
 
-    /** 仅设置颜色与缩放的缓动目标。 */
+    /** 设置颜色与缩放的缓动目标。 */
     fun setTargetColorScale(color: Color, scale: Float, easingType: EasingType, durationMs: Long) {
-        startR = curR
-        startG = curG
-        startB = curB
-        startA = curA
-        startScale = curScale
-
-        tgtR = color.r
-        tgtG = color.g
-        tgtB = color.b
-        tgtA = color.a
-        tgtScale = scale
-        easing = easingType.curve
-        colEaseStartTime = System.nanoTime()
-        colEaseDurationNs = durationMs * 1_000_000L
+        col.start = col.cur
+        scl.start = scl.cur
+        col.tgt = color
+        scl.tgt = scale
+        colEase.easing = easingType.curve
+        colEase.startTime = System.nanoTime()
+        colEase.durationNs = durationMs * 1_000_000L
         if (durationMs == 0L) snapNextSync = true
     }
 
-    /** 设置速度向量（blocks/tick）。 */
+    /** 设置速度向量。 */
     fun setVelocity(velocity: Vec3) {
         this.velocity = velocity
-        rotActive = false
-        translateActive = false
-        offsetActive = false
+        rotEase.active = false
+        transEase.active = false
+        offEase.active = false
         if (velocity.x != 0.0 || velocity.y != 0.0 || velocity.z != 0.0) {
-            posEaseStartTime = 0L
+            posEase.startTime = 0L
         }
     }
 
-    /**
-     * 设置旋转目标：绕 [pivot] 轴心将偏移 [offset] 旋转到 [targetRot] 欧拉角（X→Y→Z）。
-     */
+    /** 设置旋转缓动：绕 [pivot] 将 [offset] 旋转到 [targetRot]。 */
     fun setRotation(pivot: Vec3, offset: Vec3, targetRot: DoubleArray, easingType: EasingType, durationMs: Long) {
         rotPivot = pivot
-        curOffset = offset
-        startRot = curRot.copyOf()
-        tgtRot = targetRot.copyOf()
-        rotEasing = easingType.curve
-        rotEaseStartTime = System.nanoTime()
-        rotEaseDurationNs = durationMs * 1_000_000L
-        rotActive = true
+        off.cur = offset
+        rot.start = rot.cur.copyOf()
+        rot.tgt = targetRot.copyOf()
+        rotEase.easing = easingType.curve
+        rotEase.startTime = System.nanoTime()
+        rotEase.durationNs = durationMs * 1_000_000L
+        rotEase.active = true
         velocity = Vec3.ZERO
-        posEaseStartTime = 0L
+        posEase.startTime = 0L
     }
 
-    /**
-     * 设置平移目标（组 op 位置增量）：绕 [pivot] 轴心，在 [offset] 基础上叠加 [delta]。
-     */
+    /** 设置平移缓动：绕 [pivot] 在 [offset] 基础上叠加 [delta]。 */
     fun setTranslation(pivot: Vec3, offset: Vec3, delta: Vec3, easingType: EasingType, durationMs: Long) {
         rotPivot = pivot
-        curOffset = offset
-        startTranslate = curTranslate
-        tgtTranslate = delta
-        translateEasing = easingType.curve
-        translateEaseStartTime = System.nanoTime()
-        translateEaseDurationNs = durationMs * 1_000_000L
-        translateActive = true
+        off.cur = offset
+        trans.start = trans.cur
+        trans.tgt = delta
+        transEase.easing = easingType.curve
+        transEase.startTime = System.nanoTime()
+        transEase.durationNs = durationMs * 1_000_000L
+        transEase.active = true
         velocity = Vec3.ZERO
-        posEaseStartTime = 0L
+        posEase.startTime = 0L
     }
 
-    /**
-     * 设置位置目标（组 set 位置轨道）：把未旋转偏移 [offset] 缓动到新值，保留旋转、清零平移增量。
-     */
+    /** 设置偏移缓动：把未旋转偏移缓动到 [offset]，清零平移。 */
     fun setPositionSet(pivot: Vec3, offset: Vec3, easingType: EasingType, durationMs: Long) {
         rotPivot = pivot
-        startOffset = curOffset
-        tgtOffset = offset
-        offsetEasing = easingType.curve
-        offsetEaseStartTime = System.nanoTime()
-        offsetEaseDurationNs = durationMs * 1_000_000L
-        offsetActive = true
-        curTranslate = Vec3.ZERO
-        startTranslate = Vec3.ZERO
-        tgtTranslate = Vec3.ZERO
-        translateActive = false
+        off.start = off.cur
+        off.tgt = offset
+        offEase.easing = easingType.curve
+        offEase.startTime = System.nanoTime()
+        offEase.durationNs = durationMs * 1_000_000L
+        offEase.active = true
+        trans.cur = Vec3.ZERO
+        trans.start = Vec3.ZERO
+        trans.tgt = Vec3.ZERO
+        transEase.active = false
         velocity = Vec3.ZERO
-        posEaseStartTime = 0L
+        posEase.startTime = 0L
     }
 
     /** 当前速度向量。 */
@@ -253,58 +189,49 @@ class RenderParticle(
     /** 设置位置的缓动目标。 */
     fun setPositionTarget(x: Double, y: Double, z: Double, easingType: EasingType, durationMs: Long) {
         velocity = Vec3.ZERO
-        rotActive = false
-        translateActive = false
-        offsetActive = false
-        startX = curX
-        startY = curY
-        startZ = curZ
-        tgtX = x
-        tgtY = y
-        tgtZ = z
-        easing = easingType.curve
-        posEaseStartTime = System.nanoTime()
-        posEaseDurationNs = durationMs * 1_000_000L
+        rotEase.active = false
+        transEase.active = false
+        offEase.active = false
+        pos.start = pos.cur
+        pos.tgt = Vec3(x, y, z)
+        posEase.easing = easingType.curve
+        posEase.startTime = System.nanoTime()
+        posEase.durationNs = durationMs * 1_000_000L
         if (durationMs == 0L) snapNextSync = true
     }
 
     /** 立即跳变到目标位置。 */
     fun snapPosition(x: Double, y: Double, z: Double) {
-        rotActive = false
-        translateActive = false
-        offsetActive = false
-        curX = x; tgtX = x
-        curY = y; tgtY = y
-        curZ = z; tgtZ = z
-        posEaseStartTime = 0L
+        rotEase.active = false
+        transEase.active = false
+        offEase.active = false
+        pos.cur = Vec3(x, y, z)
+        pos.tgt = Vec3(x, y, z)
+        posEase.startTime = 0L
         snapNextSync = true
     }
 
-    /** 直接设置位置，不经过缓动。 */
+    /** 直接设置位置。 */
     fun setPositionDirect(position: Vec3) {
-        rotActive = false
-        translateActive = false
-        offsetActive = false
-        curX = position.x; tgtX = position.x
-        curY = position.y; tgtY = position.y
-        curZ = position.z; tgtZ = position.z
-        posEaseStartTime = 0L
+        rotEase.active = false
+        transEase.active = false
+        offEase.active = false
+        pos.cur = position
+        pos.tgt = position
+        posEase.startTime = 0L
     }
 
-    /**
-     * 直接设置颜色，不经过缓动。
-     */
+    /** 直接设置颜色。 */
     fun setColorDirect(color: Color) {
-        curR = color.r; tgtR = color.r
-        curG = color.g; tgtG = color.g
-        curB = color.b; tgtB = color.b
-        curA = color.a; tgtA = color.a
-        colEaseStartTime = 0L
+        col.cur = color
+        col.tgt = color
+        colEase.startTime = 0L
     }
 
     /** 直接设置缩放。 */
     fun setScaleDirect(scale: Float) {
-        curScale = scale; tgtScale = scale
+        scl.cur = scale
+        scl.tgt = scale
     }
 
     /** 读取并清除「下一次同步应跳变」标记。 */
@@ -314,8 +241,8 @@ class RenderParticle(
         return s
     }
 
-    /** 返回缓动的目标位置。 */
-    fun targetPosition(): Vec3 = Vec3(tgtX, tgtY, tgtZ)
+    /** 缓动的目标位置。 */
+    fun targetPosition(): Vec3 = pos.tgt
 
     /**
      * 设置发光状态。
@@ -326,7 +253,7 @@ class RenderParticle(
     }
 
     /**
-     * 设置发光粒子向外发出的光照等级 (0-15)。
+     * 设置发光光照等级。
      * @param level 光照等级，自动钳制到 [0, 15]
      */
     fun setLightLevel(level: Int) {
@@ -341,86 +268,75 @@ class RenderParticle(
         deathTime = if (lifetimeMs > 0) System.nanoTime() + lifetimeMs * 1_000_000L else 0
     }
 
-    /** 每帧更新：推进速度积分与缓动插值。 */
+    /** 每帧推进速度积分与缓动插值。 */
     fun tick() {
         val now = System.nanoTime()
+        var posChanged = false
 
-        if (rotActive) {
-            val elapsed = now - rotEaseStartTime
-            if (elapsed >= rotEaseDurationNs) {
-                curRot = tgtRot.copyOf()
-                rotActive = false
+        if (rotEase.active) {
+            val elapsed = now - rotEase.startTime
+            if (elapsed >= rotEase.durationNs) {
+                rot.cur = rot.tgt.copyOf()
+                rotEase.active = false
             } else {
-                val t = elapsed.toFloat() / rotEaseDurationNs
-                val e = rotEasing.evaluate(t)
-                for (i in 0..2) curRot[i] = lerp(startRot[i], tgtRot[i], e)
+                val e = rotEase.easing.evaluate(elapsed.toFloat() / rotEase.durationNs)
+                for (i in 0..2) rot.cur[i] = lerp(rot.start[i], rot.tgt[i], e)
             }
+            posChanged = true
         }
-        if (translateActive) {
-            val elapsed = now - translateEaseStartTime
-            if (elapsed >= translateEaseDurationNs) {
-                curTranslate = tgtTranslate
-                translateActive = false
+        if (transEase.active) {
+            val elapsed = now - transEase.startTime
+            if (elapsed >= transEase.durationNs) {
+                trans.cur = trans.tgt
+                transEase.active = false
             } else {
-                val t = elapsed.toFloat() / translateEaseDurationNs
-                val e = translateEasing.evaluate(t)
-                curTranslate = lerpVec(startTranslate, tgtTranslate, e)
+                trans.cur = lerpVec(trans.start, trans.tgt, transEase.easing.evaluate(elapsed.toFloat() / transEase.durationNs))
             }
+            posChanged = true
         }
-        if (offsetActive) {
-            val elapsed = now - offsetEaseStartTime
-            if (elapsed >= offsetEaseDurationNs) {
-                curOffset = tgtOffset
-                offsetActive = false
+        if (offEase.active) {
+            val elapsed = now - offEase.startTime
+            if (elapsed >= offEase.durationNs) {
+                off.cur = off.tgt
+                offEase.active = false
             } else {
-                val t = elapsed.toFloat() / offsetEaseDurationNs
-                val e = offsetEasing.evaluate(t)
-                curOffset = lerpVec(startOffset, tgtOffset, e)
+                off.cur = lerpVec(off.start, off.tgt, offEase.easing.evaluate(elapsed.toFloat() / offEase.durationNs))
             }
+            posChanged = true
         }
 
-        if (rotActive || translateActive || offsetActive) {
-            val pos = rotPivot.add(curTranslate).add(rotateEuler(curOffset, curRot[0], curRot[1], curRot[2]))
-            curX = pos.x; tgtX = pos.x
-            curY = pos.y; tgtY = pos.y
-            curZ = pos.z; tgtZ = pos.z
+        if (posChanged) {
+            val p = rotPivot.add(trans.cur).add(rotateEuler(off.cur, rot.cur[0], rot.cur[1], rot.cur[2]))
+            pos.cur = p
+            pos.tgt = p
         } else if (velocity.x != 0.0 || velocity.y != 0.0 || velocity.z != 0.0) {
-            curX += velocity.x; tgtX += velocity.x
-            curY += velocity.y; tgtY += velocity.y
-            curZ += velocity.z; tgtZ += velocity.z
-        } else if (posEaseStartTime != 0L) {
-            val elapsed = now - posEaseStartTime
-            if (elapsed >= posEaseDurationNs) {
-                curX = tgtX; curY = tgtY; curZ = tgtZ
-                posEaseStartTime = 0L
+            pos.cur = pos.cur.add(velocity)
+            pos.tgt = pos.tgt.add(velocity)
+        } else if (posEase.startTime != 0L) {
+            val elapsed = now - posEase.startTime
+            if (elapsed >= posEase.durationNs) {
+                pos.cur = pos.tgt
+                posEase.startTime = 0L
             } else {
-                val t = elapsed.toFloat() / posEaseDurationNs
-                val e = easing.evaluate(t)
-                curX = lerp(startX, tgtX, e)
-                curY = lerp(startY, tgtY, e)
-                curZ = lerp(startZ, tgtZ, e)
+                pos.cur = lerpVec(pos.start, pos.tgt, posEase.easing.evaluate(elapsed.toFloat() / posEase.durationNs))
             }
         }
 
-        if (colEaseStartTime != 0L) {
-            val elapsed = now - colEaseStartTime
-            if (elapsed >= colEaseDurationNs) {
-                curR = tgtR; curG = tgtG; curB = tgtB; curA = tgtA
-                curScale = tgtScale
-                colEaseStartTime = 0L
+        if (colEase.startTime != 0L) {
+            val elapsed = now - colEase.startTime
+            if (elapsed >= colEase.durationNs) {
+                col.cur = col.tgt
+                scl.cur = scl.tgt
+                colEase.startTime = 0L
             } else {
-                val t = elapsed.toFloat() / colEaseDurationNs
-                val e = easing.evaluate(t)
-                curR = lerp(startR, tgtR, e)
-                curG = lerp(startG, tgtG, e)
-                curB = lerp(startB, tgtB, e)
-                curA = lerp(startA, tgtA, e)
-                curScale = lerp(startScale, tgtScale, e)
+                val e = colEase.easing.evaluate(elapsed.toFloat() / colEase.durationNs)
+                col.cur = col.start.lerp(col.tgt, e)
+                scl.cur = lerp(scl.start, scl.tgt, e)
             }
         }
     }
 
-    /** 按 X→Y→Z 顺序旋转偏移向量（与编辑器一致）。 */
+    /** 按 X→Y→Z 顺序旋转偏移向量。 */
     private fun rotateEuler(v: Vec3, rx: Double, ry: Double, rz: Double): Vec3 {
         var r = v
         if (rx != 0.0) r = r.rotateAround(Vec3(1.0, 0.0, 0.0), rx)
@@ -430,22 +346,11 @@ class RenderParticle(
     }
 
     companion object {
-        private val LINEAR = EasingCurve(0.0, 0.0, 1.0, 1.0)
+        private fun lerp(a: Double, b: Double, t: Float): Double = a + (b - a) * t
 
-        private fun lerp(a: Double, b: Double, t: Float): Double {
-            return a + (b - a) * t
-        }
+        private fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t
 
-        private fun lerp(a: Float, b: Float, t: Float): Float {
-            return a + (b - a) * t
-        }
-
-        private fun lerpVec(a: Vec3, b: Vec3, t: Float): Vec3 {
-            return Vec3(
-                a.x + (b.x - a.x) * t,
-                a.y + (b.y - a.y) * t,
-                a.z + (b.z - a.z) * t
-            )
-        }
+        private fun lerpVec(a: Vec3, b: Vec3, t: Float): Vec3 =
+            Vec3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t)
     }
 }

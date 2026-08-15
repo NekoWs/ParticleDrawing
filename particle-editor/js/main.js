@@ -1,0 +1,285 @@
+/* =========================================================================
+ * UI 初始化与主循环
+ * ======================================================================= */
+
+function updateTimeUI() {
+  document.getElementById('tl-time').value = Math.round(state.time);
+  document.getElementById('tl-max').textContent = maxTick();
+}
+
+function updateLoopIndicator() {
+  const el = document.getElementById('loop-indicator');
+  if (el) el.style.opacity = state.loop ? '1' : '0.25';
+}
+
+function togglePlay() {
+  state.playing = !state.playing;
+  document.getElementById('btn-play').textContent = state.playing ? '⏸ 暂停' : '▶ 播放';
+}
+
+let shiftHeld = false;
+window.addEventListener('keydown', (e) => { if (e.key === 'Shift') shiftHeld = true; });
+window.addEventListener('keyup', (e) => { if (e.key === 'Shift') shiftHeld = false; });
+evShift = () => shiftHeld;
+
+function initUI() {
+  const styleSel = document.getElementById('prop-style');
+  STYLES.forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = s; styleSel.appendChild(o); });
+  const tlEase = document.getElementById('tl-easing');
+  tlEase.innerHTML = easingCurveSVG(state.defaultEasing);
+  tlEase.onclick = () => openEasingEditor(state.defaultEasing, (e) => {
+    state.defaultEasing = e;
+    tlEase.innerHTML = easingCurveSVG(e);
+  }, tlEase);
+
+  // 菜单（悬停展开）
+  document.querySelectorAll('.menu').forEach(menu => {
+    menu.addEventListener('mouseenter', () => {
+      document.querySelectorAll('.menu').forEach(m => m.classList.remove('open'));
+      menu.classList.add('open');
+    });
+    menu.addEventListener('mouseleave', () => menu.classList.remove('open'));
+  });
+  const closeMenus = () => document.querySelectorAll('.menu').forEach(m => m.classList.remove('open'));
+  document.getElementById('btn-new').addEventListener('click', () => { closeMenus(); newFile(); });
+  document.getElementById('btn-open').addEventListener('click', () => { closeMenus(); openFile(); });
+  document.getElementById('btn-save').addEventListener('click', () => { closeMenus(); saveFile(); });
+  document.getElementById('btn-saveas').addEventListener('click', () => { closeMenus(); saveFileAs(); });
+  document.getElementById('btn-clear').addEventListener('click', () => { closeMenus(); clearAll(); });
+  document.getElementById('btn-undo').addEventListener('click', () => { closeMenus(); undo(); });
+  document.getElementById('btn-redo').addEventListener('click', () => { closeMenus(); redo(); });
+  document.getElementById('btn-selall').addEventListener('click', () => { closeMenus(); selectAll(); });
+  document.getElementById('btn-delete-selected').addEventListener('click', () => { closeMenus(); deleteSelected(); });
+  document.getElementById('btn-group').addEventListener('click', () => { closeMenus(); createGroup(); });
+
+  // 工具
+  document.getElementById('tools').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.tool');
+    if (!btn) return;
+    state.tool = btn.dataset.tool;
+    document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b === btn));
+  });
+  document.getElementById('draw-plane').addEventListener('change', (ev) => { state.drawPlane = ev.target.value; triggerDrawPlanePulse(); });
+
+  // 函数 / 傅里叶 / 变量
+  document.getElementById('btn-var-add').addEventListener('click', () => addVarRow());
+  document.getElementById('btn-fn').addEventListener('click', generateFunction);
+  document.getElementById('btn-four').addEventListener('click', generateFourier);
+  document.getElementById('four-plane').addEventListener('change', renderFourierInputs);
+
+  // 属性
+  document.getElementById('prop-style').addEventListener('change', (ev) => { if (ev.target.value === '__mixed__') return; pushUndo(); currentSelected().forEach(p => { p.style = ev.target.value; }); rebuildPoints(); });
+  document.getElementById('prop-glow').addEventListener('change', (ev) => { pushUndo(); currentSelected().forEach(p => { p.glow = ev.target.checked; }); rebuildPoints(); });
+  document.getElementById('prop-light').addEventListener('input', (ev) => { beginContinuous(); document.getElementById('light-val').textContent = ev.target.value; currentSelected().forEach(p => { p.lightLevel = parseInt(ev.target.value); }); rebuildPoints(); });
+  document.getElementById('prop-light').addEventListener('change', endContinuous);
+  document.getElementById('prop-alpha').addEventListener('input', (ev) => { beginContinuous(); document.getElementById('alpha-val').textContent = parseFloat(ev.target.value).toFixed(2); applyColorFromInputs(); });
+  document.getElementById('prop-alpha').addEventListener('change', endContinuous);
+  document.getElementById('prop-color').addEventListener('input', (ev) => { beginContinuous(); applyColorFromInputs(); });
+  document.getElementById('prop-color').addEventListener('change', endContinuous);
+  document.getElementById('prop-scale').addEventListener('input', (ev) => { beginContinuous(); editBaseValue([...state.selected], 'scl', [parseFloat(ev.target.value) || 1]); rebuildPoints(); });
+  document.getElementById('prop-scale').addEventListener('change', endContinuous);
+  ['prop-posx', 'prop-posy', 'prop-posz'].forEach(id => {
+    document.getElementById(id).addEventListener('input', (ev) => { beginContinuous(); applyPositionFromInputs(); });
+    document.getElementById(id).addEventListener('change', endContinuous);
+  });
+
+  // 时间轴
+  document.getElementById('btn-play').addEventListener('click', togglePlay);
+  document.getElementById('tl-speed').addEventListener('change', (ev) => { state.playSpeed = Math.max(0.1, parseFloat(ev.target.value) || 1); });
+  document.getElementById('tl-time').addEventListener('input', (ev) => { state.time = parseFloat(ev.target.value) || 0; updateTimeUI(); rebuildPoints(); });
+  document.getElementById('tl-loop').addEventListener('change', (ev) => { state.loop = ev.target.checked; updateLoopIndicator(); });
+  document.getElementById('btn-capture').addEventListener('click', captureKeyframes);
+
+  // 文件导入
+  document.getElementById('file-import').addEventListener('change', (ev) => {
+    const f = ev.target.files[0];
+    if (!f) return;
+    state.fileHandle = null;
+    loadFile(f);
+    ev.target.value = '';
+  });
+
+  // 时间轴点击/拖动
+  const tlCanvas = document.getElementById('timeline');
+  let tlDrag = null; // { mode: 'scrub' | 'pan', lastX }
+  tlCanvas.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0 && ev.button !== 1) return;
+    ev.preventDefault();
+    tlCanvas.setPointerCapture(ev.pointerId);
+    if (ev.button === 1) { // 中键：平移视图
+      tlDrag = { mode: 'pan', lastX: ev.clientX };
+    } else {
+      tlDrag = { mode: 'scrub', lastX: ev.clientX };
+      state.time = Math.max(0, timelineXToTick(ev.clientX));
+      updateTimeUI();
+      rebuildPoints();
+    }
+  });
+  tlCanvas.addEventListener('pointermove', (ev) => {
+    if (!tlDrag) return;
+    if (tlDrag.mode === 'pan') {
+      timelineViewStart -= (ev.clientX - tlDrag.lastX) / TL_PX_PER_TICK;
+      timelineViewStart = Math.max(-25, timelineViewStart);
+    } else {
+      state.time = Math.max(0, timelineXToTick(ev.clientX));
+      updateTimeUI();
+    }
+    tlDrag.lastX = ev.clientX;
+    drawTimeline();
+    if (tlDrag.mode === 'scrub') rebuildPoints();
+  });
+  tlCanvas.addEventListener('pointerup', () => { tlDrag = null; });
+  tlCanvas.addEventListener('pointerleave', () => { tlDrag = null; });
+  tlCanvas.addEventListener('wheel', (ev) => {
+    ev.preventDefault();
+    timelineViewStart += ev.deltaY / TL_PX_PER_TICK;
+    timelineViewStart = Math.max(-25, timelineViewStart);
+    drawTimeline();
+  }, { passive: false });
+
+  renderFourierInputs();
+  addVarRow('speed', '0.2');
+  rebuildPoints();
+  refreshParticleTree();
+}
+
+function clearAll() {
+  pushUndo();
+  state.particles = []; state.tracks = []; state.groups = {};
+  state.selected.clear(); state.selectedGroup = null;
+  state.expandedParticles.clear(); state.expandedProps.clear();
+  state.time = 0;
+  updateTimeUI(); rebuildPoints(); refreshParticleTree();
+}
+
+function applyColorFromInputs() {
+  const rgb = hexToRgb(document.getElementById('prop-color').value);
+  const a = parseFloat(document.getElementById('prop-alpha').value);
+  editBaseValue([...state.selected], 'col', [rgb[0], rgb[1], rgb[2], a]);
+  rebuildPoints();
+}
+
+function applyPositionFromInputs() {
+  const x = parseFloat(document.getElementById('prop-posx').value);
+  const y = parseFloat(document.getElementById('prop-posy').value);
+  const z = parseFloat(document.getElementById('prop-posz').value);
+  if ([x, y, z].some(isNaN)) return;
+  editBaseValue([...state.selected], 'pos', [x, y, z]);
+  rebuildPoints();
+}
+
+/* 左侧面板拖拽缩放 + 拖拽移出组 */
+(function setupPanelResizeAndDrop() {
+  const tree = document.getElementById('particle-tree');
+  tree.addEventListener('dragover', (e) => { if (dragIds) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } });
+  tree.addEventListener('drop', (e) => {
+    if (dragIds && !e.target.closest('.ptree-head.group')) {
+      e.preventDefault();
+      removeParticlesFromGroups(dragIds);
+    }
+    dragIds = null;
+  });
+  tree.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('.ptree-head')) return;
+    e.preventDefault();
+    showContextMenu(e.clientX, e.clientY, [
+      { label: '添加粒子', action: () => { pushUndo(); addParticle({}); rebuildPoints(); refreshParticleTree(); } },
+    ]);
+  });
+
+  const handle = document.getElementById('resize-handle');
+  let resizing = false;
+  handle.addEventListener('pointerdown', (e) => {
+    resizing = true;
+    handle.classList.add('dragging');
+    handle.setPointerCapture(e.pointerId);
+  });
+  handle.addEventListener('pointermove', (e) => {
+    if (!resizing) return;
+    const layout = document.querySelector('.layout');
+    const rect = layout.getBoundingClientRect();
+    let w = e.clientX - rect.left;
+    w = Math.max(220, Math.min(600, w));
+    layout.style.setProperty('--left-w', w + 'px');
+    resize();
+  });
+  handle.addEventListener('pointerup', () => { resizing = false; handle.classList.remove('dragging'); });
+})();
+
+function resize() {
+  const w = viewport.clientWidth, h = viewport.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  pointsMaterial.uniforms.uPixelScale.value = focalLengthPx();
+  selectedMaterial.uniforms.uPixelScale.value = focalLengthPx();
+  drawTimeline();
+}
+window.addEventListener('resize', resize);
+resize();
+
+let last = performance.now();
+function animate(now) {
+  requestAnimationFrame(animate);
+  const dt = Math.min((now - last) / 1000, 0.1);
+  last = now;
+
+  if (camTransition) {
+    const t = Math.min(1, (now - camTransition.t0) / camTransition.dur);
+    const e = easeInOut(t);
+    const dir = slerp(camTransition.startDir, camTransition.endDir, e);
+    camera.position.copy(camTransition.target).addScaledVector(dir, camTransition.dist);
+    camera.up.lerpVectors(camTransition.startUp, camTransition.endUp, e).normalize();
+    camera.lookAt(camTransition.target);
+    if (t >= 1) camTransition = null;
+    controls.update();
+  }
+
+  if (planePulse) {
+    const t = (now - planePulse.t0) / planePulse.dur;
+    if (t >= 1) {
+      restoreAxisColors();
+      planePulse = null;
+    } else {
+      setAxisGlow(planePulse.axes, Math.sin(Math.PI * t) * 0.85);
+    }
+  }
+
+  if (state.playing) {
+    state.time += dt * 20 * state.playSpeed;
+    const mx = maxTick();
+    if (state.time >= mx && mx > 0) {
+      if (state.loop) state.time = 0;
+      else { state.time = mx; state.playing = false; document.getElementById('btn-play').textContent = '▶ 播放'; }
+    }
+    updateTimeUI();
+    rebuildPoints();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  drawAxisGizmo();
+}
+
+initUI();
+requestAnimationFrame(animate);
+
+// 关闭页面前若未保存则提示
+window.addEventListener('beforeunload', (ev) => {
+  if (state.dirty) {
+    ev.preventDefault();
+    ev.returnValue = '';
+  }
+});
+
+// 拖拽文件到窗口即可打开
+(function setupDragDrop() {
+  window.addEventListener('dragover', (ev) => { ev.preventDefault(); });
+  window.addEventListener('drop', (ev) => {
+    ev.preventDefault();
+    const file = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+    if (!file) return;
+    if (!confirmDiscardChanges()) return;
+    state.fileHandle = null;
+    loadFile(file);
+  });
+})();

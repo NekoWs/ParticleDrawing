@@ -3,6 +3,7 @@ package work.nekow.particledrawing.animation
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.server.ServerParticleEngine
 import java.util.UUID
 
@@ -26,9 +27,26 @@ class AnimationPlayer(
     private val maxTick: Int = animation.tracks.flatMap { it.keyframes }.maxOfOrNull { it.tick } ?: 0
 
     init {
+        // 粒子所属组映射（用于查询组的常量位置增量）
+        val particleGroup = HashMap<String, String>()
+        for ((name, members) in animation.groups) {
+            for (id in members) particleGroup[id] = name
+        }
+        // 单关键帧 op 位置轨道：增量为常量，直接并入 spawn 位置，避免「先出现在原点再闪现」
+        val constantPosDelta = HashMap<String, Vec3>()
+        for (track in animation.tracks) {
+            if (track.property != AnimTrack.Property.POSITION || track.mode != AnimTrack.Mode.OP) continue
+            if (track.keyframes.size != 1) continue
+            val kf0 = track.keyframes[0]
+            if (kf0.tick != 0) continue
+            val groupName = track.ids.firstOrNull { it.startsWith("g:") }?.substring(2) ?: continue
+            constantPosDelta[groupName] = Vec3(kf0.value[0], kf0.value[1], kf0.value[2])
+        }
+
         for (p in animation.particles) {
+            val constDelta = particleGroup[p.id]?.let { constantPosDelta[it] } ?: Vec3.ZERO
             val data = engine.spawnParticle(
-                p.style, origin.add(p.pos), p.color, p.scale,
+                p.style, origin.add(p.pos).add(constDelta), p.color, p.scale,
                 -1, null, p.glowing, p.lightLevel, null, players
             ) ?: continue
             idMap[p.id] = data.id
@@ -47,6 +65,8 @@ class AnimationPlayer(
             }
             if (n > 0) groupPivot[name] = Vec3(sx / n, sy / n, sz / n)
         }
+        // 应用 t=0 的初始关键帧增量（无缓动），避免粒子先出现在原点再缓动到初始位置
+        applyInitialStates(players)
     }
 
     /**
@@ -100,6 +120,7 @@ class AnimationPlayer(
 
     private fun applySegment(track: AnimTrack, i: Int, players: Collection<ServerPlayer>) {
         val kfs = track.keyframes
+        if (kfs.size <= 1) return // 单关键帧：值恒定，初始增量已在 spawn 时应用
         val next = if (i + 1 < kfs.size) kfs[i + 1]
         else if (animation.loop) kfs[0]
         else return // 非循环的最后一个关键帧：保持不动
@@ -108,7 +129,11 @@ class AnimationPlayer(
         else (maxTick - kfs[i].tick) + next.tick // 循环回绕
         if (duration <= 0) return
 
-        val v = next.value
+        applyValue(track, next.value, kfs[i].easing, duration, players)
+    }
+
+    /** 将某个关键帧值应用到目标粒子（duration=0 表示立即应用，无缓动）。 */
+    private fun applyValue(track: AnimTrack, v: DoubleArray, easing: EasingType, duration: Int, players: Collection<ServerPlayer>) {
         val op = track.mode == AnimTrack.Mode.OP
         val groupName = track.ids.firstOrNull { it.startsWith("g:") }?.substring(2)
         val pivot = groupName?.let { groupPivot[it] } ?: Vec3.ZERO
@@ -120,7 +145,7 @@ class AnimationPlayer(
             }
             if (track.property == AnimTrack.Property.ROTATION) {
                 val base = basePos[id] ?: Vec3.ZERO
-                engine.rotateParticle(uuid, origin.add(pivot), currentOffset(id, base, pivot, groupName, currentTick), v, duration, kfs[i].easing, players)
+                engine.rotateParticle(uuid, origin.add(pivot), currentOffset(id, base, pivot, groupName, currentTick), v, duration, easing, players)
                 continue
             }
             val b = engine.update(uuid)
@@ -128,9 +153,9 @@ class AnimationPlayer(
                 AnimTrack.Property.POSITION -> {
                     val base = basePos[id] ?: Vec3.ZERO
                     if (op) {
-                        engine.translateParticle(uuid, origin.add(pivot), base.subtract(pivot), Vec3(v[0], v[1], v[2]), duration, kfs[i].easing, players)
+                        engine.translateParticle(uuid, origin.add(pivot), base.subtract(pivot), Vec3(v[0], v[1], v[2]), duration, easing, players)
                     } else {
-                        engine.setPosition(uuid, origin.add(pivot), Vec3(v[0], v[1], v[2]).subtract(pivot), duration, kfs[i].easing, players)
+                        engine.setPosition(uuid, origin.add(pivot), Vec3(v[0], v[1], v[2]).subtract(pivot), duration, easing, players)
                     }
                     continue
                 }
@@ -156,7 +181,19 @@ class AnimationPlayer(
                     }
                 }
             }
-            b.easing(kfs[i].easing, duration).send(players)
+            b.easing(easing, duration).send(players)
+        }
+    }
+
+    /** spawn 后应用 t=0 的 op 轨道初始增量（无缓动），保证粒子初始位置与编辑器一致。 */
+    private fun applyInitialStates(players: Collection<ServerPlayer>) {
+        for (track in animation.tracks) {
+            if (track.mode != AnimTrack.Mode.OP) continue
+            // 单关键帧位置轨道：常量增量已直接并入 spawn 位置，无需再次下发
+            if (track.property == AnimTrack.Property.POSITION && track.keyframes.size <= 1) continue
+            val kf0 = track.keyframes.firstOrNull() ?: continue
+            if (kf0.tick != 0) continue
+            applyValue(track, kf0.value, kf0.easing, 0, players)
         }
     }
 
