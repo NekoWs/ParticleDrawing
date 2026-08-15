@@ -76,7 +76,6 @@ class RenderParticle(
     // 旋转插值状态（绕轴心做圆弧运动，避免线性插值位置导致的收缩失真）
     private var rotActive = false
     private var rotPivot = Vec3.ZERO
-    private var rotOffset = Vec3.ZERO
     private var startRot = DoubleArray(3)
     private var tgtRot = DoubleArray(3)
     private var curRot = DoubleArray(3)
@@ -92,6 +91,15 @@ class RenderParticle(
     private var translateEaseStartTime = 0L
     private var translateEaseDurationNs = 0L
     private var translateEasing: EasingCurve = LINEAR
+
+    // 偏移插值状态（相对轴心的未旋转位置；op 模式恒为 base-pivot，set 模式位置轨道会改变它）
+    private var offsetActive = false
+    private var curOffset = Vec3.ZERO
+    private var tgtOffset = Vec3.ZERO
+    private var startOffset = Vec3.ZERO
+    private var offsetEaseStartTime = 0L
+    private var offsetEaseDurationNs = 0L
+    private var offsetEasing: EasingCurve = LINEAR
 
     init {
         curX = position.x; tgtX = position.x
@@ -131,6 +139,7 @@ class RenderParticle(
         velocity = Vec3.ZERO
         rotActive = false
         translateActive = false
+        offsetActive = false
         startX = curX
         startY = curY
         startZ = curZ
@@ -181,6 +190,7 @@ class RenderParticle(
         this.velocity = velocity
         rotActive = false
         translateActive = false
+        offsetActive = false
         if (velocity.x != 0.0 || velocity.y != 0.0 || velocity.z != 0.0) {
             posEaseStartTime = 0L
         }
@@ -191,7 +201,7 @@ class RenderParticle(
      */
     fun setRotation(pivot: Vec3, offset: Vec3, targetRot: DoubleArray, easingType: EasingType, durationMs: Long) {
         rotPivot = pivot
-        rotOffset = offset
+        curOffset = offset
         startRot = curRot.copyOf()
         tgtRot = targetRot.copyOf()
         rotEasing = easingType.curve
@@ -207,13 +217,32 @@ class RenderParticle(
      */
     fun setTranslation(pivot: Vec3, offset: Vec3, delta: Vec3, easingType: EasingType, durationMs: Long) {
         rotPivot = pivot
-        rotOffset = offset
+        curOffset = offset
         startTranslate = curTranslate
         tgtTranslate = delta
         translateEasing = easingType.curve
         translateEaseStartTime = System.nanoTime()
         translateEaseDurationNs = durationMs * 1_000_000L
         translateActive = true
+        velocity = Vec3.ZERO
+        posEaseStartTime = 0L
+    }
+
+    /**
+     * 设置位置目标（组 set 位置轨道）：把未旋转偏移 [offset] 缓动到新值，保留旋转、清零平移增量。
+     */
+    fun setPositionSet(pivot: Vec3, offset: Vec3, easingType: EasingType, durationMs: Long) {
+        rotPivot = pivot
+        startOffset = curOffset
+        tgtOffset = offset
+        offsetEasing = easingType.curve
+        offsetEaseStartTime = System.nanoTime()
+        offsetEaseDurationNs = durationMs * 1_000_000L
+        offsetActive = true
+        curTranslate = Vec3.ZERO
+        startTranslate = Vec3.ZERO
+        tgtTranslate = Vec3.ZERO
+        translateActive = false
         velocity = Vec3.ZERO
         posEaseStartTime = 0L
     }
@@ -226,6 +255,7 @@ class RenderParticle(
         velocity = Vec3.ZERO
         rotActive = false
         translateActive = false
+        offsetActive = false
         startX = curX
         startY = curY
         startZ = curZ
@@ -242,6 +272,7 @@ class RenderParticle(
     fun snapPosition(x: Double, y: Double, z: Double) {
         rotActive = false
         translateActive = false
+        offsetActive = false
         curX = x; tgtX = x
         curY = y; tgtY = y
         curZ = z; tgtZ = z
@@ -253,6 +284,7 @@ class RenderParticle(
     fun setPositionDirect(position: Vec3) {
         rotActive = false
         translateActive = false
+        offsetActive = false
         curX = position.x; tgtX = position.x
         curY = position.y; tgtY = position.y
         curZ = position.z; tgtZ = position.z
@@ -335,9 +367,20 @@ class RenderParticle(
                 curTranslate = lerpVec(startTranslate, tgtTranslate, e)
             }
         }
+        if (offsetActive) {
+            val elapsed = now - offsetEaseStartTime
+            if (elapsed >= offsetEaseDurationNs) {
+                curOffset = tgtOffset
+                offsetActive = false
+            } else {
+                val t = elapsed.toFloat() / offsetEaseDurationNs
+                val e = offsetEasing.evaluate(t)
+                curOffset = lerpVec(startOffset, tgtOffset, e)
+            }
+        }
 
-        if (rotActive || translateActive) {
-            val pos = rotPivot.add(curTranslate).add(rotateEuler(rotOffset, curRot[0], curRot[1], curRot[2]))
+        if (rotActive || translateActive || offsetActive) {
+            val pos = rotPivot.add(curTranslate).add(rotateEuler(curOffset, curRot[0], curRot[1], curRot[2]))
             curX = pos.x; tgtX = pos.x
             curY = pos.y; tgtY = pos.y
             curZ = pos.z; tgtZ = pos.z

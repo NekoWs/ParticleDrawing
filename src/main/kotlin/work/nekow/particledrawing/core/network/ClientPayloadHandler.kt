@@ -96,6 +96,17 @@ internal object ClientPayloadHandler {
         }
     }
 
+    fun handleSetPosition(payload: ParticleSetPositionPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientParticleEngine.instance()?.setPosition(
+                payload.particleId,
+                payload.px, payload.py, payload.pz,
+                payload.ox, payload.oy, payload.oz,
+                payload.durationTicks, payload.easingType()
+            )
+        }
+    }
+
     fun handleLightLevel(payload: ParticleLightLevelPayload, context: IPayloadContext) {
         context.enqueueWork {
             ClientParticleEngine.instance()?.setLightLevel(

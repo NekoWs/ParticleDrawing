@@ -15,6 +15,7 @@ import work.nekow.particledrawing.core.network.ParticleDestroyPayload
 import work.nekow.particledrawing.core.network.ParticleGroupTransformPayload
 import work.nekow.particledrawing.core.network.ParticleLightLevelPayload
 import work.nekow.particledrawing.core.network.ParticleRotationPayload
+import work.nekow.particledrawing.core.network.ParticleSetPositionPayload
 import work.nekow.particledrawing.core.network.ParticleSpawnPayload
 import work.nekow.particledrawing.core.network.ParticleTranslatePayload
 import work.nekow.particledrawing.core.network.ParticleUpdatePayload
@@ -171,6 +172,20 @@ class ServerParticleEngine(
                           playersInDimension: Collection<ServerPlayer>) {
         val data = particles[id] ?: return
         val payload = ParticleTranslatePayload.of(id, pivot, offset, delta, durationTicks, easing)
+        sendToVisible(playersInDimension, data.position(), payload)
+    }
+
+    /**
+     * 设置粒子的位置（组 set 位置轨道）并广播：缓动未旋转偏移，保留旋转。
+     * @param id 粒子 ID
+     * @param pivot 旋转轴心（绝对世界坐标）
+     * @param offset 目标未旋转偏移（相对轴心）
+     */
+    fun setPosition(id: UUID, pivot: Vec3, offset: Vec3,
+                    durationTicks: Int, easing: EasingType,
+                    playersInDimension: Collection<ServerPlayer>) {
+        val data = particles[id] ?: return
+        val payload = ParticleSetPositionPayload.of(id, pivot, offset, durationTicks, easing)
         sendToVisible(playersInDimension, data.position(), payload)
     }
 

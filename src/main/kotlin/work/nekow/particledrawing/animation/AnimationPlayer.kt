@@ -66,7 +66,7 @@ class AnimationPlayer(
             }
         }
         currentTick++
-        if (maxTick > 0 && currentTick > maxTick) {
+        if (maxTick in 1..<currentTick) {
             if (animation.loop) {
                 currentTick = 0
             } else {
@@ -110,8 +110,8 @@ class AnimationPlayer(
 
         val v = next.value
         val op = track.mode == AnimTrack.Mode.OP
-        val pivot = track.ids.firstOrNull { it.startsWith("g:") }
-            ?.let { groupPivot[it.substring(2)] } ?: Vec3.ZERO
+        val groupName = track.ids.firstOrNull { it.startsWith("g:") }?.substring(2)
+        val pivot = groupName?.let { groupPivot[it] } ?: Vec3.ZERO
         for (id in resolveIds(track)) {
             val uuid = idMap[id] ?: continue
             if (track.property == AnimTrack.Property.VELOCITY) {
@@ -120,19 +120,19 @@ class AnimationPlayer(
             }
             if (track.property == AnimTrack.Property.ROTATION) {
                 val base = basePos[id] ?: Vec3.ZERO
-                engine.rotateParticle(uuid, origin.add(pivot), base.subtract(pivot), v, duration, kfs[i].easing, players)
+                engine.rotateParticle(uuid, origin.add(pivot), currentOffset(id, base, pivot, groupName, currentTick), v, duration, kfs[i].easing, players)
                 continue
             }
             val b = engine.update(uuid)
             when (track.property) {
                 AnimTrack.Property.POSITION -> {
+                    val base = basePos[id] ?: Vec3.ZERO
                     if (op) {
-                        val base = basePos[id] ?: Vec3.ZERO
                         engine.translateParticle(uuid, origin.add(pivot), base.subtract(pivot), Vec3(v[0], v[1], v[2]), duration, kfs[i].easing, players)
-                        continue
                     } else {
-                        b.position(origin.x + v[0], origin.y + v[1], origin.z + v[2])
+                        engine.setPosition(uuid, origin.add(pivot), Vec3(v[0], v[1], v[2]).subtract(pivot), duration, kfs[i].easing, players)
                     }
+                    continue
                 }
                 AnimTrack.Property.COLOR -> {
                     if (op) {
@@ -158,6 +158,40 @@ class AnimationPlayer(
             }
             b.easing(kfs[i].easing, duration).send(players)
         }
+    }
+
+    /**
+     * 计算粒子在指定 tick 的「未旋转偏移」（相对轴心）。
+     * 组位置轨道为 set 模式时偏移会随时间变化（setValue - pivot），否则恒为 base - pivot。
+     */
+    private fun currentOffset(id: String, base: Vec3, pivot: Vec3, groupName: String?, tick: Int): Vec3 {
+        if (groupName == null) return base.subtract(pivot)
+        val posTrack = animation.tracks.firstOrNull {
+            it.property == AnimTrack.Property.POSITION && it.mode == AnimTrack.Mode.SET && it.ids.contains("g:$groupName")
+        } ?: return base.subtract(pivot)
+        val value = interpolateValue(posTrack, tick)
+        return Vec3(value[0], value[1], value[2]).subtract(pivot)
+    }
+
+    /** 按关键帧缓动插值轨道在指定 tick 的值（与编辑器/客户端一致）。 */
+    private fun interpolateValue(track: AnimTrack, tick: Int): DoubleArray {
+        val kfs = track.keyframes
+        if (kfs.isEmpty()) return DoubleArray(3)
+        if (tick <= kfs.first().tick) return kfs.first().value
+        if (tick >= kfs.last().tick) return kfs.last().value
+        for (i in 0 until kfs.size - 1) {
+            val a = kfs[i]
+            val b = kfs[i + 1]
+            if (tick in a.tick..b.tick) {
+                val dur = (b.tick - a.tick).toDouble()
+                val t = if (dur == 0.0) 1.0f else ((tick - a.tick) / dur).toFloat()
+                val e = a.easing.evaluate(t)
+                val out = DoubleArray(a.value.size)
+                for (j in a.value.indices) out[j] = a.value[j] + (b.value[j] - a.value[j]) * e
+                return out
+            }
+        }
+        return kfs.last().value
     }
 
     private fun cleanup(players: Collection<ServerPlayer>) {
