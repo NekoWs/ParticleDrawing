@@ -1115,6 +1115,23 @@ function confirmModal() { modal = null; controls.enabled = true; }
 function updateGrab(clientX, clientY) {
   const m = modal;
   if (!m || m.type !== 'grab') return;
+
+  // Y 轴移动：仅依赖鼠标 Y 位移，不依赖绘制平面求交（避免镜头水平时求交失败产生“空气墙”）
+  if (m.axis === 'Y') {
+    const dy = -(clientY - m.startClient.y) * 0.02;
+    const sdy = shiftHeld ? Math.round(dy / SNAP_STEP) * SNAP_STEP : dy;
+    if (m.groupName) {
+      const d = m.startDelta || [0, 0, 0];
+      setGroupTrackValue(m.groupName, 'pos', 'op', Math.round(state.time), [d[0], d[1] + sdy, d[2]]);
+    } else {
+      for (const [id, orig] of m.origins) {
+        editBaseValue([id], 'pos', [orig[0], orig[1] + sdy, orig[2]]);
+      }
+      rebuildPoints();
+    }
+    return;
+  }
+
   if (!m.startWorld) {
     const pt = planePointAt(clientX, clientY);
     if (!pt) return;
@@ -1127,10 +1144,9 @@ function updateGrab(clientX, clientY) {
   let dx = pt.x - m.startWorld.x, dy = 0, dz = pt.z - m.startWorld.z;
   if (m.axis === 'X') dz = 0;
   else if (m.axis === 'Z') dx = 0;
-  else if (m.axis === 'Y') { dx = 0; dz = 0; dy = -(clientY - m.startClient.y) * 0.02; }
   const doSnap = shiftHeld;
   const sdx = doSnap ? Math.round(dx / SNAP_STEP) * SNAP_STEP : dx;
-  const sdy = doSnap ? Math.round(dy / SNAP_STEP) * SNAP_STEP : dy;
+  const sdy = 0;
   const sdz = doSnap ? Math.round(dz / SNAP_STEP) * SNAP_STEP : dz;
   if (m.groupName) {
     const d = m.startDelta || [0, 0, 0];

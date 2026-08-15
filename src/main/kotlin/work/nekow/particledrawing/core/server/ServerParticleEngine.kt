@@ -16,6 +16,7 @@ import work.nekow.particledrawing.core.network.ParticleGroupTransformPayload
 import work.nekow.particledrawing.core.network.ParticleLightLevelPayload
 import work.nekow.particledrawing.core.network.ParticleRotationPayload
 import work.nekow.particledrawing.core.network.ParticleSpawnPayload
+import work.nekow.particledrawing.core.network.ParticleTranslatePayload
 import work.nekow.particledrawing.core.network.ParticleUpdatePayload
 import work.nekow.particledrawing.core.network.ParticleVelocityPayload
 import java.util.UUID
@@ -155,6 +156,21 @@ class ServerParticleEngine(
                        playersInDimension: Collection<ServerPlayer>) {
         val data = particles[id] ?: return
         val payload = ParticleRotationPayload.of(id, pivot, offset, rot, durationTicks, easing)
+        sendToVisible(playersInDimension, data.position(), payload)
+    }
+
+    /**
+     * 设置粒子的平移（绕轴心叠加世界空间增量）并广播。
+     * @param id 粒子 ID
+     * @param pivot 旋转轴心（绝对世界坐标）
+     * @param offset 粒子相对轴心的偏移向量
+     * @param delta 目标平移增量
+     */
+    fun translateParticle(id: UUID, pivot: Vec3, offset: Vec3, delta: Vec3,
+                          durationTicks: Int, easing: EasingType,
+                          playersInDimension: Collection<ServerPlayer>) {
+        val data = particles[id] ?: return
+        val payload = ParticleTranslatePayload.of(id, pivot, offset, delta, durationTicks, easing)
         sendToVisible(playersInDimension, data.position(), payload)
     }
 

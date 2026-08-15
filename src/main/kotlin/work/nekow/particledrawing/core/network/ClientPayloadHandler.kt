@@ -84,6 +84,18 @@ internal object ClientPayloadHandler {
         }
     }
 
+    fun handleTranslate(payload: ParticleTranslatePayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientParticleEngine.instance()?.translateParticle(
+                payload.particleId,
+                payload.px, payload.py, payload.pz,
+                payload.ox, payload.oy, payload.oz,
+                payload.tx, payload.ty, payload.tz,
+                payload.durationTicks, payload.easingType()
+            )
+        }
+    }
+
     fun handleLightLevel(payload: ParticleLightLevelPayload, context: IPayloadContext) {
         context.enqueueWork {
             ClientParticleEngine.instance()?.setLightLevel(

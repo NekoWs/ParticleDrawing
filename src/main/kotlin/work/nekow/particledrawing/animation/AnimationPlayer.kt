@@ -128,7 +128,8 @@ class AnimationPlayer(
                 AnimTrack.Property.POSITION -> {
                     if (op) {
                         val base = basePos[id] ?: Vec3.ZERO
-                        b.position(origin.x + base.x + v[0], origin.y + base.y + v[1], origin.z + base.z + v[2])
+                        engine.translateParticle(uuid, origin.add(pivot), base.subtract(pivot), Vec3(v[0], v[1], v[2]), duration, kfs[i].easing, players)
+                        continue
                     } else {
                         b.position(origin.x + v[0], origin.y + v[1], origin.z + v[2])
                     }

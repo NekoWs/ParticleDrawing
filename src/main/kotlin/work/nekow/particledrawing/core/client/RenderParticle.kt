@@ -84,6 +84,15 @@ class RenderParticle(
     private var rotEaseDurationNs = 0L
     private var rotEasing: EasingCurve = LINEAR
 
+    // 平移插值状态（组 op 位置增量，与旋转独立缓动后叠加）
+    private var translateActive = false
+    private var curTranslate = Vec3.ZERO
+    private var tgtTranslate = Vec3.ZERO
+    private var startTranslate = Vec3.ZERO
+    private var translateEaseStartTime = 0L
+    private var translateEaseDurationNs = 0L
+    private var translateEasing: EasingCurve = LINEAR
+
     init {
         curX = position.x; tgtX = position.x
         curY = position.y; tgtY = position.y
@@ -121,6 +130,7 @@ class RenderParticle(
     fun setTarget(position: Vec3, color: Color, scale: Float, easingType: EasingType, durationMs: Long) {
         velocity = Vec3.ZERO
         rotActive = false
+        translateActive = false
         startX = curX
         startY = curY
         startZ = curZ
@@ -170,6 +180,7 @@ class RenderParticle(
     fun setVelocity(velocity: Vec3) {
         this.velocity = velocity
         rotActive = false
+        translateActive = false
         if (velocity.x != 0.0 || velocity.y != 0.0 || velocity.z != 0.0) {
             posEaseStartTime = 0L
         }
@@ -191,6 +202,22 @@ class RenderParticle(
         posEaseStartTime = 0L
     }
 
+    /**
+     * 设置平移目标（组 op 位置增量）：绕 [pivot] 轴心，在 [offset] 基础上叠加 [delta]。
+     */
+    fun setTranslation(pivot: Vec3, offset: Vec3, delta: Vec3, easingType: EasingType, durationMs: Long) {
+        rotPivot = pivot
+        rotOffset = offset
+        startTranslate = curTranslate
+        tgtTranslate = delta
+        translateEasing = easingType.curve
+        translateEaseStartTime = System.nanoTime()
+        translateEaseDurationNs = durationMs * 1_000_000L
+        translateActive = true
+        velocity = Vec3.ZERO
+        posEaseStartTime = 0L
+    }
+
     /** 当前速度向量。 */
     fun velocity(): Vec3 = velocity
 
@@ -198,6 +225,7 @@ class RenderParticle(
     fun setPositionTarget(x: Double, y: Double, z: Double, easingType: EasingType, durationMs: Long) {
         velocity = Vec3.ZERO
         rotActive = false
+        translateActive = false
         startX = curX
         startY = curY
         startZ = curZ
@@ -213,6 +241,7 @@ class RenderParticle(
     /** 立即跳变到目标位置。 */
     fun snapPosition(x: Double, y: Double, z: Double) {
         rotActive = false
+        translateActive = false
         curX = x; tgtX = x
         curY = y; tgtY = y
         curZ = z; tgtZ = z
@@ -223,6 +252,7 @@ class RenderParticle(
     /** 直接设置位置，不经过缓动。 */
     fun setPositionDirect(position: Vec3) {
         rotActive = false
+        translateActive = false
         curX = position.x; tgtX = position.x
         curY = position.y; tgtY = position.y
         curZ = position.z; tgtZ = position.z
@@ -293,7 +323,21 @@ class RenderParticle(
                 val e = rotEasing.evaluate(t)
                 for (i in 0..2) curRot[i] = lerp(startRot[i], tgtRot[i], e)
             }
-            val pos = rotPivot.add(rotateEuler(rotOffset, curRot[0], curRot[1], curRot[2]))
+        }
+        if (translateActive) {
+            val elapsed = now - translateEaseStartTime
+            if (elapsed >= translateEaseDurationNs) {
+                curTranslate = tgtTranslate
+                translateActive = false
+            } else {
+                val t = elapsed.toFloat() / translateEaseDurationNs
+                val e = translateEasing.evaluate(t)
+                curTranslate = lerpVec(startTranslate, tgtTranslate, e)
+            }
+        }
+
+        if (rotActive || translateActive) {
+            val pos = rotPivot.add(curTranslate).add(rotateEuler(rotOffset, curRot[0], curRot[1], curRot[2]))
             curX = pos.x; tgtX = pos.x
             curY = pos.y; tgtY = pos.y
             curZ = pos.z; tgtZ = pos.z
@@ -351,6 +395,14 @@ class RenderParticle(
 
         private fun lerp(a: Float, b: Float, t: Float): Float {
             return a + (b - a) * t
+        }
+
+        private fun lerpVec(a: Vec3, b: Vec3, t: Float): Vec3 {
+            return Vec3(
+                a.x + (b.x - a.x) * t,
+                a.y + (b.y - a.y) * t,
+                a.z + (b.z - a.z) * t
+            )
         }
     }
 }
