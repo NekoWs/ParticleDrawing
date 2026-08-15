@@ -15,12 +15,15 @@ function updateLoopIndicator() {
 function togglePlay() {
   state.playing = !state.playing;
   document.getElementById('btn-play').textContent = state.playing ? '⏸ 暂停' : '▶ 播放';
+  resetVelOffsets();
 }
 
 let shiftHeld = false;
 window.addEventListener('keydown', (e) => { if (e.key === 'Shift') shiftHeld = true; });
 window.addEventListener('keyup', (e) => { if (e.key === 'Shift') shiftHeld = false; });
 evShift = () => shiftHeld;
+window.addEventListener('keydown', (e) => { if (e.key === 'Control') document.body.classList.add('ctrl-held'); });
+window.addEventListener('keyup', (e) => { if (e.key === 'Control') document.body.classList.remove('ctrl-held'); });
 
 function initUI() {
   const styleSel = document.getElementById('prop-style');
@@ -76,7 +79,7 @@ function initUI() {
   document.getElementById('prop-alpha').addEventListener('change', endContinuous);
   document.getElementById('prop-color').addEventListener('input', (ev) => { beginContinuous(); applyColorFromInputs(); });
   document.getElementById('prop-color').addEventListener('change', endContinuous);
-  document.getElementById('prop-scale').addEventListener('input', (ev) => { beginContinuous(); editBaseValue([...state.selected], 'scl', [parseFloat(ev.target.value) || 1]); rebuildPoints(); });
+  document.getElementById('prop-scale').addEventListener('input', (ev) => { beginContinuous(); editSelectionUniform('scl', [parseFloat(ev.target.value) || 1]); });
   document.getElementById('prop-scale').addEventListener('change', endContinuous);
   ['prop-posx', 'prop-posy', 'prop-posz'].forEach(id => {
     document.getElementById(id).addEventListener('input', (ev) => { beginContinuous(); applyPositionFromInputs(); });
@@ -86,9 +89,9 @@ function initUI() {
   // 时间轴
   document.getElementById('btn-play').addEventListener('click', togglePlay);
   document.getElementById('tl-speed').addEventListener('change', (ev) => { state.playSpeed = Math.max(0.1, parseFloat(ev.target.value) || 1); });
-  document.getElementById('tl-time').addEventListener('input', (ev) => { state.time = parseFloat(ev.target.value) || 0; updateTimeUI(); rebuildPoints(); });
+  document.getElementById('tl-time').addEventListener('input', (ev) => { state.time = parseFloat(ev.target.value) || 0; resetVelOffsets(); updateTimeUI(); rebuildPoints(); });
   document.getElementById('tl-loop').addEventListener('change', (ev) => { state.loop = ev.target.checked; updateLoopIndicator(); });
-  document.getElementById('btn-capture').addEventListener('click', captureKeyframes);
+  document.getElementById('capture-keyframes').addEventListener('change', (ev) => { state.captureKeyframes = ev.target.checked; });
 
   // 文件导入
   document.getElementById('file-import').addEventListener('change', (ev) => {
@@ -111,6 +114,7 @@ function initUI() {
     } else {
       tlDrag = { mode: 'scrub', lastX: ev.clientX };
       state.time = Math.max(0, timelineXToTick(ev.clientX));
+      resetVelOffsets();
       updateTimeUI();
       rebuildPoints();
     }
@@ -155,8 +159,7 @@ function clearAll() {
 function applyColorFromInputs() {
   const rgb = hexToRgb(document.getElementById('prop-color').value);
   const a = parseFloat(document.getElementById('prop-alpha').value);
-  editBaseValue([...state.selected], 'col', [rgb[0], rgb[1], rgb[2], a]);
-  rebuildPoints();
+  editSelectionUniform('col', [rgb[0], rgb[1], rgb[2], a]);
 }
 
 function applyPositionFromInputs() {
@@ -164,8 +167,7 @@ function applyPositionFromInputs() {
   const y = parseFloat(document.getElementById('prop-posy').value);
   const z = parseFloat(document.getElementById('prop-posz').value);
   if ([x, y, z].some(isNaN)) return;
-  editBaseValue([...state.selected], 'pos', [x, y, z]);
-  rebuildPoints();
+  editSelectionUniform('pos', [x, y, z]);
 }
 
 /* 左侧面板拖拽缩放 + 拖拽移出组 */
@@ -185,6 +187,12 @@ function applyPositionFromInputs() {
     showContextMenu(e.clientX, e.clientY, [
       { label: '添加粒子', action: () => { pushUndo(); addParticle({}); rebuildPoints(); refreshParticleTree(); } },
     ]);
+  });
+  tree.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('.ptree-particle')) {
+      state.selected.clear(); state.selectedGroup = null;
+      rebuildPoints();
+    }
   });
 
   const handle = document.getElementById('resize-handle');
@@ -246,11 +254,20 @@ function animate(now) {
   }
 
   if (state.playing) {
+    const prevTime = state.time;
     state.time += dt * 20 * state.playSpeed;
     const mx = maxTick();
     if (state.time >= mx && mx > 0) {
-      if (state.loop) state.time = 0;
-      else { state.time = mx; state.playing = false; document.getElementById('btn-play').textContent = '▶ 播放'; }
+      if (state.loop) { state.time = 0; resetVelOffsets(); }
+      else { state.time = mx; state.playing = false; document.getElementById('btn-play').textContent = '▶ 播放'; resetVelOffsets(); }
+    }
+    const tickDelta = state.time - prevTime;
+    if (tickDelta > 0) {
+      for (const p of state.particles) {
+        const vel = particleValueAt(p, 'vel', state.time);
+        const cur = velOffsets.get(p.id) || [0, 0, 0];
+        velOffsets.set(p.id, [cur[0] + vel[0] * tickDelta, cur[1] + vel[1] * tickDelta, cur[2] + vel[2] * tickDelta]);
+      }
     }
     updateTimeUI();
     rebuildPoints();

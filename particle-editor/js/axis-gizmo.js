@@ -11,6 +11,7 @@ const GIZMO_RING_R = 42;
 let gizmoDrag = null;
 let gizmoHoverAxis = null;
 const gizmoRingPolys = { X: [], Y: [], Z: [] };
+const gizmoRingWorlds = { X: [], Y: [], Z: [] };
 
 const GIZMO_RING_DEFS = [
   { key: 'X', axis: new THREE.Vector3(1, 0, 0), color: '#ff5555' },
@@ -45,6 +46,7 @@ function drawAxisGizmo() {
     const world = gizmoRingWorld(def.axis, inv, 72);
     const poly = world.map(p => [cx + p.x * GIZMO_RING_R, cy - p.y * GIZMO_RING_R]);
     gizmoRingPolys[def.key] = poly;
+    gizmoRingWorlds[def.key] = world;
     for (let i = 0; i < poly.length - 1; i++) {
       const [ax, ay] = poly[i], [bx, by] = poly[i + 1];
       const front = (world[i].z + world[i + 1].z) / 2 < 0;
@@ -61,14 +63,18 @@ function drawAxisGizmo() {
 }
 
 function hitAxisRing(px, py) {
-  let best = null, bestD = 11;
+  let best = null, bestD = 11, bestFront = false;
   for (const [key, poly] of Object.entries(gizmoRingPolys)) {
     for (let i = 0; i < poly.length - 1; i++) {
       const d = distToSegment(px, py, poly[i][0], poly[i][1], poly[i + 1][0], poly[i + 1][1]);
-      if (d < bestD) { bestD = d; best = key; }
+      if (d < bestD) {
+        bestD = d; best = key;
+        const world = gizmoRingWorlds[key];
+        bestFront = world && (world[i].z + world[i + 1].z) / 2 < 0;
+      }
     }
   }
-  return best;
+  return best ? { key: best, front: bestFront } : null;
 }
 
 function orbitCamera(dx, dy) {
@@ -104,9 +110,9 @@ gizmoCanvas.addEventListener('pointerdown', (ev) => {
   const py = (ev.clientY - rect.top) * (GIZMO_SIZE / rect.height);
   gizmoCanvas.setPointerCapture(ev.pointerId);
   gizmoCanvas.style.cursor = 'grabbing';
-  const ring = hitAxisRing(px, py);
-  if (ring) {
-    gizmoDrag = { mode: 'axis', axis: ring, startAngle: Math.atan2(py - GIZMO_CENTER, px - GIZMO_CENTER), moved: false };
+  const hit = hitAxisRing(px, py);
+  if (hit) {
+    gizmoDrag = { mode: 'axis', axis: hit.key, front: hit.front, lastX: px, lastY: py, moved: false };
   } else {
     gizmoDrag = { mode: 'free', x: ev.clientX, y: ev.clientY, moved: false };
   }
@@ -117,7 +123,8 @@ gizmoCanvas.addEventListener('pointermove', (ev) => {
   const px = (ev.clientX - rect.left) * (GIZMO_SIZE / rect.width);
   const py = (ev.clientY - rect.top) * (GIZMO_SIZE / rect.height);
   if (!gizmoDrag) {
-    gizmoHoverAxis = hitAxisRing(px, py);
+    const hit = hitAxisRing(px, py);
+    gizmoHoverAxis = hit ? hit.key : null;
     gizmoCanvas.style.cursor = gizmoHoverAxis ? 'pointer' : 'default';
     return;
   }
@@ -127,12 +134,16 @@ gizmoCanvas.addEventListener('pointermove', (ev) => {
     if (Math.abs(dx) + Math.abs(dy) > 2) gizmoDrag.moved = true;
     orbitCamera(dx, dy);
   } else {
-    const ang = Math.atan2(py - GIZMO_CENTER, px - GIZMO_CENTER);
-    let d = ang - gizmoDrag.startAngle;
-    if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI;
-    if (Math.abs(d) > 0.02) gizmoDrag.moved = true;
-    orbitAroundAxis(gizmoDrag.axis, d);
-    gizmoDrag.startAngle = ang;
+    const dx = px - gizmoDrag.lastX, dy = py - gizmoDrag.lastY;
+    const rx = px - GIZMO_CENTER, ry = py - GIZMO_CENTER;
+    const rlen = Math.hypot(rx, ry);
+    if (rlen > 0.01) {
+      const tx = -ry / rlen, ty = rx / rlen;
+      const angle = (dx * tx + dy * ty) / rlen;
+      if (Math.abs(dx) + Math.abs(dy) > 0.5) gizmoDrag.moved = true;
+      orbitAroundAxis(gizmoDrag.axis, angle);
+    }
+    gizmoDrag.lastX = px; gizmoDrag.lastY = py;
   }
 });
 gizmoCanvas.addEventListener('pointerleave', () => { gizmoHoverAxis = null; });
@@ -143,7 +154,7 @@ gizmoCanvas.addEventListener('pointerup', () => {
   gizmoCanvas.style.cursor = '';
   if (info.mode === 'axis' && !info.moved) {
     const def = GIZMO_RING_DEFS.find(d => d.key === info.axis);
-    if (def) orientToAxis(def.axis);
+    if (def) orientToAxis(info.front ? def.axis : def.axis.clone().negate());
   }
 });
 

@@ -134,8 +134,8 @@ const gizmoRings = {};
   const defs = { X: [0xff5555, new THREE.Vector3(0, Math.PI / 2, 0)], Y: [0x55ff55, new THREE.Vector3(Math.PI / 2, 0, 0)], Z: [0x5588ff, new THREE.Vector3(0, 0, 0)] };
   for (const [axis, [color, rot]] of Object.entries(defs)) {
     const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(0.5, 0.018, 16, 96),
-      new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: true, transparent: true, side: THREE.DoubleSide })
+      new THREE.TorusGeometry(0.5, 0.02, 32, 128),
+      new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: true, transparent: true, side: THREE.FrontSide })
     );
     ring.rotation.set(rot.x, rot.y, rot.z);
     ring.name = axis;

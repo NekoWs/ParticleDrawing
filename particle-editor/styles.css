@@ -310,10 +310,11 @@ body {
 .kf-row input {
   min-width: 0; background: var(--panel-3); border: 1px solid var(--border);
   color: var(--text); border-radius: 5px; padding: 6px 8px; font-size: 12px; height: 30px;
-  transition: border-color 0.12s ease;
+  text-align: center; transition: border-color 0.12s ease;
 }
 .kf-row input:focus { border-color: var(--accent); outline: none; }
 .kf-row input.kf-t { width: 38px; flex: none; margin-right: 4px; }
+body.ctrl-held .kf-t { cursor: pointer; }
 .kf-row input.kf-v { flex: 1; min-width: 30px; }
 .kf-row input.kf-color { width: 30px; flex: none; padding: 0 2px; cursor: pointer; }
 .kf-row select {
@@ -324,7 +325,7 @@ body {
 }
 .kf-row select:focus { border-color: var(--accent); outline: none; }
 .kf-add {
-  width: 100%; margin-top: 5px; background: none; border: 1px dashed var(--border);
+  width: 100%; margin: 5px 0 6px; background: none; border: 1px dashed var(--border);
   color: var(--muted); border-radius: 6px; cursor: pointer; padding: 7px;
   font-size: 12px; transition: all 0.12s ease;
 }
@@ -410,6 +411,14 @@ body {
 .tl-controls select:focus { border-color: var(--accent); outline: none; }
 .tl-controls .ease-btn { height: 30px; }
 .ticks { color: var(--muted); }
+.tl-time-group {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--panel-3); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 0 8px; height: 30px;
+}
+.tl-time-group #tl-time { width: 46px; background: none; border: none; padding: 0; height: auto; }
+.tl-time-group #tl-time:focus { border-color: transparent; }
+.tl-time-group .ticks { white-space: nowrap; }
 #timeline { flex: 1; width: 100%; min-height: 0; margin-top: 6px; cursor: crosshair; border-radius: var(--radius-sm); }
 .tl-loop {
   margin: 0; padding: 4px 10px; gap: 6px; height: 30px; display: inline-flex; align-items: center;

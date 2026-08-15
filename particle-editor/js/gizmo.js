@@ -3,8 +3,11 @@
  * ======================================================================= */
 
 function snapValue(v) {
-  if (!state.snap) return v;
   return Math.round(v / SNAP_STEP) * SNAP_STEP;
+}
+
+function snapGrid(v) {
+  return shiftHeld ? snapValue(v) : v;
 }
 
 function snapPos(p) {
@@ -29,7 +32,7 @@ function updateGizmo() {
   gizmoGroup.visible = true;
   gizmoGroup.position.set(c[0], c[1], c[2]);
   gizmoGroup.scale.setScalar(2); // 固定世界尺寸，随相机远近自然缩放（越远越小）
-  setGizmoHover(null);
+  setGizmoHover(null, null);
 }
 
 /* =========================================================================
@@ -115,8 +118,11 @@ const shapeCount = () => Math.max(2, parseInt(document.getElementById('shape-cou
 function computeShapePositions(mode, u0, v0, u1, v1, off) {
   const toWorld = PLANES[state.drawPlane].toWorld;
   const out = [];
-  const push = (u, v) => { const [x, y, z] = toWorld(snapValue(u), snapValue(v), off); out.push([x, y, z]); };
-  const sU0 = snapValue(u0), sV0 = snapValue(v0), sU1 = snapValue(u1), sV1 = snapValue(v1);
+  const su0 = shiftHeld ? snapValue(u0) : u0;
+  const sv0 = shiftHeld ? snapValue(v0) : v0;
+  const sU0 = su0, sV0 = sv0;
+  const sU1 = u1 + (su0 - u0), sV1 = v1 + (sv0 - v0);
+  const push = (u, v) => { const [x, y, z] = toWorld(u, v, off); out.push([x, y, z]); };
   if (mode === 'line') {
     const n = shapeCount();
     for (let i = 0; i < n; i++) { const t = n === 1 ? 0.5 : i / (n - 1); push(sU0 + (sU1 - sU0) * t, sV0 + (sV1 - sV0) * t); }

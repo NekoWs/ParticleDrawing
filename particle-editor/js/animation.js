@@ -89,9 +89,9 @@ function applyGroupRotation(p, value, T) {
   if (rot[0] === 0 && rot[1] === 0 && rot[2] === 0) return value;
   const pivot = info.pivot;
   let r = [value[0] - pivot[0], value[1] - pivot[1], value[2] - pivot[2]];
-  r = rotateVector(r, [1, 0, 0], rot[0]);
-  r = rotateVector(r, [0, 1, 0], rot[1]);
-  r = rotateVector(r, [0, 0, 1], rot[2]);
+  r = rotateVector(r, [1, 0, 0], rot[0] * DEG2RAD);
+  r = rotateVector(r, [0, 1, 0], rot[1] * DEG2RAD);
+  r = rotateVector(r, [0, 0, 1], rot[2] * DEG2RAD);
   return [pivot[0] + r[0], pivot[1] + r[1], pivot[2] + r[2]];
 }
 
@@ -134,6 +134,10 @@ function maxTick() {
   return m;
 }
 
+// 播放时的速度累积位移（渲染期叠加，不改数据）
+const velOffsets = new Map();
+function resetVelOffsets() { velOffsets.clear(); }
+
 /* =========================================================================
  * 渲染
  * ======================================================================= */
@@ -154,7 +158,8 @@ function rebuildPoints() {
   for (let i = 0; i < n; i++) {
     const p = state.particles[i];
     const v = currentVisual(p);
-    positions[i * 3] = v.pos[0]; positions[i * 3 + 1] = v.pos[1]; positions[i * 3 + 2] = v.pos[2];
+    const off = velOffsets.get(p.id) || [0, 0, 0];
+    positions[i * 3] = v.pos[0] + off[0]; positions[i * 3 + 1] = v.pos[1] + off[1]; positions[i * 3 + 2] = v.pos[2] + off[2];
     colors[i * 4] = v.color[0]; colors[i * 4 + 1] = v.color[1]; colors[i * 4 + 2] = v.color[2]; colors[i * 4 + 3] = v.color[3];
     sizes[i] = Math.max(0.02, v.scale * PARTICLE_SIZE_FACTOR);
   }
@@ -164,7 +169,8 @@ function rebuildPoints() {
   const spos = new Float32Array(sel.length * 3), ssiz = new Float32Array(sel.length);
   for (let i = 0; i < sel.length; i++) {
     const v = currentVisual(sel[i]);
-    spos[i * 3] = v.pos[0]; spos[i * 3 + 1] = v.pos[1]; spos[i * 3 + 2] = v.pos[2];
+    const off = velOffsets.get(sel[i].id) || [0, 0, 0];
+    spos[i * 3] = v.pos[0] + off[0]; spos[i * 3 + 1] = v.pos[1] + off[1]; spos[i * 3 + 2] = v.pos[2] + off[2];
     ssiz[i] = Math.max(0.02, v.scale * PARTICLE_SIZE_FACTOR);
   }
   setPointsGeometry(selectedPoints, spos, new Float32Array(sel.length * 4), ssiz);

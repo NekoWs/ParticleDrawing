@@ -222,10 +222,11 @@ function renderParticleTrackNode(p, def) {
       if (!tr) {
         tr = { pr: def.key, m: 'set', ids: [p.id], kf: [[0, baseValue(p, def.key).slice(), state.defaultEasing]] };
         state.tracks.push(tr);
+      } else {
+        const t = nextFreeTime(tr, Math.round(state.time));
+        tr.kf.push([t, particleValueAt(p, def.key, t).slice(), state.defaultEasing]);
+        tr.kf.sort((a, b) => a[0] - b[0]);
       }
-      const t = nextFreeTime(tr, Math.round(state.time));
-      tr.kf.push([t, particleValueAt(p, def.key, t).slice(), state.defaultEasing]);
-      tr.kf.sort((a, b) => a[0] - b[0]);
       rebuildPoints(); refreshParticleTree();
     };
     kfs.appendChild(add);
@@ -241,6 +242,7 @@ function renderParticleKfRow(p, def, kf) {
   tIn.className = 'kf-t'; tIn.type = 'number'; tIn.value = kf[0];
   tIn.title = '时间 (tick)';
   tIn.onchange = () => updateKeyframeTime(p.id, def.key, kf[0], parseInt(tIn.value) || 0);
+  tIn.addEventListener('click', (e) => { if (e.ctrlKey) { state.time = kf[0]; resetVelOffsets(); updateTimeUI(); rebuildPoints(); } });
   row.appendChild(tIn);
   if (def.key === 'col') {
     row.appendChild(makeColorSwatch(kf, (r, g, b) => {
@@ -404,9 +406,12 @@ function renderGroupPropNode(name, def) {
   const modeSel = document.createElement('select');
   modeSel.className = 'mode-sel';
   const mSet = document.createElement('option'); mSet.value = 'set'; mSet.textContent = '设置';
-  const mOp = document.createElement('option'); mOp.value = 'op'; mOp.textContent = '操作';
-  modeSel.appendChild(mSet); modeSel.appendChild(mOp);
-  const defaultMode = def.key === 'col' ? 'set' : 'op';
+  modeSel.appendChild(mSet);
+  if (def.key !== 'rot') {
+    const mOp = document.createElement('option'); mOp.value = 'op'; mOp.textContent = '操作';
+    modeSel.appendChild(mOp);
+  }
+  const defaultMode = (def.key === 'rot' || def.key === 'col' || def.key === 'vel') ? 'set' : 'op';
   modeSel.value = tr ? tr.m : defaultMode;
   modeSel.onchange = () => setGroupTrackMode(name, def.key, modeSel.value);
   modeSel.onclick = (e) => e.stopPropagation();
@@ -438,11 +443,11 @@ function renderGroupPropNode(name, def) {
         state.tracks.push(track);
       } else {
         track.m = mode;
+        const t = nextFreeTime(track, Math.round(state.time));
+        const cur = mode === 'op' ? zeroArray(def.key).slice() : groupCentroidValue(name, def.key);
+        track.kf.push([t, cur, state.defaultEasing]);
+        track.kf.sort((a, b) => a[0] - b[0]);
       }
-      const t = nextFreeTime(track, Math.round(state.time));
-      const cur = mode === 'op' ? zeroArray(def.key).slice() : groupCentroidValue(name, def.key);
-      track.kf.push([t, cur, state.defaultEasing]);
-      track.kf.sort((a, b) => a[0] - b[0]);
       rebuildPoints(); refreshParticleTree();
     };
     kfs.appendChild(add);
@@ -475,35 +480,6 @@ function groupCurrentCentroid(name, prop) {
   return sum.map(v => r3(v / members.length));
 }
 
-// 捕获关键帧：优先写入组轨道，仅对非组粒子写逐粒子关键帧
-function captureKeyframes() {
-  const ids = [...state.selected];
-  if (ids.length === 0) { alert('请先选择粒子'); return; }
-  pushUndo();
-  const t = Math.round(state.time);
-  const gname = selectedGroupName();
-  if (gname) {
-    const basePos = groupCentroidValue(gname, 'pos');
-    const curPos = groupCurrentCentroid(gname, 'pos');
-    const delta = [curPos[0] - basePos[0], curPos[1] - basePos[1], curPos[2] - basePos[2]];
-    if (delta.some(d => Math.abs(d) > 1e-9)) setGroupTrackValue(gname, 'pos', 'op', t, delta);
-    const rot = groupRotationValueAt(gname, t);
-    if (rot.some(r => Math.abs(r) > 1e-9)) setGroupTrackValue(gname, 'rot', 'op', t, rot);
-    setGroupTrackValue(gname, 'col', 'set', t, groupCurrentCentroid(gname, 'col'));
-    setGroupTrackValue(gname, 'scl', 'set', t, groupCurrentCentroid(gname, 'scl'));
-  } else {
-    for (const id of ids) {
-      const p = getParticle(id);
-      if (!p) continue;
-      const v = currentVisual(p);
-      setValueAtTime([id], 'pos', v.pos);
-      setValueAtTime([id], 'col', v.color);
-      setValueAtTime([id], 'scl', [v.scale]);
-      setValueAtTime([id], 'vel', p.vel || [0, 0, 0]);
-    }
-  }
-}
-
 function renderGroupKfRow(name, def, mode, kf) {
   const row = document.createElement('div');
   row.className = 'kf-row';
@@ -511,6 +487,7 @@ function renderGroupKfRow(name, def, mode, kf) {
   tIn.className = 'kf-t'; tIn.type = 'number'; tIn.value = kf[0];
   tIn.title = '时间 (tick)';
   tIn.onchange = () => updateKeyframeTime('g:' + name, def.key, kf[0], parseInt(tIn.value) || 0);
+  tIn.addEventListener('click', (e) => { if (e.ctrlKey) { state.time = kf[0]; resetVelOffsets(); updateTimeUI(); rebuildPoints(); } });
   row.appendChild(tIn);
   if (def.key === 'col' && mode !== 'op') {
     row.appendChild(makeColorSwatch(kf, (r, g, b) => {
@@ -522,7 +499,7 @@ function renderGroupKfRow(name, def, mode, kf) {
     const vIn = document.createElement('input');
     vIn.className = 'kf-v'; vIn.type = 'number'; vIn.step = '0.01'; vIn.value = r3(kf[1][i]);
     vIn.title = def.labels
-      ? (def.key === 'rot' ? def.labels[i] + ' (弧度)' : def.labels[i] + (mode === 'op' ? ' 增量' : ' 值'))
+      ? (def.key === 'rot' ? def.labels[i] + ' (角度)' : def.labels[i] + (mode === 'op' ? ' 增量' : ' 值'))
       : def.key;
     vIn.onchange = () => {
       const v = kf[1].slice();

@@ -42,6 +42,55 @@ function editBaseValue(ids, prop, values) {
   }
 }
 
+// 批量：为多个粒子在同一时间写关键帧（每个粒子独立值）
+function setValuesAtTime(entries, prop) {
+  const t = Math.round(state.time);
+  for (const [id, values] of entries) {
+    const p = getParticle(id);
+    if (!p) continue;
+    let tr = findTrack(prop, id);
+    if (!tr) {
+      tr = { pr: prop, m: 'set', ids: [id], kf: [[0, baseValue(p, prop).slice(), state.defaultEasing]] };
+      state.tracks.push(tr);
+    }
+    const idx = tr.kf.findIndex(k => k[0] === t);
+    if (idx >= 0) tr.kf[idx][1] = values.slice();
+    else { tr.kf.push([t, values.slice(), state.defaultEasing]); tr.kf.sort((a, b) => a[0] - b[0]); }
+    if (t === 0) applyBaseValue(p, prop, values);
+  }
+  rebuildPoints();
+  refreshParticleTree();
+}
+
+// 逐粒子编辑：捕获时写当前帧关键帧，否则改基础值
+function editParticles(entries, prop) {
+  if (state.captureKeyframes) setValuesAtTime(entries, prop);
+  else {
+    for (const [id, values] of entries) editBaseValue([id], prop, values);
+    rebuildPoints();
+  }
+}
+
+// 统一值编辑（属性面板）：捕获时写当前帧关键帧，否则改基础值
+function editSelectionUniform(prop, values) {
+  const ids = [...state.selected];
+  if (ids.length === 0) return;
+  const gname = selectedGroupName();
+  if (!state.captureKeyframes) {
+    editBaseValue(ids, prop, values);
+    return;
+  }
+  const t = Math.round(state.time);
+  if (gname && prop === 'pos') {
+    const base = groupCentroidValue(gname, 'pos');
+    setGroupTrackValue(gname, 'pos', 'op', t, [values[0] - base[0], values[1] - base[1], values[2] - base[2]]);
+  } else if (gname) {
+    setGroupTrackValue(gname, prop, 'set', t, values);
+  } else {
+    setValueAtTime(ids, prop, values);
+  }
+}
+
 function setComponentValue(particleId, comp, time, value) {
   const p = getParticle(particleId);
   if (!p) return;

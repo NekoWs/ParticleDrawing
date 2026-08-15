@@ -82,15 +82,18 @@ object AnimationLoader {
         val ids = o.get("ids").asJsonArray.map { it.asString }
         val mode = if (o.get("m")?.asString == "op") AnimTrack.Mode.OP else AnimTrack.Mode.SET
         val keyframes = o.get("kf").asJsonArray
-            .map { parseKeyframe(it.asJsonArray) }
+            .map { parseKeyframe(it.asJsonArray, property) }
             .sortedBy { it.tick }
         return AnimTrack(property, ids, keyframes, mode)
     }
 
-    private fun parseKeyframe(arr: JsonArray): AnimKeyframe {
+    private fun parseKeyframe(arr: JsonArray, property: AnimTrack.Property): AnimKeyframe {
         val tick = arr[0].asInt
         val valueArr = arr[1].asJsonArray
-        val value = DoubleArray(valueArr.size()) { i -> valueArr[i].asDouble }
+        val value = DoubleArray(valueArr.size()) { i ->
+            val v = valueArr[i].asDouble
+            if (property == AnimTrack.Property.ROTATION) v * Math.PI / 180.0 else v
+        }
         val easing = parseEasing(arr[2])
         return AnimKeyframe(tick, value, easing)
     }

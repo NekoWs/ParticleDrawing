@@ -47,13 +47,16 @@ const PARTICLE_TRACK_DEFS = [
 
 const DEFAULT_EASING = 3;
 const SNAP_STEP = 1.0;
-const ROT_SNAP = Math.PI / 4; // 按住 Shift 时旋转吸附的步长（45°）
+const DEG2RAD = Math.PI / 180;
+const RAD2DEG = 180 / Math.PI;
+const ROT_SNAP = 45; // 按住 Shift 时旋转吸附的步长（角度）
 const PARTICLE_SIZE_FACTOR = 0.5; // 编辑器渲染缩放（与游戏内 quad 的可见点大小一致）
 
-// 组的属性（轨道级）：位置/旋转/颜色/缩放，支持「设置(set)」或「操作(op)」两种模式
+// 组的属性（轨道级）
 const GROUP_PROP_DEFS = [
   { key: 'pos', label: '位置', size: 3, labels: ['X', 'Y', 'Z'] },
   { key: 'rot', label: '旋转', size: 3, labels: ['X', 'Y', 'Z'] },
+  { key: 'vel', label: '速度', size: 3, labels: ['X', 'Y', 'Z'] },
   { key: 'col', label: '颜色', size: 4, labels: ['R', 'G', 'B', 'A'] },
   { key: 'scl', label: '缩放', size: 1, labels: ['缩放'] },
 ];
@@ -80,6 +83,7 @@ const state = {
   playing: false,
   playSpeed: 1,
   defaultEasing: DEFAULT_EASING,
+  captureKeyframes: false,
   dirty: false,
 };
 

@@ -21,6 +21,7 @@ class AnimationPlayer(
     private val basePos = HashMap<String, Vec3>()
     private val baseColor = HashMap<String, Color>()
     private val baseScale = HashMap<String, Float>()
+    private val baseVel = HashMap<String, Vec3>()
     private val groupPivot = HashMap<String, Vec3>()
     private var currentTick = 0
     private var finished = false
@@ -53,6 +54,7 @@ class AnimationPlayer(
             basePos[p.id] = p.pos
             baseColor[p.id] = p.color
             baseScale[p.id] = p.scale
+            baseVel[p.id] = p.vel
             if (p.vel.x != 0.0 || p.vel.y != 0.0 || p.vel.z != 0.0) {
                 engine.setVelocity(data.id, p.vel, players)
             }
@@ -140,7 +142,12 @@ class AnimationPlayer(
         for (id in resolveIds(track)) {
             val uuid = idMap[id] ?: continue
             if (track.property == AnimTrack.Property.VELOCITY) {
-                engine.setVelocity(uuid, Vec3(v[0], v[1], v[2]), players)
+                if (op) {
+                    val base = baseVel[id] ?: Vec3.ZERO
+                    engine.setVelocity(uuid, base.add(Vec3(v[0], v[1], v[2])), players)
+                } else {
+                    engine.setVelocity(uuid, Vec3(v[0], v[1], v[2]), players)
+                }
                 continue
             }
             if (track.property == AnimTrack.Property.ROTATION) {

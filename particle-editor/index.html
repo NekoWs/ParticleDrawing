@@ -141,9 +141,11 @@
       <label class="row" style="margin:0">速度 <input id="tl-speed" type="number" min="0.1" step="0.1" value="1" style="width:56px" /></label>
       <label class="chk tl-loop"><input id="tl-loop" type="checkbox" checked />循环</label>
       <button id="tl-easing" class="ease-btn" title="缓动函数"></button>
-      <button id="btn-capture" class="btn">捕获关键帧</button>
-      <input id="tl-time" type="number" min="0" step="1" value="0" />
-      <span class="ticks">tick / <span id="tl-max">0</span></span>
+      <label class="chk tl-loop"><input id="capture-keyframes" type="checkbox" />捕获关键帧</label>
+      <span class="tl-time-group">
+        <input id="tl-time" type="number" min="0" step="1" value="0" />
+        <span class="ticks">tick / <span id="tl-max">0</span></span>
+      </span>
     </div>
     <canvas id="timeline"></canvas>
   </footer>
