@@ -29,7 +29,7 @@ function trackValueAt(tr, T, fallback) {
     const a = kfs[i], b = kfs[i + 1];
     if (T >= a[0] && T <= b[0]) {
       const dur = b[0] - a[0];
-      return lerpArray(a[1], b[1], easeVal(dur === 0 ? 1 : (T - a[0]) / dur, a[2]));
+      return lerpArray(a[1], b[1], easeVal(dur === 0 ? 1 : (T - a[0]) / dur, b[2]));
     }
   }
   return fallback;
@@ -43,6 +43,10 @@ function tracksForParticle(prop, pId) {
       if (id.startsWith('g:')) {
         const members = state.groups[id.slice(2)];
         if (members && members.includes(pId)) return tr;
+      }
+      if (id.startsWith('f:')) {
+        const p = getParticle(pId);
+        if (p && p.fx === id.slice(2)) return tr;
       }
     }
   }
@@ -61,6 +65,10 @@ function groupOpDelta(p, prop, T) {
           delta = delta ? addArrays(delta, d) : d.slice();
         }
       }
+      if (id.startsWith('f:') && p.fx === id.slice(2)) {
+        const d = trackValueAt(tr, T, zeroArray(prop));
+        delta = delta ? addArrays(delta, d) : d.slice();
+      }
     }
   }
   return delta;
@@ -76,6 +84,11 @@ function groupRotationInfo(p, T) {
         if (members && members.includes(p.id)) {
           return { rot: trackValueAt(tr, T, [0, 0, 0]), pivot: groupCentroidValue(gname, 'pos') };
         }
+      }
+      if (id.startsWith('f:') && p.fx === id.slice(2)) {
+        const fx = getFunction(p.fx);
+        // 旋转轴心固定为 center（与模组组轨道绕组质心一致，对称形状质心=center）
+        return { rot: trackValueAt(tr, T, [0, 0, 0]), pivot: fx ? fx.center.slice() : [0, 0, 0] };
       }
     }
   }

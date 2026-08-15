@@ -5,6 +5,12 @@
 function updatePropPanel() {
   const sel = currentSelected();
   if (sel.length === 0) return;
+  // 派生粒子基础属性只读：禁用属性面板输入
+  const readOnly = sel.some(isDerivedParticle);
+  ['prop-style', 'prop-color', 'prop-alpha', 'prop-scale', 'prop-glow', 'prop-light', 'prop-posx', 'prop-posy', 'prop-posz'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = readOnly;
+  });
   const first = sel[0];
   const same = (fn) => sel.every(q => fn(q) === fn(first));
   const styleSel = document.getElementById('prop-style');
@@ -105,4 +111,283 @@ function timelineXToTick(clientX) {
   const canvas = document.getElementById('timeline');
   const rect = canvas.getBoundingClientRect();
   return timelineViewStart + (clientX - rect.left) / TL_PX_PER_TICK;
+}
+
+/* =========================================================================
+ * 函数对象属性面板
+ * ======================================================================= */
+
+let fxFormulaView = false;
+
+function refreshFunctionPanel() {
+  const box = document.getElementById('fx-panel');
+  if (!box) return;
+  const fx = getFunction(state.selectedFunction);
+  if (!fx) { box.innerHTML = '<p class="hint">选中一个函数对象以编辑属性</p>'; return; }
+  box.innerHTML = '';
+  box.appendChild(buildFunctionPanel(fx));
+}
+
+function commitFunctionRebuild(fx) {
+  try { rebuildFunctionObject(fx); }
+  catch (e) { alert('表达式错误：' + e.message); }
+}
+
+function buildFunctionPanel(fx) {
+  const wrap = document.createElement('div');
+  wrap.className = 'fx-panel';
+
+  const nameRow = document.createElement('label');
+  nameRow.className = 'row';
+  nameRow.textContent = '名称 ';
+  const nameIn = document.createElement('input');
+  nameIn.type = 'text'; nameIn.value = fx.name;
+  nameIn.onchange = () => { pushUndo(); fx.name = nameIn.value.trim() || fx.name; refreshParticleTree(); };
+  nameRow.appendChild(nameIn);
+  wrap.appendChild(nameRow);
+
+  // 中心点
+  const centerRow = document.createElement('div');
+  centerRow.className = 'row';
+  const centerLabel = document.createElement('span');
+  centerLabel.textContent = '中心点 ';
+  centerRow.appendChild(centerLabel);
+  ['X', 'Y', 'Z'].forEach((axis, idx) => {
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.step = '0.1'; inp.value = fx.center[idx];
+    inp.style.width = '46px';
+    inp.title = axis;
+    inp.onchange = () => { fx.center[idx] = parseFloat(inp.value) || 0; pushUndo(); commitFunctionRebuild(fx); };
+    centerRow.appendChild(document.createTextNode(axis));
+    centerRow.appendChild(inp);
+  });
+  wrap.appendChild(centerRow);
+
+  // 预设
+  const presetRow = document.createElement('label');
+  presetRow.className = 'row';
+  presetRow.textContent = '预设 ';
+  const presetSel = document.createElement('select');
+  const opt0 = document.createElement('option'); opt0.value = ''; opt0.textContent = '自定义公式';
+  presetSel.appendChild(opt0);
+  for (const id in FUNCTION_PRESETS) {
+    const o = document.createElement('option'); o.value = id; o.textContent = FUNCTION_PRESETS[id].label;
+    presetSel.appendChild(o);
+  }
+  presetSel.value = fx.preset || '';
+  presetSel.onchange = () => {
+    pushUndo();
+    if (presetSel.value) applyPreset(fx, presetSel.value);
+    else { fx.preset = null; fx.params = null; }
+    commitFunctionRebuild(fx);
+    refreshFunctionPanel();
+  };
+  presetRow.appendChild(presetSel);
+  wrap.appendChild(presetRow);
+
+  // 预设参数
+  if (fx.preset && FUNCTION_PRESETS[fx.preset]) {
+    const preset = FUNCTION_PRESETS[fx.preset];
+    const pbox = document.createElement('div');
+    pbox.className = 'fx-params';
+    for (const prm of preset.params) {
+      const row = document.createElement('label');
+      row.className = 'row';
+      row.textContent = prm.label + ' ';
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.step = '0.1'; inp.value = fx.params[prm.key] != null ? fx.params[prm.key] : prm.def;
+      inp.onchange = () => {
+        pushUndo();
+        fx.params[prm.key] = parseFloat(inp.value) || 0;
+        applyPresetBuild(fx);
+        commitFunctionRebuild(fx);
+        refreshFunctionPanel();
+      };
+      row.appendChild(inp);
+      pbox.appendChild(row);
+    }
+    wrap.appendChild(pbox);
+  }
+
+  // 公式视图切换（仅预设对象可折叠；自定义对象常显）
+  if (fx.preset) {
+    const toggle = document.createElement('button');
+    toggle.className = 'mini';
+    toggle.textContent = fxFormulaView ? '隐藏公式视图' : '公式视图';
+    toggle.onclick = () => { fxFormulaView = !fxFormulaView; refreshFunctionPanel(); };
+    wrap.appendChild(toggle);
+  }
+
+  // 采样数
+  const countRow = document.createElement('label');
+  countRow.className = 'row';
+  countRow.textContent = '采样数 ';
+  const countIn = document.createElement('input');
+  countIn.type = 'number'; countIn.min = '1'; countIn.value = fx.count;
+  countIn.onchange = () => { pushUndo(); fx.count = Math.max(1, Math.round(parseInt(countIn.value) || 1)); commitFunctionRebuild(fx); };
+  countRow.appendChild(countIn);
+  wrap.appendChild(countRow);
+
+  // 样式
+  const styleRow = document.createElement('label');
+  styleRow.className = 'row';
+  styleRow.textContent = '样式 ';
+  const styleSel = document.createElement('select');
+  STYLES.forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = s; styleSel.appendChild(o); });
+  styleSel.value = fx.style;
+  styleSel.onchange = () => { pushUndo(); fx.style = styleSel.value; commitFunctionRebuild(fx); };
+  styleRow.appendChild(styleSel);
+  wrap.appendChild(styleRow);
+
+  // 时长 / 采样间隔
+  const durRow = document.createElement('div');
+  durRow.className = 'row';
+  const durLabel = document.createElement('span'); durLabel.textContent = '时长 ';
+  durRow.appendChild(durLabel);
+  const durIn = document.createElement('input');
+  durIn.type = 'number'; durIn.min = '0'; durIn.value = fx.duration; durIn.style.width = '52px';
+  durIn.onchange = () => { pushUndo(); fx.duration = Math.max(0, parseInt(durIn.value) || 0); commitFunctionRebuild(fx); };
+  durRow.appendChild(durIn);
+  const stepLabel = document.createElement('span'); stepLabel.textContent = ' 间隔 ';
+  durRow.appendChild(stepLabel);
+  const stepIn = document.createElement('input');
+  stepIn.type = 'number'; stepIn.min = '1'; stepIn.value = fx.step; stepIn.style.width = '52px';
+  stepIn.onchange = () => { pushUndo(); fx.step = Math.max(1, parseInt(stepIn.value) || 1); commitFunctionRebuild(fx); };
+  durRow.appendChild(stepIn);
+  wrap.appendChild(durRow);
+
+  if (fxFormulaView || !fx.preset) {
+    wrap.appendChild(document.createElement('hr'));
+    // 公式代码块
+    const codeLabel = document.createElement('div');
+    codeLabel.className = 'row';
+    codeLabel.textContent = '公式代码块';
+    wrap.appendChild(codeLabel);
+    const codeArea = document.createElement('textarea');
+    codeArea.className = 'fx-code';
+    codeArea.rows = 7;
+    codeArea.value = fx.code;
+    codeArea.onchange = () => { pushUndo(); fx.code = codeArea.value; commitFunctionRebuild(fx); };
+    wrap.appendChild(codeArea);
+    const codeHint = document.createElement('p');
+    codeHint.className = 'hint';
+    codeHint.textContent = '分号分隔，可换行；[x,y,z]=[..] 打包；属性 x/y/z r/g/b/a vx/vy/vz sc glow light；其它名=临时变量；内置 i/n/t';
+    wrap.appendChild(codeHint);
+
+    // 变量表
+    const vhead = document.createElement('div');
+    vhead.className = 'vars-head';
+    vhead.innerHTML = '<span>变量（可设关键帧+缓动）</span>';
+    const vadd = document.createElement('button');
+    vadd.className = 'mini'; vadd.textContent = '+';
+    vadd.onclick = () => {
+      pushUndo();
+      let k = 0; while (('v' + k) in fx.vars) k++;
+      fx.vars['v' + k] = { expr: '0', kf: [] };
+      commitFunctionRebuild(fx); refreshFunctionPanel();
+    };
+    vhead.appendChild(vadd);
+    wrap.appendChild(vhead);
+    const vlist = document.createElement('div');
+    vlist.className = 'fx-vars';
+    for (const name of Object.keys(fx.vars)) vlist.appendChild(buildVarRow(fx, name));
+    wrap.appendChild(vlist);
+  }
+
+  return wrap;
+}
+
+function nextFreeTimeVar(kf, startTime) {
+  let t = Math.max(0, Math.round(startTime));
+  while (kf.some(k => k[0] === t)) t += 5;
+  return t;
+}
+
+function buildVarRow(fx, name) {
+  const v = fx.vars[name];
+  const wrap = document.createElement('div');
+  wrap.className = 'fx-var';
+  const row = document.createElement('div');
+  row.className = 'var-row';
+  const nIn = document.createElement('input');
+  nIn.className = 'var-name'; nIn.type = 'text'; nIn.value = name;
+  const vIn = document.createElement('input');
+  vIn.className = 'var-value'; vIn.type = 'text';
+  const hasKf = (v.kf || []).length > 0;
+  vIn.disabled = hasKf;
+  if (hasKf) {
+    vIn.value = r3(varKfValue(v.kf, state.time)).toFixed(2);
+    vIn.dataset.fxKf = fx.id + '|' + name;
+    vIn.classList.add('kf-synced');
+    vIn.title = '有关键帧：值由时间轴驱动（删除全部关键帧后可编辑表达式）';
+  } else {
+    vIn.value = v.expr || '0';
+  }
+  nIn.onchange = () => {
+    pushUndo();
+    const nn = nIn.value.trim();
+    if (nn && nn !== name) {
+      if (ATTR_NAMES.includes(nn)) { alert('变量名 ' + nn + ' 是属性保留字'); nIn.value = name; refreshFunctionPanel(); return; }
+      fx.vars[nn] = fx.vars[name]; delete fx.vars[name];
+    }
+    commitFunctionRebuild(fx); refreshFunctionPanel();
+  };
+  vIn.onchange = () => { pushUndo(); fx.vars[name].expr = vIn.value.trim() || '0'; syncPresetCount(fx); commitFunctionRebuild(fx); };
+  const del = document.createElement('button');
+  del.className = 'del-x'; del.textContent = '×';
+  del.onclick = () => { pushUndo(); delete fx.vars[name]; commitFunctionRebuild(fx); refreshFunctionPanel(); };
+  row.appendChild(nIn); row.appendChild(vIn); row.appendChild(del);
+  wrap.appendChild(row);
+  const kfWrap = document.createElement('div');
+  kfWrap.className = 'fx-kf';
+  (v.kf || []).forEach((k, idx) => kfWrap.appendChild(buildVarKfRow(fx, name, k, idx === 0)));
+  const addBtn = document.createElement('button');
+  addBtn.className = 'mini'; addBtn.textContent = '+ 关键帧';
+  addBtn.onclick = () => {
+    pushUndo();
+    if (!fx.vars[name].kf) fx.vars[name].kf = [];
+    const kf = fx.vars[name].kf;
+    const t = nextFreeTimeVar(kf, Math.round(state.time));
+    kf.push([t, 0, state.defaultEasing]);
+    kf.sort((a, b) => a[0] - b[0]);
+    commitFunctionRebuild(fx); refreshFunctionPanel();
+  };
+  kfWrap.appendChild(addBtn);
+  wrap.appendChild(kfWrap);
+  return wrap;
+}
+
+function buildVarKfRow(fx, name, k, isFirst) {
+  const row = document.createElement('div');
+  row.className = 'kf-row';
+  const tIn = document.createElement('input');
+  tIn.className = 'kf-t'; tIn.type = 'number'; tIn.value = k[0];
+  tIn.onchange = () => { pushUndo(); k[0] = Math.max(0, parseInt(tIn.value) || 0); fx.vars[name].kf.sort((a, b) => a[0] - b[0]); commitFunctionRebuild(fx); refreshFunctionPanel(); };
+  row.appendChild(tIn);
+  const vIn = document.createElement('input');
+  vIn.className = 'kf-v'; vIn.type = 'number'; vIn.step = '0.01'; vIn.value = r3(k[1]);
+  vIn.onchange = () => { pushUndo(); k[1] = parseFloat(vIn.value) || 0; commitFunctionRebuild(fx); };
+  row.appendChild(vIn);
+  if (!isFirst) {
+    const easeBtn = makeEasingBtn(k[2], (easing) => { pushUndo(); k[2] = easing; commitFunctionRebuild(fx); });
+    row.appendChild(easeBtn);
+  }
+  const del = document.createElement('button');
+  del.className = 'del-x'; del.textContent = '×';
+  del.onclick = () => { pushUndo(); fx.vars[name].kf = fx.vars[name].kf.filter(x => x !== k); commitFunctionRebuild(fx); refreshFunctionPanel(); };
+  row.appendChild(del);
+  return row;
+}
+
+// 实时同步「有关键帧」变量输入框显示的当前帧插值值（不重建面板）
+function syncFunctionVarValues() {
+  document.querySelectorAll('input.kf-synced').forEach(inp => {
+    const sep = inp.dataset.fxKf.indexOf('|');
+    const fxId = inp.dataset.fxKf.slice(0, sep);
+    const name = inp.dataset.fxKf.slice(sep + 1);
+    const fx = getFunction(fxId);
+    const v = fx && fx.vars && fx.vars[name];
+    const kf = v && v.kf;
+    if (kf && kf.length > 0) inp.value = r3(varKfValue(kf, state.time)).toFixed(2);
+  });
 }

@@ -48,6 +48,7 @@ function initUI() {
   document.getElementById('btn-open').addEventListener('click', () => { closeMenus(); openFile(); });
   document.getElementById('btn-save').addEventListener('click', () => { closeMenus(); saveFile(); });
   document.getElementById('btn-saveas').addEventListener('click', () => { closeMenus(); saveFileAs(); });
+  document.getElementById('btn-export').addEventListener('click', () => { closeMenus(); exportAnimation(); });
   document.getElementById('btn-clear').addEventListener('click', () => { closeMenus(); clearAll(); });
   document.getElementById('btn-undo').addEventListener('click', () => { closeMenus(); undo(); });
   document.getElementById('btn-redo').addEventListener('click', () => { closeMenus(); redo(); });
@@ -70,6 +71,18 @@ function initUI() {
   document.getElementById('btn-four').addEventListener('click', generateFourier);
   document.getElementById('four-plane').addEventListener('change', renderFourierInputs);
 
+  // 函数对象
+  const fxPresetSel = document.getElementById('fx-preset-add');
+  for (const id in FUNCTION_PRESETS) {
+    const o = document.createElement('option'); o.value = id; o.textContent = FUNCTION_PRESETS[id].label;
+    fxPresetSel.appendChild(o);
+  }
+  document.getElementById('btn-fx-add').addEventListener('click', () => createFunctionObject(null));
+  document.getElementById('btn-fx-preset-add').addEventListener('click', () => {
+    if (fxPresetSel.value) createFunctionObject(fxPresetSel.value);
+  });
+  refreshFunctionPanel();
+
   // 属性
   document.getElementById('prop-style').addEventListener('change', (ev) => { if (ev.target.value === '__mixed__') return; pushUndo(); currentSelected().forEach(p => { p.style = ev.target.value; }); rebuildPoints(); });
   document.getElementById('prop-glow').addEventListener('change', (ev) => { pushUndo(); currentSelected().forEach(p => { p.glow = ev.target.checked; }); rebuildPoints(); });
@@ -89,7 +102,7 @@ function initUI() {
   // 时间轴
   document.getElementById('btn-play').addEventListener('click', togglePlay);
   document.getElementById('tl-speed').addEventListener('change', (ev) => { state.playSpeed = Math.max(0.1, parseFloat(ev.target.value) || 1); });
-  document.getElementById('tl-time').addEventListener('input', (ev) => { state.time = parseFloat(ev.target.value) || 0; resetVelOffsets(); updateTimeUI(); rebuildPoints(); });
+  document.getElementById('tl-time').addEventListener('input', (ev) => { state.time = parseFloat(ev.target.value) || 0; resetVelOffsets(); updateTimeUI(); rebuildPoints(); syncFunctionVarValues(); });
   document.getElementById('tl-loop').addEventListener('change', (ev) => { state.loop = ev.target.checked; updateLoopIndicator(); });
   document.getElementById('capture-keyframes').addEventListener('change', (ev) => { state.captureKeyframes = ev.target.checked; });
 
@@ -117,6 +130,7 @@ function initUI() {
       resetVelOffsets();
       updateTimeUI();
       rebuildPoints();
+      syncFunctionVarValues();
     }
   });
   tlCanvas.addEventListener('pointermove', (ev) => {
@@ -130,7 +144,7 @@ function initUI() {
     }
     tlDrag.lastX = ev.clientX;
     drawTimeline();
-    if (tlDrag.mode === 'scrub') rebuildPoints();
+    if (tlDrag.mode === 'scrub') { rebuildPoints(); syncFunctionVarValues(); }
   });
   tlCanvas.addEventListener('pointerup', () => { tlDrag = null; });
   tlCanvas.addEventListener('pointerleave', () => { tlDrag = null; });
@@ -149,11 +163,11 @@ function initUI() {
 
 function clearAll() {
   pushUndo();
-  state.particles = []; state.tracks = []; state.groups = {};
-  state.selected.clear(); state.selectedGroup = null;
+  state.particles = []; state.tracks = []; state.groups = {}; state.functions = [];
+  state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null;
   state.expandedParticles.clear(); state.expandedProps.clear();
   state.time = 0;
-  updateTimeUI(); rebuildPoints(); refreshParticleTree();
+  updateTimeUI(); rebuildPoints(); refreshParticleTree(); refreshFunctionPanel();
 }
 
 function applyColorFromInputs() {
@@ -190,8 +204,9 @@ function applyPositionFromInputs() {
   });
   tree.addEventListener('pointerdown', (e) => {
     if (!e.target.closest('.ptree-particle')) {
-      state.selected.clear(); state.selectedGroup = null;
+      state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null;
       rebuildPoints();
+      refreshFunctionPanel();
     }
   });
 
@@ -271,6 +286,7 @@ function animate(now) {
     }
     updateTimeUI();
     rebuildPoints();
+    syncFunctionVarValues();
   }
   controls.update();
   renderer.render(scene, camera);

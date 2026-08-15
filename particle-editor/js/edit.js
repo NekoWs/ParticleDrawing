@@ -22,7 +22,7 @@ function setValueAtTime(ids, prop, values) {
     const idx = tr.kf.findIndex(k => k[0] === t);
     if (idx >= 0) tr.kf[idx][1] = values.slice();
     else { tr.kf.push([t, values.slice(), state.defaultEasing]); tr.kf.sort((a, b) => a[0] - b[0]); }
-    if (t === 0) applyBaseValue(p, prop, values);
+    if (t === 0 && !isDerivedParticle(p)) applyBaseValue(p, prop, values);
   }
   rebuildPoints();
   refreshParticleTree();
@@ -33,6 +33,7 @@ function editBaseValue(ids, prop, values) {
   for (const id of ids) {
     const p = getParticle(id);
     if (!p) continue;
+    if (isDerivedParticle(p)) continue; // 派生粒子基础属性只读
     applyBaseValue(p, prop, values);
     const tr = findTrack(prop, id);
     if (tr) {
@@ -56,7 +57,7 @@ function setValuesAtTime(entries, prop) {
     const idx = tr.kf.findIndex(k => k[0] === t);
     if (idx >= 0) tr.kf[idx][1] = values.slice();
     else { tr.kf.push([t, values.slice(), state.defaultEasing]); tr.kf.sort((a, b) => a[0] - b[0]); }
-    if (t === 0) applyBaseValue(p, prop, values);
+    if (t === 0 && !isDerivedParticle(p)) applyBaseValue(p, prop, values);
   }
   rebuildPoints();
   refreshParticleTree();
@@ -75,6 +76,7 @@ function editParticles(entries, prop) {
 function editSelectionUniform(prop, values) {
   const ids = [...state.selected];
   if (ids.length === 0) return;
+  if (ids.some(id => isDerivedParticle(getParticle(id)))) return; // 派生粒子基础属性只读
   const gname = selectedGroupName();
   if (!state.captureKeyframes) {
     editBaseValue(ids, prop, values);
@@ -109,7 +111,7 @@ function setComponentValue(particleId, comp, time, value) {
     tr.kf.sort((a, b) => a[0] - b[0]);
   }
   kf[1][comp.index] = value;
-  if (time === 0) applyBaseValue(p, prop, kf[1]);
+  if (time === 0 && !isDerivedParticle(p)) applyBaseValue(p, prop, kf[1]);
   rebuildPoints();
   refreshParticleTree();
 }
@@ -170,6 +172,44 @@ function setGroupTrackValue(groupName, prop, mode, time, value) {
 
 function setGroupTrackMode(groupName, prop, mode) {
   const tr = findGroupTrack(prop, groupName);
+  if (!tr) return;
+  pushUndo();
+  tr.m = mode;
+  rebuildPoints();
+  refreshParticleTree();
+}
+
+/* =========================================================================
+ * 函数对象：整体变换轨道（ids 用 'f:'+fxId）
+ * ======================================================================= */
+
+function findFunctionTrack(prop, fxId) {
+  return state.tracks.find(tr => tr.pr === prop && tr.ids.length === 1 && tr.ids[0] === 'f:' + fxId);
+}
+
+function functionBaseValue(prop) {
+  if (prop === 'scl') return [1];
+  return [0, 0, 0];
+}
+
+function setFunctionTrackValue(fxId, prop, mode, time, value) {
+  let tr = findFunctionTrack(prop, fxId);
+  if (!tr) {
+    const base = mode === 'op' ? zeroArray(prop).slice() : functionBaseValue(prop);
+    tr = { pr: prop, m: mode, ids: ['f:' + fxId], kf: [[0, base, state.defaultEasing]] };
+    state.tracks.push(tr);
+  } else {
+    tr.m = mode;
+  }
+  let kf = tr.kf.find(k => k[0] === time);
+  if (!kf) { kf = [time, value.slice(), state.defaultEasing]; tr.kf.push(kf); tr.kf.sort((a, b) => a[0] - b[0]); }
+  else kf[1] = value.slice();
+  rebuildPoints();
+  refreshParticleTree();
+}
+
+function setFunctionTrackMode(fxId, prop, mode) {
+  const tr = findFunctionTrack(prop, fxId);
   if (!tr) return;
   pushUndo();
   tr.m = mode;

@@ -16,6 +16,7 @@
           <button id="btn-open" class="dd-item"><span>打开…</span><kbd>Ctrl+O</kbd></button>
           <button id="btn-save" class="dd-item"><span>保存</span><kbd>Ctrl+S</kbd></button>
           <button id="btn-saveas" class="dd-item"><span>另存为…</span></button>
+          <button id="btn-export" class="dd-item"><span>导出动画…</span></button>
           <div class="dd-sep"></div>
           <button id="btn-clear" class="dd-item danger"><span>清空</span></button>
         </div>
@@ -77,6 +78,16 @@
         <label class="row">放置高度 <input id="height-y" type="number" step="0.1" value="0" /></label>
         <label class="row">粒子数量 <input id="shape-count" type="number" min="2" value="30" /></label>
         <p class="hint">中键旋转 · Shift+中键平移 · 滚轮缩放 · 左键框选 · S 缩放 · Delete 删除 · Ctrl+A 全选 · Ctrl+D 取消选中 · 空格 播放 · Shift+拖动方向轴=吸附整格 · Ctrl+C/V 复制粘贴</p>
+      </details>
+
+      <details open>
+        <summary>函数对象</summary>
+        <div class="vars-head">
+          <button id="btn-fx-add" class="mini" title="新建空白函数对象">+ 空白</button>
+          <select id="fx-preset-add"></select>
+          <button id="btn-fx-preset-add" class="mini" title="按预设新建函数对象">+ 预设</button>
+        </div>
+        <div id="fx-panel"><p class="hint">选中一个函数对象以编辑属性</p></div>
       </details>
 
       <details>

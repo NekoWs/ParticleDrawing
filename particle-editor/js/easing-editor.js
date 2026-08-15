@@ -64,6 +64,7 @@ function openEasingEditor(easing, applyFn, anchor) {
         easingEditor.apply(easingEditor.bezier.slice());
         drawEasingEditor();
       });
+      inp.addEventListener('change', () => { refreshParticleTree(); refreshFunctionPanel(); });
       easingEditor.inputs[idx] = inp;
       row.appendChild(inp);
     };
@@ -88,12 +89,15 @@ function openEasingEditor(easing, applyFn, anchor) {
     o.value = i; o.textContent = EASINGS[i][0];
     presetSel.appendChild(o);
   }
+  if (Number.isInteger(easing)) presetSel.value = String(easing); // 预设下拉回显当前缓动
   presetSel.onchange = () => {
     if (presetSel.value === '') return;
     easingEditor.bezier = easingToBezier(parseInt(presetSel.value));
     easingEditor.apply(parseInt(presetSel.value));
     syncEasingInputs();
     drawEasingEditor();
+    refreshParticleTree();
+    refreshFunctionPanel();
   };
   pop.appendChild(presetSel);
   document.body.appendChild(pop);
@@ -106,7 +110,7 @@ function openEasingEditor(easing, applyFn, anchor) {
   drawEasingEditor();
   canvas.addEventListener('pointerdown', onEasingPointerDown);
   canvas.addEventListener('pointermove', onEasingPointerMove);
-  canvas.addEventListener('pointerup', () => { if (easingEditor) { easingEditor.dragging = -1; refreshParticleTree(); } });
+  canvas.addEventListener('pointerup', () => { if (easingEditor) { easingEditor.dragging = -1; refreshParticleTree(); refreshFunctionPanel(); } });
   setTimeout(() => document.addEventListener('pointerdown', onEasingDocPointerDown), 0);
 }
 
@@ -119,7 +123,7 @@ function syncEasingInputs() {
 }
 
 function onEasingDocPointerDown(e) {
-  if (easingEditor && !e.target.closest('#easing-editor')) { closeEasingEditor(); refreshParticleTree(); }
+  if (easingEditor && !e.target.closest('#easing-editor')) { closeEasingEditor(); refreshParticleTree(); refreshFunctionPanel(); }
 }
 
 function closeEasingEditor() {
@@ -132,6 +136,11 @@ function closeEasingEditor() {
 function cubicBezierX(t, x1, x2) {
   const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
   return ((ax * t + bx) * t + cx) * t;
+}
+
+function cubicBezierY(t, y1, y2) {
+  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  return ((ay * t + by) * t + cy) * t;
 }
 
 function drawEasingEditor() {
@@ -155,7 +164,7 @@ function drawEasingEditor() {
   for (let i = 0; i <= 48; i++) {
     const t = i / 48;
     const bx = pad + cubicBezierX(t, x1, x2) * (w - 2 * pad);
-    const by = pad + (1 - cubicBezier(t, x1, y1, x2, y2)) * (h - 2 * pad);
+    const by = pad + (1 - cubicBezierY(t, y1, y2)) * (h - 2 * pad);
     if (i === 0) ctx.moveTo(bx, by); else ctx.lineTo(bx, by);
   }
   ctx.stroke();

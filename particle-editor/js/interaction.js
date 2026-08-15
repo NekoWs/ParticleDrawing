@@ -14,6 +14,12 @@ function selectedGroupName() {
   return state.selectedGroup && state.groups[state.selectedGroup] ? state.selectedGroup : null;
 }
 
+// 当前选中是否包含派生粒子（基础属性只读）
+function selectionHasDerived() {
+  for (const id of state.selected) { const p = getParticle(id); if (isDerivedParticle(p)) return true; }
+  return false;
+}
+
 function rotateVector(v, axis, angle) {
   const c = Math.cos(angle), s = Math.sin(angle);
   const dot = v[0] * axis[0] + v[1] * axis[1] + v[2] * axis[2];
@@ -25,7 +31,18 @@ function rotateVector(v, axis, angle) {
 }
 
 function enterGrab(clientX, clientY) {
+  const fx = getFunction(state.selectedFunction);
+  if (fx) {
+    pushUndo();
+    const startDelta = fxPosDeltaAt(fx.id, Math.round(state.time));
+    const c = [fx.center[0] + startDelta[0], fx.center[1] + startDelta[1], fx.center[2] + startDelta[2]];
+    const pt = planePointAt(clientX, clientY);
+    modal = { type: 'fx-grab', fxId: fx.id, startDelta, centroid: c, axis: null, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: clientX, y: clientY }, y: c[1] };
+    controls.enabled = false;
+    return;
+  }
   if (state.selected.size === 0) return;
+  if (selectionHasDerived()) return;
   pushUndo();
   const origins = new Map();
   for (const p of currentSelected()) origins.set(p.id, currentVisual(p).pos.slice());
@@ -37,7 +54,15 @@ function enterGrab(clientX, clientY) {
 }
 
 function enterScale(clientX) {
+  const fx = getFunction(state.selectedFunction);
+  if (fx) {
+    pushUndo();
+    modal = { type: 'fx-scale', fxId: fx.id, startScale: fxScaleValueAt(fx.id, Math.round(state.time)), startClient: { x: clientX } };
+    controls.enabled = false;
+    return;
+  }
   if (state.selected.size === 0) return;
+  if (selectionHasDerived()) return;
   pushUndo();
   const origins = new Map();
   for (const p of currentSelected()) origins.set(p.id, currentVisual(p).scale);
@@ -76,8 +101,44 @@ function groupPosDeltaAt(gname, T) {
   return [0, 0, 0];
 }
 
+function fxPosDeltaAt(fxId, T) {
+  const tr = findFunctionTrack('pos', fxId);
+  if (tr && tr.kf.length > 0) return trackValueAt(tr, T, [0, 0, 0]);
+  return [0, 0, 0];
+}
+
+function fxRotationValueAt(fxId, T) {
+  const tr = findFunctionTrack('rot', fxId);
+  if (tr && tr.kf.length > 0) return trackValueAt(tr, T, [0, 0, 0]);
+  return [0, 0, 0];
+}
+
+function fxScaleValueAt(fxId, T) {
+  const tr = findFunctionTrack('scl', fxId);
+  if (tr && tr.kf.length > 0) return trackValueAt(tr, T, [1])[0];
+  return 1;
+}
+
 function enterRotate(clientX, clientY, axis) {
+  const fx = getFunction(state.selectedFunction);
+  if (fx) {
+    pushUndo();
+    const d = fxPosDeltaAt(fx.id, Math.round(state.time));
+    const c = [fx.center[0] + d[0], fx.center[1] + d[1], fx.center[2] + d[2]];
+    const axArr = AXIS_VECTORS[axis] || AXIS_VECTORS.Y;
+    const a = new THREE.Vector3(axArr[0], axArr[1], axArr[2]);
+    let u = new THREE.Vector3(1, 0, 0);
+    if (Math.abs(a.dot(u)) > 0.9) u.set(0, 1, 0);
+    u.crossVectors(a, u).normalize();
+    const v = new THREE.Vector3().crossVectors(a, u).normalize();
+    const p0 = rayOnAxisPlane(clientX, clientY, axArr, c);
+    const startAngle = p0 ? angleInBasis(p0, c, u, v) : 0;
+    modal = { type: 'fx-rotate', fxId: fx.id, centroid: c, axis: axArr, axisIndex: AXIS_INDEX[axis] ?? 1, startRot: fxRotationValueAt(fx.id, Math.round(state.time)), u, v, startAngle };
+    controls.enabled = false;
+    return;
+  }
   if (state.selected.size === 0) return;
+  if (selectionHasDerived()) return;
   const gname = selectedGroupName();
   pushUndo();
   const c = selectionCentroid();
@@ -119,12 +180,18 @@ function confirmModal() { modal = null; controls.enabled = true; }
 
 function updateGrab(clientX, clientY) {
   const m = modal;
-  if (!m || m.type !== 'grab') return;
+  if (!m || (m.type !== 'grab' && m.type !== 'fx-grab')) return;
+  const fxMode = m.type === 'fx-grab';
 
   // Y 轴移动：仅依赖鼠标 Y 位移，不依赖绘制平面求交（避免镜头水平时求交失败产生“空气墙”）
   if (m.axis === 'Y') {
     const dy = -(clientY - m.startClient.y) * 0.02;
-    if (m.groupName && state.captureKeyframes) {
+    if (fxMode) {
+      const d = m.startDelta || [0, 0, 0];
+      const ndy = shiftHeld ? snapValue(d[1] + dy) : (d[1] + dy);
+      const t = state.captureKeyframes ? Math.round(state.time) : 0;
+      setFunctionTrackValue(m.fxId, 'pos', 'op', t, [d[0], ndy, d[2]]);
+    } else if (m.groupName && state.captureKeyframes) {
       const d = m.startDelta || [0, 0, 0];
       const ndy = shiftHeld ? snapValue(d[1] + dy) : (d[1] + dy);
       setGroupTrackValue(m.groupName, 'pos', 'op', Math.round(state.time), [d[0], ndy, d[2]]);
@@ -153,7 +220,13 @@ function updateGrab(clientX, clientY) {
   if (m.axis === 'X') dz = 0;
   else if (m.axis === 'Z') dx = 0;
 
-  if (m.groupName && state.captureKeyframes) {
+  if (fxMode) {
+    const d = m.startDelta || [0, 0, 0];
+    const ndx = shiftHeld ? snapValue(d[0] + dx) : (d[0] + dx);
+    const ndz = shiftHeld ? snapValue(d[2] + dz) : (d[2] + dz);
+    const t = state.captureKeyframes ? Math.round(state.time) : 0;
+    setFunctionTrackValue(m.fxId, 'pos', 'op', t, [ndx, d[1], ndz]);
+  } else if (m.groupName && state.captureKeyframes) {
     const d = m.startDelta || [0, 0, 0];
     const ndx = shiftHeld ? snapValue(d[0] + dx) : (d[0] + dx);
     const ndz = shiftHeld ? snapValue(d[2] + dz) : (d[2] + dz);
@@ -173,18 +246,31 @@ function updateGrab(clientX, clientY) {
 
 function updateScale(clientX) {
   const m = modal;
-  if (!m || m.type !== 'scale') return;
+  if (!m || (m.type !== 'scale' && m.type !== 'fx-scale')) return;
   const factor = Math.max(0.02, 1 + (clientX - m.startClient.x) * 0.01);
+  if (m.type === 'fx-scale') {
+    const s = Math.max(0.02, m.startScale * factor);
+    const t = state.captureKeyframes ? Math.round(state.time) : 0;
+    setFunctionTrackValue(m.fxId, 'scl', 'set', t, [s]);
+    return;
+  }
   editParticles([...m.origins].map(([id, orig]) => [id, [orig * factor]]), 'scl');
 }
 
 function updateRotate(clientX, clientY) {
   const m = modal;
-  if (!m || (m.type !== 'rotate' && m.type !== 'group-rotate')) return;
+  if (!m || (m.type !== 'rotate' && m.type !== 'group-rotate' && m.type !== 'fx-rotate')) return;
   const p1 = rayOnAxisPlane(clientX, clientY, m.axis, m.centroid);
   if (!p1) return;
   let angle = angleInBasis(p1, m.centroid, m.u, m.v) - m.startAngle;
   if (shiftHeld) angle = Math.round(angle * RAD2DEG / ROT_SNAP) * ROT_SNAP * DEG2RAD;
+  if (m.type === 'fx-rotate') {
+    const newRot = m.startRot.slice();
+    newRot[m.axisIndex] = m.startRot[m.axisIndex] + angle * RAD2DEG;
+    const t = state.captureKeyframes ? Math.round(state.time) : 0;
+    setFunctionTrackValue(m.fxId, 'rot', 'set', t, newRot);
+    return;
+  }
   if (m.type === 'group-rotate') {
     const newRot = m.startRot.slice();
     newRot[m.axisIndex] = m.startRot[m.axisIndex] + angle * RAD2DEG;
@@ -215,7 +301,9 @@ function deleteSelected() {
   if (state.selected.size === 0) return;
   pushUndo();
   for (const id of state.selected) {
-    const idx = state.particles.findIndex(p => p.id === id);
+    const p = getParticle(id);
+    if (isDerivedParticle(p)) continue; // 派生粒子不可单独删除
+    const idx = state.particles.findIndex(x => x.id === id);
     if (idx >= 0) state.particles.splice(idx, 1);
     state.tracks = state.tracks.filter(tr => !tr.ids.includes(id));
   }
@@ -225,6 +313,7 @@ function deleteSelected() {
   }
   state.selected.clear();
   state.selectedGroup = null;
+  state.selectedFunction = null;
   rebuildPoints();
   refreshParticleTree();
 }
@@ -233,6 +322,7 @@ function selectAll() {
   if (state.selected.size === state.particles.length && state.particles.length > 0) state.selected.clear();
   else state.selected = new Set(state.particles.map(p => p.id));
   state.selectedGroup = null;
+  state.selectedFunction = null;
   rebuildPoints();
 }
 
@@ -287,8 +377,10 @@ function pasteClipboard() {
       });
     }
     state.selectedGroup = newGroupName;
+    state.selectedFunction = null;
   } else {
     state.selectedGroup = null;
+    state.selectedFunction = null;
   }
   state.selected = new Set(newIds);
   rebuildPoints();
@@ -296,8 +388,9 @@ function pasteClipboard() {
 }
 
 function hitGizmoAxis(clientX, clientY) {
-  const c = selectionCentroid();
-  if (!c) return null;
+  if (!gizmoGroup.visible) return null;
+  // 使用 gizmo 实际显示位置（函数对象在 center，粒子/组在质心），与 updateGizmo 一致
+  const c = [gizmoGroup.position.x, gizmoGroup.position.y, gizmoGroup.position.z];
   const rect = renderer.domElement.getBoundingClientRect();
   const px = clientX - rect.left, py = clientY - rect.top;
   const scale = gizmoGroup.scale.x || 1;
@@ -341,8 +434,19 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
   if (modal) { confirmModal(); return; }
 
   if (state.tool === 'select') {
-    const axis = hitGizmoAxis(ev.clientX, ev.clientY);
+    const derived = selectionHasDerived() && !state.selectedFunction;
+    const axis = derived ? null : hitGizmoAxis(ev.clientX, ev.clientY);
     if (axis) {
+      const fx = getFunction(state.selectedFunction);
+      if (fx) {
+        pushUndo();
+        const startDelta = fxPosDeltaAt(fx.id, Math.round(state.time));
+        const c = [fx.center[0] + startDelta[0], fx.center[1] + startDelta[1], fx.center[2] + startDelta[2]];
+        const pt = planePointAt(ev.clientX, ev.clientY);
+        modal = { type: 'fx-grab', fxId: fx.id, startDelta, centroid: c, axis, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: ev.clientX, y: ev.clientY }, y: c[1] };
+        controls.enabled = false;
+        return;
+      }
       pushUndo();
       const origins = new Map();
       for (const p of currentSelected()) origins.set(p.id, currentVisual(p).pos.slice());
@@ -353,7 +457,7 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
       controls.enabled = false;
       return;
     }
-    const rotAxis = hitGizmoRotate(ev.clientX, ev.clientY);
+    const rotAxis = derived ? null : hitGizmoRotate(ev.clientX, ev.clientY);
     if (rotAxis) {
       enterRotate(ev.clientX, ev.clientY, rotAxis);
       return;
@@ -365,6 +469,7 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
         if (ev.shiftKey) { state.selected.has(p.id) ? state.selected.delete(p.id) : state.selected.add(p.id); }
         else if (!state.selected.has(p.id)) { state.selected.clear(); state.selected.add(p.id); }
         state.selectedGroup = null;
+        state.selectedFunction = null;
         rebuildPoints();
         enterGrab(ev.clientX, ev.clientY);
         return;
@@ -420,9 +525,9 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
   lastMouse.x = ev.clientX; lastMouse.y = ev.clientY;
 
   if (modal) {
-    if (modal.type === 'grab') updateGrab(ev.clientX, ev.clientY);
-    else if (modal.type === 'scale') updateScale(ev.clientX);
-    else if (modal.type === 'rotate' || modal.type === 'group-rotate') updateRotate(ev.clientX, ev.clientY);
+    if (modal.type === 'grab' || modal.type === 'fx-grab') updateGrab(ev.clientX, ev.clientY);
+    else if (modal.type === 'scale' || modal.type === 'fx-scale') updateScale(ev.clientX);
+    else if (modal.type === 'rotate' || modal.type === 'group-rotate' || modal.type === 'fx-rotate') updateRotate(ev.clientX, ev.clientY);
     return;
   }
   if (boxSel) { boxSel.x1 = ev.clientX; boxSel.y1 = ev.clientY; updateBoxOverlay(); return; }
@@ -521,19 +626,19 @@ window.addEventListener('keydown', (ev) => {
   if (ev.ctrlKey && k === 'o') { ev.preventDefault(); openFile(); return; }
   if (ev.ctrlKey && k === 'g') { ev.preventDefault(); createGroup(); return; }
   if (ev.ctrlKey && k === 'a') { ev.preventDefault(); selectAll(); return; }
-  if (ev.ctrlKey && k === 'd') { ev.preventDefault(); state.selected.clear(); state.selectedGroup = null; rebuildPoints(); return; }
+  if (ev.ctrlKey && k === 'd') { ev.preventDefault(); state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null; rebuildPoints(); return; }
   if (ev.ctrlKey && k === 'c') { ev.preventDefault(); copySelected(); return; }
   if (ev.ctrlKey && k === 'v') { ev.preventDefault(); pasteClipboard(); return; }
   if (k === ' ') { ev.preventDefault(); togglePlay(); return; }
   if (modal) {
     if (k === 'escape') cancelModal();
     else if (k === 'enter') confirmModal();
-    else if (modal.type === 'grab' && (k === 'x' || k === 'y' || k === 'z')) modal.axis = modal.axis === k.toUpperCase() ? null : k.toUpperCase();
+    else if ((modal.type === 'grab' || modal.type === 'fx-grab') && (k === 'x' || k === 'y' || k === 'z')) modal.axis = modal.axis === k.toUpperCase() ? null : k.toUpperCase();
     return;
   }
   if (k === 's') enterScale(lastMouse.x);
   else if (k === 'delete') deleteSelected();
-  else if (k === 'escape') { state.selected.clear(); state.selectedGroup = null; rebuildPoints(); }
+  else if (k === 'escape') { state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null; rebuildPoints(); }
 });
 
 function updateBoxOverlay() {
@@ -559,4 +664,5 @@ function applyBoxSelection() {
   if (boxSel.shift) for (const id of sel) state.selected.add(id);
   else state.selected = sel;
   state.selectedGroup = null;
+  state.selectedFunction = null;
 }

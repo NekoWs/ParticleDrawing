@@ -192,15 +192,19 @@ class AnimationPlayer(
         }
     }
 
-    /** spawn 后应用 t=0 的 op 轨道初始增量（无缓动），保证粒子初始位置与编辑器一致。 */
+    /** spawn 后应用 t=0 的关键帧初始值（无缓动），保证粒子初始状态与编辑器一致、避免首帧闪烁。 */
     private fun applyInitialStates(players: Collection<ServerPlayer>) {
         for (track in animation.tracks) {
-            if (track.mode != AnimTrack.Mode.OP) continue
-            // 单关键帧位置轨道：常量增量已直接并入 spawn 位置，无需再次下发
-            if (track.property == AnimTrack.Property.POSITION && track.keyframes.size <= 1) continue
             val kf0 = track.keyframes.firstOrNull() ?: continue
             if (kf0.tick != 0) continue
-            applyValue(track, kf0.value, kf0.easing, 0, players)
+            if (track.mode == AnimTrack.Mode.OP) {
+                // 单关键帧位置轨道：常量增量已直接并入 spawn 位置，无需再次下发
+                if (track.property == AnimTrack.Property.POSITION && track.keyframes.size <= 1) continue
+                applyValue(track, kf0.value, kf0.easing, 0, players)
+            } else {
+                // set 轨道：t=0 初始值立即应用（duration=0），避免首帧出现错误位置/属性
+                applyValue(track, kf0.value, kf0.easing, 0, players)
+            }
         }
     }
 

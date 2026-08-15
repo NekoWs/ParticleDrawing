@@ -27,7 +27,15 @@ function selectionCentroid() {
 }
 
 function updateGizmo() {
-  const c = selectionCentroid();
+  let c = null;
+  const fx = getFunction(state.selectedFunction);
+  if (fx) {
+    // 函数对象：gizmo 跟随整体位置（center + 当前 pos 增量），随拖动/时间轴移动
+    const d = fxPosDeltaAt(fx.id, state.time);
+    c = [fx.center[0] + d[0], fx.center[1] + d[1], fx.center[2] + d[2]];
+  } else if (!selectionHasDerived()) {
+    c = selectionCentroid();
+  }
   if (!c) { gizmoGroup.visible = false; return; }
   gizmoGroup.visible = true;
   gizmoGroup.position.set(c[0], c[1], c[2]);
