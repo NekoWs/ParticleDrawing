@@ -48,7 +48,7 @@ const PARTICLE_TRACK_DEFS = [
 const DEFAULT_EASING = 3;
 const SNAP_STEP = 1.0;
 const ROT_SNAP = Math.PI / 4; // 按住 Shift 时旋转吸附的步长（45°）
-const PARTICLE_SIZE_FACTOR = 0.25; // 编辑器渲染缩放（与游戏内 quad 的可见点大小一致）
+const PARTICLE_SIZE_FACTOR = 0.5; // 编辑器渲染缩放（与游戏内 quad 的可见点大小一致）
 
 // 组的属性（轨道级）：位置/旋转/颜色/缩放，支持「设置(set)」或「操作(op)」两种模式
 const GROUP_PROP_DEFS = [
@@ -80,6 +80,7 @@ const state = {
   playing: false,
   playSpeed: 1,
   defaultEasing: DEFAULT_EASING,
+  dirty: false,
 };
 
 function nextId() {
@@ -235,36 +236,30 @@ grid.position.y = 0;
 scene.add(grid);
 scene.add(new THREE.AxesHelper(4));
 
-// 柔和圆点贴图（2D 广告牌，始终朝向摄像头，匹配游戏内 DOT 粒子）
+// 方形贴图（2D 广告牌，始终朝向摄像头）
 function makeSquareTexture() {
   const c = document.createElement('canvas');
-  c.width = c.height = 64;
+  c.width = c.height = 16;
   const ctx = c.getContext('2d');
-  const g = ctx.createRadialGradient(32, 32, 4, 32, 32, 31);
-  g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.65, 'rgba(255,255,255,1)');
-  g.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, 16, 16);
   const tex = new THREE.CanvasTexture(c);
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.magFilter = THREE.NearestFilter;
   return tex;
 }
 
-// 选中描边用圆环贴图（中心透明，露出粒子本色，形状与粒子一致）
+// 选中描边用方框贴图（中心透明，露出粒子本色，形状与粒子一致）
 function makeRingTexture() {
   const c = document.createElement('canvas');
-  c.width = c.height = 64;
+  c.width = c.height = 32;
   const ctx = c.getContext('2d');
   ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.arc(32, 32, 28, 0, Math.PI * 2);
-  ctx.stroke();
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, 30, 30);
   const tex = new THREE.CanvasTexture(c);
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.magFilter = THREE.NearestFilter;
   return tex;
 }
 
@@ -679,7 +674,8 @@ function findGroupTrack(prop, groupName) {
 function setGroupTrackValue(groupName, prop, mode, time, value) {
   let tr = findGroupTrack(prop, groupName);
   if (!tr) {
-    tr = { pr: prop, m: mode, ids: ['g:' + groupName], kf: [[0, zeroArray(prop).slice(), state.defaultEasing]] };
+    const base = mode === 'op' ? zeroArray(prop).slice() : groupCentroidValue(groupName, prop);
+    tr = { pr: prop, m: mode, ids: ['g:' + groupName], kf: [[0, base, state.defaultEasing]] };
     state.tracks.push(tr);
   } else {
     tr.m = mode;
@@ -831,6 +827,7 @@ function pushUndo() {
   undoStack.push(snapshot());
   if (undoStack.length > 100) undoStack.shift();
   redoStack.length = 0;
+  state.dirty = true;
 }
 
 function popUndo() { undoStack.pop(); }
@@ -843,12 +840,14 @@ function undo() {
   if (undoStack.length === 0) return;
   redoStack.push(snapshot());
   restore(undoStack.pop());
+  state.dirty = true;
 }
 
 function redo() {
   if (redoStack.length === 0) return;
   undoStack.push(snapshot());
   restore(redoStack.pop());
+  state.dirty = true;
 }
 
 /* =========================================================================
@@ -911,8 +910,8 @@ function triggerDrawPlanePulse() {
   const def = PLANES[state.drawPlane] || PLANES.XZ;
   const off = parseFloat(document.getElementById('height-y').value) || 0;
   const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(1, 1),
-    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide })
+    new THREE.CircleGeometry(1, 64),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide })
   );
   if (state.drawPlane === 'XZ') mesh.rotation.x = -Math.PI / 2;
   else if (state.drawPlane === 'YZ') mesh.rotation.y = Math.PI / 2;
@@ -923,7 +922,7 @@ function triggerDrawPlanePulse() {
   );
   mesh.renderOrder = 5;
   scene.add(mesh);
-  planePulse = { mesh, t0: performance.now(), dur: 600 };
+  planePulse = { mesh, t0: performance.now(), dur: 400 };
 }
 
 function planePointAt(clientX, clientY) {
@@ -1018,7 +1017,8 @@ function enterGrab(clientX, clientY) {
   for (const p of currentSelected()) origins.set(p.id, currentVisual(p).pos.slice());
   const c = selectionCentroid();
   const pt = planePointAt(clientX, clientY);
-  modal = { type: 'grab', groupName: selectedGroupName(), origins, axis: null, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: clientX, y: clientY }, y: c ? c[1] : 0 };
+  const gname = selectedGroupName();
+  modal = { type: 'grab', groupName: gname, startDelta: gname ? groupPosDeltaAt(gname, Math.round(state.time)) : null, origins, axis: null, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: clientX, y: clientY }, y: c ? c[1] : 0 };
   controls.enabled = false;
 }
 
@@ -1056,6 +1056,12 @@ function groupRotationValueAt(gname, T) {
   return [0, 0, 0];
 }
 
+function groupPosDeltaAt(gname, T) {
+  const tr = findGroupTrack('pos', gname);
+  if (tr && tr.kf.length > 0) return trackValueAt(tr, T, [0, 0, 0]);
+  return [0, 0, 0];
+}
+
 function enterRotate(clientX, clientY, axis) {
   if (state.selected.size === 0) return;
   const gname = selectedGroupName();
@@ -1089,7 +1095,8 @@ function enterRotate(clientX, clientY, axis) {
 function cancelModal() {
   if (!modal) return;
   if (modal.type === 'grab') {
-    for (const [id, orig] of modal.origins) editBaseValue([id], 'pos', orig);
+    if (modal.groupName) setGroupTrackValue(modal.groupName, 'pos', 'op', Math.round(state.time), modal.startDelta || [0, 0, 0]);
+    else for (const [id, orig] of modal.origins) editBaseValue([id], 'pos', orig);
   } else if (modal.type === 'scale') {
     for (const [id, orig] of modal.origins) editBaseValue([id], 'scl', [orig]);
   } else if (modal.type === 'rotate') {
@@ -1125,10 +1132,15 @@ function updateGrab(clientX, clientY) {
   const sdx = doSnap ? Math.round(dx / SNAP_STEP) * SNAP_STEP : dx;
   const sdy = doSnap ? Math.round(dy / SNAP_STEP) * SNAP_STEP : dy;
   const sdz = doSnap ? Math.round(dz / SNAP_STEP) * SNAP_STEP : dz;
-  for (const [id, orig] of m.origins) {
-    editBaseValue([id], 'pos', [orig[0] + sdx, orig[1] + sdy, orig[2] + sdz]);
+  if (m.groupName) {
+    const d = m.startDelta || [0, 0, 0];
+    setGroupTrackValue(m.groupName, 'pos', 'op', Math.round(state.time), [d[0] + sdx, d[1] + sdy, d[2] + sdz]);
+  } else {
+    for (const [id, orig] of m.origins) {
+      editBaseValue([id], 'pos', [orig[0] + sdx, orig[1] + sdy, orig[2] + sdz]);
+    }
+    rebuildPoints();
   }
-  rebuildPoints();
 }
 
 function updateScale(clientX) {
@@ -1188,23 +1200,59 @@ function selectAll() {
 
 let clipboard = null;
 function copySelected() {
+  const gname = selectedGroupName();
+  if (gname) {
+    const members = (state.groups[gname] || []).map(getParticle).filter(Boolean);
+    if (members.length === 0) return;
+    const memberIds = new Set(members.map(m => m.id));
+    const items = members.map(p => ({
+      id: p.id, style: p.style, color: p.color.slice(), scale: p.scale, glow: p.glow,
+      lightLevel: p.lightLevel, pos: currentVisual(p).pos.slice(), vel: (p.vel || [0, 0, 0]).slice(),
+    }));
+    const tracks = state.tracks
+      .filter(tr => tr.ids.some(id => id === 'g:' + gname || memberIds.has(id)))
+      .map(tr => ({ pr: tr.pr, m: tr.m, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], k[1].slice(), k[2]]) }));
+    clipboard = { type: 'group', groupName: gname, items, tracks };
+    return;
+  }
   const sel = currentSelected();
   if (sel.length === 0) return;
-  clipboard = sel.map(p => ({
-    style: p.style, color: p.color.slice(), scale: p.scale, glow: p.glow,
-    lightLevel: p.lightLevel, pos: currentVisual(p).pos.slice(), vel: (p.vel || [0, 0, 0]).slice(),
-  }));
+  clipboard = {
+    type: 'particles',
+    items: sel.map(p => ({
+      id: p.id, style: p.style, color: p.color.slice(), scale: p.scale, glow: p.glow,
+      lightLevel: p.lightLevel, pos: currentVisual(p).pos.slice(), vel: (p.vel || [0, 0, 0]).slice(),
+    })),
+  };
 }
 function pasteClipboard() {
-  if (!clipboard || clipboard.length === 0) return;
+  if (!clipboard || !clipboard.items || clipboard.items.length === 0) return;
   pushUndo();
+  const idMap = {};
   const newIds = [];
-  for (const item of clipboard) {
-    const p = addParticle({ ...item, pos: [item.pos[0] + 1, item.pos[1], item.pos[2] + 1], color: item.color.slice(), vel: item.vel.slice() });
+  for (const item of clipboard.items) {
+    const p = addParticle({
+      style: item.style, color: item.color.slice(), scale: item.scale, glow: item.glow,
+      lightLevel: item.lightLevel, pos: [item.pos[0] + 1, item.pos[1], item.pos[2] + 1], vel: item.vel.slice(),
+    });
+    idMap[item.id] = p.id;
     newIds.push(p.id);
   }
+  if (clipboard.type === 'group') {
+    const newGroupName = nextGroupName();
+    state.groups[newGroupName] = newIds.slice();
+    for (const tr of clipboard.tracks) {
+      state.tracks.push({
+        pr: tr.pr, m: tr.m,
+        ids: tr.ids.map(id => id.startsWith('g:') ? 'g:' + newGroupName : (idMap[id] || id)),
+        kf: tr.kf.map(k => [k[0], k[1].slice(), k[2]]),
+      });
+    }
+    state.selectedGroup = newGroupName;
+  } else {
+    state.selectedGroup = null;
+  }
   state.selected = new Set(newIds);
-  state.selectedGroup = null;
   rebuildPoints();
   refreshParticleTree();
 }
@@ -1262,7 +1310,8 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
       for (const p of currentSelected()) origins.set(p.id, currentVisual(p).pos.slice());
       const c = selectionCentroid();
       const pt = planePointAt(ev.clientX, ev.clientY);
-      modal = { type: 'grab', groupName: selectedGroupName(), origins, axis, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: ev.clientX, y: ev.clientY }, y: c ? c[1] : 0 };
+      const gname = selectedGroupName();
+      modal = { type: 'grab', groupName: gname, startDelta: gname ? groupPosDeltaAt(gname, Math.round(state.time)) : null, origins, axis, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: ev.clientX, y: ev.clientY }, y: c ? c[1] : 0 };
       controls.enabled = false;
       return;
     }
@@ -1411,6 +1460,7 @@ window.addEventListener('keydown', (ev) => {
   // 全局快捷键：无论焦点在何处都生效
   if (ev.ctrlKey && k === 'z') { ev.preventDefault(); if (ev.shiftKey) redo(); else undo(); return; }
   if (ev.ctrlKey && k === 'y') { ev.preventDefault(); redo(); return; }
+  if (ev.ctrlKey && k === 'n') { ev.preventDefault(); newFile(); return; }
   if (ev.ctrlKey && k === 's') { ev.preventDefault(); saveFile(); return; }
   if (ev.ctrlKey && k === 'o') { ev.preventDefault(); openFile(); return; }
   if (ev.ctrlKey && k === 'g') { ev.preventDefault(); createGroup(); return; }
@@ -1637,6 +1687,11 @@ function createGroup() {
   if (state.selected.size < 1) { alert('请先选中粒子'); return; }
   pushUndo();
   const name = nextGroupName();
+  const idSet = new Set(state.selected);
+  for (const g in state.groups) {
+    state.groups[g] = state.groups[g].filter(id => !idSet.has(id));
+    if (state.groups[g].length === 0) delete state.groups[g];
+  }
   state.groups[name] = [...state.selected];
   state.selectedGroup = name;
   refreshParticleTree();
@@ -1713,6 +1768,13 @@ function renderParticleNode(p) {
   const style = document.createElement('span');
   style.className = 'pstyle'; style.textContent = p.style;
   head.appendChild(arrow); head.appendChild(pid); head.appendChild(style);
+  const trackCount = state.tracks.filter(tr => tr.ids.length === 1 && tr.ids[0] === p.id).length;
+  if (trackCount > 0) {
+    const cnt = document.createElement('span');
+    cnt.className = 'ptree-track-count';
+    cnt.textContent = trackCount + ' 个时间轴';
+    head.appendChild(cnt);
+  }
   head.onclick = () => {
     if (evShift()) {
       const anchorIdx = treeAnchorId ? state.particles.findIndex(x => x.id === treeAnchorId) : -1;
@@ -2080,6 +2142,47 @@ function groupCentroidValue(name, prop) {
     for (let i = 0; i < sum.length; i++) sum[i] += v[i];
   }
   return sum.map(v => r3(v / members.length));
+}
+
+// 组当前视觉值的质心（含动画）
+function groupCurrentCentroid(name, prop) {
+  const members = (state.groups[name] || []).map(getParticle).filter(Boolean);
+  if (members.length === 0) return zeroArray(prop);
+  const sum = zeroArray(prop);
+  for (const m of members) {
+    const v = particleValueAt(m, prop, state.time);
+    for (let i = 0; i < sum.length; i++) sum[i] += v[i];
+  }
+  return sum.map(v => r3(v / members.length));
+}
+
+// 捕获关键帧：优先写入组轨道，仅对非组粒子写逐粒子关键帧
+function captureKeyframes() {
+  const ids = [...state.selected];
+  if (ids.length === 0) { alert('请先选择粒子'); return; }
+  pushUndo();
+  const t = Math.round(state.time);
+  const gname = selectedGroupName();
+  if (gname) {
+    const basePos = groupCentroidValue(gname, 'pos');
+    const curPos = groupCurrentCentroid(gname, 'pos');
+    const delta = [curPos[0] - basePos[0], curPos[1] - basePos[1], curPos[2] - basePos[2]];
+    if (delta.some(d => Math.abs(d) > 1e-9)) setGroupTrackValue(gname, 'pos', 'op', t, delta);
+    const rot = groupRotationValueAt(gname, t);
+    if (rot.some(r => Math.abs(r) > 1e-9)) setGroupTrackValue(gname, 'rot', 'op', t, rot);
+    setGroupTrackValue(gname, 'col', 'set', t, groupCurrentCentroid(gname, 'col'));
+    setGroupTrackValue(gname, 'scl', 'set', t, groupCurrentCentroid(gname, 'scl'));
+  } else {
+    for (const id of ids) {
+      const p = getParticle(id);
+      if (!p) continue;
+      const v = currentVisual(p);
+      setValueAtTime([id], 'pos', v.pos);
+      setValueAtTime([id], 'col', v.color);
+      setValueAtTime([id], 'scl', [v.scale]);
+      setValueAtTime([id], 'vel', p.vel || [0, 0, 0]);
+    }
+  }
 }
 
 function renderGroupKfRow(name, def, mode, kf) {
@@ -2549,7 +2652,7 @@ function hexToRgb(hex) {
  * ======================================================================= */
 
 const TL_PX_PER_TICK = 4;
-let timelineViewStart = 0;
+let timelineViewStart = -25;
 
 function drawTimeline() {
   const canvas = document.getElementById('timeline');
@@ -2628,9 +2731,12 @@ function importJSON(obj) {
     kf: (tr.kf || []).map(k => [k[0], k[1].slice(), Array.isArray(k[2]) ? k[2].slice() : (Number.isInteger(k[2]) ? k[2] : DEFAULT_EASING)]),
   }));
   state.loop = !!obj.loop;
+  document.getElementById('tl-loop').checked = state.loop;
+  updateLoopIndicator();
   state.selected.clear(); state.selectedGroup = null; state.time = 0;
   state.expandedParticles.clear(); state.expandedProps.clear();
   updateTimeUI(); rebuildPoints(); refreshParticleTree();
+  state.dirty = false;
 }
 
 function download(json, filename) {
@@ -2642,14 +2748,27 @@ function download(json, filename) {
   URL.revokeObjectURL(a.href);
 }
 
+// 从 File 对象载入动画（用于文件选择与拖拽打开）
+async function loadFile(file) {
+  const text = await file.text();
+  importJSON(JSON.parse(text));
+  state.name = file.name.replace(/\.json$/i, '');
+  state.dirty = false;
+  updateTopbarTitle();
+}
+
+function updateTopbarTitle() {
+  const el = document.getElementById('topbar-title');
+  if (el) el.textContent = state.name + '.json';
+}
+
 async function openFile() {
+  if (!confirmDiscardChanges()) return;
   if (window.showOpenFilePicker) {
     try {
       const [h] = await window.showOpenFilePicker({ types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }] });
       state.fileHandle = h;
-      const f = await h.getFile();
-      importJSON(JSON.parse(await f.text()));
-      state.name = f.name.replace(/\.json$/i, '');
+      await loadFile(await h.getFile());
       return;
     } catch (e) { /* 取消或失败则回退 */ }
   }
@@ -2657,15 +2776,18 @@ async function openFile() {
 }
 
 async function saveFile() {
-  const json = JSON.stringify(exportJSON());
-  if (state.fileHandle && state.fileHandle.createWritable) {
-    try {
-      const w = await state.fileHandle.createWritable();
-      await w.write(json); await w.close();
-      return;
-    } catch (e) { /* 回退到下载 */ }
+  if (!state.fileHandle || !state.fileHandle.createWritable) {
+    await saveFileAs();
+    return;
   }
-  download(json, state.name + '.json');
+  const json = JSON.stringify(exportJSON());
+  try {
+    const w = await state.fileHandle.createWritable();
+    await w.write(json); await w.close();
+    state.dirty = false;
+  } catch (e) {
+    await saveFileAs();
+  }
 }
 
 async function saveFileAs() {
@@ -2676,10 +2798,37 @@ async function saveFileAs() {
       state.fileHandle = h;
       const w = await h.createWritable();
       await w.write(json); await w.close();
+      state.dirty = false;
       return;
     } catch (e) { /* 取消或失败则回退 */ }
   }
   download(json, (state.name || 'my_animation') + '.json');
+  state.dirty = false;
+}
+
+// 新建空白动画
+function newFile() {
+  if (!confirmDiscardChanges()) return;
+  pushUndo();
+  state.particles = []; state.tracks = []; state.groups = {};
+  state.selected.clear(); state.selectedGroup = null;
+  state.expandedParticles.clear(); state.expandedProps.clear();
+  state.time = 0;
+  state.name = 'my_animation';
+  state.fileHandle = null;
+  state.loop = true;
+  document.getElementById('tl-loop').checked = true;
+  updateTimeUI(); rebuildPoints(); refreshParticleTree();
+  state.dirty = false;
+  updateTopbarTitle();
+}
+
+// 若有未保存更改，弹出保存确认。返回是否继续操作。
+function confirmDiscardChanges() {
+  if (!state.dirty) return true;
+  const r = confirm('有未保存的更改，是否保存？\n\n「确定」= 保存后继续\n「取消」= 不保存直接继续');
+  if (r) saveFile();
+  return true;
 }
 
 /* =========================================================================
@@ -2725,11 +2874,10 @@ function initUI() {
     menu.addEventListener('mouseleave', () => menu.classList.remove('open'));
   });
   const closeMenus = () => document.querySelectorAll('.menu').forEach(m => m.classList.remove('open'));
+  document.getElementById('btn-new').addEventListener('click', () => { closeMenus(); newFile(); });
   document.getElementById('btn-open').addEventListener('click', () => { closeMenus(); openFile(); });
   document.getElementById('btn-save').addEventListener('click', () => { closeMenus(); saveFile(); });
   document.getElementById('btn-saveas').addEventListener('click', () => { closeMenus(); saveFileAs(); });
-  document.getElementById('btn-export').addEventListener('click', () => { closeMenus(); download(JSON.stringify(exportJSON()), (state.name || 'my_animation') + '.json'); });
-  document.getElementById('btn-import').addEventListener('click', () => { closeMenus(); document.getElementById('file-import').click(); });
   document.getElementById('btn-clear').addEventListener('click', () => { closeMenus(); clearAll(); });
   document.getElementById('btn-undo').addEventListener('click', () => { closeMenus(); undo(); });
   document.getElementById('btn-redo').addEventListener('click', () => { closeMenus(); redo(); });
@@ -2773,40 +2921,14 @@ function initUI() {
   document.getElementById('tl-speed').addEventListener('change', (ev) => { state.playSpeed = Math.max(0.1, parseFloat(ev.target.value) || 1); });
   document.getElementById('tl-time').addEventListener('input', (ev) => { state.time = parseFloat(ev.target.value) || 0; updateTimeUI(); rebuildPoints(); });
   document.getElementById('tl-loop').addEventListener('change', (ev) => { state.loop = ev.target.checked; updateLoopIndicator(); });
-  document.getElementById('btn-capture').addEventListener('click', () => {
-    const ids = [...state.selected];
-    if (ids.length === 0) { alert('请先选择粒子'); return; }
-    pushUndo();
-    for (const id of ids) {
-      const p = getParticle(id);
-      if (!p) continue;
-      const v = currentVisual(p);
-      setValueAtTime([id], 'pos', v.pos);
-      setValueAtTime([id], 'col', v.color);
-      setValueAtTime([id], 'scl', [v.scale]);
-      setValueAtTime([id], 'vel', p.vel || [0, 0, 0]);
-    }
-  });
-  document.getElementById('btn-kf-add').addEventListener('click', () => {
-    const ids = [...state.selected];
-    if (ids.length === 0) { alert('请先选择粒子'); return; }
-    pushUndo();
-    for (const id of ids) {
-      const p = getParticle(id);
-      if (!p) continue;
-      const v = currentVisual(p);
-      setValueAtTime([id], 'pos', v.pos);
-      setValueAtTime([id], 'col', v.color);
-      setValueAtTime([id], 'scl', [v.scale]);
-      setValueAtTime([id], 'vel', p.vel || [0, 0, 0]);
-    }
-  });
+  document.getElementById('btn-capture').addEventListener('click', captureKeyframes);
 
   // 文件导入
   document.getElementById('file-import').addEventListener('change', (ev) => {
     const f = ev.target.files[0];
     if (!f) return;
-    f.text().then(txt => { importJSON(JSON.parse(txt)); state.name = f.name.replace(/\.json$/i, ''); });
+    state.fileHandle = null;
+    loadFile(f);
     ev.target.value = '';
   });
 
@@ -2954,8 +3076,8 @@ function animate(now) {
       planePulse.mesh.material.dispose();
       planePulse = null;
     } else {
-      planePulse.mesh.scale.setScalar(0.5 + t * 20);
-      planePulse.mesh.material.opacity = 0.35 * (1 - t);
+      planePulse.mesh.scale.setScalar(0.5 + t * 40);
+      planePulse.mesh.material.opacity = 0.55 * (1 - t);
     }
   }
 
@@ -2976,3 +3098,24 @@ function animate(now) {
 
 initUI();
 requestAnimationFrame(animate);
+
+// 关闭页面前若未保存则提示
+window.addEventListener('beforeunload', (ev) => {
+  if (state.dirty) {
+    ev.preventDefault();
+    ev.returnValue = '';
+  }
+});
+
+// 拖拽文件到窗口即可打开
+(function setupDragDrop() {
+  window.addEventListener('dragover', (ev) => { ev.preventDefault(); });
+  window.addEventListener('drop', (ev) => {
+    ev.preventDefault();
+    const file = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+    if (!file) return;
+    if (!confirmDiscardChanges()) return;
+    state.fileHandle = null;
+    loadFile(file);
+  });
+})();

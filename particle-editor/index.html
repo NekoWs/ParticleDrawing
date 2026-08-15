@@ -12,12 +12,10 @@
       <div class="menu">
         <button class="menu-btn" data-menu="file">文件</button>
         <div class="dropdown" id="menu-file">
+          <button id="btn-new" class="dd-item"><span>新建</span><kbd>Ctrl+N</kbd></button>
           <button id="btn-open" class="dd-item"><span>打开…</span><kbd>Ctrl+O</kbd></button>
           <button id="btn-save" class="dd-item"><span>保存</span><kbd>Ctrl+S</kbd></button>
           <button id="btn-saveas" class="dd-item"><span>另存为…</span></button>
-          <div class="dd-sep"></div>
-          <button id="btn-export" class="dd-item"><span>导出 JSON</span></button>
-          <button id="btn-import" class="dd-item"><span>导入 JSON</span></button>
           <div class="dd-sep"></div>
           <button id="btn-clear" class="dd-item danger"><span>清空</span></button>
         </div>
@@ -42,6 +40,7 @@
         </div>
       </div>
     </nav>
+    <span id="topbar-title">my_animation</span>
   </header>
 
   <main class="layout">
@@ -132,12 +131,6 @@
         <label class="row">X <input id="prop-posx" type="number" step="0.1" value="0" /></label>
         <label class="row">Y <input id="prop-posy" type="number" step="0.1" value="0" /></label>
         <label class="row">Z <input id="prop-posz" type="number" step="0.1" value="0" /></label>
-      </details>
-
-      <details open>
-        <summary>关键帧</summary>
-        <button id="btn-kf-add" class="btn">为选中粒子添加关键帧</button>
-        <p class="hint">在当前时间捕获选中粒子的位置/颜色/缩放/速度</p>
       </details>
     </aside>
   </main>
