@@ -10,9 +10,7 @@ import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.event.RegisterCommandsEvent
 import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.animation.AnimationLoader
-import work.nekow.particledrawing.animation.AnimationPlayer
-import work.nekow.particledrawing.animation.AnimationPlayerManager
-import work.nekow.particledrawing.core.server.ServerParticleEngine
+import work.nekow.particledrawing.animation.ServerAnimationManager
 import work.nekow.particledrawing.util.ParticleUtils
 
 /**
@@ -38,6 +36,9 @@ object ParticleDrawCommands {
                 .then(Commands.literal("play")
                     .then(Commands.argument("name", StringArgumentType.string()).executes(::playAnimation)))
                 .then(Commands.literal("stop").executes(::stopAnimations))
+                .then(Commands.literal("var")
+                    .then(Commands.argument("name", StringArgumentType.string())
+                        .then(Commands.argument("value", StringArgumentType.greedyString()).executes(::updateVariable))))
         )
     }
 
@@ -66,7 +67,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * /test play <name> —— 在玩家面前播放动画。
+     * /test play <name> —— 在玩家面前播放动画（客户端本地播放）。
      */
     private fun playAnimation(ctx: CommandContext<CommandSourceStack>): Int {
         val name = StringArgumentType.getString(ctx, "name")
@@ -75,22 +76,15 @@ object ParticleDrawCommands {
                 ctx.source.sendFailure(Component.literal("未找到动画: $name"))
                 return 0
             }
-        val animation = try {
-            AnimationLoader.parse(json)
-        } catch (e: Exception) {
-            ctx.source.sendFailure(Component.literal("解析失败: ${e.message}"))
-            return 0
-        }
 
         val level = ctx.source.level
         val dim = ParticleUtils.dimensionUUID(level)
-        val engine = ServerParticleEngine.getOrCreate(dim)
         val player = ctx.source.playerOrException
         val origin = player.position().add(player.lookAngle.scale(3.0))
 
-        AnimationPlayerManager.start(dim, AnimationPlayer(engine, origin, animation, level.players()))
+        ServerAnimationManager.play(dim, level.players(), json, origin)
         ctx.source.sendSuccess(
-            { Component.literal("正在播放动画: $name（粒子 ${animation.particles.size}，轨道 ${animation.tracks.size}）") },
+            { Component.literal("正在播放动画: $name（客户端本地渲染）") },
             false
         )
         return 1
@@ -102,8 +96,24 @@ object ParticleDrawCommands {
     private fun stopAnimations(ctx: CommandContext<CommandSourceStack>): Int {
         val level = ctx.source.level
         val dim = ParticleUtils.dimensionUUID(level)
-        AnimationPlayerManager.stopAll(dim, level.players())
+        ServerAnimationManager.stopAll(dim, level.players())
         ctx.source.sendSuccess({ Component.literal("已停止当前维度的全部动画") }, false)
+        return 1
+    }
+
+    /**
+     * /test var <name> <value> —— 更新当前维度全部播放中的函数对象变量（服务端权威下发）。
+     */
+    private fun updateVariable(ctx: CommandContext<CommandSourceStack>): Int {
+        val name = StringArgumentType.getString(ctx, "name")
+        val value = StringArgumentType.getString(ctx, "value")
+        val level = ctx.source.level
+        val dim = ParticleUtils.dimensionUUID(level)
+        ServerAnimationManager.updateVariableForDimension(dim, name, value, level.players())
+        ctx.source.sendSuccess(
+            { Component.literal("已更新变量: $name = $value") },
+            false
+        )
         return 1
     }
 }

@@ -211,27 +211,81 @@ function buildDerivedTracks(fx) {
   if (duration <= 0) return;
   const hasVarAnim = Object.values(fx.vars || {}).some(v => (v.kf || []).length > 0 || exprUsesT(v.expr));
   if (!exprUsesT(fx.code) && !hasVarAnim) return;
-  const times = [0];
-  for (let t = step; t <= duration; t += step) times.push(t);
+
+  // 收集动画源关键帧（变量 kf + 整体轨道 kf）
+  const sources = [];
+  for (const v of Object.values(fx.vars || {})) {
+    const kf = (v.kf || []).slice().sort((a, b) => a[0] - b[0]);
+    if (kf.length > 1) sources.push(kf);
+  }
+  for (const tr of state.tracks) {
+    if (tr.ids.some(id => id.startsWith('f:'))) {
+      const kf = tr.kf.slice().sort((a, b) => a[0] - b[0]);
+      if (kf.length > 1) sources.push(kf);
+    }
+  }
+
+  // 关键帧 tick 对齐 + 各段缓动一致 → 用「关键帧 + 缓动」（连续、丝滑、体积小）；否则均匀采样 + LINEAR
+  let uniform = !exprUsesT(fx.code) && sources.length > 0;
+  if (uniform) {
+    const baseTicks = sources[0].map(k => k[0]).join(',');
+    for (const src of sources) {
+      if (src.map(k => k[0]).join(',') !== baseTicks) { uniform = false; break; }
+    }
+  }
+  if (uniform) {
+    for (let i = 1; i < sources[0].length; i++) {
+      const e = sources[0][i][2];
+      for (const src of sources) {
+        if (src[i][2] !== e) { uniform = false; break; }
+      }
+      if (!uniform) break;
+    }
+  }
+
+  let times, easingAt;
+  if (uniform) {
+    times = sources[0].map(k => k[0]).filter(t => t <= duration);
+    if (times.length < 2) times = [0, duration];
+    // 编辑器 b[2] 语义：关键帧 idx 的 easing 控制 idx-1→idx 段
+    easingAt = (idx) => (idx === 0 || idx >= sources[0].length) ? 0 : sources[0][idx][2];
+  } else {
+    times = [0];
+    for (let t = step; t <= duration; t += step) times.push(t);
+    easingAt = () => 0;
+  }
+
   for (let i = 0; i < n; i++) {
     const pid = fx.id + ':p' + i;
     const samples = times.map(t => evaluateParticleAt(fx, i, n, t));
     const base = samples[0];
     const changed = (key) => samples.some(s => s !== base && !eq3(s[key], base[key]));
-    // 采样点已是缓动后的精确值，点间应线性插值（LINEAR=0），避免默认缓动二次插值产生过冲/回弹
-    if (changed('pos')) state.tracks.push({ pr: 'pos', m: 'set', ids: [pid], kf: times.map((t, idx) => [t, samples[idx].pos.slice(), 0]), fx: fx.id });
-    if (changed('color')) state.tracks.push({ pr: 'col', m: 'set', ids: [pid], kf: times.map((t, idx) => [t, samples[idx].color.slice(), 0]), fx: fx.id });
-    if (changed('vel')) state.tracks.push({ pr: 'vel', m: 'set', ids: [pid], kf: times.map((t, idx) => [t, samples[idx].vel.slice(), 0]), fx: fx.id });
-    if (samples.some(s => Math.abs(s.scale - base.scale) > 1e-9)) state.tracks.push({ pr: 'scl', m: 'set', ids: [pid], kf: times.map((t, idx) => [t, [samples[idx].scale], 0]), fx: fx.id });
+    const mkKf = (key, idx) => [times[idx], samples[idx][key].slice(), easingAt(idx)];
+    if (changed('pos')) state.tracks.push({ pr: 'pos', m: 'set', ids: [pid], kf: samples.map((_, idx) => mkKf('pos', idx)), fx: fx.id });
+    if (changed('color')) state.tracks.push({ pr: 'col', m: 'set', ids: [pid], kf: samples.map((_, idx) => mkKf('color', idx)), fx: fx.id });
+    if (changed('vel')) state.tracks.push({ pr: 'vel', m: 'set', ids: [pid], kf: samples.map((_, idx) => mkKf('vel', idx)), fx: fx.id });
+    if (samples.some(s => Math.abs(s.scale - base.scale) > 1e-9)) state.tracks.push({ pr: 'scl', m: 'set', ids: [pid], kf: samples.map((_, idx) => [times[idx], [samples[idx].scale], easingAt(idx)]), fx: fx.id });
   }
 }
 
-// 活源重算：按当前函数定义重建派生粒子与派生轨道（保留手动轨道）
+// 活源重算：按当前函数定义重建派生粒子与派生轨道。
+// 派生粒子 id 约定为 `fxId:p<i>`，据此清理旧格式（无 fx 标记）残留的派生粒子与派生轨道。
 function rebuildFunctionObject(fx) {
   const n = Math.max(1, Math.round(fx.count) || 1);
-  state.tracks = state.tracks.filter(tr => tr.fx !== fx.id); // 移除函数派生轨道
+  const prefix = fx.id + ':p';
+  // 移除函数派生轨道：新格式（带 fx 标记）+ 旧格式（ids 命中 fxId:p 前缀）一并清除
+  state.tracks = state.tracks.filter(tr => tr.fx !== fx.id && !tr.ids.some(id => id.startsWith(prefix)));
   const existing = new Map();
-  for (const p of state.particles) if (p.fx === fx.id) existing.set(p.id, p);
+  // 复用带 fx 标记的派生粒子；旧格式残留（无 fx 标记但 id 命中前缀）直接移除
+  for (const p of [...state.particles]) {
+    if (!p.id.startsWith(prefix)) continue;
+    if (p.fx === fx.id) existing.set(p.id, p);
+    else {
+      state.particles = state.particles.filter(x => x !== p);
+      state.tracks = state.tracks.filter(tr => !tr.ids.includes(p.id));
+      state.selected.delete(p.id);
+    }
+  }
   const kept = new Set();
   for (let i = 0; i < n; i++) {
     const id = fx.id + ':p' + i;

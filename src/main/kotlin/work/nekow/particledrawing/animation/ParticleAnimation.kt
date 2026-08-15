@@ -3,16 +3,42 @@ package work.nekow.particledrawing.animation
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleStyle
+import work.nekow.particledrawing.animation.expr.Keyframe
 import work.nekow.particledrawing.core.easing.EasingType
 
 /**
- * 解析后的粒子动画（对应网页编辑器导出的轻量 JSON 格式）。
+ * 解析后的粒子动画（对应网页编辑器导出的 .pdraw 工程文件）。
  */
 class ParticleAnimation(
     val loop: Boolean,
     val particles: List<AnimParticle>,
     val tracks: List<AnimTrack>,
-    val groups: Map<String, List<String>>
+    val groups: Map<String, List<String>>,
+    val functions: List<FunctionObject> = emptyList()
+)
+
+/**
+ * 函数对象（.pdraw 的 f 字段）：公式代码块 + 变量，客户端实时求值生成派生粒子。
+ */
+class FunctionObject(
+    val id: String,
+    val name: String,
+    val center: DoubleArray,
+    val count: Int,
+    val style: ParticleStyle,
+    val code: String,
+    val vars: Map<String, FunctionVar>,
+    val duration: Int,
+    val step: Int
+)
+
+/**
+ * 函数对象变量：表达式（无关键帧时求值）或关键帧（关键帧优先，b[2] 缓动）。
+ * expr/kf 可变，支持服务端下发变量更新。
+ */
+class FunctionVar(
+    var expr: String,
+    var kf: List<Keyframe>
 )
 
 /**

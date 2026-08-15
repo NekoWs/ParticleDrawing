@@ -107,6 +107,38 @@ class ClientParticleEngine {
     }
 
     /**
+     * 直接、立即地同步粒子的完整可视化状态（绕过缓动状态机与分批轮转）。
+     *
+     * 供客户端本地动画播放使用：本地播放器每 tick 已按公式/轨道实时算出最终状态。
+     * 位置用 [BridgeParticle.syncPosition] 的 snap=false 写入，保留 xo（上一 tick 位置）
+     * 与 x（当前 tick 位置）的差值，让原版粒子渲染用 partialTick 在两者间平滑插值，
+     * 从而按渲染帧率（而非 game tick 的 20Hz）呈现动画。
+     *
+     * @param id 粒子唯一标识符
+     * @param x/y/z 目标位置
+     * @param r/g/b/a 目标颜色
+     * @param scale 目标缩放
+     * @param glowing 是否发光（逐 tick 求值结果）
+     * @param lightLevel 发光粒子向外发出的光照等级 (0-15)
+     */
+    fun updateParticleDirect(id: UUID, x: Double, y: Double, z: Double,
+                             r: Float, g: Float, b: Float, a: Float, scale: Float,
+                             glowing: Boolean, lightLevel: Int) {
+        val rp = particles[id] ?: return
+        rp.setPositionDirect(Vec3(x, y, z))
+        rp.setColorDirect(Color.of(r, g, b, a))
+        rp.setScaleDirect(scale)
+        rp.setGlowing(glowing)
+        rp.setLightLevel(lightLevel)
+        bridges[id]?.let {
+            it.syncPosition(x, y, z, snap = false)
+            it.syncColor(r, g, b, a)
+            it.syncScale(scale)
+            it.setGlowing(glowing)
+        }
+    }
+
+    /**
      * 设置粒子的速度向量（blocks/tick）。
      * @param id 粒子唯一标识符
      * @param vx X 速度分量

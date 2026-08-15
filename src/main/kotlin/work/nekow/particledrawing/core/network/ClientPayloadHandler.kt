@@ -1,6 +1,8 @@
 package work.nekow.particledrawing.core.network
 
+import net.minecraft.world.phys.Vec3
 import net.neoforged.neoforge.network.handling.IPayloadContext
+import work.nekow.particledrawing.core.client.ClientAnimationManager
 import work.nekow.particledrawing.core.client.ClientParticleEngine
 import work.nekow.particledrawing.core.motion.MotionPayload
 
@@ -112,6 +114,28 @@ internal object ClientPayloadHandler {
             ClientParticleEngine.instance()?.setLightLevel(
                 payload.particleId, payload.lightLevel
             )
+        }
+    }
+
+    fun handlePlayAnimation(payload: PlayAnimationPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientAnimationManager.play(
+                payload.animationId,
+                payload.json,
+                Vec3(payload.originX, payload.originY, payload.originZ)
+            )
+        }
+    }
+
+    fun handleVariableUpdate(payload: VariableUpdatePayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientAnimationManager.updateVariable(payload.animationId, payload.variable, payload.value)
+        }
+    }
+
+    fun handleStopAnimation(payload: StopAnimationPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientAnimationManager.stop(payload.animationId)
         }
     }
 }

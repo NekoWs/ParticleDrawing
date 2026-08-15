@@ -7,6 +7,7 @@ import net.minecraft.world.phys.Vec3
 import net.neoforged.fml.loading.FMLPaths
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleStyle
+import work.nekow.particledrawing.animation.expr.Keyframe
 import work.nekow.particledrawing.core.easing.EasingType
 import java.nio.file.Files
 import java.nio.file.Path
@@ -16,26 +17,26 @@ import java.nio.file.Path
  */
 object AnimationLoader {
 
-    /** 动画 JSON 存放目录：`<gameDir>/animations/`。 */
+    /** 动画工程文件存放目录：`<gameDir>/animations/`。 */
     val DIRECTORY: Path = FMLPaths.GAMEDIR.get().resolve("animations")
 
-    /** 列出可用的动画名（不含 .json 后缀）。 */
+    /** 列出可用的动画名（不含 .pdraw 后缀）。 */
     @JvmStatic
     fun list(): List<String> {
         if (!Files.isDirectory(DIRECTORY)) return emptyList()
         return Files.list(DIRECTORY).use { stream ->
-            stream.filter { it.fileName.toString().endsWith(".json") }
-                .map { it.fileName.toString().removeSuffix(".json") }
+            stream.filter { it.fileName.toString().endsWith(".pdraw") }
+                .map { it.fileName.toString().removeSuffix(".pdraw") }
                 .sorted()
                 .toList()
         }
     }
 
-    /** 按名称读取动画 JSON 文本，找不到返回 null。 */
+    /** 按名称读取动画工程文件文本，找不到返回 null。 */
     @JvmStatic
     fun load(name: String): String? {
         val safe = name.replace(Regex("[^a-zA-Z0-9_\\-.]"), "_")
-        val path = DIRECTORY.resolve("$safe.json")
+        val path = DIRECTORY.resolve("$safe.pdraw")
         if (!Files.exists(path)) return null
         return Files.readString(path)
     }
@@ -59,7 +60,37 @@ object AnimationLoader {
             groups[name] = members.asJsonArray.map { it.asString }
         }
 
-        return ParticleAnimation(loop, particles, tracks, groups)
+        val functions = root.get("f")?.asJsonArray
+            ?.map { parseFunction(it.asJsonObject) }
+            ?: emptyList()
+
+        return ParticleAnimation(loop, particles, tracks, groups, functions)
+    }
+
+    private fun parseFunction(o: com.google.gson.JsonObject): FunctionObject {
+        val id = o.get("id")?.asString ?: throw IllegalArgumentException("函数对象缺少 id")
+        val name = o.get("name")?.asString ?: "函数对象"
+        val center = o.get("center")?.asJsonArray?.map { it.asDouble }?.toDoubleArray() ?: doubleArrayOf(0.0, 0.0, 0.0)
+        val count = o.get("count")?.asInt ?: 30
+        val style = ParticleStyle.valueOf(o.get("style")?.asString?.uppercase() ?: "DOT")
+        val code = o.get("code")?.asString ?: ""
+        val duration = o.get("duration")?.asInt ?: 0
+        val step = o.get("step")?.asInt ?: 5
+        val vars = mutableMapOf<String, FunctionVar>()
+        o.get("vars")?.asJsonObject?.entrySet()?.forEach { (vname, v) ->
+            val vo = v.asJsonObject
+            val expr = vo.get("expr")?.asString ?: "0"
+            val kf = vo.get("kf")?.asJsonArray?.map { parseVarKeyframe(it.asJsonArray) } ?: emptyList()
+            vars[vname] = FunctionVar(expr, kf)
+        }
+        return FunctionObject(id, name, center, count, style, code, vars, duration, step)
+    }
+
+    private fun parseVarKeyframe(arr: com.google.gson.JsonArray): Keyframe {
+        val tick = arr[0].asDouble
+        val value = arr[1].asDouble
+        val easing = parseEasing(arr[2])
+        return Keyframe(tick, value, easing)
     }
 
     private fun parseParticle(o: com.google.gson.JsonObject): AnimParticle {

@@ -36,5 +36,6 @@ object ParticleRenderHandler {
             engine.frameUpdate()
             DynamicLightManager.renderDynamicLights(engine)
         }
+        ClientAnimationManager.tick()
     }
 }

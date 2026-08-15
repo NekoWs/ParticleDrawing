@@ -31,7 +31,7 @@ class BridgeParticle(
     x: Double, y: Double, z: Double,
     color: Color,
     scale: Float,
-    private val isGlowing: Boolean
+    private var isGlowing: Boolean
 ) : SingleQuadParticle(level, x, y, z, getSpriteForStyle(style)) {
 
     init {
@@ -48,6 +48,11 @@ class BridgeParticle(
     }
 
     fun isGlowing(): Boolean = isGlowing
+
+    /** 更新发光状态（本地动画逐 tick 求值时同步）。 */
+    fun setGlowing(glowing: Boolean) {
+        isGlowing = glowing
+    }
 
     /**
      * 同步粒子位置。

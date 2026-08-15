@@ -6,7 +6,7 @@ import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.event.level.LevelEvent
 import net.neoforged.neoforge.event.tick.ServerTickEvent
 import work.nekow.particledrawing.ParticleDrawing
-import work.nekow.particledrawing.animation.AnimationPlayerManager
+import work.nekow.particledrawing.animation.ServerAnimationManager
 import work.nekow.particledrawing.util.ParticleUtils
 
 /**
@@ -24,7 +24,6 @@ object ServerParticleHandler {
             val dim = ParticleUtils.dimensionUUID(level)
             val engine = ServerParticleEngine.getOrCreate(dim)
             engine.tick(level.players())
-            AnimationPlayerManager.tick(dim, level.players())
         }
     }
 
@@ -33,7 +32,7 @@ object ServerParticleHandler {
     fun onLevelUnload(event: LevelEvent.Unload) {
         if (event.level is ServerLevel) {
             val dim = ParticleUtils.dimensionUUID(event.level as ServerLevel)
-            AnimationPlayerManager.stopAll(dim, (event.level as ServerLevel).players())
+            ServerAnimationManager.stopAll(dim, (event.level as ServerLevel).players())
             ServerParticleEngine.clearDimension(dim)
         }
     }

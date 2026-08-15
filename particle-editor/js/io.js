@@ -63,6 +63,24 @@ function convertKfForExport(kf) {
   });
 }
 
+// 采样点简化：移除「两端 LINEAR 插值即可近似」的中间采样点，减少导出体积与逐 tick 更新负载
+function simplifyKf(kf, tol) {
+  if (kf.length <= 2) return kf;
+  const t = tol != null ? tol : 0.002;
+  const out = [kf[0]];
+  for (let i = 1; i < kf.length - 1; i++) {
+    const a = out[out.length - 1];
+    const b = kf[i + 1];
+    const span = b[0] - a[0];
+    if (span <= 0) { out.push(kf[i]); continue; }
+    const f = (kf[i][0] - a[0]) / span;
+    const maxErr = Math.max(...kf[i][1].map((v, j) => Math.abs(v - (a[1][j] + (b[1][j] - a[1][j]) * f))));
+    if (maxErr > t) out.push(kf[i]);
+  }
+  out.push(kf[kf.length - 1]);
+  return out;
+}
+
 // 导出动画（模组可播）：函数对象 pos op 增量烘焙进派生粒子 pos 轨道；rot/scl 转隐式组轨道
 function exportJSON() {
   // 先收集函数对象 pos op 轨道（用于烘焙 t=0 增量与派生 pos 轨道）
@@ -102,12 +120,13 @@ function exportJSON() {
     } else if (tr.fx) {
       const opTr = fxPosOp.get(tr.fx);
       if (tr.pr === 'pos' && opTr) {
-        // 派生 pos 轨道：叠加 pos op 增量（烘焙完整位置），采样点间 LINEAR
-        const kf = tr.kf.map(k => {
+        // 派生 pos 轨道：叠加 pos op 增量（烘焙完整位置）；easing 左移为模组语义后合并共线点
+        const kf = tr.kf.map((k, i) => {
           const d = trackValueAt(opTr, k[0], [0, 0, 0]);
-          return [k[0], roundArr([k[1][0] + d[0], k[1][1] + d[1], k[1][2] + d[2]]), 0];
+          const easing = (i + 1 < tr.kf.length) ? tr.kf[i + 1][2] : tr.kf[i][2];
+          return [k[0], roundArr([k[1][0] + d[0], k[1][1] + d[1], k[1][2] + d[2]]), encodeEasing(easing)];
         });
-        t.push({ pr: 'pos', ids: [tr.ids[0]], kf });
+        t.push({ pr: 'pos', ids: [tr.ids[0]], kf: simplifyKf(kf) });
       } else {
         const o = { pr: tr.pr, ids: tr.ids.slice(), kf: convertKfForExport(tr.kf) };
         if (tr.m === 'op') o.m = 'op';
@@ -130,8 +149,14 @@ function exportProject() {
     if (tr.m === 'op') o.m = 'op';
     return o;
   });
+  // 组：剔除函数对象派生粒子成员（id 形如 fxId:p<i>，由客户端播放时实时生成，不烘焙进工程文件）
+  const fxPrefixes = state.functions.map(fx => fx.id + ':p');
+  const isDerived = id => fxPrefixes.some(pre => id.startsWith(pre));
   const g = {};
-  for (const [name, members] of Object.entries(state.groups)) if (members.length) g[name] = members.slice();
+  for (const [name, members] of Object.entries(state.groups)) {
+    const kept = members.filter(id => !isDerived(id));
+    if (kept.length) g[name] = kept;
+  }
   const f = state.functions.map(serializeFunction);
   return { v: 2, loop: state.loop, g, p, t, f };
 }
