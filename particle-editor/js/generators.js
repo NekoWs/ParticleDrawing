@@ -195,11 +195,21 @@ function buildDerivedTracks(fx) {
     const samples = times.map(t => evaluateParticleAt(fx, i, n, t));
     const base = samples[0];
     const changed = (key) => samples.some(s => s !== base && !eq3(s[key], base[key]));
-    const mkKf = (key, idx) => [times[idx], samples[idx][key].slice(), easingAt(idx)];
-    if (changed('pos')) state.tracks.push({ pr: 'pos', m: 'set', ids: [pid], kf: samples.map((_, idx) => mkKf('pos', idx)), fx: fx.id });
-    if (changed('color')) state.tracks.push({ pr: 'col', m: 'set', ids: [pid], kf: samples.map((_, idx) => mkKf('color', idx)), fx: fx.id });
-    if (changed('vel')) state.tracks.push({ pr: 'vel', m: 'set', ids: [pid], kf: samples.map((_, idx) => mkKf('vel', idx)), fx: fx.id });
-    if (samples.some(s => Math.abs(s.scale - base.scale) > 1e-9)) state.tracks.push({ pr: 'scl', m: 'set', ids: [pid], kf: samples.map((_, idx) => [times[idx], [samples[idx].scale], easingAt(idx)]), fx: fx.id });
+    const pushComp = (prop, comps, getVal) => {
+      comps.forEach((comp, ci) => {
+        const kfs = samples.map((_, idx) => [times[idx], getVal(idx, ci), easingAt(idx)]);
+        if (kfs.some(k => Math.abs(k[1] - kfs[0][1]) > 1e-9)) {
+          state.tracks.push({ pr: compPr(prop, comp), m: 'set', ids: [pid], kf: kfs, fx: fx.id });
+        }
+      });
+    };
+    if (changed('pos')) pushComp('pos', ['x', 'y', 'z'], (idx, ci) => samples[idx].pos[ci]);
+    if (changed('color')) pushComp('col', ['r', 'g', 'b', 'a'], (idx, ci) => samples[idx].color[ci]);
+    if (changed('vel')) pushComp('vel', ['x', 'y', 'z'], (idx, ci) => samples[idx].vel[ci]);
+    if (samples.some(s => Math.abs(s.scale - base.scale) > 1e-9)) {
+      const kfs = samples.map((_, idx) => [times[idx], samples[idx].scale, easingAt(idx)]);
+      state.tracks.push({ pr: 'scl', m: 'set', ids: [pid], kf: kfs, fx: fx.id });
+    }
   }
 }
 
@@ -264,16 +274,26 @@ function applyPresetBuild(fx) {
 // 分辨率变量联动 count：改 m/k/cols/rows/turns/ppr 时重算 count=乘积
 function syncPresetCount(fx) {
   const preset = FUNCTION_PRESETS[fx.preset];
-  if (!preset || !preset.countVars || preset.countVars.length === 0) return;
-  let count = 1;
-  for (const name of preset.countVars) {
-    const v = fx.vars[name];
-    if (!v) return;
-    let val;
-    try { val = evaluate(v.expr || '0', { i: 0, n: 1, t: 0 }); } catch (e) { return; }
-    if (!Number.isFinite(val) || val <= 0) return;
-    count *= Math.round(val);
+  if (!preset) return;
+  // 先把所有变量求值为 scope（供 countExpr 或 countVars 使用）
+  const scope = { i: 0, n: 1, t: 0 };
+  for (const name in fx.vars) {
+    try { scope[name] = evaluate(fx.vars[name].expr || '0', scope); } catch (e) { return; }
   }
+  let count;
+  if (preset.countExpr) {
+    try { count = evaluate(preset.countExpr, scope); } catch (e) { return; }
+  } else if (preset.countVars && preset.countVars.length) {
+    count = 1;
+    for (const name of preset.countVars) {
+      const val = scope[name];
+      if (!Number.isFinite(val) || val <= 0) return;
+      count *= Math.round(val);
+    }
+  } else {
+    return;
+  }
+  if (!Number.isFinite(count) || count <= 0) return;
   fx.count = Math.max(1, Math.round(count));
 }
 
@@ -294,7 +314,7 @@ function createFunctionObject(presetId) {
   const fx = {
     id: nextFunctionId(), name: presetId ? FUNCTION_PRESETS[presetId].label : '函数对象',
     center: [0, 0, 0], count: 30, style: 'DOT',
-    code: '[x,y,z] = [0, 0, 0];\n[r,g,b,a] = [1,1,1,1];\nsc = 0.3;\nglow = 0;\nlight = 0',
+    code: '[x,y,z] = [0, 0, 0];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
     vars: {}, duration: 100, step: 5, preset: null, params: null,
   };
   state.functions.push(fx);

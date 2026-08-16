@@ -27,51 +27,52 @@ const ATOM_PREC = 10;
 
 /* —— 函数块定义：label 显示名，ret 返回类型，args 参数槽 [标签, 类型] —— */
 const FUNC_BLOCKS = {
-  sin: { ret: T_SCALAR, args: [['角度', T_SCALAR]] },
-  cos: { ret: T_SCALAR, args: [['角度', T_SCALAR]] },
-  tan: { ret: T_SCALAR, args: [['角度', T_SCALAR]] },
-  asin: { ret: T_SCALAR, args: [['值', T_SCALAR]] },
-  acos: { ret: T_SCALAR, args: [['值', T_SCALAR]] },
-  atan: { ret: T_SCALAR, args: [['值', T_SCALAR]] },
-  atan2: { ret: T_SCALAR, args: [['y', T_SCALAR], ['x', T_SCALAR]] },
-  sqrt: { ret: T_SCALAR, args: [['值', T_SCALAR]] },
-  abs: { ret: T_SCALAR, args: [['值', T_SCALAR]] },
-  exp: { ret: T_SCALAR, args: [['值', T_SCALAR]] },
-  log: { ret: T_SCALAR, args: [['值', T_SCALAR]] },
-  ln: { ret: T_SCALAR, args: [['值', T_SCALAR]] },
-  floor: { ret: T_SCALAR, args: [['值', T_SCALAR]] },
-  ceil: { ret: T_SCALAR, args: [['值', T_SCALAR]] },
-  round: { ret: T_SCALAR, args: [['值', T_SCALAR]] },
-  pow: { ret: T_SCALAR, args: [['底数', T_SCALAR], ['指数', T_SCALAR]] },
-  min: { ret: T_SCALAR, args: [['a', T_SCALAR], ['b', T_SCALAR]] },
-  max: { ret: T_SCALAR, args: [['a', T_SCALAR], ['b', T_SCALAR]] },
-  clamp: { ret: T_SCALAR, args: [['值', T_SCALAR], ['下界', T_SCALAR], ['上界', T_SCALAR]] },
-  lerp: { ret: T_SCALAR, args: [['a', T_SCALAR], ['b', T_SCALAR], ['t', T_SCALAR]] },
-  vec: { ret: T_VEC, args: [['x', T_SCALAR], ['y', T_SCALAR], ['z', T_SCALAR]] },
-  dot: { ret: T_SCALAR, args: [['a', T_VEC], ['b', T_VEC]] },
-  cross: { ret: T_VEC, args: [['a', T_VEC], ['b', T_VEC]] },
-  len: { ret: T_SCALAR, args: [['向量', T_ANY]] },
-  norm: { ret: T_VEC, args: [['向量', T_VEC]] },
-  rotX: { ret: T_MAT, args: [['角度', T_SCALAR]] },
-  rotY: { ret: T_MAT, args: [['角度', T_SCALAR]] },
-  rotZ: { ret: T_MAT, args: [['角度', T_SCALAR]] },
-  rotAxis: { ret: T_MAT, args: [['轴', T_VEC], ['角度', T_SCALAR]] },
-  polar: { ret: T_VEC, args: [['半径', T_SCALAR], ['角度', T_SCALAR]] },
-  sphere: { ret: T_VEC, args: [['半径', T_SCALAR], ['θ', T_SCALAR], ['φ', T_SCALAR]] },
-  torus: { ret: T_VEC, args: [['R', T_SCALAR], ['r', T_SCALAR], ['θ', T_SCALAR], ['φ', T_SCALAR]] },
+  sin: { ret: T_SCALAR, args: [['角度', T_SCALAR]], desc: '正弦函数' },
+  cos: { ret: T_SCALAR, args: [['角度', T_SCALAR]], desc: '余弦函数' },
+  tan: { ret: T_SCALAR, args: [['角度', T_SCALAR]], desc: '正切函数' },
+  asin: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '反正弦函数' },
+  acos: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '反余弦函数' },
+  atan: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '反正切函数' },
+  atan2: { ret: T_SCALAR, args: [['y', T_SCALAR], ['x', T_SCALAR]], desc: '反正切函数（y/x）' },
+  sqrt: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '平方根' },
+  abs: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '绝对值' },
+  exp: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '指数函数 e^x' },
+  log: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '常用对数（以 10 为底）' },
+  ln: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '自然对数（以 e 为底）' },
+  floor: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '向下取整' },
+  ceil: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '向上取整' },
+  round: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '四舍五入' },
+  pow: { ret: T_SCALAR, args: [['底数', T_SCALAR], ['指数', T_SCALAR]], desc: '幂运算（底数^指数）' },
+  min: { ret: T_SCALAR, args: [['a', T_SCALAR], ['b', T_SCALAR]], desc: '取两者较小值' },
+  max: { ret: T_SCALAR, args: [['a', T_SCALAR], ['b', T_SCALAR]], desc: '取两者较大值' },
+  clamp: { ret: T_SCALAR, args: [['值', T_SCALAR], ['下界', T_SCALAR], ['上界', T_SCALAR]], desc: '把值限制在区间内' },
+  lerp: { ret: T_SCALAR, args: [['a', T_SCALAR], ['b', T_SCALAR], ['t', T_SCALAR]], desc: '线性插值 a→b' },
+  vec: { ret: T_VEC, args: [['x', T_SCALAR], ['y', T_SCALAR], ['z', T_SCALAR]], desc: '由分量构造向量' },
+  dot: { ret: T_SCALAR, args: [['a', T_VEC], ['b', T_VEC]], desc: '向量点积' },
+  cross: { ret: T_VEC, args: [['a', T_VEC], ['b', T_VEC]], desc: '向量叉积' },
+  len: { ret: T_SCALAR, args: [['向量', T_ANY]], desc: '向量长度' },
+  norm: { ret: T_VEC, args: [['向量', T_VEC]], desc: '向量归一化' },
+  rotX: { ret: T_MAT, args: [['角度', T_SCALAR]], desc: '绕 X 轴旋转矩阵' },
+  rotY: { ret: T_MAT, args: [['角度', T_SCALAR]], desc: '绕 Y 轴旋转矩阵' },
+  rotZ: { ret: T_MAT, args: [['角度', T_SCALAR]], desc: '绕 Z 轴旋转矩阵' },
+  rotAxis: { ret: T_MAT, args: [['轴', T_VEC], ['角度', T_SCALAR]], desc: '绕任意轴旋转矩阵' },
+  polar: { ret: T_VEC, args: [['半径', T_SCALAR], ['角度', T_SCALAR]], desc: '极坐标转向量（XZ 平面）' },
+  sphere: { ret: T_VEC, args: [['半径', T_SCALAR], ['θ', T_SCALAR], ['φ', T_SCALAR]], desc: '球坐标转向量' },
+  torus: { ret: T_VEC, args: [['R', T_SCALAR], ['r', T_SCALAR], ['θ', T_SCALAR], ['φ', T_SCALAR]], desc: '环面坐标转向量' },
 };
 
 /* —— 语句块定义：label 显示名，group 调色板分组 —— */
 const STMT_BLOCKS = {
-  pos: { label: '位置', group: 'pos', slotCount: 3 },
-  pos_vec: { label: '位置 ← 向量', group: 'pos', slotCount: 1 },
-  vel: { label: '速度', group: 'pos', slotCount: 3 },
-  vel_vec: { label: '速度', group: 'pos', slotCount: 1 },
-  col: { label: '颜色', group: 'color', slotCount: 4 },
-  scl: { label: '缩放', group: 'appearance', slotCount: 1 },
-  glow: { label: '发光', group: 'appearance', toggle: true },
-  light: { label: '光照等级', group: 'appearance', slotCount: 1 },
-  set: { label: '临时变量', group: 'var', named: true },
+  pos: { label: '位置', group: 'pos', slotCount: 3, desc: '设置粒子位置 [x, y, z]' },
+  pos_vec: { label: '位置 ← 向量', group: 'pos', slotCount: 1, desc: '用向量设置粒子位置' },
+  vel: { label: '速度', group: 'pos', slotCount: 3, desc: '设置粒子速度 [vx, vy, vz]' },
+  vel_vec: { label: '速度', group: 'pos', slotCount: 1, desc: '用向量设置粒子速度' },
+  col: { label: '颜色', group: 'color', slotCount: 4, desc: '设置粒子颜色 [r, g, b, a]' },
+  scl: { label: '缩放', group: 'appearance', slotCount: 1, desc: '设置粒子缩放' },
+  glow: { label: '发光', group: 'appearance', toggle: true, desc: '设置粒子是否发光' },
+  light: { label: '光照等级', group: 'appearance', slotCount: 1, desc: '设置粒子光照等级' },
+  attr: { label: '设置属性', group: 'pos', named: true, desc: '设置单个属性值（x/y/z/…）' },
+  set: { label: '临时变量', group: 'var', named: true, desc: '定义临时变量并赋值' },
 };
 
 /* —— 调色板分组（顺序即显示顺序） —— */
@@ -225,6 +226,7 @@ function stmtToCode(s) {
     case 'scl': return 'sc = ' + exprToCode(s.expr, 0);
     case 'glow': return 'glow = ' + (s.on ? '1' : '0');
     case 'light': return 'light = ' + exprToCode(s.expr, 0);
+    case 'attr': return s.name + ' = ' + exprToCode(s.expr, 0);
     case 'set': return s.name + ' = ' + exprToCode(s.expr, 0);
     default: throw new Error('未知语句块: ' + s.kind);
   }
@@ -324,6 +326,13 @@ function parseExpr(str) {
       ops.push(next().t);
       terms.push(parsePower());
     }
+    // 扁平化冗余括号：首项（无前置运算符的左操作数）若为同优先级二元运算（如 (i%m) 或 (a*b)），
+    // 左结合下括号冗余，展开进算式以得到扁平 chain（避免 { [i] % [m] } / ... 的嵌套）
+    const first = terms[0];
+    if (first.kind === 'op' && (first.op === '*' || first.op === '/' || first.op === '%')) {
+      terms.splice(0, 1, first.a, first.b);
+      ops.unshift(first.op);
+    }
     return (terms.length === 1) ? terms[0] : (terms.length === 2) ? { kind: 'op', op: ops[0], a: terms[0], b: terms[1] } : { kind: 'chain', terms, ops };
   }
   function parseAddSub() {
@@ -393,7 +402,7 @@ function stmtToNode(stmt) {
     throw new Error('发光赋值只能是 0 或 1: ' + stmt);
   }
   if (lhs === 'light') return { kind: 'light', expr: parseExpr(rhs) };
-  if (ATTR_NAMES.includes(lhs)) throw new Error('属性 ' + lhs + ' 请用打包赋值 [..]: ' + stmt);
+  if (ATTR_NAMES.includes(lhs)) return { kind: 'attr', name: lhs, expr: parseExpr(rhs) };
   return { kind: 'set', name: lhs, expr: parseExpr(rhs) };
 }
 

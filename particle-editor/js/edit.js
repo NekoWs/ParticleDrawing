@@ -1,27 +1,56 @@
 /* =========================================================================
- * 编辑：写入关键帧
+ * 编辑：写入关键帧（分量级）
  * ======================================================================= */
 
-function applyBaseValue(p, prop, value) {
-  if (prop === 'pos') p.pos = value.slice(0, 3);
-  else if (prop === 'col') p.color = value.slice(0, 4);
-  else if (prop === 'vel') p.vel = value.slice(0, 3);
-  else p.scale = value[0];
+// 修改基础值（完整向量）
+function applyBaseValue(p, prop, values) {
+  if (prop === 'pos') p.pos = values.slice(0, 3);
+  else if (prop === 'col') p.color = values.slice(0, 4);
+  else if (prop === 'vel') p.vel = values.slice(0, 3);
+  else p.scale = values[0];
 }
 
+// 某 id（'p0' | 'g:g0' | 'f:fx0'）在某分量的基础值
+function baseValueFor(id, prop, comp) {
+  if (id.startsWith('g:')) {
+    const gname = id.slice(2);
+    if (prop === 'rot') return 0;
+    return groupCentroidValue(gname, prop)[COMP_INDEX[comp]];
+  }
+  if (id.startsWith('f:')) {
+    const fx = getFunction(id.slice(2));
+    if (prop === 'pos') return fx ? fx.center[COMP_INDEX[comp]] : 0;
+    if (prop === 'scl') return 1;
+    return 0; // rot
+  }
+  const p = getParticle(id);
+  return p ? baseComponent(p, prop, comp) : 0;
+}
+
+// 写某 id 在某分量的关键帧（标量值）
+function setComponentKeyframe(id, prop, comp, time, value, mode) {
+  const pr = compPr(prop, comp);
+  let tr = findTrackByPr(pr, id);
+  if (!tr) {
+    const base = mode === 'op' ? 0 : baseValueFor(id, prop, comp);
+    tr = { pr, m: mode, ids: [id], kf: [[0, base, state.defaultEasing]] };
+    state.tracks.push(tr);
+  } else {
+    tr.m = mode;
+  }
+  let kf = tr.kf.find(k => k[0] === time);
+  if (!kf) { kf = [time, value, state.defaultEasing]; tr.kf.push(kf); tr.kf.sort((a, b) => a[0] - b[0]); }
+  else kf[1] = value;
+}
+
+// 为多个粒子在同一时间写统一值（每分量独立轨道）
 function setValueAtTime(ids, prop, values) {
   const t = Math.round(state.time);
+  const comps = TRACK_COMPS[prop];
   for (const id of ids) {
     const p = getParticle(id);
     if (!p) continue;
-    let tr = findTrack(prop, id);
-    if (!tr) {
-      tr = { pr: prop, m: 'set', ids: [id], kf: [[0, baseValue(p, prop).slice(), state.defaultEasing]] };
-      state.tracks.push(tr);
-    }
-    const idx = tr.kf.findIndex(k => k[0] === t);
-    if (idx >= 0) tr.kf[idx][1] = values.slice();
-    else { tr.kf.push([t, values.slice(), state.defaultEasing]); tr.kf.sort((a, b) => a[0] - b[0]); }
+    comps.forEach((comp, i) => setComponentKeyframe(id, prop, comp, t, values[i], 'set'));
     if (t === 0 && !isDerivedParticle(p)) applyBaseValue(p, prop, values);
   }
   rebuildPoints();
@@ -30,33 +59,30 @@ function setValueAtTime(ids, prop, values) {
 
 // 直接修改基础值（不创建关键帧），并同步 t=0 关键帧（若存在）
 function editBaseValue(ids, prop, values) {
+  const comps = TRACK_COMPS[prop];
   for (const id of ids) {
     const p = getParticle(id);
     if (!p) continue;
-    if (isDerivedParticle(p)) continue; // 派生粒子基础属性只读
+    if (isDerivedParticle(p)) continue;
     applyBaseValue(p, prop, values);
-    const tr = findTrack(prop, id);
-    if (tr) {
-      const kf0 = tr.kf.find(k => k[0] === 0);
-      if (kf0) kf0[1] = values.slice();
-    }
+    comps.forEach((comp, i) => {
+      const tr = findTrackByPr(compPr(prop, comp), id);
+      if (tr) {
+        const kf0 = tr.kf.find(k => k[0] === 0);
+        if (kf0) kf0[1] = values[i];
+      }
+    });
   }
 }
 
 // 批量：为多个粒子在同一时间写关键帧（每个粒子独立值）
 function setValuesAtTime(entries, prop) {
   const t = Math.round(state.time);
+  const comps = TRACK_COMPS[prop];
   for (const [id, values] of entries) {
     const p = getParticle(id);
     if (!p) continue;
-    let tr = findTrack(prop, id);
-    if (!tr) {
-      tr = { pr: prop, m: 'set', ids: [id], kf: [[0, baseValue(p, prop).slice(), state.defaultEasing]] };
-      state.tracks.push(tr);
-    }
-    const idx = tr.kf.findIndex(k => k[0] === t);
-    if (idx >= 0) tr.kf[idx][1] = values.slice();
-    else { tr.kf.push([t, values.slice(), state.defaultEasing]); tr.kf.sort((a, b) => a[0] - b[0]); }
+    comps.forEach((comp, i) => setComponentKeyframe(id, prop, comp, t, values[i], 'set'));
     if (t === 0 && !isDerivedParticle(p)) applyBaseValue(p, prop, values);
   }
   rebuildPoints();
@@ -72,52 +98,118 @@ function editParticles(entries, prop) {
   }
 }
 
-// 统一值编辑（属性面板）：捕获时写当前帧关键帧，否则改基础值
+// 统一值编辑（属性面板）：捕获关键帧时按 函数对象 > 组 > 粒子 优先级
 function editSelectionUniform(prop, values) {
+  const t = Math.round(state.time);
+  const comps = TRACK_COMPS[prop];
+  const fxId = state.selectedFunction;
+  const gname = selectedGroupName();
+
+  // 1. 函数对象优先
+  if (fxId) {
+    const fx = getFunction(fxId);
+    if (!fx || prop === 'col' || prop === 'vel') return; // 无整体颜色/速度轨道
+    if (!state.captureKeyframes) {
+      if (prop === 'pos') { fx.center = values.slice(0, 3); commitFunctionRebuild(fx); }
+      else if (prop === 'scl') { setComponentKeyframe('f:' + fxId, 'scl', 's', 0, values[0], 'set'); rebuildPoints(); refreshParticleTree(); }
+      return;
+    }
+    if (prop === 'pos') {
+      comps.forEach((comp, i) => setComponentKeyframe('f:' + fxId, 'pos', comp, t, values[i] - fx.center[COMP_INDEX[comp]], 'op'));
+    } else if (prop === 'scl') {
+      setComponentKeyframe('f:' + fxId, 'scl', 's', t, values[0], 'set');
+    }
+    rebuildPoints(); refreshParticleTree();
+    return;
+  }
+
+  // 2. 组
+  if (gname) {
+    if (!state.captureKeyframes) {
+      editBaseValue(state.groups[gname] || [], prop, values);
+      rebuildPoints();
+      return;
+    }
+    const mode = prop === 'pos' ? 'op' : 'set';
+    comps.forEach((comp, i) => {
+      let v = values[i];
+      if (mode === 'op') v = values[i] - groupCentroidValue(gname, 'pos')[COMP_INDEX[comp]];
+      setComponentKeyframe('g:' + gname, prop, comp, t, v, mode);
+    });
+    rebuildPoints(); refreshParticleTree();
+    return;
+  }
+
+  // 3. 单个粒子
   const ids = [...state.selected];
   if (ids.length === 0) return;
   if (ids.some(id => isDerivedParticle(getParticle(id)))) return; // 派生粒子基础属性只读
-  const gname = selectedGroupName();
-  if (!state.captureKeyframes) {
-    editBaseValue(ids, prop, values);
-    return;
-  }
-  const t = Math.round(state.time);
-  if (gname && prop === 'pos') {
-    const base = groupCentroidValue(gname, 'pos');
-    setGroupTrackValue(gname, 'pos', 'op', t, [values[0] - base[0], values[1] - base[1], values[2] - base[2]]);
-  } else if (gname) {
-    setGroupTrackValue(gname, prop, 'set', t, values);
-  } else {
-    setValueAtTime(ids, prop, values);
-  }
+  if (!state.captureKeyframes) { editBaseValue(ids, prop, values); rebuildPoints(); return; }
+  setValueAtTime(ids, prop, values);
 }
 
-function setComponentValue(particleId, comp, time, value) {
-  const p = getParticle(particleId);
+// 单分量值编辑（树/时间轴用）
+function setComponentValue(id, prop, comp, time, value) {
+  const p = getParticle(id);
   if (!p) return;
   pushUndo();
-  const prop = comp.track;
-  let tr = findTrack(prop, particleId);
+  const pr = compPr(prop, comp);
+  let tr = findTrackByPr(pr, id);
   if (!tr) {
-    tr = { pr: prop, m: 'set', ids: [particleId], kf: [[0, baseValue(p, prop).slice(), state.defaultEasing]] };
+    tr = { pr, m: 'set', ids: [id], kf: [[0, baseValueFor(id, prop, comp), state.defaultEasing]] };
     state.tracks.push(tr);
   }
   let kf = tr.kf.find(k => k[0] === time);
   if (!kf) {
-    const cur = particleValueAt(p, prop, time);
-    kf = [time, cur.slice(), state.defaultEasing];
+    const cur = componentValueAt(p, prop, comp, time);
+    kf = [time, cur, state.defaultEasing];
     tr.kf.push(kf);
     tr.kf.sort((a, b) => a[0] - b[0]);
   }
-  kf[1][comp.index] = value;
-  if (time === 0 && !isDerivedParticle(p)) applyBaseValue(p, prop, kf[1]);
+  kf[1] = value;
+  if (time === 0 && !isDerivedParticle(p)) {
+    if (prop === 'pos') p.pos[COMP_INDEX[comp]] = value;
+    else if (prop === 'col') p.color[COMP_INDEX[comp]] = value;
+    else if (prop === 'vel') (p.vel || (p.vel = [0, 0, 0]))[COMP_INDEX[comp]] = value;
+    else p.scale = value;
+  }
   rebuildPoints();
   refreshParticleTree();
 }
 
-function updateKeyframeTime(particleId, prop, oldT, newT) {
-  const tr = findTrack(prop, particleId);
+// 通用分量值编辑（时间轴 [值] 输入框用）：按 id 前缀分发到粒子/组/函数对象，
+// 在当前 tick 创建/更新关键帧（op 模式把绝对值换算为增量）
+function editComponentValue(id, prop, comp, time, value) {
+  pushUndo();
+  const pr = compPr(prop, comp);
+  let tr = findTrackByPr(pr, id);
+  const defaultMode = ((id.startsWith('g:') || id.startsWith('f:')) && prop === 'pos') ? 'op' : 'set';
+  if (!tr) {
+    const base = defaultMode === 'op' ? 0 : baseValueFor(id, prop, comp);
+    tr = { pr, m: defaultMode, ids: [id], kf: [[0, base, state.defaultEasing]] };
+    state.tracks.push(tr);
+  }
+  let kf = tr.kf.find(k => k[0] === time);
+  if (!kf) {
+    const cur = targetComponentValue(id, prop, comp, time);
+    kf = [time, cur, state.defaultEasing];
+    tr.kf.push(kf);
+    tr.kf.sort((a, b) => a[0] - b[0]);
+  }
+  kf[1] = tr.m === 'op' ? (value - baseValueFor(id, prop, comp)) : value;
+  const p = getParticle(id);
+  if (p && time === 0 && !isDerivedParticle(p)) {
+    if (prop === 'pos') p.pos[COMP_INDEX[comp]] = value;
+    else if (prop === 'col') p.color[COMP_INDEX[comp]] = value;
+    else if (prop === 'vel') (p.vel || (p.vel = [0, 0, 0]))[COMP_INDEX[comp]] = value;
+    else p.scale = value;
+  }
+  rebuildPoints();
+  refreshParticleTree();
+}
+
+function updateKeyframeTime(id, pr, oldT, newT) {
+  const tr = findTrackByPr(pr, id);
   const kf = tr && tr.kf.find(k => k[0] === oldT);
   if (!kf) return;
   pushUndo();
@@ -127,8 +219,8 @@ function updateKeyframeTime(particleId, prop, oldT, newT) {
   refreshParticleTree();
 }
 
-function updateKeyframeEasing(particleId, prop, t, easing) {
-  const tr = findTrack(prop, particleId);
+function updateKeyframeEasing(id, pr, t, easing) {
+  const tr = findTrackByPr(pr, id);
   const kf = tr && tr.kf.find(k => k[0] === t);
   if (!kf) return;
   pushUndo();
@@ -136,8 +228,8 @@ function updateKeyframeEasing(particleId, prop, t, easing) {
   rebuildPoints();
 }
 
-function removeKeyframe(particleId, prop, t) {
-  const tr = findTrack(prop, particleId);
+function removeKeyframe(id, pr, t) {
+  const tr = findTrackByPr(pr, id);
   if (!tr) return;
   pushUndo();
   tr.kf = tr.kf.filter(k => k[0] !== t);
@@ -147,75 +239,48 @@ function removeKeyframe(particleId, prop, t) {
 }
 
 /* =========================================================================
- * 组：操作/设置 关键帧
+ * 组 / 函数对象：向量级便捷写入（内部拆分量）
  * ======================================================================= */
 
-function findGroupTrack(prop, groupName) {
-  return state.tracks.find(tr => tr.pr === prop && tr.ids.length === 1 && tr.ids[0] === 'g:' + groupName);
-}
-
-function setGroupTrackValue(groupName, prop, mode, time, value) {
-  let tr = findGroupTrack(prop, groupName);
-  if (!tr) {
-    const base = mode === 'op' ? zeroArray(prop).slice() : groupCentroidValue(groupName, prop);
-    tr = { pr: prop, m: mode, ids: ['g:' + groupName], kf: [[0, base, state.defaultEasing]] };
-    state.tracks.push(tr);
-  } else {
-    tr.m = mode;
-  }
-  let kf = tr.kf.find(k => k[0] === time);
-  if (!kf) { kf = [time, value.slice(), state.defaultEasing]; tr.kf.push(kf); tr.kf.sort((a, b) => a[0] - b[0]); }
-  else kf[1] = value.slice();
+function setGroupTrackValue(groupName, prop, mode, time, values) {
+  const comps = TRACK_COMPS[prop];
+  comps.forEach((comp, i) => setComponentKeyframe('g:' + groupName, prop, comp, time, values[i], mode));
   rebuildPoints();
   refreshParticleTree();
 }
 
 function setGroupTrackMode(groupName, prop, mode) {
-  const tr = findGroupTrack(prop, groupName);
-  if (!tr) return;
   pushUndo();
-  tr.m = mode;
+  const comps = TRACK_COMPS[prop];
+  for (const comp of comps) {
+    const tr = findTrackByPr(compPr(prop, comp), 'g:' + groupName);
+    if (tr) tr.m = mode;
+  }
   rebuildPoints();
   refreshParticleTree();
 }
 
-/* =========================================================================
- * 函数对象：整体变换轨道（ids 用 'f:'+fxId）
- * ======================================================================= */
-
-function findFunctionTrack(prop, fxId) {
-  return state.tracks.find(tr => tr.pr === prop && tr.ids.length === 1 && tr.ids[0] === 'f:' + fxId);
-}
-
-function functionBaseValue(prop) {
-  if (prop === 'scl') return [1];
-  return [0, 0, 0];
-}
-
-function setFunctionTrackValue(fxId, prop, mode, time, value) {
-  let tr = findFunctionTrack(prop, fxId);
-  if (!tr) {
-    const base = mode === 'op' ? zeroArray(prop).slice() : functionBaseValue(prop);
-    tr = { pr: prop, m: mode, ids: ['f:' + fxId], kf: [[0, base, state.defaultEasing]] };
-    state.tracks.push(tr);
-  } else {
-    tr.m = mode;
-  }
-  let kf = tr.kf.find(k => k[0] === time);
-  if (!kf) { kf = [time, value.slice(), state.defaultEasing]; tr.kf.push(kf); tr.kf.sort((a, b) => a[0] - b[0]); }
-  else kf[1] = value.slice();
+function setFunctionTrackValue(fxId, prop, mode, time, values) {
+  const comps = TRACK_COMPS[prop];
+  comps.forEach((comp, i) => setComponentKeyframe('f:' + fxId, prop, comp, time, values[i], mode));
   rebuildPoints();
   refreshParticleTree();
 }
 
 function setFunctionTrackMode(fxId, prop, mode) {
-  const tr = findFunctionTrack(prop, fxId);
-  if (!tr) return;
   pushUndo();
-  tr.m = mode;
+  const comps = TRACK_COMPS[prop];
+  for (const comp of comps) {
+    const tr = findTrackByPr(compPr(prop, comp), 'f:' + fxId);
+    if (tr) tr.m = mode;
+  }
   rebuildPoints();
   refreshParticleTree();
 }
+
+/* =========================================================================
+ * 粒子 / 组 操作
+ * ======================================================================= */
 
 function addParticle(base) {
   const p = Object.assign({ id: nextId(), style: 'DOT', color: [1, 1, 1, 1], scale: 1, glow: false, lightLevel: 0, pos: [0, 0, 0], vel: [0, 0, 0] }, base);

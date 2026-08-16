@@ -67,10 +67,10 @@ const src = [
   const presetCode = FUNCTION_PRESETS.cube.build({ edge: 4 }).code;
   const stmts = codeToStatements(presetCode);
   const reCode = statementsToCode(stmts);
-  ok('preset stmts count', stmts.length === 5);
+  ok('preset stmts count', stmts.length === 4);
   ok('preset idempotent', statementsToCode(codeToStatements(reCode)) === reCode);
   for (let i = 0; i < 4; i++) {
-    const env = { i, n: 512, edge: 4, t: 5 };
+    const env = { i, n: 512, edge: 4, sx: 8, sy: 8, sz: 8, t: 5 };
     const a = evalFunctionCode(presetCode, env);
     const b = evalFunctionCode(reCode, env);
     ok('preset eval-consist i=' + i, JSON.stringify(a) === JSON.stringify(b));
@@ -113,9 +113,10 @@ const src = [
   const temps = collectTemps(codeToStatements('aa = i*2; bb = aa+1; [x,y,z]=[aa,bb,0]'));
   ok('collectTemps', JSON.stringify(temps) === JSON.stringify(['aa', 'bb']));
 
-  // 7) 语义化块拒绝单属性赋值
-  let threw = false; try { stmtToNode('x = 5'); } catch (_) { threw = true; }
-  ok('reject single attr x', threw);
+  // 7) 单属性赋值解析为 attr 块（设置 x/y/z 等属性）
+  const attrNode = stmtToNode('x = 5');
+  ok('parse attr x', attrNode.kind === 'attr' && attrNode.name === 'x' && attrNode.expr.kind === 'num' && attrNode.expr.value === 5);
+  ok('attr roundtrip', stmtToCode(attrNode) === 'x = 5');
   threw = false; try { stmtToNode('glow = 0.5'); } catch (_) { threw = true; }
   ok('reject glow non-binary', threw);
 

@@ -118,6 +118,19 @@ function makeFloatWindow(id, title, opts) {
   function setPos(x, y) { el.style.left = x + 'px'; el.style.top = y + 'px'; }
   function setSize(w, h) { el.style.width = w + 'px'; el.style.height = h + 'px'; }
 
+  // 窗口 resize 后把悬浮窗拉回屏幕内（避免窗口移出屏幕无法拖动）
+  function clampToScreen() {
+    if (minimized) return;
+    const w = el.offsetWidth, h = el.offsetHeight;
+    const margin = 40; // 至少留 40px（标题栏）可见
+    let L = el.offsetLeft, T = el.offsetTop;
+    L = Math.max(-w + margin, Math.min(L, window.innerWidth - margin));
+    T = Math.max(-h + margin, Math.min(T, window.innerHeight - margin));
+    el.style.left = L + 'px';
+    el.style.top = T + 'px';
+  }
+  window.addEventListener('resize', clampToScreen);
+
   return {
     el, body, titlebar: tb,
     setPos, setSize, minimize, restore,

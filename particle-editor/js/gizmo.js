@@ -42,7 +42,19 @@ function updateGizmo() {
   gizmoGroup.visible = true;
   gizmoGroup.position.set(c[0], c[1], c[2]);
   gizmoGroup.scale.setScalar(2); // 固定世界尺寸，随相机远近自然缩放（越远越小）
+  // 局部坐标系：组/函数对象随其 rot 轨道旋转，普通粒子保持世界朝向
+  const rot = gizmoRotation();
+  gizmoGroup.rotation.set(rot[0] * DEG2RAD, rot[1] * DEG2RAD, rot[2] * DEG2RAD);
   setGizmoHover(null, null);
+}
+
+// 局部坐标系当前朝向（度）：函数对象 > 组 > 世界（0）
+function gizmoRotation() {
+  const fxId = state.selectedFunction;
+  if (fxId) return fxRotationValueAt(fxId, state.time);
+  const gname = selectedGroupName();
+  if (gname) return groupRotationValueAt(gname, state.time);
+  return [0, 0, 0];
 }
 
 /* =========================================================================

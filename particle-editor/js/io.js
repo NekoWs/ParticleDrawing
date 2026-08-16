@@ -81,7 +81,7 @@ function parseFunction(o) {
 function exportProject() {
   const p = state.particles.filter(pt => !pt.fx).map(serializeParticle);
   const t = state.tracks.filter(tr => !tr.fx).map(tr => {
-    const o = { pr: tr.pr, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], roundArr(k[1]), encodeEasing(k[2])]) };
+    const o = { pr: tr.pr, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], r3(k[1]), encodeEasing(k[2])]) };
     if (tr.m === 'op') o.m = 'op';
     return o;
   });
@@ -106,12 +106,15 @@ function parseParticlesTracks(obj) {
   }));
   state.groups = {};
   for (const [name, members] of Object.entries(obj.g || {})) state.groups[name] = members.slice();
-  state.tracks = (obj.t || []).map(tr => ({
-    pr: ['pos', 'rot', 'vel', 'col', 'scl'].includes(tr.pr) ? tr.pr : 'pos',
-    m: tr.m === 'op' ? 'op' : 'set',
-    ids: (tr.ids || []).slice(),
-    kf: (tr.kf || []).map(k => [k[0], k[1].slice(), Array.isArray(k[2]) ? k[2].slice() : (Number.isInteger(k[2]) ? k[2] : DEFAULT_EASING)]),
-  }));
+  state.tracks = (obj.t || []).map(tr => {
+    const [prop] = splitCompPr(tr.pr);
+    return {
+      pr: PROP_LABELS[prop] ? tr.pr : 'pos.x',
+      m: tr.m === 'op' ? 'op' : 'set',
+      ids: (tr.ids || []).slice(),
+      kf: (tr.kf || []).map(k => [k[0], k[1], Array.isArray(k[2]) ? k[2].slice() : (Number.isInteger(k[2]) ? k[2] : DEFAULT_EASING)]),
+    };
+  });
   state.loop = !!obj.loop;
 }
 

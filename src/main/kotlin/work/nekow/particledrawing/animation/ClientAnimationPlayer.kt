@@ -8,21 +8,12 @@ import work.nekow.particledrawing.api.ParticleStyle
 import kotlin.math.cos
 import kotlin.math.sin
 
-/**
- * 客户端本地动画播放器：按游戏 tick 实时求值函数对象与轨道，生成粒子可视化状态。
- *
- * 与编辑器语义一致：
- * - 变量关键帧优先（b[2] 缓动），无帧时用表达式（可链式引用 i/n/t 与其它变量）。
- * - 公式代码块顺序执行，[x,y,z]=向量 拆包。
- * - 轨道缓动使用「关键帧 k 的 easing 控制 k-1→k」语义（工程文件内部语义）。
- */
 @Suppress("unused")
 class ClientAnimationPlayer(
     private val animation: ParticleAnimation,
     private val origin: Vec3,
 ) {
 
-    /** 单个粒子的当前可视化状态。 */
     data class ParticleState(
         val id: String,
         val style: ParticleStyle,
@@ -36,8 +27,7 @@ class ClientAnimationPlayer(
     private var currentTick = 0
     private val states = LinkedHashMap<String, ParticleState>()
     private var finished = false
-    // 播放时长 = 轨道关键帧 + 函数对象 duration + 函数对象变量关键帧的最大 tick
-    // （精简 .pdraw 后派生轨道不再烘焙，函数对象动画时长需从自身字段推导，否则 maxTick 会误判为 0）
+
     private val maxTick: Int = run {
         var max = animation.tracks.flatMap { it.keyframes }.maxOfOrNull { it.tick }?.toDouble() ?: 0.0
         for (fx in animation.functions) {
@@ -51,11 +41,9 @@ class ClientAnimationPlayer(
     }
 
     init {
-        // 物化独立粒子
         for (p in animation.particles) {
             states[p.id] = ParticleState(p.id, p.style, origin.add(p.pos), p.color, p.scale, p.glowing, p.lightLevel)
         }
-        // 物化函数对象派生粒子
         for (fx in animation.functions) {
             for (i in 0 until fx.count) {
                 val id = fx.id + ":p" + i
@@ -66,17 +54,12 @@ class ClientAnimationPlayer(
         advanceTo(0.0)
     }
 
-    /** 推进一 tick，返回是否仍在播放。 */
     fun tick(): Boolean {
         if (finished) return false
         currentTick++
         if (currentTick > maxTick) {
-            if (animation.loop) {
-                currentTick = 0
-            } else {
-                finished = true
-                return false
-            }
+            if (animation.loop) currentTick = 0
+            else { finished = true; return false }
         }
         advanceTo(currentTick.toDouble())
         return true
@@ -84,11 +67,8 @@ class ClientAnimationPlayer(
 
     fun isFinished(): Boolean = finished
     fun currentStates(): Collection<ParticleState> = states.values
-
-    /** 立即停止（状态保留，由调用方清理渲染）。 */
     fun stop() { finished = true }
 
-    /** 更新函数对象变量：改为表达式（清空关键帧），后续 tick 实时生效。按变量名匹配（跨函数对象）。 */
     fun updateVariable(name: String, value: String) {
         for (fx in animation.functions) {
             val v = fx.vars[name] ?: continue
@@ -98,46 +78,32 @@ class ClientAnimationPlayer(
         }
     }
 
-    // ------------------------------------------------------------------
-    // 求值
-    // ------------------------------------------------------------------
-
-    /** 在指定 tick 计算所有粒子状态。 */
     private fun advanceTo(t: Double) {
-        // 1. 独立粒子基础值（无函数对象）
         for (p in animation.particles) {
             val s = states[p.id] ?: continue
-            val pos = particlePosition(p, t)
-            val col = particleColor(p, t)
-            val scl = particleScale(p, t)
-            s.pos = origin.add(pos)
-            s.color = col
-            s.scale = scl
+            s.pos = origin.add(particlePosition(p, t))
+            s.color = particleColor(p, t)
+            s.scale = particleScale(p, t)
         }
-        // 2. 函数对象派生粒子：实时求值 + 整体轨道
         for (fx in animation.functions) {
             for (i in 0 until fx.count) {
                 val id = fx.id + ":p" + i
                 val s = states[id] ?: continue
                 val base = evaluateFunctionParticle(fx, i, fx.count, t)
                 var pos = base.first
-                // 整体位置 op 增量
-                val opDelta = trackValue("pos", "f:" + fx.id, t, doubleArrayOf(0.0, 0.0, 0.0))
-                if (trackMode("pos", "f:" + fx.id) == AnimTrack.Mode.OP) {
-                    pos = Vec3(pos.x + opDelta[0], pos.y + opDelta[1], pos.z + opDelta[2])
+                val dx = opDeltaAt("pos.x", "f:" + fx.id, t)
+                val dy = opDeltaAt("pos.y", "f:" + fx.id, t)
+                val dz = opDeltaAt("pos.z", "f:" + fx.id, t)
+                pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
+                val rx = scalarAt("rot.x", "f:" + fx.id, t, 0.0)
+                val ry = scalarAt("rot.y", "f:" + fx.id, t, 0.0)
+                val rz = scalarAt("rot.z", "f:" + fx.id, t, 0.0)
+                if (rx != 0.0 || ry != 0.0 || rz != 0.0) {
+                    pos = rotateAround(pos, Vec3(fx.center[0], fx.center[1], fx.center[2]), doubleArrayOf(rx, ry, rz))
                 }
-                // 整体旋转（绕 center）
-                val rot = trackValue("rot", "f:" + fx.id, t, doubleArrayOf(0.0, 0.0, 0.0))
-                if (rot[0] != 0.0 || rot[1] != 0.0 || rot[2] != 0.0) {
-                    pos = rotateAround(pos, Vec3(fx.center[0], fx.center[1], fx.center[2]), rot)
-                }
-                // 整体缩放（set 倍数）
                 var scale = base.third
-                val sclTr = findTrack("scl", "f:" + fx.id)
-                if (sclTr != null && sclTr.keyframes.isNotEmpty()) {
-                    val sv = trackValueAt(sclTr, t, doubleArrayOf(scale.toDouble()))
-                    scale = sv[0].toFloat().coerceAtLeast(0.01f)
-                }
+                val sv = scalarAt("scl", "f:" + fx.id, t, scale.toDouble())
+                scale = sv.toFloat().coerceAtLeast(0.01f)
                 s.pos = origin.add(pos)
                 s.color = base.second
                 s.scale = scale
@@ -147,7 +113,6 @@ class ClientAnimationPlayer(
         }
     }
 
-    /** 求值单个函数对象派生粒子的基础状态（不含整体轨道）。返回 pos/color/scale/glow/light。 */
     private fun evaluateFunctionParticle(fx: FunctionObject, i: Int, n: Int, t: Double): Five<Vec3, Color, Float, Boolean, Int> {
         val env = buildEnv(fx.vars, i, n, t)
         val out = ExpressionEvaluator.evalFunctionCode(fx.code, env)
@@ -160,7 +125,6 @@ class ClientAnimationPlayer(
         return Five(pos, color, scale, out.glow, light)
     }
 
-    /** 链式求值变量：关键帧优先按 t 插值，无帧用表达式（可引用 i/n/t 与其它变量）。 */
     private fun buildEnv(vars: Map<String, FunctionVar>, i: Int, n: Int, t: Double): Map<String, Any> {
         val env = HashMap<String, Any>()
         env["i"] = i.toDouble()
@@ -172,15 +136,14 @@ class ClientAnimationPlayer(
         fun resolve(name: String): Any {
             memo[name]?.let { return it }
             env[name]?.let { return it }
-            val v = vars[name] ?: throw IllegalArgumentException("未知变量: $name")
-            if (name in inStack) throw IllegalArgumentException("变量循环引用: $name")
+            val v = vars[name] ?: throw IllegalArgumentException("未知变量: " + name)
+            if (name in inStack) throw IllegalArgumentException("变量循环引用: " + name)
             inStack.add(name)
             val value = if (v.kf.isNotEmpty()) {
                 ExpressionEvaluator.varKfValue(v.kf, t)
             } else {
                 val resolver = object : java.util.AbstractMap<String, Any>() {
-                    override val entries: MutableSet<MutableMap.MutableEntry<String, Any>>
-                        get() = mutableSetOf()
+                    override val entries: MutableSet<MutableMap.MutableEntry<String, Any>> get() = mutableSetOf()
                     override fun get(key: String): Any {
                         memo[key]?.let { return it }
                         env[key]?.let { return it }
@@ -195,28 +158,19 @@ class ClientAnimationPlayer(
         }
 
         for (name in vars.keys) {
-            if (name in ATTR_NAMES) throw IllegalArgumentException("变量名 $name 是属性保留字")
+            if (name in ATTR_NAMES) throw IllegalArgumentException("变量名 " + name + " 是属性保留字")
             resolve(name)
         }
         for ((k, v) in memo) env[k] = v
         return env
     }
 
-    // ------------------------------------------------------------------
-    // 轨道查询（工程文件内部语义：段 i→i+1 用关键帧 i+1 的缓动）
-    // ------------------------------------------------------------------
+    private fun compPr(prop: String, comp: String): String = if (comp.isEmpty()) prop else prop + "." + comp
 
-    private fun findTrack(property: String, id: String): AnimTrack? =
-        animation.tracks.find { it.property.wire == property && it.ids.size == 1 && it.ids[0] == id }
+    private fun findTrackByPr(pr: String, id: String): AnimTrack? =
+        animation.tracks.find { it.pr == pr && it.ids.size == 1 && it.ids[0] == id }
 
-    private fun trackMode(property: String, id: String): AnimTrack.Mode? = findTrack(property, id)?.mode
-
-    private fun trackValue(property: String, id: String, t: Double, fallback: DoubleArray): DoubleArray {
-        val tr = findTrack(property, id) ?: return fallback
-        return trackValueAt(tr, t, fallback)
-    }
-
-    private fun trackValueAt(tr: AnimTrack, t: Double, fallback: DoubleArray): DoubleArray {
+    private fun trackValueAt(tr: AnimTrack, t: Double, fallback: Double): Double {
         val kfs = tr.keyframes
         if (kfs.isEmpty()) return fallback
         if (t <= kfs[0].tick) return kfs[0].value
@@ -227,90 +181,143 @@ class ClientAnimationPlayer(
                 val dur = (b.tick - a.tick).toDouble()
                 val f = if (dur == 0.0) 1.0 else (t - a.tick) / dur
                 val e = b.easing.evaluate(f.toFloat()).toDouble()
-                val out = DoubleArray(a.value.size)
-                for (j in a.value.indices) out[j] = a.value[j] + (b.value[j] - a.value[j]) * e
-                return out
+                return a.value + (b.value - a.value) * e
             }
         }
         return kfs.last().value
     }
 
-    /** 独立粒子的位置（粒子 set 轨道覆盖 + 组旋转 + 组 pos op 增量，与编辑器语义一致）。 */
-    private fun particlePosition(p: AnimParticle, t: Double): Vec3 {
-        var pos = p.pos
-        // 粒子自身 set 轨道覆盖
-        val ownSet = findTrack("pos", p.id)
-        if (ownSet != null && ownSet.mode == AnimTrack.Mode.SET && ownSet.keyframes.isNotEmpty()) {
-            val v = trackValueAt(ownSet, t, doubleArrayOf(pos.x, pos.y, pos.z))
-            pos = Vec3(v[0], v[1], v[2])
-        }
-        // 组旋转（绕组质心，rot 为度）
-        val gr = groupRotation(p, t)
-        if (gr != null) {
-            val r = gr.rot
-            if (r[0] != 0.0 || r[1] != 0.0 || r[2] != 0.0) {
-                pos = rotateAround(pos, gr.pivot, r)
-            }
-        }
-        // 组 op 增量
-        for ((gname, members) in animation.groups) {
-            if (p.id !in members) continue
-            val tr = findTrack("pos", "g:$gname")
-            if (tr != null && tr.mode == AnimTrack.Mode.OP) {
-                val d = trackValueAt(tr, t, doubleArrayOf(0.0, 0.0, 0.0))
-                pos = pos.add(d[0], d[1], d[2])
-            }
-        }
-        return pos
+    private fun scalarAt(pr: String, id: String, t: Double, fallback: Double): Double {
+        val tr = findTrackByPr(pr, id) ?: return fallback
+        return trackValueAt(tr, t, fallback)
     }
 
-    /** 组旋转信息：粒子所属（首个）组的 rot 轨道与其质心 pivot。 */
-    private data class GroupRotation(val rot: DoubleArray, val pivot: Vec3)
+    private fun opDeltaAt(pr: String, id: String, t: Double): Double {
+        val tr = findTrackByPr(pr, id) ?: return 0.0
+        if (tr.mode != AnimTrack.Mode.OP || tr.keyframes.isEmpty()) return 0.0
+        return trackValueAt(tr, t, 0.0)
+    }
 
-    private fun groupRotation(p: AnimParticle, t: Double): GroupRotation? {
+    private fun particleFunction(id: String): FunctionObject? =
+        animation.functions.find { id.startsWith(it.id + ":p") }
+
+    private fun findSetTrackFor(id: String, prop: String, comp: String): AnimTrack? {
+        val pr = compPr(prop, comp)
+        findTrackByPr(pr, id)?.let { if (it.mode != AnimTrack.Mode.OP) return it }
         for ((gname, members) in animation.groups) {
-            if (p.id !in members) continue
-            val tr = findTrack("rot", "g:$gname") ?: continue
-            if (tr.keyframes.isEmpty()) continue
-            val rot = trackValueAt(tr, t, doubleArrayOf(0.0, 0.0, 0.0))
-            return GroupRotation(rot, groupCentroid(gname))
+            if (id !in members) continue
+            findTrackByPr(pr, "g:" + gname)?.let { if (it.mode != AnimTrack.Mode.OP) return it }
+        }
+        val fx = particleFunction(id)
+        if (fx != null) {
+            findTrackByPr(pr, "f:" + fx.id)?.let { if (it.mode != AnimTrack.Mode.OP) return it }
         }
         return null
     }
 
-    /** 组质心 = 成员基础位置的平均值（与编辑器 groupCentroidValue(pos) 一致）。 */
+    private fun compOpDelta(p: AnimParticle, prop: String, comp: String, t: Double): Double {
+        val pr = compPr(prop, comp)
+        var delta = 0.0
+        for (tr in animation.tracks) {
+            if (tr.pr != pr || tr.mode != AnimTrack.Mode.OP || tr.keyframes.isEmpty()) continue
+            for (id in tr.ids) {
+                if (id.startsWith("g:")) {
+                    val members = animation.groups[id.removePrefix("g:")] ?: continue
+                    if (p.id in members) delta += trackValueAt(tr, t, 0.0)
+                }
+                if (id.startsWith("f:")) {
+                    val fxId = id.removePrefix("f:")
+                    if (p.id.startsWith(fxId + ":p")) delta += trackValueAt(tr, t, 0.0)
+                }
+            }
+        }
+        return delta
+    }
+
+    private fun rotVectorAt(id: String, t: Double): DoubleArray =
+        doubleArrayOf(
+            scalarAt("rot.x", id, t, 0.0),
+            scalarAt("rot.y", id, t, 0.0),
+            scalarAt("rot.z", id, t, 0.0),
+        )
+
+    private fun baseComponent(p: AnimParticle, prop: String, comp: String): Double = when (prop) {
+        "pos" -> when (comp) { "x" -> p.pos.x; "y" -> p.pos.y; else -> p.pos.z }
+        "col" -> when (comp) { "r" -> p.color.r.toDouble(); "g" -> p.color.g.toDouble(); "b" -> p.color.b.toDouble(); else -> p.color.a.toDouble() }
+        "vel" -> when (comp) { "x" -> p.vel.x; "y" -> p.vel.y; else -> p.vel.z }
+        "scl" -> p.scale.toDouble()
+        else -> 0.0
+    }
+
+    private fun componentValueAt(p: AnimParticle, prop: String, comp: String, t: Double): Double {
+        var v = baseComponent(p, prop, comp)
+        val tr = findSetTrackFor(p.id, prop, comp)
+        if (tr != null && tr.keyframes.isNotEmpty()) v = trackValueAt(tr, t, v)
+        v += compOpDelta(p, prop, comp, t)
+        return v
+    }
+
+    private fun particlePosition(p: AnimParticle, t: Double): Vec3 {
+        var pos = Vec3(
+            setComponentValueAt(p, "pos", "x", t),
+            setComponentValueAt(p, "pos", "y", t),
+            setComponentValueAt(p, "pos", "z", t),
+        )
+        pos = applyGroupRotation(p, pos, t)
+        pos = pos.add(
+            compOpDelta(p, "pos", "x", t),
+            compOpDelta(p, "pos", "y", t),
+            compOpDelta(p, "pos", "z", t),
+        )
+        return pos
+    }
+
+    private fun setComponentValueAt(p: AnimParticle, prop: String, comp: String, t: Double): Double {
+        var v = baseComponent(p, prop, comp)
+        val tr = findSetTrackFor(p.id, prop, comp)
+        if (tr != null && tr.keyframes.isNotEmpty()) v = trackValueAt(tr, t, v)
+        return v
+    }
+
+    private fun applyGroupRotation(p: AnimParticle, value: Vec3, t: Double): Vec3 {
+        for ((gname, members) in animation.groups) {
+            if (p.id !in members) continue
+            val rot = rotVectorAt("g:" + gname, t)
+            if (rot[0] == 0.0 && rot[1] == 0.0 && rot[2] == 0.0) return value
+            return rotateAround(value, groupCentroid(gname), rot)
+        }
+        val fx = particleFunction(p.id)
+        if (fx != null) {
+            val rot = rotVectorAt("f:" + fx.id, t)
+            if (rot[0] == 0.0 && rot[1] == 0.0 && rot[2] == 0.0) return value
+            return rotateAround(value, Vec3(fx.center[0], fx.center[1], fx.center[2]), rot)
+        }
+        return value
+    }
+
     private fun groupCentroid(gname: String): Vec3 {
         val members = animation.groups[gname] ?: return Vec3.ZERO
         var sx = 0.0; var sy = 0.0; var sz = 0.0; var n = 0
         for (id in members) {
-            val member = animation.particles.find { it.id == id } ?: continue
-            sx += member.pos.x; sy += member.pos.y; sz += member.pos.z; n++
+            val m = animation.particles.find { it.id == id } ?: continue
+            sx += m.pos.x; sy += m.pos.y; sz += m.pos.z; n++
         }
         if (n == 0) return Vec3.ZERO
         return Vec3(sx / n, sy / n, sz / n)
     }
 
     private fun particleColor(p: AnimParticle, t: Double): Color {
-        val tr = findTrack("col", p.id)
-        if (tr != null && tr.keyframes.isNotEmpty()) {
-            val v = trackValueAt(tr, t, doubleArrayOf(p.color.r.toDouble(), p.color.g.toDouble(), p.color.b.toDouble(), p.color.a.toDouble()))
-            return Color.of(v[0].toFloat(), v[1].toFloat(), v[2].toFloat(), v[3].toFloat())
-        }
-        return p.color
+        return Color.of(
+            componentValueAt(p, "col", "r", t).toFloat(),
+            componentValueAt(p, "col", "g", t).toFloat(),
+            componentValueAt(p, "col", "b", t).toFloat(),
+            componentValueAt(p, "col", "a", t).toFloat(),
+        )
     }
 
     private fun particleScale(p: AnimParticle, t: Double): Float {
-        val tr = findTrack("scl", p.id)
-        if (tr != null && tr.keyframes.isNotEmpty()) {
-            val v = trackValueAt(tr, t, doubleArrayOf(p.scale.toDouble()))
-            return v[0].toFloat().coerceAtLeast(0.01f)
-        }
-        return p.scale
+        return componentValueAt(p, "scl", "", t).toFloat().coerceAtLeast(0.01f)
     }
-
-    // ------------------------------------------------------------------
-    // 旋转
-    // ------------------------------------------------------------------
 
     private fun rotateAround(p: Vec3, pivot: Vec3, rot: DoubleArray): Vec3 {
         var r = p.subtract(pivot)
@@ -330,15 +337,5 @@ class ClientAnimationPlayer(
         )
     }
 
-    /** 五元组辅助。 */
     private data class Five<A, B, C, D, E>(val first: A, val second: B, val third: C, val fourth: D, val fifth: E)
-
-    private val AnimTrack.Property.wire: String
-        get() = when (this) {
-            AnimTrack.Property.POSITION -> "pos"
-            AnimTrack.Property.ROTATION -> "rot"
-            AnimTrack.Property.VELOCITY -> "vel"
-            AnimTrack.Property.COLOR -> "col"
-            AnimTrack.Property.SCALE -> "scl"
-        }
 }

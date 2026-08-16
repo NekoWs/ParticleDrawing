@@ -37,13 +37,36 @@ const PLANES = {
   YZ: { axes: ['Y', 'Z'], constant: 'X', normal: new THREE.Vector3(1, 0, 0), toWorld: (u, v, o) => [o, u, v] },
 };
 
-// 粒子可动画轨道（与组一致：位置/颜色/缩放，多分量合并在同一节点内）
-const PARTICLE_TRACK_DEFS = [
-  { key: 'pos', label: '位置', labels: ['X', 'Y', 'Z'] },
-  { key: 'vel', label: '速度', labels: ['X', 'Y', 'Z'] },
-  { key: 'col', label: '颜色', labels: ['R', 'G', 'B', 'A'] },
-  { key: 'scl', label: '缩放', labels: ['缩放'] },
-];
+/* ========================================================================
+ * 轨道属性与分量（分量级数据模型）
+ * 轨道 pr 编码：多分量属性为「属性.分量」（如 pos.x / rot.y / col.a），
+ * 单分量属性（scl）直接用「scl」。关键帧值（kf[1]）为标量。
+ * ======================================================================== */
+
+// 属性 → 分量键列表
+const TRACK_COMPS = {
+  pos: ['x', 'y', 'z'],
+  rot: ['x', 'y', 'z'],
+  vel: ['x', 'y', 'z'],
+  col: ['r', 'g', 'b', 'a'],
+  scl: ['s'],
+};
+
+// 分量键 → 在向量中的下标
+const COMP_INDEX = { x: 0, y: 1, z: 2, r: 0, g: 1, b: 2, a: 3, s: 0 };
+
+// 属性 / 分量 显示标签
+const PROP_LABELS = { pos: '位置', rot: '旋转', vel: '速度', col: '颜色', scl: '缩放' };
+const COMP_LABELS = { x: 'X', y: 'Y', z: 'Z', r: 'R', g: 'G', b: 'B', a: 'A', s: '缩放' };
+
+// 各对象类型可动画的属性
+const PARTICLE_TRACK_DEFS = ['pos', 'vel', 'col', 'scl'];
+const GROUP_PROP_DEFS = ['pos', 'rot', 'vel', 'col', 'scl'];
+const FUNCTION_PROP_DEFS = ['pos', 'rot', 'scl'];
+
+// 分量轨道 pr 拼接 / 解析
+function compPr(prop, comp) { return comp ? prop + '.' + comp : prop; }
+function splitCompPr(pr) { const i = pr.indexOf('.'); return i < 0 ? [pr, null] : [pr.slice(0, i), pr.slice(i + 1)]; }
 
 const DEFAULT_EASING = 3;
 const SNAP_STEP = 1.0;
@@ -51,15 +74,6 @@ const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
 const ROT_SNAP = 45; // 按住 Shift 时旋转吸附的步长（角度）
 const PARTICLE_SIZE_FACTOR = 0.5; // 编辑器渲染缩放（与游戏内 quad 的可见点大小一致）
-
-// 组的属性（轨道级）
-const GROUP_PROP_DEFS = [
-  { key: 'pos', label: '位置', size: 3, labels: ['X', 'Y', 'Z'] },
-  { key: 'rot', label: '旋转', size: 3, labels: ['X', 'Y', 'Z'] },
-  { key: 'vel', label: '速度', size: 3, labels: ['X', 'Y', 'Z'] },
-  { key: 'col', label: '颜色', size: 4, labels: ['R', 'G', 'B', 'A'] },
-  { key: 'scl', label: '缩放', size: 1, labels: ['缩放'] },
-];
 
 /* =========================================================================
  * 状态
@@ -135,18 +149,19 @@ const FUNCTION_PRESETS = {
     build: p => ({
       count: 200,
       vars: { rad: { expr: String(p.rad), kf: [] } },
-      code: 'th = acos(1-2*(i+0.5)/n);\nph = i*pi*(3-sqrt(5));\n[x,y,z] = [rad*sin(th)*cos(ph), rad*cos(th), rad*sin(th)*sin(ph)];\n[r,g,b,a] = [1,1,1,1];\nsc = 0.3;\nglow = 1;\nlight = 12',
+      code: 'th = acos(1-2*(i+0.5)/n);\nph = i*pi*(3-sqrt(5));\n[x,y,z] = [rad*sin(th)*cos(ph), rad*cos(th), rad*sin(th)*sin(ph)];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 12',
     }),
   },
   cube: {
     label: '立方体',
+    countVars: ['sx', 'sy', 'sz'],
     params: [
       { key: 'edge', label: '边长', def: 4 },
     ],
     build: p => ({
       count: 512,
-      vars: { edge: { expr: String(p.edge), kf: [] } },
-      code: '[x,y,z] = [((floor(i/(n*n)))/(n-1)-0.5)*edge, ((floor((i%(n*n))/n))/(n-1)-0.5)*edge, ((i%(n*n)%n)/(n-1)-0.5)*edge];\n[r,g,b,a] = [1,1,1,1];\nsc = 0.25;\nglow = 0;\nlight = 0',
+      vars: { edge: { expr: String(p.edge), kf: [] }, sx: { expr: '8', kf: [] }, sy: { expr: '8', kf: [] }, sz: { expr: '8', kf: [] } },
+      code: '[x,y,z] = [((floor(i/(sy*sz)))/(sx-1)-0.5)*edge, ((floor((i%(sy*sz))/sz))/(sy-1)-0.5)*edge, ((i%sz)/(sz-1)-0.5)*edge];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
     }),
   },
   torus: {
@@ -159,20 +174,20 @@ const FUNCTION_PRESETS = {
     build: p => ({
       count: 288,
       vars: { major: { expr: String(p.major), kf: [] }, minor: { expr: String(p.minor), kf: [] }, m: { expr: '24', kf: [] }, k: { expr: '12', kf: [] } },
-      code: 'th = (i%k)/k*2*pi;\nph = floor(i/k)/m*2*pi;\n[x,y,z] = [(major+minor*cos(th))*cos(ph), minor*sin(th), (major+minor*cos(th))*sin(ph)];\n[r,g,b,a] = [1,1,1,1];\nsc = 0.2;\nglow = 1;\nlight = 10',
+      code: 'th = i%k/k*2*pi;\nph = floor(i/k)/m*2*pi;\n[x,y,z] = [(major+minor*cos(th))*cos(ph), minor*sin(th), (major+minor*cos(th))*sin(ph)];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 10',
     }),
   },
   cylinder: {
     label: '圆柱',
-    countVars: ['m', 'k'],
+    countExpr: 'm*(k+2*cr)',
     params: [
       { key: 'rad', label: '半径', def: 2 },
       { key: 'h', label: '高度', def: 4 },
     ],
     build: p => ({
-      count: 256,
-      vars: { rad: { expr: String(p.rad), kf: [] }, h: { expr: String(p.h), kf: [] }, m: { expr: '32', kf: [] }, k: { expr: '8', kf: [] } },
-      code: 'aa = (i%m)/m*2*pi;\nyy = floor(i/m)/(k-1);\n[x,y,z] = [rad*cos(aa), (yy-0.5)*h, rad*sin(aa)];\n[r,g,b,a] = [1,1,1,1];\nsc = 0.25;\nglow = 0;\nlight = 0',
+      count: 512,
+      vars: { rad: { expr: String(p.rad), kf: [] }, h: { expr: String(p.h), kf: [] }, m: { expr: '32', kf: [] }, k: { expr: '8', kf: [] }, cr: { expr: '4', kf: [] } },
+      code: 'L = k + 2*cr;\nly = floor(i/m);\naa = i%m/m*2*pi;\nrr = rad*clamp(min(ly/(cr-1), (L-1-ly)/(cr-1)), 0, 1);\nyy = (clamp(ly, cr, cr+k-1)-cr)/(k-1)*h - h/2;\n[x,y,z] = [rr*cos(aa), yy, rr*sin(aa)];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
     }),
   },
   cone: {
@@ -183,9 +198,9 @@ const FUNCTION_PRESETS = {
       { key: 'h', label: '高度', def: 4 },
     ],
     build: p => ({
-      count: 256,
-      vars: { rad: { expr: String(p.rad), kf: [] }, h: { expr: String(p.h), kf: [] }, m: { expr: '32', kf: [] }, k: { expr: '8', kf: [] } },
-      code: 'aa = (i%m)/m*2*pi;\nyy = floor(i/m)/(k-1);\n[x,y,z] = [rad*(1-yy)*cos(aa), (yy-0.5)*h, rad*(1-yy)*sin(aa)];\n[r,g,b,a] = [1,1,1,1];\nsc = 0.25;\nglow = 0;\nlight = 0',
+      count: 512,
+      vars: { rad: { expr: String(p.rad), kf: [] }, h: { expr: String(p.h), kf: [] }, m: { expr: '32', kf: [] }, k: { expr: '16', kf: [] } },
+      code: 'aa = i%m/m*2*pi;\nyy = floor(i/m)/(k-1);\n[x,y,z] = [rad*(1-yy)*cos(aa), (yy-0.5)*h, rad*(1-yy)*sin(aa)];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
     }),
   },
   helix: {
@@ -198,7 +213,7 @@ const FUNCTION_PRESETS = {
     build: p => ({
       count: 120,
       vars: { rad: { expr: String(p.rad), kf: [] }, h: { expr: String(p.h), kf: [] }, turns: { expr: '3', kf: [] }, ppr: { expr: '40', kf: [] } },
-      code: 'aa = i/ppr*2*pi;\n[x,y,z] = [rad*cos(aa), (i/n-0.5)*h, rad*sin(aa)];\n[r,g,b,a] = [1,1,1,1];\nsc = 0.3;\nglow = 1;\nlight = 8',
+      code: 'aa = i/ppr*2*pi;\n[x,y,z] = [rad*cos(aa), (i/n-0.5)*h, rad*sin(aa)];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 8',
     }),
   },
   plane: {
@@ -211,7 +226,7 @@ const FUNCTION_PRESETS = {
     build: p => ({
       count: 256,
       vars: { w: { expr: String(p.w), kf: [] }, d: { expr: String(p.d), kf: [] }, cols: { expr: '16', kf: [] }, rows: { expr: '16', kf: [] } },
-      code: '[x,y,z] = [((i%cols)/(cols-1)-0.5)*w, 0, (floor(i/cols)/(rows-1)-0.5)*d];\n[r,g,b,a] = [1,1,1,1];\nsc = 0.2;\nglow = 0;\nlight = 0',
+      code: '[x,y,z] = [((i%cols)/(cols-1)-0.5)*w, 0, (floor(i/cols)/(rows-1)-0.5)*d];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
     }),
   },
   circle: {
@@ -223,7 +238,31 @@ const FUNCTION_PRESETS = {
     build: p => ({
       count: 200,
       vars: { outer: { expr: String(p.outer), kf: [] }, inner: { expr: String(p.inner), kf: [] } },
-      code: 'aa = i/n*2*pi;\nrr = sqrt(inner^2 + (outer^2-inner^2)*i/n);\n[x,y,z] = [rr*cos(aa), 0, rr*sin(aa)];\n[r,g,b,a] = [1,1,1,1];\nsc = 0.3;\nglow = 1;\nlight = 12',
+      code: 'aa = i/n*2*pi;\nrr = sqrt(inner^2 + (outer^2-inner^2)*i/n);\n[x,y,z] = [rr*cos(aa), 0, rr*sin(aa)];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 12',
+    }),
+  },
+  disc: {
+    label: '圆盘',
+    params: [
+      { key: 'rad', label: '半径', def: 4 },
+    ],
+    build: p => ({
+      count: 240,
+      vars: { rad: { expr: String(p.rad), kf: [] } },
+      code: 'aa = i/n*2*pi;\nrr = rad*sqrt(i/n);\n[x,y,z] = [rr*cos(aa), 0, rr*sin(aa)];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 12',
+    }),
+  },
+  sin: {
+    label: 'sin 波',
+    params: [
+      { key: 'amp', label: '振幅', def: 2 },
+      { key: 'freq', label: '频率', def: 2 },
+      { key: 'wid', label: '宽度', def: 8 },
+    ],
+    build: p => ({
+      count: 200,
+      vars: { amp: { expr: String(p.amp), kf: [] }, freq: { expr: String(p.freq), kf: [] }, wid: { expr: String(p.wid), kf: [] } },
+      code: 'xx = (i/n-0.5)*wid;\n[x,y,z] = [xx, amp*sin(freq*pi*xx/wid), 0];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 12',
     }),
   },
 };

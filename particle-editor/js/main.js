@@ -235,7 +235,10 @@ function resize() {
   camera.updateProjectionMatrix();
   pointsMaterial.uniforms.uPixelScale.value = focalLengthPx();
   selectedMaterial.uniforms.uPixelScale.value = focalLengthPx();
-  if (!document.body.classList.contains('puzzle-mode')) drawTimeline();
+  if (!document.body.classList.contains('puzzle-mode')) {
+    drawTimeline();
+    if (typeof refreshCompTimelines === 'function') refreshCompTimelines();
+  }
 }
 window.addEventListener('resize', resize);
 resize();

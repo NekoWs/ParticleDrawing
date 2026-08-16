@@ -89,34 +89,27 @@ function angleInBasis(point, centroid, u, v) {
   return Math.atan2(rel.dot(v), rel.dot(u));
 }
 
-function groupRotationValueAt(gname, T) {
-  const tr = findGroupTrack('rot', gname);
-  if (tr && tr.kf.length > 0) return trackValueAt(tr, T, [0, 0, 0]);
-  return [0, 0, 0];
-}
+function groupRotationValueAt(gname, T) { return rotVectorAt('g:' + gname, T); }
 
 function groupPosDeltaAt(gname, T) {
-  const tr = findGroupTrack('pos', gname);
-  if (tr && tr.kf.length > 0) return trackValueAt(tr, T, [0, 0, 0]);
-  return [0, 0, 0];
+  return ['x', 'y', 'z'].map(c => {
+    const tr = findTrackByPr('pos.' + c, 'g:' + gname);
+    return (tr && tr.m === 'op' && tr.kf.length > 0) ? trackValueAt(tr, T, 0) : 0;
+  });
 }
 
 function fxPosDeltaAt(fxId, T) {
-  const tr = findFunctionTrack('pos', fxId);
-  if (tr && tr.kf.length > 0) return trackValueAt(tr, T, [0, 0, 0]);
-  return [0, 0, 0];
+  return ['x', 'y', 'z'].map(c => {
+    const tr = findTrackByPr('pos.' + c, 'f:' + fxId);
+    return (tr && tr.m === 'op' && tr.kf.length > 0) ? trackValueAt(tr, T, 0) : 0;
+  });
 }
 
-function fxRotationValueAt(fxId, T) {
-  const tr = findFunctionTrack('rot', fxId);
-  if (tr && tr.kf.length > 0) return trackValueAt(tr, T, [0, 0, 0]);
-  return [0, 0, 0];
-}
+function fxRotationValueAt(fxId, T) { return rotVectorAt('f:' + fxId, T); }
 
 function fxScaleValueAt(fxId, T) {
-  const tr = findFunctionTrack('scl', fxId);
-  if (tr && tr.kf.length > 0) return trackValueAt(tr, T, [1])[0];
-  return 1;
+  const tr = findTrackByPr('scl', 'f:' + fxId);
+  return (tr && tr.kf.length > 0) ? trackValueAt(tr, T, 1) : 1;
 }
 
 function enterRotate(clientX, clientY, axis) {
@@ -339,7 +332,7 @@ function copySelected() {
     }));
     const tracks = state.tracks
       .filter(tr => tr.ids.some(id => id === 'g:' + gname || memberIds.has(id)))
-      .map(tr => ({ pr: tr.pr, m: tr.m, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], k[1].slice(), k[2]]) }));
+      .map(tr => ({ pr: tr.pr, m: tr.m, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], k[1], k[2]]) }));
     clipboard = { type: 'group', groupName: gname, items, tracks };
     return;
   }
@@ -373,7 +366,7 @@ function pasteClipboard() {
       state.tracks.push({
         pr: tr.pr, m: tr.m,
         ids: tr.ids.map(id => id.startsWith('g:') ? 'g:' + newGroupName : (idMap[id] || id)),
-        kf: tr.kf.map(k => [k[0], k[1].slice(), k[2]]),
+        kf: tr.kf.map(k => [k[0], k[1], k[2]]),
       });
     }
     state.selectedGroup = newGroupName;
@@ -395,8 +388,10 @@ function hitGizmoAxis(clientX, clientY) {
   const px = clientX - rect.left, py = clientY - rect.top;
   const scale = gizmoGroup.scale.x || 1;
   for (const [axis, v] of Object.entries(AXIS_VECTORS)) {
+    // 用 gizmo 当前旋转（局部坐标系）旋转轴向量，使命中检测与箭头实际渲染方向一致
+    const dir = new THREE.Vector3(v[0], v[1], v[2]).applyQuaternion(gizmoGroup.quaternion);
     const s = projectToScreen(c[0], c[1], c[2]);
-    const e = projectToScreen(c[0] + v[0] * 1.5 * scale, c[1] + v[1] * 1.5 * scale, c[2] + v[2] * 1.5 * scale);
+    const e = projectToScreen(c[0] + dir.x * 1.5 * scale, c[1] + dir.y * 1.5 * scale, c[2] + dir.z * 1.5 * scale);
     if (distToSegment(px, py, s.x, s.y, e.x, e.y) < 10) return axis;
   }
   return null;
@@ -468,8 +463,8 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
       if (p) {
         if (ev.shiftKey) { state.selected.has(p.id) ? state.selected.delete(p.id) : state.selected.add(p.id); }
         else if (!state.selected.has(p.id)) { state.selected.clear(); state.selected.add(p.id); }
-        state.selectedGroup = null;
         state.selectedFunction = null;
+        promoteGroupSelection();
         rebuildPoints();
         enterGrab(ev.clientX, ev.clientY);
         return;
@@ -651,6 +646,19 @@ function updateBoxOverlay() {
   ov.style.height = Math.abs(boxSel.y1 - boxSel.y0) + 'px';
 }
 
+// 选中集合恰好等于某组全部成员时，自动提升为选中该组
+function promoteGroupSelection() {
+  for (const [gname, members] of Object.entries(state.groups)) {
+    if (members.length === 0) continue;
+    if (state.selected.size === members.length && members.every(id => state.selected.has(id))) {
+      state.selectedGroup = gname;
+      state.selectedFunction = null;
+      return;
+    }
+  }
+  state.selectedGroup = null;
+}
+
 function applyBoxSelection() {
   const rect = renderer.domElement.getBoundingClientRect();
   const x0 = Math.min(boxSel.x0, boxSel.x1) - rect.left, y0 = Math.min(boxSel.y0, boxSel.y1) - rect.top;
@@ -663,6 +671,6 @@ function applyBoxSelection() {
   }
   if (boxSel.shift) for (const id of sel) state.selected.add(id);
   else state.selected = sel;
-  state.selectedGroup = null;
   state.selectedFunction = null;
+  promoteGroupSelection();
 }

@@ -4,13 +4,30 @@
 
 function updatePropPanel() {
   const sel = currentSelected();
-  if (sel.length === 0) return;
-  // 派生粒子基础属性只读：禁用属性面板输入
-  const readOnly = sel.some(isDerivedParticle);
-  ['prop-style', 'prop-color', 'prop-alpha', 'prop-scale', 'prop-glow', 'prop-light', 'prop-posx', 'prop-posy', 'prop-posz'].forEach(id => {
+  const fxId = state.selectedFunction;
+  const isFx = !!fxId;
+  if (sel.length === 0 && !isFx) return;
+  // 派生粒子基础属性只读；函数对象 pos/scl 可编辑（写整体轨道）
+  const readOnly = !isFx && sel.some(isDerivedParticle);
+  ['prop-style', 'prop-color', 'prop-alpha', 'prop-glow', 'prop-light'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = readOnly || isFx;
+  });
+  ['prop-scale', 'prop-posx', 'prop-posy', 'prop-posz'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = readOnly;
   });
+  // 函数对象：显示/编辑整体位置与缩放
+  if (isFx) {
+    const fx = getFunction(fxId);
+    if (!fx) return;
+    const d = fxPosDeltaAt(fxId, state.time);
+    document.getElementById('prop-posx').value = (fx.center[0] + d[0]).toFixed(2);
+    document.getElementById('prop-posy').value = (fx.center[1] + d[1]).toFixed(2);
+    document.getElementById('prop-posz').value = (fx.center[2] + d[2]).toFixed(2);
+    document.getElementById('prop-scale').value = fxScaleValueAt(fxId, state.time);
+    return;
+  }
   const first = sel[0];
   const same = (fn) => sel.every(q => fn(q) === fn(first));
   const styleSel = document.getElementById('prop-style');
@@ -72,6 +89,7 @@ function hexToRgb(hex) {
 
 const TL_PX_PER_TICK = 4;
 let timelineViewStart = -25;
+let compTimelineViewStart = 0;
 
 function drawTimeline() {
   const canvas = document.getElementById('timeline');
@@ -168,6 +186,7 @@ function buildFunctionPanel(fx) {
   presetRow.className = 'row';
   presetRow.textContent = '预设 ';
   const presetSel = document.createElement('select');
+  presetSel.className = 'fx-preset-sel';
   const opt0 = document.createElement('option'); opt0.value = ''; opt0.textContent = '自定义公式';
   presetSel.appendChild(opt0);
   for (const id in FUNCTION_PRESETS) {

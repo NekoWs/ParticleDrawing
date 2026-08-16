@@ -340,7 +340,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .ease-btn svg { display: block; }
 
 .easing-editor {
-  position: fixed; z-index: 100; width: 216px; background: var(--panel-3);
+  position: fixed; z-index: 2100; width: 216px; background: var(--panel-3);
   border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; box-shadow: var(--shadow);
 }
 .ee-title { font-weight: 600; margin-bottom: 8px; }
@@ -438,6 +438,12 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .fx-panel .row input[type="number"] { width: 64px; }
 .fx-panel .row input[type="text"] { flex: 1; min-width: 0; }
 .fx-panel .row select { flex: 1; }
+.fx-panel select.fx-preset-sel {
+  background: var(--panel-3); border: 1px solid var(--border);
+  color: var(--text); border-radius: 5px; padding: 0 8px;
+  font-size: 12px; height: 30px; cursor: pointer;
+}
+.fx-panel select.fx-preset-sel:focus { border-color: var(--accent); outline: none; }
 .fx-panel input, .fx-panel select {
   background: var(--panel-3); border: 1px solid var(--border);
   color: var(--text); border-radius: 5px; padding: 6px 8px;
@@ -547,7 +553,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
 
 .blk-expr {
   display: inline-flex; align-items: center; gap: 2px;
-  padding: 3px 8px; border-radius: 12px; cursor: grab; user-select: none;
+  padding: 0 4px; border-radius: 8px; cursor: grab; user-select: none;
   border: 1px solid rgba(0,0,0,0.18); font-size: 12px; white-space: nowrap;
   box-shadow: 0 1px 1px rgba(0,0,0,0.2);
 }
@@ -594,7 +600,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
 
 .blk-ghost {
   position: fixed; z-index: 1000; pointer-events: none;
-  opacity: 1; box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+  opacity: 1;
   display: flex; flex-direction: column; align-items: flex-start;
 }
 body.blk-dragging { cursor: grabbing; }
@@ -711,6 +717,8 @@ body.puzzle-mode #puzzle-toolbar { display: flex; }
 .pal-item {
   position: relative; cursor: grab; user-select: none;
   transition: filter 0.1s ease;
+  margin: 3px;
+  zoom: 1.5;
 }
 .pal-item:hover { filter: brightness(1.18); }
 .pal-item:active { cursor: grabbing; }
@@ -723,13 +731,14 @@ body.puzzle-mode #puzzle-toolbar { display: flex; }
   font-size: 10px; font-weight: 700; text-align: center; line-height: 15px;
   cursor: help; z-index: 3;
 }
-.pal-item .qtip {
-  position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%);
+.qtip {
+  position: fixed;
   background: var(--panel-3); border: 1px solid var(--border); border-radius: 6px;
-  padding: 6px 9px; font-size: 11px; color: var(--text); white-space: nowrap;
-  display: none; z-index: 10; box-shadow: var(--shadow);
+  padding: 8px 12px; font-size: 14px; color: var(--text); white-space: nowrap;
+  z-index: 2000; box-shadow: var(--shadow);
+  pointer-events: none;
 }
-.pal-item .qmark:hover .qtip { display: block; }
+.pal-item .qmark:hover { z-index: 100; }
 
 /* 调色板（左侧固定栏，紧凑） */
 .pal-group { margin-bottom: 4px; }
@@ -740,6 +749,8 @@ body.puzzle-mode #puzzle-toolbar { display: flex; }
 .pal-item {
   position: relative; cursor: grab; user-select: none;
   transition: filter 0.1s ease;
+  margin: 3px;
+  zoom: 1.5;
 }
 .pal-item:hover { filter: brightness(1.18); }
 .pal-item:active { cursor: grabbing; }
@@ -752,26 +763,30 @@ body.puzzle-mode #puzzle-toolbar { display: flex; }
   font-size: 10px; font-weight: 700; text-align: center; line-height: 15px;
   cursor: help; z-index: 3;
 }
-.pal-item .qtip {
-  position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%);
+.qtip {
+  position: fixed;
   background: var(--panel-3); border: 1px solid var(--border); border-radius: 6px;
-  padding: 6px 9px; font-size: 11px; color: var(--text); white-space: nowrap;
-  display: none; z-index: 10; box-shadow: var(--shadow);
+  padding: 8px 12px; font-size: 14px; color: var(--text); white-space: nowrap;
+  z-index: 2000; box-shadow: var(--shadow);
+  pointer-events: none;
 }
-.pal-item .qmark:hover .qtip { display: block; }
+.pal-item .qmark:hover { z-index: 100; }
 /* 拖到调色板上方 = 删除 */
 #puzzle-palette.del-target { background: rgba(255,107,107,0.12); outline: 1px dashed var(--danger); }
-.chain-canvas { position: absolute; inset: 0; overflow: hidden; background: var(--bg); }
+.chain-canvas {
+  position: absolute; inset: 0; overflow: hidden; background: var(--bg);
+  background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.10) 1px, transparent 0);
+  background-size: 22px 22px;
+  background-position: 0 0;
+}
 .chain-plane {
   position: absolute; left: 0; top: 0; width: 100%; height: 100%;
   transform-origin: 0 0;
-  background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.10) 1px, transparent 0);
-  background-size: 22px 22px;
 }
 .chain-vars {
   position: absolute; left: 0; right: 0; bottom: 0; max-height: 40%;
   overflow-y: auto; padding: 6px 8px; background: rgba(0,0,0,0.25);
-  border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px;
+  border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
 }
 .chain-vars:empty { display: none; }
 .chain-stack { position: absolute; display: flex; flex-direction: column; align-items: flex-start; }
@@ -802,14 +817,14 @@ body.puzzle-mode #puzzle-toolbar { display: flex; }
 
 .blk-expr {
   display: inline-flex; align-items: center; gap: 2px;
-  padding: 2px 7px; border-radius: 12px; cursor: grab; user-select: none;
+  padding: 0 4px; border-radius: 8px; cursor: grab; user-select: none;
   border: 1px solid rgba(0,0,0,0.18); font-size: 12px; white-space: nowrap;
   box-shadow: 0 1px 1px rgba(0,0,0,0.2);
 }
 .blk-expr:active { cursor: grabbing; }
 .blk-slot {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 30px; min-height: 20px; padding: 1px 4px;
+  min-width: 10px; min-height: 20px; padding: 1px 4px;
   border: 1px dashed rgba(255,255,255,0.28); border-radius: 8px;
   vertical-align: middle;
 }
@@ -835,7 +850,21 @@ body.puzzle-mode #puzzle-toolbar { display: flex; }
   color: #fff; border-radius: 6px; padding: 1px 4px; font-size: 12px; text-align: center;
 }
 .blk-num:focus { border-color: #fff; outline: none; }
-.blk-op-sym { cursor: default; font-weight: 700; padding: 0 4px; border-radius: 4px; min-width: 14px; text-align: center; }
+.blk-attr-sel {
+  background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.3);
+  color: #fff; border-radius: 5px; padding: 1px 3px; font-size: 12px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+.blk-attr-sel:focus { outline: none; border-color: #fff; }
+.blk-attr-tag {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; padding: 1px 6px; border-radius: 6px;
+  background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+  color: #fff; font-size: 12px; font-family: "SFMono-Regular", Consolas, monospace;
+  cursor: grab; user-select: none;
+}
+.blk-attr-tag:hover { background: rgba(255,255,255,0.2); }
+.blk-op-sym { cursor: default; font-weight: 700; padding: 0 4px; border-radius: 4px; min-width: 10px; text-align: center; }
 .blk-op-sym:hover { background: rgba(255,255,255,0.2); }
 .blk-toggle {
   border: none; border-radius: 10px; padding: 3px 10px; cursor: pointer; font-size: 12px;
@@ -882,7 +911,7 @@ body.puzzle-mode #viewport #box-overlay { display: none; }
 /* 动态算式（chain） */
 .blk-chain .blk-op-sym {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 20px; height: 20px; margin: 0; border-radius: 5px;
+  min-width: 10px; height: 20px; margin: 0; border-radius: 5px;
   cursor: grab; font-weight: 700;
 }
 .blk-chain .blk-op-sym.hover { background: rgba(255,255,255,0.3); box-shadow: 0 0 0 2px rgba(255,255,255,0.5); }
@@ -896,3 +925,67 @@ body.puzzle-mode #viewport #box-overlay { display: none; }
 .blk-chain .blk-chain-append.hover { border-color: #fff; background: rgba(255,255,255,0.18); color: #fff; }
 .blk-chain .blk-chain-append.invalid { border-color: var(--danger); color: var(--danger); }
 .blk-opval { min-width: 22px; justify-content: center; }
+
+/* =========================================================================
+ * 分量级图形化时间轴（左侧树）
+ * ======================================================================= */
+
+.ptree-comp-rows { display: flex; flex-direction: column; gap: 2px; padding: 2px 0; }
+.ptree-comp-row {
+  display: flex; align-items: center; gap: 2px;
+  padding: 2px 4px 2px 18px; min-height: 28px;
+}
+.ptree-comp-row .clabel {
+  flex: 0 0 16px; font-size: 12px; color: #9aa0ad;
+  text-align: center; font-weight: 700;
+}
+.ptree-comp-row .cval {
+  flex: 0 0 auto; width: 60px; min-width: 60px; max-width: 60px;
+  font-size: 12px; color: #e8eaf0;
+  text-align: left; font-variant-numeric: tabular-nums; white-space: nowrap;
+  margin-right: 6px; padding: 1px 3px;
+  background: #12141a; border: 1px solid #323848; border-radius: 3px;
+}
+.ptree-comp-row .cval:focus { border-color: var(--accent); outline: none; }
+.ptree-comp-row .comp-timeline {
+  flex: 1 1 auto; height: 24px; min-width: 40px;
+  border-radius: 3px; cursor: crosshair; display: block;
+}
+.ptree-comp-row .kf-add {
+  flex: 0 0 auto; width: 22px; height: 18px; padding: 0;
+  font-size: 11px; line-height: 1; border-radius: 4px;
+  background: transparent; color: #9aa0ad;
+  border: 1px solid #3a3f4b; cursor: pointer;
+}
+.ptree-comp-row .kf-add:hover { color: #ffcc55; border-color: #ffcc55; }
+
+/* 关键帧编辑弹窗（悬浮于关键帧附近，不遮罩背景） */
+.kf-editor {
+  position: fixed; z-index: 2000;
+  background: #1c1f27; border: 1px solid #3a3f4b;
+  border-radius: 8px; padding: 14px 16px; min-width: 240px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+  animation: kfPopIn 0.15s ease-in;
+}
+.kf-editor.closing { animation: kfPopOut 0.12s ease-out forwards; }
+@keyframes kfPopIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes kfPopOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(5px); }
+}
+.kf-editor .ke-title { font-size: 13px; font-weight: 700; margin-bottom: 10px; color: #e8eaf0; }
+.kf-editor .ke-label { flex: none; width: 44px; }
+.kf-editor .row { display: flex; align-items: center; gap: 6px; margin: 6px 0; font-size: 12px; color: #9aa0ad; }
+.kf-editor .row input, .kf-editor .row select {
+  flex: 1; background: #12141a; color: #e8eaf0; border: 1px solid #3a3f4b;
+  border-radius: 4px; padding: 3px 6px; font-size: 12px;
+}
+.kf-editor .ke-btns { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px; }
+.kf-editor .ke-btns button {
+  padding: 4px 12px; border-radius: 4px; border: 1px solid #3a3f4b;
+  background: #23272f; color: #e8eaf0; cursor: pointer; font-size: 12px;
+}
+.kf-editor .ke-btns button:first-child { background: #2a3f5f; border-color: #3a6fa0; }

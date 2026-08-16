@@ -1,96 +1,111 @@
 /* =========================================================================
- * 动画状态查询
+ * 动画状态查询（分量级数据模型）
+ * 轨道 pr：pos.x / pos.y / ... / col.a / scl（单分量 scl 无后缀），kf 值为标量。
  * ======================================================================= */
 
+// 粒子基础分量值（无轨道）
+function baseComponent(p, prop, comp) {
+  if (prop === 'pos') return p.pos[COMP_INDEX[comp]];
+  if (prop === 'col') return p.color[COMP_INDEX[comp]];
+  if (prop === 'vel') return (p.vel || [0, 0, 0])[COMP_INDEX[comp]];
+  if (prop === 'scl') return p.scale;
+  return 0;
+}
+
+// 粒子完整基础向量
 function baseValue(p, prop) {
-  if (prop === 'pos') return p.pos;
-  if (prop === 'col') return p.color;
-  if (prop === 'vel') return p.vel;
+  if (prop === 'pos') return p.pos.slice(0, 3);
+  if (prop === 'col') return p.color.slice(0, 4);
+  if (prop === 'vel') return (p.vel || [0, 0, 0]).slice(0, 3);
+  if (prop === 'rot') return [0, 0, 0];
   return [p.scale];
 }
 
+// 零向量（按属性）
 function zeroArray(prop) {
   if (prop === 'pos' || prop === 'rot' || prop === 'vel') return [0, 0, 0];
   if (prop === 'col') return [0, 0, 0, 0];
   return [0];
 }
 
-function addArrays(a, b) {
-  const out = new Array(a.length);
-  for (let i = 0; i < a.length; i++) out[i] = a[i] + b[i];
-  return out;
-}
-
+// 轨道插值（标量）：b[2] 缓动语义（后一关键帧控制前一段）
 function trackValueAt(tr, T, fallback) {
   const kfs = tr.kf;
-  if (T < kfs[0][0]) return fallback;
+  if (!kfs || kfs.length === 0) return fallback;
+  if (T <= kfs[0][0]) return kfs[0][1];
   if (T >= kfs[kfs.length - 1][0]) return kfs[kfs.length - 1][1];
   for (let i = 0; i < kfs.length - 1; i++) {
     const a = kfs[i], b = kfs[i + 1];
     if (T >= a[0] && T <= b[0]) {
       const dur = b[0] - a[0];
-      return lerpArray(a[1], b[1], easeVal(dur === 0 ? 1 : (T - a[0]) / dur, b[2]));
+      const e = easeVal(dur === 0 ? 1 : (T - a[0]) / dur, b[2]);
+      return a[1] + (b[1] - a[1]) * e;
     }
   }
   return fallback;
 }
 
-function tracksForParticle(prop, pId) {
-  for (const tr of state.tracks) if (tr.pr === prop && tr.m !== 'op' && tr.ids.length === 1 && tr.ids[0] === pId) return tr;
-  for (const tr of state.tracks) {
-    if (tr.pr !== prop || tr.m === 'op') continue;
-    for (const id of tr.ids) {
-      if (id.startsWith('g:')) {
-        const members = state.groups[id.slice(2)];
-        if (members && members.includes(pId)) return tr;
-      }
-      if (id.startsWith('f:')) {
-        const p = getParticle(pId);
-        if (p && p.fx === id.slice(2)) return tr;
-      }
-    }
+// 按 pr + id 精确查找轨道
+function findTrackByPr(pr, id) {
+  return state.tracks.find(tr => tr.pr === pr && tr.ids.length === 1 && tr.ids[0] === id);
+}
+
+// 某 id 在某分量的 set 轨道（优先级：自身 > 组 > 函数对象）
+function findSetTrackFor(id, prop, comp) {
+  const pr = compPr(prop, comp);
+  const own = findTrackByPr(pr, id);
+  if (own && own.m !== 'op') return own;
+  const p = getParticle(id);
+  for (const [gname, members] of Object.entries(state.groups)) {
+    if (!members.includes(id)) continue;
+    const tr = findTrackByPr(pr, 'g:' + gname);
+    if (tr && tr.m !== 'op') return tr;
+  }
+  if (p && p.fx) {
+    const tr = findTrackByPr(pr, 'f:' + p.fx);
+    if (tr && tr.m !== 'op') return tr;
   }
   return null;
 }
 
-function groupOpDelta(p, prop, T) {
-  let delta = null;
+// 组/函数对象在某分量的 op 增量（标量累加）
+function compOpDelta(p, prop, comp, T) {
+  const pr = compPr(prop, comp);
+  let delta = 0;
   for (const tr of state.tracks) {
-    if (tr.pr !== prop || tr.m !== 'op' || tr.kf.length === 0) continue;
+    if (tr.pr !== pr || tr.m !== 'op' || tr.kf.length === 0) continue;
     for (const id of tr.ids) {
       if (id.startsWith('g:')) {
         const members = state.groups[id.slice(2)];
-        if (members && members.includes(p.id)) {
-          const d = trackValueAt(tr, T, zeroArray(prop));
-          delta = delta ? addArrays(delta, d) : d.slice();
-        }
+        if (members && members.includes(p.id)) delta += trackValueAt(tr, T, 0);
       }
-      if (id.startsWith('f:') && p.fx === id.slice(2)) {
-        const d = trackValueAt(tr, T, zeroArray(prop));
-        delta = delta ? addArrays(delta, d) : d.slice();
-      }
+      if (id.startsWith('f:') && p.fx === id.slice(2)) delta += trackValueAt(tr, T, 0);
     }
   }
   return delta;
 }
 
+// 某 id（'g:name' 或 'f:fxId'）的 rot 向量（三个分量）
+function rotVectorAt(id, T) {
+  return ['x', 'y', 'z'].map(c => {
+    const tr = findTrackByPr('rot.' + c, id);
+    return tr ? trackValueAt(tr, T, 0) : 0;
+  });
+}
+
+// 组旋转信息（组件/函数对象的 rot + pivot）
 function groupRotationInfo(p, T) {
-  for (const tr of state.tracks) {
-    if (tr.pr !== 'rot' || tr.kf.length === 0) continue;
-    for (const id of tr.ids) {
-      if (id.startsWith('g:')) {
-        const gname = id.slice(2);
-        const members = state.groups[gname];
-        if (members && members.includes(p.id)) {
-          return { rot: trackValueAt(tr, T, [0, 0, 0]), pivot: groupCentroidValue(gname, 'pos') };
-        }
-      }
-      if (id.startsWith('f:') && p.fx === id.slice(2)) {
-        const fx = getFunction(p.fx);
-        // 旋转轴心固定为 center（与模组组轨道绕组质心一致，对称形状质心=center）
-        return { rot: trackValueAt(tr, T, [0, 0, 0]), pivot: fx ? fx.center.slice() : [0, 0, 0] };
-      }
-    }
+  for (const [gname, members] of Object.entries(state.groups)) {
+    if (!members.includes(p.id)) continue;
+    const rot = rotVectorAt('g:' + gname, T);
+    if (rot[0] === 0 && rot[1] === 0 && rot[2] === 0) return null;
+    return { rot, pivot: groupCentroidValue(gname, 'pos') };
+  }
+  if (p.fx) {
+    const rot = rotVectorAt('f:' + p.fx, T);
+    if (rot[0] === 0 && rot[1] === 0 && rot[2] === 0) return null;
+    const fx = getFunction(p.fx);
+    return { rot, pivot: fx ? fx.center.slice() : [0, 0, 0] };
   }
   return null;
 }
@@ -99,7 +114,6 @@ function applyGroupRotation(p, value, T) {
   const info = groupRotationInfo(p, T);
   if (!info) return value;
   const rot = info.rot;
-  if (rot[0] === 0 && rot[1] === 0 && rot[2] === 0) return value;
   const pivot = info.pivot;
   let r = [value[0] - pivot[0], value[1] - pivot[1], value[2] - pivot[2]];
   r = rotateVector(r, [1, 0, 0], rot[0] * DEG2RAD);
@@ -108,29 +122,35 @@ function applyGroupRotation(p, value, T) {
   return [pivot[0] + r[0], pivot[1] + r[1], pivot[2] + r[2]];
 }
 
-function particleValueAt(p, prop, T) {
-  if (prop === 'pos') {
-    const tr = tracksForParticle('pos', p.id);
-    let value = baseValue(p, 'pos');
-    if (tr && tr.kf.length > 0) value = trackValueAt(tr, T, value);
-    value = applyGroupRotation(p, value, T);
-    const op = groupOpDelta(p, 'pos', T);
-    if (op) value = addArrays(value, op);
-    return value;
-  }
-  const tr = tracksForParticle(prop, p.id);
-  const base = baseValue(p, prop);
-  let value = base;
-  if (tr && tr.kf.length > 0) value = trackValueAt(tr, T, base);
-  const op = groupOpDelta(p, prop, T);
-  if (op) value = addArrays(value, op);
-  return value;
+// 粒子位置：set 覆盖 → 组旋转 → op 增量
+function particlePosition(p, T) {
+  let pos = ['x', 'y', 'z'].map(c => {
+    let v = baseComponent(p, 'pos', c);
+    const tr = findSetTrackFor(p.id, 'pos', c);
+    if (tr && tr.kf.length > 0) v = trackValueAt(tr, T, v);
+    return v;
+  });
+  pos = applyGroupRotation(p, pos, T);
+  pos = pos.map((v, i) => v + compOpDelta(p, 'pos', ['x', 'y', 'z'][i], T));
+  return pos;
 }
 
-function lerpArray(a, b, t) {
-  const out = new Array(a.length);
-  for (let i = 0; i < a.length; i++) out[i] = a[i] + (b[i] - a[i]) * t;
-  return out;
+// 粒子某分量值：基础 → set 覆盖 → op 增量
+function componentValueAt(p, prop, comp, T) {
+  let v = baseComponent(p, prop, comp);
+  const tr = findSetTrackFor(p.id, prop, comp);
+  if (tr && tr.kf.length > 0) v = trackValueAt(tr, T, v);
+  v += compOpDelta(p, prop, comp, T);
+  return v;
+}
+
+// 粒子某属性完整向量（分量级拼装）
+function particleValueAt(p, prop, T) {
+  if (prop === 'pos') return particlePosition(p, T);
+  if (prop === 'col') return ['r', 'g', 'b', 'a'].map(c => componentValueAt(p, 'col', c, T));
+  if (prop === 'vel') return ['x', 'y', 'z'].map(c => componentValueAt(p, 'vel', c, T));
+  if (prop === 'rot') return [0, 0, 0]; // 粒子无自身 rot
+  return [componentValueAt(p, 'scl', 's', T)];
 }
 
 function currentVisual(p) {
@@ -192,6 +212,7 @@ function rebuildPoints() {
   drawTimeline();
   updatePropPanel();
   refreshTreeSelection();
+  if (typeof refreshCompTimelines === 'function') refreshCompTimelines();
 }
 
 function setPreview(positions) {

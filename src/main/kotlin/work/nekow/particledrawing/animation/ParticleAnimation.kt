@@ -56,34 +56,17 @@ class AnimParticle(
 )
 
 /**
- * 一条关键帧轨道，作用于一组粒子（按 id 或 "g:name" 或 "all"）的某个属性。
+ * 一条分量轨道，作用于一组目标（按 id 或 "g:name" 或 "f:fxId"）的某个分量。
  *
- * @param mode SET=关键帧值为绝对值（所有成员设为该值）；OP=关键帧值为增量（叠加到每个成员的基础值上）
+ * @param pr 分量轨道标识，如 "pos.x" / "rot.y" / "col.a" / "scl"
+ * @param mode SET=关键帧值为绝对值；OP=关键帧值为增量（叠加到每个成员的基础值上）
  */
 class AnimTrack(
-    val property: Property,
+    val pr: String,
     val ids: List<String>,
     val keyframes: List<AnimKeyframe>,
     val mode: Mode
 ) {
-    enum class Property {
-        POSITION,
-        ROTATION,
-        VELOCITY,
-        COLOR,
-        SCALE;
-
-        companion object {
-            fun from(wire: String): Property = when (wire) {
-                "rot" -> ROTATION
-                "vel" -> VELOCITY
-                "col" -> COLOR
-                "scl" -> SCALE
-                else -> POSITION
-            }
-        }
-    }
-
     enum class Mode { SET, OP }
 }
 
@@ -91,11 +74,11 @@ class AnimTrack(
  * 单个关键帧。
  *
  * @param tick 触发时刻（tick）
- * @param value 目标值：position=[x,y,z]，color=[r,g,b,a]，scale=单元素数组
+ * @param value 目标标量值（rot 为度，渲染时转弧度）
  * @param easing 到下一个关键帧的缓动类型
  */
 class AnimKeyframe(
     val tick: Int,
-    val value: DoubleArray,
+    val value: Double,
     val easing: EasingType
 )

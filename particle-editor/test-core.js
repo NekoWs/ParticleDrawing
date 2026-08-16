@@ -96,7 +96,7 @@ for (let i = 0; i < 2; i++) {
   state.particles.push({ id: 'fxk:p' + i, fx: 'fxk', style: 'DOT', color: base.color.slice(), scale: base.scale, glow: base.glow, lightLevel: base.light, pos: base.pos.slice(), vel: [0, 0, 0] });
 }
 buildDerivedTracks(fxk);
-const kfTrack = state.tracks.find(tr => tr.fx === 'fxk' && tr.pr === 'pos');
+const kfTrack = state.tracks.find(tr => tr.fx === 'fxk' && tr.pr === 'pos.x');
 __assert('keyframe track few kf', kfTrack && kfTrack.kf.length === 3);
 __assert('keyframe track has easing', kfTrack && kfTrack.kf[1][2] === 3 && kfTrack.kf[2][2] === 3);
 

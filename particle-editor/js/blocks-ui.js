@@ -71,6 +71,7 @@ function funcGroup(name) {
 function blockVarTypeOf(name) {
   if (name === 'i' || name === 'n' || name === 't') return T_SCALAR;
   if (name === 'pi' || name === 'e') return T_SCALAR;
+  if (ATTR_NAMES.includes(name)) return T_SCALAR; // 属性（x/y/z/…）是标量
   if (bctx && name in bctx.varExprs) return T_SCALAR;
   return T_ANY;
 }
@@ -240,6 +241,32 @@ function makeStatementBlock(s, isChain, chainIndex) {
     el.appendChild(name);
     el.appendChild(document.createTextNode(' = '));
     el.appendChild(makeSlot(slotRef(() => s.expr, v => { s.expr = v; }, T_ANY), ''));
+  } else if (s.kind === 'attr') {
+    // 属性名：可拖入变量（属性标签 x/y/z/…）设置，点击循环切换
+    const attrs = ATTR_NAMES.filter(n => n !== 'glow');
+    const attrRef = slotRef(
+      () => ({ kind: 'var', name: s.name }),
+      v => {
+        if (v && v.kind === 'var' && attrs.includes(v.name)) {
+          bctxPushUndo();
+          s.name = v.name;
+          renderChain();
+          refreshCodeEcho();
+        }
+      },
+      T_SCALAR
+    );
+    const attrSlot = makeSlot(attrRef, '');
+    attrSlot.addEventListener('click', () => {
+      const idx = attrs.indexOf(s.name);
+      bctxPushUndo();
+      s.name = attrs[(idx + 1) % attrs.length];
+      renderChain();
+      refreshCodeEcho();
+    });
+    el.appendChild(attrSlot);
+    el.appendChild(document.createTextNode(' = '));
+    el.appendChild(makeSlot(slotRef(() => s.expr, v => { s.expr = v; }, T_SCALAR), ''));
   } else if (s.kind === 'glow') {
     const sw = document.createElement('button');
     sw.className = 'blk-toggle' + (s.on ? ' on' : '');
@@ -343,6 +370,7 @@ function newStmtNode(kind) {
     case 'light': return { kind, expr: N0() };
     case 'glow': return { kind, on: true };
     case 'set': return { kind, name: freshTempName(), expr: N0() };
+    case 'attr': return { kind, name: 'x', expr: N0() };
     case 'pos_vec': case 'vel_vec': return { kind, expr: NVEC() };
     default: throw new Error('未知语句块: ' + kind);
   }
@@ -464,41 +492,68 @@ function renderPalette() {
   }
 }
 
+/** 函数积木注解：功能 + 返回值。 */
+function funcInfo(name) {
+  const f = FUNC_BLOCKS[name];
+  return (f.desc || name);
+}
+
 function buildPaletteGroup(g) {
   const items = [];
   if (g.id === 'pos') {
-    ['pos', 'pos_vec', 'vel', 'vel_vec'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: STMT_BLOCKS[k].label }));
+    ['pos', 'pos_vec', 'vel', 'vel_vec'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: STMT_BLOCKS[k].label, info: STMT_BLOCKS[k].desc }));
+    items.push({ key: 'stmt:attr', type: 'stmt', kind: 'attr', label: STMT_BLOCKS.attr.label, info: STMT_BLOCKS.attr.desc });
   } else if (g.id === 'color') {
-    items.push({ key: 'stmt:col', type: 'stmt', kind: 'col', label: STMT_BLOCKS.col.label });
+    items.push({ key: 'stmt:col', type: 'stmt', kind: 'col', label: STMT_BLOCKS.col.label, info: STMT_BLOCKS.col.desc });
   } else if (g.id === 'appearance') {
-    ['scl', 'glow', 'light'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: STMT_BLOCKS[k].label }));
+    ['scl', 'glow', 'light'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: STMT_BLOCKS[k].label, info: STMT_BLOCKS[k].desc }));
   } else if (g.id === 'var') {
-    items.push({ key: 'stmt:set', type: 'stmt', kind: 'set', label: STMT_BLOCKS.set.label });
-    for (const name of availableVars()) items.push({ key: 'var:' + name, type: 'expr', template: { kind: 'var', name }, label: name, info: BUILTIN_VAR_INFO[name] });
+    items.push({ key: 'stmt:set', type: 'stmt', kind: 'set', label: STMT_BLOCKS.set.label, info: STMT_BLOCKS.set.desc });
+    for (const name of availableVars()) items.push({ key: 'var:' + name, type: 'expr', template: { kind: 'var', name }, label: name, info: BUILTIN_VAR_INFO[name] || '变量' });
   } else if (g.id === 'const') {
-    items.push({ key: 'expr:num', type: 'expr', template: { kind: 'num', value: 1 }, label: '数字' });
-    items.push({ key: 'expr:pi', type: 'expr', template: { kind: 'var', name: 'pi' }, label: 'pi' });
-    items.push({ key: 'expr:e', type: 'expr', template: { kind: 'var', name: 'e' }, label: 'e' });
+    items.push({ key: 'expr:num', type: 'expr', template: { kind: 'num', value: 1 }, label: '数字', info: '常量数值' });
+    items.push({ key: 'expr:pi', type: 'expr', template: { kind: 'var', name: 'pi' }, label: 'pi', info: '圆周率 π ≈ 3.14159' });
+    items.push({ key: 'expr:e', type: 'expr', template: { kind: 'var', name: 'e' }, label: 'e', info: '自然常数 e ≈ 2.71828' });
   } else if (g.id === 'math') {
     // 动态算式 + 独立运算符拼图
-    items.push({ key: 'expr:chain', type: 'expr', template: { kind: 'chain', terms: [{ kind: 'num', value: 0 }, { kind: 'num', value: 0 }], ops: ['+'] }, label: '算式' });
-    for (const op of OP_SYMBOLS) items.push({ key: 'opval:' + op, type: 'opval', op, label: op });
+    items.push({ key: 'expr:chain', type: 'expr', template: { kind: 'chain', terms: [{ kind: 'num', value: 0 }, { kind: 'num', value: 0 }], ops: ['+'] }, label: '算式', info: '动态算式（可追加项）' });
+    for (const op of OP_SYMBOLS) items.push({ key: 'opval:' + op, type: 'opval', op, label: op, info: OP_LABELS[op] || op });
     for (const name in FUNC_BLOCKS) {
       const r = FUNC_BLOCKS[name].ret;
-      if (r === T_SCALAR && !['vec', 'dot', 'cross', 'len', 'norm'].includes(name)) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name });
+      if (r === T_SCALAR && !['vec', 'dot', 'cross', 'len', 'norm'].includes(name)) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) });
     }
   } else if (g.id === 'vec') {
     ['vec', 'cross', 'norm', 'polar', 'sphere', 'torus', 'dot', 'len'].forEach(name => {
-      if (FUNC_BLOCKS[name]) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name });
+      if (FUNC_BLOCKS[name]) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) });
     });
-    items.push({ key: 'expr:comp', type: 'expr', template: { kind: 'comp', axis: 'x', target: null }, label: '.分量' });
+    items.push({ key: 'expr:comp', type: 'expr', template: { kind: 'comp', axis: 'x', target: null }, label: '.分量', info: '取向量的 x/y/z 分量' });
   } else if (g.id === 'mat') {
-    ['rotX', 'rotY', 'rotZ', 'rotAxis'].forEach(name => items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name }));
+    ['rotX', 'rotY', 'rotZ', 'rotAxis'].forEach(name => items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) }));
   }
   return items;
 }
 
 /** 调色板项：与代码链积木同款渲染（复用 makeStatementBlock / makeExprBlock），内部禁用交互。 */
+let paletteTipEl = null;
+function showPaletteTip(anchor, text) {
+  hidePaletteTip();
+  const tip = document.createElement('div');
+  tip.className = 'qtip';
+  tip.textContent = text;
+  document.body.appendChild(tip);
+  const qr = anchor.getBoundingClientRect();
+  const tr = tip.getBoundingClientRect();
+  let left = qr.left + qr.width / 2 - tr.width / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - tr.width - 8));
+  let top = qr.top - tr.height - 6;
+  if (top < 8) top = qr.bottom + 6;
+  tip.style.left = left + 'px';
+  tip.style.top = top + 'px';
+  paletteTipEl = tip;
+}
+function hidePaletteTip() {
+  if (paletteTipEl) { paletteTipEl.remove(); paletteTipEl = null; }
+}
 function makePaletteItemEl(item) {
   const wrap = document.createElement('div');
   wrap.className = 'pal-item blk-drag';
@@ -520,10 +575,9 @@ function makePaletteItemEl(item) {
   if (item.info) {
     const q = document.createElement('span');
     q.className = 'qmark'; q.textContent = '?';
-    const tip = document.createElement('span');
-    tip.className = 'qtip'; tip.textContent = item.info;
-    q.appendChild(tip);
     wrap.appendChild(q);
+    q.addEventListener('mouseenter', () => showPaletteTip(q, item.info));
+    q.addEventListener('mouseleave', hidePaletteTip);
   }
   return wrap;
 }
@@ -587,6 +641,11 @@ function renderChain() {
       if (!(name in bctx.varExprs)) continue;
       varBox.appendChild(makeVarBlock(name));
     }
+    // 可设置的属性（x/y/z/…）：可拖入表达式 slot 作为变量引用
+    for (const name of ATTR_NAMES) {
+      if (name === 'glow') continue;
+      varBox.appendChild(makeAttrBlock(name));
+    }
   }
   refreshCodeEcho();
 }
@@ -631,6 +690,19 @@ function makeVarBlock(name) {
   wrap.appendChild(makeSlot(slotRef(() => bctx.varExprs[name], val => { bctx.varExprs[name] = val; }, T_SCALAR), ''));
   return wrap;
 }
+/** 可设置属性标签（x/y/z/…）：可拖入表达式 slot 作为变量引用。 */
+function makeAttrBlock(name) {
+  const wrap = document.createElement('div');
+  wrap.className = 'blk-var-row';
+  const tag = document.createElement('span');
+  tag.className = 'blk-attr-tag blk-drag';
+  tag.textContent = name;
+  tag.title = '拖入表达式以引用属性 ' + name;
+  tag._attrVar = name;
+  tag._dragLabel = name;
+  wrap.appendChild(tag);
+  return wrap;
+}
 function renameVarGlobal(oldName, newName) {
   if (oldName in bctx.varExprs) {
     bctx.varExprs[newName] = bctx.varExprs[oldName];
@@ -667,6 +739,13 @@ function beginBlockDrag(el, clientX, clientY) {
   if (el._opSlot) {
     const { chain, index } = el._opSlot;
     bdrag.source = { type: 'op-remove', chain, index };
+    computeGrab(el, clientX, clientY);
+    makeGhost(el, clientX, clientY);
+    return;
+  }
+  if (el._attrVar) {
+    const name = el._attrVar;
+    bdrag.source = { type: 'palette', make: () => ({ kind: 'var', name }), stmt: false };
     computeGrab(el, clientX, clientY);
     makeGhost(el, clientX, clientY);
     return;
@@ -713,6 +792,17 @@ function makeGhost(el, clientX, clientY) {
   if (src) {
     const clone = src.cloneNode(true);
     clone.querySelectorAll('input, button').forEach(x => { x.disabled = true; });
+    if (el.classList.contains('pal-item')) {
+      // 调色板拼图有放大，克隆也应用相同缩放，保持拖拽前后大小一致
+      clone.style.zoom = '1.5';
+    } else if (el.closest && el.closest('#chain-canvas')) {
+      // 工作区拼图随视图缩放，克隆也应用相同缩放，保持拖拽前后大小一致
+      const s = bctx ? bctx.layout.view.scale : 1;
+      if (s !== 1) {
+        clone.style.transform = 'scale(' + s + ')';
+        clone.style.transformOrigin = 'top left';
+      }
+    }
     ghost.appendChild(clone);
   } else {
     ghost.textContent = el._dragLabel || '积木';
@@ -737,6 +827,12 @@ function makeGroupGhost(group, clientX, clientY) {
     stack.appendChild(blk);
   });
   ghost.appendChild(stack);
+  // 语句组随工作区缩放，ghost 也应用相同缩放
+  const vs = bctx ? bctx.layout.view.scale : 1;
+  if (vs !== 1) {
+    stack.style.transform = 'scale(' + vs + ')';
+    stack.style.transformOrigin = 'top left';
+  }
   ghost.style.left = (clientX - bdrag.grabDx) + 'px';
   ghost.style.top = (clientY - bdrag.grabDy) + 'px';
   document.body.appendChild(ghost);
@@ -858,7 +954,10 @@ function moveGhost(clientX, clientY) {
     const rect = document.getElementById('chain-canvas').getBoundingClientRect();
     // 换算到 plane 坐标系（抵消 view 平移缩放）
     const v = bctx.layout.view;
-    bdrag.target = { kind: 'blank', x: (clientX - rect.left - v.x) / v.scale, y: (clientY - rect.top - v.y) / v.scale };
+    // 用 ghost 左上角（而非鼠标位置）定位碎片，避免出现位置偏移
+    const gx = clientX - (bdrag.grabDx || 0);
+    const gy = clientY - (bdrag.grabDy || 0);
+    bdrag.target = { kind: 'blank', x: (gx - rect.left - v.x) / v.scale, y: (gy - rect.top - v.y) / v.scale };
     bdrag.valid = src.stmt;
     return;
   }
@@ -866,11 +965,11 @@ function moveGhost(clientX, clientY) {
 
 /** 找鼠标位置最近的语句插入点（drop zone）。 */
 function nearestStmtDrop(clientX, clientY) {
-  // 用拼图实际位置（ghost 中心）而非鼠标位置，纳入 grab 偏移，使从某处拖走能精确拖回
+  // 用拼图实际位置（ghost 左边缘）而非鼠标位置，纳入 grab 偏移，使从某处拖走能精确拖回
   let cx = clientX, cy = clientY;
   if (bdrag && bdrag.ghost) {
     const gr = bdrag.ghost.getBoundingClientRect();
-    cx = gr.left + gr.width / 2;
+    cx = gr.left; // 左边缘对齐（而非中心），使左侧也能吸附
     // 用 ghost 顶边而非中心：拖拽语句组时插入点由组顶边决定，
     // 中心点会使插入位置向下偏移半个 ghost 高度（组越长偏移越大）。
     cy = gr.top;
@@ -880,7 +979,7 @@ function nearestStmtDrop(clientX, clientY) {
   for (const d of drops) {
     const r = d.getBoundingClientRect();
     const dy = Math.abs(cy - (r.top + r.height / 2));
-    const dx = Math.abs(cx - (r.left + r.width / 2));
+    const dx = Math.abs(cx - r.left); // 左边缘对齐
     if (dy < bestD && dx < 160) { bestD = dy; best = d; }
   }
   if (!best) return null;
@@ -950,10 +1049,14 @@ function endBlockDrag() {
     } else {
       // 追加数值项 + 默认运算符
       let node;
-      if (source.type === 'palette') node = source.make();
-      else if (source.type === 'expr') { if (!source.detach) return; node = source.detach(); }
-      else return;
-      bctxPushUndo();
+      if (source.type === 'palette') {
+        node = source.make();
+        bctxPushUndo();
+      } else if (source.type === 'expr') {
+        if (!source.detach) return;
+        bctxPushUndo(); // 先快照 detach 前状态
+        node = source.detach();
+      } else return;
       chain.ops.push('+');
       chain.terms.push(node);
     }
@@ -962,10 +1065,14 @@ function endBlockDrag() {
   }
   if (target.kind === 'slot') {
     let node;
-    if (source.type === 'palette') node = source.make();
-    else if (source.type === 'expr') { if (!source.detach) return; node = source.detach(); }
-    else return;
-    bctxPushUndo();
+    if (source.type === 'palette') {
+      node = source.make();
+      bctxPushUndo();
+    } else if (source.type === 'expr') {
+      if (!source.detach) return;
+      bctxPushUndo(); // 先快照 detach 前状态，否则撤销后原值会丢成 0
+      node = source.detach();
+    } else return;
     target.ref.set(node);
     renderChain();
     return;
@@ -1107,8 +1214,16 @@ function ensurePuzzleDom() {
 function applyChainView() {
   if (!bctx) return;
   const plane = document.querySelector('#chain-canvas .chain-plane');
-  if (!plane) return;
-  plane.style.transform = 'translate(' + bctx.layout.view.x + 'px,' + bctx.layout.view.y + 'px) scale(' + bctx.layout.view.scale + ')';
+  if (plane) {
+    plane.style.transform = 'translate(' + bctx.layout.view.x + 'px,' + bctx.layout.view.y + 'px) scale(' + bctx.layout.view.scale + ')';
+  }
+  // 点阵背景跟随视图平移/缩放，实现无限延伸
+  const canvas = document.getElementById('chain-canvas');
+  if (canvas) {
+    const s = 22 * bctx.layout.view.scale;
+    canvas.style.backgroundSize = s + 'px ' + s + 'px';
+    canvas.style.backgroundPosition = bctx.layout.view.x + 'px ' + bctx.layout.view.y + 'px';
+  }
 }
 
 function openBlockDrawer(fx) {
@@ -1200,6 +1315,14 @@ function closeBlockDrawer(commit) {
   if (typeof resize === 'function') resize();
   if (typeof drawTimeline === 'function') drawTimeline();
 
+  // 重新选中该函数对象（确定/取消后保持一致选中反馈）
+  if (fx) {
+    state.selectedFunction = fx.id;
+    state.selected = new Set(state.particles.filter(p => p.fx === fx.id).map(p => p.id));
+    state.selectedGroup = null;
+    if (typeof rebuildPoints === 'function') rebuildPoints();
+    if (typeof refreshParticleTree === 'function') refreshParticleTree();
+  }
   bctx = null;
   refreshFunctionPanel();
 }
@@ -1317,6 +1440,7 @@ function applyWorkspaceState() {
 (function initBlockDrag() {
   window.addEventListener('pointerdown', (ev) => {
     if (!bctx) return;
+    if (ev.button !== 0) return; // 仅左键拖拽，中键/右键不移动拼图
     const t = ev.target;
     if (t.closest && (t.closest('input') || t.closest('button') || t.closest('select') || t.closest('.fwin-titlebar') || t.closest('.fwin-rsz'))) return;
     const dragEl = t.closest && t.closest('.blk-drag');

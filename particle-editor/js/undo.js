@@ -25,7 +25,7 @@ function cloneFunctions(fs) {
 function snapshot() {
   return {
     particles: state.particles.map(p => ({ ...p, color: p.color.slice(), pos: p.pos.slice(), vel: p.vel ? p.vel.slice() : [0, 0, 0] })),
-    tracks: state.tracks.map(tr => ({ pr: tr.pr, m: tr.m, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], k[1].slice(), k[2]]) })),
+    tracks: state.tracks.map(tr => ({ pr: tr.pr, m: tr.m, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], k[1], k[2]]) })),
     groups: JSON.parse(JSON.stringify(state.groups)),
     functions: cloneFunctions(state.functions),
     name: state.name,
@@ -38,7 +38,7 @@ function snapshot() {
 
 function restore(s) {
   state.particles = s.particles.map(p => ({ ...p, color: p.color.slice(), pos: p.pos.slice(), vel: p.vel ? p.vel.slice() : [0, 0, 0] }));
-  state.tracks = s.tracks.map(tr => ({ pr: tr.pr, m: tr.m, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], k[1].slice(), k[2]]) }));
+  state.tracks = s.tracks.map(tr => ({ pr: tr.pr, m: tr.m, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], k[1], k[2]]) }));
   state.groups = JSON.parse(JSON.stringify(s.groups));
   state.functions = cloneFunctions(s.functions);
   state.name = s.name;

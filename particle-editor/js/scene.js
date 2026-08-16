@@ -134,8 +134,8 @@ const gizmoRings = {};
   const defs = { X: [0xff5555, new THREE.Vector3(0, Math.PI / 2, 0)], Y: [0x55ff55, new THREE.Vector3(Math.PI / 2, 0, 0)], Z: [0x5588ff, new THREE.Vector3(0, 0, 0)] };
   for (const [axis, [color, rot]] of Object.entries(defs)) {
     const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(0.5, 0.02, 32, 128),
-      new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: true, transparent: true, side: THREE.FrontSide })
+      new THREE.TorusGeometry(0.5, 0.012, 32, 128),
+      new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: false, transparent: true, side: THREE.DoubleSide })
     );
     ring.rotation.set(rot.x, rot.y, rot.z);
     ring.name = axis;
@@ -149,15 +149,16 @@ const gizmoArrows = {};
 (function buildMoveArrows() {
   const defs = { X: [1, 0, 0, 0xff5555], Y: [0, 1, 0, 0x55ff55], Z: [0, 0, 1, 0x5588ff] };
   const up = new THREE.Vector3(0, 1, 0);
-  const shaftLen = 1.28, shaftR = 0.014, headH = 0.22, headR = 0.07;
+  const offset = 0.3; // 箭头起点距中心的距离
+  const shaftLen = 0.9, shaftR = 0.008, headH = 0.16, headR = 0.05;
   for (const [axis, [x, y, z, color]] of Object.entries(defs)) {
     const dir = new THREE.Vector3(x, y, z);
     const group = new THREE.Group();
     group.name = axis;
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(shaftR, shaftR, shaftLen, 10), new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: true, transparent: true }));
-    shaft.position.y = shaftLen / 2;
-    const head = new THREE.Mesh(new THREE.ConeGeometry(headR, headH, 14), new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: true, transparent: true }));
-    head.position.y = shaftLen + headH / 2;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(shaftR, shaftR, shaftLen, 10), new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: false, transparent: true }));
+    shaft.position.y = offset + shaftLen / 2;
+    const head = new THREE.Mesh(new THREE.ConeGeometry(headR, headH, 14), new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: false, transparent: true }));
+    head.position.y = offset + shaftLen + headH / 2;
     group.add(shaft); group.add(head);
     group.quaternion.setFromUnitVectors(up, dir);
     shaft.renderOrder = GIZMO_ARROW_RENDER_ORDER;

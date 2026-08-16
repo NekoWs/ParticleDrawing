@@ -110,20 +110,19 @@ object AnimationLoader {
     }
 
     private fun parseTrack(o: com.google.gson.JsonObject): AnimTrack {
-        val property = AnimTrack.Property.from(o.get("pr").asString)
+        val pr = o.get("pr").asString
         val ids = o.get("ids").asJsonArray.map { it.asString }
         val mode = if (o.get("m")?.asString == "op") AnimTrack.Mode.OP else AnimTrack.Mode.SET
         val keyframes = o.get("kf").asJsonArray
             .map { parseKeyframe(it.asJsonArray) }
             .sortedBy { it.tick }
-        return AnimTrack(property, ids, keyframes, mode)
+        return AnimTrack(pr, ids, keyframes, mode)
     }
 
     private fun parseKeyframe(arr: JsonArray): AnimKeyframe {
         val tick = arr[0].asInt
-        val valueArr = arr[1].asJsonArray
         // rot 值保留原始「度」，渲染时由 ClientAnimationPlayer 统一转弧度，避免双重转换
-        val value = DoubleArray(valueArr.size()) { i -> valueArr[i].asDouble }
+        val value = arr[1].asDouble
         val easing = parseEasing(arr[2])
         return AnimKeyframe(tick, value, easing)
     }
