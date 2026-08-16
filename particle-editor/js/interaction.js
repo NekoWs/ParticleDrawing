@@ -30,14 +30,15 @@ function rotateVector(v, axis, angle) {
   ];
 }
 
-function enterGrab(clientX, clientY) {
+function enterGrab(clientX, clientY, axis, face) {
   const fx = getFunction(state.selectedFunction);
   if (fx) {
     pushUndo();
     const startDelta = fxPosDeltaAt(fx.id, Math.round(state.time));
     const c = [fx.center[0] + startDelta[0], fx.center[1] + startDelta[1], fx.center[2] + startDelta[2]];
     const pt = planePointAt(clientX, clientY);
-    modal = { type: 'fx-grab', fxId: fx.id, startDelta, centroid: c, axis: null, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: clientX, y: clientY }, y: c[1] };
+    modal = { type: 'fx-grab', fxId: fx.id, startDelta, centroid: c, axis: axis || null, axisKey: axis, face: face || null, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: clientX, y: clientY }, y: c[1], faceStart: null };
+    setDragAxisHighlight(modal);
     controls.enabled = false;
     return;
   }
@@ -49,7 +50,8 @@ function enterGrab(clientX, clientY) {
   const c = selectionCentroid();
   const pt = planePointAt(clientX, clientY);
   const gname = selectedGroupName();
-    modal = { type: 'grab', groupName: gname, startDelta: gname ? groupPosDeltaAt(gname, Math.round(state.time)) : null, origins, axis: null, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: clientX, y: clientY }, centroid: c, y: c ? c[1] : 0 };
+  modal = { type: 'grab', groupName: gname, startDelta: gname ? groupPosDeltaAt(gname, Math.round(state.time)) : null, origins, axis: axis || null, axisKey: axis, face: face || null, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: clientX, y: clientY }, centroid: c, y: c ? c[1] : 0, faceStart: null };
+  setDragAxisHighlight(modal);
   controls.enabled = false;
 }
 
@@ -126,7 +128,8 @@ function enterRotate(clientX, clientY, axis) {
     const v = new THREE.Vector3().crossVectors(a, u).normalize();
     const p0 = rayOnAxisPlane(clientX, clientY, axArr, c);
     const startAngle = p0 ? angleInBasis(p0, c, u, v) : 0;
-    modal = { type: 'fx-rotate', fxId: fx.id, centroid: c, axis: axArr, axisIndex: AXIS_INDEX[axis] ?? 1, startRot: fxRotationValueAt(fx.id, Math.round(state.time)), u, v, startAngle };
+    modal = { type: 'fx-rotate', fxId: fx.id, centroid: c, axis: axArr, axisKey: axis, axisIndex: AXIS_INDEX[axis] ?? 1, startRot: fxRotationValueAt(fx.id, Math.round(state.time)), u, v, startAngle };
+    setDragAxisHighlight(modal);
     controls.enabled = false;
     return;
   }
@@ -147,7 +150,7 @@ function enterRotate(clientX, clientY, axis) {
     const origins = new Map();
     for (const p of currentSelected()) origins.set(p.id, currentVisual(p).pos.slice());
     modal = {
-      type: 'group-rotate', gname, centroid: c, axis: axArr,
+      type: 'group-rotate', gname, centroid: c, axis: axArr, axisKey: axis,
       axisIndex: AXIS_INDEX[axis] ?? 1,
       startRot: groupRotationValueAt(gname, Math.round(state.time)),
       origins, u, v, startAngle,
@@ -156,84 +159,192 @@ function enterRotate(clientX, clientY, axis) {
     const origins = new Map();
     for (const p of currentSelected()) origins.set(p.id, currentVisual(p).pos.slice());
     modal = {
-      type: 'rotate', origins, centroid: c, axis: axArr, u, v, startAngle,
+      type: 'rotate', origins, centroid: c, axis: axArr, axisKey: axis, u, v, startAngle,
     };
   }
+  setDragAxisHighlight(modal);
   controls.enabled = false;
+}
+
+/* ---------------- 视图旋转（外部白色圆环：绕视线方向旋转） ---------------- */
+
+function viewAxisOf(c) {
+  // 视线轴：从选中对象指向摄像头（摄像头相对于选中对象的轴），白圈绕该轴旋转
+  const v = [camera.position.x - c[0], camera.position.y - c[1], camera.position.z - c[2]];
+  const len = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / len, v[1] / len, v[2] / len];
+}
+
+function screenAngleAt(clientX, clientY, centroid) {
+  const s = projectToScreen(centroid[0], centroid[1], centroid[2]);
+  const rect = renderer.domElement.getBoundingClientRect();
+  // 统一到画布本地坐标（projectToScreen 返回相对 rect 的坐标，client 是页面坐标）
+  return Math.atan2(clientY - rect.top - s.y, clientX - rect.left - s.x);
+}
+
+// 绕世界轴 axis（单位向量）旋转 angle（弧度），复合到 startRot（度）。
+// rot 轨道为 extrinsic XYZ（先绕 X、再绕 Y、再绕 Z，等价 THREE.Euler 'ZYX'）。
+// 用矩阵复合 M_new = M_axis * M_rot，避免欧拉相加导致对象旋转后绕世界轴的反向问题。
+function applyWorldRotation(startRot, axis, angle) {
+  const e = new THREE.Euler(startRot[0] * DEG2RAD, startRot[1] * DEG2RAD, startRot[2] * DEG2RAD, 'ZYX');
+  const mRot = new THREE.Matrix4().makeRotationFromEuler(e);
+  const mAxis = new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(axis[0], axis[1], axis[2]), angle);
+  const mNew = new THREE.Matrix4().multiplyMatrices(mAxis, mRot);
+  const eNew = new THREE.Euler().setFromRotationMatrix(mNew, 'ZYX');
+  return [eNew.x * RAD2DEG, eNew.y * RAD2DEG, eNew.z * RAD2DEG];
+}
+
+function enterViewRotate(clientX, clientY) {
+  const fx = getFunction(state.selectedFunction);
+  if (fx) {
+    pushUndo();
+    const d = fxPosDeltaAt(fx.id, Math.round(state.time));
+    const c = [fx.center[0] + d[0], fx.center[1] + d[1], fx.center[2] + d[2]];
+    modal = { type: 'fx-view-rotate', fxId: fx.id, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot: fxRotationValueAt(fx.id, Math.round(state.time)), angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
+    controls.enabled = false;
+    return;
+  }
+  if (state.selected.size === 0) return;
+  if (selectionHasDerived()) return;
+  pushUndo();
+  const c = selectionCentroid();
+  const origins = new Map();
+  for (const p of currentSelected()) origins.set(p.id, currentVisual(p).pos.slice());
+  const gname = selectedGroupName();
+  if (gname) {
+    modal = { type: 'group-view-rotate', gname, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot: groupRotationValueAt(gname, Math.round(state.time)), origins, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
+  } else {
+    modal = { type: 'view-rotate', origins, centroid: c, view: true, lookAxis: viewAxisOf(c), angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
+  }
+  controls.enabled = false;
+}
+
+function updateViewRotate(clientX, clientY) {
+  const m = modal;
+  if (!m) return;
+  // Blender trackball：增量累加角度，处理 atan2 的 ±π 跳变，支持连续多圈旋转
+  const cur = screenAngleAt(clientX, clientY, m.centroid);
+  let delta = cur - m.lastAngle;
+  if (delta > Math.PI) delta -= Math.PI * 2;
+  else if (delta < -Math.PI) delta += Math.PI * 2;
+  m.lastAngle = cur;
+  m.angle += delta;
+  let angle = -m.angle; // 绕「对象→相机」轴，负角度使对象与拖拽方向一致（顺时针拖 → 顺时针转）
+  if (shiftHeld) angle = Math.round(angle * RAD2DEG / ROT_SNAP) * ROT_SNAP * DEG2RAD;
+  const a = m.lookAxis;
+  if (m.type === 'fx-view-rotate' || (m.type === 'group-view-rotate' && state.captureKeyframes)) {
+    const newRot = applyWorldRotation(m.startRot, a, angle); // 绕视线轴矩阵复合
+    if (m.type === 'fx-view-rotate') {
+      const t = state.captureKeyframes ? Math.round(state.time) : 0;
+      setFunctionTrackValue(m.fxId, 'rot', 'set', t, newRot);
+    } else {
+      setGroupTrackValue(m.gname, 'rot', 'set', Math.round(state.time), newRot);
+    }
+    return;
+  }
+  // 普通粒子：直接绕质心、绕视线轴旋转位置（精确）
+  const c = m.centroid;
+  const entries = [];
+  for (const [id, orig] of m.origins) {
+    const rel = [orig[0] - c[0], orig[1] - c[1], orig[2] - c[2]];
+    const r = rotateVector(rel, a, angle);
+    entries.push([id, [c[0] + r[0], c[1] + r[1], c[2] + r[2]]]);
+  }
+  editParticles(entries, 'pos');
 }
 
 function cancelModal() {
   if (!modal) return;
   modal = null;
   controls.enabled = true;
+  resetWorldAxisState();
   if (undoStack.length > 0) restore(undoStack.pop());
+  updateGizmoFrame(); // 恢复圆环/视图环显示
+  setGizmoHover(null, null, null, false); // 恢复拖拽高亮为基色
 }
 
-function confirmModal() { modal = null; controls.enabled = true; }
+function confirmModal() {
+  modal = null;
+  controls.enabled = true;
+  resetWorldAxisState();
+  updateGizmoFrame();
+  setGizmoHover(null, null, null, false); // 恢复拖拽高亮为基色
+}
+
+// 面移动器：面法线方向 + 面内两轴
+const FACE_PLANES = {
+  XY: { dir: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] },
+  XZ: { dir: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1] },
+  YZ: { dir: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1] },
+};
+
+// 按 modal 计算世界位移 delta（x/y/z），面移动器 / XZ 轴 / Y 轴 共用
+function grabDelta(clientX, clientY, m) {
+  if (m.face) {
+    // 面移动器：在「过质心、法线=面法线」的平面上求交，取面内两轴的位移
+    const def = FACE_PLANES[m.face];
+    const p = rayOnAxisPlane(clientX, clientY, def.dir, m.centroid);
+    if (!p) return null;
+    if (!m.faceStart) m.faceStart = { x: p.x, y: p.y, z: p.z };
+    const rx = p.x - m.faceStart.x, ry = p.y - m.faceStart.y, rz = p.z - m.faceStart.z;
+    const du = rx * def.u[0] + ry * def.u[1] + rz * def.u[2];
+    const dv = rx * def.v[0] + ry * def.v[1] + rz * def.v[2];
+    return [
+      du * def.u[0] + dv * def.v[0],
+      du * def.u[1] + dv * def.v[1],
+      du * def.u[2] + dv * def.v[2],
+    ];
+  }
+  // Y 轴移动：仅依赖鼠标 Y 位移（避免镜头水平时求交失败产生“空气墙”）
+  if (m.axis === 'Y') {
+    const dy = -(clientY - m.startClient.y) * 0.02;
+    return [0, dy, 0];
+  }
+  if (!m.startWorld) {
+    const pt = planePointAt(clientX, clientY);
+    if (!pt) return null;
+    m.startWorld = { x: pt.x, z: pt.z };
+    m.startClient = { x: clientX, y: clientY };
+  }
+  // 普通轴：绘制平面（默认 XZ）上求交，取对应轴分量（位移，不吸附）
+  const pt = planePointAt(clientX, clientY);
+  if (!pt) return null;
+  let dx = pt.x - m.startWorld.x, dz = pt.z - m.startWorld.z;
+  if (m.axis === 'X') dz = 0;
+  else if (m.axis === 'Z') dx = 0;
+  return [dx, 0, dz];
+}
 
 function updateGrab(clientX, clientY) {
   const m = modal;
   if (!m || (m.type !== 'grab' && m.type !== 'fx-grab')) return;
   const fxMode = m.type === 'fx-grab';
-
-  // Y 轴移动：仅依赖鼠标 Y 位移，不依赖绘制平面求交（避免镜头水平时求交失败产生“空气墙”）
-  if (m.axis === 'Y') {
-    const dy = -(clientY - m.startClient.y) * 0.02;
-    if (fxMode) {
-      const d = m.startDelta || [0, 0, 0];
-      const ndy = shiftHeld ? snapValue(d[1] + dy) : (d[1] + dy);
-      const t = state.captureKeyframes ? Math.round(state.time) : 0;
-      setFunctionTrackValue(m.fxId, 'pos', 'op', t, [d[0], ndy, d[2]]);
-    } else if (m.groupName && state.captureKeyframes) {
-      const d = m.startDelta || [0, 0, 0];
-      const ndy = shiftHeld ? snapValue(d[1] + dy) : (d[1] + dy);
-      setGroupTrackValue(m.groupName, 'pos', 'op', Math.round(state.time), [d[0], ndy, d[2]]);
-    } else if (m.groupName) {
-      const cent = m.centroid;
-      const ny = shiftHeld ? snapValue(cent[1] + dy) : (cent[1] + dy);
-      const offy = ny - cent[1];
-      editParticles([...m.origins].map(([id, orig]) => [id, [orig[0], orig[1] + offy, orig[2]]]), 'pos');
-    } else {
-      const ody = shiftHeld ? snapValue(dy) : dy;
-      editParticles([...m.origins].map(([id, orig]) => [id, [orig[0], orig[1] + ody, orig[2]]]), 'pos');
-    }
-    return;
-  }
-
-  if (!m.startWorld) {
-    const pt = planePointAt(clientX, clientY);
-    if (!pt) return;
-    m.startWorld = { x: pt.x, z: pt.z };
-    m.startClient = { x: clientX, y: clientY };
-    return;
-  }
-  const pt = planePointAt(clientX, clientY);
-  if (!pt) return;
-  let dx = pt.x - m.startWorld.x, dz = pt.z - m.startWorld.z;
-  if (m.axis === 'X') dz = 0;
-  else if (m.axis === 'Z') dx = 0;
-
+  const delta = grabDelta(clientX, clientY, m);
+  if (!delta) return;
   if (fxMode) {
+    const fx = getFunction(m.fxId);
     const d = m.startDelta || [0, 0, 0];
-    const ndx = shiftHeld ? snapValue(d[0] + dx) : (d[0] + dx);
-    const ndz = shiftHeld ? snapValue(d[2] + dz) : (d[2] + dz);
+    let nd = [d[0] + delta[0], d[1] + delta[1], d[2] + delta[2]];
+    // Shift：绝对位置吸附到世界网格（center + 增量 → snap → 减 center）
+    if (shiftHeld && fx) nd = nd.map((v, i) => snapValue(fx.center[i] + v) - fx.center[i]);
     const t = state.captureKeyframes ? Math.round(state.time) : 0;
-    setFunctionTrackValue(m.fxId, 'pos', 'op', t, [ndx, d[1], ndz]);
+    setFunctionTrackValue(m.fxId, 'pos', 'op', t, nd);
   } else if (m.groupName && state.captureKeyframes) {
     const d = m.startDelta || [0, 0, 0];
-    const ndx = shiftHeld ? snapValue(d[0] + dx) : (d[0] + dx);
-    const ndz = shiftHeld ? snapValue(d[2] + dz) : (d[2] + dz);
-    setGroupTrackValue(m.groupName, 'pos', 'op', Math.round(state.time), [ndx, d[1], ndz]);
-  } else if (m.groupName) {
-    const cent = m.centroid;
-    const nx = shiftHeld ? snapValue(cent[0] + dx) : (cent[0] + dx);
-    const nz = shiftHeld ? snapValue(cent[2] + dz) : (cent[2] + dz);
-    const offx = nx - cent[0], offz = nz - cent[2];
-    editParticles([...m.origins].map(([id, orig]) => [id, [orig[0] + offx, orig[1], orig[2] + offz]]), 'pos');
+    let nd = [d[0] + delta[0], d[1] + delta[1], d[2] + delta[2]];
+    if (shiftHeld) {
+      const base = groupCentroidValue(m.groupName, 'pos');
+      nd = nd.map((v, i) => snapValue(base[i] + v) - base[i]);
+    }
+    setGroupTrackValue(m.groupName, 'pos', 'op', Math.round(state.time), nd);
   } else {
-    const odx = shiftHeld ? snapValue(dx) : dx;
-    const odz = shiftHeld ? snapValue(dz) : dz;
-    editParticles([...m.origins].map(([id, orig]) => [id, [orig[0] + odx, orig[1], orig[2] + odz]]), 'pos');
+    // 粒子：Shift 时把每个粒子的绝对位置吸附到世界网格
+    editParticles([...m.origins].map(([id, orig]) => {
+      const nx = shiftHeld ? snapValue(orig[0] + delta[0]) : orig[0] + delta[0];
+      const ny = shiftHeld ? snapValue(orig[1] + delta[1]) : orig[1] + delta[1];
+      const nz = shiftHeld ? snapValue(orig[2] + delta[2]) : orig[2] + delta[2];
+      return [id, [nx, ny, nz]];
+    }), 'pos');
   }
 }
 
@@ -258,15 +369,13 @@ function updateRotate(clientX, clientY) {
   let angle = angleInBasis(p1, m.centroid, m.u, m.v) - m.startAngle;
   if (shiftHeld) angle = Math.round(angle * RAD2DEG / ROT_SNAP) * ROT_SNAP * DEG2RAD;
   if (m.type === 'fx-rotate') {
-    const newRot = m.startRot.slice();
-    newRot[m.axisIndex] = m.startRot[m.axisIndex] + angle * RAD2DEG;
+    const newRot = applyWorldRotation(m.startRot, m.axis, angle); // 绕世界轴矩阵复合
     const t = state.captureKeyframes ? Math.round(state.time) : 0;
     setFunctionTrackValue(m.fxId, 'rot', 'set', t, newRot);
     return;
   }
   if (m.type === 'group-rotate') {
-    const newRot = m.startRot.slice();
-    newRot[m.axisIndex] = m.startRot[m.axisIndex] + angle * RAD2DEG;
+    const newRot = applyWorldRotation(m.startRot, m.axis, angle); // 绕世界轴矩阵复合
     if (state.captureKeyframes) {
       setGroupTrackValue(m.gname, 'rot', 'set', Math.round(state.time), newRot);
     } else {
@@ -291,6 +400,11 @@ function updateRotate(clientX, clientY) {
 }
 
 function deleteSelected() {
+  // 函数对象优先：直接删除整个函数对象及其派生粒子
+  if (state.selectedFunction) {
+    deleteFunctionObject(state.selectedFunction);
+    return;
+  }
   if (state.selected.size === 0) return;
   pushUndo();
   for (const id of state.selected) {
@@ -380,6 +494,13 @@ function pasteClipboard() {
   refreshParticleTree();
 }
 
+function raycastGizmoMeshes(clientX, clientY, meshes) {
+  if (!meshes || meshes.length === 0) return [];
+  screenToNdc(clientX, clientY);
+  raycaster.setFromCamera(pointer, camera);
+  return raycaster.intersectObjects(meshes, false);
+}
+
 function hitGizmoAxis(clientX, clientY) {
   if (!gizmoGroup.visible) return null;
   // 使用 gizmo 实际显示位置（函数对象在 center，粒子/组在质心），与 updateGizmo 一致
@@ -388,38 +509,97 @@ function hitGizmoAxis(clientX, clientY) {
   const px = clientX - rect.left, py = clientY - rect.top;
   const scale = gizmoGroup.scale.x || 1;
   for (const [axis, v] of Object.entries(AXIS_VECTORS)) {
-    // 用 gizmo 当前旋转（局部坐标系）旋转轴向量，使命中检测与箭头实际渲染方向一致
-    const dir = new THREE.Vector3(v[0], v[1], v[2]).applyQuaternion(gizmoGroup.quaternion);
+    // 世界坐标系（局部坐标系已移除）：直接用世界轴向量做命中检测
     const s = projectToScreen(c[0], c[1], c[2]);
-    const e = projectToScreen(c[0] + dir.x * 1.5 * scale, c[1] + dir.y * 1.5 * scale, c[2] + dir.z * 1.5 * scale);
-    if (distToSegment(px, py, s.x, s.y, e.x, e.y) < 10) return axis;
+    const e = projectToScreen(c[0] + v[0] * 1.5 * scale, c[1] + v[1] * 1.5 * scale, c[2] + v[2] * 1.5 * scale);
+    if (distToSegment(px, py, s.x, s.y, e.x, e.y) < 20) return axis;
   }
   return null;
 }
 
-function hitGizmoRotate(clientX, clientY) {
-  if (state.selected.size === 0) return null;
-  screenToNdc(clientX, clientY);
-  raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects(Object.values(gizmoRings));
-  if (hits.length === 0) return null;
-  for (const [axis, ring] of Object.entries(gizmoRings)) {
-    if (hits[0].object === ring) return axis;
+// 鼠标到轴环的最小距离 + 命中的轴（null 表示未命中）
+function ringHitInfo(clientX, clientY) {
+  if (!gizmoGroup.visible) return null;
+  const c = [gizmoGroup.position.x, gizmoGroup.position.y, gizmoGroup.position.z];
+  const rect = renderer.domElement.getBoundingClientRect();
+  const px = clientX - rect.left, py = clientY - rect.top;
+  const scale = gizmoGroup.scale.x || 1;
+  const rotQ = gizmoRotateGroup.quaternion;
+  let bestAxis = null, bestDist = Infinity;
+  for (const ax of ['X', 'Y', 'Z']) {
+    const segs = gizmoRingSegs[ax], dirs = gizmoRingSegDirs[ax];
+    for (let i = 0; i < segs.length; i++) {
+      if (!segs[i].visible) continue;
+      const d = dirs[i].clone().applyQuaternion(rotQ); // 本地 -> 世界
+      const p = projectToScreen(c[0] + d.x * 0.5 * scale, c[1] + d.y * 0.5 * scale, c[2] + d.z * 0.5 * scale);
+      const dist = Math.hypot(px - p.x, py - p.y);
+      if (dist < bestDist) { bestDist = dist; bestAxis = ax; }
+    }
   }
-  return null;
+  return bestAxis ? { axis: bestAxis, dist: bestDist } : null;
+}
+
+// 命中旋转控制器的轴圆环（仅返回轴）
+function hitGizmoRotate(clientX, clientY) {
+  const info = ringHitInfo(clientX, clientY);
+  return info && info.dist < 15 ? info.axis : null;
+}
+
+// 命中面移动器（三轴之间的矩形）
+function hitGizmoFace(clientX, clientY) {
+  if (!gizmoGroup.visible) return null;
+  const targets = Object.values(gizmoFaces).filter(f => f.visible);
+  if (targets.length === 0) return null;
+  const hits = raycastGizmoMeshes(clientX, clientY, targets);
+  return hits.length ? hits[0].object.userData.face : null;
+}
+
+// 鼠标到白圈投影圆的距离（Infinity 表示未命中）
+function viewRingDistance(clientX, clientY) {
+  if (!gizmoGroup.visible || !gizmoViewRing.visible) return Infinity;
+  const c = gizmoGroup.position;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const px = clientX - rect.left, py = clientY - rect.top;
+  const scale = gizmoGroup.scale.x || 1;
+  const center = projectToScreen(c.x, c.y, c.z);
+  // 白圈正对相机，屏幕半径 = 0.62 * scale * focal / depth（精确，不随视角漂移）
+  const viewDir = camera.getWorldDirection(new THREE.Vector3());
+  const toCam = new THREE.Vector3(c.x - camera.position.x, c.y - camera.position.y, c.z - camera.position.z);
+  const depth = Math.max(0.5, toCam.dot(viewDir));
+  const r = 0.62 * scale * focalLengthPx() / depth;
+  return Math.abs(Math.hypot(px - center.x, py - center.y) - r);
+}
+
+// 命中外部白色视图环
+function hitGizmoViewRing(clientX, clientY) {
+  return viewRingDistance(clientX, clientY) < 15;
 }
 
 const AXIS_COLORS = { X: 0xff5555, Y: 0x55ff55, Z: 0x5588ff };
-function setGizmoHover(arrowAxis, ringAxis) {
+// 悬停时颜色「变亮」（向白色混合 30%，避免过白），而不是直接变白
+function hoverColor(c) { return new THREE.Color(c).lerp(new THREE.Color(1, 1, 1), 0.3); }
+function setGizmoHover(arrowAxis, ringAxis, faceKey, viewRingHover) {
   if (!gizmoGroup.visible) return;
-  for (const [ax, ring] of Object.entries(gizmoRings)) {
-    ring.material.color.set(ringAxis === ax ? 0xffffff : AXIS_COLORS[ax]);
+  for (const ax of ['X', 'Y', 'Z']) {
+    const col = ringAxis === ax ? hoverColor(AXIS_RING_COLORS[ax]) : AXIS_RING_COLORS[ax];
+    for (const seg of gizmoRingSegs[ax]) if (seg.visible) seg.material.color.set(col);
   }
+  gizmoViewRing.material.color.set(viewRingHover ? 0xffffff : 0xe4e8f2);
   for (const [ax, a] of Object.entries(gizmoArrows)) {
-    const c = arrowAxis === ax ? 0xffffff : AXIS_COLORS[ax];
-    a.shaft.material.color.set(c);
-    a.head.material.color.set(c);
+    const col = arrowAxis === ax ? hoverColor(AXIS_COLORS[ax]) : AXIS_COLORS[ax];
+    a.shaft.material.color.set(col);
+    a.head.material.color.set(col);
   }
+  for (const [name, f] of Object.entries(gizmoFaces)) {
+    f.material.color.set(faceKey === name ? hoverColor(GIZMO_FACE_DEFS[name].color) : GIZMO_FACE_DEFS[name].color);
+    f.material.opacity = faceKey === name ? 0.95 : 0.8;
+  }
+}
+
+// 拖拽时：底部世界三轴中对应的轴显示并高亮（Y 轴默认隐藏，操作 Y 时才显示）
+function setDragAxisHighlight(m) {
+  // 拖拽时世界轴保持默认（不再高亮世界轴线），操作轴提示线由 updateGizmoFrame 在中心显示
+  resetWorldAxisState();
 }
 
 renderer.domElement.addEventListener('pointerdown', (ev) => {
@@ -428,51 +608,51 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
   if (ev.button !== 0) return;
   if (modal) { confirmModal(); return; }
 
-  if (state.tool === 'select') {
+  if (['select', 'move', 'rotate'].includes(state.tool)) {
     const derived = selectionHasDerived() && !state.selectedFunction;
-    const axis = derived ? null : hitGizmoAxis(ev.clientX, ev.clientY);
-    if (axis) {
-      const fx = getFunction(state.selectedFunction);
-      if (fx) {
-        pushUndo();
-        const startDelta = fxPosDeltaAt(fx.id, Math.round(state.time));
-        const c = [fx.center[0] + startDelta[0], fx.center[1] + startDelta[1], fx.center[2] + startDelta[2]];
-        const pt = planePointAt(ev.clientX, ev.clientY);
-        modal = { type: 'fx-grab', fxId: fx.id, startDelta, centroid: c, axis, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: ev.clientX, y: ev.clientY }, y: c[1] };
-        controls.enabled = false;
-        return;
-      }
-      pushUndo();
-      const origins = new Map();
-      for (const p of currentSelected()) origins.set(p.id, currentVisual(p).pos.slice());
-      const c = selectionCentroid();
-      const pt = planePointAt(ev.clientX, ev.clientY);
-      const gname = selectedGroupName();
-      modal = { type: 'grab', groupName: gname, startDelta: gname ? groupPosDeltaAt(gname, Math.round(state.time)) : null, origins, axis, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: ev.clientX, y: ev.clientY }, centroid: c, y: c ? c[1] : 0 };
-      controls.enabled = false;
-      return;
-    }
-    const rotAxis = derived ? null : hitGizmoRotate(ev.clientX, ev.clientY);
-    if (rotAxis) {
-      enterRotate(ev.clientX, ev.clientY, rotAxis);
-      return;
-    }
-    const idx = pickParticleAt(ev.clientX, ev.clientY);
-    if (idx >= 0) {
-      const p = particleAt(idx);
-      if (p) {
-        if (ev.shiftKey) { state.selected.has(p.id) ? state.selected.delete(p.id) : state.selected.add(p.id); }
-        else if (!state.selected.has(p.id)) { state.selected.clear(); state.selected.add(p.id); }
-        state.selectedFunction = null;
-        promoteGroupSelection();
-        rebuildPoints();
-        enterGrab(ev.clientX, ev.clientY);
-        return;
+    let handled = false;
+    // 移动控制器：仅在移动工具下命中轴箭头 / 面移动器
+    if (state.tool === 'move') {
+      const axis = derived ? null : hitGizmoAxis(ev.clientX, ev.clientY);
+      if (axis) { enterGrab(ev.clientX, ev.clientY, axis, null); handled = true; }
+      else {
+        const face = derived ? null : hitGizmoFace(ev.clientX, ev.clientY);
+        if (face) { enterGrab(ev.clientX, ev.clientY, null, face); handled = true; }
       }
     }
-    boxSel = { x0: ev.clientX, y0: ev.clientY, x1: ev.clientX, y1: ev.clientY, shift: ev.shiftKey };
-    document.getElementById('box-overlay').style.display = 'block';
-    updateBoxOverlay();
+    // 旋转控制器：仅旋转工具下命中；白圈（外圈）与轴环（内圈）就近判定，避免互相误命中
+    if (!handled && state.tool === 'rotate') {
+      const viewDist = derived ? Infinity : viewRingDistance(ev.clientX, ev.clientY);
+      const ring = derived ? null : ringHitInfo(ev.clientX, ev.clientY);
+      if (viewDist < 15 && (!ring || viewDist <= ring.dist)) {
+        enterViewRotate(ev.clientX, ev.clientY); handled = true;
+      } else if (ring && ring.dist < 15) {
+        enterRotate(ev.clientX, ev.clientY, ring.axis); handled = true;
+      }
+    }
+    // 点选粒子
+    if (!handled) {
+      const idx = pickParticleAt(ev.clientX, ev.clientY);
+      if (idx >= 0) {
+        const p = particleAt(idx);
+        if (p) {
+          if (ev.shiftKey) { state.selected.has(p.id) ? state.selected.delete(p.id) : state.selected.add(p.id); }
+          else if (!state.selected.has(p.id)) { state.selected.clear(); state.selected.add(p.id); }
+          state.selectedFunction = null;
+          promoteGroupSelection();
+          rebuildPoints();
+          // 选择工具：点选后立即进入拖动；移动/旋转工具仅选中
+          if (state.tool === 'select') enterGrab(ev.clientX, ev.clientY);
+          handled = true;
+        }
+      }
+    }
+    // 空白：框选（三种变换工具共用）
+    if (!handled) {
+      boxSel = { x0: ev.clientX, y0: ev.clientY, x1: ev.clientX, y1: ev.clientY, shift: ev.shiftKey };
+      document.getElementById('box-overlay').style.display = 'block';
+      updateBoxOverlay();
+    }
     return;
   }
 
@@ -523,17 +703,27 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
     if (modal.type === 'grab' || modal.type === 'fx-grab') updateGrab(ev.clientX, ev.clientY);
     else if (modal.type === 'scale' || modal.type === 'fx-scale') updateScale(ev.clientX);
     else if (modal.type === 'rotate' || modal.type === 'group-rotate' || modal.type === 'fx-rotate') updateRotate(ev.clientX, ev.clientY);
+    else if (modal.type === 'view-rotate' || modal.type === 'group-view-rotate' || modal.type === 'fx-view-rotate') updateViewRotate(ev.clientX, ev.clientY);
     return;
   }
   if (boxSel) { boxSel.x1 = ev.clientX; boxSel.y1 = ev.clientY; updateBoxOverlay(); return; }
   if (!drag) {
-    // 悬停高亮方向轴控制器
-    if (state.tool === 'select' && state.selected.size > 0) {
-      const arrowAxis = hitGizmoAxis(ev.clientX, ev.clientY);
-      const ringAxis = arrowAxis ? null : hitGizmoRotate(ev.clientX, ev.clientY);
-      setGizmoHover(arrowAxis, ringAxis);
+    // 悬停高亮：移动控制器（轴/面）与旋转控制器（环/视图环）
+    if ((state.tool === 'move' || state.tool === 'rotate') && state.selected.size > 0) {
+      let ah = null, fh = null, rh = null, vh = false;
+      if (state.tool === 'move') {
+        ah = hitGizmoAxis(ev.clientX, ev.clientY);
+        if (!ah) fh = hitGizmoFace(ev.clientX, ev.clientY);
+      } else {
+        // 白圈（外圈）与轴环（内圈）就近判定
+        const viewDist = viewRingDistance(ev.clientX, ev.clientY);
+        const ring = ringHitInfo(ev.clientX, ev.clientY);
+        if (viewDist < 15 && (!ring || viewDist <= ring.dist)) { vh = true; }
+        else if (ring && ring.dist < 15) { rh = ring.axis; }
+      }
+      setGizmoHover(ah, rh, fh, vh);
     } else {
-      setGizmoHover(null, null);
+      setGizmoHover(null, null, null, false);
     }
     // 铅笔工具：按住 Shift 显示吸附预览落点
     if (state.tool === 'pencil' && shiftHeld) {
@@ -628,7 +818,11 @@ window.addEventListener('keydown', (ev) => {
   if (modal) {
     if (k === 'escape') cancelModal();
     else if (k === 'enter') confirmModal();
-    else if ((modal.type === 'grab' || modal.type === 'fx-grab') && (k === 'x' || k === 'y' || k === 'z')) modal.axis = modal.axis === k.toUpperCase() ? null : k.toUpperCase();
+    else if ((modal.type === 'grab' || modal.type === 'fx-grab') && (k === 'x' || k === 'y' || k === 'z')) {
+      modal.axis = modal.axis === k.toUpperCase() ? null : k.toUpperCase();
+      if (modal.axis) modal.face = null; // 切换为单轴约束时放弃面移动
+      setDragAxisHighlight(modal);
+    }
     return;
   }
   if (k === 's') enterScale(lastMouse.x);
@@ -659,6 +853,22 @@ function promoteGroupSelection() {
   state.selectedGroup = null;
 }
 
+// 按优先级解析选中：函数对象 > 组 > 单个粒子
+function resolveSelectionPriority() {
+  state.selectedFunction = null;
+  state.selectedGroup = null;
+  // 1. 函数对象：选中集合覆盖某函数对象的全部派生粒子 → 选中该函数对象
+  for (const fx of state.functions) {
+    const ids = state.particles.filter(p => p.fx === fx.id).map(p => p.id);
+    if (ids.length > 0 && ids.every(id => state.selected.has(id))) {
+      state.selectedFunction = fx.id;
+      return;
+    }
+  }
+  // 2. 组：选中集合恰好等于某组全部成员 → 提升为选中该组
+  promoteGroupSelection();
+}
+
 function applyBoxSelection() {
   const rect = renderer.domElement.getBoundingClientRect();
   const x0 = Math.min(boxSel.x0, boxSel.x1) - rect.left, y0 = Math.min(boxSel.y0, boxSel.y1) - rect.top;
@@ -671,6 +881,6 @@ function applyBoxSelection() {
   }
   if (boxSel.shift) for (const id of sel) state.selected.add(id);
   else state.selected = sel;
-  state.selectedFunction = null;
-  promoteGroupSelection();
+  resolveSelectionPriority();
+  if (state.selectedFunction) refreshFunctionPanel(); // 选中函数对象时刷新其属性面板
 }

@@ -99,7 +99,7 @@ const state = {
   playing: false,
   playSpeed: 1,
   defaultEasing: DEFAULT_EASING,
-  captureKeyframes: false,
+  captureKeyframes: true, // 始终开启「捕获关键帧」（按钮已移除）
   dirty: false,
 };
 

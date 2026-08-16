@@ -62,6 +62,7 @@ function initUI() {
     if (!btn) return;
     state.tool = btn.dataset.tool;
     document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b === btn));
+    updateGizmo(); // 切换工具时立即刷新 gizmo 显示模式
   });
   document.getElementById('draw-plane').addEventListener('change', (ev) => { state.drawPlane = ev.target.value; triggerDrawPlanePulse(); });
 
@@ -102,7 +103,6 @@ function initUI() {
   document.getElementById('tl-speed').addEventListener('change', (ev) => { state.playSpeed = Math.max(0.1, parseFloat(ev.target.value) || 1); });
   document.getElementById('tl-time').addEventListener('input', (ev) => { state.time = parseFloat(ev.target.value) || 0; resetVelOffsets(); updateTimeUI(); rebuildPoints(); syncFunctionVarValues(); });
   document.getElementById('tl-loop').addEventListener('change', (ev) => { state.loop = ev.target.checked; updateLoopIndicator(); });
-  document.getElementById('capture-keyframes').addEventListener('change', (ev) => { state.captureKeyframes = ev.target.checked; });
 
   // 文件导入
   document.getElementById('file-import').addEventListener('change', (ev) => {
@@ -291,6 +291,7 @@ function animate(now) {
     syncFunctionVarValues();
   }
   controls.update();
+  updateGizmoFrame();
   renderer.render(scene, camera);
   drawAxisGizmo();
 }

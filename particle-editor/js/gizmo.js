@@ -26,9 +26,28 @@ function selectionCentroid() {
   return [c[0] / sel.length, c[1] / sel.length, c[2] / sel.length];
 }
 
+/* =========================================================================
+ * 变换控制器（gizmo）：移动工具 = 三轴箭头 + 面移动器；旋转工具 = 三轴环 + 视图环
+ * 始终使用世界坐标系（局部坐标系已移除：不再随选中对象的旋转而旋转）
+ * ======================================================================= */
+const GIZMO_SCREEN_SCALE = 0.14; // 屏幕恒定大小系数：世界缩放 = 视线深度 × 系数
+const TRANSFORM_TOOLS = ['move', 'rotate']; // 仅移动/旋转工具显示 gizmo
+const _gizmoTmp = new THREE.Vector3();
+// 拖拽中选中的控制器高亮：向白色混合 30%（与悬停一致，避免过白）
+function gizmoHl(c) { return new THREE.Color(c).lerp(new THREE.Color(1, 1, 1), 0.3); }
+
+
 function updateGizmo() {
-  // 拼图模式下场景仅查看：隐藏三轴移动/旋转控制器
-  if (document.body.classList.contains('puzzle-mode')) { gizmoGroup.visible = false; return; }
+  // 移动/旋转工具选中粒子时：移除橙色描边，粒子不透明度降至 0.8（仅渲染，不改数据）
+  const dim = (state.tool === 'move' || state.tool === 'rotate') && state.selected.size > 0;
+  pointsMaterial.uniforms.uOpacity.value = dim ? 0.8 : 1.0;
+  selectedMaterial.uniforms.uOpacity.value = dim ? 0.0 : 1.0;
+  // 拼图模式 / 非移动、旋转工具：隐藏控制器
+  if (document.body.classList.contains('puzzle-mode') || !TRANSFORM_TOOLS.includes(state.tool)) {
+    gizmoGroup.visible = false;
+    resetWorldAxisState();
+    return;
+  }
   let c = null;
   const fx = getFunction(state.selectedFunction);
   if (fx) {
@@ -41,20 +60,100 @@ function updateGizmo() {
   if (!c) { gizmoGroup.visible = false; return; }
   gizmoGroup.visible = true;
   gizmoGroup.position.set(c[0], c[1], c[2]);
-  gizmoGroup.scale.setScalar(2); // 固定世界尺寸，随相机远近自然缩放（越远越小）
-  // 局部坐标系：组/函数对象随其 rot 轨道旋转，普通粒子保持世界朝向
-  const rot = gizmoRotation();
-  gizmoGroup.rotation.set(rot[0] * DEG2RAD, rot[1] * DEG2RAD, rot[2] * DEG2RAD);
-  setGizmoHover(null, null);
+  gizmoGroup.rotation.set(0, 0, 0); // 移动控制器：世界朝向
+  gizmoRotateGroup.rotation.set(0, 0, 0); // 旋转控制器：世界坐标系（不随对象旋转）
+  updateGizmoFrame();
+  setGizmoHover(null, null, null, false);
 }
 
-// 局部坐标系当前朝向（度）：函数对象 > 组 > 世界（0）
-function gizmoRotation() {
-  const fxId = state.selectedFunction;
-  if (fxId) return fxRotationValueAt(fxId, state.time);
-  const gname = selectedGroupName();
-  if (gname) return groupRotationValueAt(gname, state.time);
-  return [0, 0, 0];
+// 每帧调用：恒定屏幕大小 + 白环正对相机 + 轴环半圆环可见性（alpha 渐变防突变）
+// （拖拽某个环时：隐藏其他圆环与视图环，选中环不再遮罩、整环显示）
+function updateGizmoFrame() {
+  if (!gizmoGroup.visible) return;
+  const c = gizmoGroup.position;
+  const showMove = state.tool === 'move';
+  const showRotate = state.tool === 'rotate';
+  // 恒定屏幕大小：用「沿视线方向的深度」而非欧氏距离补偿，抵消透视下 gizmo 偏离
+  // 屏幕中心时的误差，使缩放/移动视角时 gizmo 屏幕尺寸真正不变。
+  // toGizmo：相机 -> gizmo 中心；depth：gizmo 沿视线方向的深度（正数）
+  const toGizmo = _gizmoTmp.set(c.x - camera.position.x, c.y - camera.position.y, c.z - camera.position.z);
+  const viewDir = camera.getWorldDirection(new THREE.Vector3());
+  const depth = Math.max(0.5, toGizmo.dot(viewDir));
+  gizmoGroup.scale.setScalar(depth * GIZMO_SCREEN_SCALE);
+  // 外部白色视图环：始终正对摄像头（环面垂直于视线）
+  gizmoViewRing.lookAt(camera.position);
+  // 面移动器：固定朝向该面（构建时已设定），不做 billboard
+
+  const m = modal;
+  const isGrab = m && (m.type === 'grab' || m.type === 'fx-grab');
+  const rotDragging = m && (m.type === 'rotate' || m.type === 'group-rotate' || m.type === 'fx-rotate'
+    || m.type === 'view-rotate' || m.type === 'group-view-rotate' || m.type === 'fx-view-rotate');
+  const viewDragging = rotDragging && (m.type === 'view-rotate' || m.type === 'group-view-rotate' || m.type === 'fx-view-rotate');
+  const camDir = toGizmo.clone().negate().normalize(); // gizmo -> 相机方向（环可见性判据）
+
+  // 面移动器 / 箭头显隐（按工具）
+  for (const f of Object.values(gizmoFaces)) f.visible = showMove;
+  for (const ax of ['X', 'Y', 'Z']) gizmoArrows[ax].group.visible = showMove;
+
+  if (rotDragging) {
+    // 旋转拖拽：选中轴环整环显示并高亮；其他环与白环隐藏
+    for (const ax of ['X', 'Y', 'Z']) {
+      const active = showRotate && !viewDragging && m.axisKey === ax;
+      for (const seg of gizmoRingSegs[ax]) {
+        seg.visible = active;
+        seg.material.opacity = 1;
+        seg.material.color.set(active ? gizmoHl(AXIS_RING_COLORS[ax]) : AXIS_RING_COLORS[ax]);
+      }
+    }
+    gizmoViewRing.visible = showRotate && viewDragging;
+    gizmoViewRing.material.color.set(viewDragging ? 0xffffff : 0xe4e8f2);
+  } else if (isGrab) {
+    // 移动拖拽：选中箭头/面高亮；环与白环隐藏
+    for (const ax of ['X', 'Y', 'Z']) for (const seg of gizmoRingSegs[ax]) seg.visible = false;
+    gizmoViewRing.visible = false;
+    for (const ax of ['X', 'Y', 'Z']) {
+      const a = gizmoArrows[ax];
+      const col = m.axis === ax ? gizmoHl(AXIS_COLORS[ax]) : AXIS_COLORS[ax];
+      a.shaft.material.color.set(col);
+      a.head.material.color.set(col);
+    }
+    for (const [name, f] of Object.entries(gizmoFaces)) {
+      f.material.color.set(m.face === name ? gizmoHl(GIZMO_FACE_DEFS[name].color) : GIZMO_FACE_DEFS[name].color);
+    }
+  } else {
+    // 非拖拽：只显示「从相机能看到」的半圆环（本地坐标轴，应用对象旋转）。
+    // 仅当视角位于该坐标轴上（视线沿轴，|n·camDir| 接近 1）才整环显示；
+    // 否则按角度隐藏位于「球体」后方的半边弧线（径向朝向相机一侧显示）。
+    const rotQ = gizmoRotateGroup.quaternion;
+    for (const ax of ['X', 'Y', 'Z']) {
+      const n = new THREE.Vector3(...RING_NORMALS[ax]).applyQuaternion(rotQ);
+      const align = Math.abs(n.dot(camDir));
+      const faceOn = align > 0.999; // 只有几乎正对该轴（视线沿轴）才整环显示
+      const segs = gizmoRingSegs[ax], dirs = gizmoRingSegDirs[ax];
+      for (let i = 0; i < segs.length; i++) {
+        const d = dirs[i].clone().applyQuaternion(rotQ).dot(camDir);
+        const t = THREE.MathUtils.clamp(d / 0.03, 0, 1); // 更窄的过渡带，后半弧线严格隐藏
+        const half = t * t * (3 - 2 * t); // 平滑半边
+        const op = showRotate ? (faceOn ? 1 : half) : 0;
+        segs[i].visible = op > 0.02;
+        segs[i].material.opacity = op;
+      }
+    }
+    gizmoViewRing.visible = showRotate;
+  }
+
+  // 操作轴提示线：拖拽移动/旋转的某个轴时，在 gizmo 中心画一条高亮轴线（与移动线同粗）
+  const hintAxis = m && m.axisKey;
+  if (hintAxis && (isGrab || rotDragging)) {
+    gizmoAxisHint.visible = true;
+    const baseDir = new THREE.Vector3(...AXIS_VECTORS[hintAxis]);
+    // 旋转时提示线沿本地轴；移动时沿世界轴
+    const dir = rotDragging ? baseDir.applyQuaternion(gizmoRotateGroup.quaternion) : baseDir;
+    gizmoAxisHint.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    gizmoAxisHint.material.color.set(gizmoHl(AXIS_COLORS[hintAxis]));
+  } else {
+    gizmoAxisHint.visible = false;
+  }
 }
 
 /* =========================================================================
@@ -80,23 +179,15 @@ function triggerDrawPlanePulse() {
   planePulse = { axes: def.axes, t0: performance.now(), dur: 400 };
 }
 
+// 让指定轴发光（绘制平面脉冲用）：显示并变亮（透过网格线也能看到）
 function setAxisGlow(axes, glow) {
-  const arr = axesColorAttr.array;
   for (const axis of axes) {
-    for (const vi of AXIS_VERTEX_INDEX[axis]) {
-      const i = vi * 3;
-      arr[i]     = axesBaseColors[i]     + (1 - axesBaseColors[i])     * glow;
-      arr[i + 1] = axesBaseColors[i + 1] + (1 - axesBaseColors[i + 1]) * glow;
-      arr[i + 2] = axesBaseColors[i + 2] + (1 - axesBaseColors[i + 2]) * glow;
-    }
+    setWorldAxisVisible(axis, true);
+    setWorldAxisGlow(axis, glow);
   }
-  axesColorAttr.needsUpdate = true;
 }
 
-function restoreAxisColors() {
-  axesColorAttr.array.set(axesBaseColors);
-  axesColorAttr.needsUpdate = true;
-}
+function restoreAxisColors() { resetWorldAxisState(); }
 
 function planePointAt(clientX, clientY) {
   screenToNdc(clientX, clientY);

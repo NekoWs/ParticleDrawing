@@ -56,6 +56,8 @@
       <div id="box-overlay"></div>
       <div class="toolbar" id="tools">
         <button class="tool active" data-tool="select" title="选择（框选）"><svg viewBox="0 0 18 18"><path d="M4 2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 2"/></svg></button>
+        <button class="tool" data-tool="move" title="移动"><svg viewBox="0 0 18 18"><path d="M9 3v12M3 9h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M6 6l3-3 3 3M6 12l3 3 3-3M6 6l-3 3 3 3M12 6l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button class="tool" data-tool="rotate" title="旋转"><svg viewBox="0 0 18 18"><path d="M14.5 9a5.5 5.5 0 1 1-1.6-3.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M13.5 1.5v3.6h-3.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <button class="tool" data-tool="pencil" title="铅笔（点按放置）"><svg viewBox="0 0 18 18"><path d="M3 15l1-4 9-9 3 3-9 9-4 1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>
         <button class="tool" data-tool="line" title="直线"><svg viewBox="0 0 18 18"><path d="M3 15L15 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
         <button class="tool" data-tool="circle" title="圆"><svg viewBox="0 0 18 18"><circle cx="9" cy="9" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
@@ -77,7 +79,7 @@
         </label>
         <label class="row">放置高度 <input id="height-y" type="number" step="0.1" value="0" /></label>
         <label class="row">粒子数量 <input id="shape-count" type="number" min="2" value="30" /></label>
-        <p class="hint">中键旋转 · Shift+中键平移 · 滚轮缩放 · 左键框选 · S 缩放 · Delete 删除 · Ctrl+A 全选 · Ctrl+D 取消选中 · 空格 播放 · Shift+拖动方向轴=吸附整格 · Ctrl+C/V 复制粘贴</p>
+        <p class="hint">中键旋转 · Shift+中键平移 · 滚轮缩放 · 左键框选 · 移动=移动工具拖轴/面 · 旋转=旋转工具拖环 · S 缩放 · Delete 删除 · Ctrl+A 全选 · Ctrl+D 取消选中 · 空格 播放 · Shift+拖动=吸附 · Ctrl+C/V 复制粘贴</p>
       </details>
 
       <details open>
@@ -128,7 +130,6 @@
       <label class="row" style="margin:0">速度 <input id="tl-speed" type="number" min="0.1" step="0.1" value="1" style="width:56px" /></label>
       <label class="chk tl-loop"><input id="tl-loop" type="checkbox" checked />循环</label>
       <button id="tl-easing" class="ease-btn" title="缓动函数"></button>
-      <label class="chk tl-loop"><input id="capture-keyframes" type="checkbox" />捕获关键帧</label>
       <span class="tl-time-group">
         <input id="tl-time" type="number" min="0" step="1" value="0" />
         <span class="ticks">tick / <span id="tl-max">0</span></span>

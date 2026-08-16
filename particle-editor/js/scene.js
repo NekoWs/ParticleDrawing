@@ -20,15 +20,64 @@ controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.M
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
-const grid = new THREE.GridHelper(40, 40, 0x4a5568, 0x2c3342);
+// 底部平面网格：距离无限（视觉上延伸至地平线，相机远平面 1000 内）
+const grid = new THREE.GridHelper(2000, 1000, 0x4a5568, 0x2c3342);
 grid.position.y = 0;
+grid.material.transparent = true;
+grid.material.opacity = 0.9;
 scene.add(grid);
-const axesHelper = new THREE.AxesHelper(4);
-scene.add(axesHelper);
-// 轴线发光脉冲：备份原始颜色 + 各轴顶点索引（AxesHelper 顶点顺序固定：X=0,1 / Y=2,3 / Z=4,5）
-const axesColorAttr = axesHelper.geometry.attributes.color;
-const axesBaseColors = axesColorAttr.array.slice();
-const AXIS_VERTEX_INDEX = { X: [0, 1], Y: [2, 3], Z: [4, 5] };
+
+// ---- 底部世界三轴指示器（无限长，双向） ----
+// 默认只显示 X/Z（与底部网格同面）；操作 Y 轴（移动/旋转拖拽）时才显示 Y。
+// 平时 depthTest:true 正常被遮挡（不穿透）；操作中由 setWorldAxisGlow 改为穿透显示。
+const WORLD_AXIS_LEN = 3000; // 半长：轴向从 -3000 延伸到 +3000
+const WORLD_AXIS_DEFS = {
+  X: { dir: new THREE.Vector3(1, 0, 0), color: 0xff5555 },
+  Y: { dir: new THREE.Vector3(0, 1, 0), color: 0x55ff55 },
+  Z: { dir: new THREE.Vector3(0, 0, 1), color: 0x5588ff },
+};
+const worldAxes = {};
+(function buildWorldAxes() {
+  const up = new THREE.Vector3(0, 1, 0);
+  for (const [key, def] of Object.entries(WORLD_AXIS_DEFS)) {
+    // 无体积的线（THREE.Line，1px，与网格同细）：相机经过时不会看到体积
+    const geo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, -WORLD_AXIS_LEN, 0),
+      new THREE.Vector3(0, WORLD_AXIS_LEN, 0),
+    ]);
+    // 默认 depthTest:true：不穿透，被物体正常遮挡；操作中才由 setWorldAxisGlow 改为穿透
+    const mat = new THREE.LineBasicMaterial({ color: def.color, transparent: true, opacity: 0.85, depthTest: true, depthWrite: false });
+    const line = new THREE.Line(geo, mat);
+    line.quaternion.setFromUnitVectors(up, def.dir);
+    // 双向：中心位于原点（-LEN ~ +LEN），略抬离地面（0.005）消除与网格线重合穿模
+    line.position.set(0, 0.005, 0);
+    line.renderOrder = 20;
+    line.visible = key !== 'Y'; // 默认只显示 X/Z
+    line.scale.set(1, 1, 1);
+    worldAxes[key] = { mesh: line, baseColor: new THREE.Color(def.color) };
+    scene.add(line);
+  }
+})();
+
+function setWorldAxisVisible(key, visible) { if (worldAxes[key]) worldAxes[key].mesh.visible = visible; }
+// glow: 0~1，把轴色向白色混合（变亮），并略微提高透明度/置顶，使其透过遮挡显示
+function setWorldAxisGlow(key, glow) {
+  const w = worldAxes[key];
+  if (!w) return;
+  w.mesh.material.color.copy(w.baseColor).lerp(new THREE.Color(1, 1, 1), Math.max(0, Math.min(1, glow)));
+  w.mesh.material.opacity = 0.85 + glow * 0.15;
+  const active = glow > 0.01;
+  // 操作中（active）：变亮 + 穿透遮挡显示；平时：正常深度测试（线无体积，粗细不变）
+  w.mesh.material.depthTest = !active;
+  w.mesh.renderOrder = active ? 21 : 20;
+}
+// 恢复默认状态：X/Z 常显、Y 隐藏、无高亮
+function resetWorldAxisState() {
+  for (const key of Object.keys(WORLD_AXIS_DEFS)) {
+    setWorldAxisVisible(key, key !== 'Y');
+    setWorldAxisGlow(key, 0);
+  }
+}
 
 // 方形贴图（2D 广告牌，始终朝向摄像头）
 function makeSquareTexture() {
@@ -63,7 +112,7 @@ function focalLengthPx() {
 }
 
 const pointsMaterial = new THREE.ShaderMaterial({
-  uniforms: { uMap: { value: makeSquareTexture() }, uPixelScale: { value: focalLengthPx() } },
+  uniforms: { uMap: { value: makeSquareTexture() }, uPixelScale: { value: focalLengthPx() }, uOpacity: { value: 1.0 } },
   vertexShader: `
     uniform float uPixelScale;
     attribute vec4 aColor;
@@ -78,10 +127,11 @@ const pointsMaterial = new THREE.ShaderMaterial({
   `,
   fragmentShader: `
     uniform sampler2D uMap;
+    uniform float uOpacity;
     varying vec4 vColor;
     void main() {
       vec4 tex = texture2D(uMap, gl_PointCoord);
-      gl_FragColor = vec4(vColor.rgb, vColor.a) * tex;
+      gl_FragColor = vec4(vColor.rgb, vColor.a) * tex * uOpacity;
     }
   `,
   transparent: true,
@@ -91,7 +141,7 @@ const pointsMaterial = new THREE.ShaderMaterial({
 
 // 选中描边（方形边框，中心透明露出粒子本色）
 const selectedMaterial = new THREE.ShaderMaterial({
-  uniforms: { uMap: { value: makeRingTexture() }, uPixelScale: { value: focalLengthPx() } },
+  uniforms: { uMap: { value: makeRingTexture() }, uPixelScale: { value: focalLengthPx() }, uOpacity: { value: 1.0 } },
   vertexShader: `
     uniform float uPixelScale;
     attribute float aSize;
@@ -103,9 +153,10 @@ const selectedMaterial = new THREE.ShaderMaterial({
   `,
   fragmentShader: `
     uniform sampler2D uMap;
+    uniform float uOpacity;
     void main() {
       vec4 tex = texture2D(uMap, gl_PointCoord);
-      gl_FragColor = vec4(1.0, 0.6, 0.25, 1.0) * tex.a;
+      gl_FragColor = vec4(1.0, 0.6, 0.25, 1.0) * tex.a * uOpacity;
     }
   `,
   transparent: true,
@@ -126,22 +177,96 @@ scene.add(previewPoints);
 const gizmoGroup = new THREE.Group();
 scene.add(gizmoGroup);
 gizmoGroup.visible = false;
-const GIZMO_RING_RENDER_ORDER = 10;
-const GIZMO_ARROW_RENDER_ORDER = 11;
-// 旋转控制器：三个轴向的彩色圆环（环面垂直对应轴，DoubleSide 保证完整圆环）
-const gizmoRings = {};
+
+// 旋转控制器子组：跟随本地坐标轴（对象 rot 轨道），移动控制器保持世界朝向
+const gizmoRotateGroup = new THREE.Group();
+gizmoGroup.add(gizmoRotateGroup);
+
+// gizmo 渲染顺序最高：无视遮挡关系，始终绘制在最上层
+const GIZMO_RING_RENDER_ORDER = 50;
+const GIZMO_FACE_RENDER_ORDER = 51;
+const GIZMO_ARROW_RENDER_ORDER = 52;
+
+/* =========================================================================
+ * 旋转控制器（Blender 风格，世界朝向，移除局部坐标系）
+ * - 三个轴的圆环由分段弧组成，仅显示「从相机能看到」的一半（半圆环，
+ *   渲染效果类似在此处放了一个球体，环是球面上的可见部分）
+ * - 外部白色圆环：绕视线方向旋转
+ * ======================================================================= */
+const AXIS_RING_COLORS = { X: 0xff5555, Y: 0x55ff55, Z: 0x5588ff };
+// 各轴环的环面法线 = 旋转轴方向（世界朝向）
+const RING_NORMALS = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] };
+const RING_SEGMENTS = 72;                       // 每环分段数（提高弧线精度）
+const RING_SEG_ARC = (Math.PI * 2) / RING_SEGMENTS;
+const gizmoRingSegs = {};                        // { X: [mesh...], Y: [...], Z: [...] }
+const gizmoRingSegDirs = {};                     // 各段中点方向（局部坐标，gizmo 无旋转即世界方向）
 (function buildRotateRings() {
-  const defs = { X: [0xff5555, new THREE.Vector3(0, Math.PI / 2, 0)], Y: [0x55ff55, new THREE.Vector3(Math.PI / 2, 0, 0)], Z: [0x5588ff, new THREE.Vector3(0, 0, 0)] };
-  for (const [axis, [color, rot]] of Object.entries(defs)) {
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(0.5, 0.012, 32, 128),
-      new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: false, transparent: true, side: THREE.DoubleSide })
+  const zAxis = new THREE.Vector3(0, 0, 1);
+  for (const axis of ['X', 'Y', 'Z']) {
+    const align = new THREE.Quaternion().setFromUnitVectors(zAxis, new THREE.Vector3(...RING_NORMALS[axis]));
+    const segs = [], dirs = [];
+    for (let i = 0; i < RING_SEGMENTS; i++) {
+      // 圆环管（有粗细，管径 0.014）
+      const geo = new THREE.TorusGeometry(0.5, 0.014, 6, 6, RING_SEG_ARC);
+      geo.rotateZ(i * RING_SEG_ARC);            // 段起点角度
+      geo.applyQuaternion(align);               // 环面法线 Z -> 轴方向
+      const mat = new THREE.MeshBasicMaterial({ color: AXIS_RING_COLORS[axis], depthWrite: false, depthTest: false, transparent: true });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.userData.axis = axis;
+      mesh.userData.seg = i;
+      mesh.renderOrder = GIZMO_RING_RENDER_ORDER;
+      segs.push(mesh);
+      gizmoRotateGroup.add(mesh); // 环跟随本地坐标轴
+      // 段中点方向（环平面内），用于判定「是否面向相机」
+      const mid = (i + 0.5) * RING_SEG_ARC;
+      dirs.push(new THREE.Vector3(Math.cos(mid), Math.sin(mid), 0).applyQuaternion(align).normalize());
+    }
+    gizmoRingSegs[axis] = segs;
+    gizmoRingSegDirs[axis] = dirs;
+  }
+})();
+// 外部白色视图环（绕视线方向旋转）
+const gizmoViewRing = new THREE.Mesh(
+  new THREE.TorusGeometry(0.62, 0.016, 10, 96),
+  new THREE.MeshBasicMaterial({ color: 0xe4e8f2, depthWrite: false, depthTest: false, transparent: true, side: THREE.DoubleSide })
+);
+gizmoViewRing.renderOrder = GIZMO_RING_RENDER_ORDER - 1;
+gizmoViewRing.userData.view = true;
+gizmoGroup.add(gizmoViewRing);
+
+/* =========================================================================
+ * 面移动器：三轴之间的矩形，悬浮于该面上，始终正对相机（billboard）
+ * ======================================================================= */
+// 面移动器：三轴之间的矩形，固定朝向该面（法线沿该面正对的轴），
+// 颜色 = 该面正对的轴的颜色（如 XZ 面正对 Y 轴 → 绿色）
+const GIZMO_FACE_DEFS = {
+  XY: { pos: [0.38, 0.38, 0], normal: [0, 0, 1], color: 0x5588ff },    // 正对 Z → 蓝，位于 XY 面（z=0）
+  XZ: { pos: [0.38, 0, 0.38], normal: [0, 1, 0], color: 0x55ff55 },    // 正对 Y → 绿，位于 XZ 面（y=0）
+  YZ: { pos: [0, 0.38, 0.38], normal: [1, 0, 0], color: 0xff5555 },    // 正对 X → 红，位于 YZ 面（x=0）
+};
+const FACE_AXES = { XY: ['X', 'Y'], XZ: ['X', 'Z'], YZ: ['Y', 'Z'] };
+const gizmoFaces = {};
+(function buildFacePlanes() {
+  const zAxis = new THREE.Vector3(0, 0, 1);
+  for (const [name, def] of Object.entries(GIZMO_FACE_DEFS)) {
+    // 半透明填充 + 白色描边；提高不透明度、缩小尺寸
+    const mat = new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: 0.8, depthWrite: false, depthTest: false, side: THREE.DoubleSide });
+    const geo = new THREE.PlaneGeometry(0.15, 0.15);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(def.pos[0], def.pos[1], def.pos[2]);
+    // 固定朝向：法线从 +Z 转到该面正对的轴方向（面始终平行于该面，不做 billboard）
+    mesh.quaternion.setFromUnitVectors(zAxis, new THREE.Vector3(...def.normal));
+    mesh.userData.face = name;
+    mesh.renderOrder = GIZMO_FACE_RENDER_ORDER;
+    // 描边（跟随 mesh 的变换）
+    const edge = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geo),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false, depthTest: false })
     );
-    ring.rotation.set(rot.x, rot.y, rot.z);
-    ring.name = axis;
-    ring.renderOrder = GIZMO_RING_RENDER_ORDER;
-    gizmoRings[axis] = ring;
-    gizmoGroup.add(ring);
+    edge.renderOrder = GIZMO_FACE_RENDER_ORDER + 1;
+    mesh.add(edge);
+    gizmoFaces[name] = mesh;
+    gizmoGroup.add(mesh);
   }
 })();
 // 移动控制器：柱身 + 锥头
@@ -149,16 +274,16 @@ const gizmoArrows = {};
 (function buildMoveArrows() {
   const defs = { X: [1, 0, 0, 0xff5555], Y: [0, 1, 0, 0x55ff55], Z: [0, 0, 1, 0x5588ff] };
   const up = new THREE.Vector3(0, 1, 0);
-  const offset = 0.3; // 箭头起点距中心的距离
   const shaftLen = 0.9, shaftR = 0.008, headH = 0.16, headR = 0.05;
   for (const [axis, [x, y, z, color]] of Object.entries(defs)) {
     const dir = new THREE.Vector3(x, y, z);
     const group = new THREE.Group();
     group.name = axis;
+    // 柱身（有粗细）+ 实心锥头（箭头加回来）
     const shaft = new THREE.Mesh(new THREE.CylinderGeometry(shaftR, shaftR, shaftLen, 10), new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: false, transparent: true }));
-    shaft.position.y = offset + shaftLen / 2;
+    shaft.position.y = shaftLen / 2;
     const head = new THREE.Mesh(new THREE.ConeGeometry(headR, headH, 14), new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: false, transparent: true }));
-    head.position.y = offset + shaftLen + headH / 2;
+    head.position.y = shaftLen + headH / 2;
     group.add(shaft); group.add(head);
     group.quaternion.setFromUnitVectors(up, dir);
     shaft.renderOrder = GIZMO_ARROW_RENDER_ORDER;
@@ -167,6 +292,15 @@ const gizmoArrows = {};
     gizmoGroup.add(group);
   }
 })();
+
+// 操作轴提示线：拖拽移动/旋转的某个轴时，在 gizmo 中心画一条高亮轴线（与移动线同粗）
+const gizmoAxisHint = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.008, 0.008, 100.0, 6, 1, true), // 无限长（双向 ±50，乘 gizmo scale 后远超屏幕）
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false, depthTest: false })
+);
+gizmoAxisHint.renderOrder = GIZMO_ARROW_RENDER_ORDER + 1;
+gizmoAxisHint.visible = false;
+gizmoGroup.add(gizmoAxisHint);
 
 let camTransition = null;
 let planePulse = null; // 绘制平面切换时的轴线发光动画 { axis, t0, dur }

@@ -38,6 +38,13 @@ function setComponentKeyframe(id, prop, comp, time, value, mode) {
   } else {
     tr.m = mode;
   }
+  // 始终捕获关键帧：但若 0t 到当前设置的值没有变化（新值等于 t=0 基线值），
+  // 则不创建当前帧关键帧（并移除该 tick 上已有的冗余关键帧）
+  const kf0 = tr.kf.find(k => k[0] === 0);
+  if (time > 0 && kf0 && Math.abs(value - kf0[1]) < 1e-6) {
+    tr.kf = tr.kf.filter(k => k[0] !== time);
+    return;
+  }
   let kf = tr.kf.find(k => k[0] === time);
   if (!kf) { kf = [time, value, state.defaultEasing]; tr.kf.push(kf); tr.kf.sort((a, b) => a[0] - b[0]); }
   else kf[1] = value;
