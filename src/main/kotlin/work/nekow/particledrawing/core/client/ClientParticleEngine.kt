@@ -123,7 +123,8 @@ class ClientParticleEngine {
      */
     fun updateParticleDirect(id: UUID, x: Double, y: Double, z: Double,
                              r: Float, g: Float, b: Float, a: Float, scale: Float,
-                             glowing: Boolean, lightLevel: Int) {
+                             glowing: Boolean, lightLevel: Int,
+                              snap: Boolean = false) {
         val rp = particles[id] ?: return
         rp.setPositionDirect(Vec3(x, y, z))
         rp.setColorDirect(Color.of(r, g, b, a))
@@ -131,7 +132,7 @@ class ClientParticleEngine {
         rp.setGlowing(glowing)
         rp.setLightLevel(lightLevel)
         bridges[id]?.let {
-            it.syncPosition(x, y, z, snap = false)
+            it.syncPosition(x, y, z, snap)
             it.syncColor(r, g, b, a)
             it.syncScale(scale)
             it.setGlowing(glowing)

@@ -101,7 +101,7 @@ function makeSlot(ref, label) {
   else {
     const ph = document.createElement('span');
     ph.className = 'blk-slot-empty';
-    ph.textContent = (label || '') + (label ? '·' : '') + TYPE_LABEL[ref.type];
+    ph.textContent = (label || '') + (label ? ' ' : '') + TYPE_LABEL[ref.type];
     el.appendChild(ph);
   }
   return el;
@@ -113,6 +113,7 @@ function makeExprBlock(n) {
   el.className = 'blk-expr ' + t.cls + ' blk-drag';
   el._node = n;
   el._dragLabel = t.label;
+  el._info = nodeInfo(n);
 
   if (n.kind === 'num') {
     const inp = document.createElement('input');
@@ -212,6 +213,7 @@ function makeStatementBlock(s, isChain, chainIndex) {
   el.className = 'blk-stmt ' + cls + (BIG_BLOCKS[s.kind] ? ' big' : '') + ' blk-drag';
   el._stmt = s;
   el._dragLabel = STMT_BLOCKS[s.kind].label;
+  el._info = STMT_BLOCKS[s.kind].desc;
 
   if (s.kind === 'set') {
     const name = document.createElement('input');
@@ -492,10 +494,25 @@ function renderPalette() {
   }
 }
 
-/** 函数积木注解：功能 + 返回值。 */
+/** 函数积木注解：用途（参数含义…）。 */
 function funcInfo(name) {
   const f = FUNC_BLOCKS[name];
-  return (f.desc || name);
+  const args = (f.args || []).map(a => a[0]).join(', ');
+  return f.desc + '（' + args + '）';
+}
+
+/** 积木节点含义（供放大镜查看）。 */
+function nodeInfo(n) {
+  switch (n.kind) {
+    case 'num': return '常量数值';
+    case 'var': return BUILTIN_VAR_INFO[n.name] || '变量';
+    case 'func': return funcInfo(n.name);
+    case 'op': return OP_LABELS[n.op] || '运算符';
+    case 'chain': return '动态算式（可追加项）';
+    case 'comp': return '取向量的 x/y/z 分量';
+    case 'neg': return '取负';
+    default: return '';
+  }
 }
 
 function buildPaletteGroup(g) {
@@ -559,6 +576,7 @@ function makePaletteItemEl(item) {
   wrap.className = 'pal-item blk-drag';
   wrap._palette = { type: item.type, kind: item.kind, template: item.template, op: item.op };
   wrap._dragLabel = item.label;
+  if (item.info) wrap._info = item.info;
 
   if (item.type === 'opval') {
     // 运算符拼图：独立小块
@@ -571,13 +589,6 @@ function makePaletteItemEl(item) {
     wrap.appendChild(makeStatementBlock(tmp));
   } else {
     wrap.appendChild(makeExprBlock(newExprNodeFromTemplate(item.template)));
-  }
-  if (item.info) {
-    const q = document.createElement('span');
-    q.className = 'qmark'; q.textContent = '?';
-    wrap.appendChild(q);
-    q.addEventListener('mouseenter', () => showPaletteTip(q, item.info));
-    q.addEventListener('mouseleave', hidePaletteTip);
   }
   return wrap;
 }
@@ -1142,6 +1153,13 @@ function ensurePuzzleDom() {
   const fxName = document.createElement('span'); fxName.className = 'pz-fx'; fxName.id = 'puzzle-fx-name';
   const spacer = document.createElement('span'); spacer.className = 'pz-spacer';
   toolbar.appendChild(title); toolbar.appendChild(fxName); toolbar.appendChild(spacer);
+  const lensBtn = document.createElement('button');
+  lensBtn.id = 'puzzle-lens';
+  lensBtn.className = 'pz-lens';
+  lensBtn.textContent = '🔍';
+  lensBtn.title = '拖动到拼图上查看含义';
+  lensBtn.addEventListener('pointerdown', beginLensDrag);
+  toolbar.appendChild(lensBtn);
   toolbar.appendChild(mkBtn('puzzle-preview', '预览'));
   toolbar.appendChild(mkBtn('puzzle-ok', '确定', 'btn bd-ok'));
   toolbar.appendChild(mkBtn('puzzle-cancel', '取消'));
@@ -1434,6 +1452,55 @@ function applyWorkspaceState() {
 }
 
 /* =========================================================================
+ * 放大镜（拖到拼图上查看含义）
+ * ======================================================================= */
+
+let lensDrag = null;
+
+function beginLensDrag(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  lensDrag = { startX: e.clientX, startY: e.clientY, moved: false, ghost: null, shownInfo: null };
+  const ghost = document.createElement('div');
+  ghost.className = 'lens-ghost';
+  ghost.textContent = '🔍';
+  ghost.style.left = e.clientX + 'px';
+  ghost.style.top = e.clientY + 'px';
+  document.body.appendChild(ghost);
+  lensDrag.ghost = ghost;
+}
+
+function moveLensGhost(clientX, clientY) {
+  if (!lensDrag) return;
+  if (Math.hypot(clientX - lensDrag.startX, clientY - lensDrag.startY) > 3) lensDrag.moved = true;
+  lensDrag.ghost.style.left = clientX + 'px';
+  lensDrag.ghost.style.top = clientY + 'px';
+  const infoEl = findInfoEl(document.elementFromPoint(clientX, clientY));
+  const info = (infoEl && infoEl._info) || '';
+  if (info !== lensDrag.shownInfo) {
+    lensDrag.shownInfo = info;
+    if (info) showPaletteTip(infoEl, info);
+    else hidePaletteTip();
+  }
+}
+
+function findInfoEl(el) {
+  let cur = el;
+  while (cur && cur !== document.body) {
+    if (cur._info) return cur;
+    cur = cur.parentElement;
+  }
+  return null;
+}
+
+function endLensDrag(clientX, clientY) {
+  if (!lensDrag) return;
+  if (lensDrag.ghost) lensDrag.ghost.remove();
+  lensDrag = null;
+  hidePaletteTip();
+}
+
+/* =========================================================================
  * 事件绑定
  * ======================================================================= */
 
@@ -1441,6 +1508,7 @@ function applyWorkspaceState() {
   window.addEventListener('pointerdown', (ev) => {
     if (!bctx) return;
     if (ev.button !== 0) return; // 仅左键拖拽，中键/右键不移动拼图
+    hidePaletteTip();
     const t = ev.target;
     if (t.closest && (t.closest('input') || t.closest('button') || t.closest('select') || t.closest('.fwin-titlebar') || t.closest('.fwin-rsz'))) return;
     const dragEl = t.closest && t.closest('.blk-drag');
@@ -1450,8 +1518,8 @@ function applyWorkspaceState() {
     }
   }, true);
 
-  window.addEventListener('pointermove', (ev) => { if (bdrag) moveGhost(ev.clientX, ev.clientY); });
-  window.addEventListener('pointerup', () => { if (bdrag) endBlockDrag(); });
+  window.addEventListener('pointermove', (ev) => { if (bdrag) moveGhost(ev.clientX, ev.clientY); else if (lensDrag) moveLensGhost(ev.clientX, ev.clientY); });
+  window.addEventListener('pointerup', (ev) => { if (bdrag) endBlockDrag(); else if (lensDrag) endLensDrag(ev.clientX, ev.clientY); });
 
   window.addEventListener('keydown', (ev) => {
     if (!bctx) return;

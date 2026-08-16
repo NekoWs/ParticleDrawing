@@ -27,15 +27,19 @@ class ClientAnimationPlayer(
     private var currentTick = 0
     private val states = LinkedHashMap<String, ParticleState>()
     private var finished = false
+    private var justLooped = false
 
     private val maxTick: Int = run {
         var max = animation.tracks.flatMap { it.keyframes }.maxOfOrNull { it.tick }?.toDouble() ?: 0.0
         for (fx in animation.functions) {
-            if (fx.duration > max) max = fx.duration.toDouble()
+            var hasVarAnim = false
             for (v in fx.vars.values) {
                 val kfMax = v.kf.maxOfOrNull { it.tick } ?: continue
+                hasVarAnim = true
                 if (kfMax > max) max = kfMax
             }
+            // 仅当代码本身依赖时间 t（且变量无关键帧动画）时，duration 才是动画时长
+            if (!hasVarAnim && usesTimeVar(fx.code) && fx.duration > max) max = fx.duration.toDouble()
         }
         max.toInt()
     }
@@ -58,7 +62,7 @@ class ClientAnimationPlayer(
         if (finished) return false
         currentTick++
         if (currentTick > maxTick) {
-            if (animation.loop) currentTick = 0
+            if (animation.loop) { currentTick = 0; justLooped = true }
             else { finished = true; return false }
         }
         advanceTo(currentTick.toDouble())
@@ -66,6 +70,9 @@ class ClientAnimationPlayer(
     }
 
     fun isFinished(): Boolean = finished
+    fun consumeJustLooped(): Boolean { val v = justLooped; justLooped = false; return v }
+
+    private fun usesTimeVar(code: String): Boolean = Regex("\\bt\\b").containsMatchIn(code)
     fun currentStates(): Collection<ParticleState> = states.values
     fun stop() { finished = true }
 
@@ -91,16 +98,16 @@ class ClientAnimationPlayer(
                 val s = states[id] ?: continue
                 val base = evaluateFunctionParticle(fx, i, fx.count, t)
                 var pos = base.first
-                val dx = opDeltaAt("pos.x", "f:" + fx.id, t)
-                val dy = opDeltaAt("pos.y", "f:" + fx.id, t)
-                val dz = opDeltaAt("pos.z", "f:" + fx.id, t)
-                pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
                 val rx = scalarAt("rot.x", "f:" + fx.id, t, 0.0)
                 val ry = scalarAt("rot.y", "f:" + fx.id, t, 0.0)
                 val rz = scalarAt("rot.z", "f:" + fx.id, t, 0.0)
                 if (rx != 0.0 || ry != 0.0 || rz != 0.0) {
                     pos = rotateAround(pos, Vec3(fx.center[0], fx.center[1], fx.center[2]), doubleArrayOf(rx, ry, rz))
                 }
+                val dx = opDeltaAt("pos.x", "f:" + fx.id, t)
+                val dy = opDeltaAt("pos.y", "f:" + fx.id, t)
+                val dz = opDeltaAt("pos.z", "f:" + fx.id, t)
+                pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
                 var scale = base.third
                 val sv = scalarAt("scl", "f:" + fx.id, t, scale.toDouble())
                 scale = sv.toFloat().coerceAtLeast(0.01f)

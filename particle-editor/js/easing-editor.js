@@ -10,11 +10,14 @@ function easingToBezier(easing) {
 
 function easingCurveSVG(easing) {
   const w = 28, h = 16;
+  const ys = [];
+  for (let i = 0; i <= 24; i++) ys.push(easeVal(i / 24, easing));
+  let lo = Math.min(0, ...ys), hi = Math.max(1, ...ys);
+  if (hi - lo < 1e-6) { lo -= 0.5; hi += 0.5; }
   let d = '';
   for (let i = 0; i <= 24; i++) {
     const t = i / 24;
-    const y = easeVal(t, easing);
-    const x = t * w, yy = h - 1 - y * (h - 2);
+    const x = t * w, yy = h - 1 - (ys[i] - lo) / (hi - lo) * (h - 2);
     d += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + yy.toFixed(1);
   }
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><path d="${d}" fill="none" stroke="#5b9dff" stroke-width="1.6"/></svg>`;
@@ -53,13 +56,17 @@ function openEasingEditor(easing, applyFn, anchor) {
     lab.textContent = label;
     row.appendChild(lab);
     const mkInp = (idx) => {
+      const isX = idx % 2 === 0;
       const inp = document.createElement('input');
       inp.type = 'number';
       inp.step = '0.01';
-      inp.min = '0'; inp.max = '1';
+      if (isX) { inp.min = '0'; inp.max = '1'; }
+      else { inp.min = String(EE_Y_LO); inp.max = String(EE_Y_HI); }
       inp.value = bezier[idx].toFixed(3);
       inp.addEventListener('input', () => {
-        const v = Math.min(1, Math.max(0, parseFloat(inp.value) || 0));
+        let v = parseFloat(inp.value);
+        if (!Number.isFinite(v)) v = 0;
+        v = isX ? Math.min(1, Math.max(0, v)) : Math.min(EE_Y_HI, Math.max(EE_Y_LO, v));
         easingEditor.bezier[idx] = v;
         easingEditor.apply(easingEditor.bezier.slice());
         drawEasingEditor();
@@ -77,7 +84,7 @@ function openEasingEditor(easing, applyFn, anchor) {
 
   const canvas = document.createElement('canvas');
   canvas.className = 'ee-canvas';
-  canvas.width = 196; canvas.height = 132;
+  canvas.width = EE_W; canvas.height = EE_H;
   pop.appendChild(canvas);
   const presetSel = document.createElement('select');
   presetSel.className = 'ee-presets';
@@ -143,6 +150,18 @@ function cubicBezierY(t, y1, y2) {
   return ((ay * t + by) * t + cy) * t;
 }
 
+// 绘制区常量：方框 x∈[0,1]（几乎占满宽度），y∈[0,1] 允许溢出到 [EE_Y_LO, EE_Y_HI]
+const EE_W = 160;
+const EE_H = 160;
+const EE_MX = 8;
+const EE_Y_LO = -0.75;
+const EE_Y_HI = 1.75;
+const EE_BOX_W = EE_W - EE_MX * 2;
+const EE_BOX_H = EE_H / (EE_Y_HI - EE_Y_LO);
+
+function eePx(x) { return EE_MX + Math.min(1, Math.max(0, x)) * EE_BOX_W; }
+function eePy(y) { return (EE_Y_HI - y) * EE_BOX_H; }
+
 function drawEasingEditor() {
   const pop = document.getElementById('easing-editor');
   if (!pop || !easingEditor) return;
@@ -150,32 +169,47 @@ function drawEasingEditor() {
   syncEasingInputs();
   const canvas = pop.querySelector('.ee-canvas');
   const ctx = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height, pad = 12;
+  const w = canvas.width, h = canvas.height;
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = '#171a20';
   ctx.fillRect(0, 0, w, h);
+
+  // 方框 [0,1]×[0,1]（正方形）
   ctx.strokeStyle = '#323848';
-  ctx.strokeRect(pad, pad, w - 2 * pad, h - 2 * pad);
-  const px = (x) => pad + Math.min(1, Math.max(0, x)) * (w - 2 * pad);
-  const py = (y) => pad + (1 - Math.min(1, Math.max(0, y))) * (h - 2 * pad);
+  ctx.lineWidth = 1;
+  ctx.strokeRect(EE_MX, eePy(1), EE_BOX_W, EE_BOX_H);
+  // 中线参考线
+  ctx.strokeStyle = '#252b36';
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(EE_MX, eePy(0.5)); ctx.lineTo(EE_MX + EE_BOX_W, eePy(0.5));
+  ctx.moveTo(EE_MX + EE_BOX_W / 2, eePy(1)); ctx.lineTo(EE_MX + EE_BOX_W / 2, eePy(0));
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 曲线（y 超出 [0,1] 时延伸到方框外）
   ctx.strokeStyle = '#5b9dff';
   ctx.lineWidth = 2;
   ctx.beginPath();
   for (let i = 0; i <= 48; i++) {
     const t = i / 48;
-    const bx = pad + cubicBezierX(t, x1, x2) * (w - 2 * pad);
-    const by = pad + (1 - cubicBezierY(t, y1, y2)) * (h - 2 * pad);
+    const bx = eePx(cubicBezierX(t, x1, x2));
+    const by = eePy(cubicBezierY(t, y1, y2));
     if (i === 0) ctx.moveTo(bx, by); else ctx.lineTo(bx, by);
   }
   ctx.stroke();
+
+  // 控制线（端点 → 控制点）
   ctx.strokeStyle = '#4a5568';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(pad, h - pad); ctx.lineTo(px(x1), py(y1));
-  ctx.moveTo(w - pad, pad); ctx.lineTo(px(x2), py(y2));
+  ctx.moveTo(eePx(0), eePy(0)); ctx.lineTo(eePx(x1), eePy(y1));
+  ctx.moveTo(eePx(1), eePy(1)); ctx.lineTo(eePx(x2), eePy(y2));
   ctx.stroke();
-  drawPoint(ctx, px(x1), py(y1), '#ff6b6b');
-  drawPoint(ctx, px(x2), py(y2), '#6ba7ff');
+
+  // 控制点球（可移出方框）
+  drawPoint(ctx, eePx(x1), eePy(y1), '#ff6b6b');
+  drawPoint(ctx, eePx(x2), eePy(y2), '#6ba7ff');
 }
 
 function drawPoint(ctx, x, y, color) {
@@ -192,9 +226,8 @@ function onEasingPointerDown(e) {
   if (!easingEditor) return;
   const canvas = document.getElementById('easing-editor').querySelector('.ee-canvas');
   const rect = canvas.getBoundingClientRect();
-  const w = canvas.width, h = canvas.height, pad = 12;
-  const mx = (e.clientX - rect.left - pad) / (w - 2 * pad);
-  const my = 1 - (e.clientY - rect.top - pad) / (h - 2 * pad);
+  const mx = (e.clientX - rect.left - EE_MX) / EE_BOX_W;
+  const my = EE_Y_HI - (e.clientY - rect.top) / EE_BOX_H;
   const [x1, y1, x2, y2] = easingEditor.bezier;
   const d1 = Math.hypot(mx - x1, my - y1);
   const d2 = Math.hypot(mx - x2, my - y2);
@@ -206,11 +239,10 @@ function onEasingPointerMove(e) {
   if (!easingEditor || easingEditor.dragging < 0) return;
   const canvas = document.getElementById('easing-editor').querySelector('.ee-canvas');
   const rect = canvas.getBoundingClientRect();
-  const w = canvas.width, h = canvas.height, pad = 12;
-  let mx = (e.clientX - rect.left - pad) / (w - 2 * pad);
-  let my = 1 - (e.clientY - rect.top - pad) / (h - 2 * pad);
+  let mx = (e.clientX - rect.left - EE_MX) / EE_BOX_W;
+  let my = EE_Y_HI - (e.clientY - rect.top) / EE_BOX_H;
   mx = Math.min(1, Math.max(0, mx));
-  my = Math.min(1, Math.max(0, my));
+  my = Math.min(EE_Y_HI, Math.max(EE_Y_LO, my));
   const b = easingEditor.bezier;
   if (easingEditor.dragging === 0) { b[0] = mx; b[1] = my; }
   else { b[2] = mx; b[3] = my; }

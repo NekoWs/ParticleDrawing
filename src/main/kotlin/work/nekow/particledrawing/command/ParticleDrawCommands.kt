@@ -4,7 +4,9 @@ import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
+import net.minecraft.commands.arguments.coordinates.Vec3Argument
 import net.minecraft.network.chat.Component
+import net.minecraft.world.phys.Vec3
 import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.event.RegisterCommandsEvent
@@ -34,7 +36,9 @@ object ParticleDrawCommands {
                 .executes(::runTest)
                 .then(Commands.literal("list").executes(::listAnimations))
                 .then(Commands.literal("play")
-                    .then(Commands.argument("name", StringArgumentType.string()).executes(::playAnimation)))
+                    .then(Commands.argument("name", StringArgumentType.string())
+                        .executes(::playAnimation)
+                        .then(Commands.argument("pos", Vec3Argument.vec3()).executes(::playAnimation))))
                 .then(Commands.literal("stop").executes(::stopAnimations))
                 .then(Commands.literal("var")
                     .then(Commands.argument("name", StringArgumentType.string())
@@ -67,7 +71,9 @@ object ParticleDrawCommands {
     }
 
     /**
-     * /test play <name> —— 在玩家面前播放动画（客户端本地播放）。
+     * /test play <name> [pos] —— 播放动画（客户端本地播放）。
+     * pos 可省略（默认在玩家面前 3 格）；命令方块执行时必须提供 pos。
+     * pos 支持绝对坐标与 ~ 相对坐标（相对命令执行者）。
      */
     private fun playAnimation(ctx: CommandContext<CommandSourceStack>): Int {
         val name = StringArgumentType.getString(ctx, "name")
@@ -79,8 +85,12 @@ object ParticleDrawCommands {
 
         val level = ctx.source.level
         val dim = ParticleUtils.dimensionUUID(level)
-        val player = ctx.source.playerOrException
-        val origin = player.position().add(player.lookAngle.scale(3.0))
+        val origin: Vec3 = try {
+            Vec3Argument.getVec3(ctx, "pos")
+        } catch (_: IllegalArgumentException) {
+            val player = ctx.source.playerOrException
+            player.position().add(player.lookAngle.scale(3.0))
+        }
 
         ServerAnimationManager.play(dim, level.players(), json, origin)
         ctx.source.sendSuccess(

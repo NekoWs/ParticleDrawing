@@ -135,8 +135,6 @@ function timelineXToTick(clientX) {
  * 函数对象属性面板
  * ======================================================================= */
 
-let fxFormulaView = false;
-
 function refreshFunctionPanel() {
   const box = document.getElementById('fx-panel');
   if (!box) return;
@@ -228,15 +226,6 @@ function buildFunctionPanel(fx) {
     wrap.appendChild(pbox);
   }
 
-  // 公式视图切换（仅预设对象可折叠；自定义对象常显）
-  if (fx.preset) {
-    const toggle = document.createElement('button');
-    toggle.className = 'mini';
-    toggle.textContent = fxFormulaView ? '隐藏公式视图' : '公式视图';
-    toggle.onclick = () => { fxFormulaView = !fxFormulaView; refreshFunctionPanel(); };
-    wrap.appendChild(toggle);
-  }
-
   // 采样数
   const countRow = document.createElement('label');
   countRow.className = 'row';
@@ -275,49 +264,46 @@ function buildFunctionPanel(fx) {
   durRow.appendChild(stepIn);
   wrap.appendChild(durRow);
 
-  if (fxFormulaView || !fx.preset) {
-    wrap.appendChild(document.createElement('hr'));
-    // 公式代码块
-    const codeLabel = document.createElement('div');
-    codeLabel.className = 'row';
-    codeLabel.textContent = '公式代码块';
-    const puzzleBtn = document.createElement('button');
-    puzzleBtn.className = 'mini';
-    puzzleBtn.textContent = '🧩 拼图';
-    puzzleBtn.title = '以拼图形式编辑代码段';
-    puzzleBtn.onclick = () => openBlockDrawer(fx);
-    codeLabel.appendChild(puzzleBtn);
-    wrap.appendChild(codeLabel);
-    const codeArea = document.createElement('textarea');
-    codeArea.className = 'fx-code';
-    codeArea.rows = 7;
-    codeArea.value = fx.code;
-    codeArea.onchange = () => { pushUndo(); fx.code = codeArea.value; commitFunctionRebuild(fx); };
-    wrap.appendChild(codeArea);
-    const codeHint = document.createElement('p');
-    codeHint.className = 'hint';
-    codeHint.textContent = '分号分隔，可换行；[x,y,z]=[..] 打包；属性 x/y/z r/g/b/a vx/vy/vz sc glow light；其它名=临时变量；内置 i/n/t';
-    wrap.appendChild(codeHint);
+  // 公式代码块
+  const codeLabel = document.createElement('div');
+  codeLabel.className = 'row';
+  codeLabel.textContent = '公式代码块';
+  const puzzleBtn = document.createElement('button');
+  puzzleBtn.className = 'mini';
+  puzzleBtn.textContent = '🧩 拼图';
+  puzzleBtn.title = '以拼图形式编辑代码段';
+  puzzleBtn.onclick = () => openBlockDrawer(fx);
+  codeLabel.appendChild(puzzleBtn);
+  wrap.appendChild(codeLabel);
+  const codeArea = document.createElement('textarea');
+  codeArea.className = 'fx-code';
+  codeArea.rows = 7;
+  codeArea.value = fx.code;
+  codeArea.onchange = () => { pushUndo(); fx.code = codeArea.value; commitFunctionRebuild(fx); };
+  wrap.appendChild(codeArea);
+  const codeHint = document.createElement('p');
+  codeHint.className = 'hint';
+  codeHint.textContent = '分号分隔，可换行；[x,y,z]=[..] 打包；属性 x/y/z r/g/b/a vx/vy/vz sc glow light；其它名=临时变量；内置 i/n/t';
+  wrap.appendChild(codeHint);
 
-    // 变量表
-    const vhead = document.createElement('div');
-    vhead.className = 'vars-head';
-    vhead.innerHTML = '<span>变量（可设关键帧+缓动）</span>';
-    const vadd = document.createElement('button');
-    vadd.className = 'mini'; vadd.textContent = '+';
-    vadd.onclick = () => {
-      pushUndo();
-      let k = 0; while (('v' + k) in fx.vars) k++;
-      fx.vars['v' + k] = { expr: '0', kf: [] };
-      commitFunctionRebuild(fx); refreshFunctionPanel();
-    };
-    vhead.appendChild(vadd);
-    wrap.appendChild(vhead);
-    const vlist = document.createElement('div');
-    vlist.className = 'fx-vars';
-    for (const name of Object.keys(fx.vars)) vlist.appendChild(buildVarRow(fx, name));
-    wrap.appendChild(vlist);
-  }
+  // 变量表
+  const vhead = document.createElement('div');
+  vhead.className = 'vars-head';
+  vhead.innerHTML = '<span>变量（可设关键帧+缓动）</span>';
+  const vadd = document.createElement('button');
+  vadd.className = 'mini'; vadd.textContent = '+';
+  vadd.onclick = () => {
+    pushUndo();
+    let k = 0; while (('v' + k) in fx.vars) k++;
+    fx.vars['v' + k] = { expr: '0', kf: [] };
+    commitFunctionRebuild(fx); refreshFunctionPanel();
+  };
+  vhead.appendChild(vadd);
+  wrap.appendChild(vhead);
+  const vlist = document.createElement('div');
+  vlist.className = 'fx-vars';
+  for (const name of Object.keys(fx.vars)) vlist.appendChild(buildVarRow(fx, name));
+  wrap.appendChild(vlist);
 
   return wrap;
 }
