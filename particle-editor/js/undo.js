@@ -18,6 +18,7 @@ function cloneFunctions(fs) {
     center: f.center.slice(),
     vars: cloneVars(f.vars),
     params: f.params ? { ...f.params } : null,
+    ui: f.ui ? JSON.parse(JSON.stringify(f.ui)) : null,
   }));
 }
 

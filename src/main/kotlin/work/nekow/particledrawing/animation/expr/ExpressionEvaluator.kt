@@ -97,6 +97,7 @@ private val FUNCS = mapOf(
 val ATTR_NAMES = listOf("x", "y", "z", "r", "g", "b", "a", "vx", "vy", "vz", "sc", "glow", "light")
 
 private val PREC = mapOf('+' to 1, '-' to 1, '*' to 2, '/' to 2, '%' to 2, '^' to 3)
+private const val NEG_PREC = 2.5 // 一元负号优先级：高于 * / %，低于 ^（-2^2 = -(2^2)）
 
 /** 函数求值结果。 */
 class EvalResult(var pos: Vec3, val color: DoubleArray, var vel: Vec3, var scale: Double, var glow: Boolean, var light: Double)
@@ -214,27 +215,36 @@ object ExpressionEvaluator {
         throw IllegalArgumentException("运算符 $op 类型不匹配")
     }
 
+    private fun negate(v: Any): Any = when (v) {
+        is Double -> -v
+        is Vec3 -> Vec3(-v.x, -v.y, -v.z)
+        is Mat3 -> Mat3(Array(3) { i -> DoubleArray(3) { j -> -v.m[i][j] } })
+        else -> throw IllegalArgumentException("一元负号类型不支持")
+    }
+
     private sealed class Token {
         data class Num(val v: Double) : Token()
         data class Var(val name: String) : Token()
         data class Func(val name: String) : Token()
         data class Comp(val axis: Char) : Token()
         data class Sym(val c: Char) : Token()
+        data object Neg : Token()
     }
 
     private fun tokenize(expr: String): List<Token> {
         val tokens = mutableListOf<Token>()
         var i = 0
+        var expectOperand = true
         while (i < expr.length) {
             val c = expr[i]
             if (c == ' ' || c == '\t' || c == '\n') { i++; continue }
             if (c == '.' && i + 1 < expr.length && expr[i + 1] in "xyz") {
-                tokens.add(Token.Comp(expr[i + 1])); i += 2; continue
+                tokens.add(Token.Comp(expr[i + 1])); i += 2; expectOperand = false; continue
             }
             if (c.isDigit() || c == '.') {
                 var j = i
                 while (j < expr.length && (expr[j].isDigit() || expr[j] == '.')) j++
-                tokens.add(Token.Num(expr.substring(i, j).toDouble())); i = j; continue
+                tokens.add(Token.Num(expr.substring(i, j).toDouble())); i = j; expectOperand = false; continue
             }
             if (c.isLetter() || c == '_') {
                 var j = i
@@ -246,9 +256,10 @@ object ExpressionEvaluator {
                     FUNCS.containsKey(name) -> tokens.add(Token.Func(name))
                     else -> tokens.add(Token.Var(name))
                 }
-                i = j; continue
+                i = j; expectOperand = false; continue
             }
-            if (c in "+-*/%^(),") { tokens.add(Token.Sym(c)); i++; continue }
+            if (c == '-' && expectOperand) { tokens.add(Token.Neg); i++; continue } // 一元负号
+            if (c in "+-*/%^(),") { tokens.add(Token.Sym(c)); i++; expectOperand = (c == '(' || c == ',' || c in "+-*/%^"); continue }
             i++
         }
         return tokens
@@ -267,6 +278,16 @@ object ExpressionEvaluator {
                 }
                 is Token.Func -> stack.add(tk.name)
                 is Token.Comp -> output.add(tk)
+                is Token.Neg -> {
+                    while (stack.isNotEmpty()) {
+                        val top = stack.last()
+                        if (top == '(' || top == "neg") break
+                        if (top is String && top in FUNCS) { output.add(stack.removeAt(stack.size - 1)); continue }
+                        if (top is Char && PREC.containsKey(top) && (PREC[top] ?: 0) > NEG_PREC) output.add(stack.removeAt(stack.size - 1))
+                        else break
+                    }
+                    stack.add("neg")
+                }
                 is Token.Sym -> when (tk.c) {
                     ',' -> { while (stack.isNotEmpty() && stack.last() != '(') output.add(stack.removeAt(stack.size - 1)) }
                     '(' -> stack.add('(')
@@ -283,6 +304,7 @@ object ExpressionEvaluator {
                         while (stack.isNotEmpty()) {
                             val top = stack.last()
                             if (top == '(') break
+                            if (top == "neg") { if (NEG_PREC > prec) output.add(stack.removeAt(stack.size - 1)) else break; continue }
                             if (top is String && top in FUNCS) { output.add(stack.removeAt(stack.size - 1)); continue }
                             if (top is Char && PREC.containsKey(top)) {
                                 val tp = PREC[top] ?: 0
@@ -301,6 +323,10 @@ object ExpressionEvaluator {
         for (o in output) {
             when (o) {
                 is Double, is Vec3, is Mat3 -> s.add(o)
+                "neg" -> {
+                    val v = s.removeAt(s.size - 1)
+                    s.add(negate(v))
+                }
                 is Token.Comp -> {
                     val v = s.removeAt(s.size - 1) as? Vec3 ?: throw IllegalArgumentException("分量访问需要向量")
                     s.add(v.component(o.axis))

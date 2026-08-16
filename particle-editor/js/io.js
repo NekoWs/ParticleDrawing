@@ -41,6 +41,7 @@ function serializeFunction(fx) {
     style: fx.style, code: fx.code || '',
     vars: serializeVars(fx.vars),
     duration: fx.duration, step: fx.step, preset: fx.preset, params: fx.params ? { ...fx.params } : null,
+    ui: fx.ui ? JSON.parse(JSON.stringify(fx.ui)) : null,
   };
 }
 function parseFunction(o) {
@@ -51,6 +52,7 @@ function parseFunction(o) {
     vars: parseVars(o.vars),
     duration: o.duration || 0, step: o.step || 5,
     preset: o.preset || null, params: o.params ? { ...o.params } : null,
+    ui: o.ui || null,
   };
 }
 
@@ -233,10 +235,56 @@ function updateTopbarTitle() {
   if (el) el.textContent = state.name + '.pdraw';
 }
 
+/* —— FileSystemHandle 持久化（IndexedDB，用于"上次保存路径"） —— */
+let _idbDb = null;
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    if (_idbDb) return resolve(_idbDb);
+    const req = indexedDB.open('particledrawing', 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore('handles'); };
+    req.onsuccess = () => { _idbDb = req.result; resolve(_idbDb); };
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbSetHandle(key, handle) {
+  if (!handle) return;
+  try {
+    const db = await idbOpen();
+    await new Promise((res, rej) => {
+      const tx = db.transaction('handles', 'readwrite');
+      tx.objectStore('handles').put(handle, key);
+      tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+    });
+  } catch (e) {}
+}
+async function idbGetHandle(key) {
+  try {
+    const db = await idbOpen();
+    return await new Promise((res) => {
+      const tx = db.transaction('handles', 'readonly');
+      const rq = tx.objectStore('handles').get(key);
+      rq.onsuccess = () => res(rq.result || null);
+      rq.onerror = () => res(null);
+    });
+  } catch (e) { return null; }
+}
+
 async function openFile() {
   if (!confirmDiscardChanges()) return;
   if (window.showOpenFilePicker) {
     try {
+      // 优先直接重新打开上次的文件（自动选中上次路径）
+      const lastFile = await idbGetHandle('lastFile');
+      if (lastFile) {
+        try {
+          const perm = await lastFile.queryPermission({ mode: 'read' });
+          if (perm === 'granted' || (perm === 'prompt' && await lastFile.requestPermission({ mode: 'read' }) === 'granted')) {
+            state.fileHandle = lastFile;
+            await loadFile(await lastFile.getFile());
+            return;
+          }
+        } catch (e) { /* 权限失败则回退到选择器 */ }
+      }
       const [h] = await window.showOpenFilePicker({ types: [{ description: '工程/动画', accept: { 'application/json': ['.pdraw', '.json'] } }] });
       state.fileHandle = h;
       await loadFile(await h.getFile());
@@ -256,6 +304,7 @@ async function saveFile() {
     const w = await state.fileHandle.createWritable();
     await w.write(json); await w.close();
     state.dirty = false;
+    await idbSetHandle('lastFile', state.fileHandle);
   } catch (e) {
     await saveFileAs();
   }
@@ -270,6 +319,7 @@ async function saveFileAs() {
       const w = await h.createWritable();
       await w.write(json); await w.close();
       state.dirty = false;
+      await idbSetHandle('lastFile', h);
       return;
     } catch (e) { /* 取消或失败则回退 */ }
   }

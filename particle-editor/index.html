@@ -91,30 +91,6 @@
       </details>
 
       <details>
-        <summary>函数生成</summary>
-        <p class="hint">t = 该粒子运行时长(tick)，i = 粒子序号，可引用下方变量</p>
-        <div class="vars-head"><span>变量</span><button id="btn-var-add" class="mini">+</button></div>
-        <div id="var-list"></div>
-        <label class="row">粒子数 <input id="fn-count" type="number" min="1" value="30" /></label>
-        <label class="row">时长(tick) <input id="fn-duration" type="number" min="0" value="100" /></label>
-        <label class="row">采样间隔 <input id="fn-step" type="number" min="1" value="5" /></label>
-        <p class="hint">位置</p>
-        <label class="row">X <input id="fn-x" type="text" value="cos(t*0.1 + i*0.2)*4" /></label>
-        <label class="row">Y <input id="fn-y" type="text" value="sin(t*0.05)*1.5" /></label>
-        <label class="row">Z <input id="fn-z" type="text" value="sin(t*0.1 + i*0.2)*4" /></label>
-        <p class="hint">颜色(0..1)</p>
-        <label class="row">R <input id="fn-r" type="text" value="" /></label>
-        <label class="row">G <input id="fn-g" type="text" value="" /></label>
-        <label class="row">B <input id="fn-b" type="text" value="" /></label>
-        <label class="row">透明度 <input id="fn-a" type="text" value="" /></label>
-        <p class="hint">其它</p>
-        <label class="row">缩放 <input id="fn-s" type="text" value="0.3" /></label>
-        <label class="row">发光 <input id="fn-glow" type="text" value="1" /></label>
-        <label class="row">光照等级 <input id="fn-light" type="text" value="12" /></label>
-        <button id="btn-fn" class="btn">生成</button>
-      </details>
-
-      <details>
         <summary>傅里叶级数</summary>
         <label class="row">平面
           <select id="four-plane">
@@ -177,6 +153,9 @@
   <script src="./js/easing-editor.js"></script>
   <script src="./js/generators.js"></script>
   <script src="./js/panels.js"></script>
+  <script src="./js/blocks.js"></script>
+  <script src="./js/float-window.js"></script>
+  <script src="./js/blocks-ui.js"></script>
   <script src="./js/io.js"></script>
   <script src="./js/main.js"></script>
 </body>

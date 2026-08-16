@@ -262,6 +262,12 @@ function buildFunctionPanel(fx) {
     const codeLabel = document.createElement('div');
     codeLabel.className = 'row';
     codeLabel.textContent = '公式代码块';
+    const puzzleBtn = document.createElement('button');
+    puzzleBtn.className = 'mini';
+    puzzleBtn.textContent = '🧩 拼图';
+    puzzleBtn.title = '以拼图形式编辑代码段';
+    puzzleBtn.onclick = () => openBlockDrawer(fx);
+    codeLabel.appendChild(puzzleBtn);
     wrap.appendChild(codeLabel);
     const codeArea = document.createElement('textarea');
     codeArea.className = 'fx-code';

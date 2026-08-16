@@ -72,6 +72,7 @@ const FUNC_IMPL = {
   torus: (R, r, th, ph) => vec3((R + r * Math.cos(th)) * Math.cos(ph), r * Math.sin(th), (R + r * Math.cos(th)) * Math.sin(ph)),
 };
 const PREC = { '+': 1, '-': 1, '*': 2, '/': 2, '%': 2, '^': 3 };
+const NEG_PREC = 2.5; // 一元负号优先级：高于 * / %，低于 ^（-2^2 = -(2^2)）
 
 function matVec(M, v) {
   const m = M.m;
@@ -85,6 +86,13 @@ function matMat(A, B) {
   const a = A.m, b = B.m, o = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
   for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) o[i][j] += a[i][k] * b[k][j];
   return mat3(o);
+}
+
+function negate(v) {
+  if (typeof v === 'number') return -v;
+  if (isVec(v)) return vec3(-v.x, -v.y, -v.z);
+  if (isMat(v)) return mat3(v.m.map(r => r.map(c => -c)));
+  throw new Error('一元负号类型不支持');
 }
 
 function applyOp(op, a, b) {
@@ -136,15 +144,16 @@ function applyOp(op, a, b) {
 function tokenize(expr) {
   const tokens = [];
   let i = 0;
+  let expectOperand = true; // 一元负号判定：期望操作数时遇到的 - 是负号
   while (i < expr.length) {
     const c = expr[i];
     if (c === ' ' || c === '\t' || c === '\n') { i++; continue; }
     if (c === '.' && (expr[i + 1] === 'x' || expr[i + 1] === 'y' || expr[i + 1] === 'z')) {
-      tokens.push({ t: 'comp', axis: expr[i + 1] }); i += 2; continue;
+      tokens.push({ t: 'comp', axis: expr[i + 1] }); i += 2; expectOperand = false; continue;
     }
     if ((c >= '0' && c <= '9') || c === '.') {
       let j = i; while (j < expr.length && /[0-9.]/.test(expr[j])) j++;
-      tokens.push({ t: 'num', v: parseFloat(expr.slice(i, j)) }); i = j; continue;
+      tokens.push({ t: 'num', v: parseFloat(expr.slice(i, j)) }); i = j; expectOperand = false; continue;
     }
     if (/[a-zA-Z_]/.test(c)) {
       let j = i; while (j < expr.length && /[a-zA-Z0-9_]/.test(expr[j])) j++;
@@ -153,9 +162,10 @@ function tokenize(expr) {
       else if (name === 'e') tokens.push({ t: 'num', v: Math.E });
       else if (name in FUNCS) tokens.push({ t: 'func', name });
       else tokens.push({ t: 'var', name });
-      i = j; continue;
+      i = j; expectOperand = false; continue;
     }
-    if ('+-*/%^(),'.includes(c)) { tokens.push({ t: c }); i++; continue; }
+    if (c === '-' && expectOperand) { tokens.push({ t: 'neg' }); i++; continue; } // 一元负号，仍期望操作数
+    if ('+-*/%^(),'.includes(c)) { tokens.push({ t: c }); i++; expectOperand = (c === '(' || c === ',' || '+-*/%^'.includes(c)); continue; }
     i++;
   }
   return tokens;
@@ -172,6 +182,16 @@ function evaluate(expr, vars) {
       output.push(v);
     } else if (tk.t === 'func') stack.push(tk.name);
     else if (tk.t === 'comp') output.push(tk);
+    else if (tk.t === 'neg') {
+      while (stack.length) {
+        const top = stack[stack.length - 1];
+        if (top === '(' || top === 'neg') break;
+        if (top in FUNCS) { output.push(stack.pop()); continue; }
+        if (top in PREC && PREC[top] > NEG_PREC) output.push(stack.pop());
+        else break;
+      }
+      stack.push('neg');
+    }
     else if (tk.t === ',') { while (stack.length && stack[stack.length - 1] !== '(') output.push(stack.pop()); }
     else if (tk.t === '(') stack.push(tk.t);
     else if (tk.t === ')') {
@@ -183,6 +203,7 @@ function evaluate(expr, vars) {
       while (stack.length) {
         const top = stack[stack.length - 1];
         if (top === '(') break;
+        if (top === 'neg') { if (NEG_PREC > prec) output.push(stack.pop()); else break; continue; }
         if (top in FUNCS) { output.push(stack.pop()); continue; }
         if (top in PREC && (PREC[top] > prec || (PREC[top] === prec && !rightAssoc))) output.push(stack.pop());
         else break;
@@ -194,6 +215,7 @@ function evaluate(expr, vars) {
   const s = [];
   for (const o of output) {
     if (typeof o === 'number' || isVec(o) || isMat(o)) s.push(o);
+    else if (o === 'neg') { const v = s.pop(); s.push(negate(v)); }
     else if (o.t === 'comp') {
       const v = s.pop();
       if (!isVec(v)) throw new Error('分量访问需要向量');

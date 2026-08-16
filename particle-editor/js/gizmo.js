@@ -27,6 +27,8 @@ function selectionCentroid() {
 }
 
 function updateGizmo() {
+  // 拼图模式下场景仅查看：隐藏三轴移动/旋转控制器
+  if (document.body.classList.contains('puzzle-mode')) { gizmoGroup.visible = false; return; }
   let c = null;
   const fx = getFunction(state.selectedFunction);
   if (fx) {

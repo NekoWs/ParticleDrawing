@@ -1,71 +1,6 @@
 /* =========================================================================
- * 函数 / 傅里叶 生成
+ * 傅里叶 生成
  * ======================================================================= */
-
-function collectVariables() {
-  const vars = {};
-  document.querySelectorAll('#var-list .var-row').forEach(row => {
-    const name = row.querySelector('.var-name').value.trim();
-    const val = parseFloat(row.querySelector('.var-value').value);
-    if (name && !isNaN(val)) vars[name] = val;
-  });
-  return vars;
-}
-
-function addVarRow(name, value) {
-  const box = document.getElementById('var-list');
-  const row = document.createElement('div');
-  row.className = 'var-row';
-  row.innerHTML = '<input class="var-name" type="text" placeholder="名称" /><input class="var-value" type="text" placeholder="值" />';
-  if (name) row.querySelector('.var-name').value = name;
-  if (value != null) row.querySelector('.var-value').value = value;
-  const del = document.createElement('button');
-  del.className = 'del-x'; del.textContent = '×';
-  del.onclick = () => row.remove();
-  row.appendChild(del);
-  box.appendChild(row);
-}
-
-function evalOr(expr, env, fallback) { const e = (expr || '').trim(); return e === '' ? fallback : evaluate(e, env); }
-
-function generateFunction() {
-  const vars = collectVariables();
-  const count = Math.max(1, parseInt(document.getElementById('fn-count').value) || 30);
-  const duration = Math.max(0, parseInt(document.getElementById('fn-duration').value) || 100);
-  const step = Math.max(1, parseInt(document.getElementById('fn-step').value) || 5);
-  const fx = document.getElementById('fn-x').value.trim(), fy = document.getElementById('fn-y').value.trim(), fz = document.getElementById('fn-z').value.trim();
-  const fr = document.getElementById('fn-r').value.trim(), fg = document.getElementById('fn-g').value.trim(), fb = document.getElementById('fn-b').value.trim(), fa = document.getElementById('fn-a').value.trim();
-  const fs = document.getElementById('fn-s').value.trim(), fglow = document.getElementById('fn-glow').value.trim(), flight = document.getElementById('fn-light').value.trim();
-  const animPos = fx && fy && fz, animCol = fr && fg && fb, animScl = fs !== '';
-  try {
-    pushUndo();
-    const startIndex = state.particles.length;
-    for (let i = 0; i < count; i++) {
-      const env0 = { t: 0, i, n: count, ...vars };
-      const pos = [evalOr(fx, env0, 0), evalOr(fy, env0, 0), evalOr(fz, env0, 0)];
-      const color = [evalOr(fr, env0, 1), evalOr(fg, env0, 1), evalOr(fb, env0, 1), evalOr(fa, env0, 1)];
-      const scale = evalOr(fs, env0, 1);
-      const glow = evalOr(fglow, env0, 0) > 0.5;
-      const light = Math.round(Math.min(15, Math.max(0, evalOr(flight, env0, 0))));
-      const p = addParticle({ pos, color, scale, glow, lightLevel: light });
-      if (duration > 0) {
-        const posKf = [], colKf = [], sclKf = [];
-        for (let t = step; t <= duration; t += step) {
-          const env = { t, i, n: count, ...vars };
-          if (animPos) posKf.push([t, [evaluate(fx, env), evaluate(fy, env), evaluate(fz, env)], state.defaultEasing]);
-          if (animCol) colKf.push([t, [evaluate(fr, env), evaluate(fg, env), evaluate(fb, env), evalOr(fa, env, 1)], state.defaultEasing]);
-          if (animScl) sclKf.push([t, [evaluate(fs, env)], state.defaultEasing]);
-        }
-        if (posKf.length) state.tracks.push({ pr: 'pos', m: 'set', ids: [p.id], kf: [[0, pos.slice(), state.defaultEasing], ...posKf] });
-        if (colKf.length) state.tracks.push({ pr: 'col', m: 'set', ids: [p.id], kf: [[0, color.slice(), state.defaultEasing], ...colKf] });
-        if (sclKf.length) state.tracks.push({ pr: 'scl', m: 'set', ids: [p.id], kf: [[0, [scale], state.defaultEasing], ...sclKf] });
-      }
-    }
-  } catch (e) { alert('表达式错误：' + e.message); return; }
-  autoGroup(state.particles.slice(startIndex).map(p => p.id));
-  rebuildPoints();
-  refreshParticleTree();
-}
 
 function renderFourierInputs() {
   const box = document.getElementById('four-coeffs');
@@ -358,7 +293,7 @@ function createFunctionObject(presetId) {
   pushUndo();
   const fx = {
     id: nextFunctionId(), name: presetId ? FUNCTION_PRESETS[presetId].label : '函数对象',
-    center: [0, 4, 0], count: 30, style: 'DOT',
+    center: [0, 0, 0], count: 30, style: 'DOT',
     code: '[x,y,z] = [0, 0, 0];\n[r,g,b,a] = [1,1,1,1];\nsc = 0.3;\nglow = 0;\nlight = 0',
     vars: {}, duration: 100, step: 5, preset: null, params: null,
   };

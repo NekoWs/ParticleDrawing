@@ -65,9 +65,7 @@ function initUI() {
   });
   document.getElementById('draw-plane').addEventListener('change', (ev) => { state.drawPlane = ev.target.value; triggerDrawPlanePulse(); });
 
-  // 函数 / 傅里叶 / 变量
-  document.getElementById('btn-var-add').addEventListener('click', () => addVarRow());
-  document.getElementById('btn-fn').addEventListener('click', generateFunction);
+  // 傅里叶
   document.getElementById('btn-four').addEventListener('click', generateFourier);
   document.getElementById('four-plane').addEventListener('change', renderFourierInputs);
 
@@ -156,9 +154,10 @@ function initUI() {
   }, { passive: false });
 
   renderFourierInputs();
-  addVarRow('speed', '0.2');
   rebuildPoints();
   refreshParticleTree();
+  // 恢复工作区状态（粒子列表宽）
+  if (typeof applyWorkspaceState === 'function') applyWorkspaceState();
 }
 
 function clearAll() {
@@ -226,7 +225,7 @@ function applyPositionFromInputs() {
     layout.style.setProperty('--left-w', w + 'px');
     resize();
   });
-  handle.addEventListener('pointerup', () => { resizing = false; handle.classList.remove('dragging'); });
+  handle.addEventListener('pointerup', () => { resizing = false; handle.classList.remove('dragging'); if (typeof saveWorkspaceState === 'function') saveWorkspaceState(); });
 })();
 
 function resize() {
@@ -236,7 +235,7 @@ function resize() {
   camera.updateProjectionMatrix();
   pointsMaterial.uniforms.uPixelScale.value = focalLengthPx();
   selectedMaterial.uniforms.uPixelScale.value = focalLengthPx();
-  drawTimeline();
+  if (!document.body.classList.contains('puzzle-mode')) drawTimeline();
 }
 window.addEventListener('resize', resize);
 resize();
