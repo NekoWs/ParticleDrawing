@@ -144,7 +144,7 @@ function buildDerivedTracks(fx) {
   const duration = Math.max(0, Math.round(fx.duration) || 0);
   const step = Math.max(1, Math.round(fx.step) || 1);
   if (duration <= 0) return;
-  const hasVarAnim = Object.values(fx.vars || {}).some(v => (v.kf || []).length > 0 || exprUsesT(v.expr));
+  const hasVarAnim = Object.values(fx.vars || {}).some(v => (v.kf || []).length > 1 || exprUsesT(v.expr));
   if (!exprUsesT(fx.code) && !hasVarAnim) return;
 
   // 收集动画源关键帧（变量 kf + 整体轨道 kf）

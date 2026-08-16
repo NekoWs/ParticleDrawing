@@ -231,7 +231,11 @@
 
 					}
 
-					offset.setFromSpherical( spherical );
+					if ( sphericalDelta.theta !== 0 || sphericalDelta.phi !== 0 || sphericalDelta.radius !== 0 || scale !== 1 ) {
+
+						offset.setFromSpherical( spherical );
+
+					}
 
 					// rotate offset back to "camera-up-vector-is-up" space
 					offset.applyQuaternion( quatInverse );

@@ -50,6 +50,7 @@ function restore(s) {
   updateLoopIndicator();
   rebuildPoints();
   refreshParticleTree();
+  if (typeof refreshFunctionPanel === 'function') refreshFunctionPanel();
 }
 
 function pushUndo() {

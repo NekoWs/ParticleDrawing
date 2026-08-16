@@ -45,9 +45,30 @@ function trackValueAt(tr, T, fallback) {
   return fallback;
 }
 
-// 按 pr + id 精确查找轨道
+// 轨道索引缓存：大批量求值（rebuildPoints）前 buildTrackIndex 建立，O(1) 查找
+let trackIndexCache = null;
+let trackIndexLen = -1;
+let opTracksCache = null;
+function buildTrackIndex() {
+  const map = new Map();
+  const opTracks = [];
+  for (const tr of state.tracks) {
+    if (tr.ids.length === 1) map.set(tr.pr + '\u0000' + tr.ids[0], tr);
+    if (tr.m === 'op') opTracks.push(tr);
+  }
+  trackIndexCache = map;
+  trackIndexLen = state.tracks.length;
+  opTracksCache = opTracks;
+}
+
+// 按 pr + id 精确查找轨道（有新鲜索引时 O(1)，否则线性搜索）
 function findTrackByPr(pr, id) {
-  return state.tracks.find(tr => tr.pr === pr && tr.ids.length === 1 && tr.ids[0] === id);
+  if (trackIndexCache && trackIndexLen === state.tracks.length) {
+    const tr = trackIndexCache.get(pr + '\u0000' + id);
+    if (tr) return tr;
+    return null;
+  }
+  return state.tracks.find(tr => tr.pr === pr && tr.ids.length === 1 && tr.ids[0] === id) || null;
 }
 
 // 某 id 在某分量的 set 轨道（优先级：自身 > 组 > 函数对象）
@@ -72,7 +93,7 @@ function findSetTrackFor(id, prop, comp) {
 function compOpDelta(p, prop, comp, T) {
   const pr = compPr(prop, comp);
   let delta = 0;
-  for (const tr of state.tracks) {
+  for (const tr of (opTracksCache || state.tracks)) {
     if (tr.pr !== pr || tr.m !== 'op' || tr.kf.length === 0) continue;
     for (const id of tr.ids) {
       if (id.startsWith('g:')) {
@@ -175,19 +196,36 @@ function resetVelOffsets() { velOffsets.clear(); }
  * 渲染
  * ======================================================================= */
 
+// 复用几何体与缓冲：仅顶点数量变化时重建，否则只更新数组内容（避免每帧 new/dispose 造成 GC 卡顿）
 function setPointsGeometry(pts, positions, colors, sizes) {
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geo.setAttribute('aColor', new THREE.BufferAttribute(colors, 4));
-  geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
-  const old = pts.geometry;
-  pts.geometry = geo;
-  old.dispose();
+  let geo = pts.geometry;
+  const posAttr = geo && geo.getAttribute('position');
+  if (!geo || !posAttr || posAttr.array.length !== positions.length) {
+    geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions.length), 3));
+    geo.setAttribute('aColor', new THREE.BufferAttribute(new Float32Array(colors.length), 4));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(new Float32Array(sizes.length), 1));
+    const old = pts.geometry;
+    pts.geometry = geo;
+    if (old) old.dispose();
+  }
+  geo.getAttribute('position').array.set(positions);
+  geo.getAttribute('aColor').array.set(colors);
+  geo.getAttribute('aSize').array.set(sizes);
+  geo.getAttribute('position').needsUpdate = true;
+  geo.getAttribute('aColor').needsUpdate = true;
+  geo.getAttribute('aSize').needsUpdate = true;
+  geo.setDrawRange(0, positions.length / 3);
 }
 
+let rpPos = null, rpCol = null, rpSize = null, rpSelPos = null, rpSelCol = null, rpSelSize = null;
 function rebuildPoints() {
+  buildTrackIndex();
   const n = state.particles.length;
-  const positions = new Float32Array(n * 3), colors = new Float32Array(n * 4), sizes = new Float32Array(n);
+  if (!rpPos || rpPos.length !== n * 3) rpPos = new Float32Array(n * 3);
+  if (!rpCol || rpCol.length !== n * 4) rpCol = new Float32Array(n * 4);
+  if (!rpSize || rpSize.length !== n) rpSize = new Float32Array(n);
+  const positions = rpPos, colors = rpCol, sizes = rpSize;
   for (let i = 0; i < n; i++) {
     const p = state.particles[i];
     const v = currentVisual(p);
@@ -199,14 +237,17 @@ function rebuildPoints() {
   setPointsGeometry(points, positions, colors, sizes);
 
   const sel = state.particles.filter(p => state.selected.has(p.id));
-  const spos = new Float32Array(sel.length * 3), ssiz = new Float32Array(sel.length);
+  if (!rpSelPos || rpSelPos.length !== sel.length * 3) rpSelPos = new Float32Array(sel.length * 3);
+  if (!rpSelCol || rpSelCol.length !== sel.length * 4) rpSelCol = new Float32Array(sel.length * 4);
+  if (!rpSelSize || rpSelSize.length !== sel.length) rpSelSize = new Float32Array(sel.length);
+  const spos = rpSelPos, ssiz = rpSelSize;
   for (let i = 0; i < sel.length; i++) {
     const v = currentVisual(sel[i]);
     const off = velOffsets.get(sel[i].id) || [0, 0, 0];
     spos[i * 3] = v.pos[0] + off[0]; spos[i * 3 + 1] = v.pos[1] + off[1]; spos[i * 3 + 2] = v.pos[2] + off[2];
     ssiz[i] = Math.max(0.02, v.scale * PARTICLE_SIZE_FACTOR);
   }
-  setPointsGeometry(selectedPoints, spos, new Float32Array(sel.length * 4), ssiz);
+  setPointsGeometry(selectedPoints, spos, rpSelCol, ssiz);
 
   updateGizmo();
   drawTimeline();

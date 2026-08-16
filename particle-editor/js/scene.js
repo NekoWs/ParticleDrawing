@@ -15,16 +15,26 @@ camera.position.set(12, 8, 14);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 1, 0);
 controls.update();
-controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN };
+controls.mouseButtons = { LEFT: null, MIDDLE: null, RIGHT: THREE.MOUSE.PAN };
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
-// 底部平面网格：距离无限（视觉上延伸至地平线，相机远平面 1000 内）
-const grid = new THREE.GridHelper(2000, 1000, 0x4a5568, 0x2c3342);
+// 底部平面网格：距离无限（视觉上延伸至地平线），移除与世界轴重合的 x=0 / z=0 中心线
+const grid = (function makeGrid() {
+  const half = 1000, step = 2;
+  const pts = [];
+  for (let i = -500; i <= 500; i++) {
+    const v = i * step;
+    if (Math.abs(v) < 1e-6) continue; // 跳过中心线（x=0 与 z=0，由世界轴线承担）
+    pts.push(-half, 0, v, half, 0, v); // 沿 X 的线（z=v）
+    pts.push(v, 0, -half, v, 0, half); // 沿 Z 的线（x=v）
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x2c3342, transparent: true, opacity: 0.9 }));
+})();
 grid.position.y = 0;
-grid.material.transparent = true;
-grid.material.opacity = 0.9;
 scene.add(grid);
 
 // ---- 底部世界三轴指示器（无限长，双向） ----
@@ -46,11 +56,11 @@ const worldAxes = {};
       new THREE.Vector3(0, WORLD_AXIS_LEN, 0),
     ]);
     // 默认 depthTest:true：不穿透，被物体正常遮挡；操作中才由 setWorldAxisGlow 改为穿透
-    const mat = new THREE.LineBasicMaterial({ color: def.color, transparent: true, opacity: 0.85, depthTest: true, depthWrite: false });
+    const mat = new THREE.LineBasicMaterial({ color: def.color, transparent: true, opacity: 1.0, depthTest: true, depthWrite: false });
     const line = new THREE.Line(geo, mat);
     line.quaternion.setFromUnitVectors(up, def.dir);
-    // 双向：中心位于原点（-LEN ~ +LEN），略抬离地面（0.005）消除与网格线重合穿模
-    line.position.set(0, 0.005, 0);
+    // 双向：中心位于原点（-LEN ~ +LEN），与地面网格同面（网格中心线已移除，不会重合）
+    line.position.set(0, 0, 0);
     line.renderOrder = 20;
     line.visible = key !== 'Y'; // 默认只显示 X/Z
     line.scale.set(1, 1, 1);
