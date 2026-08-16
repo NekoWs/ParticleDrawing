@@ -293,6 +293,7 @@ function animate(now) {
 }
 
 initUI();
+updateTopbarTitle();
 requestAnimationFrame(animate);
 
 // 关闭页面前若未保存则提示

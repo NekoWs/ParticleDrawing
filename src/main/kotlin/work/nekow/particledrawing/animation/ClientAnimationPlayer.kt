@@ -235,7 +235,7 @@ class ClientAnimationPlayer(
         return kfs.last().value
     }
 
-    /** 独立粒子的位置（含粒子 set 轨道覆盖 + 组/函数对象 op 增量）。 */
+    /** 独立粒子的位置（粒子 set 轨道覆盖 + 组旋转 + 组 pos op 增量，与编辑器语义一致）。 */
     private fun particlePosition(p: AnimParticle, t: Double): Vec3 {
         var pos = p.pos
         // 粒子自身 set 轨道覆盖
@@ -243,6 +243,14 @@ class ClientAnimationPlayer(
         if (ownSet != null && ownSet.mode == AnimTrack.Mode.SET && ownSet.keyframes.isNotEmpty()) {
             val v = trackValueAt(ownSet, t, doubleArrayOf(pos.x, pos.y, pos.z))
             pos = Vec3(v[0], v[1], v[2])
+        }
+        // 组旋转（绕组质心，rot 为度）
+        val gr = groupRotation(p, t)
+        if (gr != null) {
+            val r = gr.rot
+            if (r[0] != 0.0 || r[1] != 0.0 || r[2] != 0.0) {
+                pos = rotateAround(pos, gr.pivot, r)
+            }
         }
         // 组 op 增量
         for ((gname, members) in animation.groups) {
@@ -254,6 +262,32 @@ class ClientAnimationPlayer(
             }
         }
         return pos
+    }
+
+    /** 组旋转信息：粒子所属（首个）组的 rot 轨道与其质心 pivot。 */
+    private data class GroupRotation(val rot: DoubleArray, val pivot: Vec3)
+
+    private fun groupRotation(p: AnimParticle, t: Double): GroupRotation? {
+        for ((gname, members) in animation.groups) {
+            if (p.id !in members) continue
+            val tr = findTrack("rot", "g:$gname") ?: continue
+            if (tr.keyframes.isEmpty()) continue
+            val rot = trackValueAt(tr, t, doubleArrayOf(0.0, 0.0, 0.0))
+            return GroupRotation(rot, groupCentroid(gname))
+        }
+        return null
+    }
+
+    /** 组质心 = 成员基础位置的平均值（与编辑器 groupCentroidValue(pos) 一致）。 */
+    private fun groupCentroid(gname: String): Vec3 {
+        val members = animation.groups[gname] ?: return Vec3.ZERO
+        var sx = 0.0; var sy = 0.0; var sz = 0.0; var n = 0
+        for (id in members) {
+            val member = animation.particles.find { it.id == id } ?: continue
+            sx += member.pos.x; sy += member.pos.y; sz += member.pos.z; n++
+        }
+        if (n == 0) return Vec3.ZERO
+        return Vec3(sx / n, sy / n, sz / n)
     }
 
     private fun particleColor(p: AnimParticle, t: Double): Color {

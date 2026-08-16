@@ -86,38 +86,6 @@ fx5.vars.m.expr = '48';
 syncPresetCount(fx5);
 __assert('torus count sync', fx5.count === 576);
 
-// —— 导出：函数对象整体轨道(f:)转隐式组轨道(g:) ——
-state.functions = [{ id: 'fx0', name: 't', center: [0, 0, 0], count: 2, style: 'DOT', code: '', vars: {}, duration: 0, step: 5, preset: null, params: null }];
-state.particles = [
-  { id: 'fx0:p0', fx: 'fx0', style: 'DOT', color: [1, 1, 1, 1], scale: 1, glow: false, lightLevel: 0, pos: [0, 0, 0], vel: [0, 0, 0] },
-  { id: 'fx0:p1', fx: 'fx0', style: 'DOT', color: [1, 1, 1, 1], scale: 1, glow: false, lightLevel: 0, pos: [1, 0, 0], vel: [0, 0, 0] },
-];
-state.tracks = [
-  { pr: 'pos', m: 'op', ids: ['f:fx0'], kf: [[0, [0, 2, 0], 3], [10, [0, 5, 0], 3]] },
-  { pr: 'pos', m: 'set', ids: ['fx0:p0'], kf: [[0, [0, 0, 0], 0], [10, [0, 0, 0], 0]], fx: 'fx0' },
-  { pr: 'pos', m: 'set', ids: ['fx0:p1'], kf: [[0, [1, 0, 0], 0], [10, [1, 0, 0], 0]], fx: 'fx0' },
-];
-state.groups = {};
-state.loop = true;
-const json = exportJSON();
-__assert('export g group', json.g && json.g['fx0'] && json.g['fx0'].length === 2);
-// spawn 位置含 t=0 的 pos op 增量：fx0:p0 spawn pos y = 0 + 2 = 2
-const spawnP0 = json.p.find(pt => pt.id === 'fx0:p0');
-__assert('export spawn pos has t0 delta', spawnP0 && Math.abs(spawnP0.pos[1] - 2) < 1e-6);
-// pos op 烘焙进派生 pos 轨道：fx0:p0 在 t=10 时 y 应为 5（0 + op 增量 5）
-const bakedP0 = json.t.find(tr => tr.ids && tr.ids[0] === 'fx0:p0');
-__assert('export pos op baked', bakedP0 && Math.abs(bakedP0.kf[1][1][1] - 5) < 1e-6);
-// 不再输出 g:fx0 的 pos op 轨道
-__assert('export no pos op group track', !json.t.some(tr => tr.ids && tr.ids[0] === 'g:fx0' && tr.pr === 'pos' && tr.m === 'op'));
-
-// —— 缓动语义转换：编辑器 kf[i].easing 控制 i-1→i，导出左移为控制 i→i+1 ——
-const conv = convertKfForExport([[0, [0, 0, 0], 0], [10, [0, 5, 0], 3], [20, [0, 10, 0], 5]]);
-__assert('easing shift export', conv[0][2] === 3 && conv[1][2] === 5 && conv[2][2] === 5);
-
-// —— 采样点简化：共线中间点被合并 ——
-const sk = simplifyKf([[0, [0, 0, 0], 0], [1, [0, 0.1, 0], 0], [2, [0, 0.2, 0], 0], [3, [0, 0.3, 0], 0]]);
-__assert('simplifyKf collinear', sk.length === 2 && sk[0][0] === 0 && sk[1][0] === 3);
-
 // —— 关键帧对齐 + 缓动一致 → 用关键帧 + 缓动（少帧、连续） ——
 state.tracks = [];
 state.particles = [];

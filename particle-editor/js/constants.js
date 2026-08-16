@@ -89,6 +89,11 @@ const state = {
   dirty: false,
 };
 
+function setDirty(v) {
+  state.dirty = v;
+  if (typeof updateTopbarTitle === 'function') updateTopbarTitle();
+}
+
 function nextId() {
   let n = 0;
   while (state.particles.some(p => p.id === 'p' + n)) n++;

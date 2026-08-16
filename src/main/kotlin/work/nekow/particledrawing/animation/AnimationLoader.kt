@@ -95,9 +95,10 @@ object AnimationLoader {
 
     private fun parseParticle(o: com.google.gson.JsonObject): AnimParticle {
         val id = o.get("id")?.asString ?: throw IllegalArgumentException("粒子缺少 id")
-        val style = ParticleStyle.valueOf(o.get("s").asString.uppercase())
-        val c = o.get("c").asJsonArray
-        val color = Color.of(c[0].asFloat, c[1].asFloat, c[2].asFloat, c[3].asFloat)
+        // s/c/sc/g/l/vel 可省略（省略即默认值），与编辑器导出保持一致
+        val style = ParticleStyle.valueOf((o.get("s")?.asString ?: "DOT").uppercase())
+        val cArr = o.get("c")?.asJsonArray
+        val color = if (cArr != null) Color.of(cArr[0].asFloat, cArr[1].asFloat, cArr[2].asFloat, cArr[3].asFloat) else Color.of(1f, 1f, 1f, 1f)
         val scale = o.get("sc")?.asFloat ?: 1f
         val glowing = o.get("g")?.asInt == 1
         val lightLevel = o.get("l")?.asInt ?: 0
@@ -113,18 +114,16 @@ object AnimationLoader {
         val ids = o.get("ids").asJsonArray.map { it.asString }
         val mode = if (o.get("m")?.asString == "op") AnimTrack.Mode.OP else AnimTrack.Mode.SET
         val keyframes = o.get("kf").asJsonArray
-            .map { parseKeyframe(it.asJsonArray, property) }
+            .map { parseKeyframe(it.asJsonArray) }
             .sortedBy { it.tick }
         return AnimTrack(property, ids, keyframes, mode)
     }
 
-    private fun parseKeyframe(arr: JsonArray, property: AnimTrack.Property): AnimKeyframe {
+    private fun parseKeyframe(arr: JsonArray): AnimKeyframe {
         val tick = arr[0].asInt
         val valueArr = arr[1].asJsonArray
-        val value = DoubleArray(valueArr.size()) { i ->
-            val v = valueArr[i].asDouble
-            if (property == AnimTrack.Property.ROTATION) v * Math.PI / 180.0 else v
-        }
+        // rot 值保留原始「度」，渲染时由 ClientAnimationPlayer 统一转弧度，避免双重转换
+        val value = DoubleArray(valueArr.size()) { i -> valueArr[i].asDouble }
         val easing = parseEasing(arr[2])
         return AnimKeyframe(tick, value, easing)
     }

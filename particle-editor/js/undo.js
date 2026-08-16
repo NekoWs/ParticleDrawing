@@ -56,7 +56,7 @@ function pushUndo() {
   undoStack.push(snapshot());
   if (undoStack.length > 100) undoStack.shift();
   redoStack.length = 0;
-  state.dirty = true;
+  setDirty(true);
 }
 
 function popUndo() { undoStack.pop(); }
@@ -69,12 +69,12 @@ function undo() {
   if (undoStack.length === 0) return;
   redoStack.push(snapshot());
   restore(undoStack.pop());
-  state.dirty = true;
+  setDirty(true);
 }
 
 function redo() {
   if (redoStack.length === 0) return;
   undoStack.push(snapshot());
   restore(redoStack.pop());
-  state.dirty = true;
+  setDirty(true);
 }

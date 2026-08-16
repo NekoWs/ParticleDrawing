@@ -37,11 +37,11 @@
         <button class="menu-btn" data-menu="about">关于</button>
         <div class="dropdown" id="menu-about">
           <div class="dd-text">ParticleDrawing 粒子动画编辑器</div>
-          <div class="dd-text">导出 JSON 供模组 /test play 播放</div>
+          <div class="dd-text">导出 .pdraw 供模组 /test play 播放</div>
         </div>
       </div>
     </nav>
-    <span id="topbar-title">my_animation</span>
+    <span id="topbar-title">my_animation.pdraw</span>
   </header>
 
   <main class="layout">
@@ -137,7 +137,7 @@
     <canvas id="timeline"></canvas>
   </footer>
 
-  <input id="file-import" type="file" accept=".json" hidden />
+  <input id="file-import" type="file" accept=".pdraw,.json" hidden />
   <script src="./vendor/three.min.js"></script>
   <script src="./vendor/OrbitControls.js"></script>
   <script src="./js/constants.js"></script>

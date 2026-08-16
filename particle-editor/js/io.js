@@ -6,6 +6,24 @@ const r3 = x => Math.round(x * 1000) / 1000;
 const roundArr = a => a.map(r3);
 function encodeEasing(e) { return Array.isArray(e) ? e.map(r3) : e; }
 
+// 颜色是否为默认白色（省略导出）
+function isDefaultColor(c) {
+  return !!c && Math.abs(c[0] - 1) < 1e-9 && Math.abs(c[1] - 1) < 1e-9 && Math.abs(c[2] - 1) < 1e-9 && Math.abs(c[3] - 1) < 1e-9;
+}
+
+// 粒子序列化：省略等于默认值的字段，减小工程文件体积（解析侧均有默认回退）
+function serializeParticle(pt) {
+  const o = { id: pt.id, pos: roundArr(pt.pos) };
+  if (pt.style !== 'DOT') o.s = pt.style;
+  if (!isDefaultColor(pt.color)) o.c = roundArr(pt.color);
+  if (pt.scale !== 1) o.sc = r3(pt.scale);
+  if (pt.glow) o.g = 1;
+  if (pt.lightLevel) o.l = pt.lightLevel;
+  const v = pt.vel || [0, 0, 0];
+  if (v[0] || v[1] || v[2]) o.vel = roundArr(v);
+  return o;
+}
+
 /* —— 函数对象 序列化 —— */
 function serializeVars(vars) {
   const o = {};
@@ -36,13 +54,16 @@ function legacyCode(o) {
   return parts.join('; ');
 }
 function serializeFunction(fx) {
-  return {
+  const o = {
     id: fx.id, name: fx.name, center: fx.center.slice(), count: fx.count,
     style: fx.style, code: fx.code || '',
     vars: serializeVars(fx.vars),
-    duration: fx.duration, step: fx.step, preset: fx.preset, params: fx.params ? { ...fx.params } : null,
-    ui: fx.ui ? JSON.parse(JSON.stringify(fx.ui)) : null,
+    duration: fx.duration, step: fx.step,
   };
+  if (fx.preset) o.preset = fx.preset;
+  if (fx.params) o.params = { ...fx.params };
+  if (fx.ui) o.ui = JSON.parse(JSON.stringify(fx.ui));
+  return o;
 }
 function parseFunction(o) {
   return {
@@ -56,96 +77,9 @@ function parseFunction(o) {
   };
 }
 
-// 编辑器缓动语义：kf[k].easing 控制 k-1→k；模组语义：kf[i].easing 控制 i→i+1。
-// 导出时 easing 左移一位，使模组段 i→i+1 用编辑器 kf[i+1].easing，保持一致。
-function convertKfForExport(kf) {
-  return kf.map((k, i) => {
-    const easing = (i + 1 < kf.length) ? kf[i + 1][2] : kf[i][2];
-    return [k[0], roundArr(k[1]), encodeEasing(easing)];
-  });
-}
-
-// 采样点简化：移除「两端 LINEAR 插值即可近似」的中间采样点，减少导出体积与逐 tick 更新负载
-function simplifyKf(kf, tol) {
-  if (kf.length <= 2) return kf;
-  const t = tol != null ? tol : 0.002;
-  const out = [kf[0]];
-  for (let i = 1; i < kf.length - 1; i++) {
-    const a = out[out.length - 1];
-    const b = kf[i + 1];
-    const span = b[0] - a[0];
-    if (span <= 0) { out.push(kf[i]); continue; }
-    const f = (kf[i][0] - a[0]) / span;
-    const maxErr = Math.max(...kf[i][1].map((v, j) => Math.abs(v - (a[1][j] + (b[1][j] - a[1][j]) * f))));
-    if (maxErr > t) out.push(kf[i]);
-  }
-  out.push(kf[kf.length - 1]);
-  return out;
-}
-
-// 导出动画（模组可播）：函数对象 pos op 增量烘焙进派生粒子 pos 轨道；rot/scl 转隐式组轨道
-function exportJSON() {
-  // 先收集函数对象 pos op 轨道（用于烘焙 t=0 增量与派生 pos 轨道）
-  const fxPosOp = new Map();
-  for (const tr of state.tracks) {
-    const fId = tr.ids.find(id => id.startsWith('f:'));
-    if (fId && tr.pr === 'pos' && tr.m === 'op') fxPosOp.set(fId.slice(2), tr);
-  }
-  // 派生粒子 spawn 位置 = 基础 pos + pos op 的 t=0 增量（避免首帧闪烁）
-  const p = state.particles.map(pt => {
-    const o = { id: pt.id, s: pt.style, c: roundArr(pt.color), sc: r3(pt.scale), g: pt.glow ? 1 : 0, l: pt.lightLevel, pos: roundArr(pt.pos), vel: roundArr(pt.vel || [0, 0, 0]) };
-    if (pt.fx) {
-      const opTr = fxPosOp.get(pt.fx);
-      if (opTr) {
-        const d = trackValueAt(opTr, 0, [0, 0, 0]);
-        o.pos = roundArr([pt.pos[0] + d[0], pt.pos[1] + d[1], pt.pos[2] + d[2]]);
-      }
-    }
-    return o;
-  });
-  const t = [];
-  const g = {};
-  for (const [name, members] of Object.entries(state.groups)) if (members.length) g[name] = members.slice();
-  // 函数对象派生粒子加入隐式组（组名 = fx.id）
-  for (const fx of state.functions) {
-    const members = state.particles.filter(pt => pt.fx === fx.id).map(pt => pt.id);
-    if (members.length) g[fx.id] = members;
-  }
-  for (const tr of state.tracks) {
-    const fId = tr.ids.find(id => id.startsWith('f:'));
-    if (fId) {
-      const fxId = fId.slice(2);
-      if (tr.pr === 'pos' && tr.m === 'op') continue; // 已烘焙进派生轨道，不单独输出
-      const o = { pr: tr.pr, ids: ['g:' + fxId], kf: convertKfForExport(tr.kf) };
-      if (tr.m === 'op') o.m = 'op';
-      t.push(o);
-    } else if (tr.fx) {
-      const opTr = fxPosOp.get(tr.fx);
-      if (tr.pr === 'pos' && opTr) {
-        // 派生 pos 轨道：叠加 pos op 增量（烘焙完整位置）；easing 左移为模组语义后合并共线点
-        const kf = tr.kf.map((k, i) => {
-          const d = trackValueAt(opTr, k[0], [0, 0, 0]);
-          const easing = (i + 1 < tr.kf.length) ? tr.kf[i + 1][2] : tr.kf[i][2];
-          return [k[0], roundArr([k[1][0] + d[0], k[1][1] + d[1], k[1][2] + d[2]]), encodeEasing(easing)];
-        });
-        t.push({ pr: 'pos', ids: [tr.ids[0]], kf: simplifyKf(kf) });
-      } else {
-        const o = { pr: tr.pr, ids: tr.ids.slice(), kf: convertKfForExport(tr.kf) };
-        if (tr.m === 'op') o.m = 'op';
-        t.push(o);
-      }
-    } else {
-      const o = { pr: tr.pr, ids: tr.ids.slice(), kf: convertKfForExport(tr.kf) };
-      if (tr.m === 'op') o.m = 'op';
-      t.push(o);
-    }
-  }
-  return { v: 1, loop: state.loop, g, p, t };
-}
-
 // 导出工程（.pdraw）：独立粒子 + 非派生轨道 + 函数对象定义
 function exportProject() {
-  const p = state.particles.filter(pt => !pt.fx).map(pt => ({ id: pt.id, s: pt.style, c: roundArr(pt.color), sc: r3(pt.scale), g: pt.glow ? 1 : 0, l: pt.lightLevel, pos: roundArr(pt.pos), vel: roundArr(pt.vel || [0, 0, 0]) }));
+  const p = state.particles.filter(pt => !pt.fx).map(serializeParticle);
   const t = state.tracks.filter(tr => !tr.fx).map(tr => {
     const o = { pr: tr.pr, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], roundArr(k[1]), encodeEasing(k[2])]) };
     if (tr.m === 'op') o.m = 'op';
@@ -191,7 +125,7 @@ function importJSON(obj) {
   state.selected.clear(); state.selectedGroup = null; state.time = 0;
   state.expandedParticles.clear(); state.expandedProps.clear();
   updateTimeUI(); rebuildPoints(); refreshParticleTree();
-  state.dirty = false;
+  setDirty(false);
 }
 
 function importProject(obj) {
@@ -207,7 +141,7 @@ function importProject(obj) {
     try { rebuildFunctionObject(fx); } catch (e) { console.warn('函数对象求值失败：' + fx.id + ' ' + e.message); }
   }
   updateTimeUI(); rebuildPoints(); refreshParticleTree();
-  state.dirty = false;
+  setDirty(false);
 }
 
 function download(json, filename) {
@@ -226,70 +160,23 @@ async function loadFile(file) {
   if (file.name.toLowerCase().endsWith('.pdraw') || obj.v === 2 || obj.f) importProject(obj);
   else importJSON(obj);
   state.name = file.name.replace(/\.(json|pdraw)$/i, '');
-  state.dirty = false;
-  updateTopbarTitle();
+  setDirty(false);
 }
 
 function updateTopbarTitle() {
   const el = document.getElementById('topbar-title');
-  if (el) el.textContent = state.name + '.pdraw';
-}
-
-/* —— FileSystemHandle 持久化（IndexedDB，用于"上次保存路径"） —— */
-let _idbDb = null;
-function idbOpen() {
-  return new Promise((resolve, reject) => {
-    if (_idbDb) return resolve(_idbDb);
-    const req = indexedDB.open('particledrawing', 1);
-    req.onupgradeneeded = () => { req.result.createObjectStore('handles'); };
-    req.onsuccess = () => { _idbDb = req.result; resolve(_idbDb); };
-    req.onerror = () => reject(req.error);
-  });
-}
-async function idbSetHandle(key, handle) {
-  if (!handle) return;
-  try {
-    const db = await idbOpen();
-    await new Promise((res, rej) => {
-      const tx = db.transaction('handles', 'readwrite');
-      tx.objectStore('handles').put(handle, key);
-      tx.oncomplete = res; tx.onerror = () => rej(tx.error);
-    });
-  } catch (e) {}
-}
-async function idbGetHandle(key) {
-  try {
-    const db = await idbOpen();
-    return await new Promise((res) => {
-      const tx = db.transaction('handles', 'readonly');
-      const rq = tx.objectStore('handles').get(key);
-      rq.onsuccess = () => res(rq.result || null);
-      rq.onerror = () => res(null);
-    });
-  } catch (e) { return null; }
+  if (el) el.textContent = state.name + '.pdraw' + (state.dirty ? ' *' : '');
 }
 
 async function openFile() {
   if (!confirmDiscardChanges()) return;
   if (window.showOpenFilePicker) {
     try {
-      // 优先直接重新打开上次的文件（自动选中上次路径）
-      const lastFile = await idbGetHandle('lastFile');
-      if (lastFile) {
-        try {
-          const perm = await lastFile.queryPermission({ mode: 'read' });
-          if (perm === 'granted' || (perm === 'prompt' && await lastFile.requestPermission({ mode: 'read' }) === 'granted')) {
-            state.fileHandle = lastFile;
-            await loadFile(await lastFile.getFile());
-            return;
-          }
-        } catch (e) { /* 权限失败则回退到选择器 */ }
-      }
       const [h] = await window.showOpenFilePicker({ types: [{ description: '工程/动画', accept: { 'application/json': ['.pdraw', '.json'] } }] });
       state.fileHandle = h;
       await loadFile(await h.getFile());
-      return;
-    } catch (e) { /* 取消或失败则回退 */ }
+    } catch (e) { /* 取消则忽略 */ }
+    return;
   }
   document.getElementById('file-import').click();
 }
@@ -303,8 +190,7 @@ async function saveFile() {
   try {
     const w = await state.fileHandle.createWritable();
     await w.write(json); await w.close();
-    state.dirty = false;
-    await idbSetHandle('lastFile', state.fileHandle);
+    setDirty(false);
   } catch (e) {
     await saveFileAs();
   }
@@ -318,27 +204,32 @@ async function saveFileAs() {
       state.fileHandle = h;
       const w = await h.createWritable();
       await w.write(json); await w.close();
-      state.dirty = false;
-      await idbSetHandle('lastFile', h);
+      setDirty(false);
       return;
-    } catch (e) { /* 取消或失败则回退 */ }
+    } catch (e) {
+      return; // 用户取消选择器 → 取消保存，不下载
+    }
   }
+  // 无 File System Access API 时回退下载
   download(json, (state.name || 'my_animation') + '.pdraw');
-  state.dirty = false;
+  setDirty(false);
 }
 
-// 导出动画（模组可播 .json），不改变当前工程 fileHandle
+// 导出动画（.pdraw 供模组 /test play 播放），不改变当前工程 fileHandle
 async function exportAnimation() {
-  const json = JSON.stringify(exportJSON());
+  const json = JSON.stringify(exportProject());
   if (window.showSaveFilePicker) {
     try {
-      const h = await window.showSaveFilePicker({ suggestedName: state.name + '.json', types: [{ description: '动画 JSON', accept: { 'application/json': ['.json'] } }] });
+      const h = await window.showSaveFilePicker({ suggestedName: state.name + '.pdraw', types: [{ description: '工程文件', accept: { 'application/json': ['.pdraw'] } }] });
       const w = await h.createWritable();
       await w.write(json); await w.close();
       return;
-    } catch (e) { /* 取消或失败则回退 */ }
+    } catch (e) {
+      return; // 用户取消选择器 → 取消导出，不下载
+    }
   }
-  download(json, (state.name || 'my_animation') + '.json');
+  // 无 File System Access API 时回退下载
+  download(json, (state.name || 'my_animation') + '.pdraw');
 }
 
 // 新建空白动画
@@ -354,8 +245,7 @@ function newFile() {
   state.loop = true;
   document.getElementById('tl-loop').checked = true;
   updateTimeUI(); rebuildPoints(); refreshParticleTree();
-  state.dirty = false;
-  updateTopbarTitle();
+  setDirty(false);
 }
 
 // 若有未保存更改，弹出保存确认。返回是否继续操作。

@@ -58,7 +58,7 @@ object ParticleDrawCommands {
     private fun listAnimations(ctx: CommandContext<CommandSourceStack>): Int {
         val names = AnimationLoader.list()
         val msg = if (names.isEmpty()) {
-            "暂无动画，请将导出的 .json 放入 animations/ 目录"
+            "暂无动画，请将导出的 .pdraw 放入 animations/ 目录"
         } else {
             "可用动画: " + names.joinToString(", ")
         }

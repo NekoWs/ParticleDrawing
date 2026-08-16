@@ -249,7 +249,7 @@ function rebuildFunctionObject(fx) {
   buildDerivedTracks(fx);
   rebuildPoints();
   refreshParticleTree();
-  state.dirty = true;
+  setDirty(true);
 }
 
 // 预设：按参数生成代码块 + 变量（改参数时不重置 count）
