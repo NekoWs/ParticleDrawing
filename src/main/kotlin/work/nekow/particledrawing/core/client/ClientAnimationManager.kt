@@ -23,18 +23,18 @@ object ClientAnimationManager {
     fun play(animationId: UUID, json: String, origin: Vec3) {
         val animation = try {
             AnimationLoader.parse(json)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             return
         }
         val player = ClientAnimationPlayer(animation, origin)
         val uuids = HashMap<String, UUID>()
-        for (state in player.currentStates()) {
+        for ((id, style, pos, color, scale, glowing, lightLevel) in player.currentStates()) {
             val uuid = UUID.randomUUID()
-            uuids[state.id] = uuid
+            uuids[id] = uuid
             ClientParticleEngine.instance()?.spawnParticle(
-                uuid, state.style, state.pos.x, state.pos.y, state.pos.z,
-                state.color.r, state.color.g, state.color.b, state.color.a,
-                state.scale, -1, null, state.glowing, state.lightLevel
+                uuid, style, pos.x, pos.y, pos.z,
+                color.r, color.g, color.b, color.a,
+                scale, -1, null, glowing, lightLevel
             )
         }
         entries[animationId] = Entry(player, uuids)

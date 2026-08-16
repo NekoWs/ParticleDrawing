@@ -3,9 +3,10 @@ package work.nekow.particledrawing.animation
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.expr.ATTR_NAMES
 import work.nekow.particledrawing.animation.expr.ExpressionEvaluator
-import work.nekow.particledrawing.animation.expr.Keyframe
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleStyle
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * 客户端本地动画播放器：按游戏 tick 实时求值函数对象与轨道，生成粒子可视化状态。
@@ -15,6 +16,7 @@ import work.nekow.particledrawing.api.ParticleStyle
  * - 公式代码块顺序执行，[x,y,z]=向量 拆包。
  * - 轨道缓动使用「关键帧 k 的 easing 控制 k-1→k」语义（工程文件内部语义）。
  */
+@Suppress("unused")
 class ClientAnimationPlayer(
     private val animation: ParticleAnimation,
     private val origin: Vec3,
@@ -179,7 +181,7 @@ class ClientAnimationPlayer(
                 val resolver = object : java.util.AbstractMap<String, Any>() {
                     override val entries: MutableSet<MutableMap.MutableEntry<String, Any>>
                         get() = mutableSetOf()
-                    override fun get(key: String): Any? {
+                    override fun get(key: String): Any {
                         memo[key]?.let { return it }
                         env[key]?.let { return it }
                         return resolve(key)
@@ -245,7 +247,7 @@ class ClientAnimationPlayer(
         // 组 op 增量
         for ((gname, members) in animation.groups) {
             if (p.id !in members) continue
-            val tr = findTrack("pos", "g:" + gname)
+            val tr = findTrack("pos", "g:$gname")
             if (tr != null && tr.mode == AnimTrack.Mode.OP) {
                 val d = trackValueAt(tr, t, doubleArrayOf(0.0, 0.0, 0.0))
                 pos = pos.add(d[0], d[1], d[2])
@@ -285,7 +287,7 @@ class ClientAnimationPlayer(
     }
 
     private fun rotateVec(v: Vec3, axis: Vec3, angle: Double): Vec3 {
-        val c = Math.cos(angle); val s = Math.sin(angle)
+        val c = cos(angle); val s = sin(angle)
         val dot = v.x * axis.x + v.y * axis.y + v.z * axis.z
         return Vec3(
             v.x * c + (axis.y * v.z - axis.z * v.y) * s + axis.x * dot * (1 - c),

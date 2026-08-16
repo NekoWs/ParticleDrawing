@@ -86,7 +86,7 @@ object AnimationLoader {
         return FunctionObject(id, name, center, count, style, code, vars, duration, step)
     }
 
-    private fun parseVarKeyframe(arr: com.google.gson.JsonArray): Keyframe {
+    private fun parseVarKeyframe(arr: JsonArray): Keyframe {
         val tick = arr[0].asDouble
         val value = arr[1].asDouble
         val easing = parseEasing(arr[2])
