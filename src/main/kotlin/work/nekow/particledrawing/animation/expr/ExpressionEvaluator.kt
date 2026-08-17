@@ -87,8 +87,8 @@ data class Mat3(val m: Array<DoubleArray>) {
 /** 函数签名：名称 -> 参数个数。 */
 private val FUNCS = mapOf(
     "sin" to 1, "cos" to 1, "tan" to 1, "asin" to 1, "acos" to 1, "atan" to 1, "atan2" to 2,
-    "sqrt" to 1, "abs" to 1, "exp" to 1, "log" to 1, "ln" to 1,
-    "floor" to 1, "ceil" to 1, "round" to 1, "pow" to 2, "min" to 2, "max" to 2, "clamp" to 3, "lerp" to 3,
+    "sqrt" to 1, "abs" to 1, "sign" to 1, "exp" to 1, "log" to 1, "ln" to 1,
+    "floor" to 1, "ceil" to 1, "round" to 1, "fract" to 1, "pow" to 2, "min" to 2, "max" to 2, "clamp" to 3, "lerp" to 3, "step" to 2, "smoothstep" to 3, "mod" to 2, "random" to 0, "rand" to 1,
     "vec" to 3, "dot" to 2, "cross" to 2, "len" to 1, "norm" to 1,
     "rotX" to 1, "rotY" to 1, "rotZ" to 1, "rotAxis" to 2,
     "polar" to 2, "sphere" to 3, "torus" to 4,
@@ -151,17 +151,27 @@ object ExpressionEvaluator {
             "atan2" -> atan2(num(0), num(1))
             "sqrt" -> sqrt(num(0))
             "abs" -> abs(num(0))
+            "sign" -> sign(num(0))
             "exp" -> exp(num(0))
             "log" -> ln(num(0))
             "ln" -> ln(num(0))
             "floor" -> floor(num(0))
             "ceil" -> ceil(num(0))
             "round" -> round(num(0))
+            "fract" -> num(0) - floor(num(0))
             "pow" -> num(0).pow(num(1))
             "min" -> min(num(0), num(1))
             "max" -> max(num(0), num(1))
             "clamp" -> num(0).coerceIn(num(1), num(2))
             "lerp" -> num(0) + (num(1) - num(0)) * num(2)
+            "step" -> if (num(1) >= num(0)) 1.0 else 0.0
+            "smoothstep" -> {
+                val t = ((num(2) - num(0)) / (num(1) - num(0))).coerceIn(0.0, 1.0)
+                t * t * (3 - 2 * t)
+            }
+            "mod" -> { val a = num(0); val b = num(1); a - b * floor(a / b) }
+            "random" -> Math.random()
+            "rand" -> { val x = sin(num(0) * 127.1 + 311.7) * 43758.5453; x - floor(x) }
             "vec" -> Vec3(num(0), num(1), num(2))
             "dot" -> vec(0).dot(vec(1))
             "cross" -> vec(0).cross(vec(1))

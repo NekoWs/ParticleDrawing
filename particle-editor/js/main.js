@@ -271,20 +271,11 @@ function animate(now) {
   }
 
   if (state.playing) {
-    const prevTime = state.time;
     state.time += dt * 20 * state.playSpeed;
     const mx = maxTick();
     if (state.time >= mx && mx > 0) {
       if (state.loop) { state.time = 0; resetVelOffsets(); }
       else { state.time = mx; state.playing = false; document.getElementById('btn-play').textContent = '▶ 播放'; resetVelOffsets(); }
-    }
-    const tickDelta = state.time - prevTime;
-    if (tickDelta > 0) {
-      for (const p of state.particles) {
-        const vel = particleValueAt(p, 'vel', state.time);
-        const cur = velOffsets.get(p.id) || [0, 0, 0];
-        velOffsets.set(p.id, [cur[0] + vel[0] * tickDelta, cur[1] + vel[1] * tickDelta, cur[2] + vel[2] * tickDelta]);
-      }
     }
     updateTimeUI();
     rebuildPoints(false);

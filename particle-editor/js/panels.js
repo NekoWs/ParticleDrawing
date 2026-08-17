@@ -191,29 +191,6 @@ function buildFunctionPanel(fx) {
   });
   wrap.appendChild(centerRow);
 
-  // 预设
-  const presetRow = document.createElement('label');
-  presetRow.className = 'row';
-  presetRow.textContent = '预设 ';
-  const presetSel = document.createElement('select');
-  presetSel.className = 'fx-preset-sel';
-  const opt0 = document.createElement('option'); opt0.value = ''; opt0.textContent = '自定义公式';
-  presetSel.appendChild(opt0);
-  for (const id in FUNCTION_PRESETS) {
-    const o = document.createElement('option'); o.value = id; o.textContent = FUNCTION_PRESETS[id].label;
-    presetSel.appendChild(o);
-  }
-  presetSel.value = fx.preset || '';
-  presetSel.onchange = () => {
-    pushUndo();
-    if (presetSel.value) applyPreset(fx, presetSel.value);
-    else { fx.preset = null; fx.params = null; }
-    commitFunctionRebuild(fx);
-    refreshFunctionPanel();
-  };
-  presetRow.appendChild(presetSel);
-  wrap.appendChild(presetRow);
-
   // 预设参数
   if (fx.preset && FUNCTION_PRESETS[fx.preset]) {
     const preset = FUNCTION_PRESETS[fx.preset];
@@ -293,10 +270,6 @@ function buildFunctionPanel(fx) {
   codeArea.value = fx.code;
   codeArea.onchange = () => { pushUndo(); fx.code = codeArea.value; commitFunctionRebuild(fx); };
   wrap.appendChild(codeArea);
-  const codeHint = document.createElement('p');
-  codeHint.className = 'hint';
-  codeHint.textContent = '分号分隔，可换行；[x,y,z]=[..] 打包；属性 x/y/z r/g/b/a vx/vy/vz sc glow light；其它名=临时变量；内置 i/n/t';
-  wrap.appendChild(codeHint);
 
   // 变量表
   const vhead = document.createElement('div');
@@ -368,10 +341,18 @@ function buildVarRow(fx, name) {
   addBtn.className = 'mini'; addBtn.textContent = '+ 关键帧';
   addBtn.onclick = () => {
     pushUndo();
-    if (!fx.vars[name].kf) fx.vars[name].kf = [];
-    const kf = fx.vars[name].kf;
+    const v = fx.vars[name];
+    if (!v.kf) v.kf = [];
+    const kf = v.kf;
     const t = nextFreeTimeVar(kf, Math.round(state.time));
-    kf.push([t, 0, state.defaultEasing]);
+    let val = 0;
+    if (kf.length === 0) {
+      try {
+        val = evaluate(v.expr || '0', { i: 0, n: fx.count, t: state.time });
+      } catch (e) { val = 0; }
+      if (typeof val !== 'number' || !isFinite(val)) val = 0;
+    }
+    kf.push([t, val, state.defaultEasing]);
     kf.sort((a, b) => a[0] - b[0]);
     commitFunctionRebuild(fx); refreshFunctionPanel();
   };

@@ -218,11 +218,27 @@ function particleValueAt(p, prop, T) {
 }
 
 function currentVisual(p) {
+  if (p.fx) return currentVisualDerived(p, state.time);
   return {
     pos: particleValueAt(p, 'pos', state.time),
     color: particleValueAt(p, 'col', state.time),
     scale: particleValueAt(p, 'scl', state.time)[0],
   };
+}
+
+// 派生粒子活源求值：每帧执行公式代码块（random 每帧变化，实现星光闪闪预览），
+// 再叠加函数对象整体旋转（rot）与位移增量（op），与游戏端活源语义一致。
+function currentVisualDerived(p, T) {
+  const fx = getFunction(p.fx);
+  if (!fx) return { pos: [0, 0, 0], color: [1, 1, 1, 1], scale: 1 };
+  const i = parseInt(p.id.slice(fx.id.length + 2), 10);
+  const n = fx.count;
+  const r = evaluateParticleAt(fx, i, n, T);
+  let pos = applyGroupRotation(p, r.pos.slice(), T);
+  pos = pos.map((v, ci) => v + compOpDelta(p, 'pos', ['x', 'y', 'z'][ci], T));
+  const sclTr = findTrackByPr('scl', 'f:' + fx.id);
+  const scale = (sclTr && sclTr.kf.length > 0) ? trackValueAt(sclTr, T, r.scale) : r.scale;
+  return { pos, color: r.color, scale };
 }
 
 function maxTick() {
@@ -231,9 +247,48 @@ function maxTick() {
   return m;
 }
 
-// 播放时的速度累积位移（渲染期叠加，不改数据）
-const velOffsets = new Map();
-function resetVelOffsets() { velOffsets.clear(); }
+// 速度位移积分：按时间计算（任何时刻都生效，含非播放/拖动时间轴），渲染期叠加不改数据。
+// 兼容旧调用：速度积分已改为按 time 计算，无需重置状态。
+function resetVelOffsets() {}
+
+// 轨道分段积分（线性近似，忽略缓动）：trackValueAt 的常数段 + 线性段面积
+function trackIntegral(tr, time) {
+  const kfs = tr.kf;
+  if (!kfs || kfs.length === 0) return 0;
+  const first = kfs[0], last = kfs[kfs.length - 1];
+  if (time <= first[0]) return first[1] * time;
+  let acc = first[1] * Math.max(0, first[0]); // [0, first.tick] 常数段
+  for (let i = 0; i < kfs.length - 1; i++) {
+    const a = kfs[i], b = kfs[i + 1];
+    if (a[0] >= time) break;
+    const ts = Math.max(a[0], 0);
+    const te = Math.min(b[0], time);
+    if (te <= ts) continue;
+    const dur = b[0] - a[0];
+    if (dur <= 0) continue;
+    const f0 = (ts - a[0]) / dur;
+    const f1 = (te - a[0]) / dur;
+    const v0 = a[1] + (b[1] - a[1]) * f0;
+    const v1 = a[1] + (b[1] - a[1]) * f1;
+    acc += (v0 + v1) * 0.5 * (te - ts);
+  }
+  if (time > last[0]) acc += last[1] * (time - last[0]);
+  return acc;
+}
+
+// 速度从 0 到 time 的位移积分（恒定速度解析，轨道分段线性近似）
+function velOffsetAt(p, time) {
+  if (time <= 0) return [0, 0, 0];
+  if (p.fx) {
+    // 派生粒子：活源初速（t=0 的 p.vel）恒定积分（散开等恒定速度效果精确）
+    return ['x', 'y', 'z'].map(c => baseComponent(p, 'vel', c) * time);
+  }
+  return ['x', 'y', 'z'].map(c => {
+    const tr = findSetTrackFor(p.id, 'vel', c);
+    if (!tr || tr.kf.length === 0) return baseComponent(p, 'vel', c) * time;
+    return trackIntegral(tr, time);
+  });
+}
 
 /* =========================================================================
  * 渲染
@@ -274,7 +329,7 @@ function rebuildPoints(full) {
   for (let i = 0; i < n; i++) {
     const p = state.particles[i];
     const v = currentVisual(p);
-    const off = velOffsets.get(p.id) || [0, 0, 0];
+    const off = velOffsetAt(p, state.time);
     positions[i * 3] = v.pos[0] + off[0]; positions[i * 3 + 1] = v.pos[1] + off[1]; positions[i * 3 + 2] = v.pos[2] + off[2];
     colors[i * 4] = v.color[0]; colors[i * 4 + 1] = v.color[1]; colors[i * 4 + 2] = v.color[2]; colors[i * 4 + 3] = v.color[3];
     sizes[i] = Math.max(0.02, v.scale * PARTICLE_SIZE_FACTOR);
@@ -288,7 +343,7 @@ function rebuildPoints(full) {
   const spos = rpSelPos, ssiz = rpSelSize;
   for (let i = 0; i < sel.length; i++) {
     const v = currentVisual(sel[i]);
-    const off = velOffsets.get(sel[i].id) || [0, 0, 0];
+    const off = velOffsetAt(sel[i], state.time);
     spos[i * 3] = v.pos[0] + off[0]; spos[i * 3 + 1] = v.pos[1] + off[1]; spos[i * 3 + 2] = v.pos[2] + off[2];
     ssiz[i] = Math.max(0.02, v.scale * PARTICLE_SIZE_FACTOR);
   }

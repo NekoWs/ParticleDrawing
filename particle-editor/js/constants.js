@@ -152,6 +152,18 @@ const FUNCTION_PRESETS = {
       code: '[x,y,z] = [0, 0, 0];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
     }),
   },
+  rising_smoke: {
+    label: '循环上升烟雾',
+    params: [
+      { key: 'rad', label: '半径', def: 100 },
+      { key: 'spd', label: '上升速度', def: 0.5 },
+    ],
+    build: p => ({
+      count: 2000,
+      vars: { rad: { expr: String(p.rad), kf: []}, spd: { expr: String(p.spd), kf: [] } },
+      code: 'x = rand(i * 2) * 2 * rad - rad;\nz = rand(i * 4) * 2 * rad - rad;\n_y = rand(i * 6) * 2 * rad - rad; \ny = -rad + (_y + rad + t * spd) % (2 * rad)'
+    })
+  },
   sin: {
     label: 'SIN 函数',
     params: [

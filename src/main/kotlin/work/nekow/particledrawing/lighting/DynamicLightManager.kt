@@ -97,7 +97,8 @@ object DynamicLightManager {
         cellRange = ceil(radius / 16.0).toInt().coerceAtLeast(1)
 
         val renderDistance = mc.options.effectiveRenderDistance * 16.0
-        val newSources = collectSources(engine, player.x, player.y, player.z, renderDistance)
+        val partialTick = mc.deltaTracker.getGameTimeDeltaPartialTick(false)
+        val newSources = collectSources(engine, player.x, player.y, player.z, renderDistance, partialTick)
 
         // 计算需要重建的区块（新增 / 移动 / 移除的光源）。
         val dirtySections = HashSet<Long>()
@@ -147,38 +148,66 @@ object DynamicLightManager {
     }
 
     /**
-     * 收集本帧活跃的动态光源（按渲染距离裁剪并按亮度排序）。
+     * 收集本帧活跃的动态光源（按渲染距离裁剪、按 cell 分区限制数量、位置用 partialTick 插值）。
      *
-     * 裁剪距离取玩家当前渲染距离（view distance，单位格）：只要光源处于可被渲染的
-     * 范围内就保持追踪，保证其光照在可见区块内始终正确，避免在裁剪边界处突然消失。
+     * 每个 16×16×16 cell 内只保留亮度得分最高的 [maxDynamicLightsPerCell] 个光源，
+     * 避免某块区域的密集光源挤占其他区域的光照额度；再用全局上限兜底。
      */
-    private fun collectSources(engine: ClientParticleEngine, camX: Double, camY: Double, camZ: Double, renderDistance: Double): List<LightSource> {
+    private fun collectSources(engine: ClientParticleEngine, camX: Double, camY: Double, camZ: Double, renderDistance: Double, partialTick: Float): List<LightSource> {
         val glowing = engine.getGlowingParticles()
         if (glowing.isEmpty()) return emptyList()
 
         val cullDistSq = renderDistance * renderDistance
-        val maxLights = ParticleDrawingConfig.CLIENT.maxDynamicLights.get()
+        val perCell = ParticleDrawingConfig.CLIENT.maxDynamicLightsPerCell.get().coerceAtLeast(1)
 
-        // 最小堆保留亮度得分最高的 maxLights 个光源，避免对全部发光粒子做 O(N log N) 全排序
-        val heap = PriorityQueue<Pair<Double, LightSource>>(compareBy { it.first })
+        // 每个 cell 一个最小堆，保留该 cell 内亮度最高的 perCell 个光源
+        val cellHeaps = HashMap<Long, PriorityQueue<Pair<Double, LightSource>>>()
         for (p in glowing) {
-            val dx = p.x() - camX
-            val dy = p.y() - camY
-            val dz = p.z() - camZ
+            val x = p.interpolatedX(partialTick)
+            val y = p.interpolatedY(partialTick)
+            val z = p.interpolatedZ(partialTick)
+            val dx = x - camX
+            val dy = y - camY
+            val dz = z - camZ
             val distSq = dx * dx + dy * dy + dz * dz
             if (distSq > cullDistSq) continue
             val luminance = p.lightLevel().toDouble()
             val score = luminance / (1.0 + sqrt(distSq))
-            if (heap.size < maxLights) {
-                heap.add(score to LightSource(p.id(), p.x(), p.y(), p.z(), luminance))
+            val src = LightSource(p.id(), x, y, z, luminance)
+            val key = cellKey(cellCoord(x), cellCoord(y), cellCoord(z))
+            val heap = cellHeaps.getOrPut(key) { PriorityQueue(compareBy { it.first }) }
+            if (heap.size < perCell) {
+                heap.add(score to src)
             } else if (score > heap.peek().first) {
                 heap.poll()
-                heap.add(score to LightSource(p.id(), p.x(), p.y(), p.z(), luminance))
+                heap.add(score to src)
             }
         }
 
-        val out = ArrayList<LightSource>(heap.size)
-        for ((_, src) in heap) out.add(src)
+        val out = ArrayList<LightSource>()
+        for (heap in cellHeaps.values) for ((_, src) in heap) out.add(src)
+
+        // 全局上限兜底：若超出则按亮度得分裁剪
+        val maxLights = ParticleDrawingConfig.CLIENT.maxDynamicLights.get()
+        if (out.size > maxLights) {
+            val heap = PriorityQueue<Pair<Double, LightSource>>(compareBy { it.first })
+            for (src in out) {
+                val dx = src.x - camX
+                val dy = src.y - camY
+                val dz = src.z - camZ
+                val distSq = dx * dx + dy * dy + dz * dz
+                val score = src.luminance / (1.0 + sqrt(distSq))
+                if (heap.size < maxLights) {
+                    heap.add(score to src)
+                } else if (score > heap.peek().first) {
+                    heap.poll()
+                    heap.add(score to src)
+                }
+            }
+            val capped = ArrayList<LightSource>(heap.size)
+            for ((_, src) in heap) capped.add(src)
+            return capped
+        }
         return out
     }
 

@@ -34,8 +34,8 @@ function mat3(m) { return { __m: 3, m }; }
 
 const FUNCS = {
   sin: 1, cos: 1, tan: 1, asin: 1, acos: 1, atan: 1, atan2: 2,
-  sqrt: 1, abs: 1, exp: 1, log: 1, ln: 1,
-  floor: 1, ceil: 1, round: 1, pow: 2, min: 2, max: 2, clamp: 3, lerp: 3,
+  sqrt: 1, abs: 1, sign: 1, exp: 1, log: 1, ln: 1,
+  floor: 1, ceil: 1, round: 1, fract: 1, pow: 2, min: 2, max: 2, clamp: 3, lerp: 3, step: 2, smoothstep: 3, mod: 2, random: 0, rand: 1,
   vec: 3, dot: 2, cross: 2, len: 1, norm: 1,
   rotX: 1, rotY: 1, rotZ: 1, rotAxis: 2,
   polar: 2, sphere: 3, torus: 4,
@@ -43,11 +43,15 @@ const FUNCS = {
 const FUNC_IMPL = {
   sin: a => Math.sin(a), cos: a => Math.cos(a), tan: a => Math.tan(a),
   asin: a => Math.asin(a), acos: a => Math.acos(a), atan: a => Math.atan(a), atan2: (a, b) => Math.atan2(a, b),
-  sqrt: a => Math.sqrt(a), abs: a => Math.abs(a), exp: a => Math.exp(a),
+  sqrt: a => Math.sqrt(a), abs: a => Math.abs(a), sign: a => Math.sign(a), exp: a => Math.exp(a),
   log: a => Math.log(a), ln: a => Math.log(a),
-  floor: a => Math.floor(a), ceil: a => Math.ceil(a), round: a => Math.round(a),
+  floor: a => Math.floor(a), ceil: a => Math.ceil(a), round: a => Math.round(a), fract: a => a - Math.floor(a),
   pow: (a, b) => Math.pow(a, b), min: (a, b) => Math.min(a, b), max: (a, b) => Math.max(a, b),
   clamp: (a, b, c) => Math.min(Math.max(a, b), c), lerp: (a, b, c) => a + (b - a) * c,
+  step: (e, x) => (x >= e ? 1 : 0), smoothstep: (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); },
+  mod: (a, b) => a - b * Math.floor(a / b),
+  random: () => Math.random(),
+  rand: i => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); },
   vec: (x, y, z) => vec3(x, y, z),
   dot: (a, b) => { if (!isVec(a) || !isVec(b)) throw new Error('dot 需要向量'); return a.x * b.x + a.y * b.y + a.z * b.z; },
   cross: (a, b) => { if (!isVec(a) || !isVec(b)) throw new Error('cross 需要向量'); return vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x); },

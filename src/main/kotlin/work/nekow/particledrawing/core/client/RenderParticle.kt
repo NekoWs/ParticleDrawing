@@ -66,6 +66,11 @@ class RenderParticle(
     private var deathTime: Long
     private var snapNextSync = false
 
+    // 上一 game tick 的位置（供动态光照每帧 partialTick 插值，避免快速移动粒子光源跳变）
+    private var prevX: Double
+    private var prevY: Double
+    private var prevZ: Double
+
     init {
         pos.cur = position
         pos.tgt = position
@@ -73,6 +78,9 @@ class RenderParticle(
         col.tgt = color
         scl.cur = scale
         scl.tgt = scale
+        prevX = position.x
+        prevY = position.y
+        prevZ = position.z
         deathTime = if (lifetimeMs > 0) System.nanoTime() + lifetimeMs * 1_000_000L else 0
         this.lightLevel = lightLevel.coerceIn(0, 15)
     }
@@ -89,6 +97,11 @@ class RenderParticle(
     fun b(): Float = col.cur.b
     fun a(): Float = col.cur.a
     fun scale(): Float = scl.cur
+
+    // 每帧 partialTick 插值后的位置（动态光照用，避免快速移动粒子光源跳变）
+    fun interpolatedX(partialTick: Float): Double = prevX + (pos.cur.x - prevX) * partialTick
+    fun interpolatedY(partialTick: Float): Double = prevY + (pos.cur.y - prevY) * partialTick
+    fun interpolatedZ(partialTick: Float): Double = prevZ + (pos.cur.z - prevZ) * partialTick
 
     fun isAlive(): Boolean = deathTime == 0L || System.nanoTime() < deathTime
     fun isDead(): Boolean = !isAlive()
@@ -216,6 +229,9 @@ class RenderParticle(
         rotEase.active = false
         transEase.active = false
         offEase.active = false
+        prevX = pos.cur.x
+        prevY = pos.cur.y
+        prevZ = pos.cur.z
         pos.cur = position
         pos.tgt = position
         posEase.startTime = 0L
@@ -305,13 +321,16 @@ class RenderParticle(
             posChanged = true
         }
 
+        var posUpdated = false
         if (posChanged) {
             val p = rotPivot.add(trans.cur).add(rotateEuler(off.cur, rot.cur[0], rot.cur[1], rot.cur[2]))
             pos.cur = p
             pos.tgt = p
+            posUpdated = true
         } else if (velocity.x != 0.0 || velocity.y != 0.0 || velocity.z != 0.0) {
             pos.cur = pos.cur.add(velocity)
             pos.tgt = pos.tgt.add(velocity)
+            posUpdated = true
         } else if (posEase.startTime != 0L) {
             val elapsed = now - posEase.startTime
             if (elapsed >= posEase.durationNs) {
@@ -320,6 +339,12 @@ class RenderParticle(
             } else {
                 pos.cur = lerpVec(pos.start, pos.tgt, posEase.easing.evaluate(elapsed.toFloat() / posEase.durationNs))
             }
+            posUpdated = true
+        }
+        if (posUpdated) {
+            prevX = pos.cur.x
+            prevY = pos.cur.y
+            prevZ = pos.cur.z
         }
 
         if (colEase.startTime != 0L) {

@@ -498,7 +498,7 @@ function renderPalette() {
 function funcInfo(name) {
   const f = FUNC_BLOCKS[name];
   const args = (f.args || []).map(a => a[0]).join(', ');
-  return f.desc + '（' + args + '）';
+  return f.desc + (args ? '（' + args + '）' : '');
 }
 
 /** 积木节点含义（供放大镜查看）。 */
