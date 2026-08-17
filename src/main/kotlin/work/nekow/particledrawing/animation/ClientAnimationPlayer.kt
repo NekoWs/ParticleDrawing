@@ -2,7 +2,11 @@ package work.nekow.particledrawing.animation
 
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.expr.ATTR_NAMES
+import work.nekow.particledrawing.animation.expr.CompiledFunction
 import work.nekow.particledrawing.animation.expr.ExpressionEvaluator
+import work.nekow.particledrawing.animation.expr.Reg
+import work.nekow.particledrawing.animation.expr.VarDef
+import work.nekow.particledrawing.animation.expr.compileFunctionObject
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleStyle
 import kotlin.math.cos
@@ -67,10 +71,23 @@ class ClientAnimationPlayer(
     // ---- 预构建求值索引（避免每 tick 线性扫描轨道 / 组 / 粒子） ----
     private val trackIndex: Map<String, Map<String, AnimTrack>> = buildTrackIndex()
     private val opTracks: List<AnimTrack> = animation.tracks.filter { it.mode == AnimTrack.Mode.OP }
+    private val opTracksByPr: Map<String, List<AnimTrack>> = opTracks.filter { it.keyframes.isNotEmpty() }.groupBy { it.pr }
     private val groupSets: Map<String, Set<String>> = animation.groups.mapValues { (_, v) -> v.toSet() }
     private val particleGroupIndex: Map<String, Set<String>> = buildParticleGroupIndex()
     private val groupCentroidCache: Map<String, Vec3> = buildGroupCentroids()
     private val particleFxCache: Map<String, FunctionObject?> = buildParticleFxCache()
+
+    // ---- 函数对象纯标量快路径编译缓存（null = 含向量/矩阵，回退通用解释器） ----
+    private val compiledFunctions: MutableMap<String, CompiledFunction?> = buildCompiledFunctions()
+
+    private fun buildCompiledFunctions(): MutableMap<String, CompiledFunction?> {
+        val map = HashMap<String, CompiledFunction?>()
+        for (fx in animation.functions) {
+            val varDefs = fx.vars.map { (name, v) -> VarDef(name, v.expr, v.kf) }
+            map[fx.id] = compileFunctionObject(fx.code, varDefs)
+        }
+        return map
+    }
 
     private fun buildTrackIndex(): Map<String, Map<String, AnimTrack>> {
         val map = HashMap<String, HashMap<String, AnimTrack>>()
@@ -162,6 +179,8 @@ class ClientAnimationPlayer(
             val v = fx.vars[name] ?: continue
             v.expr = value
             v.kf = emptyList()
+            val varDefs = fx.vars.map { (n, vv) -> VarDef(n, vv.expr, vv.kf) }
+            compiledFunctions[fx.id] = compileFunctionObject(fx.code, varDefs)
             return
         }
     }
@@ -174,29 +193,56 @@ class ClientAnimationPlayer(
             s.scale = particleScale(p, t)
         }
         for (fx in animation.functions) {
+            val cf = compiledFunctions[fx.id]
+            val regs = cf?.allocRegs()
+            val stack = cf?.allocStack()
+            val cx = fx.center[0]; val cy = fx.center[1]; val cz = fx.center[2]
+            // 整体变换 / op 增量 / 整体缩放 每 tick 只算一次（与粒子序号无关）
+            val rx = scalarAt("rot.x", "f:" + fx.id, t, 0.0)
+            val ry = scalarAt("rot.y", "f:" + fx.id, t, 0.0)
+            val rz = scalarAt("rot.z", "f:" + fx.id, t, 0.0)
+            val hasRot = rx != 0.0 || ry != 0.0 || rz != 0.0
+            val rotPivot = Vec3(cx, cy, cz)
+            val rot = doubleArrayOf(rx, ry, rz)
+            val dx = opDeltaAt("pos.x", "f:" + fx.id, t)
+            val dy = opDeltaAt("pos.y", "f:" + fx.id, t)
+            val dz = opDeltaAt("pos.z", "f:" + fx.id, t)
+            val n = fx.count.toDouble()
             for (i in 0 until fx.count) {
                 val id = fx.id + ":p" + i
                 val s = states[id] ?: continue
-                val base = evaluateFunctionParticle(fx, i, fx.count, t)
-                var pos = base.first
-                val rx = scalarAt("rot.x", "f:" + fx.id, t, 0.0)
-                val ry = scalarAt("rot.y", "f:" + fx.id, t, 0.0)
-                val rz = scalarAt("rot.z", "f:" + fx.id, t, 0.0)
-                if (rx != 0.0 || ry != 0.0 || rz != 0.0) {
-                    pos = rotateAround(pos, Vec3(fx.center[0], fx.center[1], fx.center[2]), doubleArrayOf(rx, ry, rz))
+                if (cf != null) {
+                    cf.eval(i.toDouble(), n, t, regs!!, stack!!)
+                    var px = regs[Reg.X] + cx
+                    var py = regs[Reg.Y] + cy
+                    var pz = regs[Reg.Z] + cz
+                    if (hasRot) {
+                        val rotated = rotateAround(Vec3(px, py, pz), rotPivot, rot)
+                        px = rotated.x; py = rotated.y; pz = rotated.z
+                    }
+                    px += dx; py += dy; pz += dz
+                    s.pos = origin.add(px, py, pz)
+                    s.color = Color.of(
+                        regs[Reg.R].coerceIn(0.0, 1.0).toFloat(),
+                        regs[Reg.G].coerceIn(0.0, 1.0).toFloat(),
+                        regs[Reg.B].coerceIn(0.0, 1.0).toFloat(),
+                        regs[Reg.A].coerceIn(0.0, 1.0).toFloat(),
+                    )
+                    val scaleRaw = if (regs[Reg.SC].isFinite()) regs[Reg.SC] else 1.0
+                    s.scale = scalarAt("scl", "f:" + fx.id, t, scaleRaw).toFloat().coerceAtLeast(0.01f)
+                    s.glowing = regs[Reg.GLOW] > 0.5
+                    s.lightLevel = regs[Reg.LIGHT].toInt().coerceIn(0, 15)
+                } else {
+                    val base = evaluateFunctionParticle(fx, i, fx.count, t)
+                    var pos = base.first
+                    if (hasRot) pos = rotateAround(pos, rotPivot, rot)
+                    pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
+                    s.pos = origin.add(pos)
+                    s.color = base.second
+                    s.scale = scalarAt("scl", "f:" + fx.id, t, base.third.toDouble()).toFloat().coerceAtLeast(0.01f)
+                    s.glowing = base.fourth
+                    s.lightLevel = base.fifth
                 }
-                val dx = opDeltaAt("pos.x", "f:" + fx.id, t)
-                val dy = opDeltaAt("pos.y", "f:" + fx.id, t)
-                val dz = opDeltaAt("pos.z", "f:" + fx.id, t)
-                pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
-                var scale = base.third
-                val sv = scalarAt("scl", "f:" + fx.id, t, scale.toDouble())
-                scale = sv.toFloat().coerceAtLeast(0.01f)
-                s.pos = origin.add(pos)
-                s.color = base.second
-                s.scale = scale
-                s.glowing = base.fourth
-                s.lightLevel = base.fifth
             }
         }
     }
@@ -262,16 +308,17 @@ class ClientAnimationPlayer(
         if (kfs.isEmpty()) return fallback
         if (t <= kfs[0].tick) return kfs[0].value
         if (t >= kfs.last().tick) return kfs.last().value
-        for (idx in 0 until kfs.size - 1) {
-            val a = kfs[idx]; val b = kfs[idx + 1]
-            if (t >= a.tick && t <= b.tick) {
-                val dur = (b.tick - a.tick).toDouble()
-                val f = if (dur == 0.0) 1.0 else (t - a.tick) / dur
-                val e = b.easing.evaluate(f.toFloat()).toDouble()
-                return a.value + (b.value - a.value) * e
-            }
+        var lo = 0
+        var hi = kfs.size - 1
+        while (lo + 1 < hi) {
+            val mid = (lo + hi) ushr 1
+            if (kfs[mid].tick <= t) lo = mid else hi = mid
         }
-        return kfs.last().value
+        val a = kfs[lo]; val b = kfs[lo + 1]
+        val dur = (b.tick - a.tick).toDouble()
+        val f = if (dur == 0.0) 1.0 else (t - a.tick) / dur
+        val e = b.easing.evaluate(f.toFloat()).toDouble()
+        return a.value + (b.value - a.value) * e
     }
 
     private fun scalarAt(pr: String, id: String, t: Double, fallback: Double): Double {
@@ -303,8 +350,7 @@ class ClientAnimationPlayer(
     private fun compOpDelta(p: AnimParticle, prop: String, comp: String, t: Double): Double {
         val pr = compPr(prop, comp)
         var delta = 0.0
-        for (tr in opTracks) {
-            if (tr.pr != pr || tr.keyframes.isEmpty()) continue
+        for (tr in opTracksByPr[pr] ?: emptyList()) {
             for (id in tr.ids) {
                 if (id.startsWith("g:")) {
                     val members = groupSets[id.removePrefix("g:")] ?: continue

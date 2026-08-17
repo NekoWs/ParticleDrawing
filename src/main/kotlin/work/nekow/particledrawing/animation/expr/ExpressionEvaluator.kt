@@ -85,7 +85,7 @@ data class Mat3(val m: Array<DoubleArray>) {
 }
 
 /** 函数签名：名称 -> 参数个数。 */
-private val FUNCS = mapOf(
+internal val FUNCS = mapOf(
     "sin" to 1, "cos" to 1, "tan" to 1, "asin" to 1, "acos" to 1, "atan" to 1, "atan2" to 2,
     "sqrt" to 1, "abs" to 1, "sign" to 1, "exp" to 1, "log" to 1, "ln" to 1,
     "floor" to 1, "ceil" to 1, "round" to 1, "fract" to 1, "pow" to 2, "min" to 2, "max" to 2, "clamp" to 3, "lerp" to 3, "step" to 2, "smoothstep" to 3, "mod" to 2, "random" to 0, "rand" to 1,
@@ -265,7 +265,7 @@ object ExpressionEvaluator {
         else -> throw IllegalArgumentException("一元负号类型不支持")
     }
 
-    private sealed class Token {
+    internal sealed class Token {
         data class Num(val v: Double) : Token()
         data class Var(val name: String) : Token()
         data class Func(val name: String) : Token()
@@ -309,7 +309,7 @@ object ExpressionEvaluator {
     }
 
     /** 编译表达式为 RPN（tokenize + shunting-yard，变量保留符号），结果按表达式字符串缓存复用。 */
-    private fun compile(expr: String): List<Any> {
+    internal fun compile(expr: String): List<Any> {
         rpnCache[expr]?.let { return it }
         val output = mutableListOf<Any>()
         val stack = mutableListOf<Any>()
