@@ -26,6 +26,7 @@ const BUILTIN_VAR_INFO = {
   n: '采样数（粒子总数）',
   t: '当前时间（tick）',
 };
+const BUILTIN_VAR_NAMES = ['i', 'n', 't'];
 
 let bctx = null;
 let bdrag = null;
@@ -232,7 +233,7 @@ function makeStatementBlock(s, isChain, chainIndex) {
     name.addEventListener('blur', () => {
       const nn = name.value.trim();
       if (nn === s.name) { name.value = s.name; fitNameWidth(); return; }
-      if (!nn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nn) || ATTR_NAMES.includes(nn)) { name.value = s.name; fitNameWidth(); return; }
+      if (!nn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nn) || ATTR_NAMES.includes(nn) || BUILTIN_VAR_NAMES.includes(nn)) { name.value = s.name; fitNameWidth(); return; }
       bctxPushUndo();
       renameRefsInAll(s.name, nn);
       s.name = nn;
@@ -648,6 +649,7 @@ function renderChain() {
   const varBox = document.getElementById('chain-vars');
   if (varBox) {
     varBox.innerHTML = '';
+    varBox.appendChild(makeCountBlock());
     for (const name of bctx.varOrder) {
       if (!(name in bctx.varExprs)) continue;
       varBox.appendChild(makeVarBlock(name));
@@ -689,7 +691,7 @@ function makeVarBlock(name) {
   nameIn.addEventListener('input', fitVarWidth);
   nameIn.addEventListener('change', () => {
     const nn = nameIn.value.trim();
-    if (!nn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nn) || ATTR_NAMES.includes(nn) || nn === name) { nameIn.value = name; fitVarWidth(); return; }
+    if (!nn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nn) || ATTR_NAMES.includes(nn) || BUILTIN_VAR_NAMES.includes(nn) || nn === name) { nameIn.value = name; fitVarWidth(); return; }
     if (nn in bctx.varExprs) { nameIn.value = name; fitVarWidth(); return; }
     bctxPushUndo();
     renameVarGlobal(name, nn);
@@ -712,6 +714,33 @@ function makeAttrBlock(name) {
   tag._attrVar = name;
   tag._dragLabel = name;
   wrap.appendChild(tag);
+  return wrap;
+}
+/** 采样数 n：内置只读变量，直接在拼图变量区编辑总数（实时写入 fx.count）。 */
+function makeCountBlock() {
+  const fx = getFunction(bctx.fxId);
+  const wrap = document.createElement('div');
+  wrap.className = 'blk-var-row';
+  const tag = document.createElement('span');
+  tag.className = 'blk-attr-tag';
+  tag.style.cursor = 'default';
+  tag.textContent = '采样数';
+  tag.title = BUILTIN_VAR_INFO.n;
+  wrap.appendChild(tag);
+  wrap.appendChild(document.createTextNode(' = '));
+  const inp = document.createElement('input');
+  inp.className = 'blk-num';
+  inp.type = 'number'; inp.min = '1'; inp.step = '1'; inp.value = fx.count;
+  const fitWidth = () => { inp.style.width = Math.max(26, Math.min(120, (String(inp.value).length + 1) * 8)) + 'px'; };
+  fitWidth();
+  inp.addEventListener('input', fitWidth);
+  inp.addEventListener('change', () => {
+    fx.count = Math.max(1, Math.round(parseInt(inp.value) || 1));
+    inp.value = fx.count;
+    commitFunctionRebuild(fx);
+  });
+  inp.addEventListener('pointerdown', e => e.stopPropagation());
+  wrap.appendChild(inp);
   return wrap;
 }
 function renameVarGlobal(oldName, newName) {

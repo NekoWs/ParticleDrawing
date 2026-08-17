@@ -215,16 +215,6 @@ function buildFunctionPanel(fx) {
     wrap.appendChild(pbox);
   }
 
-  // 采样数
-  const countRow = document.createElement('label');
-  countRow.className = 'row';
-  countRow.textContent = '采样数 ';
-  const countIn = document.createElement('input');
-  countIn.type = 'number'; countIn.min = '1'; countIn.value = fx.count;
-  countIn.onchange = () => { pushUndo(); fx.count = Math.max(1, Math.round(parseInt(countIn.value) || 1)); commitFunctionRebuild(fx); };
-  countRow.appendChild(countIn);
-  wrap.appendChild(countRow);
-
   // 样式
   const styleRow = document.createElement('label');
   styleRow.className = 'row';
@@ -289,6 +279,16 @@ function buildFunctionPanel(fx) {
   vlist.className = 'fx-vars';
   for (const name of Object.keys(fx.vars)) vlist.appendChild(buildVarRow(fx, name));
   wrap.appendChild(vlist);
+
+  // 采样数（外置常量，与拼图底部「采样数」一致）
+  const countRow = document.createElement('label');
+  countRow.className = 'row';
+  countRow.textContent = '采样数 ';
+  const countIn = document.createElement('input');
+  countIn.type = 'number'; countIn.min = '1'; countIn.value = fx.count;
+  countIn.onchange = () => { pushUndo(); fx.count = Math.max(1, Math.round(parseInt(countIn.value) || 1)); commitFunctionRebuild(fx); };
+  countRow.appendChild(countIn);
+  wrap.appendChild(countRow);
 
   return wrap;
 }
