@@ -299,5 +299,40 @@ const FUNCTION_PRESETS = {
       vars: { rad: { expr: String(p.rad), kf: [] } },
       code: 'm = floor(pow(n, 0.5));\nu = floor(i / m) * 2 * pi / m;\nv = i % m * pi / m - pi / 2;\nx = rad * pow(cos(u) * cos(v), 3);\ny = rad * pow(sin(u) * cos(v), 3);\nz = rad * pow(sin(v), 3)'
     })
-  }
+  },
+  fourier: {
+    label: '傅里叶曲线',
+    params: [
+      { key: 'a0x', label: 'X 常数项', def: 0 },
+      { key: 'ax1', label: 'X 谐波1·cos', def: 3 },
+      { key: 'bx1', label: 'X 谐波1·sin', def: 0 },
+      { key: 'ax2', label: 'X 谐波2·cos', def: 0 },
+      { key: 'bx2', label: 'X 谐波2·sin', def: 0 },
+      { key: 'ax3', label: 'X 谐波3·cos', def: 0 },
+      { key: 'bx3', label: 'X 谐波3·sin', def: 0 },
+      { key: 'a0z', label: 'Z 常数项', def: 0 },
+      { key: 'az1', label: 'Z 谐波1·cos', def: 0 },
+      { key: 'bz1', label: 'Z 谐波1·sin', def: 3 },
+      { key: 'az2', label: 'Z 谐波2·cos', def: 0 },
+      { key: 'bz2', label: 'Z 谐波2·sin', def: 0 },
+      { key: 'az3', label: 'Z 谐波3·cos', def: 0 },
+      { key: 'bz3', label: 'Z 谐波3·sin', def: 0 },
+      { key: 'yc', label: 'Y 常量', def: 0 },
+    ],
+    build: p => ({
+      count: 200,
+      vars: {
+        a0x: { expr: String(p.a0x), kf: [] },
+        ax1: { expr: String(p.ax1), kf: [] }, bx1: { expr: String(p.bx1), kf: [] },
+        ax2: { expr: String(p.ax2), kf: [] }, bx2: { expr: String(p.bx2), kf: [] },
+        ax3: { expr: String(p.ax3), kf: [] }, bx3: { expr: String(p.bx3), kf: [] },
+        a0z: { expr: String(p.a0z), kf: [] },
+        az1: { expr: String(p.az1), kf: [] }, bz1: { expr: String(p.bz1), kf: [] },
+        az2: { expr: String(p.az2), kf: [] }, bz2: { expr: String(p.bz2), kf: [] },
+        az3: { expr: String(p.az3), kf: [] }, bz3: { expr: String(p.bz3), kf: [] },
+        yc: { expr: String(p.yc), kf: [] },
+      },
+      code: 'x = a0x + ax1*cos(2*pi*i/n) + bx1*sin(2*pi*i/n) + ax2*cos(4*pi*i/n) + bx2*sin(4*pi*i/n) + ax3*cos(6*pi*i/n) + bx3*sin(6*pi*i/n);\nz = a0z + az1*cos(2*pi*i/n) + bz1*sin(2*pi*i/n) + az2*cos(4*pi*i/n) + bz2*sin(4*pi*i/n) + az3*cos(6*pi*i/n) + bz3*sin(6*pi*i/n);\ny = yc;\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 12',
+    }),
+  },
 };

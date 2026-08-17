@@ -64,6 +64,15 @@ __assert('cube count', fx2.count === 512);
 const b2 = evaluateParticleBase(fx2, 0, 512);
 __assert('cube corner', Math.abs(b2.pos[0] + 2) < 0.01 && Math.abs(b2.pos[1] + 2) < 0.01);
 
+const fxf = { id: 'fxf', name: 'fou', center: [0,0,0], count: 0, style: 'DOT', code: '', vars: {}, duration: 0, step: 5, preset: null, params: null };
+applyPreset(fxf, 'fourier');
+__assert('fourier count', fxf.count === 200);
+__assert('fourier vars', fxf.vars.a0x && fxf.vars.bz1.expr === '3' && fxf.vars.yc.expr === '0');
+const bf0 = evaluateParticleBase(fxf, 0, 200);
+__assert('fourier circle x', Math.abs(bf0.pos[0] - 3) < 1e-9 && Math.abs(bf0.pos[2]) < 1e-9 && Math.abs(bf0.pos[1]) < 1e-9);
+const bf1 = evaluateParticleBase(fxf, 50, 200);
+__assert('fourier circle z', Math.abs(bf1.pos[0]) < 1e-9 && Math.abs(bf1.pos[2] - 3) < 1e-9);
+
 // —— 变量时间轴驱动形状 ——
 const fx3 = { id: 'fx2', name: 'anim', center: [0,0,0], count: 1, style: 'DOT', code: '[x,y,z] = [rad, 0, 0]', vars: { rad: { expr: '1', kf: [[0, 1, 3], [10, 2, 3]] } }, duration: 10, step: 5, preset: null, params: null };
 const p0 = evaluateParticleAt(fx3, 0, 1, 0);

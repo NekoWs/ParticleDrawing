@@ -66,10 +66,6 @@ function initUI() {
   });
   document.getElementById('draw-plane').addEventListener('change', (ev) => { state.drawPlane = ev.target.value; triggerDrawPlanePulse(); });
 
-  // 傅里叶
-  document.getElementById('btn-four').addEventListener('click', generateFourier);
-  document.getElementById('four-plane').addEventListener('change', renderFourierInputs);
-
   // 函数对象
   const fxPresetSel = document.getElementById('fx-preset-add');
   for (const id in FUNCTION_PRESETS) {
@@ -153,7 +149,6 @@ function initUI() {
     drawTimeline();
   }, { passive: false });
 
-  renderFourierInputs();
   rebuildPoints();
   refreshParticleTree();
   // 恢复工作区状态（粒子列表宽）
