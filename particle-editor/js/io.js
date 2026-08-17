@@ -218,7 +218,7 @@ async function saveFileAs() {
   setDirty(false);
 }
 
-// 导出动画（.pdraw 供模组 /test play 播放），不改变当前工程 fileHandle
+// 导出动画（.pdraw 供模组 /pdraw play 播放），不改变当前工程 fileHandle
 async function exportAnimation() {
   const json = JSON.stringify(exportProject());
   if (window.showSaveFilePicker) {

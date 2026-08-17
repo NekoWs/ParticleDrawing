@@ -18,7 +18,7 @@ import work.nekow.particledrawing.core.client.ClientParticleEngine
 import work.nekow.particledrawing.util.ParticleUtils
 
 /**
- * 命令注册。提供 /test 及其子命令，用于加载播放网页编辑器导出的动画。
+ * 命令注册。提供 /pdraw 及其子命令，用于加载播放网页编辑器导出的动画。
  */
 @EventBusSubscriber(modid = ParticleDrawing.MODID)
 @Suppress("unused")
@@ -34,7 +34,7 @@ object ParticleDrawCommands {
         val dispatcher = event.dispatcher
 
         dispatcher.register(
-            Commands.literal("test")
+            Commands.literal("pdraw")
                 .executes(::runTest)
                 .then(Commands.literal("list").executes(::listAnimations))
                 .then(Commands.literal("play")
@@ -50,7 +50,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * /test 命令执行逻辑。
+     * /pdraw 命令执行逻辑。
      * @param ctx 命令上下文
      * @return 命令执行结果
      */
@@ -60,7 +60,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * /test list —— 列出可用的动画。
+     * /pdraw list —— 列出可用的动画。
      */
     private fun listAnimations(ctx: CommandContext<CommandSourceStack>): Int {
         val names = AnimationLoader.list()
@@ -74,7 +74,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * /test play <name> [pos] —— 播放动画（客户端本地播放）。
+     * /pdraw play <name> [pos] —— 播放动画（客户端本地播放）。
      * pos 可省略（默认在玩家面前 3 格）；命令方块执行时必须提供 pos。
      * pos 支持绝对坐标与 ~ 相对坐标（相对命令执行者）。
      */
@@ -104,7 +104,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * /test stop —— 停止当前维度的全部动画。
+     * /pdraw stop —— 停止当前维度的全部动画。
      */
     private fun stopAnimations(ctx: CommandContext<CommandSourceStack>): Int {
         val level = ctx.source.level
@@ -115,7 +115,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * /test debug —— 显示所有播放中动画的调试信息（每刻求值用时 / 帧数 / 粒子数 / 时间轴）。
+     * /pdraw debug —— 显示所有播放中动画的调试信息（每刻求值用时 / 帧数 / 粒子数 / 时间轴）。
      */
     private fun debugAnimations(ctx: CommandContext<CommandSourceStack>): Int {
         val infos = ClientAnimationManager.debugInfo()
@@ -148,7 +148,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * /test var <name> <value> —— 更新当前维度全部播放中的函数对象变量（服务端权威下发）。
+     * /pdraw var <name> <value> —— 更新当前维度全部播放中的函数对象变量（服务端权威下发）。
      */
     private fun updateVariable(ctx: CommandContext<CommandSourceStack>): Int {
         val name = StringArgumentType.getString(ctx, "name")
