@@ -141,6 +141,19 @@ function nextFreeTime(tr, startTime) {
  * ======================================================================= */
 
 const FUNCTION_PRESETS = {
+  sin: {
+    label: 'SIN 函数',
+    params: [
+      { key: 'amp', label: '振幅', def: 2 },
+      { key: 'freq', label: '频率', def: 2 },
+      { key: 'wid', label: '宽度', def: 8 },
+    ],
+    build: p => ({
+      count: 200,
+      vars: { amp: { expr: String(p.amp), kf: [] }, freq: { expr: String(p.freq), kf: [] }, wid: { expr: String(p.wid), kf: [] } },
+      code: 'xx = (i/n-0.5)*wid;\n[x,y,z] = [xx, amp*sin(freq*pi*xx/wid), 0];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 12',
+    }),
+  },
   sphere: {
     label: '球体',
     params: [
@@ -165,7 +178,7 @@ const FUNCTION_PRESETS = {
     }),
   },
   torus: {
-    label: '圆环/环面',
+    label: '圆环',
     countVars: ['m', 'k'],
     params: [
       { key: 'major', label: '大半径', def: 3 },
@@ -230,7 +243,7 @@ const FUNCTION_PRESETS = {
     }),
   },
   circle: {
-    label: '圆/圆环(2D)',
+    label: '圆',
     params: [
       { key: 'outer', label: '外半径', def: 4 },
       { key: 'inner', label: '内半径(0=实心)', def: 0 },
@@ -252,17 +265,15 @@ const FUNCTION_PRESETS = {
       code: 'aa = i/n*2*pi;\nrr = rad*sqrt(i/n);\n[x,y,z] = [rr*cos(aa), 0, rr*sin(aa)];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 12',
     }),
   },
-  sin: {
-    label: 'sin 波',
+  star: {
+    label: '星形',
     params: [
-      { key: 'amp', label: '振幅', def: 2 },
-      { key: 'freq', label: '频率', def: 2 },
-      { key: 'wid', label: '宽度', def: 8 },
+      { key: 'rad', label: '半径', def: 20 },
     ],
     build: p => ({
-      count: 200,
-      vars: { amp: { expr: String(p.amp), kf: [] }, freq: { expr: String(p.freq), kf: [] }, wid: { expr: String(p.wid), kf: [] } },
-      code: 'xx = (i/n-0.5)*wid;\n[x,y,z] = [xx, amp*sin(freq*pi*xx/wid), 0];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 12',
-    }),
-  },
+      count: 2000,
+      vars: { rad: { expr: String(p.rad), kf: [] } },
+      code: 'm = floor(pow(n, 0.5));\nu = floor(i / m) * 2 * pi / m;\nv = i % m * pi / m - pi / 2;\nx = rad * pow(cos(u) * cos(v), 3);\ny = rad * pow(sin(u) * cos(v), 3);\nz = rad * pow(sin(v), 3)'
+    })
+  }
 };
