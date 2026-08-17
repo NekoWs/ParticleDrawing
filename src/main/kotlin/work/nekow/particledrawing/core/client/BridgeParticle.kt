@@ -2,6 +2,7 @@ package work.nekow.particledrawing.core.client
 
 import net.minecraft.client.Minecraft
 import net.minecraft.client.multiplayer.ClientLevel
+import net.minecraft.client.particle.ParticleRenderType
 import net.minecraft.client.particle.SingleQuadParticle
 import net.minecraft.client.renderer.texture.TextureAtlasSprite
 import net.minecraft.data.AtlasIds
@@ -113,6 +114,9 @@ class BridgeParticle(
             Layer.OPAQUE
         }
     }
+
+    // 使用自定义分组（无 16384 上限），绕过原版 SINGLE_QUADS 的粒子数限制
+    override fun getGroup(): ParticleRenderType = BATCHED_QUADS
 
     // 光照查询缓存：原版 getLightCoords 每渲染帧都会查世界光照（含动态光照 mixin 的方块查询），
     // 5w 粒子会放大成每秒数十万次查询。光照按方块坐标变化，粒子在同一方块内可复用缓存。
