@@ -45,28 +45,65 @@ function trackValueAt(tr, T, fallback) {
   return fallback;
 }
 
-// 轨道索引缓存：大批量求值（rebuildPoints）前 buildTrackIndex 建立，O(1) 查找
-let trackIndexCache = null;
-let trackIndexLen = -1;
-let opTracksCache = null;
+// ---- 求值索引缓存（rebuildPoints 每次重建，避免 O(N) / O(N·M) 线性扫描） ----
+let trackIndexCache = null;        // Map: pr -> Map(id -> track)
+let opTracksCache = null;          // Array<track>（op 模式轨道）
+let groupSetCache = null;          // Map: gname -> Set<id>
+let groupMemberIndexCache = null;  // Map: particleId -> Set<gname>
+let groupCentroidPosCache = null;  // Map: gname -> [x,y,z]
+
+function buildParticleIndex() {
+  const map = new Map();
+  for (const p of state.particles) map.set(p.id, p);
+  particleIndexCache = map;
+}
+
 function buildTrackIndex() {
   const map = new Map();
   const opTracks = [];
   for (const tr of state.tracks) {
-    if (tr.ids.length === 1) map.set(tr.pr + '\u0000' + tr.ids[0], tr);
+    if (tr.ids.length === 1) {
+      let byId = map.get(tr.pr);
+      if (!byId) { byId = new Map(); map.set(tr.pr, byId); }
+      byId.set(tr.ids[0], tr);
+    }
     if (tr.m === 'op') opTracks.push(tr);
   }
   trackIndexCache = map;
-  trackIndexLen = state.tracks.length;
   opTracksCache = opTracks;
 }
 
-// 按 pr + id 精确查找轨道（有新鲜索引时 O(1)，否则线性搜索）
+// 组成员索引（particleId -> 所属组集合）+ 组 Set + 组质心缓存
+function buildGroupIndex() {
+  const memberIdx = new Map();
+  const sets = new Map();
+  const centroids = new Map();
+  for (const [gname, members] of Object.entries(state.groups)) {
+    const s = new Set(members);
+    sets.set(gname, s);
+    for (const id of members) {
+      let gs = memberIdx.get(id);
+      if (!gs) { gs = new Set(); memberIdx.set(id, gs); }
+      gs.add(gname);
+    }
+    let sx = 0, sy = 0, sz = 0, n = 0;
+    for (const id of members) {
+      const m = getParticle(id);
+      if (!m) continue;
+      sx += m.pos[0]; sy += m.pos[1]; sz += m.pos[2]; n++;
+    }
+    if (n > 0) centroids.set(gname, [sx / n, sy / n, sz / n]);
+  }
+  groupMemberIndexCache = memberIdx;
+  groupSetCache = sets;
+  groupCentroidPosCache = centroids;
+}
+
+// 按 pr + id 精确查找轨道（O(1)）
 function findTrackByPr(pr, id) {
-  if (trackIndexCache && trackIndexLen === state.tracks.length) {
-    const tr = trackIndexCache.get(pr + '\u0000' + id);
-    if (tr) return tr;
-    return null;
+  if (trackIndexCache) {
+    const byId = trackIndexCache.get(pr);
+    return byId ? (byId.get(id) || null) : null;
   }
   return state.tracks.find(tr => tr.pr === pr && tr.ids.length === 1 && tr.ids[0] === id) || null;
 }
@@ -76,12 +113,14 @@ function findSetTrackFor(id, prop, comp) {
   const pr = compPr(prop, comp);
   const own = findTrackByPr(pr, id);
   if (own && own.m !== 'op') return own;
-  const p = getParticle(id);
-  for (const [gname, members] of Object.entries(state.groups)) {
-    if (!members.includes(id)) continue;
-    const tr = findTrackByPr(pr, 'g:' + gname);
-    if (tr && tr.m !== 'op') return tr;
+  const gs = groupMemberIndexCache && groupMemberIndexCache.get(id);
+  if (gs) {
+    for (const gname of gs) {
+      const tr = findTrackByPr(pr, 'g:' + gname);
+      if (tr && tr.m !== 'op') return tr;
+    }
   }
+  const p = getParticle(id);
   if (p && p.fx) {
     const tr = findTrackByPr(pr, 'f:' + p.fx);
     if (tr && tr.m !== 'op') return tr;
@@ -93,14 +132,15 @@ function findSetTrackFor(id, prop, comp) {
 function compOpDelta(p, prop, comp, T) {
   const pr = compPr(prop, comp);
   let delta = 0;
-  for (const tr of (opTracksCache || state.tracks)) {
-    if (tr.pr !== pr || tr.m !== 'op' || tr.kf.length === 0) continue;
+  for (const tr of opTracksCache) {
+    if (tr.pr !== pr || tr.kf.length === 0) continue;
     for (const id of tr.ids) {
       if (id.startsWith('g:')) {
-        const members = state.groups[id.slice(2)];
-        if (members && members.includes(p.id)) delta += trackValueAt(tr, T, 0);
+        const members = groupSetCache.get(id.slice(2));
+        if (members && members.has(p.id)) delta += trackValueAt(tr, T, 0);
+      } else if (id.startsWith('f:') && p.fx === id.slice(2)) {
+        delta += trackValueAt(tr, T, 0);
       }
-      if (id.startsWith('f:') && p.fx === id.slice(2)) delta += trackValueAt(tr, T, 0);
     }
   }
   return delta;
@@ -116,11 +156,14 @@ function rotVectorAt(id, T) {
 
 // 组旋转信息（组件/函数对象的 rot + pivot）
 function groupRotationInfo(p, T) {
-  for (const [gname, members] of Object.entries(state.groups)) {
-    if (!members.includes(p.id)) continue;
-    const rot = rotVectorAt('g:' + gname, T);
-    if (rot[0] === 0 && rot[1] === 0 && rot[2] === 0) return null;
-    return { rot, pivot: groupCentroidValue(gname, 'pos') };
+  const gs = groupMemberIndexCache && groupMemberIndexCache.get(p.id);
+  if (gs) {
+    for (const gname of gs) {
+      const rot = rotVectorAt('g:' + gname, T);
+      if (rot[0] === 0 && rot[1] === 0 && rot[2] === 0) continue;
+      const pivot = (groupCentroidPosCache && groupCentroidPosCache.get(gname)) || groupCentroidValue(gname, 'pos');
+      return { rot, pivot };
+    }
   }
   if (p.fx) {
     const rot = rotVectorAt('f:' + p.fx, T);
@@ -219,8 +262,10 @@ function setPointsGeometry(pts, positions, colors, sizes) {
 }
 
 let rpPos = null, rpCol = null, rpSize = null, rpSelPos = null, rpSelCol = null, rpSelSize = null;
-function rebuildPoints() {
+function rebuildPoints(full) {
+  buildParticleIndex();
   buildTrackIndex();
+  buildGroupIndex();
   const n = state.particles.length;
   if (!rpPos || rpPos.length !== n * 3) rpPos = new Float32Array(n * 3);
   if (!rpCol || rpCol.length !== n * 4) rpCol = new Float32Array(n * 4);
@@ -251,9 +296,11 @@ function rebuildPoints() {
 
   updateGizmo();
   drawTimeline();
-  updatePropPanel();
-  refreshTreeSelection();
-  if (typeof refreshCompTimelines === 'function') refreshCompTimelines();
+  if (full !== false) {
+    updatePropPanel();
+    refreshTreeSelection();
+    if (typeof refreshCompTimelines === 'function') refreshCompTimelines();
+  }
 }
 
 function setPreview(positions) {

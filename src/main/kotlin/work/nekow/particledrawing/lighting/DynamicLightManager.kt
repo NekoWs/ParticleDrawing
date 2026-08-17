@@ -8,6 +8,7 @@ import net.minecraft.world.level.BlockAndLightGetter
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.client.ClientParticleEngine
 import java.util.UUID
+import java.util.PriorityQueue
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -158,26 +159,27 @@ object DynamicLightManager {
         val cullDistSq = renderDistance * renderDistance
         val maxLights = ParticleDrawingConfig.CLIENT.maxDynamicLights.get()
 
-        val candidates = ArrayList<LightSource>(glowing.size)
+        // 最小堆保留亮度得分最高的 maxLights 个光源，避免对全部发光粒子做 O(N log N) 全排序
+        val heap = PriorityQueue<Pair<Double, LightSource>>(compareBy { it.first })
         for (p in glowing) {
             val dx = p.x() - camX
             val dy = p.y() - camY
             val dz = p.z() - camZ
-            if (dx * dx + dy * dy + dz * dz > cullDistSq) continue
-            candidates.add(LightSource(p.id(), p.x(), p.y(), p.z(), p.lightLevel().toDouble()))
+            val distSq = dx * dx + dy * dy + dz * dz
+            if (distSq > cullDistSq) continue
+            val luminance = p.lightLevel().toDouble()
+            val score = luminance / (1.0 + sqrt(distSq))
+            if (heap.size < maxLights) {
+                heap.add(score to LightSource(p.id(), p.x(), p.y(), p.z(), luminance))
+            } else if (score > heap.peek().first) {
+                heap.poll()
+                heap.add(score to LightSource(p.id(), p.x(), p.y(), p.z(), luminance))
+            }
         }
 
-        candidates.sortByDescending { s ->
-            val dx = s.x - camX
-            val dy = s.y - camY
-            val dz = s.z - camZ
-            s.luminance / (1.0 + sqrt(dx * dx + dy * dy + dz * dz))
-        }
-
-        if (candidates.size > maxLights) {
-            candidates.subList(maxLights, candidates.size).clear()
-        }
-        return candidates
+        val out = ArrayList<LightSource>(heap.size)
+        for ((_, src) in heap) out.add(src)
+        return out
     }
 
     /**

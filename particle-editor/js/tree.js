@@ -52,6 +52,12 @@ function refreshTreeSelection() {
   document.querySelectorAll('.ptree-head').forEach(head => {
     head.classList.toggle('selected', state.selected.has(head.dataset.pid));
   });
+  document.querySelectorAll('.ptree-head.group').forEach(head => {
+    head.classList.toggle('selected', head.dataset.gname != null && head.dataset.gname === state.selectedGroup);
+  });
+  document.querySelectorAll('.ptree-head.func').forEach(head => {
+    head.classList.toggle('selected', head.dataset.fxid != null && head.dataset.fxid === state.selectedFunction);
+  });
 }
 
 /* =========================================================================
@@ -284,6 +290,7 @@ function renderGroupNode(name) {
   const expanded = state.expandedParticles.has('g:' + name);
   const head = document.createElement('div');
   head.className = 'ptree-head group';
+  head.dataset.gname = name;
   head.addEventListener('dragover', (e) => {
     if (dragIds) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; head.classList.add('drop-hint'); }
   });
@@ -316,7 +323,7 @@ function renderGroupNode(name) {
   count.textContent = members.length + ' 成员';
   head.appendChild(arrow); head.appendChild(label); head.appendChild(count);
   head.onclick = () => {
-    state.selected = new Set(members.filter(id => state.particles.some(p => p.id === id)));
+    state.selected.clear();
     state.selectedGroup = name;
     state.selectedFunction = null;
     rebuildPoints();
@@ -411,6 +418,7 @@ function renderFunctionNode(fx) {
   const expanded = state.expandedParticles.has('f:' + fx.id);
   const head = document.createElement('div');
   head.className = 'ptree-head func';
+  head.dataset.fxid = fx.id;
   const arrow = document.createElement('span');
   arrow.className = 'arrow';
   arrow.textContent = expanded ? '▾' : '▸';
@@ -432,8 +440,7 @@ function renderFunctionNode(fx) {
   count.textContent = fx.count + ' 粒子';
   head.appendChild(arrow); head.appendChild(label); head.appendChild(count);
   head.onclick = () => {
-    const ids = state.particles.filter(p => p.fx === fx.id).map(p => p.id);
-    state.selected = new Set(ids);
+    state.selected.clear();
     state.selectedGroup = null;
     state.selectedFunction = fx.id;
     rebuildPoints();

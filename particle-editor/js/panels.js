@@ -6,12 +6,13 @@ function updatePropPanel() {
   const sel = currentSelected();
   const fxId = state.selectedFunction;
   const isFx = !!fxId;
-  if (sel.length === 0 && !isFx) return;
+  const gname = selectedGroupName();
+  if (sel.length === 0 && !isFx && !gname) return;
   // 派生粒子基础属性只读；函数对象 pos/scl 可编辑（写整体轨道）
-  const readOnly = !isFx && sel.some(isDerivedParticle);
+  const readOnly = !isFx && !gname && sel.some(isDerivedParticle);
   ['prop-style', 'prop-color', 'prop-alpha', 'prop-glow', 'prop-light'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.disabled = readOnly || isFx;
+    if (el) el.disabled = readOnly || isFx || gname;
   });
   ['prop-scale', 'prop-posx', 'prop-posy', 'prop-posz'].forEach(id => {
     const el = document.getElementById(id);
@@ -26,6 +27,17 @@ function updatePropPanel() {
     document.getElementById('prop-posy').value = (fx.center[1] + d[1]).toFixed(2);
     document.getElementById('prop-posz').value = (fx.center[2] + d[2]).toFixed(2);
     document.getElementById('prop-scale').value = fxScaleValueAt(fxId, state.time);
+    return;
+  }
+  // 组：显示整体质心位置（缩放无独立显示）
+  if (gname) {
+    const c = groupCurrentCentroid(gname, 'pos');
+    document.getElementById('prop-posx').value = c[0].toFixed(2);
+    document.getElementById('prop-posy').value = c[1].toFixed(2);
+    document.getElementById('prop-posz').value = c[2].toFixed(2);
+    const sInput = document.getElementById('prop-scale');
+    sInput.value = '';
+    sInput.placeholder = '-';
     return;
   }
   const first = sel[0];

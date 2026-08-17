@@ -126,7 +126,9 @@ function nextFunctionId() {
 function getFunction(id) { return state.functions.find(f => f.id === id); }
 // 粒子是否由函数对象派生（基础属性只读）
 function isDerivedParticle(p) { return p != null && !!p.fx; }
-function getParticle(id) { return state.particles.find(p => p.id === id); }
+// 粒子索引（animation.js 的 buildParticleIndex 在 rebuildPoints 时重建，供 getParticle O(1) 查找）
+let particleIndexCache = null;
+function getParticle(id) { return particleIndexCache ? particleIndexCache.get(id) : state.particles.find(p => p.id === id); }
 function findTrack(prop, id) { return state.tracks.find(tr => tr.pr === prop && tr.ids.length === 1 && tr.ids[0] === id); }
 
 function nextFreeTime(tr, startTime) {
@@ -141,6 +143,15 @@ function nextFreeTime(tr, startTime) {
  * ======================================================================= */
 
 const FUNCTION_PRESETS = {
+  blank: {
+    label: '空白',
+    params: [],
+    build: p => ({
+      count: 30,
+      vars: {},
+      code: '[x,y,z] = [0, 0, 0];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
+    }),
+  },
   sin: {
     label: 'SIN 函数',
     params: [

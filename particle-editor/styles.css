@@ -438,12 +438,42 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .fx-panel .row input[type="number"] { width: 64px; }
 .fx-panel .row input[type="text"] { flex: 1; min-width: 0; }
 .fx-panel .row select { flex: 1; }
+/* 预设下拉框美化（函数面板 + 侧栏新建） */
+#fx-preset-add,
 .fx-panel select.fx-preset-sel {
-  background: var(--panel-3); border: 1px solid var(--border);
-  color: var(--text); border-radius: 5px; padding: 0 8px;
-  font-size: 12px; height: 30px; cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--panel-3);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%238b93a7' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 12px 12px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 6px 26px 6px 10px;
+  font-size: 12px;
+  height: 30px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
 }
-.fx-panel select.fx-preset-sel:focus { border-color: var(--accent); outline: none; }
+#fx-preset-add:hover,
+.fx-panel select.fx-preset-sel:hover {
+  border-color: var(--accent);
+  background-color: var(--panel-2);
+}
+#fx-preset-add:focus,
+.fx-panel select.fx-preset-sel:focus {
+  border-color: var(--accent);
+  outline: none;
+  background-color: var(--panel-2);
+}
+#fx-preset-add {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  margin-right: 10px;
+}
 .fx-panel input, .fx-panel select {
   background: var(--panel-3); border: 1px solid var(--border);
   color: var(--text); border-radius: 5px; padding: 6px 8px;

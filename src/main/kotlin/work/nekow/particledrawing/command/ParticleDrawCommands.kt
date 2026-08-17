@@ -13,6 +13,8 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent
 import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.animation.AnimationLoader
 import work.nekow.particledrawing.animation.ServerAnimationManager
+import work.nekow.particledrawing.core.client.ClientAnimationManager
+import work.nekow.particledrawing.core.client.ClientParticleEngine
 import work.nekow.particledrawing.util.ParticleUtils
 
 /**
@@ -40,6 +42,7 @@ object ParticleDrawCommands {
                         .executes(::playAnimation)
                         .then(Commands.argument("pos", Vec3Argument.vec3()).executes(::playAnimation))))
                 .then(Commands.literal("stop").executes(::stopAnimations))
+                .then(Commands.literal("debug").executes(::debugAnimations))
                 .then(Commands.literal("var")
                     .then(Commands.argument("name", StringArgumentType.string())
                         .then(Commands.argument("value", StringArgumentType.greedyString()).executes(::updateVariable))))
@@ -109,6 +112,39 @@ object ParticleDrawCommands {
         ServerAnimationManager.stopAll(dim, level.players())
         ctx.source.sendSuccess({ Component.literal("已停止当前维度的全部动画") }, false)
         return 1
+    }
+
+    /**
+     * /test debug —— 显示所有播放中动画的调试信息（每刻求值用时 / 帧数 / 粒子数 / 时间轴）。
+     */
+    private fun debugAnimations(ctx: CommandContext<CommandSourceStack>): Int {
+        val infos = ClientAnimationManager.debugInfo()
+        val engine = ClientParticleEngine.instance()
+        val engineParticles = engine?.activeCount() ?: 0
+
+        if (infos.isEmpty()) {
+            ctx.source.sendSuccess(
+                { Component.literal("无播放中的动画（引擎活跃粒子总数: $engineParticles）") },
+                false
+            )
+            return 0
+        }
+
+        for (info in infos) {
+            val shortId = info.animId.toString().take(8)
+            val lastMs = java.lang.String.format(java.util.Locale.ROOT, "%.2f", info.lastAdvanceMillis)
+            val avgMs = java.lang.String.format(java.util.Locale.ROOT, "%.2f", info.avgAdvanceMillis)
+            val msg = "动画 $shortId… | 粒子: ${info.particleCount} | " +
+                "时间轴: ${info.currentTick}/${info.maxTick} tick | " +
+                "已播放帧: ${info.frameCount} | " +
+                "每刻求值: 上次 ${lastMs}ms / 平均 ${avgMs}ms"
+            ctx.source.sendSuccess({ Component.literal(msg) }, false)
+        }
+        ctx.source.sendSuccess(
+            { Component.literal("播放中动画数: ${infos.size}，引擎活跃粒子总数: $engineParticles") },
+            false
+        )
+        return infos.size
     }
 
     /**

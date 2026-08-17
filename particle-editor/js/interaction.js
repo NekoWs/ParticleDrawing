@@ -14,6 +14,19 @@ function selectedGroupName() {
   return state.selectedGroup && state.groups[state.selectedGroup] ? state.selectedGroup : null;
 }
 
+// 当前是否有任何选中（粒子 / 组 / 函数对象）
+function hasSelection() {
+  return state.selected.size > 0 || state.selectedGroup != null || state.selectedFunction != null;
+}
+
+// 当前选中成员的粒子 id 数组（组/函数对象展开为其成员，否则为已选粒子）
+function selectedMemberIds() {
+  if (state.selectedFunction) return state.particles.filter(p => p.fx === state.selectedFunction).map(p => p.id);
+  const g = selectedGroupName();
+  if (g) return state.groups[g] || [];
+  return [...state.selected];
+}
+
 // 当前选中是否包含派生粒子（基础属性只读）
 function selectionHasDerived() {
   for (const id of state.selected) { const p = getParticle(id); if (isDerivedParticle(p)) return true; }
@@ -42,14 +55,17 @@ function enterGrab(clientX, clientY, axis, face) {
     controls.enabled = false;
     return;
   }
-  if (state.selected.size === 0) return;
+  if (!hasSelection()) return;
   if (selectionHasDerived()) return;
   pushUndo();
-  const origins = new Map();
-  for (const p of currentSelected()) origins.set(p.id, currentVisual(p).pos.slice());
-  const c = selectionCentroid();
-  const pt = planePointAt(clientX, clientY);
   const gname = selectedGroupName();
+  const origins = new Map();
+  for (const id of selectedMemberIds()) {
+    const p = getParticle(id);
+    if (p) origins.set(id, currentVisual(p).pos.slice());
+  }
+  const c = gname ? groupCurrentCentroid(gname, 'pos') : selectionCentroid();
+  const pt = planePointAt(clientX, clientY);
   modal = { type: 'grab', groupName: gname, startDelta: gname ? groupPosDeltaAt(gname, Math.round(state.time)) : null, origins, axis: axis || null, axisKey: axis, face: face || null, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: clientX, y: clientY }, centroid: c, y: c ? c[1] : 0, faceStart: null };
   setDragAxisHighlight(modal);
   controls.enabled = false;
@@ -63,11 +79,14 @@ function enterScale(clientX) {
     controls.enabled = false;
     return;
   }
-  if (state.selected.size === 0) return;
+  if (!hasSelection()) return;
   if (selectionHasDerived()) return;
   pushUndo();
   const origins = new Map();
-  for (const p of currentSelected()) origins.set(p.id, currentVisual(p).scale);
+  for (const id of selectedMemberIds()) {
+    const p = getParticle(id);
+    if (p) origins.set(id, currentVisual(p).scale);
+  }
   modal = { type: 'scale', origins, startClient: { x: clientX } };
   controls.enabled = false;
 }
@@ -133,11 +152,11 @@ function enterRotate(clientX, clientY, axis) {
     controls.enabled = false;
     return;
   }
-  if (state.selected.size === 0) return;
+  if (!hasSelection()) return;
   if (selectionHasDerived()) return;
   const gname = selectedGroupName();
   pushUndo();
-  const c = selectionCentroid();
+  const c = gname ? groupCurrentCentroid(gname, 'pos') : selectionCentroid();
   const axArr = AXIS_VECTORS[axis] || AXIS_VECTORS.Y;
   const a = new THREE.Vector3(axArr[0], axArr[1], axArr[2]);
   let u = new THREE.Vector3(1, 0, 0);
@@ -146,9 +165,12 @@ function enterRotate(clientX, clientY, axis) {
   const v = new THREE.Vector3().crossVectors(a, u).normalize();
   const p0 = rayOnAxisPlane(clientX, clientY, axArr, c);
   const startAngle = p0 ? angleInBasis(p0, c, u, v) : 0;
+  const origins = new Map();
+  for (const id of selectedMemberIds()) {
+    const p = getParticle(id);
+    if (p) origins.set(id, currentVisual(p).pos.slice());
+  }
   if (gname) {
-    const origins = new Map();
-    for (const p of currentSelected()) origins.set(p.id, currentVisual(p).pos.slice());
     modal = {
       type: 'group-rotate', gname, centroid: c, axis: axArr, axisKey: axis,
       axisIndex: AXIS_INDEX[axis] ?? 1,
@@ -156,8 +178,6 @@ function enterRotate(clientX, clientY, axis) {
       origins, u, v, startAngle,
     };
   } else {
-    const origins = new Map();
-    for (const p of currentSelected()) origins.set(p.id, currentVisual(p).pos.slice());
     modal = {
       type: 'rotate', origins, centroid: c, axis: axArr, axisKey: axis, u, v, startAngle,
     };
@@ -204,13 +224,16 @@ function enterViewRotate(clientX, clientY) {
     controls.enabled = false;
     return;
   }
-  if (state.selected.size === 0) return;
+  if (!hasSelection()) return;
   if (selectionHasDerived()) return;
   pushUndo();
-  const c = selectionCentroid();
-  const origins = new Map();
-  for (const p of currentSelected()) origins.set(p.id, currentVisual(p).pos.slice());
   const gname = selectedGroupName();
+  const c = gname ? groupCurrentCentroid(gname, 'pos') : selectionCentroid();
+  const origins = new Map();
+  for (const id of selectedMemberIds()) {
+    const p = getParticle(id);
+    if (p) origins.set(id, currentVisual(p).pos.slice());
+  }
   if (gname) {
     modal = { type: 'group-view-rotate', gname, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot: groupRotationValueAt(gname, Math.round(state.time)), origins, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
   } else {
@@ -403,6 +426,10 @@ function deleteSelected() {
   // 函数对象优先：直接删除整个函数对象及其派生粒子
   if (state.selectedFunction) {
     deleteFunctionObject(state.selectedFunction);
+    return;
+  }
+  if (state.selectedGroup) {
+    deleteGroup(state.selectedGroup);
     return;
   }
   if (state.selected.size === 0) return;
@@ -709,7 +736,7 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
   if (boxSel) { boxSel.x1 = ev.clientX; boxSel.y1 = ev.clientY; updateBoxOverlay(); return; }
   if (!drag) {
     // 悬停高亮：移动控制器（轴/面）与旋转控制器（环/视图环）
-    if ((state.tool === 'move' || state.tool === 'rotate') && state.selected.size > 0) {
+    if ((state.tool === 'move' || state.tool === 'rotate') && hasSelection()) {
       let ah = null, fh = null, rh = null, vh = false;
       if (state.tool === 'move') {
         ah = hitGizmoAxis(ev.clientX, ev.clientY);

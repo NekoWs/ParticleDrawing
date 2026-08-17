@@ -22,6 +22,9 @@ class ClientParticleEngine {
     private val bridges: MutableMap<UUID, BridgeParticle> = ConcurrentHashMap()
     private val groups: MutableMap<UUID, MutableSet<UUID>> = ConcurrentHashMap()
 
+    // 动画本地播放直接同步的粒子：跳过 frameUpdate 的缓动轮转（避免每帧冗余插值并破坏 partialTick）
+    private val directIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
+
     private var syncCursor = 0
     private var cachedIds: Array<UUID> = emptyArray()
     private var cachedSize = -1
@@ -88,6 +91,7 @@ class ClientParticleEngine {
                        hasPos: Boolean, hasColor: Boolean, hasScale: Boolean,
                        durationTicks: Int, easing: EasingType) {
         val rp = particles[id] ?: return
+        directIds.remove(id)
 
         if (hasPos) {
             if (durationTicks == 0) {
@@ -126,6 +130,7 @@ class ClientParticleEngine {
                              glowing: Boolean, lightLevel: Int,
                               snap: Boolean = false) {
         val rp = particles[id] ?: return
+        directIds.add(id)
         rp.setPositionDirect(Vec3(x, y, z))
         rp.setColorDirect(Color.of(r, g, b, a))
         rp.setScaleDirect(scale)
@@ -147,6 +152,7 @@ class ClientParticleEngine {
      * @param vz Z 速度分量
      */
     fun setVelocity(id: UUID, vx: Double, vy: Double, vz: Double) {
+        directIds.remove(id)
         particles[id]?.setVelocity(Vec3(vx, vy, vz))
     }
 
@@ -157,6 +163,7 @@ class ClientParticleEngine {
                        ox: Double, oy: Double, oz: Double,
                        rx: Double, ry: Double, rz: Double,
                        durationTicks: Int, easing: EasingType) {
+        directIds.remove(id)
         particles[id]?.setRotation(
             Vec3(px, py, pz), Vec3(ox, oy, oz),
             doubleArrayOf(rx, ry, rz), easing, durationTicks * 50L
@@ -170,6 +177,7 @@ class ClientParticleEngine {
                           ox: Double, oy: Double, oz: Double,
                           tx: Double, ty: Double, tz: Double,
                           durationTicks: Int, easing: EasingType) {
+        directIds.remove(id)
         particles[id]?.setTranslation(
             Vec3(px, py, pz), Vec3(ox, oy, oz),
             Vec3(tx, ty, tz), easing, durationTicks * 50L
@@ -182,6 +190,7 @@ class ClientParticleEngine {
     fun setPosition(id: UUID, px: Double, py: Double, pz: Double,
                     ox: Double, oy: Double, oz: Double,
                     durationTicks: Int, easing: EasingType) {
+        directIds.remove(id)
         particles[id]?.setPositionSet(
             Vec3(px, py, pz), Vec3(ox, oy, oz), easing, durationTicks * 50L
         )
@@ -204,6 +213,7 @@ class ClientParticleEngine {
         for (id in ids) {
             particles.remove(id)
             bridges.remove(id)?.remove()
+            directIds.remove(id)
         }
         for (gms in groups.values) {
             for (id in ids) gms.remove(id)
@@ -245,6 +255,7 @@ class ClientParticleEngine {
 
         for (memberId in members) {
             val rp = particles[memberId] ?: continue
+            directIds.remove(memberId)
 
             // 使用目标位置计算变换
             val curPos = rp.targetPosition()
@@ -336,6 +347,7 @@ class ClientParticleEngine {
 
             val rp = particles[id] ?: continue
             if (rp.id() in motionParticles) continue
+            if (rp.id() in directIds) continue
 
             val wasSnap = rp.consumeSnap()
             rp.tick()

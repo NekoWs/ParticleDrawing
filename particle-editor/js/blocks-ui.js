@@ -1336,7 +1336,7 @@ function closeBlockDrawer(commit) {
   // 重新选中该函数对象（确定/取消后保持一致选中反馈）
   if (fx) {
     state.selectedFunction = fx.id;
-    state.selected = new Set(state.particles.filter(p => p.fx === fx.id).map(p => p.id));
+    state.selected.clear();
     state.selectedGroup = null;
     if (typeof rebuildPoints === 'function') rebuildPoints();
     if (typeof refreshParticleTree === 'function') refreshParticleTree();

@@ -39,7 +39,7 @@ function gizmoHl(c) { return new THREE.Color(c).lerp(new THREE.Color(1, 1, 1), 0
 
 function updateGizmo() {
   // 移动/旋转工具选中粒子时：移除橙色描边，粒子不透明度降至 0.8（仅渲染，不改数据）
-  const dim = (state.tool === 'move' || state.tool === 'rotate') && state.selected.size > 0;
+  const dim = (state.tool === 'move' || state.tool === 'rotate') && hasSelection();
   pointsMaterial.uniforms.uOpacity.value = dim ? 0.8 : 1.0;
   selectedMaterial.uniforms.uOpacity.value = dim ? 0.0 : 1.0;
   // 拼图模式 / 非移动、旋转工具：隐藏控制器
@@ -54,8 +54,10 @@ function updateGizmo() {
     // 函数对象：gizmo 跟随整体位置（center + 当前 pos 增量），随拖动/时间轴移动
     const d = fxPosDeltaAt(fx.id, state.time);
     c = [fx.center[0] + d[0], fx.center[1] + d[1], fx.center[2] + d[2]];
-  } else if (!selectionHasDerived()) {
-    c = selectionCentroid();
+  } else {
+    const gname = selectedGroupName();
+    if (gname) c = groupCurrentCentroid(gname, 'pos');
+    else if (!selectionHasDerived()) c = selectionCentroid();
   }
   if (!c) { gizmoGroup.visible = false; return; }
   gizmoGroup.visible = true;

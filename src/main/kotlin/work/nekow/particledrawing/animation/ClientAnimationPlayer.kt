@@ -29,6 +29,17 @@ class ClientAnimationPlayer(
     private var finished = false
     private var justLooped = false
 
+    // ---- 调试统计 ----
+    var lastAdvanceNanos: Long = 0; private set
+    var frameCount: Long = 0; private set
+    private var advanceNanosTotal = 0L
+    private var advanceCount = 0L
+
+    val avgAdvanceNanos: Long get() = if (advanceCount == 0L) 0L else advanceNanosTotal / advanceCount
+    val particleCount: Int get() = states.size
+    val currentTickValue: Int get() = currentTick
+    val maxTickValue: Int get() = maxTick
+
     private val maxTick: Int = run {
         var max = animation.tracks.flatMap { it.keyframes }.maxOfOrNull { it.tick }?.toDouble() ?: 0.0
         for (fx in animation.functions) {
@@ -42,6 +53,57 @@ class ClientAnimationPlayer(
             if (!hasVarAnim && usesTimeVar(fx.code) && fx.duration > max) max = fx.duration.toDouble()
         }
         max.toInt()
+    }
+
+    // ---- 预构建求值索引（避免每 tick 线性扫描轨道 / 组 / 粒子） ----
+    private val trackIndex: Map<String, Map<String, AnimTrack>> = buildTrackIndex()
+    private val opTracks: List<AnimTrack> = animation.tracks.filter { it.mode == AnimTrack.Mode.OP }
+    private val groupSets: Map<String, Set<String>> = animation.groups.mapValues { (_, v) -> v.toSet() }
+    private val particleGroupIndex: Map<String, Set<String>> = buildParticleGroupIndex()
+    private val groupCentroidCache: Map<String, Vec3> = buildGroupCentroids()
+    private val particleFxCache: Map<String, FunctionObject?> = buildParticleFxCache()
+
+    private fun buildTrackIndex(): Map<String, Map<String, AnimTrack>> {
+        val map = HashMap<String, HashMap<String, AnimTrack>>()
+        for (tr in animation.tracks) {
+            if (tr.ids.size == 1) {
+                val byId = map.getOrPut(tr.pr) { HashMap() }
+                byId[tr.ids[0]] = tr
+            }
+        }
+        return map
+    }
+
+    private fun buildParticleGroupIndex(): Map<String, Set<String>> {
+        val map = HashMap<String, HashSet<String>>()
+        for ((gname, members) in animation.groups) {
+            for (id in members) map.getOrPut(id) { HashSet() }.add(gname)
+        }
+        return map
+    }
+
+    private fun buildGroupCentroids(): Map<String, Vec3> {
+        val byId = HashMap<String, AnimParticle>()
+        for (p in animation.particles) byId[p.id] = p
+        val map = HashMap<String, Vec3>()
+        for ((gname, members) in animation.groups) {
+            var sx = 0.0; var sy = 0.0; var sz = 0.0; var n = 0
+            for (id in members) {
+                val m = byId[id] ?: continue
+                sx += m.pos.x; sy += m.pos.y; sz += m.pos.z; n++
+            }
+            if (n > 0) map[gname] = Vec3(sx / n, sy / n, sz / n)
+        }
+        return map
+    }
+
+    private fun buildParticleFxCache(): Map<String, FunctionObject?> {
+        val map = HashMap<String, FunctionObject?>()
+        for (p in animation.particles) map[p.id] = null
+        for (fx in animation.functions) {
+            for (i in 0 until fx.count) map[fx.id + ":p" + i] = fx
+        }
+        return map
     }
 
     init {
@@ -60,12 +122,18 @@ class ClientAnimationPlayer(
 
     fun tick(): Boolean {
         if (finished) return false
+        frameCount++
         currentTick++
         if (currentTick > maxTick) {
             if (animation.loop) { currentTick = 0; justLooped = true }
             else { finished = true; return false }
         }
+        val t0 = System.nanoTime()
         advanceTo(currentTick.toDouble())
+        val elapsed = System.nanoTime() - t0
+        lastAdvanceNanos = elapsed
+        advanceNanosTotal += elapsed
+        advanceCount++
         return true
     }
 
@@ -174,8 +242,7 @@ class ClientAnimationPlayer(
 
     private fun compPr(prop: String, comp: String): String = if (comp.isEmpty()) prop else prop + "." + comp
 
-    private fun findTrackByPr(pr: String, id: String): AnimTrack? =
-        animation.tracks.find { it.pr == pr && it.ids.size == 1 && it.ids[0] == id }
+    private fun findTrackByPr(pr: String, id: String): AnimTrack? = trackIndex[pr]?.get(id)
 
     private fun trackValueAt(tr: AnimTrack, t: Double, fallback: Double): Double {
         val kfs = tr.keyframes
@@ -205,14 +272,12 @@ class ClientAnimationPlayer(
         return trackValueAt(tr, t, 0.0)
     }
 
-    private fun particleFunction(id: String): FunctionObject? =
-        animation.functions.find { id.startsWith(it.id + ":p") }
+    private fun particleFunction(id: String): FunctionObject? = particleFxCache[id]
 
     private fun findSetTrackFor(id: String, prop: String, comp: String): AnimTrack? {
         val pr = compPr(prop, comp)
         findTrackByPr(pr, id)?.let { if (it.mode != AnimTrack.Mode.OP) return it }
-        for ((gname, members) in animation.groups) {
-            if (id !in members) continue
+        for (gname in particleGroupIndex[id] ?: emptySet()) {
             findTrackByPr(pr, "g:" + gname)?.let { if (it.mode != AnimTrack.Mode.OP) return it }
         }
         val fx = particleFunction(id)
@@ -225,16 +290,14 @@ class ClientAnimationPlayer(
     private fun compOpDelta(p: AnimParticle, prop: String, comp: String, t: Double): Double {
         val pr = compPr(prop, comp)
         var delta = 0.0
-        for (tr in animation.tracks) {
-            if (tr.pr != pr || tr.mode != AnimTrack.Mode.OP || tr.keyframes.isEmpty()) continue
+        for (tr in opTracks) {
+            if (tr.pr != pr || tr.keyframes.isEmpty()) continue
             for (id in tr.ids) {
                 if (id.startsWith("g:")) {
-                    val members = animation.groups[id.removePrefix("g:")] ?: continue
+                    val members = groupSets[id.removePrefix("g:")] ?: continue
                     if (p.id in members) delta += trackValueAt(tr, t, 0.0)
-                }
-                if (id.startsWith("f:")) {
-                    val fxId = id.removePrefix("f:")
-                    if (p.id.startsWith(fxId + ":p")) delta += trackValueAt(tr, t, 0.0)
+                } else if (id.startsWith("f:") && p.id.startsWith(id.removePrefix("f:") + ":p")) {
+                    delta += trackValueAt(tr, t, 0.0)
                 }
             }
         }
@@ -287,11 +350,13 @@ class ClientAnimationPlayer(
     }
 
     private fun applyGroupRotation(p: AnimParticle, value: Vec3, t: Double): Vec3 {
-        for ((gname, members) in animation.groups) {
-            if (p.id !in members) continue
-            val rot = rotVectorAt("g:" + gname, t)
-            if (rot[0] == 0.0 && rot[1] == 0.0 && rot[2] == 0.0) return value
-            return rotateAround(value, groupCentroid(gname), rot)
+        val gs = particleGroupIndex[p.id]
+        if (gs != null) {
+            for (gname in gs) {
+                val rot = rotVectorAt("g:" + gname, t)
+                if (rot[0] == 0.0 && rot[1] == 0.0 && rot[2] == 0.0) return value
+                return rotateAround(value, groupCentroidCache[gname] ?: groupCentroid(gname), rot)
+            }
         }
         val fx = particleFunction(p.id)
         if (fx != null) {

@@ -76,7 +76,7 @@ function initUI() {
     const o = document.createElement('option'); o.value = id; o.textContent = FUNCTION_PRESETS[id].label;
     fxPresetSel.appendChild(o);
   }
-  document.getElementById('btn-fx-add').addEventListener('click', () => createFunctionObject(null));
+  fxPresetSel.value = 'blank';
   document.getElementById('btn-fx-preset-add').addEventListener('click', () => {
     if (fxPresetSel.value) createFunctionObject(fxPresetSel.value);
   });
@@ -287,7 +287,7 @@ function animate(now) {
       }
     }
     updateTimeUI();
-    rebuildPoints();
+    rebuildPoints(false);
     syncFunctionVarValues();
   }
   controls.update();

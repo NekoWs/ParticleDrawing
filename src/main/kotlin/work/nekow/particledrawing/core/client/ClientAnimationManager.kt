@@ -18,6 +18,35 @@ object ClientAnimationManager {
 
     private val entries = ConcurrentHashMap<UUID, Entry>()
 
+    /** 一次播放的调试信息快照。 */
+    data class DebugInfo(
+        val animId: UUID,
+        val particleCount: Int,
+        val currentTick: Int,
+        val maxTick: Int,
+        val frameCount: Long,
+        val lastAdvanceMillis: Double,
+        val avgAdvanceMillis: Double,
+    )
+
+    /** 收集当前所有播放中动画的调试信息。 */
+    @JvmStatic
+    fun debugInfo(): List<DebugInfo> = entries.map { (id, e) ->
+        DebugInfo(
+            animId = id,
+            particleCount = e.player.particleCount,
+            currentTick = e.player.currentTickValue,
+            maxTick = e.player.maxTickValue,
+            frameCount = e.player.frameCount,
+            lastAdvanceMillis = e.player.lastAdvanceNanos / 1_000_000.0,
+            avgAdvanceMillis = e.player.avgAdvanceNanos / 1_000_000.0,
+        )
+    }
+
+    /** 当前播放中的动画数量。 */
+    @JvmStatic
+    fun activeAnimationCount(): Int = entries.size
+
     /** 开始本地播放一个动画。 */
     @JvmStatic
     fun play(animationId: UUID, json: String, origin: Vec3) {

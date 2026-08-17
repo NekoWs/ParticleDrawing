@@ -1,6 +1,7 @@
 package work.nekow.particledrawing.animation.expr
 
 import work.nekow.particledrawing.core.easing.EasingType
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.*
 
 /**
@@ -106,6 +107,10 @@ class EvalResult(var pos: Vec3, val color: DoubleArray, var vel: Vec3, var scale
 data class Keyframe(val tick: Double, val value: Double, val easing: EasingType)
 
 object ExpressionEvaluator {
+
+    // RPN 编译缓存：表达式字符串 -> 逆波兰序列（tokenize + shunting-yard 结果）。
+    // 函数对象播放期间表达式字符串不变，缓存后每 tick 只做求值，避免重复词法/语法解析。
+    private val rpnCache = ConcurrentHashMap<String, List<Any>>()
 
     private fun scalar(v: Any, name: String): Double = when (v) {
         is Double -> v
@@ -265,17 +270,15 @@ object ExpressionEvaluator {
         return tokens
     }
 
-    /** 求值单个表达式。vars 为 Map<String, Double>（求值期已解析的变量）。 */
-    fun evaluate(expr: String, vars: Map<String, Any>): Any {
+    /** 编译表达式为 RPN（tokenize + shunting-yard，变量保留符号），结果按表达式字符串缓存复用。 */
+    private fun compile(expr: String): List<Any> {
+        rpnCache[expr]?.let { return it }
         val output = mutableListOf<Any>()
         val stack = mutableListOf<Any>()
         for (tk in tokenize(expr)) {
             when (tk) {
                 is Token.Num -> output.add(tk.v)
-                is Token.Var -> {
-                    val v = vars[tk.name] ?: throw IllegalArgumentException("未知变量: ${tk.name}")
-                    output.add(v)
-                }
+                is Token.Var -> output.add(tk)
                 is Token.Func -> stack.add(tk.name)
                 is Token.Comp -> output.add(tk)
                 is Token.Neg -> {
@@ -318,11 +321,22 @@ object ExpressionEvaluator {
             }
         }
         while (stack.isNotEmpty()) output.add(stack.removeAt(stack.size - 1))
+        rpnCache[expr] = output
+        return output
+    }
+
+    /** 求值单个表达式。vars 为 Map<String, Any>（求值期已解析的变量）。 */
+    fun evaluate(expr: String, vars: Map<String, Any>): Any {
+        val output = compile(expr)
 
         val s = mutableListOf<Any>()
         for (o in output) {
             when (o) {
                 is Double, is Vec3, is Mat3 -> s.add(o)
+                is Token.Var -> {
+                    val v = vars[o.name] ?: throw IllegalArgumentException("未知变量: ${o.name}")
+                    s.add(v)
+                }
                 "neg" -> {
                     val v = s.removeAt(s.size - 1)
                     s.add(negate(v))

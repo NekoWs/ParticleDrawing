@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.core.easing
 
+import java.util.Objects
 import kotlin.math.abs
 
 /**
@@ -19,6 +20,9 @@ class EasingCurve(
     val y2: Double
 ) {
 
+    // 线性曲线（默认缓动）：直接返回 t，避免贝塞尔反解迭代
+    private val linear = x1 == 0.0 && y1 == 0.0 && x2 == 1.0 && y2 == 1.0
+
     /**
      * 在给定进度下计算缓动值。
      * @param t 动画进度，范围 [0, 1]
@@ -27,6 +31,7 @@ class EasingCurve(
     fun evaluate(t: Float): Float {
         if (t <= 0f) return 0f
         if (t >= 1f) return 1f
+        if (linear) return t
         return sampleCurveY(solveTForX(t.toDouble())).toFloat()
     }
 
@@ -82,7 +87,7 @@ class EasingCurve(
     }
 
     override fun hashCode(): Int {
-        return java.util.Objects.hash(x1, y1, x2, y2)
+        return Objects.hash(x1, y1, x2, y2)
     }
 
     override fun toString(): String {
