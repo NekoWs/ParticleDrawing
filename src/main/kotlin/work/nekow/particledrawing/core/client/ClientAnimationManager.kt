@@ -75,7 +75,8 @@ object ClientAnimationManager {
         val toStop = mutableListOf<UUID>()
         for ((animId, entry) in entries) {
             if (entry.player.tick()) {
-                sync(entry)
+                // 静态动画（粒子状态恒定）跳过每刻的渲染同步，避免 5w 粒子无谓的逐粒子写入
+                if (!entry.player.isStatic()) sync(entry)
             } else {
                 toStop.add(animId)
             }
@@ -104,12 +105,7 @@ object ClientAnimationManager {
         for (state in entry.player.currentStates()) {
             val uuid = entry.particleUuids[state.id] ?: continue
             ClientParticleEngine.instance()?.updateParticleDirect(
-                uuid,
-                state.pos.x, state.pos.y, state.pos.z,
-                state.color.r, state.color.g, state.color.b, state.color.a,
-                state.scale,
-                state.glowing, state.lightLevel,
-                snap
+                uuid, state.pos, state.color, state.scale, state.glowing, state.lightLevel, snap
             )
         }
     }

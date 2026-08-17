@@ -25,6 +25,9 @@ class ClientParticleEngine {
     // 动画本地播放直接同步的粒子：跳过 frameUpdate 的缓动轮转（避免每帧冗余插值并破坏 partialTick）
     private val directIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
 
+    // 发光粒子索引：增量维护，避免 getGlowingParticles 每帧遍历全部粒子
+    private val glowingIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
+
     private var syncCursor = 0
     private var cachedIds: Array<UUID> = emptyArray()
     private var cachedSize = -1
@@ -54,6 +57,7 @@ class ClientParticleEngine {
         val rp = RenderParticle(id, style, Vec3(x, y, z),
             Color.of(r, g, b, a), scale, glowing, lightLevel, lifetimeMs)
         particles[id] = rp
+        if (glowing && lightLevel > 0) glowingIds.add(id)
 
         val pe: ParticleEngine = Minecraft.getInstance().particleEngine
         val level = Minecraft.getInstance().level
@@ -129,16 +133,27 @@ class ClientParticleEngine {
                              r: Float, g: Float, b: Float, a: Float, scale: Float,
                              glowing: Boolean, lightLevel: Int,
                               snap: Boolean = false) {
+        updateParticleDirect(id, Vec3(x, y, z), Color.of(r, g, b, a), scale, glowing, lightLevel, snap)
+    }
+
+    /** 直接同步粒子状态（接收 Vec3/Color 引用，避免逐 tick 重复分配对象）。 */
+    fun updateParticleDirect(id: UUID, pos: Vec3, color: Color, scale: Float,
+                             glowing: Boolean, lightLevel: Int, snap: Boolean = false) {
         val rp = particles[id] ?: return
         directIds.add(id)
-        rp.setPositionDirect(Vec3(x, y, z))
-        rp.setColorDirect(Color.of(r, g, b, a))
+        val wasGlowing = rp.glowing() && rp.lightLevel() > 0
+        rp.setPositionDirect(pos)
+        rp.setColorDirect(color)
         rp.setScaleDirect(scale)
         rp.setGlowing(glowing)
         rp.setLightLevel(lightLevel)
+        val nowGlowing = glowing && lightLevel > 0
+        if (wasGlowing != nowGlowing) {
+            if (nowGlowing) glowingIds.add(id) else glowingIds.remove(id)
+        }
         bridges[id]?.let {
-            it.syncPosition(x, y, z, snap)
-            it.syncColor(r, g, b, a)
+            it.syncPosition(pos.x, pos.y, pos.z, snap)
+            it.syncColor(color.r, color.g, color.b, color.a)
             it.syncScale(scale)
             it.setGlowing(glowing)
         }
@@ -214,6 +229,7 @@ class ClientParticleEngine {
             particles.remove(id)
             bridges.remove(id)?.remove()
             directIds.remove(id)
+            glowingIds.remove(id)
         }
         for (gms in groups.values) {
             for (id in ids) gms.remove(id)
@@ -367,15 +383,15 @@ class ClientParticleEngine {
     fun activeCount(): Int = particles.size
 
     /**
-     * 获取所有发光粒子的列表。
+     * 获取所有发光粒子的列表（增量维护，避免每帧遍历全部粒子）。
      * @return 发光粒子列表
      */
     fun getGlowingParticles(): List<RenderParticle> {
-        val glowing = ArrayList<RenderParticle>()
-        for (p in particles.values) {
-            if (p.glowing() && p.lightLevel() > 0 && p.isAlive() && p.a() > 0.01f) {
-                glowing.add(p)
-            }
+        if (glowingIds.isEmpty()) return emptyList()
+        val glowing = ArrayList<RenderParticle>(glowingIds.size)
+        for (id in glowingIds) {
+            val p = particles[id] ?: continue
+            if (p.isAlive() && p.a() > 0.01f) glowing.add(p)
         }
         return glowing
     }

@@ -112,6 +112,34 @@ object ExpressionEvaluator {
     // 函数对象播放期间表达式字符串不变，缓存后每 tick 只做求值，避免重复词法/语法解析。
     private val rpnCache = ConcurrentHashMap<String, List<Any>>()
 
+    // 代码块预解析缓存：code 字符串 -> 语句列表（lhs 名字 + rhs 表达式，避免每 tick 重复 split/substring）。
+    private val codeCache = ConcurrentHashMap<String, List<CompiledStmt>>()
+
+    private class CompiledStmt(
+        val names: List<String>,
+        val isListRhs: Boolean,
+        val exprs: List<String>,
+    )
+
+    private fun compileCode(code: String): List<CompiledStmt> {
+        codeCache[code]?.let { return it }
+        val stmts = ArrayList<CompiledStmt>()
+        for (raw in code.split(';')) {
+            val stmt = raw.trim()
+            if (stmt.isEmpty()) continue
+            val eq = stmt.indexOf('=')
+            if (eq < 0) throw IllegalArgumentException("表达式缺少 = : $stmt")
+            val lhs = stmt.substring(0, eq).trim()
+            val rhs = stmt.substring(eq + 1).trim()
+            val names = if (lhs.startsWith("[")) parseNameList(lhs) else listOf(lhs)
+            val isListRhs = rhs.startsWith("[")
+            val exprs = if (isListRhs) parseExprList(rhs) else listOf(rhs)
+            stmts.add(CompiledStmt(names, isListRhs, exprs))
+        }
+        codeCache[code] = stmts
+        return stmts
+    }
+
     private fun scalar(v: Any, name: String): Double = when (v) {
         is Double -> v
         else -> throw IllegalArgumentException("属性 $name 需要标量值")
@@ -396,34 +424,25 @@ object ExpressionEvaluator {
     fun evalFunctionCode(code: String, env: Map<String, Any>): EvalResult {
         val out = EvalResult(Vec3(0.0, 0.0, 0.0), doubleArrayOf(1.0, 1.0, 1.0, 1.0), Vec3(0.0, 0.0, 0.0), 1.0, false, 0.0)
         val scope = HashMap(env)
-        for (stmt in code.split(';').map { it.trim() }.filter { it.isNotEmpty() }) {
-            val eq = stmt.indexOf('=')
-            if (eq < 0) throw IllegalArgumentException("表达式缺少 = : $stmt")
-            val lhs = stmt.substring(0, eq).trim()
-            val rhs = stmt.substring(eq + 1).trim()
-            if (lhs.startsWith("[")) {
-                val names = parseNameList(lhs)
-                if (rhs.startsWith("[")) {
-                    val exprs = parseExprList(rhs)
-                    if (names.size != exprs.size) throw IllegalArgumentException("赋值数量不匹配: $stmt")
-                    for (k in names.indices) {
-                        val v = evaluate(exprs[k], scope)
-                        if (!assignAttr(names[k], v, out, scope)) scope[names[k]] = v
-                    }
-                } else {
-                    val v = evaluate(rhs, scope)
-                    if (v is Vec3 && names.size == 3) {
-                        val comps = listOf(v.x, v.y, v.z)
-                        for (k in 0..2) if (!assignAttr(names[k], comps[k], out, scope)) scope[names[k]] = comps[k]
-                    } else if (names.size == 1) {
-                        if (!assignAttr(names[0], v, out, scope)) scope[names[0]] = v
-                    } else {
-                        throw IllegalArgumentException("赋值数量不匹配: $stmt")
-                    }
+        for (stmt in compileCode(code)) {
+            val names = stmt.names
+            if (stmt.isListRhs) {
+                val exprs = stmt.exprs
+                if (names.size != exprs.size) throw IllegalArgumentException("赋值数量不匹配")
+                for (k in names.indices) {
+                    val v = evaluate(exprs[k], scope)
+                    if (!assignAttr(names[k], v, out, scope)) scope[names[k]] = v
                 }
             } else {
-                val v = evaluate(rhs, scope)
-                if (!assignAttr(lhs, v, out, scope)) scope[lhs] = v
+                val v = evaluate(stmt.exprs[0], scope)
+                if (v is Vec3 && names.size == 3) {
+                    val comps = listOf(v.x, v.y, v.z)
+                    for (k in 0..2) if (!assignAttr(names[k], comps[k], out, scope)) scope[names[k]] = comps[k]
+                } else if (names.size == 1) {
+                    if (!assignAttr(names[0], v, out, scope)) scope[names[0]] = v
+                } else {
+                    throw IllegalArgumentException("赋值数量不匹配")
+                }
             }
         }
         return out

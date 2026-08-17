@@ -5,6 +5,7 @@ import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.client.particle.SingleQuadParticle
 import net.minecraft.client.renderer.texture.TextureAtlasSprite
 import net.minecraft.data.AtlasIds
+import net.minecraft.util.Mth
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleStyle
 import java.util.UUID
@@ -113,11 +114,27 @@ class BridgeParticle(
         }
     }
 
+    // 光照查询缓存：原版 getLightCoords 每渲染帧都会查世界光照（含动态光照 mixin 的方块查询），
+    // 5w 粒子会放大成每秒数十万次查询。光照按方块坐标变化，粒子在同一方块内可复用缓存。
+    private var cachedLight = -1
+    private var cacheBX = Int.MIN_VALUE
+    private var cacheBY = Int.MIN_VALUE
+    private var cacheBZ = Int.MIN_VALUE
+
     override fun getLightCoords(partialTick: Float): Int {
         if (isGlowing) {
             return 0x00F000F0
         }
-        return super.getLightCoords(partialTick)
+        val bx = Mth.floor(this.x).toInt()
+        val by = Mth.floor(this.y).toInt()
+        val bz = Mth.floor(this.z).toInt()
+        if (cachedLight < 0 || bx != cacheBX || by != cacheBY || bz != cacheBZ) {
+            cachedLight = super.getLightCoords(partialTick)
+            cacheBX = bx
+            cacheBY = by
+            cacheBZ = bz
+        }
+        return cachedLight
     }
 
     companion object {

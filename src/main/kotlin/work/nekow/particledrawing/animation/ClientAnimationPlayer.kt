@@ -55,6 +55,15 @@ class ClientAnimationPlayer(
         max.toInt()
     }
 
+    // 静态动画（无轨道/时间轴，且公式与变量均不含 random()）：init 已算好 t=0 状态，每 tick 无需重算。
+    // 5w 粒子的静态粒子云若每刻重算会白费约 70ms/tick。
+    private val isStaticAnimation: Boolean = run {
+        if (maxTick > 0) return@run false
+        animation.functions.none { fx ->
+            usesRandom(fx.code) || fx.vars.values.any { v -> usesRandom(v.expr) }
+        }
+    }
+
     // ---- 预构建求值索引（避免每 tick 线性扫描轨道 / 组 / 粒子） ----
     private val trackIndex: Map<String, Map<String, AnimTrack>> = buildTrackIndex()
     private val opTracks: List<AnimTrack> = animation.tracks.filter { it.mode == AnimTrack.Mode.OP }
@@ -128,19 +137,23 @@ class ClientAnimationPlayer(
             if (animation.loop) { currentTick = 0; justLooped = true }
             else { finished = true; return false }
         }
-        val t0 = System.nanoTime()
-        advanceTo(currentTick.toDouble())
-        val elapsed = System.nanoTime() - t0
-        lastAdvanceNanos = elapsed
-        advanceNanosTotal += elapsed
-        advanceCount++
+        if (!isStaticAnimation) {
+            val t0 = System.nanoTime()
+            advanceTo(currentTick.toDouble())
+            val elapsed = System.nanoTime() - t0
+            lastAdvanceNanos = elapsed
+            advanceNanosTotal += elapsed
+            advanceCount++
+        }
         return true
     }
 
     fun isFinished(): Boolean = finished
     fun consumeJustLooped(): Boolean { val v = justLooped; justLooped = false; return v }
+    fun isStatic(): Boolean = isStaticAnimation
 
     private fun usesTimeVar(code: String): Boolean = Regex("\\bt\\b").containsMatchIn(code)
+    private fun usesRandom(code: String): Boolean = Regex("\\brandom\\s*\\(").containsMatchIn(code)
     fun currentStates(): Collection<ParticleState> = states.values
     fun stop() { finished = true }
 
