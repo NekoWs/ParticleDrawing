@@ -13,11 +13,20 @@ function cubicBezier(t, x1, y1, x2, y2) {
   return ((ay * s + by) * s + cy) * s;
 }
 
+const EASE_CACHE_Q = 1000; // t 量化精度（1/1000，视觉无感，用于缓存去重）
+const easeCache = [];     // easing → 长度 EASE_CACHE_Q+1 的数组，惰性分配
 function easeVal(t, easing) {
-  const t1 = Math.min(1, Math.max(0, t));
+  const t1 = t < 0 ? 0 : (t > 1 ? 1 : t);
   if (Array.isArray(easing)) return cubicBezier(t1, easing[0], easing[1], easing[2], easing[3]);
   const p = EASINGS[easing] || EASINGS[0];
-  return cubicBezier(t1, p[1], p[2], p[3], p[4]);
+  // LINEAR：x1==y1 && x2==y2（对角贝塞尔），直接返回 t，跳过牛顿迭代
+  if (p[1] === 0 && p[2] === 0 && p[3] === 1 && p[4] === 1) return t1;
+  let cache = easeCache[easing];
+  if (!cache) { cache = new Array(EASE_CACHE_Q + 1).fill(-1); easeCache[easing] = cache; }
+  const q = (t1 * EASE_CACHE_Q) | 0;
+  let v = cache[q];
+  if (v === -1) { v = cubicBezier(t1, p[1], p[2], p[3], p[4]); cache[q] = v; }
+  return v;
 }
 
 function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
@@ -175,16 +184,14 @@ function tokenize(expr) {
   return tokens;
 }
 
-function evaluate(expr, vars) {
+// 编译表达式 → RPN 指令数组（变量保留为 {t:'var',name} 符号，求值期查表，供高频求值复用）
+function compileExpr(expr) {
   const output = [];
   const stack = [];
   for (const tk of tokenize(expr)) {
     if (tk.t === 'num') output.push(tk.v);
-    else if (tk.t === 'var') {
-      const v = (typeof vars === 'function') ? vars(tk.name) : vars[tk.name];
-      if (v === undefined) throw new Error('未知变量: ' + tk.name);
-      output.push(v);
-    } else if (tk.t === 'func') stack.push(tk.name);
+    else if (tk.t === 'var') output.push(tk); // 保留符号，延迟到执行期查表
+    else if (tk.t === 'func') stack.push(tk.name);
     else if (tk.t === 'comp') output.push(tk);
     else if (tk.t === 'neg') {
       while (stack.length) {
@@ -216,18 +223,48 @@ function evaluate(expr, vars) {
     }
   }
   while (stack.length) output.push(stack.pop());
+  return output;
+}
+
+// 执行 RPN（compileExpr 输出），vars 为变量查表（对象或函数）
+function execRpn(output, vars) {
+  const isFn = typeof vars === 'function';
   const s = [];
-  for (const o of output) {
-    if (typeof o === 'number' || isVec(o) || isMat(o)) s.push(o);
-    else if (o === 'neg') { const v = s.pop(); s.push(negate(v)); }
-    else if (o.t === 'comp') {
-      const v = s.pop();
-      if (!isVec(v)) throw new Error('分量访问需要向量');
-      s.push(o.axis === 'x' ? v.x : o.axis === 'y' ? v.y : v.z);
-    } else if (o in FUNCS) { const args = []; for (let k = 0; k < FUNCS[o]; k++) args.unshift(s.pop()); s.push(FUNC_IMPL[o](...args)); }
-    else if (o in PREC) { const b = s.pop(), a = s.pop(); s.push(applyOp(o, a, b)); }
+  for (let i = 0; i < output.length; i++) {
+    const o = output[i];
+    const to = typeof o;
+    if (to === 'number' || to === 'object') {
+      if (to === 'number') { s.push(o); continue; }
+      // object：{t:'comp'} / {t:'var'} / 向量矩阵值（防御）
+      if (isVec(o) || isMat(o)) { s.push(o); continue; }
+      if (o.t === 'comp') {
+        const v = s.pop();
+        if (!isVec(v)) throw new Error('分量访问需要向量');
+        s.push(o.axis === 'x' ? v.x : o.axis === 'y' ? v.y : v.z);
+      } else {
+        const v = isFn ? vars(o.name) : vars[o.name];
+        if (v === undefined) throw new Error('未知变量: ' + o.name);
+        s.push(v);
+      }
+      continue;
+    }
+    // string：'neg' / 函数名 / 运算符
+    if (o === 'neg') { const v = s.pop(); s.push(negate(v)); continue; }
+    const argc = FUNCS[o];
+    if (argc !== undefined) {
+      if (argc === 0) s.push(FUNC_IMPL[o]());
+      else if (argc === 1) s.push(FUNC_IMPL[o](s.pop()));
+      else if (argc === 2) { const b = s.pop(), a = s.pop(); s.push(FUNC_IMPL[o](a, b)); }
+      else { const args = new Array(argc); for (let k = argc - 1; k >= 0; k--) args[k] = s.pop(); s.push(FUNC_IMPL[o](...args)); }
+      continue;
+    }
+    const b = s.pop(), a = s.pop(); s.push(applyOp(o, a, b));
   }
   return s[s.length - 1];
+}
+
+function evaluate(expr, vars) {
+  return execRpn(compileExpr(expr), vars);
 }
 
 /* =========================================================================
@@ -298,12 +335,10 @@ function assignAttr(name, v, out, scope) {
   return true;
 }
 
-// 执行公式代码块，返回 { pos, color, vel, scale, glow, light }
-function evalFunctionCode(code, env) {
-  const out = { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 };
-  const scope = { ...env };
-  const stmts = (code || '').split(';').map(s => s.trim()).filter(Boolean);
-  for (const stmt of stmts) {
+// 编译公式代码块 → 语句数组（赋值目标 + RHS 的 RPN 已预编译，供高频求值复用）
+function compileFunctionCode(code) {
+  const stmts = [];
+  for (const stmt of (code || '').split(';').map(s => s.trim()).filter(Boolean)) {
     const eq = stmt.indexOf('=');
     if (eq < 0) throw new Error('表达式缺少 = : ' + stmt);
     const lhs = stmt.slice(0, eq).trim();
@@ -311,30 +346,141 @@ function evalFunctionCode(code, env) {
     if (lhs.startsWith('[')) {
       const names = parseNameList(lhs);
       if (rhs.startsWith('[')) {
-        const exprs = parseExprList(rhs);
+        const exprs = parseExprList(rhs).map(e => compileExpr(e));
         if (names.length !== exprs.length) throw new Error('赋值数量不匹配: ' + stmt);
-        for (let i = 0; i < names.length; i++) {
-          const v = evaluate(exprs[i], scope);
-          if (!assignAttr(names[i], v, out, scope)) scope[names[i]] = v;
-        }
+        stmts.push({ kind: 'pack', names, exprs });
       } else {
-        // 单表达式：支持向量拆包 [x,y,z] = 向量表达式
-        const v = evaluate(rhs, scope);
-        if (isVec(v) && names.length === 3) {
-          const comps = [v.x, v.y, v.z];
-          for (let i = 0; i < 3; i++) {
-            if (!assignAttr(names[i], comps[i], out, scope)) scope[names[i]] = comps[i];
-          }
-        } else if (names.length === 1) {
-          if (!assignAttr(names[0], v, out, scope)) scope[names[0]] = v;
-        } else {
-          throw new Error('赋值数量不匹配: ' + stmt);
-        }
+        stmts.push({ kind: 'unpack', names, expr: compileExpr(rhs) });
       }
     } else {
-      const v = evaluate(rhs, scope);
-      if (!assignAttr(lhs, v, out, scope)) scope[lhs] = v;
+      stmts.push({ kind: 'assign', name: lhs, expr: compileExpr(rhs) });
+    }
+  }
+  return stmts;
+}
+
+// 执行编译后的公式代码块（compileFunctionCode 输出），返回 { pos, color, vel, scale, glow, light }
+function execFunctionCode(compiled, env) {
+  const out = { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 };
+  const scope = { ...env };
+  for (let si = 0; si < compiled.length; si++) {
+    const st = compiled[si];
+    if (st.kind === 'assign') {
+      const v = execRpn(st.expr, scope);
+      if (!assignAttr(st.name, v, out, scope)) scope[st.name] = v;
+    } else if (st.kind === 'pack') {
+      for (let i = 0; i < st.names.length; i++) {
+        const v = execRpn(st.exprs[i], scope);
+        if (!assignAttr(st.names[i], v, out, scope)) scope[st.names[i]] = v;
+      }
+    } else { // unpack
+      const v = execRpn(st.expr, scope);
+      if (isVec(v) && st.names.length === 3) {
+        const comps = [v.x, v.y, v.z];
+        for (let i = 0; i < 3; i++) {
+          if (!assignAttr(st.names[i], comps[i], out, scope)) scope[st.names[i]] = comps[i];
+        }
+      } else if (st.names.length === 1) {
+        if (!assignAttr(st.names[0], v, out, scope)) scope[st.names[0]] = v;
+      } else {
+        throw new Error('赋值数量不匹配');
+      }
     }
   }
   return out;
+}
+
+// 执行公式代码块（每次编译，兼容旧调用；高频求值请用 compileFunctionCode + execFunctionCode）
+function evalFunctionCode(code, env) {
+  return execFunctionCode(compileFunctionCode(code), env);
+}
+
+/* =========================================================================
+ * 代码块原生编译：纯标量代码块 → new Function 生成原生 JS（消除 RPN 解释开销）
+ * 仅适用于不含向量/矩阵函数、无分量访问的代码块；否则回退 execFunctionCode。
+ * ======================================================================= */
+
+// 标量函数 → JS 表达式生成器（参数已生成好的表达式字符串数组），全部内联为 Math/原生表达式，
+// 避免 new Function 生成代码依赖 eval 作用域里的外部符号。
+const SCALAR_FUNC_GEN = {
+  sin: a => 'Math.sin(' + a[0] + ')', cos: a => 'Math.cos(' + a[0] + ')', tan: a => 'Math.tan(' + a[0] + ')',
+  asin: a => 'Math.asin(' + a[0] + ')', acos: a => 'Math.acos(' + a[0] + ')', atan: a => 'Math.atan(' + a[0] + ')',
+  atan2: a => 'Math.atan2(' + a[0] + ',' + a[1] + ')', sqrt: a => 'Math.sqrt(' + a[0] + ')', abs: a => 'Math.abs(' + a[0] + ')',
+  sign: a => 'Math.sign(' + a[0] + ')', exp: a => 'Math.exp(' + a[0] + ')', log: a => 'Math.log(' + a[0] + ')', ln: a => 'Math.log(' + a[0] + ')',
+  floor: a => 'Math.floor(' + a[0] + ')', ceil: a => 'Math.ceil(' + a[0] + ')', round: a => 'Math.round(' + a[0] + ')',
+  pow: a => 'Math.pow(' + a[0] + ',' + a[1] + ')', min: a => 'Math.min(' + a[0] + ',' + a[1] + ')', max: a => 'Math.max(' + a[0] + ',' + a[1] + ')',
+  fract: a => '(' + a[0] + '-Math.floor(' + a[0] + '))',
+  clamp: a => 'Math.min(Math.max(' + a[0] + ',' + a[1] + '),' + a[2] + ')',
+  lerp: a => '(' + a[0] + '+(' + a[1] + '-' + a[0] + ')*' + a[2] + ')',
+  step: a => '(' + a[1] + '>=' + a[0] + '?1:0)',
+  smoothstep: a => '(function(e0,e1,x){var t=Math.min(1,Math.max(0,(x-e0)/(e1-e0)));return t*t*(3-2*t);})(' + a[0] + ',' + a[1] + ',' + a[2] + ')',
+  mod: a => '(' + a[0] + '-' + a[1] + '*Math.floor(' + a[0] + '/' + a[1] + '))',
+  random: () => 'Math.random()',
+  rand: a => '(function(x){x=Math.sin(x*127.1+311.7)*43758.5453;return x-Math.floor(x);})(' + a[0] + ')',
+};
+
+function isScalarRpn(output) {
+  for (const o of output) {
+    if (typeof o === 'string') {
+      if (o !== 'neg' && FUNCS[o] !== undefined && !SCALAR_FUNC_GEN[o]) return false; // vec/mat 函数
+    } else if (o && o.t === 'comp') return false;
+  }
+  return true;
+}
+
+// RPN → JS 表达式字符串（变量名直接作为参数/局部变量引用，见 tryCompileFunction 的函数签名）
+function rpnToJs(output) {
+  const s = [];
+  for (const o of output) {
+    const to = typeof o;
+    if (to === 'number') { s.push(String(o)); continue; }
+    if (to === 'string') {
+      if (o === 'neg') { s.push('(-' + s.pop() + ')'); continue; }
+      const gen = SCALAR_FUNC_GEN[o];
+      if (gen) {
+        const argc = FUNCS[o];
+        const a = [];
+        for (let k = 0; k < argc; k++) a.unshift(s.pop());
+        s.push(gen(a));
+        continue;
+      }
+      const b = s.pop(), a = s.pop();
+      s.push('(' + a + o + b + ')');
+      continue;
+    }
+    s.push(o.t === 'var' ? o.name : (s.pop() + '.' + o.axis));
+  }
+  return s[0];
+}
+
+// 尝试把代码块编译为原生 JS 函数；失败（含向量/矩阵/拆包）返回 null
+// 函数签名：function(i, n, t, cx, cy, cz, ...varNames)
+function tryCompileFunction(code, varNames) {
+  let compiled;
+  try { compiled = compileFunctionCode(code); }
+  catch (e) { return null; }
+  const tempSet = new Set();
+  for (const st of compiled) {
+    if (st.kind === 'assign') { if (!ATTR_NAMES.includes(st.name)) tempSet.add(st.name); }
+    else if (st.kind === 'pack') { for (const nm of st.names) if (!ATTR_NAMES.includes(nm)) tempSet.add(nm); }
+    else return null; // unpack（向量拆包）不支持
+  }
+  for (const st of compiled) {
+    const exprs = st.kind === 'pack' ? st.exprs : [st.expr];
+    for (const e of exprs) if (!isScalarRpn(e)) return null;
+  }
+  const lines = [];
+  lines.push('var x=0,y=0,z=0,r=1,g=1,b=1,a=1,vx=0,vy=0,vz=0,sc=1,glow=0,light=0;');
+  if (tempSet.size) lines.push('var ' + [...tempSet].join(',') + ';');
+  for (const st of compiled) {
+    if (st.kind === 'assign') lines.push(st.name + '=' + rpnToJs(st.expr) + ';');
+    else for (let i = 0; i < st.names.length; i++) lines.push(st.names[i] + '=' + rpnToJs(st.exprs[i]) + ';');
+  }
+  lines.push('out.pos[0]=x+cx;out.pos[1]=y+cy;out.pos[2]=z+cz;');
+  lines.push('out.color[0]=(Number.isFinite(r)?Math.min(1,Math.max(0,r)):0);out.color[1]=(Number.isFinite(g)?Math.min(1,Math.max(0,g)):0);out.color[2]=(Number.isFinite(b)?Math.min(1,Math.max(0,b)):0);out.color[3]=(Number.isFinite(a)?Math.min(1,Math.max(0,a)):0);');
+  lines.push('out.vel[0]=vx;out.vel[1]=vy;out.vel[2]=vz;out.scale=(Number.isFinite(sc)?sc:1);out.glow=glow>0.5;out.light=Math.max(0,Math.min(15,Math.round(light)));');
+  lines.push('return out;');
+  const params = ['i', 'n', 't', 'cx', 'cy', 'cz'].concat(varNames || []).concat(['out']).join(',');
+  try { return new Function(params, lines.join('')); }
+  catch (e) { return null; }
 }

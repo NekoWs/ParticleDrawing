@@ -86,6 +86,93 @@ function generateFourier() {
  * 函数对象：活源重算
  * ======================================================================= */
 
+// 代码块编译缓存：fx.code 变化时重新编译（避免每粒子重复 split/tokenize）
+function getCompiledCode(fx) {
+  const code = fx.code || '';
+  if (fx._compiledCode === undefined || fx._compiledSrc !== code) {
+    fx._compiledCode = compileFunctionCode(code);
+    fx._compiledSrc = code;
+  }
+  return fx._compiledCode;
+}
+
+// 变量名列表缓存（fx.vars 的 key 顺序；重建函数对象时失效）
+function getVarNames(fx) {
+  if (fx._varNames === undefined) fx._varNames = Object.keys(fx.vars || {});
+  return fx._varNames;
+}
+
+// 常量变量值缓存：所有变量无关键帧且表达式无变量引用时，预计算一次共享（否则 null）
+function getConstVarVals(fx) {
+  if (fx._constVarVals !== undefined) return fx._constVarVals;
+  const names = getVarNames(fx);
+  let vals = (names.length === 0) ? [] : null;
+  if (names.length > 0) {
+    vals = new Array(names.length);
+    for (let k = 0; k < names.length; k++) {
+      const v = fx.vars[names[k]];
+      if (!v || (v.kf && v.kf.length > 0)) { vals = null; break; }
+      const rpn = getCompiledVarExpr(v);
+      if (rpn.some(o => o && o.t === 'var')) { vals = null; break; }
+      vals[k] = execRpn(rpn, {});
+    }
+  }
+  fx._constVarVals = vals;
+  return vals;
+}
+
+// 代码块原生编译缓存：fx.code 变化时重新编译（纯标量代码块可编译为原生 JS 函数，否则 null）
+function getCompiledFn(fx) {
+  const code = fx.code || '';
+  if (fx._compiledFn === undefined || fx._compiledFnSrc !== code) {
+    fx._compiledFn = tryCompileFunction(code, getVarNames(fx));
+    fx._compiledFnSrc = code;
+  }
+  return fx._compiledFn;
+}
+
+// 解析变量值数组（按 getVarNames 顺序；含链式引用与关键帧），供原生编译函数调用
+function resolveVarVals(fx, i, n, t) {
+  const constVals = getConstVarVals(fx);
+  if (constVals) return constVals;
+  const vars = fx.vars || {};
+  const names = getVarNames(fx);
+  const out = new Array(names.length);
+  if (names.length === 0) return out;
+  const t0 = t || 0;
+  const env = { i, n, t: t0 };
+  const memo = {};
+  const inStack = new Set();
+  function resolve(name) {
+    if (name in memo) return memo[name];
+    if (name in env) return env[name];
+    const v = vars[name];
+    if (!v) throw new Error('未知变量: ' + name);
+    if (inStack.has(name)) throw new Error('变量循环引用: ' + name);
+    inStack.add(name);
+    const kf = v.kf || [];
+    const val = (kf.length > 0) ? varKfValue(kf, t0) : execRpn(getCompiledVarExpr(v), resolve);
+    inStack.delete(name);
+    memo[name] = val;
+    return val;
+  }
+  for (let k = 0; k < names.length; k++) {
+    if (ATTR_NAMES.includes(names[k])) throw new Error('变量名 ' + names[k] + ' 是属性保留字，请换名');
+    out[k] = resolve(names[k]);
+  }
+  return out;
+}
+
+// 变量表达式编译缓存
+function getCompiledVarExpr(v) {
+  const expr = v.expr || '0';
+  if (v._compiled === undefined || v._compiledSrc !== expr) {
+    v._compiled = compileExpr(expr);
+    v._compiledSrc = expr;
+  }
+  return v._compiled;
+}
+
 // 链式求值变量：vars 为 { name: {expr, kf} }，关键帧优先按 t 插值，无帧用表达式
 function buildEnv(vars, ctx) {
   const env = { i: ctx.i, n: ctx.n, t: ctx.t || 0 };
@@ -99,7 +186,7 @@ function buildEnv(vars, ctx) {
     if (inStack.has(name)) throw new Error('变量循环引用: ' + name);
     inStack.add(name);
     const kf = v.kf || [];
-    const val = (kf.length > 0) ? varKfValue(kf, ctx.t || 0) : evaluate(v.expr || '0', resolve);
+    const val = (kf.length > 0) ? varKfValue(kf, ctx.t || 0) : execRpn(getCompiledVarExpr(v), resolve);
     inStack.delete(name);
     memo[name] = val;
     return val;
@@ -121,8 +208,13 @@ function exprUsesT(expr) {
 
 // 求值单个粒子在某时刻的完整状态（执行公式代码块）
 function evaluateParticleAt(fx, i, n, t) {
+  const fn = getCompiledFn(fx);
+  if (fn) {
+    const center = fx.center || [0, 0, 0];
+    return fn(i, n, t, center[0], center[1], center[2], ...resolveVarVals(fx, i, n, t), { pos: [0, 0, 0], color: [0, 0, 0, 0], vel: [0, 0, 0], scale: 1, glow: false, light: 0 });
+  }
   const env = buildEnv(fx.vars || {}, { i, n, t });
-  const out = evalFunctionCode(fx.code || '', env);
+  const out = execFunctionCode(getCompiledCode(fx), env);
   const center = fx.center || [0, 0, 0];
   const clamp01 = x => (Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : 0);
   return {
@@ -216,6 +308,11 @@ function buildDerivedTracks(fx) {
 // 活源重算：按当前函数定义重建派生粒子与派生轨道。
 // 派生粒子 id 约定为 `fxId:p<i>`，据此清理旧格式（无 fx 标记）残留的派生粒子与派生轨道。
 function rebuildFunctionObject(fx) {
+  // 失效编译缓存（code/vars/count 可能已变）
+  fx._compiledFn = undefined;
+  fx._compiledCode = undefined;
+  fx._varNames = undefined;
+  fx._constVarVals = undefined;
   const n = Math.max(1, Math.round(fx.count) || 1);
   const prefix = fx.id + ':p';
   // 移除函数派生轨道：新格式（带 fx 标记）+ 旧格式（ids 命中 fxId:p 前缀）一并清除
@@ -241,6 +338,7 @@ function rebuildFunctionObject(fx) {
       p = { id, fx: fx.id, style: fx.style, color: [1, 1, 1, 1], scale: 1, glow: false, lightLevel: 0, pos: [0, 0, 0], vel: [0, 0, 0] };
       state.particles.push(p);
     }
+    p._fxIdx = i; // 缓存粒子序号，避免 currentVisualDerived 里 parse id
     p.style = fx.style;
     p.color = base.color.slice();
     p.scale = base.scale;

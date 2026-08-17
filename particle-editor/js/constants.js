@@ -123,11 +123,12 @@ function nextFunctionId() {
   while (state.functions.some(f => f.id === 'fx' + n)) n++;
   return 'fx' + n;
 }
-function getFunction(id) { return state.functions.find(f => f.id === id); }
+function getFunction(id) { return functionIndexCache ? functionIndexCache.get(id) : state.functions.find(f => f.id === id); }
 // 粒子是否由函数对象派生（基础属性只读）
 function isDerivedParticle(p) { return p != null && !!p.fx; }
 // 粒子索引（animation.js 的 buildParticleIndex 在 rebuildPoints 时重建，供 getParticle O(1) 查找）
 let particleIndexCache = null;
+let functionIndexCache = null; // 函数对象索引（buildParticleIndex 时重建，供 getFunction O(1) 查找）
 function getParticle(id) { return particleIndexCache ? particleIndexCache.get(id) : state.particles.find(p => p.id === id); }
 function findTrack(prop, id) { return state.tracks.find(tr => tr.pr === prop && tr.ids.length === 1 && tr.ids[0] === id); }
 

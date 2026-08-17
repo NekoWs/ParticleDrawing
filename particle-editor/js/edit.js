@@ -83,13 +83,40 @@ function editBaseValue(ids, prop, values) {
 }
 
 // 批量：为多个粒子在同一时间写关键帧（每个粒子独立值）
+// 性能优化：直接用 p._tr 分量轨道数组访问轨道（跳过 findTrackByPr 的 Map 查询与 compPr 拼接），
+// 供拖动 5w 粒子等热点路径使用。语义与 setComponentKeyframe 完全一致。
 function setValuesAtTime(entries, prop) {
   const t = Math.round(state.time);
   const comps = TRACK_COMPS[prop];
+  const prs = comps.map(c => prop + '.' + c);
+  const idxs = prs.map(pr => PR_TO_IDX[pr]);
   for (const [id, values] of entries) {
     const p = getParticle(id);
     if (!p) continue;
-    comps.forEach((comp, i) => setComponentKeyframe(id, prop, comp, t, values[i], 'set'));
+    for (let i = 0; i < comps.length; i++) {
+      const value = values[i];
+      let tr = (p._trVersion === trVersion && p._tr) ? p._tr[idxs[i]] : null;
+      if (!tr) {
+        const base = baseValueFor(id, prop, comps[i]);
+        tr = { pr: prs[i], m: 'set', ids: [id], kf: [[0, base, state.defaultEasing]] };
+        state.tracks.push(tr);
+        if (p._trVersion !== trVersion) { p._tr = new Array(11); p._trVersion = trVersion; }
+        p._tr[idxs[i]] = tr;
+      }
+      const kf = tr.kf;
+      const kf0 = kf[0];
+      if (t > 0 && kf0 && Math.abs(value - kf0[1]) < 1e-6) {
+        for (let k = kf.length - 1; k >= 0; k--) if (kf[k][0] === t) kf.splice(k, 1);
+        continue;
+      }
+      let kfT = null;
+      for (let k = 0; k < kf.length; k++) if (kf[k][0] === t) { kfT = kf[k]; break; }
+      if (!kfT) {
+        kfT = [t, value, state.defaultEasing];
+        kf.push(kfT);
+        kf.sort((a, b) => a[0] - b[0]);
+      } else kfT[1] = value;
+    }
     if (t === 0 && !isDerivedParticle(p)) applyBaseValue(p, prop, values);
   }
   rebuildPoints();
