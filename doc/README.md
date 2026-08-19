@@ -96,10 +96,3 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | --- | --- |
 | `EntityRendererMixin` | 实体光照注入 |
 | `LightmapRenderStateExtractorMixin` | 光照贴图刷新注入 |
-
-## 其他文档
-
-| 文档 | 内容 |
-| --- | --- |
-| [快速开始](./getting-started.md) | 环境要求、构建、运行 |
-| [发布到 Maven Central](./publishing.md) | 发布流程 |
