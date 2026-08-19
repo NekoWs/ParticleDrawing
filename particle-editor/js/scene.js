@@ -122,26 +122,66 @@ function focalLengthPx() {
 }
 
 const pointsMaterial = new THREE.ShaderMaterial({
-  uniforms: { uMap: { value: makeSquareTexture() }, uPixelScale: { value: focalLengthPx() }, uOpacity: { value: 1.0 } },
+  uniforms: { uMap: { value: makeSquareTexture() }, uPixelScale: { value: focalLengthPx() }, uOpacity: { value: 1.0 }, uTime: { value: 0.0 } },
   vertexShader: `
     uniform float uPixelScale;
     attribute vec4 aColor;
-    attribute float aSize;
+    attribute vec2 aSize;
+    attribute vec4 aUV;
+    attribute vec4 aUVScale;
+    attribute vec4 aUVAnim;
+    attribute vec2 aUVTex;
+    attribute float aUVMode;
     varying vec4 vColor;
+    varying vec2 vAspect;
+    varying vec4 vUV;
+    varying vec4 vUVScale;
+    varying vec4 vUVAnim;
+    varying vec2 vUVTex;
+    varying float vUVMode;
     void main() {
       vColor = aColor;
+      vUV = aUV; vUVScale = aUVScale; vUVAnim = aUVAnim; vUVTex = aUVTex; vUVMode = aUVMode;
       vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-      gl_PointSize = aSize * uPixelScale / max(0.1, -mvPosition.z);
+      float m = max(aSize.x, aSize.y);
+      gl_PointSize = m * uPixelScale / max(0.1, -mvPosition.z);
+      vAspect = aSize / max(0.0001, m);
       gl_Position = projectionMatrix * mvPosition;
     }
   `,
   fragmentShader: `
     uniform sampler2D uMap;
     uniform float uOpacity;
+    uniform float uTime;
     varying vec4 vColor;
+    varying vec2 vAspect;
+    varying vec4 vUV;
+    varying vec4 vUVScale;
+    varying vec4 vUVAnim;
+    varying vec2 vUVTex;
+    varying float vUVMode;
     void main() {
-      vec4 tex = texture2D(uMap, gl_PointCoord);
-      gl_FragColor = vec4(vColor.rgb, vColor.a) * tex * uOpacity;
+      vec2 uvLocal = (gl_PointCoord - 0.5) / vAspect + 0.5;
+      if (uvLocal.x < 0.0 || uvLocal.x > 1.0 || uvLocal.y < 0.0 || uvLocal.y > 1.0) discard;
+      if (vUVMode < 0.5) {
+        gl_FragColor = vec4(vColor.rgb, vColor.a) * uOpacity;
+      } else {
+        vec2 start = vUVScale.xy;
+        if (vUVMode > 2.5) {
+          float maxF = max(1.0, vUVAnim.w);
+          float frame = floor(uTime * vUVAnim.z);
+          frame = (vUVMode > 3.5) ? min(frame, maxF - 1.0) : mod(frame, maxF);
+          start += vUVAnim.xy * frame;
+        }
+        vec2 sp = start / vUVTex;
+        vec2 ep = sp + vUVScale.zw / vUVTex;
+        // 采样系数钳制到 [0,1]：即使 UV 起点/大小/动画推进越出贴图区，
+        // 也不会让采样滑出整张贴图在 atlas 中的区间（否则会采到相邻贴图/空白，右缘出现细条）
+        vec2 coef = clamp(mix(sp, ep, uvLocal), 0.0, 1.0);
+        vec2 atlasCoord = mix(vUV.xy, vUV.zw, coef);
+        vec4 tex = texture2D(uMap, atlasCoord);
+        gl_FragColor = vec4(vColor.rgb, vColor.a) * tex * uOpacity;
+      }
     }
   `,
   transparent: true,
@@ -149,23 +189,75 @@ const pointsMaterial = new THREE.ShaderMaterial({
   blending: THREE.NormalBlending,
 });
 
+/* ---- 贴图图集（atlas）：把所有贴图拼成一张大图，粒子用 per-point UV 采样 ---- */
+let texAtlasMap = {};
+let texAtlasTexture = null;
+
+function rebuildAtlas() {
+  const names = Object.keys(state.textures || {});
+  if (names.length === 0) {
+    texAtlasMap = {};
+    return;
+  }
+  const cols = Math.ceil(Math.sqrt(names.length));
+  let maxW = 0, maxH = 0;
+  for (const n of names) { const t = state.textures[n]; maxW = Math.max(maxW, t.width); maxH = Math.max(maxH, t.height); }
+  const atlasW = Math.max(2, cols * maxW), atlasH = Math.max(2, Math.ceil(names.length / cols) * maxH);
+  const canvas = document.createElement('canvas');
+  canvas.width = atlasW; canvas.height = atlasH;
+  const ctx = canvas.getContext('2d');
+  const map = {};
+  names.forEach((name, i) => {
+    const t = state.textures[name];
+    const cx = (i % cols) * maxW, cy = Math.floor(i / cols) * maxH;
+    const img = ctx.createImageData(t.width, t.height);
+    img.data.set(t.data);
+    ctx.putImageData(img, cx, cy);
+    // CanvasTexture 默认 flipY=true：canvas 行 y（0=顶部）上传后位于纹理 v = 1 - y/H。
+    // 因此贴图区域 (cx,cy,w,h) 的真实纹理 v 区间为 [1-(cy+h)/H, 1-cy/H]（顶部对应高 v）。
+    // 若直接用 v0=cy/H 会被整体翻转错位（多贴图时采样落到空白/其它贴图，表现为粒子不显示贴图）。
+    map[name] = {
+      u0: cx / atlasW, v0: 1 - (cy + t.height) / atlasH,
+      u1: (cx + t.width) / atlasW, v1: 1 - cy / atlasH,
+      w: t.width, h: t.height,
+    };
+  });
+  texAtlasMap = map;
+  if (!texAtlasTexture) {
+    texAtlasTexture = new THREE.CanvasTexture(canvas);
+    texAtlasTexture.flipY = true; // 与上方 v 坐标翻转公式配套（three 默认即 true，显式声明）
+    texAtlasTexture.minFilter = THREE.NearestFilter;
+    texAtlasTexture.magFilter = THREE.NearestFilter;
+    pointsMaterial.uniforms.uMap.value = texAtlasTexture;
+  } else {
+    texAtlasTexture.image = canvas;
+    texAtlasTexture.needsUpdate = true;
+  }
+}
+
 // 选中描边（方形边框，中心透明露出粒子本色）
 const selectedMaterial = new THREE.ShaderMaterial({
   uniforms: { uMap: { value: makeRingTexture() }, uPixelScale: { value: focalLengthPx() }, uOpacity: { value: 1.0 } },
   vertexShader: `
     uniform float uPixelScale;
-    attribute float aSize;
+    attribute vec2 aSize;
+    varying vec2 vAspect;
     void main() {
       vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-      gl_PointSize = aSize * uPixelScale / max(0.1, -mvPosition.z) * 1.1;
+      float m = max(aSize.x, aSize.y);
+      gl_PointSize = m * uPixelScale / max(0.1, -mvPosition.z) * 1.1;
+      vAspect = aSize / max(0.0001, m);
       gl_Position = projectionMatrix * mvPosition;
     }
   `,
   fragmentShader: `
     uniform sampler2D uMap;
     uniform float uOpacity;
+    varying vec2 vAspect;
     void main() {
-      vec4 tex = texture2D(uMap, gl_PointCoord);
+      vec2 uv = (gl_PointCoord - 0.5) / vAspect + 0.5;
+      if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) discard;
+      vec4 tex = texture2D(uMap, uv);
       gl_FragColor = vec4(1.0, 0.6, 0.25, 1.0) * tex.a * uOpacity;
     }
   `,

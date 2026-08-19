@@ -9,11 +9,6 @@ const OrbitControls = THREE.OrbitControls;
  * 常量
  * ======================================================================= */
 
-const STYLES = [
-  'DOT', 'DUST', 'FLAME', 'SOUL_FIRE', 'NOTE', 'HEART', 'SPARK',
-  'GLOW', 'BUBBLE', 'SMOKE',
-];
-
 const EASINGS = [
   ['LINEAR', 0, 0, 1, 1],
   ['EASE_IN', 0.42, 0, 1, 1],
@@ -49,15 +44,15 @@ const TRACK_COMPS = {
   rot: ['x', 'y', 'z'],
   vel: ['x', 'y', 'z'],
   col: ['r', 'g', 'b', 'a'],
-  scl: ['s'],
+  scl: ['x', 'y', 'z'],
 };
 
 // 分量键 → 在向量中的下标
-const COMP_INDEX = { x: 0, y: 1, z: 2, r: 0, g: 1, b: 2, a: 3, s: 0 };
+const COMP_INDEX = { x: 0, y: 1, z: 2, r: 0, g: 1, b: 2, a: 3 };
 
 // 属性 / 分量 显示标签
 const PROP_LABELS = { pos: '位置', rot: '旋转', vel: '速度', col: '颜色', scl: '缩放' };
-const COMP_LABELS = { x: 'X', y: 'Y', z: 'Z', r: 'R', g: 'G', b: 'B', a: 'A', s: '缩放' };
+const COMP_LABELS = { x: 'X', y: 'Y', z: 'Z', r: 'R', g: 'G', b: 'B', a: 'A' };
 
 // 各对象类型可动画的属性
 const PARTICLE_TRACK_DEFS = ['pos', 'vel', 'col', 'scl'];
@@ -69,6 +64,53 @@ function compPr(prop, comp) { return comp ? prop + '.' + comp : prop; }
 function splitCompPr(pr) { const i = pr.indexOf('.'); return i < 0 ? [pr, null] : [pr.slice(0, i), pr.slice(i + 1)]; }
 
 const DEFAULT_EASING = 3;
+
+/* =========================================================================
+ * 贴图 / UV（静态属性，非关键帧；作用域 f > g > p 继承覆盖）
+ * UV 坐标一律使用贴图像素；贴图大小(texSize)为粒子贴图显示尺寸（像素），仅参与采样拉伸。
+ * ======================================================================= */
+
+const UV_MODES = { static: '静态', fill: '填充', animated: '动画' };
+
+// 自动帧数：沿 x 方向能放几格 × 沿 y 方向能放几格（行末换行，flipbook 常见布局）。
+// 有效格 = 格起点仍在贴图内：起点 sx 起、步进 step，满足 sx + k*step < texW 的 k 计数；
+// 即 k = 0..floor((texW-1-sx)/step)。某方向 step 为 0（不移动）则该方向只算 1 格。
+// 渲染（computeParticleUV）与贴图预览（currentUVFrame）共用，保证实际采样帧数与预览描边一致。
+function autoFramesFor(uv, texW, texH) {
+  if (!uv) return 1;
+  const w = texW || 1, h = texH || 1;
+  const sx = uv.uvStart[0] || 0, sy = uv.uvStart[1] || 0;
+  const stepx = uv.uvStep[0] || 0, stepy = uv.uvStep[1] || 0;
+  const nx = (stepx > 0 && sx < w) ? (Math.floor((w - 1 - sx) / stepx) + 1) : 1;
+  const ny = (stepy > 0 && sy < h) ? (Math.floor((h - 1 - sy) / stepy) + 1) : 1;
+  return Math.max(1, nx * ny);
+}
+
+// 生效帧数 = min(自动帧数, 用户上限)。
+// maxFrame 语义：0 / 未设置 / 等于旧默认 1 均视为「不限制 = 自动帧数」；
+// >1 的显式值作为「小于实际帧数的最大上限」（用户可用它限制播放长度）。
+function effMaxFrame(uv, autoFrames) {
+  const mf = (uv.maxFrame != null && uv.maxFrame > 1) ? uv.maxFrame : autoFrames;
+  return Math.max(1, Math.min(mf, autoFrames));
+}
+
+// 默认 UV 参数（对象未单独设置时继承上级；根默认为「无贴图」）
+// 贴图大小默认 = 贴图分辨率，其余数值字段（UV 起点/大小/步长）默认 0
+function defaultUV(texWidth, texHeight) {
+  const w = texWidth || 16, h = texHeight || 16;
+  return {
+    texture: null,        // 贴图名（state.textures 的 key），null = 无贴图
+    mode: 'static',       // static | fill | animated
+    texSize: [w, h],      // 贴图大小（粒子贴图显示尺寸，像素）
+    uvStart: [0, 0],      // UV 起点 [x, y]（像素）
+    uvSize: [0, 0],       // UV 大小 [w, h]（像素）
+    uvStep: [0, 0],       // UV 步长 [x, y]（像素，动画模式）
+    fps: 1,               // 帧率（动画模式）
+    maxFrame: 1,          // 最大帧数（动画模式）；1=自动（按 UV 步长算满，不限制），>1=用户上限
+    loop: true,           // 循环
+  };
+}
+
 const SNAP_STEP = 1.0;
 const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
@@ -89,6 +131,7 @@ const state = {
   selectedFunction: null,
   tool: 'select',
   drawPlane: 'XZ',
+  drawCount: 30,
   selected: new Set(),
   selectedGroup: null,
   expandedParticles: new Set(),
@@ -101,6 +144,10 @@ const state = {
   defaultEasing: DEFAULT_EASING,
   captureKeyframes: true, // 始终开启「捕获关键帧」（按钮已移除）
   dirty: false,
+  textures: {},          // { name: { width, height, data(Uint8Array RGBA), fileHandle? } }
+  currentTexture: null,  // 当前贴图编辑器正在编辑的贴图名
+  directoryHandle: null, // 项目文件夹 handle（File System Access API）
+  groupUV: {},           // 组级 UV/贴图设置（继承 f > g > p）
 };
 
 function setDirty(v) {

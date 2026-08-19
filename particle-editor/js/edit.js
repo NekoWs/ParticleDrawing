@@ -7,7 +7,7 @@ function applyBaseValue(p, prop, values) {
   if (prop === 'pos') p.pos = values.slice(0, 3);
   else if (prop === 'col') p.color = values.slice(0, 4);
   else if (prop === 'vel') p.vel = values.slice(0, 3);
-  else p.scale = values[0];
+  else if (prop === 'scl') p.scale = values.slice(0, 3);
 }
 
 // 某 id（'p0' | 'g:g0' | 'f:fx0'）在某分量的基础值
@@ -100,7 +100,7 @@ function setValuesAtTime(entries, prop) {
         const base = baseValueFor(id, prop, comps[i]);
         tr = { pr: prs[i], m: 'set', ids: [id], kf: [[0, base, state.defaultEasing]] };
         state.tracks.push(tr);
-        if (p._trVersion !== trVersion) { p._tr = new Array(11); p._trVersion = trVersion; }
+        if (p._trVersion !== trVersion) { p._tr = new Array(13); p._trVersion = trVersion; }
         p._tr[idxs[i]] = tr;
       }
       const kf = tr.kf;
@@ -145,13 +145,13 @@ function editSelectionUniform(prop, values) {
     if (!fx || prop === 'col' || prop === 'vel') return; // 无整体颜色/速度轨道
     if (!state.captureKeyframes) {
       if (prop === 'pos') { fx.center = values.slice(0, 3); commitFunctionRebuild(fx); }
-      else if (prop === 'scl') { setComponentKeyframe('f:' + fxId, 'scl', 's', 0, values[0], 'set'); rebuildPoints(); refreshParticleTree(); }
+      else if (prop === 'scl') { comps.forEach((comp, i) => setComponentKeyframe('f:' + fxId, 'scl', comp, 0, values[i], 'set')); rebuildPoints(); refreshParticleTree(); }
       return;
     }
     if (prop === 'pos') {
       comps.forEach((comp, i) => setComponentKeyframe('f:' + fxId, 'pos', comp, t, values[i] - fx.center[COMP_INDEX[comp]], 'op'));
     } else if (prop === 'scl') {
-      setComponentKeyframe('f:' + fxId, 'scl', 's', t, values[0], 'set');
+      comps.forEach((comp, i) => setComponentKeyframe('f:' + fxId, 'scl', comp, t, values[i], 'set'));
     }
     rebuildPoints(); refreshParticleTree();
     return;
@@ -205,7 +205,7 @@ function setComponentValue(id, prop, comp, time, value) {
     if (prop === 'pos') p.pos[COMP_INDEX[comp]] = value;
     else if (prop === 'col') p.color[COMP_INDEX[comp]] = value;
     else if (prop === 'vel') (p.vel || (p.vel = [0, 0, 0]))[COMP_INDEX[comp]] = value;
-    else p.scale = value;
+    else p.scale[COMP_INDEX[comp]] = value;
   }
   rebuildPoints();
   refreshParticleTree();
@@ -236,7 +236,7 @@ function editComponentValue(id, prop, comp, time, value) {
     if (prop === 'pos') p.pos[COMP_INDEX[comp]] = value;
     else if (prop === 'col') p.color[COMP_INDEX[comp]] = value;
     else if (prop === 'vel') (p.vel || (p.vel = [0, 0, 0]))[COMP_INDEX[comp]] = value;
-    else p.scale = value;
+    else p.scale[COMP_INDEX[comp]] = value;
   }
   rebuildPoints();
   refreshParticleTree();
@@ -317,7 +317,8 @@ function setFunctionTrackMode(fxId, prop, mode) {
  * ======================================================================= */
 
 function addParticle(base) {
-  const p = Object.assign({ id: nextId(), style: 'DOT', color: [1, 1, 1, 1], scale: 1, glow: false, lightLevel: 0, pos: [0, 0, 0], vel: [0, 0, 0] }, base);
+  const p = Object.assign({ id: nextId(), color: [1, 1, 1, 1], scale: [1, 1, 1], glow: false, lightLevel: 0, pos: [0, 0, 0], vel: [0, 0, 0] }, base);
+  if (!Array.isArray(p.scale)) p.scale = [p.scale, p.scale, p.scale];
   state.particles.push(p);
   return p;
 }
@@ -338,6 +339,7 @@ function removeGroupAndTracks(name) {
     state.tracks = state.tracks.filter(tr => !tr.ids.includes(id));
   }
   delete state.groups[name];
+  delete state.groupUV[name];
   state.tracks = state.tracks.filter(tr => !tr.ids.includes('g:' + name));
   if (state.selectedGroup === name) state.selectedGroup = null;
   state.expandedParticles.delete('g:' + name);

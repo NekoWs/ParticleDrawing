@@ -11,16 +11,48 @@ function isDefaultColor(c) {
   return !!c && Math.abs(c[0] - 1) < 1e-9 && Math.abs(c[1] - 1) < 1e-9 && Math.abs(c[2] - 1) < 1e-9 && Math.abs(c[3] - 1) < 1e-9;
 }
 
+// UV 参数序列化 / 解析（外部 PNG 贴图只存名，像素存 textures/<name>.png）
+function serializeUV(uv) {
+  if (!uv) return undefined;
+  return {
+    texture: uv.texture || null,
+    mode: uv.mode || 'static',
+    texSize: (uv.texSize || [16, 16]).slice(0, 2),
+    uvStart: (uv.uvStart || [0, 0]).slice(0, 2),
+    uvSize: (uv.uvSize || [16, 16]).slice(0, 2),
+    uvStep: (uv.uvStep || [16, 0]).slice(0, 2),
+    fps: uv.fps != null ? uv.fps : 1,
+    maxFrame: uv.maxFrame != null ? uv.maxFrame : 1,
+    loop: uv.loop != null ? !!uv.loop : true,
+  };
+}
+function parseUV(o) {
+  if (!o) return undefined;
+  const w = (o.texSize && o.texSize[0]) || 16, h = (o.texSize && o.texSize[1]) || 16;
+  return {
+    texture: o.texture || null,
+    mode: UV_MODES[o.mode] ? o.mode : 'static',
+    texSize: (o.texSize || [w, h]).slice(0, 2),
+    uvStart: (o.uvStart || [0, 0]).slice(0, 2),
+    uvSize: (o.uvSize || [0, 0]).slice(0, 2),
+    uvStep: (o.uvStep || [0, 0]).slice(0, 2),
+    fps: o.fps != null ? o.fps : 1,
+    maxFrame: o.maxFrame != null ? o.maxFrame : 1,
+    loop: o.loop != null ? !!o.loop : true,
+  };
+}
+
 // 粒子序列化：省略等于默认值的字段，减小工程文件体积（解析侧均有默认回退）
 function serializeParticle(pt) {
   const o = { id: pt.id, pos: roundArr(pt.pos) };
-  if (pt.style !== 'DOT') o.s = pt.style;
   if (!isDefaultColor(pt.color)) o.c = roundArr(pt.color);
-  if (pt.scale !== 1) o.sc = r3(pt.scale);
+  const s = pt.scale || [1, 1, 1];
+  if (s[0] !== 1 || s[1] !== 1 || s[2] !== 1) o.sc = roundArr([s[0], s[1], s[2]]);
   if (pt.glow) o.g = 1;
   if (pt.lightLevel) o.l = pt.lightLevel;
   const v = pt.vel || [0, 0, 0];
   if (v[0] || v[1] || v[2]) o.vel = roundArr(v);
+  if (pt.uv && pt.uv.texture) o.uv = serializeUV(pt.uv);
   return o;
 }
 
@@ -56,24 +88,25 @@ function legacyCode(o) {
 function serializeFunction(fx) {
   const o = {
     id: fx.id, name: fx.name, center: fx.center.slice(), count: fx.count,
-    style: fx.style, code: fx.code || '',
+    code: fx.code || '',
     vars: serializeVars(fx.vars),
     duration: fx.duration, step: fx.step,
   };
   if (fx.preset) o.preset = fx.preset;
   if (fx.params) o.params = { ...fx.params };
   if (fx.ui) o.ui = JSON.parse(JSON.stringify(fx.ui));
+  if (fx.uv && fx.uv.texture) o.uv = serializeUV(fx.uv);
   return o;
 }
 function parseFunction(o) {
   return {
     id: o.id, name: o.name || '函数对象', center: (o.center || [0, 0, 0]).slice(0, 3), count: o.count || 30,
-    style: STYLES.includes(o.style) ? o.style : 'GLOW',
     code: o.code != null ? String(o.code) : legacyCode(o),
     vars: parseVars(o.vars),
     duration: o.duration || 0, step: o.step || 5,
     preset: o.preset || null, params: o.params ? { ...o.params } : null,
     ui: o.ui || null,
+    uv: parseUV(o.uv),
   };
 }
 
@@ -94,18 +127,29 @@ function exportProject() {
     if (kept.length) g[name] = kept;
   }
   const f = state.functions.map(serializeFunction);
-  return { v: 2, loop: state.loop, g, p, t, f };
+  const tex = Object.keys(state.textures);
+  const guv = {};
+  for (const [name, uv] of Object.entries(state.groupUV || {})) if (uv && uv.texture) guv[name] = serializeUV(uv);
+  return { v: 3, loop: state.loop, g, p, t, f, tex, guv };
 }
 
 function parseParticlesTracks(obj) {
-  state.particles = (obj.p || []).map(pt => ({
-    id: pt.id || nextId(), style: STYLES.includes(pt.s) ? pt.s : 'DOT',
-    color: (pt.c || [1, 1, 1, 1]).slice(0, 4), scale: pt.sc != null ? pt.sc : 1,
-    glow: !!pt.g, lightLevel: pt.l || 0, pos: (pt.pos || [0, 0, 0]).slice(0, 3),
-    vel: (pt.vel || [0, 0, 0]).slice(0, 3),
-  }));
+  state.particles = (obj.p || []).map(pt => {
+    let sc;
+    if (Array.isArray(pt.sc)) sc = pt.sc.slice(0, 3);
+    else { const v = pt.sc != null ? pt.sc : 1; sc = [v, v, v]; }
+    return {
+      id: pt.id || nextId(),
+      color: (pt.c || [1, 1, 1, 1]).slice(0, 4), scale: sc,
+      glow: !!pt.g, lightLevel: pt.l || 0, pos: (pt.pos || [0, 0, 0]).slice(0, 3),
+      vel: (pt.vel || [0, 0, 0]).slice(0, 3),
+      uv: parseUV(pt.uv),
+    };
+  });
   state.groups = {};
   for (const [name, members] of Object.entries(obj.g || {})) state.groups[name] = members.slice();
+  state.groupUV = {};
+  for (const [name, uv] of Object.entries(obj.guv || {})) state.groupUV[name] = parseUV(uv);
   state.tracks = (obj.t || []).map(tr => {
     const [prop] = splitCompPr(tr.pr);
     return {
@@ -122,6 +166,8 @@ function importJSON(obj) {
   pushUndo();
   parseParticlesTracks(obj);
   state.functions = [];
+  state.textures = {};
+  state.currentTexture = null;
   state.selectedFunction = null;
   document.getElementById('tl-loop').checked = state.loop;
   updateLoopIndicator();
@@ -135,6 +181,8 @@ function importProject(obj) {
   pushUndo();
   parseParticlesTracks(obj);
   state.functions = (obj.f || []).map(parseFunction);
+  state.textures = {};
+  state.currentTexture = null;
   state.selectedFunction = null;
   document.getElementById('tl-loop').checked = state.loop;
   updateLoopIndicator();
@@ -160,7 +208,7 @@ function download(json, filename) {
 async function loadFile(file) {
   const text = await file.text();
   const obj = JSON.parse(text);
-  if (file.name.toLowerCase().endsWith('.pdraw') || obj.v === 2 || obj.f) importProject(obj);
+  if (file.name.toLowerCase().endsWith('.pdraw') || obj.v >= 2 || obj.f) importProject(obj);
   else importJSON(obj);
   state.name = file.name.replace(/\.(json|pdraw)$/i, '');
   setDirty(false);
@@ -172,16 +220,79 @@ function updateTopbarTitle() {
 }
 
 async function openFile() {
-  if (!confirmDiscardChanges()) return;
-  if (window.showOpenFilePicker) {
+  if (!(await confirmDiscardChanges())) return;
+  if (window.showDirectoryPicker) {
     try {
-      const [h] = await window.showOpenFilePicker({ types: [{ description: '工程/动画', accept: { 'application/json': ['.pdraw', '.json'] } }] });
+      const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
+      const pdraws = [];
+      for await (const [name, handle] of dir.entries()) {
+        if (handle.kind === 'file' && name.toLowerCase().endsWith('.pdraw')) pdraws.push({ name, handle });
+      }
+      if (pdraws.length === 0) { await modalAlert('提示', '该文件夹没有 .pdraw 文件'); return; }
+      let h = pdraws[0].handle;
+      if (pdraws.length > 1) h = await choosePdraw(pdraws);
+      if (!h) return;
+      state.directoryHandle = dir;
       state.fileHandle = h;
       await loadFile(await h.getFile());
+      await loadTextures();
+      // 贴图文件已从 textures/ 子目录加载：重建图集并让粒子立即按 UV 引用的贴图渲染
+      if (typeof markTextureChanged === 'function') markTextureChanged();
+      if (typeof refreshTexturePanel === 'function') refreshTexturePanel();
     } catch (e) { /* 取消则忽略 */ }
     return;
   }
   document.getElementById('file-import').click();
+}
+
+// 多 pdraw 时弹出选择列表
+function choosePdraw(pdraws) {
+  return new Promise((resolve) => {
+    const box = document.createElement('div');
+    box.className = 'pdraw-picker';
+    box.innerHTML = '<div class="pp-title">选择要打开的动画</div>';
+    const list = document.createElement('div');
+    list.className = 'pp-list';
+    for (const p of pdraws) {
+      const b = document.createElement('button');
+      b.className = 'mini';
+      b.textContent = p.name;
+      b.onclick = () => { box.remove(); resolve(p.handle); };
+      list.appendChild(b);
+    }
+    const cancel = document.createElement('button');
+    cancel.className = 'mini'; cancel.textContent = '取消';
+    cancel.onclick = () => { box.remove(); resolve(null); };
+    list.appendChild(cancel);
+    box.appendChild(list);
+    document.body.appendChild(box);
+    box.style.left = (window.innerWidth / 2 - 120) + 'px';
+    box.style.top = (window.innerHeight / 2 - 80) + 'px';
+  });
+}
+
+// 从项目文件夹 textures/ 子目录加载全部贴图 PNG
+async function loadTextures() {
+  state.textures = {};
+  state.currentTexture = null;
+  if (!state.directoryHandle) return;
+  let texDir;
+  try { texDir = await state.directoryHandle.getDirectoryHandle('textures'); }
+  catch (e) { return; }
+  for await (const [name, handle] of texDir.entries()) {
+    if (handle.kind !== 'file' || !name.toLowerCase().endsWith('.png')) continue;
+    try {
+      const file = await handle.getFile();
+      if (file.size > 32 * 1024 * 1024) continue;
+      const bmp = await createImageBitmap(file);
+      const w = bmp.width, h = bmp.height;
+      const cnv = document.createElement('canvas'); cnv.width = w; cnv.height = h;
+      const ctx = cnv.getContext('2d'); ctx.drawImage(bmp, 0, 0);
+      const data = new Uint8ClampedArray(ctx.getImageData(0, 0, w, h).data);
+      const tn = name.replace(/\.png$/i, '');
+      state.textures[tn] = { name: tn, width: w, height: h, data };
+    } catch (e) { /* 跳过无法解码的贴图 */ }
+  }
 }
 
 async function saveFile() {
@@ -190,8 +301,12 @@ async function saveFile() {
     return;
   }
   const json = JSON.stringify(exportProject());
+  await writeProjectText(state.fileHandle, json);
+}
+
+async function writeProjectText(handle, json) {
   try {
-    const w = await state.fileHandle.createWritable();
+    const w = await handle.createWritable();
     await w.write(json); await w.close();
     setDirty(false);
   } catch (e) {
@@ -201,6 +316,15 @@ async function saveFile() {
 
 async function saveFileAs() {
   const json = JSON.stringify(exportProject());
+  // 项目文件夹模式：在文件夹内新建 .pdraw
+  if (state.directoryHandle && state.directoryHandle.getFileHandle) {
+    try {
+      const fh = await state.directoryHandle.getFileHandle(state.name + '.pdraw', { create: true });
+      state.fileHandle = fh;
+      await writeProjectText(fh, json);
+      return;
+    } catch (e) { /* 失败则回退下载 */ }
+  }
   if (window.showSaveFilePicker) {
     try {
       const h = await window.showSaveFilePicker({ suggestedName: state.name + '.pdraw', types: [{ description: '工程文件', accept: { 'application/json': ['.pdraw'] } }] });
@@ -236,10 +360,11 @@ async function exportAnimation() {
 }
 
 // 新建空白动画
-function newFile() {
-  if (!confirmDiscardChanges()) return;
+async function newFile() {
+  if (!(await confirmDiscardChanges())) return;
   pushUndo();
   state.particles = []; state.tracks = []; state.groups = {}; state.functions = [];
+  state.textures = {}; state.currentTexture = null; state.groupUV = {};
   state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null;
   state.expandedParticles.clear(); state.expandedProps.clear();
   state.time = 0;
@@ -252,9 +377,9 @@ function newFile() {
 }
 
 // 若有未保存更改，弹出保存确认。返回是否继续操作。
-function confirmDiscardChanges() {
+async function confirmDiscardChanges() {
   if (!state.dirty) return true;
-  const r = confirm('有未保存的更改，是否保存？\n\n「确定」= 保存后继续\n「取消」= 不保存直接继续');
-  if (r) saveFile();
+  const r = await modalConfirm('未保存的更改', '是否保存？\n\n确定 = 保存后继续\n取消 = 不保存直接继续');
+  if (r) await saveFile();
   return true;
 }

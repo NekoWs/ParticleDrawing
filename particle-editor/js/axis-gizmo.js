@@ -279,7 +279,6 @@ renderer.domElement.addEventListener('pointercancel', () => { midDrag = null; })
 
 function setDrawPlane(p) {
   state.drawPlane = p;
-  document.getElementById('draw-plane').value = p;
   // 同步底部网格到 2D 视图对应的平面
   if (typeof grid !== 'undefined' && grid) {
     const r = GRID_ROT[p] || GRID_ROT.XZ;

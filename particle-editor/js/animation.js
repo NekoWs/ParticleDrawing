@@ -8,7 +8,7 @@ function baseComponent(p, prop, comp) {
   if (prop === 'pos') return p.pos[COMP_INDEX[comp]];
   if (prop === 'col') return p.color[COMP_INDEX[comp]];
   if (prop === 'vel') return (p.vel || [0, 0, 0])[COMP_INDEX[comp]];
-  if (prop === 'scl') return p.scale;
+  if (prop === 'scl') return (p.scale || [1, 1, 1])[COMP_INDEX[comp]];
   return 0;
 }
 
@@ -18,12 +18,13 @@ function baseValue(p, prop) {
   if (prop === 'col') return p.color.slice(0, 4);
   if (prop === 'vel') return (p.vel || [0, 0, 0]).slice(0, 3);
   if (prop === 'rot') return [0, 0, 0];
-  return [p.scale];
+  const s = p.scale || [1, 1, 1];
+  return [s[0], s[1], s[2]];
 }
 
 // 零向量（按属性）
 function zeroArray(prop) {
-  if (prop === 'pos' || prop === 'rot' || prop === 'vel') return [0, 0, 0];
+  if (prop === 'pos' || prop === 'rot' || prop === 'vel' || prop === 'scl') return [0, 0, 0];
   if (prop === 'col') return [0, 0, 0, 0];
   return [0];
 }
@@ -65,14 +66,14 @@ let fxOpDeltaCache = null;         // Map: fxId -> Map(pr -> delta)：op 增量�
 let groupXformCache = null;        // Map: gname -> { rotTr, setTr, op, pivot }：组变换预计算（组-only 粒子快路径）
 let fxSclTrackCache = null;        // Map: fxId -> scl 轨道（函数对象整体缩放，pr='scl'）
 
-// 8 个分量轨道 pr 顺序（组变换预计算用，与 positions/colors 写入一致）
-const TRACK_COMP_ORDER = ['pos.x', 'pos.y', 'pos.z', 'col.r', 'col.g', 'col.b', 'col.a', 'scl.s'];
-// pr -> 粒子分量轨道槽下标（p._tr 数组，11 槽：8 分量 + vel 3）
+// 10 个分量轨道 pr 顺序（组变换预计算用，与 positions/colors 写入一致）
+const TRACK_COMP_ORDER = ['pos.x', 'pos.y', 'pos.z', 'col.r', 'col.g', 'col.b', 'col.a', 'scl.x', 'scl.y', 'scl.z'];
+// pr -> 粒子分量轨道槽下标（p._tr 数组，13 槽：10 分量 + vel 3）
 const PR_TO_IDX = {
   'pos.x': 0, 'pos.y': 1, 'pos.z': 2,
   'col.r': 3, 'col.g': 4, 'col.b': 5, 'col.a': 6,
-  'scl.s': 7,
-  'vel.x': 8, 'vel.y': 9, 'vel.z': 10,
+  'scl.x': 7, 'scl.y': 8, 'scl.z': 9,
+  'vel.x': 10, 'vel.y': 11, 'vel.z': 12,
 };
 
 let trVersion = 0; // 每次 buildParticleIndex 递增，配合 p._trVersion 惰性失效 p._tr
@@ -102,7 +103,7 @@ function buildTrackIndex() {
         if (idx >= 0) {
           const p = pidx.get(id);
           if (p) {
-            if (p._trVersion !== trVersion) { p._tr = new Array(11); p._trVersion = trVersion; }
+            if (p._trVersion !== trVersion) { p._tr = new Array(13); p._trVersion = trVersion; }
             p._tr[idx] = tr;
           }
         }
@@ -229,8 +230,8 @@ function buildGroupXforms(T) {
       rotMat = [M.m[0][0], M.m[0][1], M.m[0][2], M.m[1][0], M.m[1][1], M.m[1][2], M.m[2][0], M.m[2][1], M.m[2][2]];
     }
     const opMap = groupOpDeltaCache ? groupOpDeltaCache.get(gname) : null;
-    const op = [0, 0, 0, 0, 0, 0, 0, 0];
-    if (opMap) for (let i = 0; i < 8; i++) op[i] = opMap.get(TRACK_COMP_ORDER[i]) || 0;
+    const op = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    if (opMap) for (let i = 0; i < 10; i++) op[i] = opMap.get(TRACK_COMP_ORDER[i]) || 0;
     xforms.set(gname, {
       setTr, velTr, op, rotMat, pivot: groupCentroidPosCache.get(gname),
       hasSet: setTr.some(t => t !== null), hasRot: rotMat !== null,
@@ -240,12 +241,17 @@ function buildGroupXforms(T) {
   groupXformCache = xforms;
 }
 
-// 预计算函数对象的整体 scl 轨道（pr='scl'），供 currentVisualDerived 快速路径查询
+// 预计算函数对象的整体 scl 轨道（pr 为 scl.x/scl.y/scl.z），供 currentVisualDerived 快速路径查询
 function buildFxSclTrackCache() {
   const map = new Map();
   for (const tr of state.tracks) {
-    if (tr.ids.length === 1 && tr.ids[0].charCodeAt(0) === 102 && tr.pr === 'scl' && tr.m !== 'op' && tr.kf.length) {
-      map.set(tr.ids[0].slice(2), tr);
+    if (tr.ids.length === 1 && tr.ids[0].charCodeAt(0) === 102 && tr.m !== 'op' && tr.kf.length) {
+      const fid = tr.ids[0].slice(2);
+      let arr = map.get(fid);
+      if (!arr) { arr = [null, null, null]; map.set(fid, arr); }
+      if (tr.pr === 'scl.x') arr[0] = tr;
+      else if (tr.pr === 'scl.y') arr[1] = tr;
+      else if (tr.pr === 'scl.z') arr[2] = tr;
     }
   }
   fxSclTrackCache = map;
@@ -351,7 +357,7 @@ function particleValueAt(p, prop, T) {
   if (prop === 'col') return ['r', 'g', 'b', 'a'].map(c => componentValueAt(p, 'col', c, T));
   if (prop === 'vel') return ['x', 'y', 'z'].map(c => componentValueAt(p, 'vel', c, T));
   if (prop === 'rot') return [0, 0, 0]; // 粒子无自身 rot
-  return [componentValueAt(p, 'scl', 's', T)];
+  return ['x', 'y', 'z'].map(c => componentValueAt(p, 'scl', c, T));
 }
 
 function currentVisual(p) {
@@ -359,29 +365,34 @@ function currentVisual(p) {
   return {
     pos: particleValueAt(p, 'pos', state.time),
     color: particleValueAt(p, 'col', state.time),
-    scale: particleValueAt(p, 'scl', state.time)[0],
+    scale: particleValueAt(p, 'scl', state.time),
   };
 }
 
 // 派生粒子活源求值：每帧执行公式代码块（random 每帧变化，实现星光闪闪预览），
 // 再叠加函数对象整体旋转（rot）与位移增量（op），与游戏端活源语义一致。
+// 返回的 scale 为三分量数组 [sx,sy,sz]（函数对象整体缩放可独立分轴）。
 function currentVisualDerived(p, T) {
   const fx = getFunction(p.fx);
-  if (!fx) return { pos: [0, 0, 0], color: [1, 1, 1, 1], scale: 1 };
+  if (!fx) return { pos: [0, 0, 0], color: [1, 1, 1, 1], scale: [1, 1, 1] };
   const i = (p._fxIdx !== undefined) ? p._fxIdx : parseInt(p.id.slice(fx.id.length + 2), 10);
   const r = evaluateParticleAt(fx, i, fx.count, T);
-  const sclTr = (fxSclTrackCache && fxSclTrackCache.get(p.fx)) || null;
+  const base = r.scale;
+  const sclTrs = (fxSclTrackCache && fxSclTrackCache.get(p.fx)) || null;
+  const scaleVec = sclTrs
+    ? [sclTrs[0] ? trackValueAt(sclTrs[0], T, base) : base,
+       sclTrs[1] ? trackValueAt(sclTrs[1], T, base) : base,
+       sclTrs[2] ? trackValueAt(sclTrs[2], T, base) : base]
+    : [base, base, base];
   const gs = groupMemberIndexCache && groupMemberIndexCache.get(p.id);
   const hasFxOp = fxOpDeltaCache && fxOpDeltaCache.has(p.fx);
   if (!gs && !hasFxOp) {
     // 快速路径：无组旋转、无函数 op 位移，仅可能叠加整体缩放
-    if (!sclTr) return r; // 直接返回求值结果（含 pos/color/scale）
-    return { pos: r.pos, color: r.color, scale: trackValueAt(sclTr, T, r.scale) };
+    return { pos: r.pos, color: r.color, scale: scaleVec };
   }
   let pos = applyGroupRotation(p, r.pos.slice(), T);
   pos = pos.map((v, ci) => v + compOpDelta(p, 'pos', ['x', 'y', 'z'][ci], T));
-  const scale = sclTr ? trackValueAt(sclTr, T, r.scale) : r.scale;
-  return { pos, color: r.color, scale };
+  return { pos, color: r.color, scale: scaleVec };
 }
 
 function maxTick() {
@@ -438,6 +449,7 @@ function velOffsetAt(p, time) {
  * ======================================================================= */
 
 // 复用几何体与缓冲：仅顶点数量变化时重建，否则只更新数组内容（避免每帧 new/dispose 造成 GC 卡顿）
+// sizes 为每粒子 2 分量（sx, sy，非均匀 billboard 尺寸）
 function setPointsGeometry(pts, positions, colors, sizes) {
   let geo = pts.geometry;
   const posAttr = geo && geo.getAttribute('position');
@@ -445,7 +457,7 @@ function setPointsGeometry(pts, positions, colors, sizes) {
     geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions.length), 3));
     geo.setAttribute('aColor', new THREE.BufferAttribute(new Float32Array(colors.length), 4));
-    geo.setAttribute('aSize', new THREE.BufferAttribute(new Float32Array(sizes.length), 1));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(new Float32Array(sizes.length), 2));
     const old = pts.geometry;
     pts.geometry = geo;
     if (old) old.dispose();
@@ -460,8 +472,61 @@ function setPointsGeometry(pts, positions, colors, sizes) {
 }
 
 let rpPos = null, rpCol = null, rpSize = null, rpSelPos = null, rpSelCol = null, rpSelSize = null;
+let rpUV = null, rpUVScale = null, rpUVAnim = null, rpUVTex = null, rpUVMode = null;
 // 派生粒子求值的复用输出对象（主循环顺序执行、立即读走，单线程安全，避免每粒子分配）
 const FX_OUT = { pos: [0, 0, 0], color: [0, 0, 0, 0], vel: [0, 0, 0], scale: 1, glow: false, light: 0 };
+// 粒子 UV 求值的复用输出（fill 模式下强制全图采样）
+const UVOUT = { mode: 0, au0: 0, av0: 0, au1: 0, av1: 0, sx: 0, sy: 0, sw: 16, sh: 16, stepx: 16, stepy: 0, fps: 1, maxFrame: 1, tw: 16, th: 16 };
+
+// 计算单个粒子的 uv 渲染参数（写入复用 out），无贴图时 mode=0
+function computeParticleUV(p, out) {
+  out.mode = 0;
+  if (typeof resolveUV !== 'function') return;
+  const uv = resolveUV(p).uv;
+  if (!uv || !uv.texture) return;
+  const tex = texAtlasMap[uv.texture];
+  if (!tex) return;
+  out.au0 = tex.u0; out.av0 = tex.v0; out.au1 = tex.u1; out.av1 = tex.v1;
+  out.tw = tex.w; out.th = tex.h;
+  if (uv.mode === 'fill') {
+    out.sx = 0; out.sy = 0; out.sw = tex.w; out.sh = tex.h;
+    out.mode = 2;
+  } else if (uv.mode === 'animated') {
+    out.sx = uv.uvStart[0]; out.sy = uv.uvStart[1];
+    out.sw = uv.uvSize[0]; out.sh = uv.uvSize[1];
+    out.stepx = uv.uvStep[0]; out.stepy = uv.uvStep[1];
+    out.fps = uv.fps;
+    // 自动帧数（常量层共享函数，与贴图预览一致）：行末换行；maxFrame 0/1/未设置为「自动」
+    const autoFrames = autoFramesFor(uv, tex.w, tex.h);
+    out.maxFrame = effMaxFrame(uv, autoFrames);
+    out.mode = uv.loop ? 3 : 4;
+  } else {
+    out.sx = uv.uvStart[0]; out.sy = uv.uvStart[1];
+    out.sw = uv.uvSize[0]; out.sh = uv.uvSize[1];
+    out.mode = 1;
+  }
+}
+
+// 设置 UV 相关 attribute（在 geometry 重建后调用）
+function setPointUVAttributes(geo, uvs) {
+  const defs = [
+    ['aUV', uvs.uv, 4],
+    ['aUVScale', uvs.uvScale, 4],
+    ['aUVAnim', uvs.uvAnim, 4],
+    ['aUVTex', uvs.uvTex, 2],
+    ['aUVMode', uvs.uvMode, 1],
+  ];
+  for (const [name, arr, itemSize] of defs) {
+    let attr = geo.getAttribute(name);
+    if (!attr || attr.array.length !== arr.length) {
+      attr = new THREE.BufferAttribute(new Float32Array(arr.length), itemSize);
+      geo.setAttribute(name, attr);
+    }
+    attr.array.set(arr);
+    attr.needsUpdate = true;
+  }
+}
+
 function rebuildPoints(full) {
   buildParticleIndex();
   buildTrackIndex();
@@ -474,7 +539,12 @@ function rebuildPoints(full) {
   const n = state.particles.length;
   if (!rpPos || rpPos.length !== n * 3) rpPos = new Float32Array(n * 3);
   if (!rpCol || rpCol.length !== n * 4) rpCol = new Float32Array(n * 4);
-  if (!rpSize || rpSize.length !== n) rpSize = new Float32Array(n);
+  if (!rpSize || rpSize.length !== n * 2) rpSize = new Float32Array(n * 2);
+  if (!rpUV || rpUV.length !== n * 4) rpUV = new Float32Array(n * 4);
+  if (!rpUVScale || rpUVScale.length !== n * 4) rpUVScale = new Float32Array(n * 4);
+  if (!rpUVAnim || rpUVAnim.length !== n * 4) rpUVAnim = new Float32Array(n * 4);
+  if (!rpUVTex || rpUVTex.length !== n * 2) rpUVTex = new Float32Array(n * 2);
+  if (!rpUVMode || rpUVMode.length !== n) rpUVMode = new Float32Array(n);
   const positions = rpPos, colors = rpCol, sizes = rpSize;
   const T = state.time;
   const memberIdx = groupMemberIndexCache;
@@ -485,7 +555,7 @@ function rebuildPoints(full) {
   const fxClean = !hasGroups && opTracksCache.length === 0 && (fxSclTrackCache ? fxSclTrackCache.size === 0 : true);
   for (let i = 0; i < n; i++) {
     const p = state.particles[i];
-    let px, py, pz, cr, cg, cb, ca, ss;
+    let px, py, pz, cr, cg, cb, ca, ssx, ssy;
     if (p.fx) {
       const fx = functionIndexCache.get(p.fx);
       const fn = fx._compiledFn;
@@ -496,24 +566,25 @@ function rebuildPoints(full) {
         const vel = p.vel;
         px = r.pos[0] + vel[0] * T; py = r.pos[1] + vel[1] * T; pz = r.pos[2] + vel[2] * T;
         cr = r.color[0]; cg = r.color[1]; cb = r.color[2]; ca = r.color[3];
-        ss = r.scale;
+        ssx = r.scale; ssy = r.scale;
       } else {
         const gs = hasGroups ? memberIdx.get(p.id) : undefined;
         const hasFxOp = fxOpDeltaCache && fxOpDeltaCache.has(p.fx);
-        const sclTr = (fxSclTrackCache && fxSclTrackCache.get(p.fx)) || null;
+        const sclTrs = (fxSclTrackCache && fxSclTrackCache.get(p.fx)) || null;
         if (fn && !gs && !hasFxOp) {
           const vals = fx._constVarVals || resolveVarVals(fx, p._fxIdx, fx.count, T);
           const r = fn(p._fxIdx, fx.count, T, fx.center[0], fx.center[1], fx.center[2], ...vals, FX_OUT);
           const vel = p.vel;
           px = r.pos[0] + vel[0] * T; py = r.pos[1] + vel[1] * T; pz = r.pos[2] + vel[2] * T;
           cr = r.color[0]; cg = r.color[1]; cb = r.color[2]; ca = r.color[3];
-          ss = sclTr ? trackValueAt(sclTr, T, r.scale) : r.scale;
+          ssx = (sclTrs && sclTrs[0]) ? trackValueAt(sclTrs[0], T, r.scale) : r.scale;
+          ssy = (sclTrs && sclTrs[1]) ? trackValueAt(sclTrs[1], T, r.scale) : r.scale;
         } else {
           const v = currentVisual(p);
           const off = velOffsetAt(p, T);
           px = v.pos[0] + off[0]; py = v.pos[1] + off[1]; pz = v.pos[2] + off[2];
           cr = v.color[0]; cg = v.color[1]; cb = v.color[2]; ca = v.color[3];
-          ss = v.scale;
+          ssx = v.scale[0]; ssy = v.scale[1];
         }
       }
     } else {
@@ -528,10 +599,11 @@ function rebuildPoints(full) {
         cg = tr[4] ? trackValueAt(tr[4], T, p.color[1]) : p.color[1];
         cb = tr[5] ? trackValueAt(tr[5], T, p.color[2]) : p.color[2];
         ca = tr[6] ? trackValueAt(tr[6], T, p.color[3]) : p.color[3];
-        ss = tr[7] ? trackValueAt(tr[7], T, p.scale) : p.scale;
-        px += tr[8] ? trackIntegral(tr[8], T) : p.vel[0] * T;
-        py += tr[9] ? trackIntegral(tr[9], T) : p.vel[1] * T;
-        pz += tr[10] ? trackIntegral(tr[10], T) : p.vel[2] * T;
+        ssx = tr[7] ? trackValueAt(tr[7], T, p.scale[0]) : p.scale[0];
+        ssy = tr[8] ? trackValueAt(tr[8], T, p.scale[1]) : p.scale[1];
+        px += tr[10] ? trackIntegral(tr[10], T) : p.vel[0] * T;
+        py += tr[11] ? trackIntegral(tr[11], T) : p.vel[1] * T;
+        pz += tr[12] ? trackIntegral(tr[12], T) : p.vel[2] * T;
       } else if (!tr && inGroup) {
         const gs = memberIdx.get(p.id);
         let xf = null;
@@ -546,11 +618,12 @@ function rebuildPoints(full) {
             cg = xf.setTr[4] ? trackValueAt(xf.setTr[4], T, p.color[1]) : p.color[1];
             cb = xf.setTr[5] ? trackValueAt(xf.setTr[5], T, p.color[2]) : p.color[2];
             ca = xf.setTr[6] ? trackValueAt(xf.setTr[6], T, p.color[3]) : p.color[3];
-            ss = xf.setTr[7] ? trackValueAt(xf.setTr[7], T, p.scale) : p.scale;
+            ssx = xf.setTr[7] ? trackValueAt(xf.setTr[7], T, p.scale[0]) : p.scale[0];
+            ssy = xf.setTr[8] ? trackValueAt(xf.setTr[8], T, p.scale[1]) : p.scale[1];
           } else {
             px = p.pos[0]; py = p.pos[1]; pz = p.pos[2];
             cr = p.color[0]; cg = p.color[1]; cb = p.color[2]; ca = p.color[3];
-            ss = p.scale;
+            ssx = p.scale[0]; ssy = p.scale[1];
           }
           if (xf.rotMat) {
             const m = xf.rotMat;
@@ -563,7 +636,7 @@ function rebuildPoints(full) {
           if (xf.hasOp) {
             px += xf.op[0]; py += xf.op[1]; pz += xf.op[2];
             cr += xf.op[3]; cg += xf.op[4]; cb += xf.op[5]; ca += xf.op[6];
-            ss += xf.op[7];
+            ssx += xf.op[7]; ssy += xf.op[8];
           }
           if (xf.hasVel) {
             px += xf.velTr[0] ? trackIntegral(xf.velTr[0], T) : p.vel[0] * T;
@@ -577,39 +650,50 @@ function rebuildPoints(full) {
           const off = velOffsetAt(p, T);
           px = v.pos[0] + off[0]; py = v.pos[1] + off[1]; pz = v.pos[2] + off[2];
           cr = v.color[0]; cg = v.color[1]; cb = v.color[2]; ca = v.color[3];
-          ss = v.scale;
+          ssx = v.scale[0]; ssy = v.scale[1];
         }
       } else if (!tr && !inGroup) {
         const vel = p.vel;
         px = p.pos[0] + vel[0] * T; py = p.pos[1] + vel[1] * T; pz = p.pos[2] + vel[2] * T;
         cr = p.color[0]; cg = p.color[1]; cb = p.color[2]; ca = p.color[3];
-        ss = p.scale;
+        ssx = p.scale[0]; ssy = p.scale[1];
       } else {
         // 自身轨道 + 组：走完整求值
         const v = currentVisual(p);
         const off = velOffsetAt(p, T);
         px = v.pos[0] + off[0]; py = v.pos[1] + off[1]; pz = v.pos[2] + off[2];
         cr = v.color[0]; cg = v.color[1]; cb = v.color[2]; ca = v.color[3];
-        ss = v.scale;
+        ssx = v.scale[0]; ssy = v.scale[1];
       }
     }
     positions[i * 3] = px; positions[i * 3 + 1] = py; positions[i * 3 + 2] = pz;
     colors[i * 4] = cr; colors[i * 4 + 1] = cg; colors[i * 4 + 2] = cb; colors[i * 4 + 3] = ca;
-    const s = ss * SZF;
-    sizes[i] = s > 0.02 ? s : 0.02;
+    let sx = ssx * SZF, sy = ssy * SZF;
+    sizes[i * 2] = sx > 0.02 ? sx : 0.02;
+    sizes[i * 2 + 1] = sy > 0.02 ? sy : 0.02;
+    computeParticleUV(p, UVOUT);
+    const i4 = i * 4, i2 = i * 2;
+    rpUV[i4] = UVOUT.au0; rpUV[i4 + 1] = UVOUT.av0; rpUV[i4 + 2] = UVOUT.au1; rpUV[i4 + 3] = UVOUT.av1;
+    rpUVScale[i4] = UVOUT.sx; rpUVScale[i4 + 1] = UVOUT.sy; rpUVScale[i4 + 2] = UVOUT.sw; rpUVScale[i4 + 3] = UVOUT.sh;
+    rpUVAnim[i4] = UVOUT.stepx; rpUVAnim[i4 + 1] = UVOUT.stepy; rpUVAnim[i4 + 2] = UVOUT.fps; rpUVAnim[i4 + 3] = UVOUT.maxFrame;
+    rpUVTex[i2] = UVOUT.tw; rpUVTex[i2 + 1] = UVOUT.th;
+    rpUVMode[i] = UVOUT.mode;
   }
   setPointsGeometry(points, positions, colors, sizes);
+  setPointUVAttributes(points.geometry, { uv: rpUV, uvScale: rpUVScale, uvAnim: rpUVAnim, uvTex: rpUVTex, uvMode: rpUVMode });
 
   const sel = state.particles.filter(p => state.selected.has(p.id));
   if (!rpSelPos || rpSelPos.length !== sel.length * 3) rpSelPos = new Float32Array(sel.length * 3);
   if (!rpSelCol || rpSelCol.length !== sel.length * 4) rpSelCol = new Float32Array(sel.length * 4);
-  if (!rpSelSize || rpSelSize.length !== sel.length) rpSelSize = new Float32Array(sel.length);
+  if (!rpSelSize || rpSelSize.length !== sel.length * 2) rpSelSize = new Float32Array(sel.length * 2);
   const spos = rpSelPos, ssiz = rpSelSize;
   for (let i = 0; i < sel.length; i++) {
     const v = currentVisual(sel[i]);
     const off = velOffsetAt(sel[i], state.time);
     spos[i * 3] = v.pos[0] + off[0]; spos[i * 3 + 1] = v.pos[1] + off[1]; spos[i * 3 + 2] = v.pos[2] + off[2];
-    ssiz[i] = Math.max(0.02, v.scale * PARTICLE_SIZE_FACTOR);
+    const sx = v.scale[0] * PARTICLE_SIZE_FACTOR, sy = v.scale[1] * PARTICLE_SIZE_FACTOR;
+    ssiz[i * 2] = Math.max(0.02, sx);
+    ssiz[i * 2 + 1] = Math.max(0.02, sy);
   }
   setPointsGeometry(selectedPoints, spos, rpSelCol, ssiz);
 
@@ -619,18 +703,25 @@ function rebuildPoints(full) {
     updatePropPanel();
     refreshTreeSelection();
     if (typeof refreshCompTimelines === 'function') refreshCompTimelines();
+    if (typeof refreshUVPanel === 'function' && document.getElementById('pane-texture') && document.getElementById('pane-texture').classList.contains('active')) refreshUVPanel();
   }
 }
 
 function setPreview(positions) {
   const n = positions.length;
-  const pos = new Float32Array(n * 3), col = new Float32Array(n * 4), siz = new Float32Array(n);
+  const pos = new Float32Array(n * 3), col = new Float32Array(n * 4), siz = new Float32Array(n * 2);
   for (let i = 0; i < n; i++) {
     pos[i * 3] = positions[i][0]; pos[i * 3 + 1] = positions[i][1]; pos[i * 3 + 2] = positions[i][2];
     col[i * 4] = 1; col[i * 4 + 1] = 1; col[i * 4 + 2] = 1; col[i * 4 + 3] = 0.6;
-    siz[i] = 1 * PARTICLE_SIZE_FACTOR;
+    siz[i * 2] = 1 * PARTICLE_SIZE_FACTOR; siz[i * 2 + 1] = 1 * PARTICLE_SIZE_FACTOR;
   }
   setPointsGeometry(previewPoints, pos, col, siz);
+  // 预览点复用 pointsMaterial（shader 声明了 UV attributes）：补齐全 0 的 UV 数据，
+  // 避免 attribute 缺失时被 shader 读到垃圾值而随机采样贴图（表现为透明/花屏）
+  setPointUVAttributes(previewPoints.geometry, {
+    uv: new Float32Array(n * 4), uvScale: new Float32Array(n * 4), uvAnim: new Float32Array(n * 4),
+    uvTex: new Float32Array(n * 2), uvMode: new Float32Array(n),
+  });
 }
 
 function clearPreview() { setPointsGeometry(previewPoints, new Float32Array(0), new Float32Array(0), new Float32Array(0)); }

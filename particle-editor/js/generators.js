@@ -216,7 +216,9 @@ function buildDerivedTracks(fx) {
     if (changed('vel')) pushComp('vel', ['x', 'y', 'z'], (idx, ci) => samples[idx].vel[ci]);
     if (samples.some(s => Math.abs(s.scale - base.scale) > 1e-9)) {
       const kfs = samples.map((_, idx) => [times[idx], samples[idx].scale, easingAt(idx)]);
-      state.tracks.push({ pr: 'scl', m: 'set', ids: [pid], kf: kfs, fx: fx.id });
+      ['x', 'y', 'z'].forEach(comp => {
+        state.tracks.push({ pr: 'scl.' + comp, m: 'set', ids: [pid], kf: kfs.map(k => k.slice()), fx: fx.id });
+      });
     }
   }
 }
@@ -251,13 +253,12 @@ function rebuildFunctionObject(fx) {
     const base = evaluateParticleBase(fx, i, n);
     let p = existing.get(id);
     if (!p) {
-      p = { id, fx: fx.id, style: fx.style, color: [1, 1, 1, 1], scale: 1, glow: false, lightLevel: 0, pos: [0, 0, 0], vel: [0, 0, 0] };
+      p = { id, fx: fx.id, color: [1, 1, 1, 1], scale: [1, 1, 1], glow: false, lightLevel: 0, pos: [0, 0, 0], vel: [0, 0, 0] };
       state.particles.push(p);
     }
     p._fxIdx = i; // 缓存粒子序号，避免 currentVisualDerived 里 parse id
-    p.style = fx.style;
     p.color = base.color.slice();
-    p.scale = base.scale;
+    p.scale = [base.scale, base.scale, base.scale];
     p.glow = base.glow;
     p.lightLevel = base.light;
     p.pos = base.pos.slice();
@@ -327,7 +328,7 @@ function createFunctionObject(presetId) {
   pushUndo();
   const fx = {
     id: nextFunctionId(), name: presetId ? FUNCTION_PRESETS[presetId].label : '函数对象',
-    center: [0, 0, 0], count: 30, style: 'DOT',
+    center: [0, 0, 0], count: 30,
     code: '[x,y,z] = [0, 0, 0];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
     vars: {}, duration: 100, step: 5, preset: null, params: null,
   };
@@ -339,7 +340,7 @@ function createFunctionObject(presetId) {
   try {
     rebuildFunctionObject(fx);
   } catch (e) {
-    alert('表达式错误：' + e.message);
+    modalAlert('表达式错误', e.message);
   }
   refreshParticleTree();
   refreshFunctionPanel();

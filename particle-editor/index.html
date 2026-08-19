@@ -68,42 +68,72 @@
     </section>
 
     <aside class="sidebar">
-      <details open>
-        <summary>绘制</summary>
-        <label class="row">绘制平面
-          <select id="draw-plane">
-            <option value="XZ" selected>XZ（水平）</option>
-            <option value="XY">XY</option>
-            <option value="YZ">YZ</option>
-          </select>
-        </label>
-        <label class="row">放置高度 <input id="height-y" type="number" step="0.1" value="0" /></label>
-        <label class="row">粒子数量 <input id="shape-count" type="number" min="2" value="30" /></label>
-      </details>
+      <div class="tabs" id="sidebar-tabs">
+        <button class="tab active" data-tab="props" title="属性">
+          <svg viewBox="0 0 18 18"><path d="M5 2.5h6l2.5 2.5V15a.5.5 0 0 1-.5.5H5a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M11 2.5V5h2.5M7 8.5h4M7 11h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+        <button class="tab" data-tab="fx" title="函数对象">
+          <svg viewBox="0 0 18 18"><path d="M4 14c1.5-4 2.5-6 4-6s2.5 4 4 4 2.5-4 4-6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><text x="9" y="5" font-size="5.5" fill="currentColor" text-anchor="middle" font-family="monospace">f(x)</text></svg>
+        </button>
+        <button class="tab" data-tab="texture" title="贴图 / UV">
+          <svg viewBox="0 0 18 18"><rect x="3" y="3" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 9h12M9 3v12" stroke="currentColor" stroke-width="1.2"/><circle cx="9" cy="9" r="1.4" fill="currentColor"/></svg>
+        </button>
+      </div>
 
-      <details open>
-        <summary>函数对象</summary>
-        <div class="vars-head">
-          <select id="fx-preset-add"></select>
-          <button id="btn-fx-preset-add" class="mini" title="按预设新建函数对象">+ 新建</button>
-        </div>
-        <div id="fx-panel"><p class="hint">选中一个函数对象以编辑属性</p></div>
-      </details>
-
-      <details open>
-        <summary>属性（作用于选中）</summary>
-        <label class="row">样式
-          <select id="prop-style"></select>
-        </label>
+      <div class="tab-pane active" id="pane-props">
         <label class="row">颜色 <input id="prop-color" type="color" value="#ffffff" /></label>
         <label class="row">透明度 <input id="prop-alpha" type="range" min="0" max="1" step="0.01" value="1" /><span id="alpha-val">1.00</span></label>
-        <label class="row">缩放 <input id="prop-scale" type="number" min="0.05" step="0.05" value="1" /></label>
+        <div class="row">缩放
+          <input id="prop-scale-x" type="number" min="0.05" step="0.05" value="1" title="X" />
+          <input id="prop-scale-y" type="number" min="0.05" step="0.05" value="1" title="Y" />
+          <input id="prop-scale-z" type="number" min="0.05" step="0.05" value="1" title="Z" />
+        </div>
         <label class="chk"><input id="prop-glow" type="checkbox" />发光</label>
         <label class="row">光照等级 <input id="prop-light" type="range" min="0" max="15" step="1" value="15" /><span id="light-val">15</span></label>
         <label class="row">X <input id="prop-posx" type="number" step="0.1" value="0" /></label>
         <label class="row">Y <input id="prop-posy" type="number" step="0.1" value="0" /></label>
         <label class="row">Z <input id="prop-posz" type="number" step="0.1" value="0" /></label>
-      </details>
+      </div>
+
+      <div class="tab-pane" id="pane-fx">
+        <div class="vars-head">
+          <select id="fx-preset-add"></select>
+          <button id="btn-fx-preset-add" class="mini" title="按预设新建函数对象">+ 新建</button>
+        </div>
+        <div id="fx-panel"><p class="hint">选中一个函数对象以编辑属性</p></div>
+      </div>
+
+      <div class="tab-pane" id="pane-texture">
+        <div class="tex-editor">
+          <div class="tex-tools" id="tex-tools">
+            <button class="tex-tool active" data-ttool="select" title="选中（矩形选区）"><svg viewBox="0 0 18 18"><path d="M4 3h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.5 2"/></svg></button>
+            <button class="tex-tool" data-ttool="pencil" title="铅笔"><svg viewBox="0 0 18 18"><path d="M3.5 14.5l.8-3 8-8 2.2 2.2-8 8-3 .8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
+            <button class="tex-tool" data-ttool="eraser" title="橡皮"><svg viewBox="0 0 18 18"><path d="M7 13.5h8M4 10.5l6.5-6.5 3 3L7 13.5H4v-3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
+            <button class="tex-tool" data-ttool="bucket" title="油漆桶"><svg viewBox="0 0 18 18"><path d="M4 14L2.5 9l4-4 3 3-5.5 6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 5L13 8.5M12 9l-1.5 1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+            <button class="tex-tool" data-ttool="picker" title="滴管"><svg viewBox="0 0 18 18"><path d="M13 3l2 2-6.5 6.5-2.5.5.5-2.5L13 3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M4.5 13.5L2 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+            <div class="tex-tool-sep"></div>
+            <button class="tex-tool" id="tex-undo" title="撤回"><svg viewBox="0 0 18 18"><path d="M6 5l-3 3 3 3M3 8h7a4 4 0 0 1 0 8h-2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="tex-tool" id="tex-redo" title="重做"><svg viewBox="0 0 18 18"><path d="M12 5l3 3-3 3M15 8H8a4 4 0 0 0 0 8h2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          </div>
+          <div class="tex-canvas-wrap" id="tex-canvas-wrap">
+            <canvas id="tex-canvas"></canvas>
+            <div class="tex-overlay" id="tex-overlay-uv"></div>
+            <div class="tex-overlay" id="tex-overlay-frame"></div>
+            <button id="tex-color-btn" title="颜色" style="display:none"></button>
+          </div>
+          <div class="tex-meta" id="tex-meta">16 × 16</div>
+        </div>
+        <div class="tex-io">
+          <input id="tex-upload" type="file" accept=".png" hidden />
+          <button id="btn-tex-upload" class="mini">上传贴图</button>
+          <button id="btn-tex-new" class="mini">新建</button>
+          <button id="btn-tex-save" class="mini">保存</button>
+        </div>
+        <div class="tex-list" id="tex-list"></div>
+        <div class="uv-panel" id="uv-panel">
+          <p class="hint">选中对象以编辑贴图 / UV</p>
+        </div>
+      </div>
     </aside>
   </main>
 
@@ -125,6 +155,7 @@
   <script src="./vendor/three.min.js"></script>
   <script src="./vendor/OrbitControls.js"></script>
   <script src="./js/constants.js"></script>
+  <script src="./js/ui.js"></script>
   <script src="./js/easing.js"></script>
   <script src="./js/scene.js"></script>
   <script src="./js/animation.js"></script>
@@ -137,6 +168,7 @@
   <script src="./js/easing-editor.js"></script>
   <script src="./js/generators.js"></script>
   <script src="./js/panels.js"></script>
+  <script src="./js/texture-editor.js"></script>
   <script src="./js/blocks.js"></script>
   <script src="./js/float-window.js"></script>
   <script src="./js/blocks-ui.js"></script>

@@ -3,11 +3,11 @@
  * ======================================================================= */
 
 function createGroup() {
-  if (state.selected.size < 1) { alert('请先选中粒子'); return; }
+  if (state.selected.size < 1) { modalAlert('提示', '请先选中粒子'); return; }
   pushUndo();
   const name = nextGroupName();
   const idSet = new Set([...state.selected].filter(id => !isDerivedParticle(getParticle(id))));
-  if (idSet.size < 1) { popUndo(); alert('派生粒子不可建立普通组'); return; }
+  if (idSet.size < 1) { popUndo(); modalAlert('提示', '派生粒子不可建立普通组'); return; }
   for (const g in state.groups) {
     state.groups[g] = state.groups[g].filter(id => !idSet.has(id));
     if (state.groups[g].length === 0) delete state.groups[g];
@@ -144,9 +144,7 @@ function renderParticleNode(p) {
     e.stopPropagation();
     startRename(pid, (v) => renameParticle(p.id, v), () => refreshParticleTree());
   });
-  const style = document.createElement('span');
-  style.className = 'pstyle'; style.textContent = p.style;
-  head.appendChild(arrow); head.appendChild(pid); head.appendChild(style);
+  head.appendChild(arrow); head.appendChild(pid);
   const trackCount = state.tracks.filter(tr => tr.ids.length === 1 && tr.ids[0] === p.id).length;
   if (trackCount > 0) {
     const cnt = document.createElement('span');

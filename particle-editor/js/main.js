@@ -26,8 +26,6 @@ window.addEventListener('keydown', (e) => { if (e.key === 'Control') document.bo
 window.addEventListener('keyup', (e) => { if (e.key === 'Control') document.body.classList.remove('ctrl-held'); });
 
 function initUI() {
-  const styleSel = document.getElementById('prop-style');
-  STYLES.forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = s; styleSel.appendChild(o); });
   const tlEase = document.getElementById('tl-easing');
   tlEase.innerHTML = easingCurveSVG(state.defaultEasing);
   tlEase.onclick = () => openEasingEditor(state.defaultEasing, (e) => {
@@ -64,7 +62,15 @@ function initUI() {
     document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b === btn));
     updateGizmo(); // 切换工具时立即刷新 gizmo 显示模式
   });
-  document.getElementById('draw-plane').addEventListener('change', (ev) => { state.drawPlane = ev.target.value; triggerDrawPlanePulse(); });
+
+  // 右侧选项卡切换
+  document.getElementById('sidebar-tabs').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.tab');
+    if (!btn) return;
+    document.querySelectorAll('#sidebar-tabs .tab').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + btn.dataset.tab));
+    if (btn.dataset.tab === 'texture') refreshTexturePanel();
+  });
 
   // 函数对象
   const fxPresetSel = document.getElementById('fx-preset-add');
@@ -79,7 +85,6 @@ function initUI() {
   refreshFunctionPanel();
 
   // 属性
-  document.getElementById('prop-style').addEventListener('change', (ev) => { if (ev.target.value === '__mixed__') return; pushUndo(); currentSelected().forEach(p => { p.style = ev.target.value; }); rebuildPoints(); });
   document.getElementById('prop-glow').addEventListener('change', (ev) => { pushUndo(); currentSelected().forEach(p => { p.glow = ev.target.checked; }); rebuildPoints(); });
   document.getElementById('prop-light').addEventListener('input', (ev) => { beginContinuous(); document.getElementById('light-val').textContent = ev.target.value; currentSelected().forEach(p => { p.lightLevel = parseInt(ev.target.value); }); rebuildPoints(); });
   document.getElementById('prop-light').addEventListener('change', endContinuous);
@@ -87,8 +92,10 @@ function initUI() {
   document.getElementById('prop-alpha').addEventListener('change', endContinuous);
   document.getElementById('prop-color').addEventListener('input', (ev) => { beginContinuous(); applyColorFromInputs(); });
   document.getElementById('prop-color').addEventListener('change', endContinuous);
-  document.getElementById('prop-scale').addEventListener('input', (ev) => { beginContinuous(); editSelectionUniform('scl', [parseFloat(ev.target.value) || 1]); });
-  document.getElementById('prop-scale').addEventListener('change', endContinuous);
+  ['prop-scale-x', 'prop-scale-y', 'prop-scale-z'].forEach(id => {
+    document.getElementById(id).addEventListener('input', (ev) => { beginContinuous(); applyScaleFromInputs(); });
+    document.getElementById(id).addEventListener('change', endContinuous);
+  });
   ['prop-posx', 'prop-posy', 'prop-posz'].forEach(id => {
     document.getElementById(id).addEventListener('input', (ev) => { beginContinuous(); applyPositionFromInputs(); });
     document.getElementById(id).addEventListener('change', endContinuous);
@@ -153,11 +160,13 @@ function initUI() {
   refreshParticleTree();
   // 恢复工作区状态（粒子列表宽）
   if (typeof applyWorkspaceState === 'function') applyWorkspaceState();
+  if (typeof initTextureEditor === 'function') initTextureEditor();
 }
 
 function clearAll() {
   pushUndo();
   state.particles = []; state.tracks = []; state.groups = {}; state.functions = [];
+  state.textures = {}; state.currentTexture = null; state.groupUV = {};
   state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null;
   state.expandedParticles.clear(); state.expandedProps.clear();
   state.time = 0;
@@ -176,6 +185,14 @@ function applyPositionFromInputs() {
   const z = parseFloat(document.getElementById('prop-posz').value);
   if ([x, y, z].some(isNaN)) return;
   editSelectionUniform('pos', [x, y, z]);
+}
+
+function applyScaleFromInputs() {
+  const x = parseFloat(document.getElementById('prop-scale-x').value);
+  const y = parseFloat(document.getElementById('prop-scale-y').value);
+  const z = parseFloat(document.getElementById('prop-scale-z').value);
+  if ([x, y, z].some(isNaN)) return;
+  editSelectionUniform('scl', [x, y, z]);
 }
 
 /* 左侧面板拖拽缩放 + 拖拽移出组 */
@@ -278,8 +295,13 @@ function animate(now) {
   }
   controls.update();
   updateGizmoFrame();
+  pointsMaterial.uniforms.uTime.value = performance.now() / 1000;
   renderer.render(scene, camera);
   drawAxisGizmo();
+  // UV 动画预览：贴图 tab 激活且当前为动画模式时，逐帧刷新 overlay 让 UV 预览框跟随动画帧移动
+  if (typeof texAnimOverlayActive === 'function' && texAnimOverlayActive()) {
+    if (typeof updateTexOverlay === 'function') updateTexOverlay();
+  }
 }
 
 initUI();
@@ -297,11 +319,11 @@ window.addEventListener('beforeunload', (ev) => {
 // 拖拽文件到窗口即可打开
 (function setupDragDrop() {
   window.addEventListener('dragover', (ev) => { ev.preventDefault(); });
-  window.addEventListener('drop', (ev) => {
+  window.addEventListener('drop', async (ev) => {
     ev.preventDefault();
     const file = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
     if (!file) return;
-    if (!confirmDiscardChanges()) return;
+    if (!(await confirmDiscardChanges())) return;
     state.fileHandle = null;
     loadFile(file);
   });

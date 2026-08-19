@@ -38,8 +38,8 @@ function gizmoHl(c) { return new THREE.Color(c).lerp(new THREE.Color(1, 1, 1), 0
 
 
 function updateGizmo() {
-  // 移动/旋转工具选中粒子时：移除橙色描边，粒子不透明度降至 0.8（仅渲染，不改数据）
-  const dim = (state.tool === 'move' || state.tool === 'rotate') && hasSelection();
+  // 有选中时（任意工具）：全体粒子半透明、隐藏橙色描边（普通选中与移动/旋转拖拽视觉一致）
+  const dim = hasSelection();
   pointsMaterial.uniforms.uOpacity.value = dim ? 0.8 : 1.0;
   selectedMaterial.uniforms.uOpacity.value = dim ? 0.0 : 1.0;
   // 拼图模式 / 非移动、旋转工具：隐藏控制器
@@ -170,8 +170,7 @@ function screenToNdc(clientX, clientY) {
 
 function planeInfo() {
   const def = PLANES[state.drawPlane] || PLANES.XZ;
-  const off = parseFloat(document.getElementById('height-y').value) || 0;
-  return { def, plane: new THREE.Plane(def.normal, -off), off };
+  return { def, plane: new THREE.Plane(def.normal, 0), off: 0 };
 }
 
 // 绘制平面切换时：让该平面内包含的两条轴线颜色发光一下
@@ -228,7 +227,7 @@ function worldToUV(p) {
   return [p.y, p.z];
 }
 
-const shapeCount = () => Math.max(2, parseInt(document.getElementById('shape-count').value) || 30);
+const shapeCount = () => Math.max(2, state.drawCount || 30);
 
 function computeShapePositions(mode, u0, v0, u1, v1, off) {
   const toWorld = PLANES[state.drawPlane].toWorld;

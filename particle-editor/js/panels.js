@@ -2,6 +2,17 @@
  * 属性面板
  * ======================================================================= */
 
+// 设置缩放 XYZ 三输入（vals 为 [x,y,z]；null 元素表示混合值显示空）
+function setScaleInputs(vals) {
+  ['prop-scale-x', 'prop-scale-y', 'prop-scale-z'].forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const v = vals == null ? null : vals[i];
+    if (v == null) { el.value = ''; el.placeholder = '-'; }
+    else { el.value = (typeof v === 'number' ? Math.round(v * 100) / 100 : v); el.placeholder = ''; }
+  });
+}
+
 function updatePropPanel() {
   const sel = currentSelected();
   const fxId = state.selectedFunction;
@@ -10,11 +21,11 @@ function updatePropPanel() {
   if (sel.length === 0 && !isFx && !gname) return;
   // 派生粒子基础属性只读；函数对象 pos/scl 可编辑（写整体轨道）
   const readOnly = !isFx && !gname && sel.some(isDerivedParticle);
-  ['prop-style', 'prop-color', 'prop-alpha', 'prop-glow', 'prop-light'].forEach(id => {
+  ['prop-color', 'prop-alpha', 'prop-glow', 'prop-light'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = readOnly || isFx || gname;
   });
-  ['prop-scale', 'prop-posx', 'prop-posy', 'prop-posz'].forEach(id => {
+  ['prop-scale-x', 'prop-scale-y', 'prop-scale-z', 'prop-posx', 'prop-posy', 'prop-posz'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = readOnly;
   });
@@ -26,7 +37,7 @@ function updatePropPanel() {
     document.getElementById('prop-posx').value = (fx.center[0] + d[0]).toFixed(2);
     document.getElementById('prop-posy').value = (fx.center[1] + d[1]).toFixed(2);
     document.getElementById('prop-posz').value = (fx.center[2] + d[2]).toFixed(2);
-    document.getElementById('prop-scale').value = fxScaleValueAt(fxId, state.time);
+    setScaleInputs(fxScaleValuesAt(fxId, state.time));
     return;
   }
   // 组：显示整体质心位置（缩放无独立显示）
@@ -35,22 +46,11 @@ function updatePropPanel() {
     document.getElementById('prop-posx').value = c[0].toFixed(2);
     document.getElementById('prop-posy').value = c[1].toFixed(2);
     document.getElementById('prop-posz').value = c[2].toFixed(2);
-    const sInput = document.getElementById('prop-scale');
-    sInput.value = '';
-    sInput.placeholder = '-';
+    setScaleInputs(null);
     return;
   }
   const first = sel[0];
   const same = (fn) => sel.every(q => fn(q) === fn(first));
-  const styleSel = document.getElementById('prop-style');
-  const styleSame = same(q => q.style);
-  let mixedOpt = styleSel.querySelector('option[value="__mixed__"]');
-  if (!styleSame) {
-    if (!mixedOpt) { mixedOpt = document.createElement('option'); mixedOpt.value = '__mixed__'; mixedOpt.textContent = '-'; styleSel.appendChild(mixedOpt); }
-    styleSel.value = '__mixed__';
-  } else {
-    styleSel.value = first.style;
-  }
 
   const colorSame = same(q => q.color[0] + ',' + q.color[1] + ',' + q.color[2]);
   document.getElementById('prop-color').value = colorSame ? rgbToHex(first.color[0], first.color[1], first.color[2]) : '#808080';
@@ -60,10 +60,10 @@ function updatePropPanel() {
   if (aSame) { aInput.value = first.color[3]; document.getElementById('alpha-val').textContent = first.color[3].toFixed(2); }
   else { aInput.value = 0.5; document.getElementById('alpha-val').textContent = '-'; }
 
-  const sSame = same(q => q.scale);
-  const sInput = document.getElementById('prop-scale');
-  sInput.value = sSame ? first.scale : '';
-  sInput.placeholder = sSame ? '' : '-';
+  const sxSame = same(q => q.scale && q.scale[0]);
+  const sySame = same(q => q.scale && q.scale[1]);
+  const szSame = same(q => q.scale && q.scale[2]);
+  setScaleInputs([sxSame ? first.scale[0] : null, sySame ? first.scale[1] : null, szSame ? first.scale[2] : null]);
 
   const gSame = same(q => q.glow);
   const gInput = document.getElementById('prop-glow');
@@ -158,7 +158,7 @@ function refreshFunctionPanel() {
 
 function commitFunctionRebuild(fx) {
   try { rebuildFunctionObject(fx); }
-  catch (e) { alert('表达式错误：' + e.message); }
+  catch (e) { modalAlert('表达式错误', e.message); }
 }
 
 function buildFunctionPanel(fx) {
@@ -214,17 +214,6 @@ function buildFunctionPanel(fx) {
     }
     wrap.appendChild(pbox);
   }
-
-  // 样式
-  const styleRow = document.createElement('label');
-  styleRow.className = 'row';
-  styleRow.textContent = '样式 ';
-  const styleSel = document.createElement('select');
-  STYLES.forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = s; styleSel.appendChild(o); });
-  styleSel.value = fx.style;
-  styleSel.onchange = () => { pushUndo(); fx.style = styleSel.value; commitFunctionRebuild(fx); };
-  styleRow.appendChild(styleSel);
-  wrap.appendChild(styleRow);
 
   // 时长 / 采样间隔
   const durRow = document.createElement('div');
@@ -323,7 +312,7 @@ function buildVarRow(fx, name) {
     pushUndo();
     const nn = nIn.value.trim();
     if (nn && nn !== name) {
-      if (ATTR_NAMES.includes(nn)) { alert('变量名 ' + nn + ' 是属性保留字'); nIn.value = name; refreshFunctionPanel(); return; }
+      if (ATTR_NAMES.includes(nn)) { modalAlert('变量名错误', '变量名 ' + nn + ' 是属性保留字'); nIn.value = name; refreshFunctionPanel(); return; }
       fx.vars[nn] = fx.vars[name]; delete fx.vars[name];
     }
     commitFunctionRebuild(fx); refreshFunctionPanel();

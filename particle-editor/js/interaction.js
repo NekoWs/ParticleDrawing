@@ -129,8 +129,15 @@ function fxPosDeltaAt(fxId, T) {
 function fxRotationValueAt(fxId, T) { return rotVectorAt('f:' + fxId, T); }
 
 function fxScaleValueAt(fxId, T) {
-  const tr = findTrackByPr('scl', 'f:' + fxId);
+  const tr = findTrackByPr('scl.x', 'f:' + fxId);
   return (tr && tr.kf.length > 0) ? trackValueAt(tr, T, 1) : 1;
+}
+
+function fxScaleValuesAt(fxId, T) {
+  return ['x', 'y', 'z'].map(c => {
+    const tr = findTrackByPr('scl.' + c, 'f:' + fxId);
+    return (tr && tr.kf.length > 0) ? trackValueAt(tr, T, 1) : 1;
+  });
 }
 
 function enterRotate(clientX, clientY, axis) {
@@ -378,10 +385,10 @@ function updateScale(clientX) {
   if (m.type === 'fx-scale') {
     const s = Math.max(0.02, m.startScale * factor);
     const t = state.captureKeyframes ? Math.round(state.time) : 0;
-    setFunctionTrackValue(m.fxId, 'scl', 'set', t, [s]);
+    setFunctionTrackValue(m.fxId, 'scl', 'set', t, [s, s, s]);
     return;
   }
-  editParticles([...m.origins].map(([id, orig]) => [id, [orig * factor]]), 'scl');
+  editParticles([...m.origins].map(([id, orig]) => [id, [orig[0] * factor, orig[1] * factor, orig[2] * factor]]), 'scl');
 }
 
 function updateRotate(clientX, clientY) {
@@ -468,7 +475,7 @@ function copySelected() {
     if (members.length === 0) return;
     const memberIds = new Set(members.map(m => m.id));
     const items = members.map(p => ({
-      id: p.id, style: p.style, color: p.color.slice(), scale: p.scale, glow: p.glow,
+      id: p.id, color: p.color.slice(), scale: (p.scale || [1, 1, 1]).slice(), glow: p.glow,
       lightLevel: p.lightLevel, pos: currentVisual(p).pos.slice(), vel: (p.vel || [0, 0, 0]).slice(),
     }));
     const tracks = state.tracks
@@ -482,7 +489,7 @@ function copySelected() {
   clipboard = {
     type: 'particles',
     items: sel.map(p => ({
-      id: p.id, style: p.style, color: p.color.slice(), scale: p.scale, glow: p.glow,
+      id: p.id, color: p.color.slice(), scale: (p.scale || [1, 1, 1]).slice(), glow: p.glow,
       lightLevel: p.lightLevel, pos: currentVisual(p).pos.slice(), vel: (p.vel || [0, 0, 0]).slice(),
     })),
   };
@@ -494,7 +501,7 @@ function pasteClipboard() {
   const newIds = [];
   for (const item of clipboard.items) {
     const p = addParticle({
-      style: item.style, color: item.color.slice(), scale: item.scale, glow: item.glow,
+      color: item.color.slice(), scale: item.scale.slice(), glow: item.glow,
       lightLevel: item.lightLevel, pos: [item.pos[0] + 1, item.pos[1], item.pos[2] + 1], vel: item.vel.slice(),
     });
     idMap[item.id] = p.id;
@@ -831,8 +838,8 @@ window.addEventListener('keydown', (ev) => {
   const isTextInput = ev.target && ev.target.matches && ev.target.matches('input, textarea, select');
   // 文本框内保留默认文本操作（Ctrl+A/C/V/Z/Y 等），不触发编辑器快捷键
   if (isTextInput) return;
-  if (ev.ctrlKey && k === 'z') { ev.preventDefault(); if (ev.shiftKey) redo(); else undo(); return; }
-  if (ev.ctrlKey && k === 'y') { ev.preventDefault(); redo(); return; }
+  if (ev.ctrlKey && k === 'z') { ev.preventDefault(); if (typeof texActive !== 'undefined' && texActive) { texUndo(); return; } if (ev.shiftKey) redo(); else undo(); return; }
+  if (ev.ctrlKey && k === 'y') { ev.preventDefault(); if (typeof texActive !== 'undefined' && texActive) { texRedo(); return; } redo(); return; }
   if (ev.ctrlKey && k === 'n') { ev.preventDefault(); newFile(); return; }
   if (ev.ctrlKey && k === 's') { ev.preventDefault(); saveFile(); return; }
   if (ev.ctrlKey && k === 'o') { ev.preventDefault(); openFile(); return; }
@@ -910,4 +917,76 @@ function applyBoxSelection() {
   else state.selected = sel;
   resolveSelectionPriority();
   if (state.selectedFunction) refreshFunctionPanel(); // 选中函数对象时刷新其属性面板
+}
+
+/* =========================================================================
+ * 绘制粒子数量交互：右键短按弹编辑框 + range，拖动时滚轮增减数量
+ * ======================================================================= */
+
+const DRAW_TOOLS = ['pencil', 'line', 'circle', 'rect', 'freehand'];
+const DRAW_COUNT_MAX = 50000;
+
+function isDrawTool() { return DRAW_TOOLS.includes(state.tool); }
+
+let rightDownPos = null;
+let drawCountEditor = null;
+
+function closeDrawCountEditor() {
+  if (drawCountEditor) { drawCountEditor.remove(); drawCountEditor = null; }
+}
+
+// 右键短按：悬浮粒子数量编辑框 + range 编辑条
+function showDrawCountEditor(cx, cy) {
+  closeDrawCountEditor();
+  const box = document.createElement('div');
+  box.className = 'draw-count-editor';
+  box.innerHTML = '<span class="dce-label">粒子数量</span>';
+  const num = document.createElement('input');
+  num.type = 'number'; num.min = '2'; num.max = DRAW_COUNT_MAX; num.value = state.drawCount;
+  box.appendChild(num);
+  const range = document.createElement('input');
+  range.type = 'range'; range.min = '2'; range.max = DRAW_COUNT_MAX; range.value = state.drawCount;
+  box.appendChild(range);
+  num.addEventListener('input', () => { state.drawCount = clampCount(num.value); range.value = state.drawCount; });
+  num.addEventListener('change', () => { state.drawCount = clampCount(num.value); range.value = state.drawCount; });
+  range.addEventListener('input', () => { state.drawCount = clampCount(range.value); num.value = state.drawCount; });
+  document.body.appendChild(box);
+  box.style.left = Math.min(cx, window.innerWidth - 260) + 'px';
+  box.style.top = Math.min(cy, window.innerHeight - 60) + 'px';
+  drawCountEditor = box;
+  setTimeout(() => num.focus(), 0);
+}
+function clampCount(v) { return Math.max(2, Math.min(DRAW_COUNT_MAX, Math.round(parseInt(v) || 30))); }
+
+renderer.domElement.addEventListener('pointerdown', (ev) => {
+  if (ev.button === 2) rightDownPos = { x: ev.clientX, y: ev.clientY };
+});
+window.addEventListener('pointerup', (ev) => {
+  if (ev.button === 2 && rightDownPos) {
+    const dx = ev.clientX - rightDownPos.x, dy = ev.clientY - rightDownPos.y;
+    rightDownPos = null;
+    if (Math.hypot(dx, dy) < 5 && isDrawTool()) showDrawCountEditor(ev.clientX, ev.clientY);
+  }
+});
+
+// 拖动绘制时滚轮：动态增减粒子数量（实时更新形状预览）
+renderer.domElement.addEventListener('wheel', (ev) => {
+  if (!isDrawTool() || (!drag && !boxSel)) return;
+  const d = ev.deltaY < 0 ? 1 : -1;
+  state.drawCount = clampCount(state.drawCount + d * (ev.shiftKey ? 10 : 1));
+  syncDrawCountEditorValues();
+  // 实时刷新当前形状预览
+  if (drag && ['line', 'circle', 'rect', 'freehand'].includes(drag.mode)) {
+    const pt = planePointAt(lastMouse.x, lastMouse.y);
+    if (pt) {
+      const [u, v] = worldToUV(pt);
+      setPreview(computeShapePositions(drag.mode, drag.start.u, drag.start.v, u, v, drag.off));
+    }
+  }
+}, { passive: true });
+
+function syncDrawCountEditorValues() {
+  if (!drawCountEditor) return;
+  const inputs = drawCountEditor.querySelectorAll('input');
+  if (inputs.length === 2) { inputs[0].value = state.drawCount; inputs[1].value = state.drawCount; }
 }

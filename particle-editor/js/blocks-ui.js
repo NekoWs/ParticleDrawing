@@ -1277,14 +1277,14 @@ function openBlockDrawer(fx) {
   ensurePuzzleDom();
   let chain;
   try { chain = codeToStatements(fx.code); }
-  catch (e) { alert('无法用拼图打开：代码解析失败\n' + e.message + '\n\n请先在文本视图修正代码。'); return; }
+  catch (e) { modalAlert('无法用拼图打开', '代码解析失败\n' + e.message + '\n\n请先在文本视图修正代码。'); return; }
   const varExprs = {};
   const varOrder = [];
   for (const name of Object.keys(fx.vars)) {
     const v = fx.vars[name];
     if ((v.kf || []).length > 0) continue;
     try { varExprs[name] = parseVarExpr(v.expr || '0'); varOrder.push(name); }
-    catch (e) { alert('变量 ' + name + ' 的表达式解析失败：' + e.message); return; }
+    catch (e) { modalAlert('变量表达式错误', '变量 ' + name + ' 的表达式解析失败：' + e.message); return; }
   }
   const saved = fx.ui || {};
   bctx = {
