@@ -743,7 +743,17 @@ async function texturesDirHandle() {
 
 // 把全部对象 UV 里对 oldName 的贴图引用改为 newName（newName 为 null = 清空为无贴图）
 function replaceTextureRef(oldName, newName) {
-  const set = uv => { if (uv && uv.texture === oldName) uv.texture = newName; };
+  const set = uv => {
+    if (uv && uv.texture === oldName) {
+      uv.texture = newName;
+      // 清除贴图时重置 uvSize/texSize，避免残留被删除贴图的尺寸导致渲染异常
+      if (!newName) {
+        uv.uvSize = [0, 0];
+        uv.uvStart = [0, 0];
+        uv.texSize = [16, 16];
+      }
+    }
+  };
   for (const p of state.particles) set(p.uv);
   for (const fx of state.functions) set(fx.uv);
   for (const gname of Object.keys(state.groupUV)) set(state.groupUV[gname]);
@@ -852,6 +862,14 @@ function refreshTexList() {
  * ======================================================================= */
 
 function refreshTexturePanel() {
+  // 自动选中当前对象使用的贴图
+  const target = currentUVTarget();
+  if (target) {
+    const uv = readTargetUV(target);
+    if (uv && uv.texture && state.textures[uv.texture]) {
+      state.currentTexture = uv.texture;
+    }
+  }
   renderTexCanvas();
   refreshUVPanel();
   refreshTexList();
@@ -876,22 +894,8 @@ function refreshUVPanel() {
     const name = texSel.value || null;
     const before = readTargetUV(target);
     const nu = normalizeUV(before || {});
-    // 记录是否真的切换了贴图（用于判断是否重置采样尺寸/起点，避免残留上一张贴图的 UV 数值）
-    const texChanged = (before ? before.texture : null) !== name;
+    // 只更新贴图引用，保留用户设置的 texSize、uvStart、uvSize 等参数
     nu.texture = name;
-    const t = getTexture(name);
-    if (t && name) {
-      nu.texSize = [t.width, t.height]; // 贴图大小默认跟贴图分辨率
-      if (texChanged) {
-        // 切换贴图：采样起点/大小随新贴图重置（起点归零、大小铺满整张贴图），
-        // 否则会残留上一张贴图（可能尺寸不同）的 uvSize/uvStart，导致采样区域错位
-        nu.uvStart = [0, 0];
-        nu.uvSize = [t.width, t.height];
-      } else if (!nu.uvSize || (nu.uvSize[0] === 0 && nu.uvSize[1] === 0)) {
-        // 同贴图但 uvSize 仍为默认 0（未自定义过）：铺满整张贴图，避免采样 0 区域
-        nu.uvSize = [t.width, t.height];
-      }
-    }
     writeTargetUV(target, nu);
     refreshUVPanel();
     renderTexCanvas();

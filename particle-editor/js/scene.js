@@ -22,7 +22,7 @@ const pointer = new THREE.Vector2();
 
 // 底部平面网格：距离无限（视觉上延伸至地平线），移除与世界轴重合的 x=0 / z=0 中心线
 const grid = (function makeGrid() {
-  const half = 1000, step = 2;
+  const half = 500, step = 1;
   const pts = [];
   for (let i = -500; i <= 500; i++) {
     const v = i * step;
@@ -162,6 +162,9 @@ const pointsMaterial = new THREE.ShaderMaterial({
     varying float vUVMode;
     void main() {
       vec2 uvLocal = (gl_PointCoord - 0.5) / vAspect + 0.5;
+      // 翻转 y 坐标：flipY=true 时 canvas 行 0（图片顶部）→ 纹理 v=0，
+      // 但 UV 坐标中 y=0 应对应图片顶部，所以需要翻转
+      uvLocal.y = 1.0 - uvLocal.y;
       if (uvLocal.x < 0.0 || uvLocal.x > 1.0 || uvLocal.y < 0.0 || uvLocal.y > 1.0) discard;
       if (vUVMode < 0.5) {
         gl_FragColor = vec4(vColor.rgb, vColor.a) * uOpacity;
@@ -223,16 +226,16 @@ function rebuildAtlas() {
     };
   });
   texAtlasMap = map;
-  if (!texAtlasTexture) {
-    texAtlasTexture = new THREE.CanvasTexture(canvas);
-    texAtlasTexture.flipY = true; // 与上方 v 坐标翻转公式配套（three 默认即 true，显式声明）
-    texAtlasTexture.minFilter = THREE.NearestFilter;
-    texAtlasTexture.magFilter = THREE.NearestFilter;
-    pointsMaterial.uniforms.uMap.value = texAtlasTexture;
-  } else {
-    texAtlasTexture.image = canvas;
-    texAtlasTexture.needsUpdate = true;
+  // 当 atlas 尺寸变化时，需要销毁旧纹理并创建新纹理（Three.js CanvasTexture 不支持尺寸变化）
+  if (texAtlasTexture) {
+    texAtlasTexture.dispose();
+    texAtlasTexture = null;
   }
+  texAtlasTexture = new THREE.CanvasTexture(canvas);
+  texAtlasTexture.flipY = true;
+  texAtlasTexture.minFilter = THREE.NearestFilter;
+  texAtlasTexture.magFilter = THREE.NearestFilter;
+  pointsMaterial.uniforms.uMap.value = texAtlasTexture;
 }
 
 // 选中描边（方形边框，中心透明露出粒子本色）

@@ -479,6 +479,7 @@ const FX_OUT = { pos: [0, 0, 0], color: [0, 0, 0, 0], vel: [0, 0, 0], scale: 1, 
 const UVOUT = { mode: 0, au0: 0, av0: 0, au1: 0, av1: 0, sx: 0, sy: 0, sw: 16, sh: 16, stepx: 16, stepy: 0, fps: 1, maxFrame: 1, tw: 16, th: 16 };
 
 // 计算单个粒子的 uv 渲染参数（写入复用 out），无贴图时 mode=0
+// UV 坐标为像素坐标，在 shader 中除以 vUVTex 归一化；texSize 仅影响粒子显示大小，不影响 UV
 function computeParticleUV(p, out) {
   out.mode = 0;
   if (typeof resolveUV !== 'function') return;
@@ -493,7 +494,8 @@ function computeParticleUV(p, out) {
     out.mode = 2;
   } else if (uv.mode === 'animated') {
     out.sx = uv.uvStart[0]; out.sy = uv.uvStart[1];
-    out.sw = uv.uvSize[0]; out.sh = uv.uvSize[1];
+    // uvSize 为 0 时使用贴图大小（铺满整张贴图）
+    out.sw = uv.uvSize[0] || tex.w; out.sh = uv.uvSize[1] || tex.h;
     out.stepx = uv.uvStep[0]; out.stepy = uv.uvStep[1];
     out.fps = uv.fps;
     // 自动帧数（常量层共享函数，与贴图预览一致）：行末换行；maxFrame 0/1/未设置为「自动」
@@ -502,7 +504,8 @@ function computeParticleUV(p, out) {
     out.mode = uv.loop ? 3 : 4;
   } else {
     out.sx = uv.uvStart[0]; out.sy = uv.uvStart[1];
-    out.sw = uv.uvSize[0]; out.sh = uv.uvSize[1];
+    // uvSize 为 0 时使用贴图大小（铺满整张贴图）
+    out.sw = uv.uvSize[0] || tex.w; out.sh = uv.uvSize[1] || tex.h;
     out.mode = 1;
   }
 }
@@ -668,10 +671,16 @@ function rebuildPoints(full) {
     }
     positions[i * 3] = px; positions[i * 3 + 1] = py; positions[i * 3 + 2] = pz;
     colors[i * 4] = cr; colors[i * 4 + 1] = cg; colors[i * 4 + 2] = cb; colors[i * 4 + 3] = ca;
-    let sx = ssx * SZF, sy = ssy * SZF;
+    computeParticleUV(p, UVOUT);
+    // 贴图大小缩放：使用用户设置的 texSize（控制粒子显示大小），基准 16px
+    const uvForSize = (typeof resolveUV === 'function') ? resolveUV(p).uv : null;
+    const texW = uvForSize ? (uvForSize.texSize[0] || 16) : 16;
+    const texH = uvForSize ? (uvForSize.texSize[1] || 16) : 16;
+    const texScaleX = Math.max(1, texW) / 16;
+    const texScaleY = Math.max(1, texH) / 16;
+    let sx = ssx * SZF * texScaleX, sy = ssy * SZF * texScaleY;
     sizes[i * 2] = sx > 0.02 ? sx : 0.02;
     sizes[i * 2 + 1] = sy > 0.02 ? sy : 0.02;
-    computeParticleUV(p, UVOUT);
     const i4 = i * 4, i2 = i * 2;
     rpUV[i4] = UVOUT.au0; rpUV[i4 + 1] = UVOUT.av0; rpUV[i4 + 2] = UVOUT.au1; rpUV[i4 + 3] = UVOUT.av1;
     rpUVScale[i4] = UVOUT.sx; rpUVScale[i4 + 1] = UVOUT.sy; rpUVScale[i4 + 2] = UVOUT.sw; rpUVScale[i4 + 3] = UVOUT.sh;
@@ -691,7 +700,14 @@ function rebuildPoints(full) {
     const v = currentVisual(sel[i]);
     const off = velOffsetAt(sel[i], state.time);
     spos[i * 3] = v.pos[0] + off[0]; spos[i * 3 + 1] = v.pos[1] + off[1]; spos[i * 3 + 2] = v.pos[2] + off[2];
-    const sx = v.scale[0] * PARTICLE_SIZE_FACTOR, sy = v.scale[1] * PARTICLE_SIZE_FACTOR;
+    // 与主循环一致：使用用户设置的 texSize 计算粒子尺寸
+    computeParticleUV(sel[i], UVOUT);
+    const uvForSize = (typeof resolveUV === 'function') ? resolveUV(sel[i]).uv : null;
+    const texW = uvForSize ? (uvForSize.texSize[0] || 16) : 16;
+    const texH = uvForSize ? (uvForSize.texSize[1] || 16) : 16;
+    const texScaleX = Math.max(1, texW) / 16;
+    const texScaleY = Math.max(1, texH) / 16;
+    const sx = v.scale[0] * PARTICLE_SIZE_FACTOR * texScaleX, sy = v.scale[1] * PARTICLE_SIZE_FACTOR * texScaleY;
     ssiz[i * 2] = Math.max(0.02, sx);
     ssiz[i * 2 + 1] = Math.max(0.02, sy);
   }

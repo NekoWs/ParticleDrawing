@@ -29,7 +29,7 @@ import java.util.UUID
  * @param y 初始 Y 坐标
  * @param z 初始 Z 坐标
  * @param color 初始颜色
- * @param scale 初始缩放
+ * @param scale 初始缩放（编辑器数据模型值，已含缩放因子）
  * @param isGlowing 是否发光
  * @param uv 编辑器的 UV 参数（已解析的最终作用域值）；null 或无贴图时退化为 sprite 渲染
  */
@@ -52,6 +52,16 @@ class BridgeParticle(
     // flipbook 计时起点（墙钟，与编辑器 performance.now()/1000 语义一致）
     private val animStartNanos: Long = System.nanoTime()
 
+    // 贴图大小缩放因子：使用用户设置的 texSize / 16（基准 16px），用于控制贴图粒子的显示尺寸
+    private val texScale: Float = computeTexScale()
+
+    /** 计算贴图大小缩放因子（使用用户设置的 texSize，基准 16px，越大粒子越大）。 */
+    private fun computeTexScale(): Float {
+        val u = uv ?: return 1f
+        val maxDim = maxOf(u.texSize[0], u.texSize[1])
+        return if (maxDim > 0) maxDim / 16f else 1f
+    }
+
     init {
         xo = x
         yo = y
@@ -59,7 +69,11 @@ class BridgeParticle(
 
         setColor(color.r, color.g, color.b)
         alpha = color.a
-        quadSize = scale
+        // 编辑器中 PARTICLE_SIZE_FACTOR = 0.5 用于 gl_PointSize（屏幕像素），
+        // 与 Minecraft 的 world-space quadSize 不同。编辑器粒子约占网格 1/10（网格步长=2，即约 0.2 单位），
+        // Minecraft 方块边长 1 米，所以缩放因子 = 0.2 / 1 = 0.2
+        // 纳入贴图大小缩放：texSize 越大粒子越大
+        quadSize = scale * 0.2f * texScale
         lifetime = Int.MAX_VALUE
         gravity = 0f
         hasPhysics = false
@@ -122,10 +136,12 @@ class BridgeParticle(
 
     /**
      * 同步粒子缩放。
-     * @param scale 目标缩放值
+     * @param scale 目标缩放值（编辑器数据模型值）
      */
     fun syncScale(scale: Float) {
-        quadSize = scale
+        // 与 init 中保持一致的缩放因子（编辑器世界单位约 0.2 = Minecraft 1 米）
+        // 纳入贴图大小缩放：texSize 越大粒子越大
+        quadSize = scale * 0.2f * texScale
     }
 
     override fun tick() {
