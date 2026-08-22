@@ -162,6 +162,32 @@ class ClientParticleEngine {
     }
 
     /**
+     * 直接同步粒子状态（非均匀缩放三分量版本，供动画播放使用）。
+     * scaleArray [sx, sy, sz] 中 sx → quad 宽度，sy → quad 高度，sz 存储但不参与 billboard。
+     */
+    fun updateParticleDirectArray(id: UUID, pos: Vec3, color: Color, scaleArray: FloatArray,
+                                  glowing: Boolean, lightLevel: Int, snap: Boolean = false) {
+        val rp = particles[id] ?: return
+        directIds.add(id)
+        val wasGlowing = rp.glowing() && rp.lightLevel() > 0
+        rp.setPositionDirect(pos)
+        rp.setColorDirect(color)
+        rp.setScaleArrayDirect(scaleArray)
+        rp.setGlowing(glowing)
+        rp.setLightLevel(lightLevel)
+        val nowGlowing = glowing && lightLevel > 0
+        if (wasGlowing != nowGlowing) {
+            if (nowGlowing) glowingIds.add(id) else glowingIds.remove(id)
+        }
+        bridges[id]?.let {
+            it.syncPosition(pos.x, pos.y, pos.z, snap)
+            it.syncColor(color.r, color.g, color.b, color.a)
+            it.syncScaleArray(scaleArray)
+            it.setGlowing(glowing)
+        }
+    }
+
+    /**
      * 设置粒子的速度向量（blocks/tick）。
      * @param id 粒子唯一标识符
      * @param vx X 速度分量
@@ -373,7 +399,12 @@ class ClientParticleEngine {
             if (bp != null) {
                 bp.syncPosition(rp.x(), rp.y(), rp.z(), wasSnap)
                 bp.syncColor(rp.r(), rp.g(), rp.b(), rp.a())
-                bp.syncScale(rp.scale())
+                val sa = rp.scaleArray()
+                if (sa[0] != sa[1] || sa[0] != sa[2]) {
+                    bp.syncScaleArray(sa)
+                } else {
+                    bp.syncScale(rp.scale())
+                }
             }
         }
     }

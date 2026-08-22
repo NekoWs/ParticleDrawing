@@ -7,6 +7,7 @@ import net.minecraft.resources.Identifier
 import work.nekow.particledrawing.animation.AnimationLoader
 import java.io.IOException
 import java.nio.file.Files
+import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -42,7 +43,8 @@ object TextureCache {
     @JvmStatic
     fun load(textureName: String): Entry? {
         entries[textureName]?.let { return it }
-        val file = AnimationLoader.TEXTURE_DIRECTORY.resolve(sanitize(textureName) + ".png")
+        // 文件路径使用原始贴图名（支持中文等 Unicode 字符）
+        val file = AnimationLoader.TEXTURE_DIRECTORY.resolve("$textureName.png")
         if (!Files.exists(file)) return null
         val img: NativeImage
         try {
@@ -55,6 +57,7 @@ object TextureCache {
         val w = img.width
         val h = img.height
         val dt = DynamicTexture({ "PD:$textureName" }, img)
+        // Identifier 路径只允许 [a-z0-9/._-]，非 ASCII 名通过 sanitize 转为 MD5 hex
         val id = Identifier.fromNamespaceAndPath(namespace, prefix + "/" + sanitize(textureName))
         Minecraft.getInstance().textureManager.register(id, dt)
         val entry = Entry(id, w, h)
@@ -68,5 +71,23 @@ object TextureCache {
         entries.clear()
     }
 
-    private fun sanitize(name: String): String = name.replace(Regex("[^a-zA-Z0-9_\\-.]"), "_")
+    /**
+     * 将贴图名转为合法的 Identifier path（只允许 [a-z0-9/._-]）。
+     * 使用 MD5 哈希将任意 Unicode 名映射为 32 位 hex 字符串，保证：
+     * - 合法性：hex 只含 [0-9a-f]，完全满足 Identifier path 约束
+     * - 碰撞安全：MD5 对不同输入几乎不可能产生相同输出
+     * - 确定性：相同贴图名始终映射到相同 Identifier（/pdraw reload 安全）
+     */
+    private fun sanitize(name: String): String {
+        val md5 = MessageDigest.getInstance("MD5")
+        val hash = md5.digest(name.toByteArray(Charsets.UTF_8))
+        return buildString(hash.size * 2) {
+            for (b in hash) {
+                append(HEX_CHARS[(b.toInt() ushr 4) and 0xF])
+                append(HEX_CHARS[b.toInt() and 0xF])
+            }
+        }
+    }
+
+    private val HEX_CHARS = "0123456789abcdef".toCharArray()
 }

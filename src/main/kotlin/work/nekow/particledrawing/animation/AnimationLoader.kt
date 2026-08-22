@@ -38,7 +38,8 @@ object AnimationLoader {
     /** 按名称读取动画工程文件文本，找不到返回 null。 */
     @JvmStatic
     fun load(name: String): String? {
-        val safe = name.replace(Regex("[^a-zA-Z0-9_\\-.]"), "_")
+        // 文件路径使用原始名称（支持中文等 Unicode 字符）
+        val safe = name.replace(Regex("[/\\\\]"), "_")  // 仅防路径穿越，不剥离 Unicode
         val path = DIRECTORY.resolve("$safe.pdraw")
         if (!Files.exists(path)) return null
         return Files.readString(path)

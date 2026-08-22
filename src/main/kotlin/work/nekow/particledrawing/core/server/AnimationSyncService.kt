@@ -60,11 +60,16 @@ object AnimationSyncService {
         return diff
     }
 
-    /** 校验相对文件名，防止路径穿越（仅允许 a-zA-Z0-9 _ - . / ）。 */
+    /** 校验相对文件名，防止路径穿越（允许 Unicode 字符，禁止 .. 和控制字符）。 */
     fun sanitizeRelativeName(name: String): Boolean {
         if (name.isEmpty() || name.length > 512) return false
         if (name.contains("..")) return false
-        return name.matches(Regex("[a-zA-Z0-9_\\-./]+"))
+        // 禁止 ASCII 控制字符和文件系统非法字符（Windows: < > : " | ? *）
+        for (c in name) {
+            if (c.code < 0x20) return false
+            if (c in "<>:\"|?*") return false
+        }
+        return true
     }
 
     /** 计算本地动画文件（.pdraw 与 textures 下的 .png）相对 animations/ 的 SHA-1 清单。 */

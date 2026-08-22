@@ -117,8 +117,8 @@ object ClientAnimationManager {
         val snap = entry.player.consumeJustLooped()
         for (state in entry.player.currentStates()) {
             val uuid = entry.particleUuids[state.id] ?: continue
-            ClientParticleEngine.instance()?.updateParticleDirect(
-                uuid, state.pos, state.color, state.scale[0], state.glowing, state.lightLevel, snap
+            ClientParticleEngine.instance()?.updateParticleDirectArray(
+                uuid, state.pos, state.color, state.scale, state.glowing, state.lightLevel, snap
             )
         }
     }

@@ -6,7 +6,8 @@
   "mixins": [],
   "client": [
     "BrightnessGetterMixin",
-    "EntityRendererMixin"
+    "EntityRendererMixin",
+    "QuadParticleRenderStateMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -52,6 +52,9 @@ class RenderParticle(
     private val col = EaseVar(Color.BLACK, Color.BLACK, Color.BLACK)
     private val scl = EaseVar(0f, 0f, 0f)
 
+    // 非均匀缩放三分量（动画系统使用）；null 时退化为标量 scl
+    private var sclArray: FloatArray = floatArrayOf(0f, 0f, 0f)
+
     // 旋转 / 平移 / 偏移（绕轴心独立缓动后叠加）
     private val rot = EaseVar(DoubleArray(3), DoubleArray(3), DoubleArray(3))
     private val trans = EaseVar(Vec3.ZERO, Vec3.ZERO, Vec3.ZERO)
@@ -80,6 +83,7 @@ class RenderParticle(
         col.tgt = color
         scl.cur = scale
         scl.tgt = scale
+        sclArray = floatArrayOf(scale, scale, scale)
         prevX = position.x
         prevY = position.y
         prevZ = position.z
@@ -99,6 +103,8 @@ class RenderParticle(
     fun b(): Float = col.cur.b
     fun a(): Float = col.cur.a
     fun scale(): Float = scl.cur
+    /** 非均匀缩放三分量 [sx, sy, sz]（动画系统使用）。 */
+    fun scaleArray(): FloatArray = sclArray
 
     // 每帧 partialTick 插值后的位置（动态光照用，避免快速移动粒子光源跳变）
     fun interpolatedX(partialTick: Float): Double = prevX + (pos.cur.x - prevX) * partialTick
@@ -108,7 +114,7 @@ class RenderParticle(
     fun isAlive(): Boolean = deathTime == 0L || System.nanoTime() < deathTime
     fun isDead(): Boolean = !isAlive()
 
-    /** 设置位置/颜色/缩放的缓动目标。 */
+    /** 设置位置/颜色/缩放的缓动目标（标量缩放）。 */
     fun setTarget(position: Vec3, color: Color, scale: Float, easingType: EasingType, durationMs: Long) {
         velocity = Vec3.ZERO
         rotEase.active = false
@@ -120,6 +126,7 @@ class RenderParticle(
         pos.tgt = position
         col.tgt = color
         scl.tgt = scale
+        sclArray = floatArrayOf(scale, scale, scale)
         posEase.easing = easingType.curve
         colEase.easing = easingType.curve
         val now = System.nanoTime()
@@ -130,12 +137,13 @@ class RenderParticle(
         if (durationMs == 0L) snapNextSync = true
     }
 
-    /** 设置颜色与缩放的缓动目标。 */
+    /** 设置颜色与缩放的缓动目标（标量缩放）。 */
     fun setTargetColorScale(color: Color, scale: Float, easingType: EasingType, durationMs: Long) {
         col.start = col.cur
         scl.start = scl.cur
         col.tgt = color
         scl.tgt = scale
+        sclArray = floatArrayOf(scale, scale, scale)
         colEase.easing = easingType.curve
         colEase.startTime = System.nanoTime()
         colEase.durationNs = durationMs * 1_000_000L
@@ -246,10 +254,18 @@ class RenderParticle(
         colEase.startTime = 0L
     }
 
-    /** 直接设置缩放。 */
+    /** 直接设置缩放（标量）。 */
     fun setScaleDirect(scale: Float) {
         scl.cur = scale
         scl.tgt = scale
+        sclArray = floatArrayOf(scale, scale, scale)
+    }
+
+    /** 直接设置非均匀缩放（三分量数组 [sx, sy, sz]）。 */
+    fun setScaleArrayDirect(scaleArray: FloatArray) {
+        sclArray = scaleArray.copyOf()
+        scl.cur = scaleArray[0]
+        scl.tgt = scaleArray[0]
     }
 
     /** 读取并清除「下一次同步应跳变」标记。 */

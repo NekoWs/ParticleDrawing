@@ -5,9 +5,11 @@ import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.client.particle.ParticleRenderType
 import net.minecraft.client.particle.SingleQuadParticle
 import net.minecraft.client.renderer.RenderPipelines
+import net.minecraft.client.renderer.state.level.QuadParticleRenderState
 import net.minecraft.client.renderer.texture.TextureAtlasSprite
 import net.minecraft.data.AtlasIds
 import net.minecraft.util.Mth
+import org.joml.Quaternionf
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleStyle
@@ -55,6 +57,10 @@ class BridgeParticle(
     // 贴图大小缩放因子：使用用户设置的 texSize / 16（基准 16px），用于控制贴图粒子的显示尺寸
     private val texScale: Float = computeTexScale()
 
+    // 非均匀缩放：width 沿相机 X 轴（水平），height 沿相机 Y 轴（垂直），单位 Minecraft 块
+    private var scaleW: Float = 0f
+    private var scaleH: Float = 0f
+
     /** 计算贴图大小缩放因子（使用用户设置的 texSize，基准 16px，越大粒子越大）。 */
     private fun computeTexScale(): Float {
         val u = uv ?: return 1f
@@ -69,11 +75,10 @@ class BridgeParticle(
 
         setColor(color.r, color.g, color.b)
         alpha = color.a
-        // 编辑器中 PARTICLE_SIZE_FACTOR = 0.5 用于 gl_PointSize（屏幕像素），
-        // 与 Minecraft 的 world-space quadSize 不同。编辑器粒子约占网格 1/10（网格步长=2，即约 0.2 单位），
-        // Minecraft 方块边长 1 米，所以缩放因子 = 0.2 / 1 = 0.2
         // 纳入贴图大小缩放：texSize 越大粒子越大
-        quadSize = scale * 0.2f * texScale
+        scaleW = scale * EDITOR_TO_MC_SCALE * texScale
+        scaleH = scaleW  // 标量初始化为正方形
+        quadSize = scaleW  // 兼容原版字段（getQuadSize 回退）
         lifetime = Int.MAX_VALUE
         gravity = 0f
         hasPhysics = false
@@ -135,13 +140,51 @@ class BridgeParticle(
     }
 
     /**
-     * 同步粒子缩放。
+     * 同步粒子缩放（标量，均匀）。
      * @param scale 目标缩放值（编辑器数据模型值）
      */
     fun syncScale(scale: Float) {
-        // 与 init 中保持一致的缩放因子（编辑器世界单位约 0.2 = Minecraft 1 米）
-        // 纳入贴图大小缩放：texSize 越大粒子越大
-        quadSize = scale * 0.2f * texScale
+        val s = scale * EDITOR_TO_MC_SCALE * texScale
+        scaleW = s
+        scaleH = s
+        quadSize = s
+    }
+
+    /**
+     * 同步粒子非均匀缩放（三分量数组 [sx, sy, sz]）。
+     * sx → quad 宽度（相机 X 轴），sy → quad 高度（相机 Y 轴），sz 暂存数据不参与 billboard。
+     * @param scaleArray 三分量缩放数组
+     */
+    fun syncScaleArray(scaleArray: FloatArray) {
+        scaleW = scaleArray[0] * EDITOR_TO_MC_SCALE * texScale
+        scaleH = scaleArray[1] * EDITOR_TO_MC_SCALE * texScale
+        quadSize = scaleW  // 兼容原版字段
+    }
+
+    /**
+     * 返回 quad 高度（供 QuadParticleGroup 批量渲染使用）。
+     * 宽度通过 QuadParticleRenderStateMixin 在 renderVertex 中独立应用。
+     */
+    override fun getQuadSize(partialTick: Float): Float = scaleH
+
+    /**
+     * 重写 extractRotatedQuad：非均匀缩放时，将 scaleW 写入静态字段供 mixin 读取，
+     * 然后调用父类（传入 scaleH 作为 size）。mixin 在 renderVertex 中用 scaleW 替换
+     * nx 的缩放系数，实现宽度和高度独立缩放。
+     */
+    override fun extractRotatedQuad(
+        state: QuadParticleRenderState,
+        camera: net.minecraft.client.Camera,
+        rotation: Quaternionf,
+        partialTick: Float
+    ) {
+        if (scaleW != scaleH) {
+            nonUniformScaleW = scaleW
+            super.extractRotatedQuad(state, camera, rotation, partialTick)
+            nonUniformScaleW = -1f
+        } else {
+            super.extractRotatedQuad(state, camera, rotation, partialTick)
+        }
     }
 
     override fun tick() {
@@ -251,9 +294,9 @@ class BridgeParticle(
         if (isGlowing) {
             return 0x00F000F0
         }
-        val bx = Mth.floor(this.x).toInt()
-        val by = Mth.floor(this.y).toInt()
-        val bz = Mth.floor(this.z).toInt()
+        val bx = Mth.floor(this.x)
+        val by = Mth.floor(this.y)
+        val bz = Mth.floor(this.z)
         if (cachedLight < 0 || bx != cacheBX || by != cacheBY || bz != cacheBZ) {
             cachedLight = super.getLightCoords(partialTick)
             cacheBX = bx
@@ -264,6 +307,20 @@ class BridgeParticle(
     }
 
     companion object {
+        /**
+         * 编辑器 → Minecraft 世界单位的缩放因子。
+         */
+        const val EDITOR_TO_MC_SCALE: Float = 0.2f
+
+        /**
+         * 非均匀缩放宽度（由 extractRotatedQuad 在调用父类前设置，-1 表示均匀缩放）。
+         * QuadParticleRenderStateMixin 读取此字段在 renderVertex 中应用独立宽度。
+         * MC 渲染线程单线程，volatile 仅保证可见性。
+         */
+        @JvmStatic
+        @Volatile
+        var nonUniformScaleW: Float = -1f
+
         /**
          * 根据粒子样式获取对应的纹理精灵。
          * @param style 粒子样式

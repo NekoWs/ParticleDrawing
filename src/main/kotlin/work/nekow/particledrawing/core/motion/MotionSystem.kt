@@ -106,7 +106,8 @@ object MotionSystem {
 
                 bp.syncPosition(curPos.x, curPos.y, curPos.z, snap = false)
                 bp.syncColor(rp.r(), rp.g(), rp.b(), rp.a())
-                bp.syncScale(rp.scale())
+                // 同步完整缩放数组（motion 算法设标量时 rp.scaleArray 已退化为 [s,s,s]）
+                bp.syncScaleArray(rp.scaleArray())
             }
         }
     }
