@@ -32,5 +32,11 @@ object NetworkHandler {
         registrar.playToClient(PlayAnimationPayload.TYPE, PlayAnimationPayload.STREAM_CODEC, ClientPayloadHandler::handlePlayAnimation)
         registrar.playToClient(VariableUpdatePayload.TYPE, VariableUpdatePayload.STREAM_CODEC, ClientPayloadHandler::handleVariableUpdate)
         registrar.playToClient(StopAnimationPayload.TYPE, StopAnimationPayload.STREAM_CODEC, ClientPayloadHandler::handleStopAnimation)
+
+        // 动画文件同步（配置阶段）：客户端请求 → 服务器下发文件块 → 完成信号
+        registrar.configurationToServer(AnimationSyncRequestPayload.TYPE, AnimationSyncRequestPayload.STREAM_CODEC, ServerPayloadHandler::handleSyncRequest)
+        registrar.configurationToClient(AnimationSyncBeginPayload.TYPE, AnimationSyncBeginPayload.STREAM_CODEC, ClientPayloadHandler::handleSyncBegin)
+        registrar.configurationToClient(AnimationSyncFilePayload.TYPE, AnimationSyncFilePayload.STREAM_CODEC, ClientPayloadHandler::handleSyncFile)
+        registrar.configurationToClient(AnimationSyncDonePayload.TYPE, AnimationSyncDonePayload.STREAM_CODEC, ClientPayloadHandler::handleSyncDone)
     }
 }

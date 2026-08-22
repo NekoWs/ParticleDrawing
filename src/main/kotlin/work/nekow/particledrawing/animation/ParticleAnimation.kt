@@ -2,34 +2,40 @@ package work.nekow.particledrawing.animation
 
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.Color
-import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.animation.expr.Keyframe
 import work.nekow.particledrawing.core.easing.EasingType
 
 /**
  * 解析后的粒子动画（对应网页编辑器导出的 .pdraw 工程文件）。
+ *
+ * @param textures 工程引用的贴图名列表（对应 .pdraw 顶层的 `tex`）
+ * @param groupUV 组级 UV 映射（`guv`，组名 -> UV 参数）
  */
 class ParticleAnimation(
     val loop: Boolean,
     val particles: List<AnimParticle>,
     val tracks: List<AnimTrack>,
     val groups: Map<String, List<String>>,
-    val functions: List<FunctionObject> = emptyList()
+    val functions: List<FunctionObject> = emptyList(),
+    val textures: List<String> = emptyList(),
+    val groupUV: Map<String, UvData> = emptyMap()
 )
 
 /**
  * 函数对象（.pdraw 的 f 字段）：公式代码块 + 变量，客户端实时求值生成派生粒子。
+ *
+ * @param uv 函数对象级 UV（作用域 f 级，派生粒子继承覆盖的根）；无贴图时派生粒子渲染为纯色方块
  */
 class FunctionObject(
     val id: String,
     val name: String,
     val center: DoubleArray,
     val count: Int,
-    val style: ParticleStyle,
     val code: String,
     val vars: Map<String, FunctionVar>,
     val duration: Int,
-    val step: Int
+    val step: Int,
+    val uv: UvData? = null
 )
 
 /**
@@ -43,16 +49,20 @@ class FunctionVar(
 
 /**
  * 动画中的单个粒子定义。
+ *
+ * @param scale 非均匀缩放 [sx, sy, sz]（编辑器 scale 拆分 XYZ；无贴图渲染为纯色方块，当前仅 sx 参与
+ *              billboard 尺寸，sy/sz 暂存数据，见 HANDOFF 六.A.2 与 B.3）
+ * @param uv 粒子级 UV（作用域 p 级，最高优先级）
  */
 class AnimParticle(
     val id: String,
-    val style: ParticleStyle,
     val color: Color,
-    val scale: Float,
+    val scale: FloatArray,
     val glowing: Boolean,
     val lightLevel: Int,
     val pos: Vec3,
-    val vel: Vec3
+    val vel: Vec3,
+    val uv: UvData? = null
 )
 
 /**

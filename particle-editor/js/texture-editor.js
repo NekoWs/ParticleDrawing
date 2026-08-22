@@ -200,24 +200,26 @@ function updateTexOverlay() {
     el.style.borderStyle = dashed ? 'dashed' : 'solid';
   };
 
-  // UV 预览框（浅蓝虚线；fill 全图；静态/动画显示当前采样区域）
+  // UV 预览框（浅蓝实线；fill 全图；静态/动画显示当前采样区域）。
+  // 仅当目标 UV 引用的贴图 == 当前打开的贴图时才显示：预览框的像素坐标是相对贴图自身的，
+  // 若画布打开的是另一张贴图会绘制到错误位置/尺寸（表现为「显示另一个贴图/错误的 UV 大小预览」）。
   const t = currentUVTarget();
-  if (t) {
-    const u = readTargetUV(t);
-    if (u && u.texture) {
-      if (u.mode === 'fill') {
-        const s = currentTexSize();
-        setBox(uv, 0, 0, s.w, s.h, TEX_UV_COLOR, false);
-      } else {
-        let sx = u.uvStart[0], sy = u.uvStart[1], sw = u.uvSize[0], sh = u.uvSize[1];
-        if (u.mode === 'animated') {
-          const f = currentUVFrame(u);
-          sx += u.uvStep[0] * f; sy += u.uvStep[1] * f;
-        }
-        setBox(uv, sx, sy, sw, sh, TEX_UV_COLOR, false);
+  const u = t ? readTargetUV(t) : null;
+  if (u && u.texture && u.texture === state.currentTexture) {
+    if (u.mode === 'fill') {
+      const s = currentTexSize();
+      setBox(uv, 0, 0, s.w, s.h, TEX_UV_COLOR, false);
+    } else {
+      let sx = u.uvStart[0], sy = u.uvStart[1], sw = u.uvSize[0], sh = u.uvSize[1];
+      if (u.mode === 'animated') {
+        const f = currentUVFrame(u);
+        sx += u.uvStep[0] * f; sy += u.uvStep[1] * f;
       }
-    } else setBox(uv, 0, 0, 0, 0, '', false);
-  } else setBox(uv, 0, 0, 0, 0, '', false);
+      setBox(uv, sx, sy, sw, sh, TEX_UV_COLOR, false);
+    }
+  } else {
+    setBox(uv, 0, 0, 0, 0, '', false);
+  }
 
   // 悬停描边（铅笔/橡皮：显示将绘制/擦除的刷子范围）优先于选区描边
   const hov = texState.hover;
@@ -872,14 +874,23 @@ function refreshUVPanel() {
   texSel.value = uv.texture || '';
   texSel.onchange = () => {
     const name = texSel.value || null;
-    const nu = normalizeUV(readTargetUV(target) || {});
+    const before = readTargetUV(target);
+    const nu = normalizeUV(before || {});
+    // 记录是否真的切换了贴图（用于判断是否重置采样尺寸/起点，避免残留上一张贴图的 UV 数值）
+    const texChanged = (before ? before.texture : null) !== name;
     nu.texture = name;
     const t = getTexture(name);
     if (t && name) {
       nu.texSize = [t.width, t.height]; // 贴图大小默认跟贴图分辨率
-      // 选贴图时若 UV 采样大小仍为默认 0（未自定义过），默认覆盖整张贴图，
-      // 避免静态/动画模式刚选贴图时采样 0 区域导致粒子看不到贴图
-      if (!nu.uvSize || (nu.uvSize[0] === 0 && nu.uvSize[1] === 0)) nu.uvSize = [t.width, t.height];
+      if (texChanged) {
+        // 切换贴图：采样起点/大小随新贴图重置（起点归零、大小铺满整张贴图），
+        // 否则会残留上一张贴图（可能尺寸不同）的 uvSize/uvStart，导致采样区域错位
+        nu.uvStart = [0, 0];
+        nu.uvSize = [t.width, t.height];
+      } else if (!nu.uvSize || (nu.uvSize[0] === 0 && nu.uvSize[1] === 0)) {
+        // 同贴图但 uvSize 仍为默认 0（未自定义过）：铺满整张贴图，避免采样 0 区域
+        nu.uvSize = [t.width, t.height];
+      }
     }
     writeTargetUV(target, nu);
     refreshUVPanel();
@@ -929,14 +940,15 @@ function refreshAutoFrameHint() {
 }
 
 // 是否需要在主渲染循环中逐帧刷新贴图编辑器 overlay（UV 动画预览跟随帧移动）。
-// 仅当贴图 tab 激活且当前编辑目标的 UV 为动画模式时才逐帧刷新，避免无谓开销。
+// 仅当贴图 tab 激活、当前编辑目标的 UV 为动画模式、且其贴图 == 当前打开的贴图时才逐帧刷新
+// （与 updateTexOverlay 的显示条件一致，避免画布打开其它贴图时无谓逐帧重算与错误显示）。
 function texAnimOverlayActive() {
   const pane = document.getElementById('pane-texture');
   if (!pane || !pane.classList.contains('active')) return false;
   const t = currentUVTarget();
   if (!t) return false;
   const uv = readTargetUV(t);
-  return !!(uv && uv.texture && uv.mode === 'animated');
+  return !!(uv && uv.texture && uv.texture === state.currentTexture && uv.mode === 'animated');
 }
 
 // 二维像素字段（[x, y] 或 [w, h]），时间轴分组风格；affectsAuto=true 表示该字段变化会改变自动帧数（即时刷新提示）

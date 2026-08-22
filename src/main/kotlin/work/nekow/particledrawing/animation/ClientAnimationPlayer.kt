@@ -8,7 +8,6 @@ import work.nekow.particledrawing.animation.expr.Reg
 import work.nekow.particledrawing.animation.expr.VarDef
 import work.nekow.particledrawing.animation.expr.compileFunctionObject
 import work.nekow.particledrawing.api.Color
-import work.nekow.particledrawing.api.ParticleStyle
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -20,12 +19,12 @@ class ClientAnimationPlayer(
 
     data class ParticleState(
         val id: String,
-        val style: ParticleStyle,
         var pos: Vec3,
         var color: Color,
-        var scale: Float,
+        var scale: FloatArray,
         var glowing: Boolean,
         var lightLevel: Int,
+        var uv: UvData?,
     )
 
     private var currentTick = 0
@@ -134,13 +133,13 @@ class ClientAnimationPlayer(
 
     init {
         for (p in animation.particles) {
-            states[p.id] = ParticleState(p.id, p.style, origin.add(p.pos), p.color, p.scale, p.glowing, p.lightLevel)
+            states[p.id] = ParticleState(p.id, origin.add(p.pos), p.color, p.scale.copyOf(), p.glowing, p.lightLevel, resolveUV(p.id, p.uv))
         }
         for (fx in animation.functions) {
             for (i in 0 until fx.count) {
                 val id = fx.id + ":p" + i
                 val base = evaluateFunctionParticle(fx, i, fx.count, 0.0)
-                states[id] = ParticleState(id, fx.style, origin.add(base.first), base.second, base.third, base.fourth, base.fifth)
+                states[id] = ParticleState(id, origin.add(base.first), base.second, base.third, base.fourth, base.fifth, resolveUV(id, fx.uv))
             }
         }
         advanceTo(0.0)
@@ -229,7 +228,7 @@ class ClientAnimationPlayer(
                         regs[Reg.A].coerceIn(0.0, 1.0).toFloat(),
                     )
                     val scaleRaw = if (regs[Reg.SC].isFinite()) regs[Reg.SC] else 1.0
-                    s.scale = scalarAt("scl", "f:" + fx.id, t, scaleRaw).toFloat().coerceAtLeast(0.01f)
+                    s.scale = fxScale(fx.id, scaleRaw, t)
                     s.glowing = regs[Reg.GLOW] > 0.5
                     s.lightLevel = regs[Reg.LIGHT].toInt().coerceIn(0, 15)
                 } else {
@@ -239,7 +238,7 @@ class ClientAnimationPlayer(
                     pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
                     s.pos = origin.add(pos)
                     s.color = base.second
-                    s.scale = scalarAt("scl", "f:" + fx.id, t, base.third.toDouble()).toFloat().coerceAtLeast(0.01f)
+                    s.scale = fxScale(fx.id, base.third[0].toDouble(), t)
                     s.glowing = base.fourth
                     s.lightLevel = base.fifth
                 }
@@ -247,14 +246,15 @@ class ClientAnimationPlayer(
         }
     }
 
-    private fun evaluateFunctionParticle(fx: FunctionObject, i: Int, n: Int, t: Double): Five<Vec3, Color, Float, Boolean, Int> {
+    private fun evaluateFunctionParticle(fx: FunctionObject, i: Int, n: Int, t: Double): Five<Vec3, Color, FloatArray, Boolean, Int> {
         val env = buildEnv(fx.vars, i, n, t)
         val out = ExpressionEvaluator.evalFunctionCode(fx.code, env)
         val center = fx.center
         val clamp01 = { v: Double -> v.coerceIn(0.0, 1.0) }
         val pos = Vec3(out.pos.x + center[0], out.pos.y + center[1], out.pos.z + center[2])
         val color = Color.of(clamp01(out.color[0]).toFloat(), clamp01(out.color[1]).toFloat(), clamp01(out.color[2]).toFloat(), clamp01(out.color[3]).toFloat())
-        val scale = if (out.scale.isFinite()) out.scale.toFloat().coerceAtLeast(0.01f) else 1f
+        val s = if (out.scale.isFinite()) out.scale.toFloat().coerceAtLeast(0.01f) else 1f
+        val scale = floatArrayOf(s, s, s)
         val light = out.light.toInt().coerceIn(0, 15)
         return Five(pos, color, scale, out.glow, light)
     }
@@ -374,7 +374,7 @@ class ClientAnimationPlayer(
         "pos" -> when (comp) { "x" -> p.pos.x; "y" -> p.pos.y; else -> p.pos.z }
         "col" -> when (comp) { "r" -> p.color.r.toDouble(); "g" -> p.color.g.toDouble(); "b" -> p.color.b.toDouble(); else -> p.color.a.toDouble() }
         "vel" -> when (comp) { "x" -> p.vel.x; "y" -> p.vel.y; else -> p.vel.z }
-        "scl" -> p.scale.toDouble()
+        "scl" -> when (comp) { "x" -> p.scale[0].toDouble(); "y" -> p.scale[1].toDouble(); else -> p.scale[2].toDouble() }
         else -> 0.0
     }
 
@@ -446,8 +446,39 @@ class ClientAnimationPlayer(
         )
     }
 
-    private fun particleScale(p: AnimParticle, t: Double): Float {
-        return componentValueAt(p, "scl", "", t).toFloat().coerceAtLeast(0.01f)
+    private fun particleScale(p: AnimParticle, t: Double): FloatArray {
+        return floatArrayOf(
+            componentValueAt(p, "scl", "x", t).toFloat().coerceAtLeast(0.01f),
+            componentValueAt(p, "scl", "y", t).toFloat().coerceAtLeast(0.01f),
+            componentValueAt(p, "scl", "z", t).toFloat().coerceAtLeast(0.01f),
+        )
+    }
+
+    /**
+     * 函数对象整体缩放（三分量）：代码块输出标量 [base]，再叠加作用于 `f:fxId` 的
+     * `scl.x/y/z` 轨道（存在则覆盖对应分量，与编辑器 currentVisualDerived 语义一致）。
+     */
+    private fun fxScale(fxId: String, base: Double, t: Double): FloatArray {
+        return floatArrayOf(
+            scalarAt("scl.x", "f:" + fxId, t, base).toFloat().coerceAtLeast(0.01f),
+            scalarAt("scl.y", "f:" + fxId, t, base).toFloat().coerceAtLeast(0.01f),
+            scalarAt("scl.z", "f:" + fxId, t, base).toFloat().coerceAtLeast(0.01f),
+        )
+    }
+
+    /**
+     * 解析粒子最终 UV（继承覆盖：p.uv > 组 guv[gname] > 函数对象 fx.uv）。
+     * [ownUv] 为该对象自身的 UV（粒子为 p.uv，派生粒子为 fx.uv），组级在内部按成员关系补充。
+     */
+    private fun resolveUV(stateId: String, ownUv: UvData?): UvData? {
+        if (ownUv != null && ownUv.texture != null) return ownUv
+        for (gname in particleGroupIndex[stateId] ?: emptySet()) {
+            animation.groupUV[gname]?.let { if (it.texture != null) return it }
+        }
+        // 派生粒子：函数对象级 uv 已在 ownUv 传入；此处兜底再查一次（按 id 反查 fx）
+        val fx = particleFunction(stateId)
+        if (fx?.uv != null && fx.uv.texture != null) return fx.uv
+        return ownUv
     }
 
     private fun rotateAround(p: Vec3, pivot: Vec3, rot: DoubleArray): Vec3 {

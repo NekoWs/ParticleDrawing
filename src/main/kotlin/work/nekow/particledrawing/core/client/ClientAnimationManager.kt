@@ -3,6 +3,7 @@ package work.nekow.particledrawing.core.client
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.AnimationLoader
 import work.nekow.particledrawing.animation.ClientAnimationPlayer
+import work.nekow.particledrawing.api.ParticleStyle
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -55,18 +56,30 @@ object ClientAnimationManager {
         } catch (_: Exception) {
             return
         }
+        // 播放前预加载动画引用的全部贴图（纹理必须在粒子渲染前注册，见 TextureCache）
+        for (texName in animation.textures) ensureTextureLoaded(texName)
+
         val player = ClientAnimationPlayer(animation, origin)
         val uuids = HashMap<String, UUID>()
-        for ((id, style, pos, color, scale, glowing, lightLevel) in player.currentStates()) {
+        for (state in player.currentStates()) {
             val uuid = UUID.randomUUID()
-            uuids[id] = uuid
+            uuids[state.id] = uuid
             ClientParticleEngine.instance()?.spawnParticle(
-                uuid, style, pos.x, pos.y, pos.z,
-                color.r, color.g, color.b, color.a,
-                scale, -1, null, glowing, lightLevel
+                uuid, ParticleStyle.DOT, state.pos.x, state.pos.y, state.pos.z,
+                state.color.r, state.color.g, state.color.b, state.color.a,
+                state.scale[0], -1, null, state.glowing, state.lightLevel, state.uv
             )
         }
         entries[animationId] = Entry(player, uuids)
+    }
+
+    /** 确保一张贴图已加载并注册（主线程调用）。失败静默忽略，粒子回退为纯色方块。 */
+    private fun ensureTextureLoaded(texName: String) {
+        try {
+            TextureCache.load(texName)
+        } catch (_: Exception) {
+            // 忽略：贴图缺失/解码失败时粒子退化为无贴图渲染
+        }
     }
 
     /** 每客户端 tick 推进所有动画并同步渲染。 */
@@ -105,7 +118,7 @@ object ClientAnimationManager {
         for (state in entry.player.currentStates()) {
             val uuid = entry.particleUuids[state.id] ?: continue
             ClientParticleEngine.instance()?.updateParticleDirect(
-                uuid, state.pos, state.color, state.scale, state.glowing, state.lightLevel, snap
+                uuid, state.pos, state.color, state.scale[0], state.glowing, state.lightLevel, snap
             )
         }
     }

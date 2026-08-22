@@ -4,9 +4,11 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.client.particle.ParticleRenderType
 import net.minecraft.client.particle.SingleQuadParticle
+import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.client.renderer.texture.TextureAtlasSprite
 import net.minecraft.data.AtlasIds
 import net.minecraft.util.Mth
+import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleStyle
 import java.util.UUID
@@ -15,8 +17,13 @@ import java.util.UUID
  * 连接渲染粒子与 Minecraft 粒子系统的桥接粒子。
  * 将自定义粒子的位置、颜色和缩放属性同步到原版渲染管线中。
  *
+ * 支持两类渲染：
+ * - **无贴图**：沿用原版 sprite（[ParticleStyle] 对应图集精灵），纯色方块染色；
+ * - **有贴图**（[uv] 非 null 且贴图已注册）：`getLayer` 返回指向 [TextureCache] 中
+ *   DynamicTexture 的自定义 Layer，并按 UV 像素坐标（静态/填充/flipbook）采样。
+ *
  * @param particleId 粒子唯一标识符
- * @param style 粒子样式
+ * @param style 粒子样式（无贴图时的 sprite；有贴图时仅作回退）
  * @param level 客户端世界实例
  * @param x 初始 X 坐标
  * @param y 初始 Y 坐标
@@ -24,6 +31,7 @@ import java.util.UUID
  * @param color 初始颜色
  * @param scale 初始缩放
  * @param isGlowing 是否发光
+ * @param uv 编辑器的 UV 参数（已解析的最终作用域值）；null 或无贴图时退化为 sprite 渲染
  */
 @Suppress("unused")
 class BridgeParticle(
@@ -33,8 +41,16 @@ class BridgeParticle(
     x: Double, y: Double, z: Double,
     color: Color,
     scale: Float,
-    private var isGlowing: Boolean
+    private var isGlowing: Boolean,
+    private var uv: UvData? = null
 ) : SingleQuadParticle(level, x, y, z, getSpriteForStyle(style)) {
+
+    // 贴图解析结果（贴图已注册时才非 null）：Identifier + 尺寸
+    @Volatile
+    private var texEntry: TextureCache.Entry? = resolveTexture()
+
+    // flipbook 计时起点（墙钟，与编辑器 performance.now()/1000 语义一致）
+    private val animStartNanos: Long = System.nanoTime()
 
     init {
         xo = x
@@ -50,6 +66,18 @@ class BridgeParticle(
     }
 
     fun isGlowing(): Boolean = isGlowing
+
+    /** 更新 UV 参数（动画粒子 UV 为静态属性，通常只在 spawn 时设置一次）。 */
+    fun setUv(uv: UvData?) {
+        this.uv = uv
+        this.texEntry = resolveTexture()
+    }
+
+    /** 解析当前 UV 指向的贴图（已注册返回 Entry，否则尝试加载并返回）。 */
+    private fun resolveTexture(): TextureCache.Entry? {
+        val tex = uv?.texture ?: return null
+        return TextureCache.get(tex) ?: TextureCache.load(tex)
+    }
 
     /** 更新发光状态（本地动画逐 tick 求值时同步）。 */
     fun setGlowing(glowing: Boolean) {
@@ -108,15 +136,93 @@ class BridgeParticle(
     }
 
     override fun getLayer(): Layer {
-        return if (alpha < 1.0f || sprite.transparency().hasTranslucent()) {
-            Layer.TRANSLUCENT
+        val entry = texEntry
+        return if (entry != null) {
+            val translucent = alpha < 1.0f
+            Layer(translucent, entry.id, if (translucent) RenderPipelines.TRANSLUCENT_PARTICLE else RenderPipelines.OPAQUE_PARTICLE)
         } else {
-            Layer.OPAQUE
+            if (alpha < 1.0f || sprite.transparency().hasTranslucent()) {
+                Layer.TRANSLUCENT
+            } else {
+                Layer.OPAQUE
+            }
         }
     }
 
     // 使用自定义分组（无 16384 上限），绕过原版 SINGLE_QUADS 的粒子数限制
     override fun getGroup(): ParticleRenderType = BATCHED_QUADS
+
+    // ---- UV 采样（贴图像素坐标 → 归一化 [0,1]） ----
+    // 约定（与编辑器 scene.js flipY 一致）：GPU 纹理第 0 行 = PNG 顶部（NativeImage 自然顺序），
+    // v = 1 - y/height。quad 顶点 v0=底部、v1=顶部（SingleQuadParticle 顶点布局）。
+
+    private fun currentFrameIndex(): Int {
+        val u = uv ?: return 0
+        if (u.mode != UvData.Mode.ANIMATED) return 0
+        val tex = texEntry ?: return 0
+        val total = u.effectiveMaxFrame(u.autoFrames(tex.width, tex.height))
+        if (total <= 1) return 0
+        val fps = u.fps.coerceAtLeast(0.001f)
+        val elapsed = (System.nanoTime() - animStartNanos) / 1_000_000_000.0
+        val raw = (elapsed * fps).toLong()
+        return if (u.loop) (raw % total).toInt() else minOf(raw, (total - 1).toLong()).toInt()
+    }
+
+    /** 当前帧的 UV 起点像素 (x, y)，含 flipbook 偏移（行末换行步进）。 */
+    private fun currentUvStart(texW: Int, texH: Int): IntArray {
+        val u = uv ?: return intArrayOf(0, 0)
+        if (u.mode == UvData.Mode.FILL) return intArrayOf(0, 0)
+        var sx = u.uvStart[0]
+        var sy = u.uvStart[1]
+        if (u.mode == UvData.Mode.ANIMATED) {
+            val frame = currentFrameIndex()
+            if (frame > 0) {
+                val stepx = u.uvStep[0]
+                val stepy = u.uvStep[1]
+                // 行内格数（x 方向能放几格）；行末换行
+                val cols = if (stepx > 0 && sx < texW) (texW - 1 - sx) / stepx + 1 else 1
+                if (cols > 0) {
+                    sx += (frame % cols) * stepx
+                    sy += (frame / cols) * stepy
+                }
+            }
+        }
+        return intArrayOf(sx, sy)
+    }
+
+    override fun getU0(): Float {
+        val entry = texEntry ?: return super.getU0()
+        val u = uv ?: return super.getU0()
+        if (u.mode == UvData.Mode.FILL) return 0f
+        val sx = currentUvStart(entry.width, entry.height)[0]
+        return (sx.toFloat() / entry.width).coerceIn(0f, 1f)
+    }
+
+    override fun getU1(): Float {
+        val entry = texEntry ?: return super.getU1()
+        val u = uv ?: return super.getU1()
+        if (u.mode == UvData.Mode.FILL) return 1f
+        val sx = currentUvStart(entry.width, entry.height)[0]
+        val w = if (u.uvSize[0] > 0) u.uvSize[0] else entry.width
+        return ((sx + w).toFloat() / entry.width).coerceIn(0f, 1f)
+    }
+
+    override fun getV0(): Float {
+        val entry = texEntry ?: return super.getV0()
+        val u = uv ?: return super.getV0()
+        if (u.mode == UvData.Mode.FILL) return 0f
+        val sy = currentUvStart(entry.width, entry.height)[1]
+        val h = if (u.uvSize[1] > 0) u.uvSize[1] else entry.height
+        return (1f - (sy + h).toFloat() / entry.height).coerceIn(0f, 1f)
+    }
+
+    override fun getV1(): Float {
+        val entry = texEntry ?: return super.getV1()
+        val u = uv ?: return super.getV1()
+        if (u.mode == UvData.Mode.FILL) return 1f
+        val sy = currentUvStart(entry.width, entry.height)[1]
+        return (1f - sy.toFloat() / entry.height).coerceIn(0f, 1f)
+    }
 
     // 光照查询缓存：原版 getLightCoords 每渲染帧都会查世界光照（含动态光照 mixin 的方块查询），
     // 5w 粒子会放大成每秒数十万次查询。光照按方块坐标变化，粒子在同一方块内可复用缓存。

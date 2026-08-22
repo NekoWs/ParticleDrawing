@@ -3,6 +3,7 @@ package work.nekow.particledrawing.core.network
 import net.minecraft.world.phys.Vec3
 import net.neoforged.neoforge.network.handling.IPayloadContext
 import work.nekow.particledrawing.core.client.ClientAnimationManager
+import work.nekow.particledrawing.core.client.ClientAnimationSyncManager
 import work.nekow.particledrawing.core.client.ClientParticleEngine
 import work.nekow.particledrawing.core.motion.MotionPayload
 
@@ -136,6 +137,26 @@ internal object ClientPayloadHandler {
     fun handleStopAnimation(payload: StopAnimationPayload, context: IPayloadContext) {
         context.enqueueWork {
             ClientAnimationManager.stop(payload.animationId)
+        }
+    }
+
+    // ---- 动画文件同步（配置阶段） ----
+
+    fun handleSyncBegin(payload: AnimationSyncBeginPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientAnimationSyncManager.onBegin(context)
+        }
+    }
+
+    fun handleSyncFile(payload: AnimationSyncFilePayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientAnimationSyncManager.onFileChunk(payload.name, payload.eof, payload.data)
+        }
+    }
+
+    fun handleSyncDone(payload: AnimationSyncDonePayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientAnimationSyncManager.onDone(context)
         }
     }
 }

@@ -3,6 +3,7 @@ package work.nekow.particledrawing.core.client
 import net.minecraft.client.Minecraft
 import net.minecraft.client.particle.ParticleEngine
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.config.ParticleDrawingConfig
@@ -50,12 +51,13 @@ class ClientParticleEngine {
      */
     fun spawnParticle(id: UUID, style: ParticleStyle, x: Double, y: Double, z: Double,
                       r: Float, g: Float, b: Float, a: Float, scale: Float,
-                      lifetimeTicks: Int, groupId: UUID?, glowing: Boolean, lightLevel: Int) {
+                      lifetimeTicks: Int, groupId: UUID?, glowing: Boolean, lightLevel: Int,
+                      uv: UvData? = null) {
         if (particles.size >= ParticleDrawingConfig.CLIENT.maxRenderParticles.get()) return
 
         val lifetimeMs = if (lifetimeTicks > 0) lifetimeTicks * 50L else 0L
         val rp = RenderParticle(id, style, Vec3(x, y, z),
-            Color.of(r, g, b, a), scale, glowing, lightLevel, lifetimeMs)
+            Color.of(r, g, b, a), scale, glowing, lightLevel, lifetimeMs, uv)
         particles[id] = rp
         if (glowing && lightLevel > 0) glowingIds.add(id)
 
@@ -63,7 +65,7 @@ class ClientParticleEngine {
         val level = Minecraft.getInstance().level
         if (level != null) {
             val bp = BridgeParticle(id, style, level, x, y, z,
-                Color.of(r, g, b, a), scale, glowing)
+                Color.of(r, g, b, a), scale, glowing, uv)
             pe.add(bp)
             bridges[id] = bp
         }

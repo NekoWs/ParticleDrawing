@@ -1,6 +1,7 @@
 package work.nekow.particledrawing.core.client
 
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.core.easing.EasingCurve
@@ -42,7 +43,8 @@ class RenderParticle(
     scale: Float,
     private var glowing: Boolean,
     private var lightLevel: Int,
-    lifetimeMs: Long
+    lifetimeMs: Long,
+    var uv: UvData? = null,
 ) {
 
     // 位置 / 颜色 / 缩放（直接缓动）

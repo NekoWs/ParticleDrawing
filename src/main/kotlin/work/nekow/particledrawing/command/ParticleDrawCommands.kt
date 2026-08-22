@@ -8,14 +8,18 @@ import net.minecraft.commands.arguments.coordinates.Vec3Argument
 import net.minecraft.network.chat.Component
 import net.minecraft.world.phys.Vec3
 import net.neoforged.bus.api.SubscribeEvent
+import net.neoforged.api.distmarker.Dist
 import net.neoforged.fml.common.EventBusSubscriber
+import net.neoforged.fml.loading.FMLEnvironment
 import net.neoforged.neoforge.event.RegisterCommandsEvent
 import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.animation.AnimationLoader
 import work.nekow.particledrawing.animation.ServerAnimationManager
 import work.nekow.particledrawing.core.client.ClientAnimationManager
 import work.nekow.particledrawing.core.client.ClientParticleEngine
+import work.nekow.particledrawing.core.client.TextureCache
 import work.nekow.particledrawing.util.ParticleUtils
+import java.nio.file.Files
 
 /**
  * 命令注册。提供 /pdraw 及其子命令，用于加载播放网页编辑器导出的动画。
@@ -42,6 +46,7 @@ object ParticleDrawCommands {
                         .executes(::playAnimation)
                         .then(Commands.argument("pos", Vec3Argument.vec3()).executes(::playAnimation))))
                 .then(Commands.literal("stop").executes(::stopAnimations))
+                .then(Commands.literal("reload").executes(::reloadTextures))
                 .then(Commands.literal("debug").executes(::debugAnimations))
                 .then(Commands.literal("var")
                     .then(Commands.argument("name", StringArgumentType.string())
@@ -112,6 +117,35 @@ object ParticleDrawCommands {
         ServerAnimationManager.stopAll(dim, level.players())
         ctx.source.sendSuccess({ Component.literal("已停止当前维度的全部动画") }, false)
         return 1
+    }
+
+    /**
+     * /pdraw reload —— 重建贴图纹理（清空 TextureCache 并重新从 textures/ 目录加载全部贴图）。
+     * 用于贴图 PNG 在磁盘上被外部修改后热重载，避免重启客户端。
+     * 贴图渲染仅在客户端，故服务端（dedicated server）执行时直接返回提示。
+     */
+    private fun reloadTextures(ctx: CommandContext<CommandSourceStack>): Int {
+        if (FMLEnvironment.getDist() != Dist.CLIENT) {
+            ctx.source.sendFailure(Component.literal("贴图渲染仅在客户端，/pdraw reload 仅客户端可用"))
+            return 0
+        }
+        TextureCache.clear()
+        var count = 0
+        val dir = AnimationLoader.TEXTURE_DIRECTORY
+        if (Files.isDirectory(dir)) {
+            Files.list(dir).use { stream ->
+                stream.filter { it.fileName.toString().endsWith(".png") }
+                    .forEach { path ->
+                        val name = path.fileName.toString().removeSuffix(".png")
+                        if (TextureCache.load(name) != null) count++
+                    }
+            }
+        }
+        ctx.source.sendSuccess(
+            { Component.literal("已重建贴图纹理：重新加载 $count 张贴图（重新播放动画以应用）") },
+            false
+        )
+        return count
     }
 
     /**
