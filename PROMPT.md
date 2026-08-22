@@ -20,7 +20,7 @@
     - 矩阵：`rotX(t) rotY(t) rotZ(t) rotAxis(axis,t)`
     - 坐标构造：`polar(r,a) sphere(r,th,ph) torus(R,r,th,ph)`
 
-  注意：`atan2` 先 `y` 后 `x`；`mod` 为 GLSL 语义；`random()` 每帧变化，`rand(seed)` 确定性；`smoothstep` 在 `[e0,e1]` 内平滑阶跃。
+  注意：`atan2` 先 `y` 后 `x`；`mod` 为 GLSL 语义；`random()` 每帧变化，`rand(seed)` 由 seed 控制随机；`smoothstep` 在 `[e0,e1]` 内平滑阶跃。
 
 ## vars 变量
 - 每项：`{ expr: 表达式字符串, kf: [[tick, value, easing], ...] }`
