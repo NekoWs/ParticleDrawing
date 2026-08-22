@@ -92,10 +92,10 @@ class BridgeParticle(
         this.texEntry = resolveTexture()
     }
 
-    /** 解析当前 UV 指向的贴图（已注册返回 Entry，否则尝试加载并返回）。 */
+    /** 解析当前 UV 指向的贴图（贴图在 spawn 前已由动画管理器预加载）。 */
     private fun resolveTexture(): TextureCache.Entry? {
         val tex = uv?.texture ?: return null
-        return TextureCache.get(tex) ?: TextureCache.load(tex)
+        return TextureCache.get(tex)
     }
 
     /** 更新发光状态（本地动画逐 tick 求值时同步）。 */

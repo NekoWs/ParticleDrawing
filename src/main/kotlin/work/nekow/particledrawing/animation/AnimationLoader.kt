@@ -20,9 +20,6 @@ object AnimationLoader {
     /** 动画工程文件存放目录：`<gameDir>/animations/`。 */
     val DIRECTORY: Path = FMLPaths.GAMEDIR.get().resolve("animations")
 
-    /** 贴图 PNG 存放目录：`<gameDir>/animations/textures/`（与 pdraw 同根）。 */
-    val TEXTURE_DIRECTORY: Path = DIRECTORY.resolve("textures")
-
     /** 列出可用的动画名（不含 .pdraw 后缀）。 */
     @JvmStatic
     fun list(): List<String> {
@@ -77,7 +74,17 @@ object AnimationLoader {
             parseUv(uv)?.let { groupUV[name] = it }
         }
 
-        return ParticleAnimation(loop, particles, tracks, groups, functions, textures, groupUV)
+        // 内嵌贴图数据（v4+）：name → base64 PNG
+        val texData = mutableMapOf<String, ByteArray>()
+        root.get("texData")?.asJsonObject?.entrySet()?.forEach { (name, el) ->
+            if (el.isJsonPrimitive && el.asJsonPrimitive.isString) {
+                try {
+                    texData[name] = java.util.Base64.getDecoder().decode(el.asString)
+                } catch (_: IllegalArgumentException) { /* 跳过无效 base64 */ }
+            }
+        }
+
+        return ParticleAnimation(loop, particles, tracks, groups, functions, textures, groupUV, texData)
     }
 
     private fun parseFunction(o: JsonObject): FunctionObject {

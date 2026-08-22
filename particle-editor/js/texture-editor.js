@@ -672,6 +672,7 @@ async function uploadTextureFile(file) {
   while (getTexture(n)) n = name.trim() + '_' + (k++);
   makeTexture(n, w, h, data);
   renderTexCanvas();
+  if (typeof refreshTexBase64Cache === 'function') refreshTexBase64Cache();
   markTextureChanged();
   refreshUVPanel();
   refreshTexList();
@@ -689,6 +690,7 @@ async function newTextureDialog() {
   while (getTexture(n)) n = name.trim() + '_' + (k++);
   makeTexture(n, w, h);
   renderTexCanvas();
+  if (typeof refreshTexBase64Cache === 'function') refreshTexBase64Cache();
   markTextureChanged();
   refreshUVPanel();
   refreshTexList();
@@ -697,49 +699,15 @@ async function newTextureDialog() {
 async function saveTexture() {
   const t = getCurrentTexture();
   if (!t) { await modalAlert('保存失败', '当前无贴图，请先新建或上传'); return; }
-  const writePNG = async (h) => {
-    const cnv = document.createElement('canvas'); cnv.width = t.width; cnv.height = t.height;
-    const ctx = cnv.getContext('2d');
-    ctx.putImageData(new ImageData(t.data.slice(), t.width, t.height), 0, 0);
-    const blob = await new Promise(res => cnv.toBlob(res, 'image/png'));
-    if (h && h.createWritable) {
-      const w = await h.createWritable(); await w.write(blob); await w.close();
-    } else {
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = t.name + '.png'; a.click(); URL.revokeObjectURL(a.href);
-    }
-  };
-  // 项目文件夹模式：自动在工程目录下创建 textures 子目录
-  if (state.directoryHandle && state.directoryHandle.getDirectoryHandle) {
-    try {
-      const dir = await state.directoryHandle.getDirectoryHandle('textures', { create: true });
-      const fh = await dir.getFileHandle(t.name + '.png', { create: true });
-      await writePNG(fh);
-      setDirty(false);
-      return;
-    } catch (e) { /* 失败回退下载 */ }
-  }
-  if (window.showSaveFilePicker) {
-    try {
-      const h = await window.showSaveFilePicker({ suggestedName: t.name + '.png', types: [{ description: 'PNG', accept: { 'image/png': ['.png'] } }] });
-      await writePNG(h);
-      setDirty(false);
-    } catch (e) { /* 取消 */ }
-    return;
-  }
-  await writePNG(null);
-  setDirty(false);
+  // 贴图内嵌于 pdraw：刷新 base64 缓存并标记脏，下次 Ctrl+S 随工程一起保存
+  if (typeof refreshTexBase64Cache === 'function') await refreshTexBase64Cache();
+  setDirty(true);
+  await modalAlert('已就绪', '贴图「' + t.name + '」已更新，Ctrl+S 保存工程即可一并保存。');
 }
 
 /* =========================================================================
  * 贴图改名 / 删除（右键菜单，复用 tree.js 的 showContextMenu）
  * ======================================================================= */
-
-// 获取项目文件夹 textures 子目录（不存在则创建）；无项目文件夹时返回 null
-async function texturesDirHandle() {
-  if (!state.directoryHandle || !state.directoryHandle.getDirectoryHandle) return null;
-  try { return await state.directoryHandle.getDirectoryHandle('textures', { create: true }); }
-  catch (e) { return null; }
-}
 
 // 把全部对象 UV 里对 oldName 的贴图引用改为 newName（newName 为 null = 清空为无贴图）
 function replaceTextureRef(oldName, newName) {
@@ -769,27 +737,13 @@ async function renameTextureItem(oldName) {
   if (!name) { await modalAlert('重命名失败', '名称不能为空'); return; }
   if (name === oldName) return;
   if (getTexture(name)) { await modalAlert('重命名失败', '已存在同名贴图「' + name + '」'); return; }
-  // 项目文件夹模式：同步重命名 textures/<old>.png → textures/<new>.png
-  const dir = await texturesDirHandle();
-  if (dir) {
-    try {
-      const fh = await dir.getFileHandle(oldName + '.png');
-      if (fh.move) await fh.move(dir, name + '.png');
-      else {
-        const file = await fh.getFile();
-        const nfh = await dir.getFileHandle(name + '.png', { create: true });
-        const w = await nfh.createWritable();
-        await w.write(file); await w.close();
-        await dir.removeEntry(oldName + '.png');
-      }
-    } catch (e) { /* 文件同步失败仅改内存态 */ }
-  }
   // 内存态改名 + 同步全部引用
   const nt = { name, width: t.width, height: t.height, data: t.data };
   delete state.textures[oldName];
   state.textures[name] = nt;
   replaceTextureRef(oldName, name);
   renderTexCanvas();
+  if (typeof refreshTexBase64Cache === 'function') refreshTexBase64Cache();
   markTextureChanged();
   refreshTexList();
   refreshUVPanel();
@@ -798,16 +752,12 @@ async function renameTextureItem(oldName) {
 async function deleteTextureItem(name) {
   const ok = await modalConfirm('删除贴图', '确定删除「' + name + '」吗？\n引用它的对象将恢复为无贴图。');
   if (!ok) return;
-  // 项目文件夹模式：删除 textures/<name>.png
-  const dir = await texturesDirHandle();
-  if (dir) {
-    try { await dir.removeEntry(name + '.png'); } catch (e) { /* 文件删除失败仅改内存态 */ }
-  }
   delete state.textures[name];
   if (state.currentTexture === name) state.currentTexture = null;
   replaceTextureRef(name, null);
   texState.selection = null;
   renderTexCanvas();
+  if (typeof refreshTexBase64Cache === 'function') refreshTexBase64Cache();
   markTextureChanged();
   refreshTexList();
   refreshUVPanel();

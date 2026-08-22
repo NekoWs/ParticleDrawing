@@ -1457,6 +1457,8 @@ function saveWorkspaceState() {
   // 粒子列表宽
   const layout = document.querySelector('.layout');
   if (layout) s.particleListWidth = layout.style.getPropertyValue('--left-w') || null;
+  // 右侧栏宽
+  if (layout) s.rightPanelWidth = layout.style.getPropertyValue('--right-w') || null;
   try { localStorage.setItem(WS_KEY, JSON.stringify(s)); } catch (e) {}
 }
 function applyWorkspaceState() {
@@ -1464,6 +1466,8 @@ function applyWorkspaceState() {
   // 粒子列表宽
   const layout = document.querySelector('.layout');
   if (layout && s.particleListWidth) layout.style.setProperty('--left-w', s.particleListWidth);
+  // 右侧栏宽
+  if (layout && s.rightPanelWidth) layout.style.setProperty('--right-w', s.rightPanelWidth);
   // 调色盘宽
   const mainEl = document.querySelector('.puzzle-main');
   if (mainEl && s.paletteWidth) mainEl.style.setProperty('--pal-w', s.paletteWidth);

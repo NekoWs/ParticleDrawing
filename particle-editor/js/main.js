@@ -238,6 +238,25 @@ function applyScaleFromInputs() {
     resize();
   });
   handle.addEventListener('pointerup', () => { resizing = false; handle.classList.remove('dragging'); if (typeof saveWorkspaceState === 'function') saveWorkspaceState(); });
+
+  // 右侧栏拖拽调整大小
+  const handleR = document.getElementById('resize-handle-r');
+  let resizingR = false;
+  handleR.addEventListener('pointerdown', (e) => {
+    resizingR = true;
+    handleR.classList.add('dragging');
+    handleR.setPointerCapture(e.pointerId);
+  });
+  handleR.addEventListener('pointermove', (e) => {
+    if (!resizingR) return;
+    const layout = document.querySelector('.layout');
+    const rect = layout.getBoundingClientRect();
+    let w = rect.right - e.clientX;
+    w = Math.max(240, Math.min(640, w));
+    layout.style.setProperty('--right-w', w + 'px');
+    resize();
+  });
+  handleR.addEventListener('pointerup', () => { resizingR = false; handleR.classList.remove('dragging'); if (typeof saveWorkspaceState === 'function') saveWorkspaceState(); });
 })();
 
 function resize() {

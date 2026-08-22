@@ -14,8 +14,8 @@ import java.nio.file.Path
  */
 object AnimationSyncService {
 
-    /** 需要同步的扩展名（相对 animations/ 根）。 */
-    private val SYNC_EXTENSIONS = setOf(".pdraw", ".png")
+    /** 需要同步的扩展名（相对 animations/ 根）。贴图已内嵌于 pdraw v4+，不再单独同步 PNG。 */
+    private val SYNC_EXTENSIONS = setOf(".pdraw")
 
     /** 待同步文件描述（相对文件名 + 文件字节）。 */
     data class SyncFile(val name: String, val bytes: ByteArray)

@@ -17,9 +17,7 @@ import work.nekow.particledrawing.animation.AnimationLoader
 import work.nekow.particledrawing.animation.ServerAnimationManager
 import work.nekow.particledrawing.core.client.ClientAnimationManager
 import work.nekow.particledrawing.core.client.ClientParticleEngine
-import work.nekow.particledrawing.core.client.TextureCache
 import work.nekow.particledrawing.util.ParticleUtils
-import java.nio.file.Files
 
 /**
  * 命令注册。提供 /pdraw 及其子命令，用于加载播放网页编辑器导出的动画。
@@ -129,23 +127,12 @@ object ParticleDrawCommands {
             ctx.source.sendFailure(Component.literal("贴图渲染仅在客户端，/pdraw reload 仅客户端可用"))
             return 0
         }
-        TextureCache.clear()
-        var count = 0
-        val dir = AnimationLoader.TEXTURE_DIRECTORY
-        if (Files.isDirectory(dir)) {
-            Files.list(dir).use { stream ->
-                stream.filter { it.fileName.toString().endsWith(".png") }
-                    .forEach { path ->
-                        val name = path.fileName.toString().removeSuffix(".png")
-                        if (TextureCache.load(name) != null) count++
-                    }
-            }
-        }
+        ClientAnimationManager.reloadTextures()
         ctx.source.sendSuccess(
-            { Component.literal("已重建贴图纹理：重新加载 $count 张贴图（重新播放动画以应用）") },
+            { Component.literal("已重建贴图纹理（重新播放动画以应用）") },
             false
         )
-        return count
+        return 1
     }
 
     /**

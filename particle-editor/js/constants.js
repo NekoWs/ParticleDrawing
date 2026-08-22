@@ -146,7 +146,6 @@ const state = {
   dirty: false,
   textures: {},          // { name: { width, height, data(Uint8Array RGBA), fileHandle? } }
   currentTexture: null,  // 当前贴图编辑器正在编辑的贴图名
-  directoryHandle: null, // 项目文件夹 handle（File System Access API）
   groupUV: {},           // 组级 UV/贴图设置（继承 f > g > p）
 };
 

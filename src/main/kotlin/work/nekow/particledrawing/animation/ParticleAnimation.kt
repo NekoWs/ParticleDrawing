@@ -10,6 +10,7 @@ import work.nekow.particledrawing.core.easing.EasingType
  *
  * @param textures 工程引用的贴图名列表（对应 .pdraw 顶层的 `tex`）
  * @param groupUV 组级 UV 映射（`guv`，组名 -> UV 参数）
+ * @param texData 内嵌贴图数据（v4+，`texData`，贴图名 -> PNG 字节数组）；旧格式为空
  */
 class ParticleAnimation(
     val loop: Boolean,
@@ -18,7 +19,8 @@ class ParticleAnimation(
     val groups: Map<String, List<String>>,
     val functions: List<FunctionObject> = emptyList(),
     val textures: List<String> = emptyList(),
-    val groupUV: Map<String, UvData> = emptyMap()
+    val groupUV: Map<String, UvData> = emptyMap(),
+    val texData: Map<String, ByteArray> = emptyMap()
 )
 
 /**

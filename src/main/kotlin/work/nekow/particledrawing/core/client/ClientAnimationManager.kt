@@ -3,6 +3,7 @@ package work.nekow.particledrawing.core.client
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.AnimationLoader
 import work.nekow.particledrawing.animation.ClientAnimationPlayer
+import work.nekow.particledrawing.animation.ParticleAnimation
 import work.nekow.particledrawing.api.ParticleStyle
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -15,6 +16,7 @@ object ClientAnimationManager {
     private class Entry(
         val player: ClientAnimationPlayer,
         val particleUuids: MutableMap<String, UUID>,
+        val animation: ParticleAnimation,
     )
 
     private val entries = ConcurrentHashMap<UUID, Entry>()
@@ -56,8 +58,11 @@ object ClientAnimationManager {
         } catch (_: Exception) {
             return
         }
-        // 播放前预加载动画引用的全部贴图（纹理必须在粒子渲染前注册，见 TextureCache）
-        for (texName in animation.textures) ensureTextureLoaded(texName)
+        // 播放前预加载内嵌贴图
+        for (texName in animation.textures) {
+            val bytes = animation.texData[texName] ?: continue
+            try { TextureCache.load(texName, bytes) } catch (_: Exception) {}
+        }
 
         val player = ClientAnimationPlayer(animation, origin)
         val uuids = HashMap<String, UUID>()
@@ -70,15 +75,18 @@ object ClientAnimationManager {
                 state.scale[0], -1, null, state.glowing, state.lightLevel, state.uv
             )
         }
-        entries[animationId] = Entry(player, uuids)
+        entries[animationId] = Entry(player, uuids, animation)
     }
 
-    /** 确保一张贴图已加载并注册（主线程调用）。失败静默忽略，粒子回退为纯色方块。 */
-    private fun ensureTextureLoaded(texName: String) {
-        try {
-            TextureCache.load(texName)
-        } catch (_: Exception) {
-            // 忽略：贴图缺失/解码失败时粒子退化为无贴图渲染
+    /** 重载所有正在播放动画的内嵌贴图（/pdraw reload 使用）。 */
+    @JvmStatic
+    fun reloadTextures() {
+        TextureCache.clear()
+        for ((_, entry) in entries) {
+            for (texName in entry.animation.textures) {
+                val bytes = entry.animation.texData[texName] ?: continue
+                try { TextureCache.load(texName, bytes) } catch (_: Exception) {}
+            }
         }
     }
 

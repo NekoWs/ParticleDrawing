@@ -6,6 +6,41 @@ const r3 = x => Math.round(x * 1000) / 1000;
 const roundArr = a => a.map(r3);
 function encodeEasing(e) { return Array.isArray(e) ? e.map(r3) : e; }
 
+// 贴图 → base64 PNG（同步导出用；贴图变化时调用 refreshTexBase64Cache 预计算）
+async function textureToBase64(t) {
+  const cnv = document.createElement('canvas'); cnv.width = t.width; cnv.height = t.height;
+  const ctx = cnv.getContext('2d');
+  ctx.putImageData(new ImageData(t.data.slice(), t.width, t.height), 0, 0);
+  const blob = await new Promise(r => cnv.toBlob(r, 'image/png'));
+  const buf = await blob.arrayBuffer();
+  let bin = ''; for (const b of new Uint8Array(buf)) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+function base64ToTexture(name, b64) {
+  return new Promise((resolve, reject) => {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const blob = new Blob([bytes], { type: 'image/png' });
+    createImageBitmap(blob).then(async bmp => {
+      const w = bmp.width, h = bmp.height;
+      const cnv = document.createElement('canvas'); cnv.width = w; cnv.height = h;
+      const ctx = cnv.getContext('2d'); ctx.drawImage(bmp, 0, 0);
+      const data = new Uint8ClampedArray(ctx.getImageData(0, 0, w, h).data);
+      resolve({ name, width: w, height: h, data });
+    }).catch(reject);
+  });
+}
+// 预计算缓存：exportProject 同步读取（异步刷新，调用时机：贴图新建/上传/编辑/删除/重命名后）
+let _texBase64Cache = {};
+async function refreshTexBase64Cache() {
+  const c = {};
+  for (const [name, t] of Object.entries(state.textures)) {
+    try { c[name] = await textureToBase64(t); } catch (e) { /* skip */ }
+  }
+  _texBase64Cache = c;
+}
+
 // 颜色是否为默认白色（省略导出）
 function isDefaultColor(c) {
   return !!c && Math.abs(c[0] - 1) < 1e-9 && Math.abs(c[1] - 1) < 1e-9 && Math.abs(c[2] - 1) < 1e-9 && Math.abs(c[3] - 1) < 1e-9;
@@ -75,16 +110,6 @@ function parseVars(vars) {
   }
   return o;
 }
-// 兼容上一版（分散字段）工程文件
-function legacyCode(o) {
-  const parts = [];
-  if (o.x || o.y || o.z) parts.push('[x,y,z] = [' + (o.x || 0) + ', ' + (o.y || 0) + ', ' + (o.z || 0) + ']');
-  if (o.col) parts.push('[r,g,b,a] = ' + o.col);
-  if (o.scl != null) parts.push('sc = ' + o.scl);
-  if (o.glow != null) parts.push('glow = ' + o.glow);
-  if (o.light != null) parts.push('light = ' + o.light);
-  return parts.join('; ');
-}
 function serializeFunction(fx) {
   const o = {
     id: fx.id, name: fx.name, center: fx.center.slice(), count: fx.count,
@@ -101,7 +126,7 @@ function serializeFunction(fx) {
 function parseFunction(o) {
   return {
     id: o.id, name: o.name || '函数对象', center: (o.center || [0, 0, 0]).slice(0, 3), count: o.count || 30,
-    code: o.code != null ? String(o.code) : legacyCode(o),
+    code: o.code != null ? String(o.code) : "",
     vars: parseVars(o.vars),
     duration: o.duration || 0, step: o.step || 5,
     preset: o.preset || null, params: o.params ? { ...o.params } : null,
@@ -128,9 +153,16 @@ function exportProject() {
   }
   const f = state.functions.map(serializeFunction);
   const tex = Object.keys(state.textures);
+  // 内嵌贴图数据（base64 PNG）；使用预计算缓存（同步可用）
+  const texData = {};
+  for (const name of tex) {
+    if (_texBase64Cache[name]) texData[name] = _texBase64Cache[name];
+  }
   const guv = {};
   for (const [name, uv] of Object.entries(state.groupUV || {})) if (uv && uv.texture) guv[name] = serializeUV(uv);
-  return { v: 3, loop: state.loop, g, p, t, f, tex, guv };
+  const result = { v: 4, loop: state.loop, g, p, t, f, tex, guv };
+  if (Object.keys(texData).length > 0) result.texData = texData;
+  return result;
 }
 
 function parseParticlesTracks(obj) {
@@ -191,6 +223,18 @@ function importProject(obj) {
   for (const fx of state.functions) {
     try { rebuildFunctionObject(fx); } catch (e) { console.warn('函数对象求值失败：' + fx.id + ' ' + e.message); }
   }
+  // 内嵌贴图（v4+）
+  if (obj.texData && typeof obj.texData === 'object') {
+    const pending = [];
+    for (const [name, b64] of Object.entries(obj.texData)) {
+      if (typeof b64 === 'string') pending.push(base64ToTexture(name, b64));
+    }
+    Promise.all(pending).then(results => {
+      for (const t of results) state.textures[t.name] = t;
+      refreshTexBase64Cache();
+      markTextureChanged(); refreshTexturePanel();
+    });
+  }
   updateTimeUI(); rebuildPoints(); refreshParticleTree();
   setDirty(false);
 }
@@ -221,85 +265,30 @@ function updateTopbarTitle() {
 
 async function openFile() {
   if (!(await confirmDiscardChanges())) return;
-  if (window.showDirectoryPicker) {
+  if (window.showOpenFilePicker) {
     try {
-      const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
-      const pdraws = [];
-      for await (const [name, handle] of dir.entries()) {
-        if (handle.kind === 'file' && name.toLowerCase().endsWith('.pdraw')) pdraws.push({ name, handle });
-      }
-      if (pdraws.length === 0) { await modalAlert('提示', '该文件夹没有 .pdraw 文件'); return; }
-      let h = pdraws[0].handle;
-      if (pdraws.length > 1) h = await choosePdraw(pdraws);
-      if (!h) return;
-      state.directoryHandle = dir;
+      const [h] = await window.showOpenFilePicker({
+        types: [{ description: 'ParticleDrawing 工程', accept: { 'application/json': ['.pdraw'] } }],
+        multiple: false,
+      });
       state.fileHandle = h;
       await loadFile(await h.getFile());
-      await loadTextures();
-      // 贴图文件已从 textures/ 子目录加载：重建图集并让粒子立即按 UV 引用的贴图渲染
-      if (typeof markTextureChanged === 'function') markTextureChanged();
-      if (typeof refreshTexturePanel === 'function') refreshTexturePanel();
+      refreshTexBase64Cache();
+      markTextureChanged();
+      refreshTexturePanel();
     } catch (e) { /* 取消则忽略 */ }
     return;
   }
   document.getElementById('file-import').click();
 }
 
-// 多 pdraw 时弹出选择列表
-function choosePdraw(pdraws) {
-  return new Promise((resolve) => {
-    const box = document.createElement('div');
-    box.className = 'pdraw-picker';
-    box.innerHTML = '<div class="pp-title">选择要打开的动画</div>';
-    const list = document.createElement('div');
-    list.className = 'pp-list';
-    for (const p of pdraws) {
-      const b = document.createElement('button');
-      b.className = 'mini';
-      b.textContent = p.name;
-      b.onclick = () => { box.remove(); resolve(p.handle); };
-      list.appendChild(b);
-    }
-    const cancel = document.createElement('button');
-    cancel.className = 'mini'; cancel.textContent = '取消';
-    cancel.onclick = () => { box.remove(); resolve(null); };
-    list.appendChild(cancel);
-    box.appendChild(list);
-    document.body.appendChild(box);
-    box.style.left = (window.innerWidth / 2 - 120) + 'px';
-    box.style.top = (window.innerHeight / 2 - 80) + 'px';
-  });
-}
-
-// 从项目文件夹 textures/ 子目录加载全部贴图 PNG
-async function loadTextures() {
-  state.textures = {};
-  state.currentTexture = null;
-  if (!state.directoryHandle) return;
-  let texDir;
-  try { texDir = await state.directoryHandle.getDirectoryHandle('textures'); }
-  catch (e) { return; }
-  for await (const [name, handle] of texDir.entries()) {
-    if (handle.kind !== 'file' || !name.toLowerCase().endsWith('.png')) continue;
-    try {
-      const file = await handle.getFile();
-      if (file.size > 32 * 1024 * 1024) continue;
-      const bmp = await createImageBitmap(file);
-      const w = bmp.width, h = bmp.height;
-      const cnv = document.createElement('canvas'); cnv.width = w; cnv.height = h;
-      const ctx = cnv.getContext('2d'); ctx.drawImage(bmp, 0, 0);
-      const data = new Uint8ClampedArray(ctx.getImageData(0, 0, w, h).data);
-      const tn = name.replace(/\.png$/i, '');
-      state.textures[tn] = { name: tn, width: w, height: h, data };
-    } catch (e) { /* 跳过无法解码的贴图 */ }
-  }
-}
 
 async function saveFile() {
   if (!state.fileHandle || !state.fileHandle.createWritable) {
     await saveFileAs();
     return;
   }
+  await refreshTexBase64Cache();
   const json = JSON.stringify(exportProject());
   await writeProjectText(state.fileHandle, json);
 }
@@ -315,16 +304,8 @@ async function writeProjectText(handle, json) {
 }
 
 async function saveFileAs() {
+  await refreshTexBase64Cache();
   const json = JSON.stringify(exportProject());
-  // 项目文件夹模式：在文件夹内新建 .pdraw
-  if (state.directoryHandle && state.directoryHandle.getFileHandle) {
-    try {
-      const fh = await state.directoryHandle.getFileHandle(state.name + '.pdraw', { create: true });
-      state.fileHandle = fh;
-      await writeProjectText(fh, json);
-      return;
-    } catch (e) { /* 失败则回退下载 */ }
-  }
   if (window.showSaveFilePicker) {
     try {
       const h = await window.showSaveFilePicker({ suggestedName: state.name + '.pdraw', types: [{ description: '工程文件', accept: { 'application/json': ['.pdraw'] } }] });
@@ -344,6 +325,7 @@ async function saveFileAs() {
 
 // 导出动画（.pdraw 供模组 /pdraw play 播放），不改变当前工程 fileHandle
 async function exportAnimation() {
+  await refreshTexBase64Cache();
   const json = JSON.stringify(exportProject());
   if (window.showSaveFilePicker) {
     try {

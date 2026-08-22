@@ -132,7 +132,7 @@ body {
 /* ---- layout ---- */
 .layout {
   display: grid;
-  grid-template-columns: var(--left-w, 340px) 5px 1fr 320px;
+  grid-template-columns: var(--left-w, 340px) 5px 1fr 5px var(--right-w, 320px);
   min-height: 0;
 }
 .left-panel {
@@ -149,6 +149,13 @@ body {
   transition: background 0.12s ease;
 }
 .resize-handle:hover, .resize-handle.dragging { background: var(--accent); }
+.resize-handle-r {
+  cursor: col-resize;
+  background: transparent;
+  border-left: 1px solid var(--border);
+  transition: background 0.12s ease;
+}
+.resize-handle-r:hover, .resize-handle-r.dragging { background: var(--accent); }
 .panel-title {
   font-weight: 600;
   font-size: 12px;
@@ -164,7 +171,7 @@ body {
 #axis-gizmo { position: absolute; top: 10px; right: 10px; width: 112px; height: 112px; pointer-events: auto; cursor: pointer; }
 #box-overlay { position: absolute; border: 1px dashed var(--accent); background: var(--accent-soft); display: none; pointer-events: none; }
 
-.sidebar { display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--border); }
+.sidebar { display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--border); width: var(--right-w, 320px); min-width: 0; overflow: hidden; }
 .tabs {
   display: flex; gap: 2px; padding: 8px 8px 0;
   border-bottom: 1px solid var(--border); background: var(--bg);
