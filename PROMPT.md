@@ -30,17 +30,15 @@
 - 尽量使用纯标量（避免向量/矩阵函数、`.x/.y/.z` 分量访问和向量拆包），以获得编译快路径。
 - 临时变量先定义后使用；不修改保留字。
 - 颜色取值 `[0,1]`，`light` 取整数 `[0,15]`，`glow` 取 `0/1`；稳定外观用 `rand(seed)`，每帧变化用 `random()`。
-- 代码段中不允许包含注释。
 
 ## 示例
 ```
-外置变量:
-rad: 3
-代码段:
-th = acos(1 - 2 * (i + 0.5) / n);
-ph = i * pi * (3 - sqrt(5));
-[x, y, z] = [rad * sin(th) * cos(ph), rad * cos(th), rad * sin(th) * sin(ph)];
-[r, g, b, a] = [1, 1, 1, 1];
-glow = 1;
-light = 12;
+vars: { rad: { expr: "3", kf: [] } }
+code:
+  th = acos(1 - 2 * (i + 0.5) / n);
+  ph = i * pi * (3 - sqrt(5));
+  [x, y, z] = [rad * sin(th) * cos(ph), rad * cos(th), rad * sin(th) * sin(ph)];
+  [r, g, b, a] = [1, 1, 1, 1];
+  glow = 1;
+  light = 12;
 ```
