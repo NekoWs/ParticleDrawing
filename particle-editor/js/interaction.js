@@ -924,14 +924,16 @@ function applyBoxSelection() {
  * ======================================================================= */
 
 const DRAW_TOOLS = ['pencil', 'line', 'circle', 'rect', 'freehand'];
-const DRAW_COUNT_MAX = 50000;
+const DRAW_COUNT_MAX = 1000;
 
 function isDrawTool() { return DRAW_TOOLS.includes(state.tool); }
 
 let rightDownPos = null;
 let drawCountEditor = null;
+let drawCountDismiss = null; // document pointerdown 关闭监听器
 
 function closeDrawCountEditor() {
+  if (drawCountDismiss) { document.removeEventListener('pointerdown', drawCountDismiss); drawCountDismiss = null; }
   if (drawCountEditor) { drawCountEditor.remove(); drawCountEditor = null; }
 }
 
@@ -950,11 +952,19 @@ function showDrawCountEditor(cx, cy) {
   num.addEventListener('input', () => { state.drawCount = clampCount(num.value); range.value = state.drawCount; });
   num.addEventListener('change', () => { state.drawCount = clampCount(num.value); range.value = state.drawCount; });
   range.addEventListener('input', () => { state.drawCount = clampCount(range.value); num.value = state.drawCount; });
+  // 框内点击不关闭
+  box.addEventListener('pointerdown', (e) => e.stopPropagation());
   document.body.appendChild(box);
   box.style.left = Math.min(cx, window.innerWidth - 260) + 'px';
   box.style.top = Math.min(cy, window.innerHeight - 60) + 'px';
   drawCountEditor = box;
   setTimeout(() => num.focus(), 0);
+  // 点击外部关闭
+  drawCountDismiss = (e) => {
+    if (!box.contains(e.target)) closeDrawCountEditor();
+  };
+  // 延迟注册，避免本次右键 pointerup 事件立即触发关闭
+  setTimeout(() => document.addEventListener('pointerdown', drawCountDismiss), 0);
 }
 function clampCount(v) { return Math.max(2, Math.min(DRAW_COUNT_MAX, Math.round(parseInt(v) || 30))); }
 

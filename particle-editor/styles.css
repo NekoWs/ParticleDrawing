@@ -275,7 +275,7 @@ body {
   padding: 8px 10px; box-shadow: var(--shadow);
 }
 .draw-count-editor .dce-label { color: var(--muted); font-size: 12px; white-space: nowrap; }
-.draw-count-editor input[type="number"] { width: 70px; background: var(--panel-3); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 5px 8px; }
+.draw-count-editor input[type="number"] { width: 50px; background: var(--panel-3); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 5px 8px; }
 .draw-count-editor input[type="range"] { width: 130px; accent-color: var(--accent); }
 
 /* ---- pdraw 选择器 ---- */

@@ -253,7 +253,7 @@ function buildFunctionPanel(fx) {
   // 变量表
   const vhead = document.createElement('div');
   vhead.className = 'vars-head';
-  vhead.innerHTML = '<span>变量（可设关键帧+缓动）</span>';
+  vhead.innerHTML = '<span>变量列表</span>';
   const vadd = document.createElement('button');
   vadd.className = 'mini'; vadd.textContent = '+';
   vadd.onclick = () => {

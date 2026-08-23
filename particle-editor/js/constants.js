@@ -191,25 +191,13 @@ function nextFreeTime(tr, startTime) {
 
 const FUNCTION_PRESETS = {
   blank: {
-    label: '空白',
+    label: '空',
     params: [],
     build: p => ({
       count: 30,
       vars: {},
-      code: '[x,y,z] = [0, 0, 0];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
+      code: '',
     }),
-  },
-  rising_smoke: {
-    label: '循环上升烟雾',
-    params: [
-      { key: 'rad', label: '半径', def: 100 },
-      { key: 'spd', label: '上升速度', def: 0.5 },
-    ],
-    build: p => ({
-      count: 2000,
-      vars: { rad: { expr: String(p.rad), kf: []}, spd: { expr: String(p.spd), kf: [] } },
-      code: 'x = rand(i * 2) * 2 * rad - rad;\nz = rand(i * 4) * 2 * rad - rad;\n_y = rand(i * 6) * 2 * rad - rad; \ny = -rad + (_y + rad + t * spd) % (2 * rad)'
-    })
   },
   sin: {
     label: 'SIN 函数',
@@ -221,7 +209,8 @@ const FUNCTION_PRESETS = {
     build: p => ({
       count: 200,
       vars: { amp: { expr: String(p.amp), kf: [] }, freq: { expr: String(p.freq), kf: [] }, wid: { expr: String(p.wid), kf: [] } },
-      code: 'xx = (i/n-0.5)*wid;\n[x,y,z] = [xx, amp*sin(freq*pi*xx/wid), 0];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 12',
+      code: 'xx = (i / n - 0.5) * wid;\n' +
+          '[x,y,z] = [xx, amp * sin(freq * pi * xx / wid), 0]',
     }),
   },
   sphere: {
@@ -232,7 +221,10 @@ const FUNCTION_PRESETS = {
     build: p => ({
       count: 200,
       vars: { rad: { expr: String(p.rad), kf: [] } },
-      code: 'th = acos(1-2*(i+0.5)/n);\nph = i*pi*(3-sqrt(5));\n[x,y,z] = [rad*sin(th)*cos(ph), rad*cos(th), rad*sin(th)*sin(ph)];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 12',
+      code: 'th = acos(1-2*(i+0.5)/n);\n' +
+          'ph = i*pi*(3-sqrt(5));\n' +
+          '[x,y,z] = [rad*sin(th)*cos(ph), rad*cos(th), rad*sin(th)*sin(ph)];\n' +
+          '[r,g,b,a] = [1,1,1,1]',
     }),
   },
   cube: {
@@ -244,20 +236,25 @@ const FUNCTION_PRESETS = {
     build: p => ({
       count: 512,
       vars: { edge: { expr: String(p.edge), kf: [] }, sx: { expr: '8', kf: [] }, sy: { expr: '8', kf: [] }, sz: { expr: '8', kf: [] } },
-      code: '[x,y,z] = [((floor(i/(sy*sz)))/(sx-1)-0.5)*edge, ((floor((i%(sy*sz))/sz))/(sy-1)-0.5)*edge, ((i%sz)/(sz-1)-0.5)*edge];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
+      code: '[x,y,z] = [((floor(i/(sy*sz)))/(sx-1)-0.5)*edge, ((floor((i%(sy*sz))/sz))/(sy-1)-0.5)*edge, ((i%sz)/(sz-1)-0.5)*edge];\n' +
+          '[r,g,b,a] = [1,1,1,1]',
     }),
   },
   torus: {
-    label: '圆环',
+    label: '甜甜圈',
     countVars: ['m', 'k'],
     params: [
       { key: 'major', label: '大半径', def: 3 },
       { key: 'minor', label: '管半径', def: 1 },
+      { key: 'm', label: '密度', def: 45 },
+      { key: 'k', label: '圆环密度', def: 16 },
     ],
     build: p => ({
       count: 288,
-      vars: { major: { expr: String(p.major), kf: [] }, minor: { expr: String(p.minor), kf: [] }, m: { expr: '24', kf: [] }, k: { expr: '12', kf: [] } },
-      code: 'th = i%k/k*2*pi;\nph = floor(i/k)/m*2*pi;\n[x,y,z] = [(major+minor*cos(th))*cos(ph), minor*sin(th), (major+minor*cos(th))*sin(ph)];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 10',
+      vars: { major: { expr: String(p.major), kf: [] }, minor: { expr: String(p.minor), kf: [] }, m: { expr: String(p.m), kf: [] }, k: { expr: String(p.k), kf: [] } },
+      code: 'th = i%k/k*2*pi;\n' +
+          'ph = floor(i/k)/m*2*pi;\n' +
+          '[x,y,z] = [(major+minor*cos(th))*cos(ph), minor*sin(th), (major+minor*cos(th))*sin(ph)]',
     }),
   },
   cylinder: {
@@ -266,11 +263,19 @@ const FUNCTION_PRESETS = {
     params: [
       { key: 'rad', label: '半径', def: 2 },
       { key: 'h', label: '高度', def: 4 },
+      { key: 'm', label: '密度', def: 45 },
+      { key: 'k', label: '圆环密度', def: 12 },
+      { key: 'cr', label: '顶/底密度', def: 8 },
     ],
     build: p => ({
       count: 512,
-      vars: { rad: { expr: String(p.rad), kf: [] }, h: { expr: String(p.h), kf: [] }, m: { expr: '32', kf: [] }, k: { expr: '8', kf: [] }, cr: { expr: '4', kf: [] } },
-      code: 'L = k + 2*cr;\nly = floor(i/m);\naa = i%m/m*2*pi;\nrr = rad*clamp(min(ly/(cr-1), (L-1-ly)/(cr-1)), 0, 1);\nyy = (clamp(ly, cr, cr+k-1)-cr)/(k-1)*h - h/2;\n[x,y,z] = [rr*cos(aa), yy, rr*sin(aa)];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
+      vars: { rad: { expr: String(p.rad), kf: [] }, h: { expr: String(p.h), kf: [] }, m: { expr: String(p.m), kf: [] }, k: { expr: String(p.k), kf: [] }, cr: { expr: String(p.cr), kf: [] } },
+      code: 'L = k + 2*cr;\n' +
+          'ly = floor(i/m);\n' +
+          'aa = i%m/m*2*pi;\n' +
+          'rr = rad*clamp(min(ly/(cr-1), (L-1-ly)/(cr-1)), 0, 1);\n' +
+          'yy = (clamp(ly, cr, cr+k-1)-cr)/(k-1)*h - h/2;\n' +
+          '[x,y,z] = [rr*cos(aa), yy, rr*sin(aa)]',
     }),
   },
   cone: {
@@ -313,26 +318,29 @@ const FUNCTION_PRESETS = {
     }),
   },
   circle: {
-    label: '圆',
+    label: '圆周',
     params: [
-      { key: 'outer', label: '外半径', def: 4 },
-      { key: 'inner', label: '内半径(0=实心)', def: 0 },
+      { key: 'rad', label: '半径', def: 4 }
     ],
     build: p => ({
       count: 200,
-      vars: { outer: { expr: String(p.outer), kf: [] }, inner: { expr: String(p.inner), kf: [] } },
-      code: 'aa = i/n*2*pi;\nrr = sqrt(inner^2 + (outer^2-inner^2)*i/n);\n[x,y,z] = [rr*cos(aa), 0, rr*sin(aa)];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 12',
+      vars: { rad: { expr: String(p.rad), kf: [] } },
+      code: 'ang = i / n * 2 * pi;\n' +
+          '[x,y,z] = [rad * cos(ang), 0, rad * sin(ang)]',
     }),
   },
   disc: {
     label: '圆盘',
     params: [
-      { key: 'rad', label: '半径', def: 4 },
+      { key: 'diskR', label: '半径', def: 4 },
     ],
     build: p => ({
-      count: 240,
-      vars: { rad: { expr: String(p.rad), kf: [] } },
-      code: 'aa = i/n*2*pi;\nrr = rad*sqrt(i/n);\n[x,y,z] = [rr*cos(aa), 0, rr*sin(aa)];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 12',
+      count: 400,
+      vars: { diskR: { expr: String(p.diskR), kf: [] } },
+      code: 'rad = diskR * sqrt(i / n);\n' +
+          'th = i * pi * (3 - sqrt(5));\n' +
+          'x = rad * cos(th);\n' +
+          'z = rad * sin(th)',
     }),
   },
   star: {
@@ -346,39 +354,19 @@ const FUNCTION_PRESETS = {
       code: 'm = floor(pow(n, 0.5));\nu = floor(i / m) * 2 * pi / m;\nv = i % m * pi / m - pi / 2;\nx = rad * pow(cos(u) * cos(v), 3);\ny = rad * pow(sin(u) * cos(v), 3);\nz = rad * pow(sin(v), 3)'
     })
   },
-  fourier: {
-    label: '傅里叶曲线',
+  rising_smoke: {
+    label: '循环上升烟雾',
     params: [
-      { key: 'a0x', label: 'X 常数项', def: 0 },
-      { key: 'ax1', label: 'X 谐波1·cos', def: 3 },
-      { key: 'bx1', label: 'X 谐波1·sin', def: 0 },
-      { key: 'ax2', label: 'X 谐波2·cos', def: 0 },
-      { key: 'bx2', label: 'X 谐波2·sin', def: 0 },
-      { key: 'ax3', label: 'X 谐波3·cos', def: 0 },
-      { key: 'bx3', label: 'X 谐波3·sin', def: 0 },
-      { key: 'a0z', label: 'Z 常数项', def: 0 },
-      { key: 'az1', label: 'Z 谐波1·cos', def: 0 },
-      { key: 'bz1', label: 'Z 谐波1·sin', def: 3 },
-      { key: 'az2', label: 'Z 谐波2·cos', def: 0 },
-      { key: 'bz2', label: 'Z 谐波2·sin', def: 0 },
-      { key: 'az3', label: 'Z 谐波3·cos', def: 0 },
-      { key: 'bz3', label: 'Z 谐波3·sin', def: 0 },
-      { key: 'yc', label: 'Y 常量', def: 0 },
+      { key: 'rad', label: '半径', def: 50 },
+      { key: 'spd', label: '上升速度', def: 0.5 },
     ],
     build: p => ({
-      count: 200,
-      vars: {
-        a0x: { expr: String(p.a0x), kf: [] },
-        ax1: { expr: String(p.ax1), kf: [] }, bx1: { expr: String(p.bx1), kf: [] },
-        ax2: { expr: String(p.ax2), kf: [] }, bx2: { expr: String(p.bx2), kf: [] },
-        ax3: { expr: String(p.ax3), kf: [] }, bx3: { expr: String(p.bx3), kf: [] },
-        a0z: { expr: String(p.a0z), kf: [] },
-        az1: { expr: String(p.az1), kf: [] }, bz1: { expr: String(p.bz1), kf: [] },
-        az2: { expr: String(p.az2), kf: [] }, bz2: { expr: String(p.bz2), kf: [] },
-        az3: { expr: String(p.az3), kf: [] }, bz3: { expr: String(p.bz3), kf: [] },
-        yc: { expr: String(p.yc), kf: [] },
-      },
-      code: 'x = a0x + ax1*cos(2*pi*i/n) + bx1*sin(2*pi*i/n) + ax2*cos(4*pi*i/n) + bx2*sin(4*pi*i/n) + ax3*cos(6*pi*i/n) + bx3*sin(6*pi*i/n);\nz = a0z + az1*cos(2*pi*i/n) + bz1*sin(2*pi*i/n) + az2*cos(4*pi*i/n) + bz2*sin(4*pi*i/n) + az3*cos(6*pi*i/n) + bz3*sin(6*pi*i/n);\ny = yc;\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 12',
-    }),
+      count: 2000,
+      vars: { rad: { expr: String(p.rad), kf: []}, spd: { expr: String(p.spd), kf: [] } },
+      code: 'x = rand(i * 2) * 2 * rad - rad;\n' +
+          'z = rand(i * 4) * 2 * rad - rad;\n' +
+          '_y = rand(i * 6) * 2 * rad - rad; \n' +
+          'y = -rad + (_y + rad + t * spd) % (2 * rad)'
+    })
   },
 };
