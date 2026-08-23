@@ -250,7 +250,7 @@ const FUNCTION_PRESETS = {
       { key: 'k', label: '圆环密度', def: 16 },
     ],
     build: p => ({
-      count: 288,
+      count: 717,
       vars: { major: { expr: String(p.major), kf: [] }, minor: { expr: String(p.minor), kf: [] }, m: { expr: String(p.m), kf: [] }, k: { expr: String(p.k), kf: [] } },
       code: 'th = i%k/k*2*pi;\n' +
           'ph = floor(i/k)/m*2*pi;\n' +

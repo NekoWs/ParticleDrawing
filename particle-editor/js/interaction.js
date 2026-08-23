@@ -188,7 +188,8 @@ function enterRotate(clientX, clientY, axis) {
     const v = new THREE.Vector3().crossVectors(a, u).normalize();
     const p0 = rayOnAxisPlane(clientX, clientY, axArr, c);
     const startAngle = p0 ? angleInBasis(p0, c, u, v) : 0;
-    modal = { type: 'fx-rotate', fxId: fx.id, centroid: c, axis: axArr, axisKey: axis, axisIndex: AXIS_INDEX[axis] ?? 1, startRot: fxRotationValueAt(fx.id, Math.round(state.time)), u, v, startAngle };
+    const startRot = fxRotationValueAt(fx.id, Math.round(state.time));
+    modal = { type: 'fx-rotate', fxId: fx.id, centroid: c, axis: axArr, axisKey: axis, axisIndex: AXIS_INDEX[axis] ?? 1, startRot, u, v, startAngle };
     setDragAxisHighlight(modal);
     controls.enabled = false;
     return;
@@ -222,10 +223,10 @@ function enterRotate(clientX, clientY, axis) {
     if (p) origins.set(id, currentVisual(p).pos.slice());
   }
   if (gname) {
+    const startRot = groupRotationValueAt(gname, Math.round(state.time));
     modal = {
       type: 'group-rotate', gname, centroid: c, axis: axArr, axisKey: axis,
-      axisIndex: AXIS_INDEX[axis] ?? 1,
-      startRot: groupRotationValueAt(gname, Math.round(state.time)),
+      axisIndex: AXIS_INDEX[axis] ?? 1, startRot,
       origins, u, v, startAngle,
     };
   } else {
@@ -254,15 +255,42 @@ function screenAngleAt(clientX, clientY, centroid) {
 }
 
 // 绕世界轴 axis（单位向量）旋转 angle（弧度），复合到 startRot（度）。
+// 使用四元数增量累积，避免欧拉 gimbal lock 导致 Y=90° 附近值跳变。
 // rot 轨道为 extrinsic XYZ（先绕 X、再绕 Y、再绕 Z，等价 THREE.Euler 'ZYX'）。
-// 用矩阵复合 M_new = M_axis * M_rot，避免欧拉相加导致对象旋转后绕世界轴的反向问题。
 function applyWorldRotation(startRot, axis, angle) {
-  const e = new THREE.Euler(startRot[0] * DEG2RAD, startRot[1] * DEG2RAD, startRot[2] * DEG2RAD, 'ZYX');
-  const mRot = new THREE.Matrix4().makeRotationFromEuler(e);
-  const mAxis = new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(axis[0], axis[1], axis[2]), angle);
-  const mNew = new THREE.Matrix4().multiplyMatrices(mAxis, mRot);
-  const eNew = new THREE.Euler().setFromRotationMatrix(mNew, 'ZYX');
+  const qBase = new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(startRot[0] * DEG2RAD, startRot[1] * DEG2RAD, startRot[2] * DEG2RAD, 'ZYX'));
+  const qDelta = new THREE.Quaternion().setFromAxisAngle(
+    new THREE.Vector3(axis[0], axis[1], axis[2]), angle);
+  const qNew = qDelta.multiply(qBase); // 世界轴旋转在左侧乘
+  const eNew = new THREE.Euler().setFromQuaternion(qNew, 'ZYX');
   return [eNew.x * RAD2DEG, eNew.y * RAD2DEG, eNew.z * RAD2DEG];
+}
+
+// 从四元数中提取 Euler，被拖拽的轴使用用户的累积角度（无 ±90° 限幅）。
+// 其余两轴从旋转矩阵的独立列用 atan2 提取（对 Y=90° 万向锁免疫）。
+// dragAxisIdx: 0=X, 1=Y, 2=Z; -1=不用替换（视图旋转）。
+function eulerFromQuatDragAxis(q, dragAxisIdx, cumAngle) {
+  const me = new THREE.Matrix4().makeRotationFromQuaternion(q).elements;
+  // atan2 从矩阵独立列提取，不依赖 cos(Y) ≠ 0（无万向锁分支）
+  const x = Math.atan2(me[9], me[10]) * RAD2DEG;     // atan2(R21, R22)
+  const y = Math.asin(Math.max(-1, Math.min(1, -me[8]))) * RAD2DEG; // asin(-R20)
+  const z = Math.atan2(me[4], me[0]) * RAD2DEG;      // atan2(R10, R00)
+  const arr = [x, y, z];
+  if (dragAxisIdx >= 0) arr[dragAxisIdx] = cumAngle * RAD2DEG;
+  return arr;
+}
+
+// 增量四元数累乘 + 被拖拽轴用累积角度。
+// modal.curQuat: 四元数, modal.cumAngle: 累积角度(弧度), modal.dragAxisIdx: 轴索引。
+function applyWorldRotationQ(modal, axis, dAngle) {
+  const qDelta = new THREE.Quaternion().setFromAxisAngle(
+    new THREE.Vector3(axis[0], axis[1], axis[2]), dAngle);
+  // 世界轴旋转：delta 在左侧乘 → curQuat = qDelta * curQuat
+  // premultiply(q) 是 this = q * this，即 qDelta 左乘到 curQuat 上
+  modal.curQuat.premultiply(qDelta).normalize();
+  modal.cumAngle = (modal.cumAngle || 0) + dAngle;
+  return eulerFromQuatDragAxis(modal.curQuat, modal.dragAxisIdx, modal.cumAngle);
 }
 
 function enterViewRotate(clientX, clientY) {
@@ -271,7 +299,8 @@ function enterViewRotate(clientX, clientY) {
     pushUndo();
     const d = fxPosDeltaAt(fx.id, Math.round(state.time));
     const c = [fx.center[0] + d[0], fx.center[1] + d[1], fx.center[2] + d[2]];
-    modal = { type: 'fx-view-rotate', fxId: fx.id, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot: fxRotationValueAt(fx.id, Math.round(state.time)), angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
+    const startRot = fxRotationValueAt(fx.id, Math.round(state.time));
+    modal = { type: 'fx-view-rotate', fxId: fx.id, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
     controls.enabled = false;
     return;
   }
@@ -296,7 +325,8 @@ function enterViewRotate(clientX, clientY) {
     if (p) origins.set(id, currentVisual(p).pos.slice());
   }
   if (gname) {
-    modal = { type: 'group-view-rotate', gname, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot: groupRotationValueAt(gname, Math.round(state.time)), origins, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
+    const startRot = groupRotationValueAt(gname, Math.round(state.time));
+    modal = { type: 'group-view-rotate', gname, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, origins, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
   } else {
     modal = { type: 'view-rotate', origins, centroid: c, view: true, lookAxis: viewAxisOf(c), angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
   }
@@ -317,7 +347,7 @@ function updateViewRotate(clientX, clientY) {
   if (shiftHeld) angle = Math.round(angle * RAD2DEG / ROT_SNAP) * ROT_SNAP * DEG2RAD;
   const a = m.lookAxis;
   if (m.type === 'fx-view-rotate' || (m.type === 'group-view-rotate' && state.captureKeyframes)) {
-    const newRot = applyWorldRotation(m.startRot, a, angle); // 绕视线轴矩阵复合
+    const newRot = applyWorldRotation(m.startRot, a, angle);
     if (m.type === 'fx-view-rotate') {
       const t = state.captureKeyframes ? Math.round(state.time) : 0;
       setFunctionTrackValue(m.fxId, 'rot', 'set', t, newRot);
@@ -459,13 +489,15 @@ function updateRotate(clientX, clientY) {
   let angle = angleInBasis(p1, m.centroid, m.u, m.v) - m.startAngle;
   if (shiftHeld) angle = Math.round(angle * RAD2DEG / ROT_SNAP) * ROT_SNAP * DEG2RAD;
   if (m.type === 'fx-rotate') {
-    const newRot = applyWorldRotation(m.startRot, m.axis, angle); // 绕世界轴矩阵复合
+    const newRot = m.startRot.slice();
+    newRot[m.axisIndex] += angle * RAD2DEG;
     const t = state.captureKeyframes ? Math.round(state.time) : 0;
     setFunctionTrackValue(m.fxId, 'rot', 'set', t, newRot);
     return;
   }
   if (m.type === 'group-rotate') {
-    const newRot = applyWorldRotation(m.startRot, m.axis, angle); // 绕世界轴矩阵复合
+    const newRot = m.startRot.slice();
+    newRot[m.axisIndex] += angle * RAD2DEG;
     if (state.captureKeyframes) {
       setGroupTrackValue(m.gname, 'rot', 'set', Math.round(state.time), newRot);
     } else {
