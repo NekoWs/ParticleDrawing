@@ -1189,7 +1189,6 @@ function ensurePuzzleDom() {
   lensBtn.title = '拖动到拼图上查看含义';
   lensBtn.addEventListener('pointerdown', beginLensDrag);
   toolbar.appendChild(lensBtn);
-  toolbar.appendChild(mkBtn('puzzle-preview', '预览'));
   toolbar.appendChild(mkBtn('puzzle-ok', '确定', 'btn bd-ok'));
   toolbar.appendChild(mkBtn('puzzle-cancel', '取消'));
   document.body.appendChild(toolbar);
@@ -1210,7 +1209,6 @@ function ensurePuzzleDom() {
 
   document.getElementById('puzzle-ok').addEventListener('click', () => closeBlockDrawer(true));
   document.getElementById('puzzle-cancel').addEventListener('click', () => closeBlockDrawer(false));
-  document.getElementById('puzzle-preview').addEventListener('click', blockPreview);
 
   // 调色盘宽度拖动
   (function setupPalResize() {
@@ -1378,6 +1376,8 @@ function refreshCodeEcho() {
   const el = document.getElementById('echo-text');
   if (!el || !bctx) return;
   el.textContent = statementsToCode(bctx.chain);
+  // 实时生效：每次拼图变化后自动预览
+  blockPreview();
 }
 
 function blockPreview() {
