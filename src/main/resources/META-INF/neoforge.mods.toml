@@ -22,9 +22,7 @@ displayName="${mod_name}" #mandatory
 authors="NekoWs"
 
 description='''
-ParticleDrawing - A high-performance particle effects library for NeoForge.
-Features: 10k+ particles at 60fps, dynamic lighting, built-in drawing API (line/circle/disc),
-server-authoritative particle sync with cubic-bezier easing, and vanilla particle style adaptation.
+A high-performance particle animation library.
 '''
 
 [[mixins]]
