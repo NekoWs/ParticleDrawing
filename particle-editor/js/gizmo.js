@@ -57,7 +57,11 @@ function updateGizmo() {
   } else {
     const gname = selectedGroupName();
     if (gname) c = groupCurrentCentroid(gname, 'pos');
-    else if (!selectionHasDerived()) c = selectionCentroid();
+    else if (selectionHasDerived()) {
+      // 派生粒子选中：gizmo 显示在所属函数对象中心
+      const fxId = derivedFxIdFromSelection();
+      if (fxId) { const f = getFunction(fxId); if (f) { const d = fxPosDeltaAt(fxId, state.time); c = [f.center[0] + d[0], f.center[1] + d[1], f.center[2] + d[2]]; } }
+    } else c = selectionCentroid();
   }
   if (!c) { gizmoGroup.visible = false; return; }
   gizmoGroup.visible = true;

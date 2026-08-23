@@ -33,6 +33,19 @@ function selectionHasDerived() {
   return false;
 }
 
+// 从当前选中的派生粒子中推断所属函数对象 id（多个派生粒子必须属于同一函数对象）
+function derivedFxIdFromSelection() {
+  let fxId = null;
+  for (const id of state.selected) {
+    const p = getParticle(id);
+    if (p && p.fx) {
+      if (fxId && fxId !== p.fx) return null; // 分属不同函数对象，无法统一处理
+      fxId = p.fx;
+    }
+  }
+  return fxId;
+}
+
 function rotateVector(v, axis, angle) {
   const c = Math.cos(angle), s = Math.sin(angle);
   const dot = v[0] * axis[0] + v[1] * axis[1] + v[2] * axis[2];
@@ -56,9 +69,19 @@ function enterGrab(clientX, clientY, axis, face) {
     return;
   }
   if (!hasSelection()) return;
-  if (selectionHasDerived()) return;
-  pushUndo();
   const gname = selectedGroupName();
+  // 无组但选中了派生粒子 → 提升为函数对象位移
+  if (!gname && selectionHasDerived()) {
+    const fxId = derivedFxIdFromSelection();
+    if (!fxId) return;
+    const fx2 = getFunction(fxId);
+    if (!fx2) return;
+    state.selectedFunction = fxId; state.selectedGroup = null; state.selected.clear();
+    enterGrab(clientX, clientY, axis, face);
+    return;
+  }
+  if (gname && selectionHasDerived()) state.captureKeyframes = true;
+  pushUndo();
   const origins = new Map();
   for (const id of selectedMemberIds()) {
     const p = getParticle(id);
@@ -80,14 +103,25 @@ function enterScale(clientX) {
     return;
   }
   if (!hasSelection()) return;
-  if (selectionHasDerived()) return;
+  const gname = selectedGroupName();
+  // 无组但选中了派生粒子 → 提升为函数对象缩放
+  if (!gname && selectionHasDerived()) {
+    const fxId = derivedFxIdFromSelection();
+    if (!fxId) return;
+    const fx2 = getFunction(fxId);
+    if (!fx2) return;
+    state.selectedFunction = fxId; state.selectedGroup = null; state.selected.clear();
+    enterScale(clientX);
+    return;
+  }
+  if (gname && selectionHasDerived()) state.captureKeyframes = true;
   pushUndo();
   const origins = new Map();
   for (const id of selectedMemberIds()) {
     const p = getParticle(id);
     if (p) origins.set(id, currentVisual(p).scale);
   }
-  modal = { type: 'scale', origins, startClient: { x: clientX } };
+  modal = { type: 'scale', groupName: gname, origins, startClient: { x: clientX } };
   controls.enabled = false;
 }
 
@@ -160,8 +194,18 @@ function enterRotate(clientX, clientY, axis) {
     return;
   }
   if (!hasSelection()) return;
-  if (selectionHasDerived()) return;
   const gname = selectedGroupName();
+  // 无组但选中了派生粒子 → 提升为函数对象旋转
+  if (!gname && selectionHasDerived()) {
+    const fxId = derivedFxIdFromSelection();
+    if (!fxId) return;
+    const fx2 = getFunction(fxId);
+    if (!fx2) return;
+    state.selectedFunction = fxId; state.selectedGroup = null; state.selected.clear();
+    enterRotate(clientX, clientY, axis);
+    return;
+  }
+  if (gname && selectionHasDerived()) state.captureKeyframes = true;
   pushUndo();
   const c = gname ? groupCurrentCentroid(gname, 'pos') : selectionCentroid();
   const axArr = AXIS_VECTORS[axis] || AXIS_VECTORS.Y;
@@ -232,9 +276,19 @@ function enterViewRotate(clientX, clientY) {
     return;
   }
   if (!hasSelection()) return;
-  if (selectionHasDerived()) return;
-  pushUndo();
   const gname = selectedGroupName();
+  // 无组但选中了派生粒子 → 提升为函数对象视图旋转
+  if (!gname && selectionHasDerived()) {
+    const fxId = derivedFxIdFromSelection();
+    if (!fxId) return;
+    const fx2 = getFunction(fxId);
+    if (!fx2) return;
+    state.selectedFunction = fxId; state.selectedGroup = null; state.selected.clear();
+    enterViewRotate(clientX, clientY);
+    return;
+  }
+  if (gname && selectionHasDerived()) state.captureKeyframes = true;
+  pushUndo();
   const c = gname ? groupCurrentCentroid(gname, 'pos') : selectionCentroid();
   const origins = new Map();
   for (const id of selectedMemberIds()) {
@@ -386,6 +440,12 @@ function updateScale(clientX) {
     const s = Math.max(0.02, m.startScale * factor);
     const t = state.captureKeyframes ? Math.round(state.time) : 0;
     setFunctionTrackValue(m.fxId, 'scl', 'set', t, [s, s, s]);
+    return;
+  }
+  if (m.groupName && state.captureKeyframes) {
+    const base = groupCentroidValue(m.groupName, 'scl');
+    const ns = base.map(v => Math.max(0.02, v * factor));
+    setGroupTrackValue(m.groupName, 'scl', 'set', Math.round(state.time), ns);
     return;
   }
   editParticles([...m.origins].map(([id, orig]) => [id, [orig[0] * factor, orig[1] * factor, orig[2] * factor]]), 'scl');

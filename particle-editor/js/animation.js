@@ -386,8 +386,9 @@ function currentVisualDerived(p, T) {
     : [base, base, base];
   const gs = groupMemberIndexCache && groupMemberIndexCache.get(p.id);
   const hasFxOp = fxOpDeltaCache && fxOpDeltaCache.has(p.fx);
-  if (!gs && !hasFxOp) {
-    // 快速路径：无组旋转、无函数 op 位移，仅可能叠加整体缩放
+  const hasFxRot = rotVectorAt('f:' + p.fx, T).some(v => v !== 0);
+  if (!gs && !hasFxOp && !hasFxRot) {
+    // 快速路径：无组关联、无函数 op、无函数旋转
     return { pos: r.pos, color: r.color, scale: scaleVec };
   }
   let pos = applyGroupRotation(p, r.pos.slice(), T);
@@ -554,8 +555,9 @@ function rebuildPoints(full) {
   const hasGroups = memberIdx.size > 0;
   const xforms = groupXformCache;
   const SZF = PARTICLE_SIZE_FACTOR;
-  // 函数对象"干净"标志：无组、无 op 轨道、无函数 scl 轨道 → 派生粒子走最简快速路径
-  const fxClean = !hasGroups && opTracksCache.length === 0 && (fxSclTrackCache ? fxSclTrackCache.size === 0 : true);
+  // 函数对象"干净"标志：无组、无 op 轨道、无函数 scl 轨道、无函数 rot 轨道 → 派生粒子走最简快速路径
+  const hasFxRotTracks = state.tracks.some(tr => tr.pr.startsWith('rot.') && tr.ids.some(id => id.startsWith('f:')));
+  const fxClean = !hasGroups && opTracksCache.length === 0 && (fxSclTrackCache ? fxSclTrackCache.size === 0 : true) && !hasFxRotTracks;
   for (let i = 0; i < n; i++) {
     const p = state.particles[i];
     let px, py, pz, cr, cg, cb, ca, ssx, ssy;
@@ -573,8 +575,9 @@ function rebuildPoints(full) {
       } else {
         const gs = hasGroups ? memberIdx.get(p.id) : undefined;
         const hasFxOp = fxOpDeltaCache && fxOpDeltaCache.has(p.fx);
+        const hasFxRot = rotVectorAt('f:' + p.fx, T).some(v => v !== 0);
         const sclTrs = (fxSclTrackCache && fxSclTrackCache.get(p.fx)) || null;
-        if (fn && !gs && !hasFxOp) {
+        if (fn && !gs && !hasFxOp && !hasFxRot) {
           const vals = fx._constVarVals || resolveVarVals(fx, p._fxIdx, fx.count, T);
           const r = fn(p._fxIdx, fx.count, T, fx.center[0], fx.center[1], fx.center[2], ...vals, FX_OUT);
           const vel = p.vel;
