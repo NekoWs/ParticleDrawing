@@ -32,3 +32,20 @@ run/
 **/src/generated/**/.cache/
 repo/
 !**/src/**/repo/
+
+# NeoForge runClient 运行时产物（解包到项目根目录）
+/assets/
+/data/
+/META-INF/
+/pack.mcmeta
+/neoforge.mixins.json
+/neoforge_icon.png
+/neoforge_logo.png
+/mcplogo.png
+/url.png
+/reports/
+
+# 本地临时脚本与工具配置
+/particle-editor/test/zz-*
+/.freebuff/
+/opencode.json
