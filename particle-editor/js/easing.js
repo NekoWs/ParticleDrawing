@@ -389,12 +389,6 @@ function execFunctionCode(compiled, env) {
   }
   return out;
 }
-
-// 执行公式代码块（每次编译，兼容旧调用；高频求值请用 compileFunctionCode + execFunctionCode）
-function evalFunctionCode(code, env) {
-  return execFunctionCode(compileFunctionCode(code), env);
-}
-
 /* =========================================================================
  * 代码块原生编译：纯标量代码块 → new Function 生成原生 JS（消除 RPN 解释开销）
  * 仅适用于不含向量/矩阵函数、无分量访问的代码块；否则回退 execFunctionCode。
