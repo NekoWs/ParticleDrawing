@@ -6,7 +6,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.program.AnimInstruction
-import work.nekow.particledrawing.animation.program.InputChannel
+import work.nekow.particledrawing.animation.program.EntityBinding
 import work.nekow.particledrawing.animation.program.PivotRef
 import java.util.UUID
 
@@ -42,17 +42,17 @@ internal object AnimationProgramCodecs {
         return List(n) { StreamCodecs.UUID_CODEC.decode(buf) }
     }
 
-    fun writeChannels(buf: FriendlyByteBuf, channels: List<InputChannel>) {
-        buf.writeVarInt(channels.size)
-        for (c in channels) {
-            buf.writeUtf(c.slot)
-            StreamCodecs.UUID_CODEC.encode(buf, c.uuid)
+    fun writeEntityBindings(buf: FriendlyByteBuf, bindings: List<EntityBinding>) {
+        buf.writeVarInt(bindings.size)
+        for (b in bindings) {
+            buf.writeUtf(b.handle)
+            StreamCodecs.UUID_CODEC.encode(buf, b.uuid)
         }
     }
 
-    fun readChannels(buf: FriendlyByteBuf): List<InputChannel> {
+    fun readEntityBindings(buf: FriendlyByteBuf): List<EntityBinding> {
         val n = buf.readVarInt()
-        return List(n) { InputChannel(buf.readUtf(), StreamCodecs.UUID_CODEC.decode(buf)) }
+        return List(n) { EntityBinding(buf.readUtf(), StreamCodecs.UUID_CODEC.decode(buf)) }
     }
 
     fun writeVars(buf: FriendlyByteBuf, vars: Map<String, Double>) {
@@ -84,7 +84,7 @@ internal object AnimationProgramCodecs {
  * @param particleIds 受控粒子清单
  * @param anchorGameTime 下发时的服务端 gameTime：客户端据此对齐时钟消除漂移
  * @param initialPivot 初始轴心（客户端据此把各粒子 spawn 位置换算为相对偏移）
- * @param entities 实体注册表（下发顺序 = 句柄序号；公式经 get_entity_* 被动取值）
+ * @param entityBindings 实体注册表（下发顺序 = 句柄序号；公式经 get_entity_* 被动取值）
  * @param vars 程序初始变量
  * @param instructions 初始指令流
  */
@@ -93,7 +93,7 @@ data class AnimationProgramPayload(
     val particleIds: List<UUID>,
     val anchorGameTime: Long,
     val initialPivot: Vec3,
-    val entities: List<InputChannel>,
+    val entityBindings: List<EntityBinding>,
     val vars: Map<String, Double>,
     val instructions: List<AnimInstruction>,
 ) : CustomPacketPayload {
@@ -113,7 +113,7 @@ data class AnimationProgramPayload(
                         AnimationProgramCodecs.readUuidList(buf),
                         buf.readLong(),
                         AnimationProgramCodecs.readVec(buf),
-                        AnimationProgramCodecs.readChannels(buf),
+                        AnimationProgramCodecs.readEntityBindings(buf),
                         AnimationProgramCodecs.readVars(buf),
                         AnimationProgramCodecs.readInstructionList(buf),
                     )
@@ -123,7 +123,7 @@ data class AnimationProgramPayload(
                     AnimationProgramCodecs.writeUuidList(buf, p.particleIds)
                     buf.writeLong(p.anchorGameTime)
                     AnimationProgramCodecs.writeVec(buf, p.initialPivot)
-                    AnimationProgramCodecs.writeChannels(buf, p.entities)
+                    AnimationProgramCodecs.writeEntityBindings(buf, p.entityBindings)
                     AnimationProgramCodecs.writeVars(buf, p.vars)
                     AnimationProgramCodecs.writeInstructionList(buf, p.instructions)
                 }

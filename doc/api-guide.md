@@ -227,12 +227,12 @@ group.pulse(peakRatio = 1.8f, halfPeriodTicks = 20, cycles = 3)   // 呼吸到 1
 
 ```kotlin
 // 1. 实体句柄登记：把实体以名字写进程序注册表，公式里即可被动取值（客户端本地解析，零带宽）
-group.bindInput(slot = "e", uuid = entity.uuid)
+group.defineEntity(handle = "e", uuid = entity.uuid)
      .followEntity(entity.uuid, offset = Vec3(0.0, 1.0, 0.0))   // 或者仅轴心跟随
 
-// 2. 终极公式指令：每粒子每 tick 求值一段函数对象代码（编辑器同款语法）；
+// 2. 表达式指令：每粒子每 tick 求值一段函数对象代码（编辑器同款语法）；
 //    用到什么取什么——get_entity_*/get_world_* 在需要处调用，无需预先声明属性
-group.perParticle("""
+group.expression("""
     th = i / n * 2 * pi;
     [x,y,z] = [
         get_entity_x(e) + cos(th) * 2,
@@ -259,8 +259,8 @@ group.perParticle("""
 | `get_world_rain() / get_world_thunder()` | 降雨 / 雷暴强度（0~1，含平滑过渡） |
 | `get_world_moon_phase()` | 月相序号 0~7（按主世界时钟每 24000 刻推进一相） |
 
-> 参数 `h` 是 `bindInput` 登记的名字（也可写注册序号数字），必须是编译期常量。
-> 属性名常量集中在 `ProgramInputs`（如 `ProgramInputs.YAW` == `"yaw"`）。
+> 参数 `h` 是 `defineEntity` 定义的句柄名（也可写注册序号数字），必须是编译期常量。
+> 属性词表是封闭枚举：`EntityProp` / `WorldProp`（如 `EntityProp.YAW.call("e") == "get_entity_yaw(e)"`）。
 
 运行时热改变量（服务端只发一条控制包，动画即时响应）：
 
@@ -269,7 +269,7 @@ group.setVariableLive("speed", "2")              // 数字
 group.setVariableLive("rad", "3 + sin(t * 0.2)") // 任意公式
 ```
 
-> `perParticle` 一旦出现即为**终极模式**：接管位置/颜色/缩放的最终解释权；
+> `expression` 一旦出现即为**表达式模式**：接管位置/颜色/缩放的最终解释权；
 > `fadeIn/fadeOut` 因子仍叠加在其 alpha 上。纯数据协议——不向客户端发送任何代码字节。
 
 ### 综合链式示例：出现 → 放大 → 旋转 → 停转 → 淡出

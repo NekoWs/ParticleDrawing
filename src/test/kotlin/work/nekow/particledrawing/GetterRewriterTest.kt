@@ -5,6 +5,8 @@ import work.nekow.particledrawing.animation.expr.GetterRewriter
 import work.nekow.particledrawing.animation.expr.InputKey
 import work.nekow.particledrawing.animation.expr.Reg
 import work.nekow.particledrawing.animation.expr.compileFunctionObject
+import work.nekow.particledrawing.api.EntityProp
+import work.nekow.particledrawing.api.WorldProp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -25,7 +27,10 @@ class GetterRewriterTest {
             handles = mapOf("t0" to 0), entityCount = 1,
         )
         assertEquals(listOf("__in0", "__in1"), rw.extNames)
-        assertEquals(listOf<InputKey>(InputKey.Entity(0, "yaw"), InputKey.World("rain")), rw.keys)
+        assertEquals(
+            listOf<InputKey>(InputKey.Entity(0, EntityProp.YAW), InputKey.World(WorldProp.RAIN)),
+            rw.keys,
+        )
         assertTrue("__in0" in rw.code && "__in1" in rw.code)
         assertTrue("get_" !in rw.code)
     }
@@ -35,7 +40,7 @@ class GetterRewriterTest {
         val rw = GetterRewriter.rewrite("[x,y,z] = get_entity_pos(e1)", mapOf("e1" to 1), entityCount = 2)
         assertEquals(
             listOf<InputKey>(
-                InputKey.Entity(1, "x"), InputKey.Entity(1, "y"), InputKey.Entity(1, "z"),
+                InputKey.Entity(1, EntityProp.X), InputKey.Entity(1, EntityProp.Y), InputKey.Entity(1, EntityProp.Z),
             ),
             rw.keys,
         )
@@ -45,7 +50,7 @@ class GetterRewriterTest {
     @Test
     fun numericHandleAndBounds() {
         val ok = GetterRewriter.rewrite("y = get_entity_hp(1)", emptyMap(), entityCount = 2)
-        assertEquals(listOf<InputKey>(InputKey.Entity(1, "hp")), ok.keys)
+        assertEquals(listOf<InputKey>(InputKey.Entity(1, EntityProp.HP)), ok.keys)
 
         assertFailsWith<IllegalArgumentException> {
             GetterRewriter.rewrite("y = get_entity_hp(5)", emptyMap(), entityCount = 2)

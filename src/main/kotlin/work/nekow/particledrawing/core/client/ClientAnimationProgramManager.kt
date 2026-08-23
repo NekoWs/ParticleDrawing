@@ -12,8 +12,10 @@ import work.nekow.particledrawing.animation.expr.CompiledFunction
 import work.nekow.particledrawing.animation.expr.GetterRewriter
 import work.nekow.particledrawing.animation.expr.InputKey
 import work.nekow.particledrawing.animation.expr.compileFunctionObject
+import work.nekow.particledrawing.api.EntityProp
+import work.nekow.particledrawing.api.WorldProp
 import work.nekow.particledrawing.animation.program.AnimInstruction
-import work.nekow.particledrawing.animation.program.InputChannel
+import work.nekow.particledrawing.animation.program.EntityBinding
 import work.nekow.particledrawing.animation.program.PivotRef
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.util.rotateAround
@@ -26,13 +28,13 @@ import kotlin.math.floor
  *
  * 状态模型：
  * - **组级**：pivot（固定坐标或实体绑定）、pathOffset（平移累积）、pulseMul、
- *   fadeIn/fadeOut 因子参数、continuousFrozenTick（停转时刻）、终极公式模式；
+ *   fadeIn/fadeOut 因子参数、continuousFrozenTick（停转时刻）、表达式模式；
  * - **粒子级**：baseColor/baseScale（arm 快照）+ rel（相对 pivot 偏移，旋转的作用对象）；
  * - 旋转类指令首次应用时快照各粒子 rel，此后每 tick 由快照 + 总角度**重算** rel——
  *   幂等、支持中途追加、无累积误差。
  *
- * [AnimInstruction.EvalParticle] 为终极模式：整段函数对象代码每 tick×每粒子求值，
- * 输出世界绝对坐标；环境含 i/n/t、全套数学函数、实体通道变量（bindInput）、程序变量。
+ * [AnimInstruction.Expression] 为表达式模式：整段函数对象代码每 tick×每粒子求值，
+ * 输出世界绝对坐标；环境含 i/n/t、全套数学函数、实体句柄（defineEntity）、程序变量。
  */
 @EventBusSubscriber(modid = ParticleDrawing.MODID, value = [Dist.CLIENT])
 internal object ClientAnimationProgramManager {
@@ -105,7 +107,7 @@ internal object ClientAnimationProgramManager {
         val slots = ArrayList<Slot>()
         // 轴心
         var pivotFixed: Vec3 = Vec3.ZERO
-        var pivotEntity: InputChannel? = null
+        var pivotEntity: EntityBinding? = null
         var pivotEntityOffset: Vec3 = Vec3.ZERO
 
         // 组级动画状态
@@ -117,16 +119,16 @@ internal object ClientAnimationProgramManager {
         var fadeOutStart = -1L; var fadeOutDur = 0; var fadeOutEase = EasingType.EASE_IN
         var continuousFrozenTick: Long? = null
 
-        // 实体注册表 / 变量 / 终极公式
-        val entityBindings = ArrayList<InputChannel>()
+        // 实体注册表 / 变量 / 表达式
+        val entityBindings = ArrayList<EntityBinding>()
         val vars = LinkedHashMap<String, Double>()
-        var evalCode: String? = null
-        var evalStartTick = 0L
+        var expressionCode: String? = null
+        var expressionStartTick = 0L
         var compiled: CompiledFunction? = null
 
         /** 名字 -> 注册序号（公式 getter 参数解析用）。 */
         val handleIndexByName: Map<String, Int> by lazy {
-            entityBindings.withIndex().associate { it.value.slot to it.index }
+            entityBindings.withIndex().associate { it.value.handle to it.index }
         }
 
         // 被动输入：编译期发现的「合成变量名 → 输入键」需求清单。
@@ -156,7 +158,7 @@ internal object ClientAnimationProgramManager {
         particleIds: List<UUID>,
         anchorGameTime: Long,
         initialPivot: Vec3,
-        entitiesIn: List<InputChannel>,
+        entitiesIn: List<EntityBinding>,
         varsIn: Map<String, Double>,
         instructions: List<AnimInstruction>,
     ) {
@@ -180,7 +182,7 @@ internal object ClientAnimationProgramManager {
         } else {
             com.mojang.logging.LogUtils.getLogger().info(
                 "[ParticleDrawing] program {} armed: {} particles, {} instructions, anchorOffset={}",
-                programId, p.states.size, p.slots.size + (if (p.evalCode != null) 1 else 0), p.anchorOffset,
+                programId, p.states.size, p.slots.size + (if (p.expressionCode != null) 1 else 0), p.anchorOffset,
             )
         }
         for (ins in instructions) addInstruction(p, ins)
@@ -212,10 +214,10 @@ internal object ClientAnimationProgramManager {
         val v = try {
             work.nekow.particledrawing.animation.expr.ExpressionEvaluator.evaluate(rw.code, scope) as? Double
         } catch (_: Exception) { null } ?: return
-        val hadCode = p.evalCode != null
+        val hadCode = p.expressionCode != null
         p.vars[name] = v
-        // 变量名集合可能扩大：终极公式的 externals 布局需随之重建
-        if (hadCode) recompileEval(p) else prepareEvalBuffers(p)
+        // 变量名集合可能扩大：表达式指令的 externals 布局需随之重建
+        if (hadCode) recompileExpression(p) else prepareExpressionBuffers(p)
     }
 
     fun stop(programId: UUID, destroyParticles: Boolean) {
@@ -228,30 +230,30 @@ internal object ClientAnimationProgramManager {
     fun clearAll() { programs.clear(); entityByUuid.clear() }
 
     private fun addInstruction(p: Program, ins: AnimInstruction) {
-        if (ins is AnimInstruction.EvalParticle) {
-            // 终极模式唯一化：后到覆盖先到
-            p.evalCode = ins.code
-            p.evalStartTick = ins.startTick.toLong()
-            recompileEval(p)
+        if (ins is AnimInstruction.Expression) {
+            // 表达式唯一化：后到覆盖先到
+            p.expressionCode = ins.code
+            p.expressionStartTick = ins.startTick.toLong()
+            recompileExpression(p)
             return
         }
         p.slots.add(Slot(ins))
-        prepareEvalBuffers(p)
+        prepareExpressionBuffers(p)
     }
 
     /* ---------------- 输入采样与编译缓冲 ---------------- */
 
     /**
-     * 编译终极公式：先把 get_* 调用重写为合成外部变量（同时发现输入需求），再走纯标量快路径。
+     * 编译表达式：先把 get_* 调用重写为合成外部变量（同时发现输入需求），再走纯标量快路径。
      * 未知名/未登记句柄在此抛错——程序不生效并记日志（服务端绑定处无法预知公式语义）。
      */
-    private fun recompileEval(p: Program) {
-        val code = p.evalCode ?: return
+    private fun recompileExpression(p: Program) {
+        val code = p.expressionCode ?: return
         val rw = try {
             GetterRewriter.rewrite(code, p.handleIndexByName, p.entityBindings.size)
         } catch (e: IllegalArgumentException) {
-            com.mojang.logging.LogUtils.getLogger().error(
-                "[ParticleDrawing] perParticle 公式编译失败（getter 解析）: {}", e.message,
+            LOGGER.error(
+                "[ParticleDrawing] 表达式编译失败（getter 解析）: {}", e.message,
             )
             p.compiled = null
             p.requiredKeys = emptyList()
@@ -263,11 +265,11 @@ internal object ClientAnimationProgramManager {
         p.extNames = extAll.toTypedArray()
         p.requiredKeys = rw.keys
         p.compiled = compileFunctionObject(rw.code, emptyList(), extAll)
-        prepareEvalBuffers(p)
+        prepareExpressionBuffers(p)
     }
 
-    private fun prepareEvalBuffers(p: Program) {
-        if (p.evalCode == null || p.compiled == null) return
+    private fun prepareExpressionBuffers(p: Program) {
+        if (p.expressionCode == null || p.compiled == null) return
         p.extVals = DoubleArray(p.extNames.size)
         val cf = p.compiled ?: return
         p.regs = cf.allocRegs()
@@ -305,7 +307,7 @@ internal object ClientAnimationProgramManager {
         for (idx in usedIndices) {
             val binding = p.entityBindings.getOrNull(idx) ?: continue
             val e = findEntity(binding.uuid)
-            if (e == null) missing.add(binding.slot)
+            if (e == null) missing.add(binding.handle)
             entities[idx] = e
             val pos = e?.position()
             if (pos != null) {
@@ -341,46 +343,45 @@ internal object ClientAnimationProgramManager {
         p.latestInputs = m
     }
 
-    /** 实体属性取值（prop 字面量与 expr/GetterProps.ENTITY 对齐）；实体缺失由调用方短路为 0。 */
-    private fun sampleEntityProp(e: Entity, prop: String, vel: Vec3): Double = when (prop) {
-        "x" -> e.x
-        "y" -> e.y
-        "z" -> e.z
-        "exists" -> 1.0
-        "yaw" -> e.yRot.toDouble()
-        "pitch" -> e.xRot.toDouble()
-        "dirx" -> e.getViewVector(1f).x
-        "diry" -> e.getViewVector(1f).y
-        "dirz" -> e.getViewVector(1f).z
-        "vx" -> vel.x
-        "vy" -> vel.y
-        "vz" -> vel.z
-        "hp" -> (e as? LivingEntity)?.health?.toDouble() ?: 0.0
-        "hp_max" -> (e as? LivingEntity)?.maxHealth?.toDouble() ?: 0.0
-        "ground" -> if (e.onGround()) 1.0 else 0.0
-        "sneaking" -> if (e.isShiftKeyDown()) 1.0 else 0.0
-        "on_fire" -> if (e.isOnFire()) 1.0 else 0.0
-        "swimming" -> if (e.isSwimming()) 1.0 else 0.0
-        "sprinting" -> if (e.isSprinting()) 1.0 else 0.0
-        else -> 0.0
+    /** 实体属性取值（枚举穷举）；实体缺失由调用方短路为 0。 */
+    private fun sampleEntityProp(e: Entity, prop: EntityProp, vel: Vec3): Double = when (prop) {
+        EntityProp.X -> e.x
+        EntityProp.Y -> e.y
+        EntityProp.Z -> e.z
+        EntityProp.POS -> 0.0 // 整取形态在重写期已展开为三分量，不会到达此处
+        EntityProp.EXISTS -> 1.0
+        EntityProp.YAW -> e.yRot.toDouble()
+        EntityProp.PITCH -> e.xRot.toDouble()
+        EntityProp.DIR_X -> e.getViewVector(1f).x
+        EntityProp.DIR_Y -> e.getViewVector(1f).y
+        EntityProp.DIR_Z -> e.getViewVector(1f).z
+        EntityProp.VEL_X -> vel.x
+        EntityProp.VEL_Y -> vel.y
+        EntityProp.VEL_Z -> vel.z
+        EntityProp.HP -> (e as? LivingEntity)?.health?.toDouble() ?: 0.0
+        EntityProp.HP_MAX -> (e as? LivingEntity)?.maxHealth?.toDouble() ?: 0.0
+        EntityProp.GROUND -> if (e.onGround()) 1.0 else 0.0
+        EntityProp.SNEAKING -> if (e.isShiftKeyDown()) 1.0 else 0.0
+        EntityProp.ON_FIRE -> if (e.isOnFire()) 1.0 else 0.0
+        EntityProp.SWIMMING -> if (e.isSwimming()) 1.0 else 0.0
+        EntityProp.SPRINTING -> if (e.isSprinting()) 1.0 else 0.0
     }
 
     /** 世界属性取值（26.2 时钟 API：getOverworldClockTime 即旧 day time 域）。 */
-    private fun sampleWorldProp(level: net.minecraft.client.multiplayer.ClientLevel, prop: String): Double {
+    private fun sampleWorldProp(level: net.minecraft.client.multiplayer.ClientLevel, prop: WorldProp): Double {
         val clock = level.overworldClockTime
         return when (prop) {
-            "day_time" -> (clock % 24000L).toDouble()
-            "game_time" -> clock.toDouble()
-            "rain" -> level.getRainLevel(1f).toDouble()
-            "thunder" -> level.getThunderLevel(1f).toDouble()
-            "moon_phase" -> (clock / 24000L % 8L + 8L).toDouble()
-            else -> 0.0
+            WorldProp.DAY_TIME -> (clock % 24000L).toDouble()
+            WorldProp.GAME_TIME -> clock.toDouble()
+            WorldProp.RAIN -> level.getRainLevel(1f).toDouble()
+            WorldProp.THUNDER -> level.getThunderLevel(1f).toDouble()
+            WorldProp.MOON_PHASE -> (clock / 24000L % 8L + 8L).toDouble()
         }
     }
 
     /* ---------------- 每 tick 主循环 ---------------- */
 
-    /** 由客户端 tick 事件调用。 */
+    /** 由本地玩家 game tick 事件调用（真 20Hz、实体移动后）。 */
     @JvmStatic
     fun tick() {
         val level = Minecraft.getInstance().level ?: return
@@ -394,20 +395,20 @@ internal object ClientAnimationProgramManager {
             val now = nowClient + p.anchorOffset - p.startAnchor
             refreshInputs(p, nowClient)
 
-            if (p.evalCode != null) {
-                evalFrame(p, engine, now)
+            if (p.expressionCode != null) {
+                expressionFrame(p, engine, now)
                 continue
             }
             sugarFrame(p, engine, now)
         }
     }
 
-    /* ---------------- 终极公式模式 ---------------- */
+    /* ---------------- 表达式模式 ---------------- */
 
-    private fun evalFrame(p: Program, engine: ClientParticleEngine, now: Long) {
+    private fun expressionFrame(p: Program, engine: ClientParticleEngine, now: Long) {
         val cf = p.compiled ?: return
-        if (p.regs.size != cf.regCount) prepareEvalBuffers(p)
-        val local = (now - p.evalStartTick).coerceAtLeast(0).toDouble()
+        if (p.regs.size != cf.regCount) prepareExpressionBuffers(p)
+        val local = (now - p.expressionStartTick).coerceAtLeast(0).toDouble()
         fillExternal(p)
 
         val n = p.particleIds.size.toDouble()
@@ -497,7 +498,7 @@ internal object ClientAnimationProgramManager {
         when (ins) {
             is AnimInstruction.BindPivot -> when (val ref = ins.pivot) {
                 is PivotRef.Fixed -> { p.pivotFixed = ref.pos; p.pivotEntity = null; p.pivotEntityOffset = Vec3.ZERO }
-                is PivotRef.FollowEntity -> { p.pivotEntity = InputChannel("__pivot__", ref.uuid); p.pivotEntityOffset = ref.offset }
+                is PivotRef.FollowEntity -> { p.pivotEntity = EntityBinding("__pivot__", ref.uuid); p.pivotEntityOffset = ref.offset }
             }
 
             is AnimInstruction.FadeIn -> { p.fadeInStart = start; p.fadeInDur = ins.durationTicks; p.fadeInEase = ins.easing }
@@ -548,7 +549,7 @@ internal object ClientAnimationProgramManager {
             is AnimInstruction.StopContinuous ->
                 if (p.continuousFrozenTick == null || p.continuousFrozenTick!! > now) p.continuousFrozenTick = now
 
-            is AnimInstruction.EvalParticle -> {} // 终极模式由 addInstruction 分流，不进入糖指令槽
+            is AnimInstruction.Expression -> {} // 表达式由 addInstruction 分流，不进入糖指令槽
         }
     }
 

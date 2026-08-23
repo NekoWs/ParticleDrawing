@@ -19,7 +19,7 @@ import java.util.UUID
  */
 enum class InstructionType {
     FADE_IN, FADE_OUT, RECOLOR, SCALE_BY, TRANSLATE,
-    ROTATE_ONCE, MOVE_PATH, SPIN, PULSE, STOP_CONTINUOUS, BIND_PIVOT, EVAL_PARTICLE;
+    ROTATE_ONCE, MOVE_PATH, SPIN, PULSE, STOP_CONTINUOUS, BIND_PIVOT, EXPRESSION;
 
     companion object {
         private val BY_ORDINAL = entries.toTypedArray()
@@ -70,11 +70,11 @@ sealed class PivotRef {
 }
 
 /**
- * 实体登记项：把一个实体以 `<slot>` 名登记进程序的实体注册表（下发顺序 = 句柄序号）。
- * 公式内通过 `get_entity_<prop>(<slot>)` 被动取值（见 expr/Getters）；
+ * 实体绑定记录：把一个实体以 [handle] 名登记进程序的实体注册表（下发顺序 = 句柄序号）。
+ * 公式内通过 `get_entity_<prop>(<handle>)` 被动取值（见 expr/Getters）；
  * 客户端每 tick 本地解析实体，零带宽同步。亦用作轴心跟随的内部载体。
  */
-data class InputChannel(val slot: String, val uuid: UUID)
+data class EntityBinding(val handle: String, val uuid: UUID)
 
 // FriendlyByteBuf 原生提供 writeUUID/readUUID；Vec3 与缓动的编解码见下方工具函数。
 
@@ -126,7 +126,7 @@ sealed class AnimInstruction {
                 InstructionType.PULSE -> Pulse(startTick, buf.readFloat(), buf.readVarInt(), buf.readVarInt())
                 InstructionType.STOP_CONTINUOUS -> StopContinuous(startTick)
                 InstructionType.BIND_PIVOT -> BindPivot(startTick, PivotRef.read(buf))
-                InstructionType.EVAL_PARTICLE -> EvalParticle(startTick, buf.readUtf())
+                InstructionType.EXPRESSION -> Expression(startTick, buf.readUtf())
             }
         }
     }
@@ -276,16 +276,16 @@ sealed class AnimInstruction {
     }
 
     /**
-     * 终极公式指令：整段函数对象代码（编辑器同款语法）每粒子每 tick 求值。
-     * 输出 [x,y,z] 为世界绝对坐标，可直接引用实体通道变量（e_x/e_y/e_z）、
+     * 表达式指令：整段函数对象代码（编辑器同款语法）每粒子每 tick 求值。
+     * 输出 [x,y,z] 为世界绝对坐标，可用被动输入 getter（get_entity_* /get_world_*）、
      * 内建 i/n/t、全套数学函数与程序变量；一旦出现即接管位置/颜色/缩放的最终解释权，
      * FADE 因子仍叠加在输出的 alpha 之上。
      */
-    data class EvalParticle(
+    data class Expression(
         override val startTick: Int,
         val code: String,
     ) : AnimInstruction() {
-        override val type get() = InstructionType.EVAL_PARTICLE
+        override val type get() = InstructionType.EXPRESSION
         override fun writeBody(buf: FriendlyByteBuf) {
             buf.writeUtf(code)
         }
