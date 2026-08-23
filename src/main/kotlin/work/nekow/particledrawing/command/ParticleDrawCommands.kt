@@ -19,10 +19,8 @@ import work.nekow.particledrawing.api.Draw
 import work.nekow.particledrawing.api.ParticleManager
 import work.nekow.particledrawing.core.client.ClientAnimationManager
 import work.nekow.particledrawing.core.client.ClientParticleEngine
-import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.Locale
-import kotlin.math.PI
 
 /**
  * 命令注册。提供 /pdraw 及其子命令，用于加载播放网页编辑器导出的动画。
@@ -63,7 +61,7 @@ object ParticleDrawCommands {
      * @return 命令执行结果
      */
     private fun runTest(ctx: CommandContext<CommandSourceStack>): Int {
-        // TODO: 暂时不动
+        // pass
         return 1
     }
 

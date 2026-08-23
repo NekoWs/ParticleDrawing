@@ -6,7 +6,7 @@ import net.minecraft.world.level.Level
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.core.server.ServerParticleEngine
 import work.nekow.particledrawing.util.ParticleUtils
-import java.util.UUID
+import java.util.*
 
 /**
  * 创建和管理粒子的入口点。
