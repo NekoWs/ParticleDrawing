@@ -84,7 +84,7 @@ internal object AnimationProgramCodecs {
  * @param particleIds 受控粒子清单
  * @param anchorGameTime 下发时的服务端 gameTime：客户端据此对齐时钟消除漂移
  * @param initialPivot 初始轴心（客户端据此把各粒子 spawn 位置换算为相对偏移）
- * @param channels 实体输入通道（slot → UUID）
+ * @param entities 实体注册表（下发顺序 = 句柄序号；公式经 get_entity_* 被动取值）
  * @param vars 程序初始变量
  * @param instructions 初始指令流
  */
@@ -93,7 +93,7 @@ data class AnimationProgramPayload(
     val particleIds: List<UUID>,
     val anchorGameTime: Long,
     val initialPivot: Vec3,
-    val channels: List<InputChannel>,
+    val entities: List<InputChannel>,
     val vars: Map<String, Double>,
     val instructions: List<AnimInstruction>,
 ) : CustomPacketPayload {
@@ -123,7 +123,7 @@ data class AnimationProgramPayload(
                     AnimationProgramCodecs.writeUuidList(buf, p.particleIds)
                     buf.writeLong(p.anchorGameTime)
                     AnimationProgramCodecs.writeVec(buf, p.initialPivot)
-                    AnimationProgramCodecs.writeChannels(buf, p.channels)
+                    AnimationProgramCodecs.writeChannels(buf, p.entities)
                     AnimationProgramCodecs.writeVars(buf, p.vars)
                     AnimationProgramCodecs.writeInstructionList(buf, p.instructions)
                 }

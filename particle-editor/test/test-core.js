@@ -24,6 +24,12 @@ let ok = true;
 for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; const p = evaluate('rotZ(' + a + ') * vec(3,0,0)', {}); if (Math.abs(Math.hypot(p.x, p.y) - 3) > 1e-9) ok = false; }
 __assert('matrix circle', ok);
 
+// —— 被动输入 getter stub（游戏内由模组求值，编辑器预览统一置 0） ——
+__assert('getter stub scalar', evaluate('get_world_rain() + 1', {}) === 1);
+__assert('getter stub entity', evaluate('2 * get_entity_hp(e)', { e: 0 }) === 0);
+const outGetter = evalFunctionCode(['[x,y,z] = get_entity_pos(e)', 'y = y + 2'].join(';'), { e: 0 });
+__assert('getter stub pos triple', outGetter.pos[0] === 0 && outGetter.pos[1] === 2 && outGetter.pos[2] === 0);
+
 // —— 公式代码块（分号分隔 + 换行） ——
 const out1 = evalFunctionCode(['[x,y,z] = [1, 2, 3]', 'r = x*0.5', 'sc = 0.3', 'glow = 1', 'light = 12'].join(';'), {});
 __assert('code pos', out1.pos[0] === 1 && out1.pos[2] === 3);

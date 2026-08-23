@@ -2,12 +2,15 @@ package work.nekow.particledrawing.core.client
 
 import net.minecraft.client.Minecraft
 import net.minecraft.world.entity.Entity
+import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.phys.Vec3
 import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
 import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.animation.expr.CompiledFunction
+import work.nekow.particledrawing.animation.expr.GetterRewriter
+import work.nekow.particledrawing.animation.expr.InputKey
 import work.nekow.particledrawing.animation.expr.compileFunctionObject
 import work.nekow.particledrawing.animation.program.AnimInstruction
 import work.nekow.particledrawing.animation.program.InputChannel
@@ -97,15 +100,27 @@ internal object ClientAnimationProgramManager {
         var fadeOutStart = -1L; var fadeOutDur = 0; var fadeOutEase = EasingType.EASE_IN
         var continuousFrozenTick: Long? = null
 
-        // 实体通道 / 变量 / 终极公式
-        val channels = ArrayList<InputChannel>()
+        // 实体注册表 / 变量 / 终极公式
+        val entityBindings = ArrayList<InputChannel>()
         val vars = LinkedHashMap<String, Double>()
         var evalCode: String? = null
         var evalStartTick = 0L
         var compiled: CompiledFunction? = null
 
-        // 求值缓冲
+        /** 名字 -> 注册序号（公式 getter 参数解析用）。 */
+        val handleIndexByName: Map<String, Int> by lazy {
+            entityBindings.withIndex().associate { it.value.slot to it.index }
+        }
+
+        // 被动输入：编译期发现的「合成变量名 → 输入键」需求清单。
+        // 每 tick 只采样被引用的值；速度按相邻 tick 位置差分，同 tick 内不重复计差。
         var extNames: Array<String> = emptyArray()
+        var requiredKeys: List<InputKey> = emptyList()
+        var latestInputs: Map<String, Double> = emptyMap()
+        val prevPos = HashMap<UUID, Vec3>()
+        var lastSampleGameTime = Long.MIN_VALUE
+
+        // 求值缓冲
         var extVals = DoubleArray(0)
         var regs = DoubleArray(0)
         var stack = DoubleArray(0)
@@ -121,14 +136,14 @@ internal object ClientAnimationProgramManager {
         particleIds: List<UUID>,
         anchorGameTime: Long,
         initialPivot: Vec3,
-        channelsIn: List<InputChannel>,
+        entitiesIn: List<InputChannel>,
         varsIn: Map<String, Double>,
         instructions: List<AnimInstruction>,
     ) {
         val level = Minecraft.getInstance().level
         val p = Program(particleIds, anchorGameTime - (level?.gameTime ?: 0L), anchorGameTime, HashMap())
         p.pivotFixed = initialPivot
-        p.channels.addAll(channelsIn)
+        p.entityBindings.addAll(entitiesIn)
         for ((k, v) in varsIn) p.vars[k] = v
 
         ClientParticleEngine.instance()?.let { engine ->
@@ -157,17 +172,30 @@ internal object ClientAnimationProgramManager {
         for (ins in instructions) addInstruction(p, ins)
     }
 
-    /** 热更程序变量：value 为公式，求值环境 = 其余变量 + 实体通道当前值。 */
+    /**
+     * 热更程序变量：value 为公式，求值环境 = 其余变量 + 被动输入当前值。
+     * 公式里的 get_* 调用先重写为合成变量再求值；未知名在此处记日志并放弃本次热更。
+     */
     fun setVariable(programId: UUID, name: String, expr: String) {
         val p = programs[programId] ?: return
         if (name !in p.vars && name.length > 64) return
-        val scope = HashMap<String, Double>(p.vars)
-        fillChannelsInto(p, scope)
+        val rw = try {
+            GetterRewriter.rewrite(expr, p.handleIndexByName, p.entityBindings.size)
+        } catch (e: IllegalArgumentException) {
+            com.mojang.logging.LogUtils.getLogger().warn(
+                "[ParticleDrawing] setVariable {}:{} getter 解析失败: {}", programId, name, e.message,
+            )
+            return
+        }
+        val scope = HashMap<String, Any>(p.vars)
+        scope.putAll(p.latestInputs)
         val v = try {
-            work.nekow.particledrawing.animation.expr.ExpressionEvaluator.evaluate(expr, scope) as? Double
+            work.nekow.particledrawing.animation.expr.ExpressionEvaluator.evaluate(rw.code, scope) as? Double
         } catch (_: Exception) { null } ?: return
+        val hadCode = p.evalCode != null
         p.vars[name] = v
-        prepareEvalBuffers(p)
+        // 变量名集合可能扩大：终极公式的 externals 布局需随之重建
+        if (hadCode) recompileEval(p) else prepareEvalBuffers(p)
     }
 
     fun stop(programId: UUID, destroyParticles: Boolean) {
@@ -191,45 +219,129 @@ internal object ClientAnimationProgramManager {
         prepareEvalBuffers(p)
     }
 
-    /* ---------------- 编译与求值缓冲 ---------------- */
+    /* ---------------- 输入采样与编译缓冲 ---------------- */
 
-    private fun extNameList(p: Program): Array<String> {
-        val names = ArrayList<String>(p.channels.size * 3 + p.vars.size)
-        for (c in p.channels) for (ax in listOf("x", "y", "z")) names.add("${c.slot}_$ax")
-        for (n in p.vars.keys) names.add(n)
-        return names.toTypedArray()
-    }
-
+    /**
+     * 编译终极公式：先把 get_* 调用重写为合成外部变量（同时发现输入需求），再走纯标量快路径。
+     * 未知名/未登记句柄在此抛错——程序不生效并记日志（服务端绑定处无法预知公式语义）。
+     */
     private fun recompileEval(p: Program) {
         val code = p.evalCode ?: return
-        p.extNames = extNameList(p)
-        p.compiled = compileFunctionObject(code, emptyList(), p.extNames.toList())
+        val rw = try {
+            GetterRewriter.rewrite(code, p.handleIndexByName, p.entityBindings.size)
+        } catch (e: IllegalArgumentException) {
+            com.mojang.logging.LogUtils.getLogger().error(
+                "[ParticleDrawing] perParticle 公式编译失败（getter 解析）: {}", e.message,
+            )
+            p.compiled = null
+            p.requiredKeys = emptyList()
+            p.extNames = emptyArray()
+            return
+        }
+        // externals 布局 = 合成输入名 + 程序变量名（变量值随每 tick 快照注入，公式可直接引用）
+        val extAll = rw.extNames + p.vars.keys
+        p.extNames = extAll.toTypedArray()
+        p.requiredKeys = rw.keys
+        p.compiled = compileFunctionObject(rw.code, emptyList(), extAll)
         prepareEvalBuffers(p)
     }
 
     private fun prepareEvalBuffers(p: Program) {
-        if (p.evalCode == null) return
-        if (p.extNames.size != (p.channels.size * 3 + p.vars.size)) p.extNames = extNameList(p)
+        if (p.evalCode == null || p.compiled == null) return
         p.extVals = DoubleArray(p.extNames.size)
         val cf = p.compiled ?: return
         p.regs = cf.allocRegs()
         p.stack = cf.allocStack()
     }
 
-    private fun fillExternal(p: Program): Int {
-        var i = 0
-        for (c in p.channels) {
-            val e = findEntity(c.uuid) ?: continue
-            p.extVals[i++] = e.x; p.extVals[i++] = e.y; p.extVals[i++] = e.z
-        }
-        for (v in p.vars.values) p.extVals[i++] = v
-        return i // 实际填充数（实体缺失时尾部留 0）
+    /** 按 [extNames] 名字序注入当前输入值；缺失值落 0——槽位永不错位。 */
+    private fun fillExternal(p: Program) {
+        val src = p.latestInputs
+        for ((i, name) in p.extNames.withIndex()) p.extVals[i] = src[name] ?: 0.0
     }
 
-    private fun fillChannelsInto(p: Program, scope: MutableMap<String, Double>) {
-        for (c in p.channels) {
-            val e = findEntity(c.uuid) ?: continue
-            scope["${c.slot}_x"] = e.x; scope["${c.slot}_y"] = e.y; scope["${c.slot}_z"] = e.z
+    /**
+     * 每 tick 刷新程序的被动输入快照（同名同 tick 只采一次）。
+     * 只采样 [Program.requiredKeys] 引用的值；实体缺失时相关 getter 全部读 0；
+     * 速度按相邻 tick 位置差分，首 tick 与闪现后为 0。
+     */
+    private fun refreshInputs(p: Program, gameTime: Long) {
+        if (p.requiredKeys.isEmpty()) {
+            // 无被动输入：快照仅含程序变量（公式引用变量靠它注入）
+            p.latestInputs = if (p.vars.isEmpty()) emptyMap() else HashMap(p.vars)
+            return
+        }
+        if (gameTime == p.lastSampleGameTime) return
+        val level = Minecraft.getInstance().level ?: return
+        p.lastSampleGameTime = gameTime
+
+        // 先解析本程序引用到的实体并做速度差分（每实体一次）
+        val usedIndices = HashSet<Int>()
+        for (key in p.requiredKeys) if (key is InputKey.Entity) usedIndices.add(key.handleIndex)
+        val entities = HashMap<Int, Entity?>()
+        val vels = HashMap<Int, Vec3>()
+        val newPrev = HashMap<UUID, Vec3>()
+        for (idx in usedIndices) {
+            val binding = p.entityBindings.getOrNull(idx) ?: continue
+            val e = findEntity(binding.uuid)
+            entities[idx] = e
+            val pos = e?.position()
+            if (pos != null) {
+                newPrev[binding.uuid] = pos
+                val prev = p.prevPos[binding.uuid]
+                vels[idx] = if (prev != null) pos.subtract(prev) else Vec3.ZERO
+            }
+        }
+        p.prevPos.clear()
+        p.prevPos.putAll(newPrev)
+
+        val m = HashMap<String, Double>(p.extNames.size)
+        for ((i, key) in p.requiredKeys.withIndex()) {
+            val name = p.extNames.getOrNull(i) ?: continue
+            m[name] = when (key) {
+                is InputKey.Entity ->
+                    sampleEntityProp(entities[key.handleIndex] ?: continue, key.prop, vels[key.handleIndex] ?: Vec3.ZERO)
+                is InputKey.World -> sampleWorldProp(level, key.prop)
+            }
+        }
+        m.putAll(p.vars) // 变量值并入快照，fillExternal 按名注入
+        p.latestInputs = m
+    }
+
+    /** 实体属性取值（prop 字面量与 expr/GetterProps.ENTITY 对齐）；实体缺失由调用方短路为 0。 */
+    private fun sampleEntityProp(e: Entity, prop: String, vel: Vec3): Double = when (prop) {
+        "x" -> e.x
+        "y" -> e.y
+        "z" -> e.z
+        "exists" -> 1.0
+        "yaw" -> e.yRot.toDouble()
+        "pitch" -> e.xRot.toDouble()
+        "dirx" -> e.getViewVector(1f).x
+        "diry" -> e.getViewVector(1f).y
+        "dirz" -> e.getViewVector(1f).z
+        "vx" -> vel.x
+        "vy" -> vel.y
+        "vz" -> vel.z
+        "hp" -> (e as? LivingEntity)?.health?.toDouble() ?: 0.0
+        "hp_max" -> (e as? LivingEntity)?.maxHealth?.toDouble() ?: 0.0
+        "ground" -> if (e.onGround()) 1.0 else 0.0
+        "sneaking" -> if (e.isShiftKeyDown()) 1.0 else 0.0
+        "on_fire" -> if (e.isOnFire()) 1.0 else 0.0
+        "swimming" -> if (e.isSwimming()) 1.0 else 0.0
+        "sprinting" -> if (e.isSprinting()) 1.0 else 0.0
+        else -> 0.0
+    }
+
+    /** 世界属性取值（26.2 时钟 API：getOverworldClockTime 即旧 day time 域）。 */
+    private fun sampleWorldProp(level: net.minecraft.client.multiplayer.ClientLevel, prop: String): Double {
+        val clock = level.overworldClockTime
+        return when (prop) {
+            "day_time" -> (clock % 24000L).toDouble()
+            "game_time" -> clock.toDouble()
+            "rain" -> level.getRainLevel(1f).toDouble()
+            "thunder" -> level.getThunderLevel(1f).toDouble()
+            "moon_phase" -> (clock / 24000L % 8L + 8L).toDouble()
+            else -> 0.0
         }
     }
 
@@ -247,6 +359,7 @@ internal object ClientAnimationProgramManager {
             // clientGameTime + anchorOffset ≈ 服务端绝对 gameTime；再减程序起点 = 相对时刻。
             // 指令 startTick 与公式变量 t 均为该相对域，量纲一致、与存档时长无关。
             val now = nowClient + p.anchorOffset - p.startAnchor
+            refreshInputs(p, nowClient)
 
             if (p.evalCode != null) {
                 evalFrame(p, engine, now)

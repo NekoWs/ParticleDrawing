@@ -70,9 +70,9 @@ sealed class PivotRef {
 }
 
 /**
- * 实体输入通道：把某个实体的世界坐标暴露给公式环境，
- * 变量名为 `<slot>_x / <slot>_y / <slot>_z`（如 slot="e" → e_x/e_y/e_z）。
- * 客户端每 tick 本地解析实体后注入寄存器——引用双端共有的实体 UUID，零带宽同步。
+ * 实体登记项：把一个实体以 `<slot>` 名登记进程序的实体注册表（下发顺序 = 句柄序号）。
+ * 公式内通过 `get_entity_<prop>(<slot>)` 被动取值（见 expr/Getters）；
+ * 客户端每 tick 本地解析实体，零带宽同步。亦用作轴心跟随的内部载体。
  */
 data class InputChannel(val slot: String, val uuid: UUID)
 

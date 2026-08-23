@@ -226,17 +226,41 @@ group.pulse(peakRatio = 1.8f, halfPeriodTicks = 20, cycles = 3)   // 呼吸到 1
 在此之上，两条 API 把上限进一步打开：
 
 ```kotlin
-// 1. 实体通道：把实体坐标暴露为 e_x/e_y/e_z 变量（客户端本地解析实体，零带宽跟随）
+// 1. 实体句柄登记：把实体以名字写进程序注册表，公式里即可被动取值（客户端本地解析，零带宽）
 group.bindInput(slot = "e", uuid = entity.uuid)
      .followEntity(entity.uuid, offset = Vec3(0.0, 1.0, 0.0))   // 或者仅轴心跟随
 
-// 2. 终极公式指令：每粒子每 tick 求值一段函数对象代码（编辑器同款语法）
-//    可用 i/n/t、全套数学函数、通道变量、程序变量；输出 [x,y,z] 为世界绝对坐标
+// 2. 终极公式指令：每粒子每 tick 求值一段函数对象代码（编辑器同款语法）；
+//    用到什么取什么——get_entity_*/get_world_* 在需要处调用，无需预先声明属性
 group.perParticle("""
     th = i / n * 2 * pi;
-    [x,y,z] = [e_x + cos(th) * 2, e_y + 1, e_z + sin(th) * 2]
+    [x,y,z] = [
+        get_entity_x(e) + cos(th) * 2,
+        get_entity_y(e) + 1 + get_world_rain() * sin(t * 0.1),
+        get_entity_z(e) + sin(th) * 2
+    ]
 """)
 ```
+
+被动输入 getter 一览（未知名/未登记句柄在编译期报错；服务端下发时有预警日志）：
+
+| getter | 含义 |
+|---|---|
+| `get_entity_x/_y/_z(h)` | 实体坐标分量 |
+| `get_entity_pos(h)` | 整取坐标，仅限 `[x,y,z] = get_entity_pos(h)` 独占赋值形态 |
+| `get_entity_exists(h)` | 实体是否在场（0/1；缺失时该实体其余取值同为 0） |
+| `get_entity_yaw/_pitch(h)` | 朝向角（MC 原始度数：yaw -180~180、0=+Z；pitch -90~90） |
+| `get_entity_dirx/_diry/_dirz(h)` | 单位视线向量（与渲染视角一致） |
+| `get_entity_vx/_vy/_vz(h)` | 速度（block/tick，按相邻 tick 位置差分；首 tick 为 0） |
+| `get_entity_hp/_hp_max(h)` | 当前/最大生命值（仅生物，其他实体为 0） |
+| `get_entity_ground/_sneaking/_on_fire/_swimming/_sprinting(h)` | 状态标志（0/1） |
+| `get_world_day_time()` | 主世界时钟当日刻（0~23999） |
+| `get_world_game_time()` | 主世界时钟总刻 |
+| `get_world_rain() / get_world_thunder()` | 降雨 / 雷暴强度（0~1，含平滑过渡） |
+| `get_world_moon_phase()` | 月相序号 0~7（按主世界时钟每 24000 刻推进一相） |
+
+> 参数 `h` 是 `bindInput` 登记的名字（也可写注册序号数字），必须是编译期常量。
+> 属性名常量集中在 `ProgramInputs`（如 `ProgramInputs.YAW` == `"yaw"`）。
 
 运行时热改变量（服务端只发一条控制包，动画即时响应）：
 

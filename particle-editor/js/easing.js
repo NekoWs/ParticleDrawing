@@ -184,8 +184,18 @@ function tokenize(expr) {
   return tokens;
 }
 
+// 被动输入 getter（get_entity_*/get_world_*，游戏内由模组每 tick 求值）：
+// 编辑器预览拿不到真实世界数据，统一 stub 让带 getter 的公式结构可正常预览。
+// get_entity_pos 整取替换为 vec(0,0,0)（unpack 三分量赋值与 .x 分量访问都成立）；
+// 其余 getter 替换为标量 0。与 Kotlin 端 GetterRewriter 语义对应。
+const GETTER_POS_RE = /\bget_entity_pos\s*\(\s*[^()]*?\s*\)/g;
+const GETTER_CALL_RE = /\b(?:get_entity|get_world)_[a-z_]+\s*\(\s*[^()]*?\s*\)/g;
+
 // 编译表达式 → RPN 指令数组（变量保留为 {t:'var',name} 符号，求值期查表，供高频求值复用）
 function compileExpr(expr) {
+  if (expr.indexOf('get_') !== -1) {
+    expr = expr.replace(GETTER_POS_RE, 'vec(0,0,0)').replace(GETTER_CALL_RE, '0');
+  }
   const output = [];
   const stack = [];
   for (const tk of tokenize(expr)) {

@@ -2,6 +2,7 @@ package work.nekow.particledrawing.api
 
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.program.AnimInstruction
+import work.nekow.particledrawing.animation.expr.GetterRewriter
 import work.nekow.particledrawing.animation.program.InputChannel
 import work.nekow.particledrawing.animation.program.PivotRef
 import work.nekow.particledrawing.core.easing.EasingType
@@ -29,14 +30,13 @@ import java.util.UUID
  *     .fadeOut(20)                         // t=100  渐隐销毁
  * ```
  *
- * 高级能力：实体通道 + 终极公式指令——
+ * 高级能力：实体句柄 + 被动输入 getter + 终极公式指令——
  * ```kotlin
  * group.bindInput("e", entityUUID)
  *      .perParticle("""
  *          th = i / n * 2 * pi;
- *          [x,y,z] = [e_x + cos(th) * 2, e_y + 1 + sin(t * 0.1), e_z + sin(th) * 2]
+ *          [x,y,z] = [get_entity_x(e) + cos(th) * 2, get_entity_y(e) + 1 + sin(t * 0.1), get_entity_z(e) + sin(th) * 2]
  *      """)
- *      .setVariable("speed", "1")           // 运行时可用 setVariableLive 热更
  * ```
  */
 @Suppress("unused")
@@ -55,9 +55,26 @@ class ParticleGroup(
     /** 程序是否已随粒子清单下发（后续走增量 append）。 */
     private var armed = false
 
-    /** 实体输入通道与初始变量。 */
+    /** 实体注册表与初始变量。 */
     private val channels = ArrayList<InputChannel>()
     private val vars = LinkedHashMap<String, Double>()
+
+    /** slot 合法性：公式标识符 + 不得与内建常量/属性寄存器撞名。 */
+    private val SLOT_REGEX = Regex("""^[A-Za-z_][A-Za-z0-9_]*$""")
+    private val RESERVED_NAMES = setOf("i", "n", "t", "pi", "e") +
+        setOf("x", "y", "z", "r", "g", "b", "a", "vx", "vy", "vz", "sc", "glow", "light")
+
+    /** slot 在实体注册表中必须唯一，且不得与程序变量重名——同名会在公式环境里互相覆盖。 */
+    private fun requireFreeSlot(slot: String) {
+        require(channels.none { it.slot == slot } && slot !in vars) { "实体登记名 '$slot' 已被占用" }
+    }
+
+    /** 服务端 best-effort 预警：扫描代码里的 get_* 调用，报「确定错误」（未知名/形态误用）。 */
+    private fun lintGetters(code: String) {
+        for (problem in GetterRewriter.lint(code)) {
+            LOGGER.warn("[ParticleDrawing] group {} 公式预警: {}", id, problem)
+        }
+    }
 
     /* =====================================================================
      * 基础
@@ -283,27 +300,36 @@ class ParticleGroup(
      * ===================================================================== */
 
     /**
-     * 声明实体输入通道：把实体世界坐标暴露给公式环境，
-     * 变量名为 `<slot>_x/<slot>_y/<slot>_z`（客户端每 tick 本地解析实体注入，零带宽）。
+     * 登记实体句柄：把 [uuid] 以 `<slot>` 名写入程序实体注册表（下发顺序 = 句柄序号）。
+     * 公式内通过 `get_entity_<prop>(<slot>)` 被动取值——用到什么取什么，
+     * 属性表见 `ProgramInputs`；世界属性无需登记，直接 `get_world_<prop>()`。
+     *
+     * slot 必须是合法公式标识符，且不得与内建名（i/n/t/pi/e、x/y/z/r/g/b/a/vx/vy/vz/sc/glow/light）
+     * 或已有变量重名；违反立即抛异常。
      */
     fun bindInput(slot: String, uuid: UUID): ParticleGroup {
+        require(SLOT_REGEX.matches(slot)) { "实体登记名 '$slot' 不是合法标识符" }
+        require(slot !in RESERVED_NAMES) { "实体登记名 '$slot' 与内建名冲突" }
+        requireFreeSlot(slot)
         channels.add(InputChannel(slot, uuid))
-        armed = false // 通道变化需重发全量
+        armed = false // 注册表变化需重发全量
         return this
     }
 
     /** 设置程序静态变量（编译进公式环境的常量）。 */
     fun setVariable(name: String, value: Double): ParticleGroup {
+        require(name !in channels.map { it.slot }) { "变量名 '$name' 与实体登记名冲突" }
         vars[name] = value
         return this
     }
 
     /**
      * 终极公式指令：每粒子每 tick 求值 [code]（编辑器函数对象同款语法），
-     * 输出 [x,y,z] 为世界绝对坐标；可用 i/n/t、全套数学函数、实体通道变量、程序变量。
+     * 输出 [x,y,z] 为世界绝对坐标；可用 i/n/t、全套数学函数、get_* 被动输入、程序变量。
      * 一旦出现即接管位置/颜色/缩放的最终解释权；FADE 因子仍叠加其上。
      */
     fun perParticle(code: String): ParticleGroup {
+        lintGetters(code)
         emit(AnimInstruction.EvalParticle(cursorTicks, code))
         return this
     }
@@ -313,6 +339,7 @@ class ParticleGroup(
      * 例：`group.setVariableLive("rad", "3 + sin(t * 0.2)")`
      */
     fun setVariableLive(name: String, value: String) {
+        lintGetters(value)
         for (player in manager.getPlayers()) {
             PacketDistributor.sendToPlayer(player, work.nekow.particledrawing.core.network.SetProgramVarPayload(id, name, value))
         }

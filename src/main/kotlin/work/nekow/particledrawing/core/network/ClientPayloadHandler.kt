@@ -99,7 +99,7 @@ internal object ClientPayloadHandler {
         context.enqueueWork {
             work.nekow.particledrawing.core.client.ClientAnimationProgramManager.arm(
                 payload.programId, payload.particleIds, payload.anchorGameTime,
-                payload.initialPivot, payload.channels, payload.vars, payload.instructions,
+                payload.initialPivot, payload.entities, payload.vars, payload.instructions,
             )
         }
     }

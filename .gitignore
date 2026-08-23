@@ -49,3 +49,4 @@ repo/
 /particle-editor/test/zz-*
 /.freebuff/
 /opencode.json
+/.kotlin/
