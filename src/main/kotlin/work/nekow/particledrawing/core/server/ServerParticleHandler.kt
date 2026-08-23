@@ -20,6 +20,8 @@ object ServerParticleHandler {
     @JvmStatic
     fun onServerTick(event: ServerTickEvent.Post) {
         val server = event.server
+        // 先推进编排式动画调度（spin/movePath/stagger 等任务可能生成粒子）
+        AnimationScheduler.tick()
         for (level in server.allLevels) {
             val dim = ParticleUtils.dimensionUUID(level)
             val engine = ServerParticleEngine.getOrCreate(dim)
@@ -34,6 +36,7 @@ object ServerParticleHandler {
             val dim = ParticleUtils.dimensionUUID(event.level as ServerLevel)
             ServerAnimationManager.stopAll(dim, (event.level as ServerLevel).players())
             ServerParticleEngine.clearDimension(dim)
+            AnimationScheduler.clear()
         }
     }
 }

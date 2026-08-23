@@ -28,12 +28,12 @@ function selectionCentroid() {
 
 /* =========================================================================
  * 变换控制器（gizmo）：移动工具 = 三轴箭头 + 面移动器；旋转工具 = 三轴环 + 视图环
- * 始终使用世界坐标系（局部坐标系已移除：不再随选中对象的旋转而旋转）
+ * 使用世界坐标系（不随选中对象旋转）
  * ======================================================================= */
 const GIZMO_SCREEN_SCALE = 0.14; // 屏幕恒定大小系数：世界缩放 = 视线深度 × 系数
 const TRANSFORM_TOOLS = ['move', 'rotate']; // 仅移动/旋转工具显示 gizmo
 const _gizmoTmp = new THREE.Vector3();
-// 拖拽中选中的控制器高亮：向白色混合 30%（与悬停一致，避免过白）
+// 拖拽中选中的控制器高亮：向白色混合 30%
 function gizmoHl(c) { return new THREE.Color(c).lerp(new THREE.Color(1, 1, 1), 0.3); }
 
 
@@ -73,13 +73,13 @@ function updateGizmo() {
 }
 
 // 每帧调用：恒定屏幕大小 + 白环正对相机 + 轴环半圆环可见性（alpha 渐变防突变）
-// （拖拽某个环时：隐藏其他圆环与视图环，选中环不再遮罩、整环显示）
+// 拖拽某个环时：隐藏其他圆环与视图环，选中环整环显示
 function updateGizmoFrame() {
   if (!gizmoGroup.visible) return;
   const c = gizmoGroup.position;
   const showMove = state.tool === 'move';
   const showRotate = state.tool === 'rotate';
-  // 恒定屏幕大小：用「沿视线方向的深度」而非欧氏距离补偿，抵消透视下 gizmo 偏离
+  // 恒定屏幕大小：用「沿视线方向的深度」补偿，抵消透视下 gizmo 偏离
   // 屏幕中心时的误差，使缩放/移动视角时 gizmo 屏幕尺寸真正不变。
   // toGizmo：相机 -> gizmo 中心；depth：gizmo 沿视线方向的深度（正数）
   const toGizmo = _gizmoTmp.set(c.x - camera.position.x, c.y - camera.position.y, c.z - camera.position.z);

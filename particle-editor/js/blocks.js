@@ -249,7 +249,7 @@ function statementsToCode(stmts) {
 
 /**
  * 拼图专用分词：与 easing.js 的 tokenize 等价，但 pi/e 保留为标识符
- * （而非展开为数值），使往返序列化保持 `pi`/`e` 原样、不损失精度。
+ * 使往返序列化保持 `pi`/`e` 原样、不损失精度。
  */
 function blockTokenize(expr) {
   const tokens = [];

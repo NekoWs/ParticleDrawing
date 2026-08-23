@@ -12,7 +12,15 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * 服务端动画管理器（权威播放/停止/变量）。
  * 只负责向客户端下发 .pdraw 动画定义、停止命令与变量更新，粒子播放与渲染全部在客户端本地进行。
+ *
+ * 外部模组典型用法：
+ * ```kotlin
+ * val animId = ServerAnimationManager.playByName(dim, players, "magic_circle", origin) ?: return
+ * ServerAnimationManager.updateVariable(animId, "rad", "3 + sin(t)", players)
+ * ServerAnimationManager.stop(animId, players)
+ * ```
  */
+@Suppress("unused")
 object ServerAnimationManager {
 
     private class Playback(
@@ -37,6 +45,20 @@ object ServerAnimationManager {
         return id
     }
 
+    /**
+     * 按名称播放 `<gameDir>/animations/<name>.pdraw`（一行式入口）。
+     * @param name 动画名（不含 .pdraw 后缀）
+     * @return 动画 ID；找不到文件时为 null
+     */
+    @JvmStatic
+    fun playByName(
+        dimensionId: UUID, players: Collection<ServerPlayer>,
+        name: String, origin: Vec3
+    ): UUID? {
+        val json = AnimationLoader.load(name) ?: return null
+        return play(dimensionId, players, json, origin)
+    }
+
     /** 停止指定维度全部播放。 */
     @JvmStatic
     fun stopAll(dimensionId: UUID, players: Collection<ServerPlayer>) {
@@ -45,6 +67,20 @@ object ServerAnimationManager {
         val payload = StopAnimationPayload(null)
         for (player in players) PacketDistributor.sendToPlayer(player, payload)
         for (id in ids) playbacks.remove(id)
+    }
+
+    /**
+     * 停止单次播放：只通知该次播放覆盖到的玩家并清理记录。
+     * @return 是否存在该次播放
+     */
+    @JvmStatic
+    fun stop(animationId: UUID, players: Collection<ServerPlayer>): Boolean {
+        val pb = playbacks.remove(animationId) ?: return false
+        val payload = StopAnimationPayload(animationId)
+        for (player in players) {
+            if (player.uuid in pb.playerIds) PacketDistributor.sendToPlayer(player, payload)
+        }
+        return true
     }
 
     /** 更新某次播放的变量。 */
@@ -63,4 +99,22 @@ object ServerAnimationManager {
         val ids = playbacks.values.filter { it.dimensionId == dimensionId }.map { it.animationId }
         for (id in ids) updateVariable(id, name, value, players)
     }
+
+    /** 该次播放是否仍在进行。 */
+    @JvmStatic
+    fun isActive(animationId: UUID): Boolean = playbacks.containsKey(animationId)
+
+    /** 列出指定维度的活跃播放 ID 快照（无序）。 */
+    @JvmStatic
+    fun activePlaybacks(dimensionId: UUID): List<UUID> =
+        playbacks.values.filter { it.dimensionId == dimensionId }.map { it.animationId }
+
+    /** 列出全部维度的活跃播放 ID 快照（无序）。 */
+    @JvmStatic
+    fun activePlaybacksAll(): List<UUID> = playbacks.keys.toList()
+
+    /** 该次播放覆盖的玩家 ID 集合快照；不存在时为空集。 */
+    @JvmStatic
+    fun playbackPlayers(animationId: UUID): Set<UUID> =
+        playbacks[animationId]?.playerIds ?: emptySet()
 }

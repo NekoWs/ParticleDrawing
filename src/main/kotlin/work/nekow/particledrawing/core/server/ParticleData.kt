@@ -2,14 +2,12 @@ package work.nekow.particledrawing.core.server
 
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.Color
-import work.nekow.particledrawing.api.ParticleStyle
 import java.util.UUID
 
 /**
  * 粒子运行时数据，存储位置、颜色、缩放、生命周期等信息。
  *
  * @param id 唯一标识符
- * @param style 粒子视觉效果
  * @param position 世界坐标
  * @param color RGBA 颜色
  * @param scale 渲染缩放
@@ -23,7 +21,6 @@ import java.util.UUID
 @Suppress("unused")
 class ParticleData(
     val id: UUID,
-    val style: ParticleStyle,
     private var position: Vec3,
     private var color: Color,
     private var scale: Float,
@@ -71,12 +68,11 @@ class ParticleData(
     }
 
     fun toSnapshot(): ParticleSnapshot {
-        return ParticleSnapshot(id, style, position, color, scale, glowing, lightLevel)
+        return ParticleSnapshot(id, position, color, scale, glowing, lightLevel)
     }
 
     data class ParticleSnapshot(
         val id: UUID,
-        val style: ParticleStyle,
         val position: Vec3,
         val color: Color,
         val scale: Float,
@@ -85,11 +81,11 @@ class ParticleData(
     )
 
     companion object {
-        fun create(id: UUID, style: ParticleStyle, position: Vec3,
+        fun create(id: UUID, position: Vec3,
                    color: Color, scale: Float, lifetime: Int,
                    groupId: UUID?, glowing: Boolean, lightLevel: Int,
                    offsetFromPivot: Vec3?): ParticleData {
-            return ParticleData(id, style, position, color, scale, lifetime, lifetime,
+            return ParticleData(id, position, color, scale, lifetime, lifetime,
                 groupId, glowing, lightLevel, offsetFromPivot ?: Vec3.ZERO)
         }
     }
@@ -102,5 +98,5 @@ class ParticleData(
 
     override fun hashCode(): Int = id.hashCode()
 
-    override fun toString(): String = "ParticleData{$id $style @ $position}"
+    override fun toString(): String = "ParticleData{$id @ $position}"
 }

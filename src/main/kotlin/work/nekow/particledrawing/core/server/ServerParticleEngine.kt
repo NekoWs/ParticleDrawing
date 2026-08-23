@@ -5,12 +5,9 @@ import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.phys.Vec3
 import net.neoforged.neoforge.network.PacketDistributor
 import work.nekow.particledrawing.api.Color
-import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.api.TransformOp
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.easing.EasingType
-import work.nekow.particledrawing.core.motion.MotionPayload
-import work.nekow.particledrawing.core.motion.rotateAround
 import work.nekow.particledrawing.core.network.ParticleDestroyPayload
 import work.nekow.particledrawing.core.network.ParticleGroupTransformPayload
 import work.nekow.particledrawing.core.network.ParticleLightLevelPayload
@@ -20,6 +17,7 @@ import work.nekow.particledrawing.core.network.ParticleSpawnPayload
 import work.nekow.particledrawing.core.network.ParticleTranslatePayload
 import work.nekow.particledrawing.core.network.ParticleUpdatePayload
 import work.nekow.particledrawing.core.network.ParticleVelocityPayload
+import work.nekow.particledrawing.util.rotateAround
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import org.apache.logging.log4j.LogManager
@@ -50,7 +48,6 @@ class ServerParticleEngine(
     /**
      * 生成粒子并广播到视野内可见的玩家。
      *
-     * @param style 粒子视觉效果
      * @param position 世界坐标
      * @param color RGBA 颜色
      * @param scale 粒子缩放
@@ -63,7 +60,7 @@ class ServerParticleEngine(
      * @return 创建的粒子数据；达到维度上限时为 null
      */
     @Suppress("DataFlowIssue")
-    fun spawnParticle(style: ParticleStyle, position: Vec3, color: Color,
+    fun spawnParticle(position: Vec3, color: Color,
                       scale: Float, lifetime: Int, groupId: UUID?,
                       glowing: Boolean, lightLevel: Int, offsetFromPivot: Vec3?,
                       playersInDimension: Collection<ServerPlayer>): ParticleData? {
@@ -74,7 +71,7 @@ class ServerParticleEngine(
         }
 
         val id = UUID.randomUUID()
-        val data = ParticleData.create(id, style, position, color, scale,
+        val data = ParticleData.create(id, position, color, scale,
             lifetime, groupId, glowing, lightLevel, offsetFromPivot)
         particles[id] = data
 
@@ -83,7 +80,7 @@ class ServerParticleEngine(
         }
 
         val payload = ParticleSpawnPayload(
-            id, style, position.x, position.y, position.z,
+            id, position.x, position.y, position.z,
             color.r, color.g, color.b, color.a,
             scale, lifetime, groupId, glowing, lightLevel
         )
@@ -310,12 +307,14 @@ class ServerParticleEngine(
                 }
             }
             TransformOp.Type.SCALE -> {
+                // targetScale 为倍率：位置偏移与粒子自身缩放同乘，保证「放大 2 倍」时
+                // 半径与视觉大小一致翻倍（各粒子当前 scale 可能不同，故逐个换算绝对值）
                 for (p in groupParticles) {
                     val rel = p.offsetFromPivot()
                     val scaled = rel.scale(targetScale.toDouble())
                     p.setPosition(groupPivot.add(scaled))
                     p.setOffsetFromPivot(scaled)
-                    p.setScale(targetScale)
+                    p.setScale(p.scale() * targetScale)
                 }
             }
         }
@@ -338,6 +337,51 @@ class ServerParticleEngine(
         }
 
         sendToTracked(playersInDimension, group.memberIds(), payload)
+    }
+
+    /**
+     * 组级持续旋转单步（编排式动画 spin 的底层）：把组内成员绕轴再转 [deltaRadians]，
+     * 同步服务端数据并向可见玩家广播位置缓动包，客户端在 [broadcastTicks] 内平滑过渡。
+     *
+     * @param groupId 组 ID
+     * @param pivot 旋转轴心
+     * @param axis 归一化旋转轴
+     * @param deltaRadians 本步旋转弧度增量
+     * @param broadcastTicks 客户端插值时长（tick），通常等于调度步长
+     */
+    fun stepRotate(groupId: UUID, pivot: Vec3, axis: Vec3, deltaRadians: Double,
+                   broadcastTicks: Int, playersInDimension: Collection<ServerPlayer>) {
+        val group = groups[groupId] ?: return
+        val nAxis = axis.normalize()
+        for (memberId in group.memberIds()) {
+            val p = particles[memberId] ?: continue
+            // 以「当前位置 − 轴心」推导偏移（与 applyGroupTransform.ROTATE 一致，
+            // 不依赖 offsetFromPivot 是否已初始化）
+            val rel = p.position().subtract(pivot)
+            val rotated = rel.rotateAround(nAxis, deltaRadians)
+            val pos = pivot.add(rotated)
+            p.setPosition(pos)
+            p.setOffsetFromPivot(rotated)
+            sendToVisible(playersInDimension, pos,
+                ParticleUpdatePayload.positionOnly(memberId, pos.x, pos.y, pos.z, broadcastTicks, EasingType.LINEAR))
+        }
+    }
+
+    /**
+     * 组级路径平移单步（编排式动画 movePath / wave 的底层）：把组内成员平移 [delta]
+     * 并广播位置缓动包。
+     */
+    fun stepTranslate(groupId: UUID, delta: Vec3,
+                      broadcastTicks: Int, playersInDimension: Collection<ServerPlayer>) {
+        val group = groups[groupId] ?: return
+        for (memberId in group.memberIds()) {
+            val p = particles[memberId] ?: continue
+            val pos = p.position().add(delta)
+            p.setPosition(pos)
+            sendToVisible(playersInDimension, pos,
+                ParticleUpdatePayload.positionOnly(memberId, pos.x, pos.y, pos.z, broadcastTicks, EasingType.LINEAR))
+        }
+        group.setPivot(group.pivot().add(delta))
     }
 
     /**
@@ -552,7 +596,7 @@ class ServerParticleEngine(
 
     private fun spawnPayload(data: ParticleData): ParticleSpawnPayload {
         return ParticleSpawnPayload(
-            data.id, data.style,
+            data.id,
             data.position().x, data.position().y, data.position().z,
             data.color().r, data.color().g, data.color().b, data.color().a,
             data.scale(), data.lifetime(), data.groupId, data.glowing(), data.lightLevel()
@@ -618,15 +662,6 @@ class ServerParticleEngine(
                 PacketDistributor.sendToPlayer(player, payload)
             }
         }
-    }
-
-    fun sendMotion(groupId: UUID, active: Boolean, algorithmId: String,
-                    params: DoubleArray, pivot: Vec3,
-                    playersInDimension: Collection<ServerPlayer>) {
-        val group = groups[groupId] ?: return
-        val payload = MotionPayload(groupId, active, algorithmId, params,
-            pivot.x, pivot.y, pivot.z)
-        sendToTracked(playersInDimension, group.memberIds(), payload)
     }
 
     companion object {

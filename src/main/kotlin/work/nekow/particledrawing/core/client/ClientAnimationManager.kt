@@ -4,7 +4,6 @@ import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.AnimationLoader
 import work.nekow.particledrawing.animation.ClientAnimationPlayer
 import work.nekow.particledrawing.animation.ParticleAnimation
-import work.nekow.particledrawing.api.ParticleStyle
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -70,7 +69,7 @@ object ClientAnimationManager {
             val uuid = UUID.randomUUID()
             uuids[state.id] = uuid
             ClientParticleEngine.instance()?.spawnParticle(
-                uuid, ParticleStyle.DOT, state.pos.x, state.pos.y, state.pos.z,
+                uuid, state.pos.x, state.pos.y, state.pos.z,
                 state.color.r, state.color.g, state.color.b, state.color.a,
                 state.scale[0], -1, null, state.glowing, state.lightLevel, state.uv
             )
@@ -136,3 +135,4 @@ object ClientAnimationManager {
         ClientParticleEngine.instance()?.destroyParticles(entry.particleUuids.values.toTypedArray())
     }
 }
+

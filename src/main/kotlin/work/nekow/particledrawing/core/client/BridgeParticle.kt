@@ -8,11 +8,11 @@ import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.client.renderer.state.level.QuadParticleRenderState
 import net.minecraft.client.renderer.texture.TextureAtlasSprite
 import net.minecraft.data.AtlasIds
+import net.minecraft.resources.Identifier
 import net.minecraft.util.Mth
 import org.joml.Quaternionf
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
-import work.nekow.particledrawing.api.ParticleStyle
 import java.util.UUID
 
 /**
@@ -20,12 +20,11 @@ import java.util.UUID
  * 将自定义粒子的位置、颜色和缩放属性同步到原版渲染管线中。
  *
  * 支持两类渲染：
- * - **无贴图**：沿用原版 sprite（[ParticleStyle] 对应图集精灵），纯色方块染色；
+ * - **无贴图**：默认精灵染色为纯色方块；
  * - **有贴图**（[uv] 非 null 且贴图已注册）：`getLayer` 返回指向 [TextureCache] 中
  *   DynamicTexture 的自定义 Layer，并按 UV 像素坐标（静态/填充/flipbook）采样。
  *
  * @param particleId 粒子唯一标识符
- * @param style 粒子样式（无贴图时的 sprite；有贴图时仅作回退）
  * @param level 客户端世界实例
  * @param x 初始 X 坐标
  * @param y 初始 Y 坐标
@@ -33,19 +32,18 @@ import java.util.UUID
  * @param color 初始颜色
  * @param scale 初始缩放（编辑器数据模型值，已含缩放因子）
  * @param isGlowing 是否发光
- * @param uv 编辑器的 UV 参数（已解析的最终作用域值）；null 或无贴图时退化为 sprite 渲染
+ * @param uv 编辑器的 UV 参数（已解析的最终作用域值）；null 或无贴图时退化为纯色方块渲染
  */
 @Suppress("unused")
 class BridgeParticle(
     val particleId: UUID,
-    style: ParticleStyle,
     level: ClientLevel,
     x: Double, y: Double, z: Double,
     color: Color,
     scale: Float,
     private var isGlowing: Boolean,
     private var uv: UvData? = null
-) : SingleQuadParticle(level, x, y, z, getSpriteForStyle(style)) {
+) : SingleQuadParticle(level, x, y, z, defaultSprite()) {
 
     // 贴图解析结果（贴图已注册时才非 null）：Identifier + 尺寸
     @Volatile
@@ -200,7 +198,7 @@ class BridgeParticle(
             val translucent = alpha < 1.0f
             Layer(translucent, entry.id, if (translucent) RenderPipelines.TRANSLUCENT_PARTICLE else RenderPipelines.OPAQUE_PARTICLE)
         } else {
-            if (alpha < 1.0f || sprite.transparency().hasTranslucent()) {
+            if (alpha < 1.0f) {
                 Layer.TRANSLUCENT
             } else {
                 Layer.OPAQUE
@@ -322,15 +320,13 @@ class BridgeParticle(
         var nonUniformScaleW: Float = -1f
 
         /**
-         * 根据粒子样式获取对应的纹理精灵。
-         * @param style 粒子样式
-         * @return 对应的纹理精灵
+         * 无贴图粒子使用的默认精灵（原版粒子图集 generic_0），渲染时由颜色染色为纯色方块。
          */
-        private fun getSpriteForStyle(style: ParticleStyle): TextureAtlasSprite {
+        private fun defaultSprite(): TextureAtlasSprite {
             val atlas = Minecraft.getInstance()
                 .atlasManager
                 .getAtlasOrThrow(AtlasIds.PARTICLES)
-            return atlas.getSprite(style.spriteLocation)
+            return atlas.getSprite(Identifier.withDefaultNamespace("generic_0"))
         }
     }
 }

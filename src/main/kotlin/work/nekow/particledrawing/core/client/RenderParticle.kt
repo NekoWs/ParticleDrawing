@@ -3,10 +3,8 @@ package work.nekow.particledrawing.core.client
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
-import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.core.easing.EasingCurve
 import work.nekow.particledrawing.core.easing.EasingType
-import work.nekow.particledrawing.core.motion.rotateAround
 import java.util.UUID
 
 private val LINEAR = EasingCurve(0.0, 0.0, 1.0, 1.0)
@@ -26,7 +24,6 @@ private class EaseState(
  * 渲染粒子：保存可视化状态并支持缓动过渡与速度积分。
  *
  * @param id 粒子唯一标识符
- * @param style 粒子样式
  * @param position 初始位置
  * @param color 初始颜色
  * @param scale 初始缩放
@@ -37,7 +34,6 @@ private class EaseState(
 @Suppress("unused")
 class RenderParticle(
     private val id: UUID,
-    val style: ParticleStyle,
     position: Vec3,
     color: Color,
     scale: Float,
@@ -268,6 +264,19 @@ class RenderParticle(
         scl.tgt = scaleArray[0]
     }
 
+    /**
+     * 立即完成进行中的颜色/缩放缓动（cur = tgt 并停止计时）。
+     * 零时长目标（duration=0）由 [ClientParticleEngine.updateParticle] 调用：
+     * 若等分批轮转的 tick 落地，紧随其后的缓动包会把起点读成旧值，渐变失效。
+     */
+    fun finishColorScale() {
+        if (colEase.startTime != 0L) {
+            col.cur = col.tgt
+            scl.cur = scl.tgt
+            colEase.startTime = 0L
+        }
+    }
+
     /** 读取并清除「下一次同步应跳变」标记。 */
     fun consumeSnap(): Boolean {
         val s = snapNextSync
@@ -386,6 +395,18 @@ class RenderParticle(
         if (ry != 0.0) r = r.rotateAround(Vec3(0.0, 1.0, 0.0), ry)
         if (rz != 0.0) r = r.rotateAround(Vec3(0.0, 0.0, 1.0), rz)
         return r
+    }
+
+    private fun Vec3.rotateAround(unitAxis: Vec3, radians: Double): Vec3 {
+        val c = kotlin.math.cos(radians)
+        val s = kotlin.math.sin(radians)
+        val dot = dot(unitAxis)
+        val cross = unitAxis.cross(this)
+        return Vec3(
+            x * c + cross.x * s + unitAxis.x * dot * (1 - c),
+            y * c + cross.y * s + unitAxis.y * dot * (1 - c),
+            z * c + cross.z * s + unitAxis.z * dot * (1 - c)
+        )
     }
 
     companion object {

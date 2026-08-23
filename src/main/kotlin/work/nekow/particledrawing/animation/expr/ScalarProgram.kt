@@ -32,58 +32,65 @@ private val ATTR_SLOTS = mapOf(
     "sc" to Reg.SC, "glow" to Reg.GLOW, "light" to Reg.LIGHT,
 )
 
-// ---- 操作码 ----
-private const val OP_PUSH_CONST = 0
-private const val OP_PUSH_REG = 1
-private const val OP_POP_REG = 2
-private const val OP_NEG = 3
-private const val OP_ADD = 4
-private const val OP_SUB = 5
-private const val OP_MUL = 6
-private const val OP_DIV = 7
-private const val OP_MOD = 8
-private const val OP_POW = 9
-private const val FN_SIN = 10
-private const val FN_COS = 11
-private const val FN_TAN = 12
-private const val FN_ASIN = 13
-private const val FN_ACOS = 14
-private const val FN_ATAN = 15
-private const val FN_ATAN2 = 16
-private const val FN_SQRT = 17
-private const val FN_ABS = 18
-private const val FN_SIGN = 19
-private const val FN_EXP = 20
-private const val FN_LOG = 21
-private const val FN_FLOOR = 22
-private const val FN_CEIL = 23
-private const val FN_ROUND = 24
-private const val FN_FRACT = 25
-private const val FN_POW = 26
-private const val FN_MIN = 27
-private const val FN_MAX = 28
-private const val FN_CLAMP = 29
-private const val FN_LERP = 30
-private const val FN_STEP = 31
-private const val FN_SMOOTHSTEP = 32
-private const val FN_MOD = 33
-private const val FN_RANDOM = 34
-private const val FN_RAND = 35
-private const val OP_VARKF = 36
+/**
+ * 栈式指令集。
+ *
+ * @param pops 该表达式指令从求值栈弹出的操作数个数；编译期据此计算栈深。
+ *             数据搬运类指令（PUSH_CONST / PUSH_REG / POP_REG / VAR_KF）不参与表达式深度计算，恒为 -1。
+ */
+internal enum class ScalarOp(val pops: Int) {
+    // —— 数据搬运 ——
+    /** arg = 常量池下标：压入 consts[arg]。 */
+    PUSH_CONST(-1),
+    /** arg = 寄存器槽：压入 regs[arg]。 */
+    PUSH_REG(-1),
+    /** arg = 寄存器槽：弹栈写入 regs[arg]。 */
+    POP_REG(-1),
+    /** arg = kfTable 下标：按当前 t 插值变量关键帧并压栈。 */
+    VAR_KF(-1),
 
-/** 标量函数名 -> 操作码（与编辑器 easing.js SCALAR_FUNC_GEN 对齐；log/ln 同映射）。 */
+    // —— 运算符（弹出 2 压回 1）——
+    NEG(1),
+    ADD(2), SUB(2), MUL(2), DIV(2), REM(2), POW(2),
+
+    // —— 标量函数（与编辑器 easing.js SCALAR_FUNC_GEN 对齐）——
+    F_SIN(1), F_COS(1), F_TAN(1),
+    F_ASIN(1), F_ACOS(1), F_ATAN(1),
+    F_ATAN2(2), F_SQRT(1), F_ABS(1), F_SIGN(1),
+    F_EXP(1), F_LOG(1),
+    F_FLOOR(1), F_CEIL(1), F_ROUND(1), F_FRACT(1),
+    F_POW(2), F_MIN(2), F_MAX(2),
+    F_CLAMP(3), F_LERP(3), F_STEP(2), F_SMOOTHSTEP(3), F_MOD(2),
+    /** 纯随机源：只压栈。 */
+    F_RANDOM(0),
+    /** 固定种子伪随机（同一种子恒返回相同 [0,1) 值）。 */
+    F_RAND(1),
+}
+
+/** 标量函数名 -> 操作码（log/ln 同映射）。 */
 private val SCALAR_FUNC_OPS = mapOf(
-    "sin" to FN_SIN, "cos" to FN_COS, "tan" to FN_TAN, "asin" to FN_ASIN, "acos" to FN_ACOS, "atan" to FN_ATAN,
-    "atan2" to FN_ATAN2, "sqrt" to FN_SQRT, "abs" to FN_ABS, "sign" to FN_SIGN, "exp" to FN_EXP,
-    "log" to FN_LOG, "ln" to FN_LOG, "floor" to FN_FLOOR, "ceil" to FN_CEIL, "round" to FN_ROUND,
-    "fract" to FN_FRACT, "pow" to FN_POW, "min" to FN_MIN, "max" to FN_MAX, "clamp" to FN_CLAMP,
-    "lerp" to FN_LERP, "step" to FN_STEP, "smoothstep" to FN_SMOOTHSTEP, "mod" to FN_MOD,
-    "random" to FN_RANDOM, "rand" to FN_RAND,
+    "sin" to ScalarOp.F_SIN, "cos" to ScalarOp.F_COS, "tan" to ScalarOp.F_TAN,
+    "asin" to ScalarOp.F_ASIN, "acos" to ScalarOp.F_ACOS, "atan" to ScalarOp.F_ATAN,
+    "atan2" to ScalarOp.F_ATAN2, "sqrt" to ScalarOp.F_SQRT, "abs" to ScalarOp.F_ABS,
+    "sign" to ScalarOp.F_SIGN, "exp" to ScalarOp.F_EXP,
+    "log" to ScalarOp.F_LOG, "ln" to ScalarOp.F_LOG,
+    "floor" to ScalarOp.F_FLOOR, "ceil" to ScalarOp.F_CEIL, "round" to ScalarOp.F_ROUND,
+    "fract" to ScalarOp.F_FRACT, "pow" to ScalarOp.F_POW, "min" to ScalarOp.F_MIN,
+    "max" to ScalarOp.F_MAX, "clamp" to ScalarOp.F_CLAMP,
+    "lerp" to ScalarOp.F_LERP, "step" to ScalarOp.F_STEP,
+    "smoothstep" to ScalarOp.F_SMOOTHSTEP, "mod" to ScalarOp.F_MOD,
+    "random" to ScalarOp.F_RANDOM, "rand" to ScalarOp.F_RAND,
+)
+
+/** 运算符字符 -> 操作码。 */
+private val CHAR_OPS = mapOf(
+    '+' to ScalarOp.ADD, '-' to ScalarOp.SUB, '*' to ScalarOp.MUL,
+    '/' to ScalarOp.DIV, '%' to ScalarOp.REM, '^' to ScalarOp.POW,
 )
 
 /** 编译后的纯标量指令序列。 */
 internal class ScalarProgram(
-    private val ops: IntArray,
+    private val ops: Array<ScalarOp>,
     private val args: IntArray,
     private val consts: DoubleArray,
 ) {
@@ -94,48 +101,48 @@ internal class ScalarProgram(
         var sp = 0
         for (idx in ops.indices) {
             when (ops[idx]) {
-                OP_PUSH_CONST -> stack[sp++] = consts[args[idx]]
-                OP_PUSH_REG -> stack[sp++] = regs[args[idx]]
-                OP_POP_REG -> { sp--; regs[args[idx]] = stack[sp] }
-                OP_NEG -> stack[sp - 1] = -stack[sp - 1]
-                OP_ADD -> { sp--; stack[sp - 1] += stack[sp] }
-                OP_SUB -> { sp--; stack[sp - 1] -= stack[sp] }
-                OP_MUL -> { sp--; stack[sp - 1] *= stack[sp] }
-                OP_DIV -> { sp--; stack[sp - 1] /= stack[sp] }
-                OP_MOD -> { sp--; stack[sp - 1] %= stack[sp] }
-                OP_POW -> { sp--; stack[sp - 1] = stack[sp - 1].pow(stack[sp]) }
-                FN_SIN -> stack[sp - 1] = sin(stack[sp - 1])
-                FN_COS -> stack[sp - 1] = cos(stack[sp - 1])
-                FN_TAN -> stack[sp - 1] = tan(stack[sp - 1])
-                FN_ASIN -> stack[sp - 1] = asin(stack[sp - 1])
-                FN_ACOS -> stack[sp - 1] = acos(stack[sp - 1])
-                FN_ATAN -> stack[sp - 1] = atan(stack[sp - 1])
-                FN_ATAN2 -> { sp--; stack[sp - 1] = atan2(stack[sp - 1], stack[sp]) }
-                FN_SQRT -> stack[sp - 1] = sqrt(stack[sp - 1])
-                FN_ABS -> stack[sp - 1] = abs(stack[sp - 1])
-                FN_SIGN -> stack[sp - 1] = sign(stack[sp - 1])
-                FN_EXP -> stack[sp - 1] = exp(stack[sp - 1])
-                FN_LOG -> stack[sp - 1] = ln(stack[sp - 1])
-                FN_FLOOR -> stack[sp - 1] = floor(stack[sp - 1])
-                FN_CEIL -> stack[sp - 1] = ceil(stack[sp - 1])
-                FN_ROUND -> stack[sp - 1] = round(stack[sp - 1])
-                FN_FRACT -> stack[sp - 1] = stack[sp - 1] - floor(stack[sp - 1])
-                FN_POW -> { sp--; stack[sp - 1] = stack[sp - 1].pow(stack[sp]) }
-                FN_MIN -> { sp--; stack[sp - 1] = min(stack[sp - 1], stack[sp]) }
-                FN_MAX -> { sp--; stack[sp - 1] = max(stack[sp - 1], stack[sp]) }
-                FN_CLAMP -> { sp -= 2; stack[sp] = stack[sp].coerceIn(stack[sp + 1], stack[sp + 2]) }
-                FN_LERP -> { sp -= 2; stack[sp] = stack[sp] + (stack[sp + 1] - stack[sp]) * stack[sp + 2] }
-                FN_STEP -> { sp--; stack[sp - 1] = if (stack[sp] >= stack[sp - 1]) 1.0 else 0.0 }
-                FN_SMOOTHSTEP -> {
+                ScalarOp.PUSH_CONST -> stack[sp++] = consts[args[idx]]
+                ScalarOp.PUSH_REG -> stack[sp++] = regs[args[idx]]
+                ScalarOp.POP_REG -> { sp--; regs[args[idx]] = stack[sp] }
+                ScalarOp.NEG -> stack[sp - 1] = -stack[sp - 1]
+                ScalarOp.ADD -> { sp--; stack[sp - 1] += stack[sp] }
+                ScalarOp.SUB -> { sp--; stack[sp - 1] -= stack[sp] }
+                ScalarOp.MUL -> { sp--; stack[sp - 1] *= stack[sp] }
+                ScalarOp.DIV -> { sp--; stack[sp - 1] /= stack[sp] }
+                ScalarOp.REM -> { sp--; stack[sp - 1] %= stack[sp] }
+                ScalarOp.POW -> { sp--; stack[sp - 1] = stack[sp - 1].pow(stack[sp]) }
+                ScalarOp.F_SIN -> stack[sp - 1] = sin(stack[sp - 1])
+                ScalarOp.F_COS -> stack[sp - 1] = cos(stack[sp - 1])
+                ScalarOp.F_TAN -> stack[sp - 1] = tan(stack[sp - 1])
+                ScalarOp.F_ASIN -> stack[sp - 1] = asin(stack[sp - 1])
+                ScalarOp.F_ACOS -> stack[sp - 1] = acos(stack[sp - 1])
+                ScalarOp.F_ATAN -> stack[sp - 1] = atan(stack[sp - 1])
+                ScalarOp.F_ATAN2 -> { sp--; stack[sp - 1] = atan2(stack[sp - 1], stack[sp]) }
+                ScalarOp.F_SQRT -> stack[sp - 1] = sqrt(stack[sp - 1])
+                ScalarOp.F_ABS -> stack[sp - 1] = abs(stack[sp - 1])
+                ScalarOp.F_SIGN -> stack[sp - 1] = sign(stack[sp - 1])
+                ScalarOp.F_EXP -> stack[sp - 1] = exp(stack[sp - 1])
+                ScalarOp.F_LOG -> stack[sp - 1] = ln(stack[sp - 1])
+                ScalarOp.F_FLOOR -> stack[sp - 1] = floor(stack[sp - 1])
+                ScalarOp.F_CEIL -> stack[sp - 1] = ceil(stack[sp - 1])
+                ScalarOp.F_ROUND -> stack[sp - 1] = round(stack[sp - 1])
+                ScalarOp.F_FRACT -> stack[sp - 1] = stack[sp - 1] - floor(stack[sp - 1])
+                ScalarOp.F_POW -> { sp--; stack[sp - 1] = stack[sp - 1].pow(stack[sp]) }
+                ScalarOp.F_MIN -> { sp--; stack[sp - 1] = min(stack[sp - 1], stack[sp]) }
+                ScalarOp.F_MAX -> { sp--; stack[sp - 1] = max(stack[sp - 1], stack[sp]) }
+                ScalarOp.F_CLAMP -> { sp -= 2; stack[sp] = stack[sp].coerceIn(stack[sp + 1], stack[sp + 2]) }
+                ScalarOp.F_LERP -> { sp -= 2; stack[sp] = stack[sp] + (stack[sp + 1] - stack[sp]) * stack[sp + 2] }
+                ScalarOp.F_STEP -> { sp--; stack[sp - 1] = if (stack[sp] >= stack[sp - 1]) 1.0 else 0.0 }
+                ScalarOp.F_SMOOTHSTEP -> {
                     sp -= 2
                     val e0 = stack[sp]; val e1 = stack[sp + 1]; val x = stack[sp + 2]
                     val t = ((x - e0) / (e1 - e0)).coerceIn(0.0, 1.0)
                     stack[sp] = t * t * (3 - 2 * t)
                 }
-                FN_MOD -> { sp--; val a = stack[sp - 1]; val b = stack[sp]; stack[sp - 1] = a - b * floor(a / b) }
-                FN_RANDOM -> stack[sp++] = Math.random()
-                FN_RAND -> { val x = sin(stack[sp - 1] * 127.1 + 311.7) * 43758.5453; stack[sp - 1] = x - floor(x) }
-                OP_VARKF -> {
+                ScalarOp.F_MOD -> { sp--; val a = stack[sp - 1]; val b = stack[sp]; stack[sp - 1] = a - b * floor(a / b) }
+                ScalarOp.F_RANDOM -> stack[sp++] = Math.random()
+                ScalarOp.F_RAND -> { val x = sin(stack[sp - 1] * 127.1 + 311.7) * 43758.5453; stack[sp - 1] = x - floor(x) }
+                ScalarOp.VAR_KF -> {
                     val kf = kfTable!![args[idx]]
                     stack[sp++] = ExpressionEvaluator.varKfValue(kf, regs[Reg.T])
                 }
@@ -266,14 +273,14 @@ private fun compileVarPrograms(varDefs: List<VarDef>, nameToSlot: Map<String, In
     var stackSize = 0
     for (k in 0 until n) {
         val v = varDefs[k]
-        val ops = ArrayList<Int>()
+        val ops = ArrayList<ScalarOp>()
         val args = ArrayList<Int>()
         val consts = ArrayList<Double>()
         val maxDepth = intArrayOf(0)
         if (v.kf.isNotEmpty()) {
             val kfIdx = kfList.size
             kfList.add(v.kf)
-            ops.add(OP_VARKF); args.add(kfIdx)
+            ops.add(ScalarOp.VAR_KF); args.add(kfIdx)
             maxDepth[0] = 1
         } else {
             val rpn = ExpressionEvaluator.compile(v.expr)
@@ -285,8 +292,8 @@ private fun compileVarPrograms(varDefs: List<VarDef>, nameToSlot: Map<String, In
             }
             if (!emitRpn(rpn, ops, args, consts, slotOf, maxDepth)) return null
         }
-        ops.add(OP_POP_REG); args.add(Reg.VAR_START + k)
-        progs[k] = ScalarProgram(ops.toIntArray(), args.toIntArray(), consts.toDoubleArray())
+        ops.add(ScalarOp.POP_REG); args.add(Reg.VAR_START + k)
+        progs[k] = ScalarProgram(ops.toTypedArray(), args.toIntArray(), consts.toDoubleArray())
         if (maxDepth[0] > stackSize) stackSize = maxDepth[0]
     }
     return VarProgramsResult(progs.requireNoNulls(), order.toIntArray(), kfList.toTypedArray(), stackSize)
@@ -296,7 +303,7 @@ private class ScalarCodeResult(val program: ScalarProgram, val tempCount: Int, v
 
 /** 编译代码块为纯标量指令序列；含向量/矩阵/分量访问/拆包/未知符号时返回 null。 */
 private fun compileScalarCode(code: String, nameToSlot: Map<String, Int>, varCount: Int): ScalarCodeResult? {
-    val ops = ArrayList<Int>()
+    val ops = ArrayList<ScalarOp>()
     val args = ArrayList<Int>()
     val consts = ArrayList<Double>()
     val tempSlots = HashMap<String, Int>()
@@ -337,12 +344,12 @@ private fun compileScalarCode(code: String, nameToSlot: Map<String, Int>, varCou
             }
             if (!emitRpn(rpn, ops, args, consts, slotOf, maxDepth)) return null
             if (maxDepth[0] > stackSize) stackSize = maxDepth[0]
-            ops.add(OP_POP_REG); args.add(target)
+            ops.add(ScalarOp.POP_REG); args.add(target)
         }
     }
 
     return ScalarCodeResult(
-        ScalarProgram(ops.toIntArray(), args.toIntArray(), consts.toDoubleArray()),
+        ScalarProgram(ops.toTypedArray(), args.toIntArray(), consts.toDoubleArray()),
         tempCount,
         stackSize,
     )
@@ -351,7 +358,7 @@ private fun compileScalarCode(code: String, nameToSlot: Map<String, Int>, varCou
 /** RPN -> 指令序列；返回 false 表示含非标量元素（向量/矩阵函数、分量访问、未知符号）。 */
 private fun emitRpn(
     rpn: List<Any>,
-    ops: ArrayList<Int>,
+    ops: ArrayList<ScalarOp>,
     args: ArrayList<Int>,
     consts: ArrayList<Double>,
     slotOf: (String) -> Int?,
@@ -360,24 +367,22 @@ private fun emitRpn(
     var depth = 0
     for (o in rpn) {
         when (o) {
-            is Double -> { ops.add(OP_PUSH_CONST); args.add(consts.size); consts.add(o); depth++ }
+            is Double -> { ops.add(ScalarOp.PUSH_CONST); args.add(consts.size); consts.add(o); depth++ }
             is ExpressionEvaluator.Token.Var -> {
                 val slot = slotOf(o.name) ?: return false
-                ops.add(OP_PUSH_REG); args.add(slot); depth++
+                ops.add(ScalarOp.PUSH_REG); args.add(slot); depth++
             }
             is ExpressionEvaluator.Token.Comp -> return false
-            "neg" -> { ops.add(OP_NEG); args.add(0) }
+            "neg" -> { ops.add(ScalarOp.NEG); args.add(0) } // 一元取负：弹出 1 压回 1，深度不变
             is String -> {
                 val op = SCALAR_FUNC_OPS[o] ?: return false
                 ops.add(op); args.add(0)
-                depth -= (FUNCS[o]!! - 1)
+                depth += 1 - op.pops
             }
             is Char -> {
-                val op = when (o) {
-                    '+' -> OP_ADD; '-' -> OP_SUB; '*' -> OP_MUL; '/' -> OP_DIV; '%' -> OP_MOD; '^' -> OP_POW
-                    else -> return false
-                }
-                ops.add(op); args.add(0); depth--
+                val op = CHAR_OPS[o] ?: return false
+                ops.add(op); args.add(0)
+                depth += 1 - op.pops
             }
             else -> return false
         }
@@ -387,9 +392,11 @@ private fun emitRpn(
     return depth == 1
 }
 
+/** 解析赋值左侧的名字列表：`[x, y, z]` → ["x","y","z"]；单名直接返回。 */
 private fun parseNameList(s: String): List<String> =
     s.trim().removePrefix("[").removeSuffix("]").split(',').map { it.trim() }.filter { it.isNotEmpty() }
 
+/** 解析赋值右侧的表达式列表：`[a, b, c]` → ["a","b","c"]（忽略括号内逗号）；非列表包装为单项。 */
 private fun parseExprList(s: String): List<String> {
     val inner = s.trim()
     if (!inner.startsWith("[") || !inner.endsWith("]")) return listOf(inner)

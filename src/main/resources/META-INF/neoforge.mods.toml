@@ -47,5 +47,11 @@ config="${mod_id}.mixins.json"
     ordering="NONE"
     side="BOTH"
 
+#[[dependencies.${mod_id}]]
+#    modId = "kotlinforforge"
+#    type = "required"
+#    versionRange = "*"
+#    ordering = "NONE"
+#    side = "BOTH"
 #[features.${mod_id}]
 #openGLVersion="[3.2,)"

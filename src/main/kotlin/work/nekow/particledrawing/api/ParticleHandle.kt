@@ -144,7 +144,6 @@ class ParticleHandle(
     @Suppress("unused")
     class Builder(private val manager: ParticleManager) {
 
-        private var style: ParticleStyle = ParticleStyle.DUST
         private var position: Vec3 = Vec3.ZERO
         private var color: Color = Color.WHITE
         private var scale: Float = 1.0f
@@ -153,9 +152,6 @@ class ParticleHandle(
         private var glowing: Boolean = false
         private var lightLevel: Int = 15
         private var offsetFromPivot: Vec3 = Vec3.ZERO
-
-        /** 设置粒子视觉样式。 */
-        fun style(style: ParticleStyle) = apply { this.style = style }
 
         /** 设置粒子位置。 */
         fun position(pos: Vec3) = apply { this.position = pos }
@@ -214,7 +210,7 @@ class ParticleHandle(
         fun spawn(): ParticleHandle? {
             val engine = manager.getEngine()
             val data = engine.spawnParticle(
-                style, position, color, scale, lifetime,
+                position, color, scale, lifetime,
                 groupId, glowing, lightLevel, offsetFromPivot,
                 manager.getPlayers()
             ) ?: return null

@@ -15,9 +15,13 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent
 import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.animation.AnimationLoader
 import work.nekow.particledrawing.animation.ServerAnimationManager
+import work.nekow.particledrawing.api.Draw
+import work.nekow.particledrawing.api.ParticleManager
 import work.nekow.particledrawing.core.client.ClientAnimationManager
 import work.nekow.particledrawing.core.client.ClientParticleEngine
 import work.nekow.particledrawing.util.ParticleUtils
+import java.util.Locale
+import kotlin.math.PI
 
 /**
  * 命令注册。提供 /pdraw 及其子命令，用于加载播放网页编辑器导出的动画。
@@ -58,7 +62,13 @@ object ParticleDrawCommands {
      * @return 命令执行结果
      */
     private fun runTest(ctx: CommandContext<CommandSourceStack>): Int {
-        // TODO: 在这里编写测试逻辑。
+        val manager = ParticleManager.of(ctx.source.level)
+        Draw.circle(manager, ctx.source.position.add(0.0, 1.0, 0.0), 3.0, 200, scale = 2f)
+            .fadeIn(10)
+            .spin(Vec3(0.0, 1.0, 0.0), PI / 40)
+            .delay(100)
+            .stopContinuous()
+            .fadeOut(20)
         return 1
     }
 
@@ -100,7 +110,7 @@ object ParticleDrawCommands {
 
         ServerAnimationManager.play(dim, level.players(), json, origin)
         ctx.source.sendSuccess(
-            { Component.literal("正在播放动画: $name（客户端本地渲染）") },
+            { Component.literal("正在播放动画: $name") },
             false
         )
         return 1
@@ -151,13 +161,13 @@ object ParticleDrawCommands {
             return 0
         }
 
-        for (info in infos) {
-            val shortId = info.animId.toString().take(8)
-            val lastMs = java.lang.String.format(java.util.Locale.ROOT, "%.2f", info.lastAdvanceMillis)
-            val avgMs = java.lang.String.format(java.util.Locale.ROOT, "%.2f", info.avgAdvanceMillis)
-            val msg = "动画 $shortId… | 粒子: ${info.particleCount} | " +
-                "时间轴: ${info.currentTick}/${info.maxTick} tick | " +
-                "已播放帧: ${info.frameCount} | " +
+        for ((animId, particleCount, currentTick, maxTick, frameCount, lastAdvanceMillis, avgAdvanceMillis) in infos) {
+            val shortId = animId.toString().take(8)
+            val lastMs = String.format(Locale.ROOT, "%.2f", lastAdvanceMillis)
+            val avgMs = String.format(Locale.ROOT, "%.2f", avgAdvanceMillis)
+            val msg = "动画 $shortId… | 粒子: $particleCount | " +
+                "时间轴: $currentTick/$maxTick tick | " +
+                "已播放帧: $frameCount | " +
                 "每刻求值: 上次 ${lastMs}ms / 平均 ${avgMs}ms"
             ctx.source.sendSuccess({ Component.literal(msg) }, false)
         }

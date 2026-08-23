@@ -994,7 +994,7 @@ function moveGhost(clientX, clientY) {
     const rect = document.getElementById('chain-canvas').getBoundingClientRect();
     // 换算到 plane 坐标系（抵消 view 平移缩放）
     const v = bctx.layout.view;
-    // 用 ghost 左上角（而非鼠标位置）定位碎片，避免出现位置偏移
+    // 用 ghost 左上角定位碎片，避免出现位置偏移
     const gx = clientX - (bdrag.grabDx || 0);
     const gy = clientY - (bdrag.grabDy || 0);
     bdrag.target = { kind: 'blank', x: (gx - rect.left - v.x) / v.scale, y: (gy - rect.top - v.y) / v.scale };
@@ -1005,12 +1005,12 @@ function moveGhost(clientX, clientY) {
 
 /** 找鼠标位置最近的语句插入点（drop zone）。 */
 function nearestStmtDrop(clientX, clientY) {
-  // 用拼图实际位置（ghost 左边缘）而非鼠标位置，纳入 grab 偏移，使从某处拖走能精确拖回
+  // 用拼图实际位置（ghost 左边缘），纳入 grab 偏移，使从某处拖走能精确拖回
   let cx = clientX, cy = clientY;
   if (bdrag && bdrag.ghost) {
     const gr = bdrag.ghost.getBoundingClientRect();
-    cx = gr.left; // 左边缘对齐（而非中心），使左侧也能吸附
-    // 用 ghost 顶边而非中心：拖拽语句组时插入点由组顶边决定，
+    cx = gr.left; // 左边缘对齐，使左侧也能吸附
+    // 用 ghost 顶边：拖拽语句组时插入点由组顶边决定，
     // 中心点会使插入位置向下偏移半个 ghost 高度（组越长偏移越大）。
     cy = gr.top;
   }

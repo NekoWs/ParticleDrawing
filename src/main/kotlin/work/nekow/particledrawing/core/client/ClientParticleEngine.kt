@@ -5,11 +5,9 @@ import net.minecraft.client.particle.ParticleEngine
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
-import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.easing.EasingType
-import work.nekow.particledrawing.core.motion.MotionSystem
-import work.nekow.particledrawing.core.motion.rotateAround
+import work.nekow.particledrawing.util.rotateAround
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -36,7 +34,6 @@ class ClientParticleEngine {
     /**
      * 生成一个新粒子并注册到原版粒子系统中。
      * @param id 粒子唯一标识符
-     * @param style 粒子样式
      * @param x 初始 X 坐标
      * @param y 初始 Y 坐标
      * @param z 初始 Z 坐标
@@ -49,14 +46,14 @@ class ClientParticleEngine {
      * @param groupId 所属分组 ID，可为 null
      * @param glowing 是否发光
      */
-    fun spawnParticle(id: UUID, style: ParticleStyle, x: Double, y: Double, z: Double,
+    fun spawnParticle(id: UUID, x: Double, y: Double, z: Double,
                       r: Float, g: Float, b: Float, a: Float, scale: Float,
                       lifetimeTicks: Int, groupId: UUID?, glowing: Boolean, lightLevel: Int,
                       uv: UvData? = null) {
         if (particles.size >= ParticleDrawingConfig.CLIENT.maxRenderParticles.get()) return
 
         val lifetimeMs = if (lifetimeTicks > 0) lifetimeTicks * 50L else 0L
-        val rp = RenderParticle(id, style, Vec3(x, y, z),
+        val rp = RenderParticle(id, Vec3(x, y, z),
             Color.of(r, g, b, a), scale, glowing, lightLevel, lifetimeMs, uv)
         particles[id] = rp
         if (glowing && lightLevel > 0) glowingIds.add(id)
@@ -64,7 +61,7 @@ class ClientParticleEngine {
         val pe: ParticleEngine = Minecraft.getInstance().particleEngine
         val level = Minecraft.getInstance().level
         if (level != null) {
-            val bp = BridgeParticle(id, style, level, x, y, z,
+            val bp = BridgeParticle(id, level, x, y, z,
                 Color.of(r, g, b, a), scale, glowing, uv)
             pe.add(bp)
             bridges[id] = bp
@@ -113,6 +110,14 @@ class ClientParticleEngine {
                 if (hasColor) b else rp.b(), if (hasColor) a else rp.a())
             val scl = if (hasScale) scale else rp.scale()
             rp.setTargetColorScale(color, scl, easing, durationTicks * 50L)
+            if (durationTicks <= 0) {
+                // 零时长目标立即落地（不等分批轮转），保证紧随其后的缓动包起点正确
+                rp.finishColorScale()
+                bridges[id]?.let {
+                    it.syncColor(rp.r(), rp.g(), rp.b(), rp.a())
+                    it.syncScale(rp.scale())
+                }
+            }
         }
     }
 
@@ -327,9 +332,10 @@ class ClientParticleEngine {
                     newScale = rp.scale()
                 }
                 3 -> {
+                    // targetScale 为倍率：位置偏移与粒子自身缩放同乘（与服务端语义一致）
                     val rel = curPos.subtract(pivot)
                     newPos = pivot.add(rel.scale(targetScale.toDouble()))
-                    newScale = targetScale
+                    newScale = rp.scale() * targetScale
                     newColor = Color.of(rp.r(), rp.g(), rp.b(), rp.a())
                 }
                 else -> continue
@@ -343,10 +349,7 @@ class ClientParticleEngine {
      * 每帧更新：驱动粒子缓动并同步到桥接粒子。
      */
     fun frameUpdate() {
-        MotionSystem.tick(groups, particles, bridges)
-        val motionParticles = motionParticleIds()
-
-        syncParticlesInBatches(motionParticles)
+        syncParticlesInBatches(emptySet())
 
         val deadIds = ArrayList<UUID>()
         val it = particles.entries.iterator()
@@ -427,31 +430,6 @@ class ClientParticleEngine {
             if (p.isAlive() && p.a() > 0.01f) glowing.add(p)
         }
         return glowing
-    }
-
-    // --- 运动系统委托 ---
-
-    /** 收集所有处于运动算法控制下的粒子 ID。 */
-    private fun motionParticleIds(): Set<UUID> {
-        val ids = HashSet<UUID>()
-        for (gid in MotionSystem.activeGroupIds()) {
-            groups[gid]?.let { ids.addAll(it) }
-        }
-        return ids
-    }
-
-    fun addMotion(groupId: UUID, active: Boolean, algorithmId: String,
-                  params: DoubleArray, px: Double, py: Double, pz: Double) {
-        if (active) {
-            val pivot = Vec3(px, py, pz)
-            val snapshot = mutableMapOf<UUID, Vec3>()
-            groups[groupId]?.forEach { id ->
-                particles[id]?.targetPosition()?.let { snapshot[id] = it }
-            }
-            MotionSystem.start(groupId, algorithmId, params, pivot, snapshot)
-        } else {
-            MotionSystem.stop(groupId)
-        }
     }
 
     companion object {

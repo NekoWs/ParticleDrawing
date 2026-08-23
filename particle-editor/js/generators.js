@@ -319,9 +319,11 @@ function applyPreset(fx, presetId) {
   fx.params = {};
   for (const p of preset.params) fx.params[p.key] = p.def;
   const built = preset.build(fx.params);
-  fx.count = built.count; // 仅在切换预设时设置默认采样数
   fx.vars = { ...built.vars };
   fx.code = built.code;
+  // 声明了 countVars/countExpr 的预设：采样数按变量联动求值；否则用模板默认值
+  if (preset.countExpr || (preset.countVars && preset.countVars.length)) syncPresetCount(fx);
+  else fx.count = built.count;
 }
 
 function createFunctionObject(presetId) {

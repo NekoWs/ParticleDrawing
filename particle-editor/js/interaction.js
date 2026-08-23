@@ -702,7 +702,7 @@ function hitGizmoViewRing(clientX, clientY) {
 }
 
 const AXIS_COLORS = { X: 0xff5555, Y: 0x55ff55, Z: 0x5588ff };
-// 悬停时颜色「变亮」（向白色混合 30%，避免过白），而不是直接变白
+// 悬停时变亮，使用白色 30% 混合
 function hoverColor(c) { return new THREE.Color(c).lerp(new THREE.Color(1, 1, 1), 0.3); }
 function setGizmoHover(arrowAxis, ringAxis, faceKey, viewRingHover) {
   if (!gizmoGroup.visible) return;
@@ -724,7 +724,7 @@ function setGizmoHover(arrowAxis, ringAxis, faceKey, viewRingHover) {
 
 // 拖拽时：底部世界三轴中对应的轴显示并高亮（Y 轴默认隐藏，操作 Y 时才显示）
 function setDragAxisHighlight(m) {
-  // 拖拽时世界轴保持默认（不再高亮世界轴线），操作轴提示线由 updateGizmoFrame 在中心显示
+  // 操作轴提示线由 updateGizmoFrame 在中心显示
   resetWorldAxisState();
 }
 
