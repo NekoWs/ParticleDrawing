@@ -270,82 +270,6 @@ class ClientParticleEngine {
     }
 
     /**
-     * 对分组中的所有粒子应用统一变换。
-     * @param groupId 分组 ID
-     * @param transformType 变换类型：0=位移, 1=旋转, 2=颜色, 3=缩放
-     * @param dx X 位移量
-     * @param dy Y 位移量
-     * @param dz Z 位移量
-     * @param ax 旋转轴 X 分量
-     * @param ay 旋转轴 Y 分量
-     * @param az 旋转轴 Z 分量
-     * @param radians 旋转弧度
-     * @param r 目标红色分量
-     * @param g 目标绿色分量
-     * @param b 目标蓝色分量
-     * @param a 目标透明度分量
-     * @param targetScale 目标缩放
-     * @param px 旋转/缩放基准点 X
-     * @param py 旋转/缩放基准点 Y
-     * @param pz 旋转/缩放基准点 Z
-     * @param durationTicks 过渡持续时间（刻）
-     * @param easing 缓动类型
-     */
-    fun applyGroupTransform(groupId: UUID, transformType: Int,
-                            dx: Double, dy: Double, dz: Double,
-                            ax: Double, ay: Double, az: Double, radians: Double,
-                            r: Float, g: Float, b: Float, a: Float,
-                            targetScale: Float, px: Double, py: Double, pz: Double,
-                            durationTicks: Int, easing: EasingType) {
-        val members = groups[groupId] ?: return
-
-        val pivot = Vec3(px, py, pz)
-        val durationMs = durationTicks * 50L
-
-        for (memberId in members) {
-            val rp = particles[memberId] ?: continue
-            directIds.remove(memberId)
-
-            // 使用目标位置计算变换
-            val curPos = rp.targetPosition()
-            val newPos: Vec3
-            val newColor: Color
-            val newScale: Float
-
-            when (transformType) {
-                0 -> {
-                    newPos = curPos.add(dx, dy, dz)
-                    newColor = Color.of(rp.r(), rp.g(), rp.b(), rp.a())
-                    newScale = rp.scale()
-                }
-                1 -> {
-                    val rel = curPos.subtract(pivot)
-                    val axis = Vec3(ax, ay, az).normalize()
-                    val rotated = rel.rotateAround(axis, radians)
-                    newPos = pivot.add(rotated)
-                    newColor = Color.of(rp.r(), rp.g(), rp.b(), rp.a())
-                    newScale = rp.scale()
-                }
-                2 -> {
-                    newPos = curPos
-                    newColor = Color.of(r, g, b, a)
-                    newScale = rp.scale()
-                }
-                3 -> {
-                    // targetScale 为倍率：位置偏移与粒子自身缩放同乘（与服务端语义一致）
-                    val rel = curPos.subtract(pivot)
-                    newPos = pivot.add(rel.scale(targetScale.toDouble()))
-                    newScale = rp.scale() * targetScale
-                    newColor = Color.of(rp.r(), rp.g(), rp.b(), rp.a())
-                }
-                else -> continue
-            }
-
-            rp.setTarget(newPos, newColor, newScale, easing, durationMs)
-        }
-    }
-
-    /**
      * 每帧更新：驱动粒子缓动并同步到桥接粒子。
      */
     fun frameUpdate() {
@@ -417,6 +341,32 @@ class ClientParticleEngine {
      * @return 活跃粒子数
      */
     fun activeCount(): Int = particles.size
+
+    /** 粒子当前视觉快照（动画程序 arm 时初始化基态用）。 */
+    class Snapshot(val position: Vec3, val r: Float, val g: Float, val b: Float, val a: Float, val scale: Float)
+
+    /** 读取粒子当前视觉状态；不存在时返回 null。 */
+    fun snapshot(id: UUID): Snapshot? {
+        val rp = particles[id] ?: return null
+        return Snapshot(rp.targetPosition(), rp.r(), rp.g(), rp.b(), rp.a(), rp.scale())
+    }
+
+    /**
+     * 应用动画程序的一帧输出（客户端自驱模式）：直写渲染粒子与桥接粒
+     * 子，并标记为 direct 同步——后续分批轮转不再对其做缓动推进。
+     */
+    fun applyProgramFrame(id: UUID, pos: Vec3, r: Float, g: Float, b: Float, a: Float, scale: Float) {
+        val rp = particles[id] ?: return
+        directIds.add(id)
+        rp.setPositionDirect(pos)
+        rp.setColorDirect(Color.of(r, g, b, a))
+        rp.setScaleDirect(scale)
+        bridges[id]?.let {
+            it.syncPosition(pos.x, pos.y, pos.z, false)
+            it.syncColor(r, g, b, a)
+            it.syncScale(scale)
+        }
+    }
 
     /**
      * 获取所有发光粒子的列表（增量维护，避免每帧遍历全部粒子）。

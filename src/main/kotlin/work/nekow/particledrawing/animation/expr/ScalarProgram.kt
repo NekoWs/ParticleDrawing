@@ -154,6 +154,7 @@ internal class ScalarProgram(
 /** 函数对象的完整编译产物（纯标量快路径）。 */
 internal class CompiledFunction(
     val varCount: Int,
+    private val extCount: Int,
     private val varConsts: DoubleArray?,
     private val varProgs: Array<ScalarProgram>?,
     private val varOrder: IntArray,
@@ -165,20 +166,31 @@ internal class CompiledFunction(
     fun allocRegs() = DoubleArray(regCount)
     fun allocStack() = DoubleArray(stackSize)
 
-    /** 求值单个粒子：写满属性寄存器（Reg.X..Reg.LIGHT），调用方读取。 */
-    fun eval(i: Double, n: Double, t: Double, regs: DoubleArray, stack: DoubleArray) {
+    /**
+     * 求值单个粒子：写满属性寄存器（Reg.X..Reg.LIGHT），调用方读取。
+     * [external] 为外部输入通道值（顺序与编译期登记的 extNames 一致，长度 = [extCount]），
+     * 在变量程序求值**之前**注入寄存器——派生变量因此可引用实体坐标等运行时输入。
+     */
+    fun eval(
+        i: Double, n: Double, t: Double, regs: DoubleArray, stack: DoubleArray,
+        external: DoubleArray? = null,
+        kfTableOverride: Array<List<Keyframe>>? = null,
+    ) {
         regs[Reg.I] = i
         regs[Reg.N] = n
         regs[Reg.T] = t
         System.arraycopy(ATTR_INIT, 0, regs, Reg.X, Reg.ATTR_COUNT)
+        if (external != null && extCount > 0) {
+            System.arraycopy(external, 0, regs, Reg.VAR_START, extCount.coerceAtMost(external.size))
+        }
         val consts = varConsts
         if (consts != null) {
-            System.arraycopy(consts, 0, regs, Reg.VAR_START, varCount)
+            System.arraycopy(consts, 0, regs, Reg.VAR_START + extCount, varCount)
         } else {
             val progs = varProgs!!
             for (vi in varOrder) progs[vi].exec(regs, stack, kfTable)
         }
-        scalar.exec(regs, stack, kfTable)
+        scalar.exec(regs, stack, kfTableOverride ?: kfTable)
     }
 }
 
@@ -187,18 +199,23 @@ internal class VarDef(val name: String, val expr: String, val kf: List<Keyframe>
 
 /**
  * 编译函数对象代码块 + 变量为纯标量快路径；任何非纯标量因素返回 null（回退通用解释器）。
+ *
+ * @param extNames 外部输入通道变量名（如实体坐标 e_x/e_y/e_z）：仅登记槽位、
+ *   不生成求值程序，运行时经 [CompiledFunction.eval] 的 external 参数预注入。
  */
-internal fun compileFunctionObject(code: String, varDefs: List<VarDef>): CompiledFunction? {
+internal fun compileFunctionObject(code: String, varDefs: List<VarDef>, extNames: List<String> = emptyList()): CompiledFunction? {
+    val extCount = extNames.size
     val varCount = varDefs.size
-    val nameToSlot = HashMap<String, Int>(varCount * 2)
-    for (k in varDefs.indices) nameToSlot[varDefs[k].name] = Reg.VAR_START + k
+    val nameToSlot = HashMap<String, Int>((varCount + extCount) * 2)
+    for ((k, name) in extNames.withIndex()) nameToSlot[name] = Reg.VAR_START + k
+    for (k in varDefs.indices) nameToSlot[varDefs[k].name] = Reg.VAR_START + extCount + k
 
     val varConsts = tryFoldConsts(varDefs)
-    val varsResult = if (varConsts == null) compileVarPrograms(varDefs, nameToSlot) ?: return null else null
+    val varsResult = if (varConsts == null) compileVarPrograms(varDefs, nameToSlot, Reg.VAR_START + extCount) ?: return null else null
 
-    val codeResult = compileScalarCode(code, nameToSlot, varCount) ?: return null
+    val codeResult = compileScalarCode(code, nameToSlot, extCount + varCount) ?: return null
 
-    val regCount = Reg.VAR_START + varCount + codeResult.tempCount
+    val regCount = Reg.VAR_START + extCount + varCount + codeResult.tempCount
     val stackSize = maxOf(
         codeResult.stackSize,
         varsResult?.stackSize ?: 0,
@@ -206,6 +223,7 @@ internal fun compileFunctionObject(code: String, varDefs: List<VarDef>): Compile
 
     return CompiledFunction(
         varCount = varCount,
+        extCount = extCount,
         varConsts = varConsts,
         varProgs = varsResult?.progs,
         varOrder = varsResult?.order ?: IntArray(0),
@@ -238,8 +256,8 @@ private class VarProgramsResult(
     val stackSize: Int,
 )
 
-/** 编译变量指令程序（非常量变量），按拓扑序求值，检测循环引用；失败返回 null。 */
-private fun compileVarPrograms(varDefs: List<VarDef>, nameToSlot: Map<String, Int>): VarProgramsResult? {
+/** 编译变量指令程序（非常量变量），按拓扑序求值，检测循环引用；失败返回 null。[varBase] 为变量寄存器起始槽位。 */
+private fun compileVarPrograms(varDefs: List<VarDef>, nameToSlot: Map<String, Int>, varBase: Int): VarProgramsResult? {
     val n = varDefs.size
     val deps = Array(n) { BooleanArray(n) }
     for (k in 0 until n) {
@@ -292,7 +310,7 @@ private fun compileVarPrograms(varDefs: List<VarDef>, nameToSlot: Map<String, In
             }
             if (!emitRpn(rpn, ops, args, consts, slotOf, maxDepth)) return null
         }
-        ops.add(ScalarOp.POP_REG); args.add(Reg.VAR_START + k)
+        ops.add(ScalarOp.POP_REG); args.add(varBase + k)
         progs[k] = ScalarProgram(ops.toTypedArray(), args.toIntArray(), consts.toDoubleArray())
         if (maxDepth[0] > stackSize) stackSize = maxDepth[0]
     }

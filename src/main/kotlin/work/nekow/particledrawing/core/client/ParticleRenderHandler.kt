@@ -21,7 +21,7 @@ object ParticleRenderHandler {
 
     /**
      * 客户端渲染帧 Tick 事件处理。
-     * 负责粒子引擎的延迟初始化及每帧更新（缓动插值 + 动态光照）。
+     * 负责粒子引擎的延迟初始化及每帧更新（缓动插值 + 动态光照 + 编排动画程序求值）。
      */
     @SubscribeEvent
     @JvmStatic
@@ -37,6 +37,7 @@ object ParticleRenderHandler {
             engine.frameUpdate()
             DynamicLightManager.renderDynamicLights(engine)
         }
+        ClientAnimationProgramManager.tick()
     }
 
     /**

@@ -42,20 +42,6 @@ internal object ClientPayloadHandler {
         }
     }
 
-    fun handleGroupTransform(payload: ParticleGroupTransformPayload, context: IPayloadContext) {
-        context.enqueueWork {
-            ClientParticleEngine.instance()?.applyGroupTransform(
-                payload.groupId, payload.transformType,
-                payload.dx, payload.dy, payload.dz,
-                payload.ax, payload.ay, payload.az, payload.radians,
-                payload.r, payload.g, payload.b, payload.a,
-                payload.targetScale,
-                payload.px, payload.py, payload.pz,
-                payload.durationTicks, payload.easingType()
-            )
-        }
-    }
-
     fun handleVelocity(payload: ParticleVelocityPayload, context: IPayloadContext) {
         context.enqueueWork {
             ClientParticleEngine.instance()?.setVelocity(
@@ -103,6 +89,41 @@ internal object ClientPayloadHandler {
         context.enqueueWork {
             ClientParticleEngine.instance()?.setLightLevel(
                 payload.particleId, payload.lightLevel
+            )
+        }
+    }
+
+    // ---- 编排动画程序（客户端自驱） ----
+
+    fun handleProgram(payload: AnimationProgramPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            work.nekow.particledrawing.core.client.ClientAnimationProgramManager.arm(
+                payload.programId, payload.particleIds, payload.anchorGameTime,
+                payload.initialPivot, payload.channels, payload.vars, payload.instructions,
+            )
+        }
+    }
+
+    fun handleProgramAppend(payload: AnimationProgramAppendPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            work.nekow.particledrawing.core.client.ClientAnimationProgramManager.append(
+                payload.programId, payload.instructions
+            )
+        }
+    }
+
+    fun handleSetProgramVar(payload: SetProgramVarPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            work.nekow.particledrawing.core.client.ClientAnimationProgramManager.setVariable(
+                payload.programId, payload.name, payload.value
+            )
+        }
+    }
+
+    fun handleStopProgram(payload: StopAnimationProgramPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            work.nekow.particledrawing.core.client.ClientAnimationProgramManager.stop(
+                payload.programId, payload.destroyParticles
             )
         }
     }
