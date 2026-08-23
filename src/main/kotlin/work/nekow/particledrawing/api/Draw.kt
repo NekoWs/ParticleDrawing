@@ -284,7 +284,7 @@ object Draw {
     @JvmOverloads
     fun sphere(
         manager: ParticleManager, center: Vec3, radius: Double, count: Int,
-        colorFn: ColorSource = ColorSource.rainbow(), scale: Float = 0.2f,
+        colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
         stagger: Int = 0, group: ParticleGroup? = null
     ): ParticleGroup {
         val g = group ?: manager.createGroup(center)

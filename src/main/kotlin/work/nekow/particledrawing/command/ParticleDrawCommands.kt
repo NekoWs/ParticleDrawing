@@ -19,6 +19,7 @@ import work.nekow.particledrawing.api.Draw
 import work.nekow.particledrawing.api.ParticleManager
 import work.nekow.particledrawing.core.client.ClientAnimationManager
 import work.nekow.particledrawing.core.client.ClientParticleEngine
+import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.Locale
 import kotlin.math.PI
@@ -62,13 +63,7 @@ object ParticleDrawCommands {
      * @return 命令执行结果
      */
     private fun runTest(ctx: CommandContext<CommandSourceStack>): Int {
-        val manager = ParticleManager.of(ctx.source.level)
-        Draw.circle(manager, ctx.source.position.add(0.0, 1.0, 0.0), 3.0, 200, scale = 2f)
-            .fadeIn(10)
-            .spin(Vec3(0.0, 1.0, 0.0), PI / 40)
-            .delay(100)
-            .stopContinuous()
-            .fadeOut(20)
+        // TODO: 暂时不动
         return 1
     }
 
