@@ -37,6 +37,8 @@ import kotlin.math.floor
 @EventBusSubscriber(modid = ParticleDrawing.MODID, value = [Dist.CLIENT])
 internal object ClientAnimationProgramManager {
 
+    private val LOGGER = com.mojang.logging.LogUtils.getLogger()
+
     /* ---------------- 实体索引 ---------------- */
 
     private val entityByUuid = ConcurrentHashMap<UUID, Entity>()
@@ -53,9 +55,24 @@ internal object ClientAnimationProgramManager {
         if (ev.level.isClientSide) entityByUuid.remove(ev.entity.uuid, ev.entity)
     }
 
+    /**
+     * 解析注册表里的实体：
+     * 1. 本地玩家快路径（跟随自己最常见，实例全程稳定）；
+     * 2. 缓存命中——但已死亡/换维度的缓存实例会持冻结坐标，必须校验后使用；
+     * 3. 实体全局注册表 O(1) 直查（覆盖尚未进入渲染列表的实体，消除跟踪间隙）；
+     * 4. 渲染列表兜底扫描。
+     */
     private fun findEntity(uuid: UUID): Entity? {
-        entityByUuid[uuid]?.let { return it }
-        val level = Minecraft.getInstance().level ?: return null
+        val mc = Minecraft.getInstance()
+        mc.player?.let { if (it.uuid == uuid) return it }
+        entityByUuid[uuid]?.let { cached ->
+            if (cached.isAlive && cached.level() === mc.level) return cached
+            LOGGER.warn("[ParticleDrawing] 实体缓存失效，重新解析: {}", uuid)
+            entityByUuid.remove(uuid, cached)
+        }
+        val level = mc.level ?: return null
+        // 实体全局注册表 O(1) 直查（覆盖尚未进入渲染列表的实体，消除跟踪间隙）
+        level.getEntity(uuid)?.let { entityByUuid[uuid] = it; return it }
         for (e in level.entitiesForRendering()) {
             if (e.uuid == uuid) { entityByUuid[uuid] = e; return e }
         }
@@ -119,6 +136,9 @@ internal object ClientAnimationProgramManager {
         var latestInputs: Map<String, Double> = emptyMap()
         val prevPos = HashMap<UUID, Vec3>()
         var lastSampleGameTime = Long.MIN_VALUE
+
+        /** 输入实体连续解析失败的采样次数（诊断用，成功解析即清零）。 */
+        var missStreak = 0
 
         // 求值缓冲
         var extVals = DoubleArray(0)
@@ -281,15 +301,28 @@ internal object ClientAnimationProgramManager {
         val entities = HashMap<Int, Entity?>()
         val vels = HashMap<Int, Vec3>()
         val newPrev = HashMap<UUID, Vec3>()
+        val missing = ArrayList<String>()
         for (idx in usedIndices) {
             val binding = p.entityBindings.getOrNull(idx) ?: continue
             val e = findEntity(binding.uuid)
+            if (e == null) missing.add(binding.slot)
             entities[idx] = e
             val pos = e?.position()
             if (pos != null) {
                 newPrev[binding.uuid] = pos
                 val prev = p.prevPos[binding.uuid]
                 vels[idx] = if (prev != null) pos.subtract(prev) else Vec3.ZERO
+            }
+        }
+        if (missing.isEmpty()) {
+            p.missStreak = 0
+        } else {
+            p.missStreak++
+            if (p.missStreak % 60 == 0) {
+                LOGGER.warn(
+                    "[ParticleDrawing] 程序输入实体连续 {} 次无法解析（相关 getter 读 0）: slots={}",
+                    p.missStreak, missing,
+                )
             }
         }
         p.prevPos.clear()
