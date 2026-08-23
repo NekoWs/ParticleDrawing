@@ -218,6 +218,36 @@ group.movePath(
 group.pulse(peakRatio = 1.8f, halfPeriodTicks = 20, cycles = 3)   // 呼吸到 1.8 倍再回原大
 ```
 
+### 实体通道与公式动画（上限能力）
+
+编排动画以「客户端自驱程序」执行：链式调用录制为指令流一次性下发，
+客户端按服务端时钟锚点本地求值并直写渲染——持续动画运行期**零带宽**、帧率级平滑。
+
+在此之上，两条 API 把上限进一步打开：
+
+```kotlin
+// 1. 实体通道：把实体坐标暴露为 e_x/e_y/e_z 变量（客户端本地解析实体，零带宽跟随）
+group.bindInput(slot = "e", uuid = entity.uuid)
+     .followEntity(entity.uuid, offset = Vec3(0.0, 1.0, 0.0))   // 或者仅轴心跟随
+
+// 2. 终极公式指令：每粒子每 tick 求值一段函数对象代码（编辑器同款语法）
+//    可用 i/n/t、全套数学函数、通道变量、程序变量；输出 [x,y,z] 为世界绝对坐标
+group.perParticle("""
+    th = i / n * 2 * pi;
+    [x,y,z] = [e_x + cos(th) * 2, e_y + 1, e_z + sin(th) * 2]
+""")
+```
+
+运行时热改变量（服务端只发一条控制包，动画即时响应）：
+
+```kotlin
+group.setVariableLive("speed", "2")              // 数字
+group.setVariableLive("rad", "3 + sin(t * 0.2)") // 任意公式
+```
+
+> `perParticle` 一旦出现即为**终极模式**：接管位置/颜色/缩放的最终解释权；
+> `fadeIn/fadeOut` 因子仍叠加在其 alpha 上。纯数据协议——不向客户端发送任何代码字节。
+
 ### 综合链式示例：出现 → 放大 → 旋转 → 停转 → 淡出
 
 ```kotlin

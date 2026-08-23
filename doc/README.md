@@ -12,7 +12,7 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | --- | --- |
 | `ParticleManager` | 维度级入口，创建粒子与粒子组 |
 | `ParticleHandle` | 单粒子句柄：移动 / 速度 / 重着色 / 缩放 / 销毁，含流式 `Builder` |
-| `ParticleGroup` | 粒子组：整体变换 + 编排式动画（delay / fadeIn / spin / movePath / pulse 等） |
+| `ParticleGroup` | 粒子组：编排式动画（客户端自驱程序：delay/fadeIn/spin/movePath/pulse/实体通道/公式指令） |
 | `Draw` | 绘图工具：点、线段、圆、圆盘、曲线、三角形、六芒星、矩形、球体、长方体；支持渐变着色与逐粒子入场 |
 | `ColorSource` | 形状参数化颜色来源：固定色 / 双色渐变 / 彩虹，支持 lambda |
 | `Color` | 不可变 RGBA 颜色与工厂方法 |
@@ -39,8 +39,8 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 
 | 类 | 作用 |
 | --- | --- |
-| `ServerParticleEngine` | 服务端权威粒子引擎（每维度一个），含组级逐步动画（stepRotate / stepTranslate） |
-| `AnimationScheduler` | 服务端 tick 调度器：延迟任务队列，驱动编排式动画与 stagger 入场 |
+| `ServerParticleEngine` | 服务端权威粒子引擎（每维度一个）：生成/更新/销毁与可见性同步 |
+| `AnimationScheduler` | 服务端 tick 调度器：延迟任务队列（stagger 入场、定时销毁等） |
 | `ParticleData` | 粒子运行时数据 |
 | `ParticleGroupData` | 粒子组成员与轴心 |
 | `ParticleVisibilityManager` | 粒子可见性判定 |
@@ -58,6 +58,7 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | `BridgeParticle` | 桥接原版粒子系统的渲染代理（纯色方块 / 自定义贴图 + UV 采样） |
 | `TextureCache` | 内嵌贴图缓存（PNG 字节 → DynamicTexture） |
 | `ClientAnimationManager` | 客户端 .pdraw 动画播放管理 |
+| `ClientAnimationProgramManager` | 编排动画程序解释器：指令流本地求值、实体通道、公式模式（客户端自驱） |
 | `ClientAnimationSyncManager` | 配置阶段文件接收管理 |
 | `ParticleRenderHandler` | 客户端 tick 事件处理 |
 
@@ -71,7 +72,8 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | `ParticleSpawnPayload` | 粒子生成包 |
 | `ParticleUpdatePayload` | 粒子增量更新包（位置/颜色/缩放 + 缓动） |
 | `ParticleDestroyPayload` | 粒子销毁包 |
-| `ParticleGroupTransformPayload` | 组变换包 |
+| `AnimationProgramPayload` / `AnimationProgramAppendPayload` | 编排动画程序下发 / 追加指令包 |
+| `SetProgramVarPayload` / `StopAnimationProgramPayload` | 程序变量热更 / 停止包 |
 | `ParticleRotationPayload` / `ParticleTranslatePayload` / `ParticleSetPositionPayload` | 绕轴心旋转 / 平移 / set 位置包 |
 | `ParticleVelocityPayload` / `ParticleLightLevelPayload` | 速度 / 光照等级包 |
 | `PlayAnimationPayload` / `StopAnimationPayload` / `VariableUpdatePayload` | 动画播放控制包 |
