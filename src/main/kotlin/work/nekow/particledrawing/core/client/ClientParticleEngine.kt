@@ -354,15 +354,20 @@ class ClientParticleEngine {
     /**
      * 应用动画程序的一帧输出（客户端自驱模式）：直写渲染粒子与桥接粒
      * 子，并标记为 direct 同步——后续分批轮转不再对其做缓动推进。
+     *
+     * 首次接管（该粒子此前不在 direct 同步中）时桥接位置走跳变：
+     * 程序接管 = 解释权切换点，若按普通端点补间，出生布局到公式布局的
+     * 迁移会被拉长为整 tick 的交叉扫掠，视觉上一瞬乱序。
      */
     fun applyProgramFrame(id: UUID, pos: Vec3, r: Float, g: Float, b: Float, a: Float, scale: Float) {
         val rp = particles[id] ?: return
+        val firstTakeover = id !in directIds
         directIds.add(id)
         rp.setPositionDirect(pos)
         rp.setColorDirect(Color.of(r, g, b, a))
         rp.setScaleDirect(scale)
         bridges[id]?.let {
-            it.syncPosition(pos.x, pos.y, pos.z, false)
+            it.syncPosition(pos.x, pos.y, pos.z, firstTakeover)
             it.syncColor(r, g, b, a)
             it.syncScale(scale)
         }
