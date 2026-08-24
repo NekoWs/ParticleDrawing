@@ -280,7 +280,7 @@ function tlInitLayerEvents() {
   });
 
   // 时间轴模块整体高度拖拽（模块顶边）：clientY 差分驱动，方向=向上拖增高。
-  // 调整的是 .timeline 整个模块的内联高度，图层画布 flex:1 自动填满剩余空间。
+  // 高度写入 body 的 --tl-h（body 网格第三行轨道），图层画布 flex:1 自动填满剩余空间。
   const moduleGrip = document.getElementById('tl-module-resize');
   if (moduleGrip) {
     let resizing = false, lastY = 0;
@@ -292,13 +292,12 @@ function tlInitLayerEvents() {
     });
     moduleGrip.addEventListener('pointermove', (e) => {
       if (!resizing) return;
-      const footer = document.querySelector('.timeline');
-      if (!footer) return;
       const dy = e.clientY - lastY;
       lastY = e.clientY;
-      const nh = Math.min(window.innerHeight * 0.75, Math.max(160, footer.offsetHeight - dy));
-      footer.style.height = nh + 'px';
-      resize();               // 模块总高变化会影响 3D 视口
+      const cur = parseFloat(getComputedStyle(document.body).getPropertyValue('--tl-h')) || 360;
+      const nh = Math.min(window.innerHeight * 0.75, Math.max(160, cur - dy));
+      document.body.style.setProperty('--tl-h', nh + 'px');
+      resize();               // .layout 1fr 行随之收缩，会影响 3D 视口
       drawTimelineLayers();
     });
     const stopResize = () => {

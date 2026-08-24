@@ -37,7 +37,8 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 
 body {
   display: grid;
-  grid-template-rows: 44px 1fr 132px;
+  /* 第三行 = 底部时间轴模块高度：由 --tl-h 驱动（顶边把手拖拽写入，默认 360px） */
+  grid-template-rows: 44px 1fr var(--tl-h, 360px);
   overflow: hidden;
 }
 
@@ -505,8 +506,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
   position: relative;
   display: flex; flex-direction: column; background: var(--panel);
   border-top: 1px solid var(--border); padding: 8px 14px;
-  /* 默认模块高度：可拖顶边手柄调整（拖拽写入内联高度覆盖此值） */
-  height: 360px;
+  /* 高度由 body 网格第三行 var(--tl-h) 决定，此处不再显式设置 */
 }
 .tl-controls {
   display: flex; align-items: center; gap: 10px; height: 40px; padding: 4px 10px;

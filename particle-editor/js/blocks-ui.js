@@ -1459,9 +1459,14 @@ function saveWorkspaceState() {
   if (layout) s.particleListWidth = layout.style.getPropertyValue('--left-w') || null;
   // 右侧栏宽
   if (layout) s.rightPanelWidth = layout.style.getPropertyValue('--right-w') || null;
-  // 时间轴模块高度
-  const tlfSave = document.querySelector('.timeline');
-  if (tlfSave && tlfSave.style.height) s.tlModuleH = tlfSave.style.height;
+  // 时间轴模块高度（body 网格第三行变量）：优先读内联值；无头测试环境的极简 style 桩会被 try/能力检查跳过
+  let curTlH = '';
+  try {
+    const bs = document.body && document.body.style;
+    if (bs && typeof bs.getPropertyValue === 'function') curTlH = bs.getPropertyValue('--tl-h').trim();
+    else if (typeof getComputedStyle === 'function') curTlH = getComputedStyle(document.body).getPropertyValue('--tl-h').trim();
+  } catch (_) {}
+  if (curTlH) s.tlModuleH = curTlH;
   try { localStorage.setItem(WS_KEY, JSON.stringify(s)); } catch (e) {}
 }
 function applyWorkspaceState() {
@@ -1474,9 +1479,11 @@ function applyWorkspaceState() {
   // 调色盘宽
   const mainEl = document.querySelector('.puzzle-main');
   if (mainEl && s.paletteWidth) mainEl.style.setProperty('--pal-w', s.paletteWidth);
-  // 时间轴模块高度
-  const tlfApply = document.querySelector('.timeline');
-  if (tlfApply && s.tlModuleH) tlfApply.style.height = s.tlModuleH;
+  // 时间轴模块高度（body 网格第三行变量）
+  try {
+    const bs = document.body && document.body.style;
+    if (s.tlModuleH && bs && typeof bs.setProperty === 'function') bs.setProperty('--tl-h', s.tlModuleH);
+  } catch (_) {}
   // 窗口状态（在 ensurePuzzleDom 后应用）
   if (puzzleWin && s.sceneWin) {
     puzzleWin.scene.setPos(s.sceneWin.x, s.sceneWin.y);
