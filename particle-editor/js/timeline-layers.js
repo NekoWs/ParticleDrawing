@@ -192,7 +192,7 @@ function refreshAllPanelsLight() {
 
 function tlInitLayerEvents() {
   const canvas = document.getElementById('tl-layers-canvas');
-  const grip = document.getElementById('tl-layers-resize');
+  const grip = document.getElementById('tl-module-resize');
   if (!canvas) return;
 
   canvas.addEventListener('pointerdown', ev => {
