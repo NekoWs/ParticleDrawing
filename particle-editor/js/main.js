@@ -90,7 +90,11 @@ function initUI() {
     const v = parseInt(ev.target.value, 10);
     const life = (isNaN(v) || v < 0) ? -1 : v;
     pushUndo();
-    currentSelected().forEach(p => { if (!isDerivedParticle(p)) p.life = life; });
+    const gname = (typeof selectedGroupName === 'function') ? selectedGroupName() : null;
+    const targets = gname
+      ? (state.groups[gname] || []).map(id => getParticle(id)).filter(Boolean)
+      : currentSelected();
+    targets.forEach(p => { if (!isDerivedParticle(p)) p.life = life; });
     if (typeof refreshAllPanelsLight === 'function') refreshAllPanelsLight(); else rebuildPoints();
   });
   document.getElementById('prop-light').addEventListener('input', (ev) => { beginContinuous(); document.getElementById('light-val').textContent = ev.target.value; currentSelected().forEach(p => { p.lightLevel = parseInt(ev.target.value); }); rebuildPoints(); });

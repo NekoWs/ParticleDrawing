@@ -928,8 +928,12 @@ window.addEventListener('pointerup', () => { renderer.domElement.style.cursor = 
 window.addEventListener('keydown', (ev) => {
   const k = ev.key.toLowerCase();
   const isTextInput = ev.target && ev.target.matches && ev.target.matches('input, textarea, select');
-  // 文本框内保留默认文本操作（Ctrl+A/C/V/Z/Y 等），不触发编辑器快捷键
-  if (isTextInput) return;
+  // 文本框内：文件级快捷键（保存/打开）依然生效，避免 Ctrl+S 触发浏览器保存对话框
+  if (isTextInput) {
+    if (ev.ctrlKey && k === 's') { ev.preventDefault(); saveFile(); return; }
+    if (ev.ctrlKey && k === 'o') { ev.preventDefault(); openFile(); return; }
+    return; // 其余保留默认文本操作（Ctrl+A/C/V/Z/Y 等）
+  }
   if (ev.ctrlKey && k === 'z') { ev.preventDefault(); if (typeof texActive !== 'undefined' && texActive) { texUndo(); return; } if (ev.shiftKey) redo(); else undo(); return; }
   if (ev.ctrlKey && k === 'y') { ev.preventDefault(); if (typeof texActive !== 'undefined' && texActive) { texRedo(); return; } redo(); return; }
   if (ev.ctrlKey && k === 'n') { ev.preventDefault(); newFile(); return; }

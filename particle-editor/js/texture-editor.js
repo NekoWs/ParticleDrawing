@@ -213,7 +213,10 @@ function updateTexOverlay() {
       let sx = u.uvStart[0], sy = u.uvStart[1], sw = u.uvSize[0], sh = u.uvSize[1];
       if (u.mode === 'animated') {
         const f = currentUVFrame(u);
-        sx += u.uvStep[0] * f; sy += u.uvStep[1] * f;
+        sx += u.uvStep[0] * f;
+        // 竖向分量取反：atlas 用 CanvasTexture flipY=true，shader 中 +stepy 沿图像向上推进，
+        // 而 overlay 画布以顶部为行 0（y 向下）——水平方向不受 flip 影响，竖向需反号对齐。
+        sy -= u.uvStep[1] * f;
       }
       setBox(uv, sx, sy, sw, sh, TEX_UV_COLOR, false);
     }
@@ -453,6 +456,11 @@ function initTextureEditor() {
   }, { passive: false });
 
   wrap.addEventListener('contextmenu', (ev) => ev.preventDefault());
+
+  // 右键平移拖拽时，指针可能离开编辑器页面并在外部释放——window 级抑制浏览器的右键菜单
+  window.addEventListener('contextmenu', (ev) => {
+    if (texDrag && texDrag.mode === 'pan') ev.preventDefault();
+  });
 
   // 工具切换
   document.getElementById('tex-tools').addEventListener('click', (ev) => {

@@ -21,10 +21,13 @@ function updatePropPanel() {
   if (sel.length === 0 && !isFx && !gname) return;
   // 派生粒子基础属性只读；函数对象 pos/scl 可编辑（写整体轨道）
   const readOnly = !isFx && !gname && sel.some(isDerivedParticle);
-  ['prop-color', 'prop-alpha', 'prop-glow', 'prop-light', 'prop-life'].forEach(id => {
+  ['prop-color', 'prop-alpha', 'prop-glow', 'prop-light'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = readOnly || isFx || gname;
   });
+  // 寿命：组也可统一设置（应用到全体成员），函数对象无寿命属性保持禁用
+  const lifeEl0 = document.getElementById('prop-life');
+  if (lifeEl0) lifeEl0.disabled = readOnly || isFx;
   ['prop-scale-x', 'prop-scale-y', 'prop-scale-z', 'prop-posx', 'prop-posy', 'prop-posz'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = readOnly;
@@ -40,13 +43,15 @@ function updatePropPanel() {
     setScaleInputs(fxScaleValuesAt(fxId, state.time));
     return;
   }
-  // 组：显示整体质心位置（缩放无独立显示）
+  // 组：显示整体质心位置（缩放无独立显示）；寿命留空占位，填入即应用到全体成员
   if (gname) {
     const c = groupCurrentCentroid(gname, 'pos');
     document.getElementById('prop-posx').value = c[0].toFixed(2);
     document.getElementById('prop-posy').value = c[1].toFixed(2);
     document.getElementById('prop-posz').value = c[2].toFixed(2);
     setScaleInputs(null);
+    const lifeElG = document.getElementById('prop-life');
+    if (lifeElG) { lifeElG.value = ''; lifeElG.placeholder = '-'; }
     return;
   }
   const first = sel[0];
