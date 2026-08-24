@@ -126,13 +126,13 @@ function drawTimeline() {
   const viewEnd = timelineViewStart + w / pxPerTick;
   ctx.fillStyle = '#1f222a'; ctx.fillRect(0, 0, w, h);
   ctx.strokeStyle = '#3a3f4b'; ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
-  // 固定每 5 tick 一个刻度（与图层区视口对齐）
+  // 每 5 tick 一条刻度线；每 10 tick 显示一次数字（图层区只画线不标数，避免重复）
   const step = 5;
   ctx.fillStyle = '#9aa0ad'; ctx.font = '10px sans-serif'; ctx.textBaseline = 'top';
   for (let t = Math.floor(timelineViewStart / step) * step; t <= viewEnd; t += step) {
     if (t < 0) continue;
     const x = (t - timelineViewStart) * pxPerTick;
-    ctx.fillText(Math.round(t), x + 2, 2);
+    if (((t % 10) + 10) % 10 === 0) ctx.fillText(String(t), x + 2, 2);
     ctx.strokeStyle = '#3a3f4b'; ctx.beginPath(); ctx.moveTo(x, h / 2 - 6); ctx.lineTo(x, h / 2 + 6); ctx.stroke();
   }
   const phx = (state.time - timelineViewStart) * pxPerTick;

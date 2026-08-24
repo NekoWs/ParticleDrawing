@@ -83,13 +83,11 @@ function drawTimelineLayers() {
   ctx.fillStyle = '#181b22';
   ctx.fillRect(0, 0, w, h);
 
-  // 刻度行：每 5 tick 标注一次（与上方标尺对齐）
+  // 刻度行：每 5 tick 一条线（与标尺对齐）；数字只在上方标尺显示
   const pxPerTick = TL_PX_PER_TICK;
-  ctx.fillStyle = '#6b7382'; ctx.font = '9px sans-serif'; ctx.textBaseline = 'top';
+  ctx.strokeStyle = '#262b34';
   const viewEnd = timelineViewStart + w / pxPerTick;
   for (let t = Math.max(0, Math.floor(timelineViewStart / 5) * 5); t <= viewEnd; t += 5) {
-    ctx.fillText(String(t), X_of(t) + 2, 2);
-    ctx.strokeStyle = '#262b34';
     ctx.beginPath(); ctx.moveTo(X_of(t), 0); ctx.lineTo(X_of(t), h); ctx.stroke();
   }
 
@@ -292,26 +290,32 @@ function tlInitLayerEvents() {
     }
   });
 
-  // 时间轴模块整体高度拖拽（模块顶边）
+  // 时间轴模块整体高度拖拽（模块顶边）：clientY 差分驱动，方向=向上拖增高
   const moduleGrip = document.getElementById('tl-module-resize');
   if (moduleGrip) {
-    let resizing = false;
+    let resizing = false, lastY = 0;
     moduleGrip.addEventListener('pointerdown', (e) => {
       resizing = true;
+      lastY = e.clientY;
       moduleGrip.setPointerCapture(e.pointerId);
       e.preventDefault();
     });
     moduleGrip.addEventListener('pointermove', (e) => {
       if (!resizing) return;
-      // 向上拖 = 增高
-      tlLayerPaneH = Math.min(window.innerHeight * 0.6, Math.max(80, tlLayerPaneH - e.movementY));
+      const dy = e.clientY - lastY;
+      lastY = e.clientY;
+      tlLayerPaneH = Math.min(window.innerHeight * 0.6, Math.max(80, tlLayerPaneH - dy));
       tlApplyPaneHeight();
       resize();               // footer 总高变化会影响 3D 视口
       drawTimelineLayers();
     });
-    moduleGrip.addEventListener('pointerup', () => {
+    const stopResize = () => {
+      if (!resizing) return;
       resizing = false;
+      resize();
       if (typeof saveWorkspaceState === 'function') saveWorkspaceState();
-    });
+    };
+    moduleGrip.addEventListener('pointerup', stopResize);
+    moduleGrip.addEventListener('pointercancel', stopResize);
   }
 }
