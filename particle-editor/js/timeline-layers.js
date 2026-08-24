@@ -54,10 +54,10 @@ function rowSpan(r) {
     return [lo, anyInf ? Infinity : Math.max(hi, lo)];
   }
   if (r.kind === 'fx') {
+    // 与 maxTick 一致：extent = max(时长, 变量关键帧最大 tick)
     const fx = r.fx;
-    let extent = 0, hasVarAnim = false;
-    for (const v of Object.values(fx.vars)) for (const k of (v.kf || [])) { hasVarAnim = true; if (k[0] > extent) extent = k[0]; }
-    if (!hasVarAnim && /\bt\b/.test(fx.code || '')) extent = Math.max(extent, fx.duration || 0);
+    let extent = fx.duration || 0;
+    for (const v of Object.values(fx.vars)) for (const k of (v.kf || [])) if (k[0] > extent) extent = k[0];
     return [fx.st || 0, (fx.st || 0) + extent];
   }
   const s = r.p.st || 0, e = particleLifeEnd(r.p);
@@ -210,10 +210,17 @@ function tlInitLayerEvents() {
     }
     // 点击瞬间不跳位：记录「指针-当前值」抓取偏移，拖动后按偏移平移
     if (zone === 'life') {
-      const p = hit.r.p;
-      const end = particleLifeEnd(p);
-      const curLife = end === Infinity ? -1 : Math.max(1, end - (p.st || 0));
-      tlLayerState.drag = { kind: 'life', p, grabOff: ptrTick - curLife };
+      if (hit.r.kind === 'fx') {
+        // 函数对象右端手柄：拖拽调整时长（此前会因 hit.r.p 不存在而报错无法拖动）
+        const fx = hit.r.fx;
+        const [s, e] = rowSpan(hit.r);
+        tlLayerState.drag = { kind: 'fxdur', fx, grabOff: ptrTick - Math.max(1, e - s) };
+      } else {
+        const p = hit.r.p;
+        const end = particleLifeEnd(p);
+        const curLife = end === Infinity ? -1 : Math.max(1, end - (p.st || 0));
+        tlLayerState.drag = { kind: 'life', p, grabOff: ptrTick - curLife };
+      }
     } else {
       const cur = hit.r.kind === 'fx' ? (hit.r.fx.st || 0) : (hit.r.p.st || 0);
       tlLayerState.drag = { kind: 'start', r: hit.r, grabOff: ptrTick - cur };
@@ -233,6 +240,8 @@ function tlInitLayerEvents() {
       setRowStart(d.r, Math.max(0, Math.round(ptrTick - d.grabOff)));
     } else if (d.kind === 'life') {
       setParticleLife(d.p, Math.max(1, Math.round(ptrTick - d.grabOff)));
+    } else if (d.kind === 'fxdur') {
+      d.fx.duration = Math.max(1, Math.round(ptrTick - d.grabOff));
     } else {
       const t = Math.round(ptrTick);
       const delta = t - d.lastTick;

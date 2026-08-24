@@ -5,7 +5,14 @@
 let uiModalOverlay = null;
 
 function closeUIModal() {
-  if (uiModalOverlay) { uiModalOverlay.remove(); uiModalOverlay = null; }
+  if (!uiModalOverlay) return;
+  const ov = uiModalOverlay;
+  uiModalOverlay = null;
+  ov.classList.add('closing');
+  // 出现/消失动画结束后再移除 DOM
+  const finish = () => ov.remove();
+  ov.addEventListener('animationend', finish, { once: true });
+  setTimeout(finish, 260); // 保险：animationend 未触发时兜底移除
 }
 
 // 底层：构建弹窗，返回 { box, input, resolve }
@@ -35,7 +42,8 @@ function buildModal({ title, message, input, buttons }) {
     }
     const btns = document.createElement('div');
     btns.className = 'ui-modal-btns';
-    const close = (v) => { resolve(v); closeUIModal(); };
+    let settled = false;
+    const close = (v) => { if (settled) return; settled = true; resolve(v); closeUIModal(); };
     for (const b of buttons) {
       const btn = document.createElement('button');
       btn.className = 'ui-modal-btn' + (b.primary ? ' primary' : '') + (b.danger ? ' danger' : '');

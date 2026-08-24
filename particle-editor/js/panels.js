@@ -248,6 +248,16 @@ function buildFunctionPanel(fx) {
   nameRow.appendChild(nameIn);
   wrap.appendChild(nameRow);
 
+  // 采样数（紧跟在名称下方）
+  const countRow = document.createElement('label');
+  countRow.className = 'row';
+  countRow.textContent = '采样数 ';
+  const countIn = document.createElement('input');
+  countIn.type = 'number'; countIn.min = '1'; countIn.value = fx.count;
+  countIn.onchange = () => { pushUndo(); fx.count = Math.max(1, Math.round(parseInt(countIn.value) || 1)); commitFunctionRebuild(fx); };
+  countRow.appendChild(countIn);
+  wrap.appendChild(countRow);
+
   // 中心点
   const centerRow = document.createElement('div');
   centerRow.className = 'row';
@@ -343,16 +353,6 @@ function buildFunctionPanel(fx) {
   for (const name of Object.keys(fx.vars)) vlist.appendChild(buildVarRow(fx, name));
   wrap.appendChild(vlist);
 
-  // 采样数（外置常量，与拼图底部「采样数」一致）
-  const countRow = document.createElement('label');
-  countRow.className = 'row';
-  countRow.textContent = '采样数 ';
-  const countIn = document.createElement('input');
-  countIn.type = 'number'; countIn.min = '1'; countIn.value = fx.count;
-  countIn.onchange = () => { pushUndo(); fx.count = Math.max(1, Math.round(parseInt(countIn.value) || 1)); commitFunctionRebuild(fx); };
-  countRow.appendChild(countIn);
-  wrap.appendChild(countRow);
-
   return wrap;
 }
 
@@ -362,20 +362,41 @@ function nextFreeTimeVar(kf, startTime) {
   return t;
 }
 
+// 变量关键帧区展开状态（fx.id|name → bool，默认折叠）
+const varExpandState = {};
+// 每个变量一个色调（按变量顺序循环），关键帧列表背景色区分归属变量
+const VAR_KF_PALETTE = ['#5b9dff', '#ffa94d', '#6bd489', '#e57fae', '#9d7bff', '#4fc3c9', '#e0c35b', '#ff7d6b'];
+function varKfHue(fx, name) {
+  const keys = Object.keys(fx.vars);
+  return VAR_KF_PALETTE[Math.max(0, keys.indexOf(name)) % VAR_KF_PALETTE.length];
+}
+
 function buildVarRow(fx, name) {
   const v = fx.vars[name];
   const wrap = document.createElement('div');
   wrap.className = 'fx-var';
+  const key = fx.id + '|' + name;
+  const expanded = !!varExpandState[key];
+  const kfs = v.kf || [];
+  const hasKf = kfs.length > 0;
+
   const row = document.createElement('div');
   row.className = 'var-row';
+  // 下拉按钮：只在展开时显示该变量的关键帧列表
+  const fold = document.createElement('button');
+  fold.className = 'var-fold' + (expanded ? ' open' : '');
+  fold.textContent = expanded ? '▾' : '▸';
+  fold.title = expanded ? '折叠关键帧列表' : '展开关键帧列表';
+  fold.onclick = () => { varExpandState[key] = !expanded; refreshFunctionPanel(); };
+  row.appendChild(fold);
+
   const nIn = document.createElement('input');
   nIn.className = 'var-name'; nIn.type = 'text'; nIn.value = name;
   const vIn = document.createElement('input');
   vIn.className = 'var-value'; vIn.type = 'text';
-  const hasKf = (v.kf || []).length > 0;
   vIn.disabled = hasKf;
   if (hasKf) {
-    vIn.value = r3(varKfValue(v.kf, state.time)).toFixed(2);
+    vIn.value = r3(varKfValue(kfs, state.time)).toFixed(2);
     vIn.dataset.fxKf = fx.id + '|' + name;
     vIn.classList.add('kf-synced');
     vIn.title = '有关键帧：值由时间轴驱动（删除全部关键帧后可编辑表达式）';
@@ -395,32 +416,48 @@ function buildVarRow(fx, name) {
   const del = document.createElement('button');
   del.className = 'del-x'; del.textContent = '×';
   del.onclick = () => { pushUndo(); delete fx.vars[name]; commitFunctionRebuild(fx); refreshFunctionPanel(); };
-  row.appendChild(nIn); row.appendChild(vIn); row.appendChild(del);
+  row.appendChild(nIn); row.appendChild(vIn);
+  if (hasKf && !expanded) {
+    // 折叠时显示关键帧数量徽标（同变量色调）
+    const badge = document.createElement('span');
+    badge.className = 'kf-count';
+    badge.textContent = '◇ ' + kfs.length;
+    badge.title = '关键帧数（点击 ▸ 展开查看）';
+    badge.style.color = varKfHue(fx, name);
+    row.appendChild(badge);
+  }
+  row.appendChild(del);
   wrap.appendChild(row);
-  const kfWrap = document.createElement('div');
-  kfWrap.className = 'fx-kf';
-  (v.kf || []).forEach((k, idx) => kfWrap.appendChild(buildVarKfRow(fx, name, k, idx === 0)));
-  const addBtn = document.createElement('button');
-  addBtn.className = 'mini'; addBtn.textContent = '+ 关键帧';
-  addBtn.onclick = () => {
-    pushUndo();
-    const v = fx.vars[name];
-    if (!v.kf) v.kf = [];
-    const kf = v.kf;
-    const t = nextFreeTimeVar(kf, Math.round(state.time));
-    let val = 0;
-    if (kf.length === 0) {
-      try {
-        val = evaluate(v.expr || '0', { i: 0, n: fx.count, t: state.time });
-      } catch (e) { val = 0; }
-      if (typeof val !== 'number' || !isFinite(val)) val = 0;
-    }
-    kf.push([t, val, state.defaultEasing]);
-    kf.sort((a, b) => a[0] - b[0]);
-    commitFunctionRebuild(fx); refreshFunctionPanel();
-  };
-  kfWrap.appendChild(addBtn);
-  wrap.appendChild(kfWrap);
+
+  if (expanded) {
+    const kfWrap = document.createElement('div');
+    kfWrap.className = 'fx-kf';
+    const hue = varKfHue(fx, name);
+    kfWrap.style.background = hue + '1c';          // 低透明度背景
+    kfWrap.style.borderLeft = '3px solid ' + hue;  // 色调左边线，区分归属变量
+    kfs.forEach((k, idx) => kfWrap.appendChild(buildVarKfRow(fx, name, k, idx === 0)));
+    const addBtn = document.createElement('button');
+    addBtn.className = 'mini'; addBtn.textContent = '+ 关键帧';
+    addBtn.onclick = () => {
+      pushUndo();
+      const v = fx.vars[name];
+      if (!v.kf) v.kf = [];
+      const kf = v.kf;
+      const t = nextFreeTimeVar(kf, Math.round(state.time));
+      let val = 0;
+      if (kf.length === 0) {
+        try {
+          val = evaluate(v.expr || '0', { i: 0, n: fx.count, t: state.time });
+        } catch (e) { val = 0; }
+        if (typeof val !== 'number' || !isFinite(val)) val = 0;
+      }
+      kf.push([t, val, state.defaultEasing]);
+      kf.sort((a, b) => a[0] - b[0]);
+      commitFunctionRebuild(fx); refreshFunctionPanel();
+    };
+    kfWrap.appendChild(addBtn);
+    wrap.appendChild(kfWrap);
+  }
   return wrap;
 }
 

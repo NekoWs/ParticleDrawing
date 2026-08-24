@@ -274,7 +274,7 @@ function updateTopbarTitle() {
 }
 
 async function openFile() {
-  if (!(await confirmDiscardChanges())) return;
+  if ((await confirmDiscardChanges('打开')) === 'cancel') return;
   if (window.showOpenFilePicker) {
     try {
       const [h] = await window.showOpenFilePicker({
@@ -353,25 +353,39 @@ async function exportAnimation() {
 
 // 新建空白动画
 async function newFile() {
-  if (!(await confirmDiscardChanges())) return;
+  const r = await confirmDiscardChanges('新建');
+  if (r === 'cancel') return;
+  const name = await modalPrompt('新建项目', 'my_animation', '项目名称');
+  if (!name || !name.trim()) return;
   pushUndo();
   state.particles = []; state.tracks = []; state.groups = {}; state.functions = [];
   state.textures = {}; state.currentTexture = null; state.groupUV = {};
   state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null;
   state.expandedParticles.clear(); state.expandedProps.clear();
   state.time = 0;
-  state.name = 'my_animation';
+  state.name = name.trim() || 'my_animation';
   state.fileHandle = null;
   state.loop = true;
   document.getElementById('tl-loop').checked = true;
   updateTimeUI(); rebuildPoints(); refreshParticleTree();
+  if (typeof refreshTexturePanel === 'function') refreshTexturePanel();
   setDirty(false);
 }
 
-// 若有未保存更改，弹出保存确认。返回是否继续操作。
-async function confirmDiscardChanges() {
-  if (!state.dirty) return true;
-  const r = await modalConfirm('未保存的更改', '是否保存？\n\n确定 = 保存后继续\n取消 = 不保存直接继续');
-  if (r) await saveFile();
-  return true;
+// 若有未保存更改，弹出三键确认（按钮名即操作，不在正文里解释）：
+// 取消 = 中止本次操作；不保存 = 丢弃更改继续；保存并<动作> = 保存后继续。
+// 返回 'cancel' | 'discard' | 'save'。
+async function confirmDiscardChanges(actionLabel) {
+  if (!state.dirty) return 'discard';
+  const r = await buildModal({
+    title: '未保存的更改',
+    message: '当前工程有未保存的修改。',
+    buttons: [
+      { label: '取消', value: 'cancel' },
+      { label: '不保存', value: 'discard', danger: true },
+      { label: '保存并' + actionLabel, value: 'save', primary: true },
+    ],
+  });
+  if (r === 'save') await saveFile();
+  return r;
 }

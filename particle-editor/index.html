@@ -108,19 +108,22 @@
       <div class="tab-pane" id="pane-texture">
         <div class="tex-editor">
           <div class="tex-tools" id="tex-tools">
-            <button class="tex-tool active" data-ttool="select" title="选中（矩形选区）"><svg viewBox="0 0 18 18"><path d="M4 3h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.5 2"/></svg></button>
+            <button class="tex-tool active" data-ttool="select" title="矩形选区"><svg viewBox="0 0 18 18"><path d="M4 3h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.5 2"/></svg></button>
+            <button class="tex-tool" data-ttool="selmove" title="移动选区（在选区内拖动移动内容）"><svg viewBox="0 0 18 18"><path d="M4 3h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.5 2"/><path d="M9 6v6M6 9h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
             <button class="tex-tool" data-ttool="pencil" title="铅笔"><svg viewBox="0 0 18 18"><path d="M3.5 14.5l.8-3 8-8 2.2 2.2-8 8-3 .8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
-            <button class="tex-tool" data-ttool="eraser" title="橡皮"><svg viewBox="0 0 18 18"><path d="M7 13.5h8M4 10.5l6.5-6.5 3 3L7 13.5H4v-3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
             <button class="tex-tool" data-ttool="bucket" title="油漆桶"><svg viewBox="0 0 18 18"><path d="M4 14L2.5 9l4-4 3 3-5.5 6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 5L13 8.5M12 9l-1.5 1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-            <button class="tex-tool" data-ttool="picker" title="滴管"><svg viewBox="0 0 18 18"><path d="M13 3l2 2-6.5 6.5-2.5.5.5-2.5L13 3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M4.5 13.5L2 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+            <button class="tex-tool" data-ttool="picker" title="滴管（按住 Alt 临时切换）"><svg viewBox="0 0 18 18"><path d="M13 3l2 2-6.5 6.5-2.5.5.5-2.5L13 3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M4.5 13.5L2 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
             <div class="tex-tool-sep"></div>
             <button class="tex-tool" id="tex-undo" title="撤回"><svg viewBox="0 0 18 18"><path d="M6 5l-3 3 3 3M3 8h7a4 4 0 0 1 0 8h-2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             <button class="tex-tool" id="tex-redo" title="重做"><svg viewBox="0 0 18 18"><path d="M12 5l3 3-3 3M15 8H8a4 4 0 0 0 0 8h2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           </div>
           <div class="tex-canvas-wrap" id="tex-canvas-wrap">
             <canvas id="tex-canvas"></canvas>
+            <div class="tex-overlay" id="tex-grid"></div>
+            <div class="tex-overlay" id="tex-overlay-cells"></div>
             <div class="tex-overlay" id="tex-overlay-uv"></div>
             <div class="tex-overlay" id="tex-overlay-frame"></div>
+            <div class="tex-overlay" id="tex-overlay-sel"></div>
             <button id="tex-color-btn" title="颜色" style="display:none"></button>
           </div>
           <div class="tex-meta" id="tex-meta">16 × 16</div>
@@ -129,7 +132,7 @@
           <input id="tex-upload" type="file" accept=".png" hidden />
           <button id="btn-tex-upload" class="mini">上传贴图</button>
           <button id="btn-tex-new" class="mini">新建</button>
-          <button id="btn-tex-save" class="mini">保存</button>
+          <button id="btn-tex-export" class="mini">导出</button>
         </div>
         <div class="tex-list" id="tex-list"></div>
         <div class="uv-panel" id="uv-panel">

@@ -342,6 +342,8 @@ function animate(now) {
   pointsMaterial.uniforms.uTime.value = performance.now() / 1000;
   renderer.render(scene, camera);
   drawAxisGizmo();
+  // 选中粒子/函数对象/组变化时，贴图编辑器自动切换到其贴图（内部按目标签名去重）
+  if (typeof syncTextureSelection === 'function') syncTextureSelection();
   // UV 动画预览：贴图 tab 激活且当前为动画模式时，逐帧刷新 overlay 让 UV 预览框跟随动画帧移动
   if (typeof texAnimOverlayActive === 'function' && texAnimOverlayActive()) {
     if (typeof updateTexOverlay === 'function') updateTexOverlay();
@@ -367,7 +369,7 @@ window.addEventListener('beforeunload', (ev) => {
     ev.preventDefault();
     const file = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
     if (!file) return;
-    if (!(await confirmDiscardChanges())) return;
+    if ((await confirmDiscardChanges('打开')) === 'cancel') return;
     state.fileHandle = null;
     loadFile(file);
   });

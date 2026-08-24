@@ -188,6 +188,9 @@ const pointsMaterial = new THREE.ShaderMaterial({
         vec4 tex = texture2D(uMap, atlasCoord);
         gl_FragColor = vec4(vColor.rgb, vColor.a) * tex * uOpacity;
       }
+      // 全透明像素直接丢弃：discard 的片元不写深度，
+      // 否则 transparent+depthWrite 会让贴图的透明区域遮挡其后的粒子（透明部分看起来不透明）
+      if (gl_FragColor.a < 0.003) discard;
     }
   `,
   transparent: true,

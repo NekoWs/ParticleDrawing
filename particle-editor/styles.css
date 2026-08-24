@@ -193,6 +193,8 @@ body {
   flex: 1; min-width: 0; background: var(--panel-3); border: 1px solid var(--border);
   color: var(--text); border-radius: var(--radius-sm); padding: 7px 9px;
   transition: border-color 0.12s ease;
+  max-width: 100px;
+  text-align: center;
 }
 .row input[type="text"]:focus, .row input[type="number"]:focus, .row select:focus { border-color: var(--accent); outline: none; }
 .row input[type="range"] { flex: 1; accent-color: var(--accent); }
@@ -215,6 +217,33 @@ body {
 #tex-canvas { display: block; image-rendering: pixelated; cursor: crosshair; box-shadow: 0 0 0 1px var(--border); }
 /* 预览描边：CSS overlay 层（屏幕 1px 细线，不写入像素数据，放大后依旧是一条细线） */
 .tex-overlay { position: absolute; display: none; pointer-events: none; z-index: 2; box-sizing: border-box; border-width: 1px; border-style: solid; }
+/* 像素网格层：与画布对齐的每像素网格线（颜色同画布边框） */
+#tex-grid {
+  z-index: 1; border: none; display: none;
+  background-image:
+    repeating-linear-gradient(to right, var(--border) 0, var(--border) 1px, transparent 1px, transparent var(--cell, 8px)),
+    repeating-linear-gradient(to bottom, var(--border) 0, var(--border) 1px, transparent 1px, transparent var(--cell, 8px));
+  background-size: var(--cell, 8px) 100%, 100% var(--cell, 8px);
+  background-origin: content-box;
+}
+#tex-overlay-cells { background-origin: content-box; }
+/* 修改大小悬浮框（悬停于贴图条目下方） */
+.tex-resize-pop {
+  position: fixed; z-index: 130; width: 210px;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 10px 12px; box-shadow: var(--shadow);
+  animation: modalPopIn 0.14s ease-out;
+}
+.tex-resize-pop .trp-title { font-size: 12px; font-weight: 700; margin-bottom: 8px; color: #e8eaf0; }
+.tex-resize-pop .trp-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.tex-resize-pop .trp-label { flex: none; width: 18px; color: var(--muted); font-size: 12px; }
+.tex-resize-pop input {
+  flex: 1; min-width: 0; width: 60px;
+  background: var(--panel-3); border: 1px solid var(--border); color: var(--text);
+  border-radius: var(--radius-sm); padding: 5px 8px; text-align: center;
+}
+.tex-resize-pop input:focus { border-color: var(--accent); outline: none; }
+.tex-resize-pop .trp-btns { display: flex; justify-content: flex-end; gap: 6px; }
 #tex-color-btn { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border: 2px solid #fff; border-radius: 5px; padding: 0; cursor: pointer; box-shadow: 0 0 3px rgba(0,0,0,0.5); }
 .tex-meta { position: absolute; bottom: 5px; right: 8px; color: var(--muted); font-size: 11px; pointer-events: none; text-shadow: 0 0 3px #000; }
 .tex-io { display: flex; gap: 6px; margin-top: 8px; }
@@ -233,7 +262,7 @@ body {
 }
 .uv-field > input[type="number"]:focus { outline: none; }
 .uv-field .uv-sep {
-  flex: none; width: 1px; height: 14px; background: var(--border);
+  flex: none; width: 1px; height: 14px; background: var(--muted);
   margin: 0 1px;
 }
 .uv-field .uv-sep-mul {
@@ -242,7 +271,7 @@ body {
 }
 .uv-field .uv-suffix { color: var(--muted); white-space: nowrap; font-size: 12px; }
 .uv-field .uv-suffix em { font-style: normal; color: var(--accent); }
-.uv-panel .row { width: 100%; justify-content: space-between; }
+.uv-panel .row { width: 100%; justify-content: space-between; padding: 5px 5px 5px 15px; background: var(--panel-2); border-radius: 10px; }
 
 /* ---- 取色板 ---- */
 .color-picker {
@@ -290,24 +319,35 @@ body {
 
 /* ---- UI 弹窗 ---- */
 .ui-modal-overlay {
-  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 200;
+  position: fixed; inset: 0; background: rgba(8, 10, 14, 0.55); z-index: 200;
   display: flex; align-items: center; justify-content: center; outline: none;
+  backdrop-filter: blur(3px);
+  animation: modalFadeIn 0.16s ease-out;
 }
+.ui-modal-overlay.closing { animation: modalFadeOut 0.18s ease-in forwards; }
 .ui-modal {
-  background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 16px; width: 320px; max-width: 90vw; box-shadow: var(--shadow);
+  background: linear-gradient(180deg, #232733, #1d212b);
+  border: 1px solid #3a4150; border-radius: 12px;
+  padding: 18px 20px 14px; width: 340px; max-width: 90vw; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
   display: flex; flex-direction: column; gap: 10px;
+  animation: modalPopIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
-.ui-modal-title { font-weight: 600; font-size: 14px; }
-.ui-modal-msg { color: var(--muted); font-size: 13px; white-space: pre-wrap; word-break: break-word; }
-.ui-modal-input { background: var(--panel-3); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 7px 10px; }
-.ui-modal-input:focus { border-color: var(--accent); outline: none; }
-.ui-modal-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
-.ui-modal-btn { background: var(--panel-3); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 14px; cursor: pointer; font-size: 13px; }
+.ui-modal-overlay.closing .ui-modal { animation: modalPopOut 0.16s ease-in forwards; }
+.ui-modal-title { font-weight: 700; font-size: 15px; color: #f2f5fa; }
+.ui-modal-msg { color: var(--muted); font-size: 13px; white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
+.ui-modal-input { background: var(--panel-3); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 11px; font-size: 13px; }
+.ui-modal-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+.ui-modal-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.ui-modal-btn { background: var(--panel-3); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 16px; cursor: pointer; font-size: 13px; transition: all 0.12s ease; }
 .ui-modal-btn:hover { border-color: var(--accent); color: var(--accent); }
 .ui-modal-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.ui-modal-btn.primary:hover { background: #4a8ee8; }
+.ui-modal-btn.primary:hover { background: #4a8ee8; border-color: #4a8ee8; color: #fff; }
 .ui-modal-btn.danger { color: var(--danger); }
+.ui-modal-btn.danger:hover { border-color: var(--danger); }
+@keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modalFadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes modalPopIn { from { opacity: 0; transform: translateY(10px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes modalPopOut { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(6px) scale(0.97); } }
 
 .toolbar {
   position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
@@ -618,8 +658,16 @@ body.ctrl-held .kf-t { cursor: pointer; }
 }
 .fx-code:focus { border-color: var(--accent); outline: none; }
 .fx-var { margin: 4px 0; }
-.fx-kf { padding-left: 16px; display: flex; flex-direction: column; gap: 3px; margin-top: 2px; }
-.fx-kf .mini { padding: 2px 8px; }
+.fx-kf { padding: 4px 6px 4px 10px; display: flex; flex-direction: column; gap: 3px; margin-top: 2px; border-radius: 6px; }
+.fx-kf .mini { padding: 2px 8px; align-self: flex-start; }
+.var-fold {
+  flex: none; width: 18px; height: 20px; padding: 0; font-size: 11px; line-height: 1;
+  background: var(--panel-3); color: var(--muted); border: 1px solid var(--border);
+  border-radius: 4px; cursor: pointer; transition: all 0.1s ease;
+}
+.var-fold:hover { color: var(--accent); border-color: var(--accent); }
+.var-fold.open { color: var(--accent); }
+.kf-count { flex: none; font-size: 11px; font-weight: 600; }
 .fx-panel input.kf-synced { color: var(--accent); font-weight: 600; }
 
 /* =========================================================================

@@ -5,6 +5,8 @@
  * ======================================================================= */
 
 const TEX_UV_COLOR = '#5b9dff'; // UV 预览描边（实线，与选中态 --accent 一致）
+const TEX_SEL_COLOR = '#5b9dff'; // 选区描边（虚线，固定显示）
+const TEX_CELL_COLOR = '#20242c'; // 动画帧范围线框（比像素网格更深的颜色）
 
 const texState = {
   tool: 'select',           // select | pencil | eraser | bucket | picker
@@ -184,11 +186,24 @@ function updateTexOverlay() {
   const c = texCanvas();
   const frame = document.getElementById('tex-overlay-frame');
   const uv = document.getElementById('tex-overlay-uv');
-  if (!wrap || !c || !frame || !uv) return;
+  const sel = document.getElementById('tex-overlay-sel');
+  const cells = document.getElementById('tex-overlay-cells');
+  const grid = document.getElementById('tex-grid');
+  if (!wrap || !c || !frame || !uv || !sel || !cells || !grid) return;
   const wr = wrap.getBoundingClientRect();
   const cr = c.getBoundingClientRect();
   const ox = cr.left - wr.left, oy = cr.top - wr.top; // canvas 相对 wrap 的偏移（已含居中与 pan 平移）
   const z = texState.zoom;
+  const { w: texWpx, h: texHpx } = currentTexSize();
+
+  // 像素网格层：与画布完全对齐，每像素一条网格线（颜色与画布边框 var(--border) 一致）
+  grid.style.display = 'block';
+  grid.style.left = ox + 'px';
+  grid.style.top = oy + 'px';
+  grid.style.width = Math.round(texWpx * z) + 'px';
+  grid.style.height = Math.round(texHpx * z) + 'px';
+  grid.style.setProperty('--cell', z + 'px');
+
   const setBox = (el, x, y, w, h, color, dashed) => {
     if (w <= 0 || h <= 0) { el.style.display = 'none'; return; }
     el.style.display = 'block';
@@ -205,7 +220,8 @@ function updateTexOverlay() {
   // 若画布打开的是另一张贴图会绘制到错误位置/尺寸（表现为「显示另一个贴图/错误的 UV 大小预览」）。
   const t = currentUVTarget();
   const u = t ? readTargetUV(t) : null;
-  if (u && u.texture && u.texture === state.currentTexture) {
+  const uvMatches = !!(u && u.texture && u.texture === state.currentTexture);
+  if (uvMatches) {
     if (u.mode === 'fill') {
       const s = currentTexSize();
       setBox(uv, 0, 0, s.w, s.h, TEX_UV_COLOR, false);
@@ -229,17 +245,42 @@ function updateTexOverlay() {
     setBox(uv, 0, 0, 0, 0, '', false);
   }
 
-  // 悬停描边（铅笔/橡皮：显示将绘制/擦除的刷子范围）优先于选区描边
+  // 动画模式：帧覆盖范围线框（比网格深一些），提示 UV 步进后每帧的实际范围；
+  // 内部按 uvStep 分格，逐帧可对齐
+  const ttex = u && u.texture ? getTexture(u.texture) : null;
+  if (uvMatches && u.mode === 'animated' && ttex && u.uvSize[0] > 0 && u.uvSize[1] > 0) {
+    const stepx = u.uvStep[0] || 0, stepy = u.uvStep[1] || 0;
+    const startX = u.uvStart[0] || 0, startY = u.uvStart[1] || 0;
+    const cols = (stepx > 0 && startX < ttex.width) ? Math.floor((ttex.width - 1 - startX) / stepx) + 1 : 1;
+    const maxF = effMaxFrame(u, autoFramesFor(u, ttex.width, ttex.height));
+    const lastCol = (maxF - 1) % cols, lastRow = Math.floor((maxF - 1) / cols);
+    const spanW = stepx * lastCol + u.uvSize[0], spanH = stepy * lastRow + u.uvSize[1];
+    setBox(cells, startX, startY, spanW, spanH, TEX_CELL_COLOR, false);
+    if (stepx > 0 || stepy > 0) {
+      const gx = stepx > 0 ? 'repeating-linear-gradient(to right, ' + TEX_CELL_COLOR + ' 0, ' + TEX_CELL_COLOR + ' 1px, transparent 1px, transparent ' + (stepx * z) + 'px)' : '';
+      const gy = stepy > 0 ? 'repeating-linear-gradient(to bottom, ' + TEX_CELL_COLOR + ' 0, ' + TEX_CELL_COLOR + ' 1px, transparent 1px, transparent ' + (stepy * z) + 'px)' : '';
+      cells.style.backgroundImage = gx + (gx && gy ? ', ' : '') + gy;
+    } else {
+      cells.style.backgroundImage = 'none';
+    }
+  } else {
+    setBox(cells, 0, 0, 0, 0, '', false);
+  }
+
+  // 选区描边：固定显示（不受工具/悬停影响）
+  const sr = selectionRect();
+  if (sr) {
+    setBox(sel, sr.x, sr.y, sr.w, sr.h, TEX_SEL_COLOR, true);
+  } else {
+    setBox(sel, 0, 0, 0, 0, '', false);
+  }
+
+  // 悬停描边（铅笔：显示将绘制的刷子范围）
   const hov = texState.hover;
-  if (hov && (texState.tool === 'pencil' || texState.tool === 'eraser')) {
+  if (hov && texState.tool === 'pencil') {
     const r = Math.floor(texState.brushSize / 2);
     setBox(frame, hov.x - r, hov.y - r, texState.brushSize, texState.brushSize,
       contrastColorAt(hov.x - r, hov.y - r, texState.brushSize, texState.brushSize), false);
-  } else if (texState.selection) {
-    const s = texState.selection;
-    const x = Math.floor(Math.min(s.x0, s.x1)), y = Math.floor(Math.min(s.y0, s.y1));
-    const w = Math.floor(Math.abs(s.x1 - s.x0)), h = Math.floor(Math.abs(s.y1 - s.y0));
-    setBox(frame, x, y, w, h, contrastColorAt(x, y, w, h), false);
   } else {
     setBox(frame, 0, 0, 0, 0, '', false);
   }
@@ -259,7 +300,7 @@ function texPixelAt(ev) {
   };
 }
 
-// 在像素 (x,y) 画一块（含选区限制、画笔大小），返回是否修改
+// 在像素 (x,y) 画一块（画笔大小范围；绘制不再被选区限制），返回是否修改
 function paintArea(x, y, apply) {
   const { w, h } = currentTexSize();
   const r = Math.floor(texState.brushSize / 2);
@@ -268,16 +309,10 @@ function paintArea(x, y, apply) {
   let changed = false;
   for (let py = y0; py < y1; py++) {
     for (let px = x0; px < x1; px++) {
-      if (!pixelInSelection(px, py)) continue;
       if (apply(px, py)) changed = true;
     }
   }
   return changed;
-}
-function pixelInSelection(x, y) {
-  const s = texState.selection;
-  if (!s) return true;
-  return x >= Math.min(s.x0, s.x1) && x < Math.max(s.x0, s.x1) && y >= Math.min(s.y0, s.y1) && y < Math.max(s.y0, s.y1);
 }
 
 function pushTexUndo() {
@@ -345,7 +380,6 @@ function floodFill(px, py, target, apply) {
     seen[key(x, y)] = 1;
     const cur = texGetPixel(x, y);
     if (!eq(cur, start)) continue;
-    if (!pixelInSelection(x, y)) continue;
     apply(x, y);
     n++;
     stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
@@ -357,7 +391,50 @@ function floodFill(px, py, target, apply) {
  * 编辑器交互（事件挂到 wrap，兼容灰色区域平移/缩放）
  * ======================================================================= */
 
-let texDrag = null; // { mode: 'draw'|'pan'|'select'|'erase', last }
+let texDrag = null; // { mode: 'draw'|'pan'|'select'|'selmove'|'erase', last }
+
+// 选区像素矩形（取整归一化）；无选区/宽高为 0 返回 null
+function selectionRect() {
+  const s = texState.selection;
+  if (!s) return null;
+  const x = Math.floor(Math.min(s.x0, s.x1)), y = Math.floor(Math.min(s.y0, s.y1));
+  const w = Math.floor(Math.abs(s.x1 - s.x0)), h = Math.floor(Math.abs(s.y1 - s.y0));
+  return w < 1 || h < 1 ? null : { x, y, w, h };
+}
+function clearRegion(x, y, w, h) {
+  const t = getCurrentTexture(); if (!t) return;
+  for (let yy = y; yy < y + h; yy++) {
+    const i0 = yy * t.width * 4 + x * 4;
+    t.data.fill(0, i0, i0 + w * 4);
+  }
+}
+function stampRegion(t, snap, x, y, w, h) {
+  for (let yy = 0; yy < h; yy++) t.data.set(snap.subarray(yy * w * 4, (yy + 1) * w * 4), ((y + yy) * t.width + x) * 4);
+}
+
+// Alt 临时吸管：按住切到 picker，松开切回上一个工具（仅鼠标在贴图编辑器内时生效）
+let texAltPreviewOn = false;
+let texPreAltTool = null;
+function texAltPreview(on) {
+  if (on) {
+    if (texState.tool === 'picker') return;
+    texPreAltTool = texState.tool;
+    texState.tool = 'picker';
+    texAltPreviewOn = true;
+  } else {
+    if (!texAltPreviewOn) return;
+    texAltPreviewOn = false;
+    texState.tool = texPreAltTool || 'pencil';
+    texPreAltTool = null;
+  }
+  document.querySelectorAll('.tex-tool[data-ttool]').forEach(b => b.classList.toggle('active', b.dataset.ttool === texState.tool));
+  toggleColorButton(texState.tool === 'pencil' || texState.tool === 'bucket');
+  texState.hover = null;
+  renderTexCanvas();
+}
+window.addEventListener('keydown', (e) => { if (e.key === 'Alt' && texActive) texAltPreview(true); });
+window.addEventListener('keyup', (e) => { if (e.key === 'Alt') texAltPreview(false); });
+window.addEventListener('blur', () => texAltPreview(false));
 
 function initTextureEditor() {
   const wrap = texCanvasWrap();
@@ -370,19 +447,47 @@ function initTextureEditor() {
 
   wrap.addEventListener('pointerdown', (ev) => {
     ev.preventDefault();
-    if (ev.button === 2) { // 右键拖动：平移（灰色区域亦有效）
+    if (ev.button === 1) { // 中键拖动：平移（灰色区域亦有效）
       texDrag = { mode: 'pan', x: ev.clientX, y: ev.clientY, panX: texState.panX, panY: texState.panY };
       wrap.setPointerCapture(ev.pointerId);
       return;
     }
+    if (ev.button === 2) { // 右键按住：临时橡皮擦（松开回到原工具）
+      texDrag = { mode: 'erase', last: texPixelAt(ev) };
+      pushTexUndo();
+      wrap.setPointerCapture(ev.pointerId);
+      applyStroke(texDrag.last, 'erase');
+      return;
+    }
     if (ev.button !== 0) return;
     const p = texPixelAt(ev);
-    if (ev.altKey) return;
-    if (texState.tool === 'select') {
+    if (ev.altKey) { // Alt 临时吸管（指针处取色）
+      const col = texGetPixel(p.x, p.y);
+      if (col) { texState.color = col.slice(); updateColorButton(); }
+      return;
+    }
+    const selRect = selectionRect();
+    const insideSel = texState.tool === 'selmove' && selRect && p.x >= selRect.x && p.x < selRect.x + selRect.w && p.y >= selRect.y && p.y < selRect.y + selRect.h;
+    if (texState.tool === 'select' || (texState.tool === 'selmove' && !insideSel)) {
+      // 拖出新矩形选区
       texDrag = { mode: 'select', x0: p.x, y0: p.y };
       texState.selecting = { x0: p.x, y0: p.y };
       wrap.setPointerCapture(ev.pointerId);
       return;
+    }
+    if (texState.tool === 'selmove' && insideSel) {
+      // 在选区内按下：移动选区内容（剪下 + 贴到新位置）
+      const t = getCurrentTexture();
+      if (t) {
+        const snap = new Uint8ClampedArray(selRect.w * selRect.h * 4);
+        for (let y = 0; y < selRect.h; y++) snap.set(t.data.subarray(((selRect.y + y) * t.width + selRect.x) * 4, ((selRect.y + y) * t.width + selRect.x + selRect.w) * 4), y * selRect.w * 4);
+        pushTexUndo();
+        clearRegion(selRect.x, selRect.y, selRect.w, selRect.h);
+        texDrag = { mode: 'selmove', snap, w: selRect.w, h: selRect.h, grabX: p.x - selRect.x, grabY: p.y - selRect.y, prevX: selRect.x, prevY: selRect.y };
+        wrap.setPointerCapture(ev.pointerId);
+        renderTexCanvas();
+        return;
+      }
     }
     const { w, h } = currentTexSize();
     if (p.x < 0 || p.y < 0 || p.x >= w || p.y >= h) return; // 画布外不绘制
@@ -394,11 +499,7 @@ function initTextureEditor() {
     if (texState.tool === 'bucket') {
       pushTexUndo();
       if (!getCurrentTexture()) return;
-      if (texState.selection) {
-        paintArea(Math.min(texState.selection.x0, texState.selection.x1), Math.min(texState.selection.y0, texState.selection.y1), (x, y) => { texSetPixel(x, y); return true; });
-      } else {
-        floodFill(p.x, p.y, texState.color, texSetPixel);
-      }
+      floodFill(p.x, p.y, texState.color, texSetPixel);
       renderTexCanvas();
       if (typeof rebuildAtlas === 'function') rebuildAtlas();
       setDirty(true);
@@ -423,12 +524,29 @@ function initTextureEditor() {
         renderTexCanvas();
         return;
       }
+      if (texDrag.mode === 'selmove') {
+        const p = texPixelAt(ev);
+        const t = getCurrentTexture();
+        if (t) {
+          const { w: tw, h: th } = currentTexSize();
+          const nx = Math.max(0, Math.min(tw - texDrag.w, p.x - texDrag.grabX));
+          const ny = Math.max(0, Math.min(th - texDrag.h, p.y - texDrag.grabY));
+          if (nx !== texDrag.prevX || ny !== texDrag.prevY) {
+            clearRegion(texDrag.prevX, texDrag.prevY, texDrag.w, texDrag.h); // 清除上一盖章位置残影
+            stampRegion(t, texDrag.snap, nx, ny, texDrag.w, texDrag.h);
+            texDrag.prevX = nx; texDrag.prevY = ny;
+            texState.selection = { x0: nx, y0: ny, x1: nx + texDrag.w, y1: ny + texDrag.h };
+            renderTexCanvas();
+          }
+        }
+        return;
+      }
       const p = texPixelAt(ev);
       applyStroke(p, texDrag.mode);
       return;
     }
-    // 悬停描边（pencil/eraser）
-    if (texState.tool === 'pencil' || texState.tool === 'eraser') {
+    // 悬停描边（铅笔）
+    if (texState.tool === 'pencil') {
       const p = texPixelAt(ev);
       if (!texState.hover || texState.hover.x !== p.x || texState.hover.y !== p.y) {
         texState.hover = p;
@@ -443,12 +561,16 @@ function initTextureEditor() {
       if (s && Math.abs(s.x1 - s.x0) < 1 && Math.abs(s.y1 - s.y0) < 1) texState.selection = null;
       renderTexCanvas();
     }
-    const wasPan = texDrag && texDrag.mode === 'pan';
+    const suppressCtx = texDrag && (texDrag.mode === 'pan' || texDrag.mode === 'erase' || texDrag.mode === 'selmove');
+    if (texDrag && texDrag.mode === 'selmove') {
+      if (typeof rebuildAtlas === 'function') rebuildAtlas();
+      setDirty(true);
+    }
     texDrag = null;
     texState.selecting = null;
-    // 右键平移释放瞬间，浏览器可能在外部元素上补发 contextmenu（此时 texDrag 已置空，
+    // 中键平移/右键橡皮擦松开瞬间，浏览器可能在外部元素上补发 contextmenu（此时 texDrag 已置空，
     // 靠短暂时间窗口抑制）。捕获保证 pointerup 仍落回 wrap。
-    if (wasPan) texCtxSuppressUntil = performance.now() + 400;
+    if (suppressCtx) texCtxSuppressUntil = performance.now() + 400;
   });
 
   wrap.addEventListener('wheel', (ev) => {
@@ -466,12 +588,12 @@ function initTextureEditor() {
 
   wrap.addEventListener('contextmenu', (ev) => ev.preventDefault());
 
-  // 右键平移拖拽时，指针可能离开编辑器页面并在外部释放——window 级抑制浏览器右键菜单。
+  // 右键/中键拖拽时，指针可能离开编辑器页面并在外部释放——window 级抑制浏览器右键菜单。
   // 用「时间窗口」而非 texDrag 现场判断：contextmenu 事件普遍在 pointerup 之后派发，
   // 此时 texDrag 已复位，故松开时打一个 400ms 抑制标记。
   let texCtxSuppressUntil = 0;
   window.addEventListener('contextmenu', (ev) => {
-    if ((texDrag && texDrag.mode === 'pan') || performance.now() < texCtxSuppressUntil) ev.preventDefault();
+    if ((texDrag && (texDrag.mode === 'pan' || texDrag.mode === 'erase')) || performance.now() < texCtxSuppressUntil) ev.preventDefault();
   });
 
   // 工具切换
@@ -480,6 +602,7 @@ function initTextureEditor() {
     if (!btn) return;
     if (btn.id === 'tex-undo') { texUndo(); return; }
     if (btn.id === 'tex-redo') { texRedo(); return; }
+    texAltPreviewOn = false; texPreAltTool = null; // 手动切工具时退出 Alt 预览
     texState.tool = btn.dataset.ttool;
     document.querySelectorAll('.tex-tool[data-ttool]').forEach(b => b.classList.toggle('active', b === btn));
     toggleColorButton(texState.tool === 'pencil' || texState.tool === 'bucket');
@@ -498,8 +621,8 @@ function initTextureEditor() {
   // 文件操作
   document.getElementById('btn-tex-upload').addEventListener('click', () => document.getElementById('tex-upload').click());
   document.getElementById('tex-upload').addEventListener('change', async (ev) => { const f = ev.target.files[0]; if (f) await uploadTextureFile(f); ev.target.value = ''; });
-  document.getElementById('btn-tex-new').addEventListener('click', newTextureDialog);
-  document.getElementById('btn-tex-save').addEventListener('click', saveTexture);
+  document.getElementById('btn-tex-new').addEventListener('click', createNewTexture);
+  document.getElementById('btn-tex-export').addEventListener('click', exportTexture);
 
   updateColorButton();
 }
@@ -527,7 +650,7 @@ function applyStroke(p, mode) {
 function paintAt(p, mode) {
   const t = getCurrentTexture();
   if (!t) return;
-  if (mode === 'eraser') paintArea(p.x, p.y, (x, y) => { texErasePixel(x, y); return true; });
+  if (mode === 'eraser' || mode === 'erase') paintArea(p.x, p.y, (x, y) => { texErasePixel(x, y); return true; });
   else paintArea(p.x, p.y, (x, y) => { texSetPixel(x, y); return true; });
   renderTexCanvas();
   if (typeof rebuildAtlas === 'function') rebuildAtlas();
@@ -698,17 +821,12 @@ async function uploadTextureFile(file) {
   refreshTexList();
 }
 
-async function newTextureDialog() {
-  const name = await modalPrompt('新建贴图', '', '贴图名称');
-  if (!name || !name.trim()) return;
-  const res = await modalPrompt('贴图分辨率', '16 16', '宽 高（如 16 16）');
-  if (!res) return;
-  const parts = res.trim().split(/[\sx×X,]+/).map(v => parseInt(v)).filter(v => v >= 1);
-  if (parts.length < 2) { await modalAlert('参数错误', '请输入「宽 高」两个正整数'); return; }
-  const w = Math.min(Math.max(1, parts[0]), 4096), h = Math.min(Math.max(1, parts[1]), 4096);
-  let n = name.trim(), k = 1;
-  while (getTexture(n)) n = name.trim() + '_' + (k++);
-  makeTexture(n, w, h);
+// 新建：直接在列表中创建一个默认 16×16 的贴图并打开（大小可随后用右键「修改大小」调整）
+function createNewTexture() {
+  let k = 1;
+  while (getTexture('tex_' + k)) k++;
+  const name = 'tex_' + k;
+  makeTexture(name, 16, 16);
   renderTexCanvas();
   if (typeof refreshTexBase64Cache === 'function') refreshTexBase64Cache();
   markTextureChanged();
@@ -716,13 +834,41 @@ async function newTextureDialog() {
   refreshTexList();
 }
 
-async function saveTexture() {
+// 导出：把当前贴图以 PNG 格式下载（贴图本身随工程 Ctrl+S 实时保存，无需单独保存）
+async function exportTexture() {
   const t = getCurrentTexture();
-  if (!t) { await modalAlert('保存失败', '当前无贴图，请先新建或上传'); return; }
-  // 贴图内嵌于 pdraw：刷新 base64 缓存并标记脏，下次 Ctrl+S 随工程一起保存
-  if (typeof refreshTexBase64Cache === 'function') await refreshTexBase64Cache();
-  setDirty(true);
-  await modalAlert('已就绪', '贴图「' + t.name + '」已更新，Ctrl+S 保存工程即可一并保存。');
+  if (!t) { await modalAlert('导出失败', '当前无贴图，请先新建或上传'); return; }
+  const cnv = document.createElement('canvas');
+  cnv.width = t.width; cnv.height = t.height;
+  cnv.getContext('2d').putImageData(new ImageData(t.data.slice(), t.width, t.height), 0, 0);
+  const blob = await new Promise(r => cnv.toBlob(r, 'image/png'));
+  if (!blob) { await modalAlert('导出失败', '无法生成 PNG'); return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = t.name + '.png';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+// 修改贴图大小：保持左上对齐复制原有像素，新区域透明
+function resizeTexture(name, w, h) {
+  const t = getTexture(name);
+  if (!t) return;
+  pushTexUndo();
+  const nw = Math.max(1, Math.min(4096, Math.round(w) || 16));
+  const nh = Math.max(1, Math.min(4096, Math.round(h) || 16));
+  const nd = new Uint8ClampedArray(nw * nh * 4);
+  const copyW = Math.min(t.width, nw), copyH = Math.min(t.height, nh);
+  for (let y = 0; y < copyH; y++) {
+    nd.set(t.data.subarray(y * t.width * 4, y * t.width * 4 + copyW * 4), y * nw * 4);
+  }
+  t.data = nd; t.width = nw; t.height = nh;
+  if (state.currentTexture === name) texState.selection = null;
+  renderTexCanvas();
+  if (typeof refreshTexBase64Cache === 'function') refreshTexBase64Cache();
+  markTextureChanged();
+  refreshTexList();
+  refreshUVPanel();
 }
 
 /* =========================================================================
@@ -820,11 +966,64 @@ function refreshTexList() {
       e.stopPropagation();
       showContextMenu(e.clientX, e.clientY, [
         { label: '重命名', action: () => renameTextureItem(name) },
+        { label: '修改大小', action: () => openTexResizePop(item, name) },
         { label: '删除', danger: true, action: () => deleteTextureItem(name) },
       ]);
     };
     box.appendChild(item);
   }
+}
+
+/* ---- 修改大小悬浮框：悬停在贴图条目下方（同曲线编辑器风格），外部点击关闭 ---- */
+let texResizePop = null;
+function closeTexResizePop() {
+  if (texResizePop) { texResizePop.remove(); texResizePop = null; }
+}
+function openTexResizePop(item, name) {
+  closeTexResizePop();
+  const t = getTexture(name);
+  if (!t) return;
+  const box = document.createElement('div');
+  box.className = 'tex-resize-pop';
+  const title = document.createElement('div');
+  title.className = 'trp-title';
+  title.textContent = '修改大小 · ' + name;
+  box.appendChild(title);
+  const row = document.createElement('div');
+  row.className = 'trp-row';
+  const mk = (label, val) => {
+    const lab = document.createElement('span'); lab.className = 'trp-label'; lab.textContent = label;
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.min = '1'; inp.max = '4096'; inp.step = '1'; inp.value = val;
+    row.appendChild(lab); row.appendChild(inp);
+    return inp;
+  };
+  const wIn = mk('宽', t.width), hIn = mk('高', t.height);
+  box.appendChild(row);
+  const btns = document.createElement('div');
+  btns.className = 'trp-btns';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'mini'; cancelBtn.textContent = '取消';
+  cancelBtn.onclick = () => closeTexResizePop();
+  const okBtn = document.createElement('button');
+  okBtn.className = 'mini'; okBtn.textContent = '确定';
+  okBtn.onclick = () => {
+    const w = parseInt(wIn.value), h = parseInt(hIn.value);
+    if (!isFinite(w) || !isFinite(h) || w < 1 || h < 1) return;
+    closeTexResizePop();
+    resizeTexture(name, w, h);
+  };
+  btns.appendChild(cancelBtn); btns.appendChild(okBtn);
+  box.appendChild(btns);
+  box.addEventListener('pointerdown', (e) => e.stopPropagation());
+  document.body.appendChild(box);
+  // 悬停在贴图条目下方（同曲线编辑器定位方式）
+  const r = item.getBoundingClientRect();
+  box.style.left = Math.min(Math.max(8, r.left), window.innerWidth - 220) + 'px';
+  box.style.top = Math.min(r.bottom + 6, window.innerHeight - 120) + 'px';
+  texResizePop = box;
+  setTimeout(() => { wIn.focus(); wIn.select(); }, 0);
+  setTimeout(() => document.addEventListener('pointerdown', (e) => { if (!box.contains(e.target)) closeTexResizePop(); }), 0);
 }
 
 /* =========================================================================
@@ -845,6 +1044,26 @@ function refreshTexturePanel() {
   refreshTexList();
 }
 
+// 选中对象变化时自动把贴图编辑器切换到该对象使用的贴图。
+// 在主循环中每帧调用（内部按目标签名去重，几乎零开销）。
+let _uvTargetSig = null;
+function syncTextureSelection() {
+  const t = currentUVTarget();
+  const sig = t ? t.kind + ':' + (t.kind === 'particle' ? [...t.key].sort().join(',') : t.key) : '';
+  if (sig === _uvTargetSig) return;
+  _uvTargetSig = sig;
+  if (!t) return;
+  const uv = readTargetUV(t);
+  if (!uv || !uv.texture || !state.textures[uv.texture]) return;
+  if (state.currentTexture === uv.texture) return;
+  state.currentTexture = uv.texture;
+  texState.selection = null;
+  texState.zoom = 8; texState.panX = 0; texState.panY = 0;
+  renderTexCanvas();
+  refreshTexList();
+  refreshUVPanel();
+}
+
 function refreshUVPanel() {
   const box = document.getElementById('uv-panel');
   if (!box) return;
@@ -857,7 +1076,7 @@ function refreshUVPanel() {
   const texRow = document.createElement('label'); texRow.className = 'row';
   texRow.appendChild(document.createTextNode('贴图 '));
   const texSel = document.createElement('select');
-  texSel.appendChild(new Option('（无）', ''));
+  texSel.appendChild(new Option('无', ''));
   for (const name of Object.keys(state.textures)) texSel.appendChild(new Option(name, name));
   texSel.value = uv.texture || '';
   texSel.onchange = () => {

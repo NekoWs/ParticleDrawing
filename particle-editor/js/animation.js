@@ -408,9 +408,9 @@ function maxTick() {
     if (life >= 0 && s + life > m) m = s + life;
   }
   for (const fx of state.functions) {
-    let extent = 0, hasVarAnim = false;
-    for (const v of Object.values(fx.vars)) for (const k of (v.kf || [])) { hasVarAnim = true; if (k[0] > extent) extent = k[0]; }
-    if (!hasVarAnim && /\bt\b/.test(fx.code || '')) extent = Math.max(extent, fx.duration || 0);
+    // 函数对象跨度 = st + extent；extent = max(时长, 变量关键帧最大 tick)（与图层区 rowSpan 一致）
+    let extent = fx.duration || 0;
+    for (const v of Object.values(fx.vars)) for (const k of (v.kf || [])) if (k[0] > extent) extent = k[0];
     const end = (fx.st || 0) + extent;
     if (end > m) m = end;
   }
