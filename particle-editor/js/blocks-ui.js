@@ -1459,6 +1459,8 @@ function saveWorkspaceState() {
   if (layout) s.particleListWidth = layout.style.getPropertyValue('--left-w') || null;
   // 右侧栏宽
   if (layout) s.rightPanelWidth = layout.style.getPropertyValue('--right-w') || null;
+  // 时间轴图层区高度
+  if (typeof tlLayerPaneH !== 'undefined') s.tlLayerH = tlLayerPaneH;
   try { localStorage.setItem(WS_KEY, JSON.stringify(s)); } catch (e) {}
 }
 function applyWorkspaceState() {
@@ -1471,6 +1473,8 @@ function applyWorkspaceState() {
   // 调色盘宽
   const mainEl = document.querySelector('.puzzle-main');
   if (mainEl && s.paletteWidth) mainEl.style.setProperty('--pal-w', s.paletteWidth);
+  // 时间轴图层区高度
+  if (typeof tlLayerPaneH !== 'undefined' && s.tlLayerH) tlLayerPaneH = Math.min(window.innerHeight * 0.6, Math.max(80, s.tlLayerH));
   // 窗口状态（在 ensurePuzzleDom 后应用）
   if (puzzleWin && s.sceneWin) {
     puzzleWin.scene.setPos(s.sceneWin.x, s.sceneWin.y);

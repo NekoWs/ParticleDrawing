@@ -531,7 +531,17 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .tl-time-group #tl-time { width: 46px; background: none; border: none; padding: 0; height: auto; }
 .tl-time-group #tl-time:focus { border-color: transparent; }
 .tl-time-group .ticks { white-space: nowrap; }
-#timeline { flex: 1; width: 100%; min-height: 0; margin-top: 6px; cursor: crosshair; border-radius: var(--radius-sm); }
+#timeline { flex: 0 0 28px; width: 100%; height: 28px; margin-top: 6px; cursor: crosshair; border-radius: var(--radius-sm); }
+#tl-layers-resize {
+  flex: 0 0 6px; height: 6px; margin-top: 4px; border-radius: 3px;
+  cursor: ns-resize; background: var(--border);
+}
+#tl-layers-resize:hover { background: var(--panel-3); }
+#tl-layers-canvas {
+  width: 100%; display: block;
+  border-radius: var(--radius-sm);
+  background: #181b22; cursor: grab;
+}
 .tl-loop {
   margin: 0; padding: 4px 10px; gap: 6px; height: 30px; display: inline-flex; align-items: center;
   border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -1144,10 +1154,5 @@ body.puzzle-mode #viewport #box-overlay { display: none; }
 }
 .kf-editor .ke-btns button:first-child { background: #2a3f5f; border-color: #3a6fa0; }
 
-/* ---- 时间轴图层区（AE 式入场编排） ---- */
-#tl-layers-canvas {
-  width: 100%; height: 132px; display: block;
-  margin-top: 4px; border-radius: var(--radius-sm);
-  background: #181b22; cursor: grab;
-}
+/* ---- 时间轴图层区高度由 JS 动态设置（默认 264px，可拖拽调整） ---- */
 #tl-layers-canvas:active { cursor: grabbing; }

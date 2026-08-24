@@ -90,6 +90,7 @@ function serializeParticle(pt) {
   if (pt.uv && pt.uv.texture) o.uv = serializeUV(pt.uv);
   if (pt.st) o.st = pt.st;
   if (pt.ent) o.ent = { p: pt.ent.p, d: pt.ent.d != null ? pt.ent.d : 5 };
+  if (pt.life != null && pt.life >= 0) o.life = pt.life;   // -1=无限，省略字段
   return o;
 }
 
@@ -184,6 +185,7 @@ function parseParticlesTracks(obj) {
       uv: parseUV(pt.uv),
       st: pt.st || 0,
       ent: pt.ent && pt.ent.p ? { p: String(pt.ent.p), d: pt.ent.d != null ? pt.ent.d : 5 } : null,
+      life: (pt.life != null && pt.life >= 0) ? pt.life : -1,
     };
   });
   state.groups = {};

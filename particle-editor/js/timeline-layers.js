@@ -3,12 +3,21 @@
  *
  * - 行模型：组聚合行（成员 st 跨度，可展开为成员行）+ 未分组粒子行 + 函数对象行；
  * - 拖拽条形起点改 st（整数 tick 吸附）；组条拖拽整体平移全部成员；
+ * - 粒子寿命 life（tick，-1=无限）：有限时条长=st~st+life，右端手柄拖拽调整；
+ *   双击右端手柄在 无限⇄有限（取当前指针位置） 之间切换；
  * - 视口横向与标尺共享 timelineViewStart / TL_PX_PER_TICK（panels.js）；
- * - undo：拖拽开始前 pushUndo 一次（undo.js 的 snapshot 经字段展开天然覆盖 st/ent）。
+ * - undo：拖拽开始前 pushUndo 一次（undo.js 的 snapshot 经字段展开天然覆盖 st/life/ent）。
  * ======================================================================= */
 
 const TL_LAYER_ROW_H = 18;
+const TL_LAYER_PANE_DEFAULT = 264;          // 默认高度（初版 132 的一倍）
+let tlLayerPaneH = TL_LAYER_PANE_DEFAULT;
 const tlLayerState = { expanded: new Set(), scroll: 0, drag: null, hit: [] };
+
+function tlApplyPaneHeight() {
+  const canvas = document.getElementById('tl-layers-canvas');
+  if (canvas) canvas.style.height = tlLayerPaneH + 'px';
+}
 
 function tlLayerRows() {
   const rows = [];
@@ -31,17 +40,25 @@ function rowLabel(r) {
   return 'p ' + r.p.id;
 }
 
-/** 行的可见性跨度 [start, end]：组=成员 st 的 min~max；函数对象=st~st+extent；粒子=st 点。 */
+function particleLifeEnd(p) {
+  const life = typeof p.life === 'number' ? p.life : -1;
+  const s = p.st || 0;
+  return life < 0 ? Infinity : s + life;
+}
+
+/** 行的可见性跨度 [start, end]；end 可为 Infinity（无限寿命）。 */
 function rowSpan(r) {
   if (r.kind === 'group') {
-    let lo = Infinity, hi = -Infinity;
+    let lo = Infinity, hi = -Infinity, anyInf = false;
     for (const id of r.members) {
       const p = state.particles.find(q => q.id === id);
       if (!p) continue;
-      const s = p.st || 0; lo = Math.min(lo, s); hi = Math.max(hi, s);
+      const e = particleLifeEnd(p), s = p.st || 0;
+      lo = Math.min(lo, s);
+      if (e === Infinity) anyInf = true; else hi = Math.max(hi, e);
     }
-    if (lo === Infinity) { lo = 0; hi = 0; }
-    return [lo, Math.max(hi, lo)];
+    if (lo === Infinity) { lo = 0; }
+    return [lo, anyInf ? Infinity : Math.max(hi, lo)];
   }
   if (r.kind === 'fx') {
     const fx = r.fx;
@@ -50,11 +67,12 @@ function rowSpan(r) {
     if (!hasVarAnim && /\bt\b/.test(fx.code || '')) extent = Math.max(extent, fx.duration || 0);
     return [fx.st || 0, (fx.st || 0) + extent];
   }
-  const s = r.p.st || 0;
-  return [s, s];
+  const s = r.p.st || 0, e = particleLifeEnd(r.p);
+  return [s, e];
 }
 
 function drawTimelineLayers() {
+  tlApplyPaneHeight();
   const canvas = document.getElementById('tl-layers-canvas');
   if (!canvas) return;
   const dpr = window.devicePixelRatio || 1;
@@ -65,9 +83,19 @@ function drawTimelineLayers() {
   ctx.fillStyle = '#181b22';
   ctx.fillRect(0, 0, w, h);
 
+  // 刻度行：每 5 tick 标注一次（与上方标尺对齐）
   const pxPerTick = TL_PX_PER_TICK;
-  const X = t => (t - timelineViewStart) * pxPerTick;
+  ctx.fillStyle = '#6b7382'; ctx.font = '9px sans-serif'; ctx.textBaseline = 'top';
+  const viewEnd = timelineViewStart + w / pxPerTick;
+  for (let t = Math.max(0, Math.floor(timelineViewStart / 5) * 5); t <= viewEnd; t += 5) {
+    ctx.fillText(String(t), X_of(t) + 2, 2);
+    ctx.strokeStyle = '#262b34';
+    ctx.beginPath(); ctx.moveTo(X_of(t), 0); ctx.lineTo(X_of(t), h); ctx.stroke();
+  }
+
   const rowH = TL_LAYER_ROW_H;
+  const headerH = 12;
+  const X = t => (t - timelineViewStart) * pxPerTick;
 
   // 展开组的成员行插入到组行之后
   const flat = [];
@@ -82,42 +110,63 @@ function drawTimelineLayers() {
   }
 
   tlLayerState.hit = [];
-  let y = -tlLayerState.scroll;
+  let y = headerH - tlLayerState.scroll;
   for (const r of flat) {
-    if (y + rowH >= 0 && y <= h) {
+    if (y + rowH >= headerH && y <= h) {
       const [s, e] = rowSpan(r);
       ctx.fillStyle = '#8a92a3'; ctx.font = '10px sans-serif'; ctx.textBaseline = 'middle';
       const arrow = r.kind === 'group' ? (tlLayerState.expanded.has(r.name) ? '▾ ' : '▸ ') : '';
       ctx.fillText(arrow + rowLabel(r), 4, y + rowH / 2);
-      const bx = X(s), bw = Math.max(4, X(e) - X(s));
+      const bx = X(s);
+      const inf = e === Infinity;
+      const bw = inf ? Math.max(4, w - bx) : Math.max(4, X(e) - X(s));
       ctx.fillStyle = r.kind === 'group' ? '#c9a24b' : r.kind === 'fx' ? '#7e6bc9' : '#4b7ec9';
       ctx.fillRect(bx, y + 3, bw, rowH - 6);
+      if (inf) {
+        // 无限寿命：右端渐隐 + ∞ 标记
+        const grad = ctx.createLinearGradient(w - 60, 0, w, 0);
+        grad.addColorStop(0, 'rgba(24,27,34,0)');
+        grad.addColorStop(1, '#181b22');
+        ctx.fillStyle = grad;
+        ctx.fillRect(Math.max(bx, w - 60), y + 3, w - Math.max(bx, w - 60), rowH - 6);
+        if (bw > 26) { ctx.fillStyle = '#aab3c5'; ctx.fillText('∞', Math.min(w - 14, bx + bw - 12), y + rowH / 2); }
+      } else {
+        ctx.fillStyle = '#dfe6f2';
+        ctx.fillRect(X(e) - 1.5, y + 2, 3, rowH - 4);   // 寿命终点手柄
+      }
       ctx.fillStyle = '#e8ecf5';
-      ctx.fillRect(bx - 1.5, y + 2, 3, rowH - 4);   // 起点手柄
+      ctx.fillRect(bx - 1.5, y + 2, 3, rowH - 4);       // 起点(入场)手柄
       // 播放头之前（未出场）画遮罩
       if (state.time < s) { ctx.fillStyle = 'rgba(24,27,34,0.55)'; ctx.fillRect(bx, y + 3, Math.max(0, w - bx), rowH - 6); }
-      tlLayerState.hit.push({ y, rowH, r });
+      tlLayerState.hit.push({ y, rowH, r, s, e, inf, bx, bw });
     }
     y += rowH;
   }
 
   const phx = (state.time - timelineViewStart) * pxPerTick;
   ctx.strokeStyle = 'rgba(255,204,85,0.5)';
-  ctx.beginPath(); ctx.moveTo(phx, 0); ctx.lineTo(phx, h); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(phx, headerH); ctx.lineTo(phx, h); ctx.stroke();
 
-  if (flat.length * rowH > h) {
-    ctx.fillStyle = '#666e7d'; ctx.font = '9px sans-serif'; ctx.textAlign = 'right';
-    ctx.fillText('滚轮翻行', w - 4, 8);
-    ctx.textAlign = 'left';
-  }
+  ctx.strokeStyle = '#262b34';
+  ctx.beginPath(); ctx.moveTo(0, headerH); ctx.lineTo(w, headerH); ctx.stroke();
 }
 
-function tlLayerHit(clientY) {
+function X_of(t) { return (t - timelineViewStart) * TL_PX_PER_TICK; }
+
+/** 命中检测：返回 {hit, zone}；zone ∈ 'start'|'life'|'body'。 */
+function tlLayerHitAt(clientX, clientY) {
   const canvas = document.getElementById('tl-layers-canvas');
+  if (!canvas) return null;
   const rect = canvas.getBoundingClientRect();
-  const y = clientY - rect.top + tlLayerState.scroll;
-  for (const hit of tlLayerState.hit) {
-    if (y >= hit.y && y < hit.y + hit.rowH) return hit;
+  const lx = clientX - rect.left;
+  const ly = clientY - rect.top + tlLayerState.scroll;
+  for (const hsp of tlLayerState.hit) {
+    if (ly < hsp.y || ly >= hsp.y + hsp.rowH) continue;
+    if (lx < hsp.bx - 5 || lx > hsp.bx + hsp.bw + 5) continue;
+    let zone = 'body';
+    if (lx <= hsp.bx + 4) zone = 'start';
+    else if (!hsp.inf && lx >= hsp.bx + hsp.bw - 4) zone = 'life';
+    return { hit: hsp, zone };
   }
   return null;
 }
@@ -125,6 +174,10 @@ function tlLayerHit(clientY) {
 function setRowStart(r, v) {
   if (r.kind === 'particle' || r.kind === 'member') r.p.st = v;
   else if (r.kind === 'fx') r.fx.st = v;
+}
+
+function setParticleLife(p, v) {
+  p.life = Math.max(1, v);   // 拖拽调整的最小寿命 1 tick
 }
 
 function shiftGroup(r, delta) {
@@ -141,7 +194,7 @@ function timelineXToTickL(clientX) {
   return timelineViewStart + (clientX - rect.left) / TL_PX_PER_TICK;
 }
 
-/** 轻刷新：st 改动后同步时长显示、标尺、图层区与预览。 */
+/** 轻刷新：st/life 改动后同步时长显示、标尺、图层区与预览。 */
 function refreshAllPanelsLight() {
   const maxEl = document.getElementById('tl-max');
   if (maxEl) maxEl.textContent = maxTick();
@@ -152,19 +205,25 @@ function refreshAllPanelsLight() {
 
 function tlInitLayerEvents() {
   const canvas = document.getElementById('tl-layers-canvas');
+  const grip = document.getElementById('tl-layers-resize');
   if (!canvas) return;
 
   canvas.addEventListener('pointerdown', ev => {
-    const hit = tlLayerHit(ev.clientY);
-    if (!hit) return;
-    const rect = canvas.getBoundingClientRect();
-    const localX = ev.clientX - rect.left;
+    const res = tlLayerHitAt(ev.clientX, ev.clientY);
+    if (!res) return;
+    const { hit, zone } = res;
     // 组行行首 14px 是展开箭头，交给 click 处理
-    if (hit.r.kind === 'group' && localX < 14) return;
+    if (hit.r.kind === 'group' && (ev.clientX - canvas.getBoundingClientRect().left) < 14) return;
     pushUndo();
     canvas.setPointerCapture(ev.pointerId);
     if (hit.r.kind === 'group') {
       tlLayerState.drag = { kind: 'shift', r: hit.r, lastTick: Math.round(timelineXToTickL(ev.clientX)) };
+      return;
+    }
+    if (zone === 'life') {
+      const p = hit.r.kind === 'member' ? hit.r.p : (hit.r.kind === 'particle' ? hit.r.p : null);
+      tlLayerState.drag = { kind: 'life', p, st: p.st || 0 };
+      setParticleLife(p, Math.max(1, Math.round(timelineXToTickL(ev.clientX)) - (p.st || 0)));
     } else {
       tlLayerState.drag = { kind: 'start', r: hit.r };
       setRowStart(hit.r, Math.max(0, Math.round(timelineXToTickL(ev.clientX))));
@@ -173,11 +232,18 @@ function tlInitLayerEvents() {
   });
 
   canvas.addEventListener('pointermove', ev => {
-    const d = tlLayerState.drag;
-    if (!d) return;
+    // 悬停光标反馈
+    if (!tlLayerState.drag) {
+      const res = tlLayerHitAt(ev.clientX, ev.clientY);
+      canvas.style.cursor = res && res.zone !== 'body' ? 'ew-resize' : 'grab';
+      return;
+    }
     const t = Math.round(timelineXToTickL(ev.clientX));
+    const d = tlLayerState.drag;
     if (d.kind === 'start') {
       setRowStart(d.r, Math.max(0, t));
+    } else if (d.kind === 'life') {
+      setParticleLife(d.p, Math.max(1, t - d.st));
     } else {
       const delta = t - d.lastTick;
       if (delta) { shiftGroup(d.r, delta); d.lastTick += delta; }
@@ -189,6 +255,21 @@ function tlInitLayerEvents() {
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);
 
+  // 双击寿命终点手柄：无限 ⇄ 有限（取双击处 tick 与 st 的距离）
+  canvas.addEventListener('dblclick', ev => {
+    const res = tlLayerHitAt(ev.clientX, ev.clientY);
+    if (!res || res.hit.r.kind === 'group' || res.hit.r.kind === 'fx') return;
+    if (res.zone !== 'life' && !(res.hit.inf && res.zone === 'body')) return;
+    const p = res.hit.r.p;
+    pushUndo();
+    if (particleLifeEnd(p) === Infinity) {
+      setParticleLife(p, Math.max(1, Math.round(timelineXToTickL(ev.clientX)) - (p.st || 0)));
+    } else {
+      p.life = -1; // 无限
+    }
+    refreshAllPanelsLight();
+  });
+
   canvas.addEventListener('wheel', ev => {
     ev.preventDefault();
     tlLayerState.scroll = Math.max(0, tlLayerState.scroll + (ev.deltaY > 0 ? TL_LAYER_ROW_H * 2 : -TL_LAYER_ROW_H * 2));
@@ -196,15 +277,36 @@ function tlInitLayerEvents() {
   }, { passive: false });
 
   canvas.addEventListener('click', ev => {
-    const hit = tlLayerHit(ev.clientY);
-    if (hit && hit.r.kind === 'group') {
+    const hit = tlLayerHitAt(ev.clientX, ev.clientY);
+    if (hit && hit.hit.r.kind === 'group') {
       const rect = canvas.getBoundingClientRect();
       if (ev.clientX - rect.left < 14) {
-        const name = hit.r.name;
+        const name = hit.hit.r.name;
         if (tlLayerState.expanded.has(name)) tlLayerState.expanded.delete(name);
         else tlLayerState.expanded.add(name);
         drawTimelineLayers();
       }
     }
   });
+
+  // 图层区高度拖拽
+  if (grip) {
+    let resizing = false;
+    grip.addEventListener('pointerdown', (e) => {
+      resizing = true;
+      grip.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    grip.addEventListener('pointermove', (e) => {
+      if (!resizing) return;
+      tlLayerPaneH = Math.min(window.innerHeight * 0.6, Math.max(80, tlLayerPaneH + e.movementY));
+      tlApplyPaneHeight();
+      resize();               // footer 高度变化会影响 3D 视口
+      drawTimelineLayers();
+    });
+    grip.addEventListener('pointerup', () => {
+      resizing = false;
+      if (typeof saveWorkspaceState === 'function') saveWorkspaceState();
+    });
+  }
 }

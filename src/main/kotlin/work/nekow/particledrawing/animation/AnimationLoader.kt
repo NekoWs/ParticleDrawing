@@ -126,11 +126,14 @@ object AnimationLoader {
         val velArr = o.get("vel")?.asJsonArray
         val vel = if (velArr != null) Vec3(velArr[0].asDouble, velArr[1].asDouble, velArr[2].asDouble) else Vec3.ZERO
         val uv = parseUv(o.get("uv"))
-        return AnimParticle(id, color, scale, glowing, lightLevel, pos, vel, uv, parseSt(o), parseEntrance(o))
+        return AnimParticle(id, color, scale, glowing, lightLevel, pos, vel, uv, parseSt(o), parseEntrance(o), parseLife(o))
     }
 
     /** 起始 tick（`st`，缺省 0；旧格式无此字段）。 */
     private fun parseSt(o: JsonObject): Int = o.get("st")?.asInt ?: 0
+
+    /** 寿命（`life`，tick；缺省 -1 = 无限）。 */
+    private fun parseLife(o: JsonObject): Int = o.get("life")?.asInt ?: -1
 
     /** 入场预设（`ent: {p, d}`）；缺省 null = 到点瞬间出现。未知 preset 原样保留，播放端按词表分派。 */
     private fun parseEntrance(o: JsonObject): Entrance? {

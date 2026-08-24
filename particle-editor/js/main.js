@@ -161,6 +161,8 @@ function initUI() {
   refreshParticleTree();
   // 恢复工作区状态（粒子列表宽）
   if (typeof applyWorkspaceState === 'function') applyWorkspaceState();
+  // 栏宽恢复会改变视口尺寸：立即重设 renderer，避免首帧场景缺块
+  resize();
   if (typeof initTextureEditor === 'function') initTextureEditor();
 }
 
@@ -310,11 +312,12 @@ function animate(now) {
       else { state.time = mx; state.playing = false; document.getElementById('btn-play').textContent = '▶ 播放'; resetVelOffsets(); }
     }
     updateTimeUI();
-    drawTimeline();
-    if (typeof drawTimelineLayers === 'function') drawTimelineLayers();
     rebuildPoints(false);
     syncFunctionVarValues();
   }
+  // 标尺与图层区每帧重绘（播放头推进、粒子增删/拖拽都依赖；canvas 开销可忽略）
+  drawTimeline();
+  if (typeof drawTimelineLayers === 'function') drawTimelineLayers();
   controls.update();
   updateGizmoFrame();
   pointsMaterial.uniforms.uTime.value = performance.now() / 1000;

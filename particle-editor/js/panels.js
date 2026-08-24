@@ -116,7 +116,8 @@ function drawTimeline() {
   const viewEnd = timelineViewStart + w / pxPerTick;
   ctx.fillStyle = '#1f222a'; ctx.fillRect(0, 0, w, h);
   ctx.strokeStyle = '#3a3f4b'; ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
-  const step = niceStep(viewEnd - timelineViewStart);
+  // 固定每 5 tick 一个刻度（与图层区视口对齐）
+  const step = 5;
   ctx.fillStyle = '#9aa0ad'; ctx.font = '10px sans-serif'; ctx.textBaseline = 'top';
   for (let t = Math.floor(timelineViewStart / step) * step; t <= viewEnd; t += step) {
     if (t < 0) continue;

@@ -47,8 +47,11 @@ class ClientAnimationPlayer(
 
     private val maxTick: Int = run {
         var max = animation.tracks.flatMap { it.keyframes }.maxOfOrNull { it.tick }?.toDouble() ?: 0.0
-        // 粒子起始时间计入时长：晚出场的粒子不能被截断
-        for (p in animation.particles) if (p.st > max) max = p.st.toDouble()
+        // 粒子起始时间与有限寿命计入时长：晚出场/晚回收的粒子不能被截断
+        for (p in animation.particles) {
+            if (p.st > max) max = p.st.toDouble()
+            if (p.life >= 0 && p.st + p.life > max) max = (p.st + p.life).toDouble()
+        }
         for (fx in animation.functions) {
             // 函数对象跨度 = st + 自身 extent（变量关键帧 或 依赖 t 时的 duration）
             var extent = 0.0
@@ -197,7 +200,9 @@ class ClientAnimationPlayer(
         for (p in animation.particles) {
             val s = states[p.id] ?: continue
             val localT = t - p.st
-            s.visible = localT >= 0
+            val life = p.life
+            // st 门控 + 寿命到期回收（life=-1 无限）
+            s.visible = localT >= 0 && (life < 0 || localT < life)
             s.pos = origin.add(particlePosition(p, t))
             s.color = applyEntrance(particleColor(p, t), p.ent, localT)
             s.scale = particleScale(p, t)

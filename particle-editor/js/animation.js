@@ -399,8 +399,14 @@ function currentVisualDerived(p, T) {
 function maxTick() {
   let m = 0;
   for (const tr of state.tracks) for (const k of tr.kf) m = Math.max(m, k[0]);
-  // 粒子起始时间计入时长；函数对象跨度 = st + extent（变量关键帧 或 依赖 t 时的 duration）
-  for (const p of state.particles) if (!p.fx && (p.st || 0) > m) m = p.st;
+  // 粒子起始时间与有限寿命计入时长；函数对象跨度 = st + extent（变量关键帧 或 依赖 t 时的 duration）
+  for (const p of state.particles) {
+    if (p.fx) continue;
+    const s = p.st || 0;
+    if (s > m) m = s;
+    const life = typeof p.life === 'number' ? p.life : -1;
+    if (life >= 0 && s + life > m) m = s + life;
+  }
   for (const fx of state.functions) {
     let extent = 0, hasVarAnim = false;
     for (const v of Object.values(fx.vars)) for (const k of (v.kf || [])) { hasVarAnim = true; if (k[0] > extent) extent = k[0]; }
@@ -681,10 +687,12 @@ function rebuildPoints(full) {
         ssx = v.scale[0]; ssy = v.scale[1];
       }
     }
-    // 入场门控：t < st 粒子隐藏；fade 预设在出场窗口内做 alpha 渐显（静态粒子用自身 st，派生粒子用函数对象的）
+    // 入场/寿命门控：t < st 隐藏；有限 life 到期后隐藏。fade 预设在出场窗口内做 alpha 渐显
     const gate = p.fx ? (functionIndexCache.get(p.fx) || {}) : p;
     const gst = gate.st || 0;
     let vis = T >= gst ? 1 : 0;
+    const glife = typeof gate.life === 'number' ? gate.life : -1;
+    if (vis > 0 && glife >= 0 && T - gst >= glife) vis = 0;
     if (vis > 0 && gate.ent && gate.ent.p === 'fade') {
       const fd = gate.ent.d || 5;
       if (T - gst < fd) vis *= Math.max(0, (T - gst) / fd);

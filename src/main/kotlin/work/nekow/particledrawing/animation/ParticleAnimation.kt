@@ -68,6 +68,7 @@ data class Entrance(val preset: String, val dur: Int = 5)
  *              billboard 尺寸，sy/sz 暂存数据，见 HANDOFF 六.A.2 与 B.3）
  * @param st 起始 tick：t < st 时粒子隐藏；缺省 0（旧格式兼容）
  * @param ent 入场表现预设；null = 到点瞬间出现
+ * @param life 寿命（tick）：t ≥ st+life 后粒子回收；-1 = 无限（活到动画结束），缺省 -1
  */
 class AnimParticle(
     val id: String,
@@ -79,7 +80,8 @@ class AnimParticle(
     val vel: Vec3,
     val uv: UvData? = null,
     val st: Int = 0,
-    val ent: Entrance? = null
+    val ent: Entrance? = null,
+    val life: Int = -1
 )
 
 /**
