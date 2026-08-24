@@ -43,12 +43,10 @@ fun main() {
     val t = 0.0
 
     // ---- 性能：快路径 5w ----
-    println("=== 纯标量快路径（优化后，5w 粒子） ===")
     var total = 0.0
     for (p in presets) {
         val varDefs = p.vars.map { (name, expr) -> VarDef(name, expr, emptyList()) }
         val cf = compileFunctionObject(p.code, varDefs) ?: run {
-            println("%-8s 未命中快路径（回退）".format(p.name))
             continue
         }
         val regs = cf.allocRegs()
@@ -68,7 +66,6 @@ fun main() {
 
     // ---- 正确性：快/慢路径一致（小规模） ----
     println()
-    println("=== 快/慢路径结果一致性（count=100） ===")
     var ok = true
     for (p in presets) {
         val varDefs = p.vars.map { (name, expr) -> VarDef(name, expr, emptyList()) }
@@ -80,12 +77,12 @@ fun main() {
             cf.eval(i.toDouble(), 100.0, t, regs, stack)
             val slow = evalSlow(p.code, vars, i, 100, t)
             val mismatch = abs(regs[Reg.X] - slow.pos.x) > 1e-9 ||
-                abs(regs[Reg.Y] - slow.pos.y) > 1e-9 ||
-                abs(regs[Reg.Z] - slow.pos.z) > 1e-9 ||
-                abs(regs[Reg.R] - slow.color[0]) > 1e-9 ||
-                abs(regs[Reg.SC] - slow.scale) > 1e-9 ||
-                abs(regs[Reg.LIGHT] - slow.light) > 1e-9 ||
-                (regs[Reg.GLOW] > 0.5) != slow.glow
+                    abs(regs[Reg.Y] - slow.pos.y) > 1e-9 ||
+                    abs(regs[Reg.Z] - slow.pos.z) > 1e-9 ||
+                    abs(regs[Reg.R] - slow.color[0]) > 1e-9 ||
+                    abs(regs[Reg.SC] - slow.scale) > 1e-9 ||
+                    abs(regs[Reg.LIGHT] - slow.light) > 1e-9 ||
+                    (regs[Reg.GLOW] > 0.5) != slow.glow
             if (mismatch) {
                 ok = false
                 println("${p.name} 不一致 i=$i  fast=(${regs[Reg.X]},${regs[Reg.Y]},${regs[Reg.Z]}) slow=(${slow.pos.x},${slow.pos.y},${slow.pos.z})")

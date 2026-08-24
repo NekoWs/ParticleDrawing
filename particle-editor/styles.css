@@ -335,7 +335,7 @@ body {
 .ui-modal {
   background: linear-gradient(180deg, #232733, #1d212b);
   border: 1px solid #3a4150; border-radius: 12px;
-  padding: 18px 20px 14px; width: 340px; max-width: 90vw; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  padding: 18px 20px 14px; width: 400px; max-width: 90vw; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
   display: flex; flex-direction: column; gap: 10px;
   animation: modalPopIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
@@ -1205,7 +1205,7 @@ body.puzzle-mode #viewport #box-overlay { display: none; }
 .kf-editor {
   position: fixed; z-index: 2000;
   background: #1c1f27; border: 1px solid #3a3f4b;
-  border-radius: 8px; padding: 14px 16px; min-width: 240px;
+  border-radius: 8px; padding: 14px 16px; min-width: 200px;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
   animation: kfPopIn 0.15s ease-in;
 }
