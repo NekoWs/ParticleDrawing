@@ -270,7 +270,8 @@ class BridgeParticle(
         if (u.mode == UvData.Mode.FILL) return 0f
         val sy = currentUvStart(entry.width, entry.height)[1]
         val h = if (u.uvSize[1] > 0) u.uvSize[1] else entry.height
-        return (1f - (sy + h).toFloat() / entry.height).coerceIn(0f, 1f)
+        // v 坐标直接取 sy/H：MC 纹理 v=0 对应图顶（行 0），无需再翻转
+        return (sy.toFloat() / entry.height).coerceIn(0f, 1f)
     }
 
     override fun getV1(): Float {
@@ -278,7 +279,8 @@ class BridgeParticle(
         val u = uv ?: return super.getV1()
         if (u.mode == UvData.Mode.FILL) return 1f
         val sy = currentUvStart(entry.width, entry.height)[1]
-        return (1f - sy.toFloat() / entry.height).coerceIn(0f, 1f)
+        val h = if (u.uvSize[1] > 0) u.uvSize[1] else entry.height
+        return ((sy + h).toFloat() / entry.height).coerceIn(0f, 1f)
     }
 
     // 光照查询缓存：原版 getLightCoords 每渲染帧都会查世界光照（含动态光照 mixin 的方块查询），

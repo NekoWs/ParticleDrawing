@@ -162,9 +162,8 @@ const pointsMaterial = new THREE.ShaderMaterial({
     varying float vUVMode;
     void main() {
       vec2 uvLocal = (gl_PointCoord - 0.5) / vAspect + 0.5;
-      // 翻转 y 坐标：flipY=true 时 canvas 行 0（图片顶部）→ 纹理 v=0，
-      // 但 UV 坐标中 y=0 应对应图片顶部，所以需要翻转
-      uvLocal.y = 1.0 - uvLocal.y;
+      // 不再做 y 翻转：atlas 用 CanvasTexture flipY=true 上传，图顶已位于高 v；
+      // 此前又手翻一次导致整体上下颠倒（竖向动画 654321 / 编辑器 154321）。
       if (uvLocal.x < 0.0 || uvLocal.x > 1.0 || uvLocal.y < 0.0 || uvLocal.y > 1.0) discard;
       if (vUVMode < 0.5) {
         gl_FragColor = vec4(vColor.rgb, vColor.a) * uOpacity;
