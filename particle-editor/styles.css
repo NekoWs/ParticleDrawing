@@ -505,6 +505,8 @@ body.ctrl-held .kf-t { cursor: pointer; }
   position: relative;
   display: flex; flex-direction: column; background: var(--panel);
   border-top: 1px solid var(--border); padding: 8px 14px;
+  /* 默认模块高度：可拖顶边手柄调整（拖拽写入内联高度覆盖此值） */
+  height: 360px;
 }
 .tl-controls {
   display: flex; align-items: center; gap: 10px; height: 40px; padding: 4px 10px;
@@ -539,6 +541,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
 }
 #tl-module-resize:hover { background: rgba(255, 255, 255, 0.07); }
 #tl-layers-canvas {
+  flex: 1 1 auto; min-height: 60px;
   width: 100%; display: block;
   border-radius: var(--radius-sm);
   background: #181b22; cursor: grab;

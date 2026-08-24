@@ -10,14 +10,7 @@
  * ======================================================================= */
 
 const TL_LAYER_ROW_H = 18;
-const TL_LAYER_PANE_DEFAULT = 264;          // 默认高度（初版 132 的一倍）
-let tlLayerPaneH = TL_LAYER_PANE_DEFAULT;
 const tlLayerState = { expanded: new Set(), scroll: 0, drag: null, hit: [] };
-
-function tlApplyPaneHeight() {
-  const canvas = document.getElementById('tl-layers-canvas');
-  if (canvas) canvas.style.height = tlLayerPaneH + 'px';
-}
 
 function tlLayerRows() {
   const rows = [];
@@ -72,7 +65,6 @@ function rowSpan(r) {
 }
 
 function drawTimelineLayers() {
-  tlApplyPaneHeight();
   const canvas = document.getElementById('tl-layers-canvas');
   if (!canvas) return;
   const dpr = window.devicePixelRatio || 1;
@@ -144,9 +136,6 @@ function drawTimelineLayers() {
   const phx = (state.time - timelineViewStart) * pxPerTick;
   ctx.strokeStyle = 'rgba(255,204,85,0.5)';
   ctx.beginPath(); ctx.moveTo(phx, headerH); ctx.lineTo(phx, h); ctx.stroke();
-
-  ctx.strokeStyle = '#262b34';
-  ctx.beginPath(); ctx.moveTo(0, headerH); ctx.lineTo(w, headerH); ctx.stroke();
 }
 
 function X_of(t) { return (t - timelineViewStart) * TL_PX_PER_TICK; }
@@ -290,7 +279,8 @@ function tlInitLayerEvents() {
     }
   });
 
-  // 时间轴模块整体高度拖拽（模块顶边）：clientY 差分驱动，方向=向上拖增高
+  // 时间轴模块整体高度拖拽（模块顶边）：clientY 差分驱动，方向=向上拖增高。
+  // 调整的是 .timeline 整个模块的内联高度，图层画布 flex:1 自动填满剩余空间。
   const moduleGrip = document.getElementById('tl-module-resize');
   if (moduleGrip) {
     let resizing = false, lastY = 0;
@@ -302,11 +292,13 @@ function tlInitLayerEvents() {
     });
     moduleGrip.addEventListener('pointermove', (e) => {
       if (!resizing) return;
+      const footer = document.querySelector('.timeline');
+      if (!footer) return;
       const dy = e.clientY - lastY;
       lastY = e.clientY;
-      tlLayerPaneH = Math.min(window.innerHeight * 0.6, Math.max(80, tlLayerPaneH - dy));
-      tlApplyPaneHeight();
-      resize();               // footer 总高变化会影响 3D 视口
+      const nh = Math.min(window.innerHeight * 0.75, Math.max(160, footer.offsetHeight - dy));
+      footer.style.height = nh + 'px';
+      resize();               // 模块总高变化会影响 3D 视口
       drawTimelineLayers();
     });
     const stopResize = () => {
