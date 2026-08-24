@@ -62,15 +62,15 @@ const FUNC_IMPL = {
   random: () => Math.random(),
   rand: i => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); },
   vec: (x, y, z) => vec3(x, y, z),
-  dot: (a, b) => { if (!isVec(a) || !isVec(b)) throw new Error('dot 需要向量'); return a.x * b.x + a.y * b.y + a.z * b.z; },
-  cross: (a, b) => { if (!isVec(a) || !isVec(b)) throw new Error('cross 需要向量'); return vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x); },
+  dot: (a, b) => { if (!isVec(a) || !isVec(b)) throw new Error(_et('err.dotNeedsVec')); return a.x * b.x + a.y * b.y + a.z * b.z; },
+  cross: (a, b) => { if (!isVec(a) || !isVec(b)) throw new Error(_et('err.crossNeedsVec')); return vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x); },
   len: a => isVec(a) ? Math.hypot(a.x, a.y, a.z) : Math.abs(a),
-  norm: a => { if (!isVec(a)) throw new Error('norm 需要向量'); const l = Math.hypot(a.x, a.y, a.z) || 1; return vec3(a.x / l, a.y / l, a.z / l); },
+  norm: a => { if (!isVec(a)) throw new Error(_et('err.normNeedsVec')); const l = Math.hypot(a.x, a.y, a.z) || 1; return vec3(a.x / l, a.y / l, a.z / l); },
   rotX: t => { const c = Math.cos(t), s = Math.sin(t); return mat3([[1, 0, 0], [0, c, -s], [0, s, c]]); },
   rotY: t => { const c = Math.cos(t), s = Math.sin(t); return mat3([[c, 0, s], [0, 1, 0], [-s, 0, c]]); },
   rotZ: t => { const c = Math.cos(t), s = Math.sin(t); return mat3([[c, -s, 0], [s, c, 0], [0, 0, 1]]); },
   rotAxis: (axis, t) => {
-    if (!isVec(axis)) throw new Error('rotAxis 需要向量轴');
+    if (!isVec(axis)) throw new Error(_et('err.rotAxisNeedsVec'));
     const l = Math.hypot(axis.x, axis.y, axis.z) || 1;
     const x = axis.x / l, y = axis.y / l, z = axis.z / l;
     const c = Math.cos(t), s = Math.sin(t), C = 1 - c;
@@ -105,7 +105,7 @@ function negate(v) {
   if (typeof v === 'number') return -v;
   if (isVec(v)) return vec3(-v.x, -v.y, -v.z);
   if (isMat(v)) return mat3(v.m.map(r => r.map(c => -c)));
-  throw new Error('一元负号类型不支持');
+  throw new Error(_et('err.negType'));
 }
 
 function applyOp(op, a, b) {
@@ -113,13 +113,13 @@ function applyOp(op, a, b) {
     if (isVec(a) && isVec(b)) return vec3(a.x + b.x, a.y + b.y, a.z + b.z);
     if (isMat(a) && isMat(b)) return mat3(a.m.map((r, i) => r.map((c, j) => c + b.m[i][j])));
     if (typeof a === 'number' && typeof b === 'number') return a + b;
-    throw new Error('运算符 + 类型不匹配');
+    throw new Error(_et('err.opAdd'));
   }
   if (op === '-') {
     if (isVec(a) && isVec(b)) return vec3(a.x - b.x, a.y - b.y, a.z - b.z);
     if (isMat(a) && isMat(b)) return mat3(a.m.map((r, i) => r.map((c, j) => c - b.m[i][j])));
     if (typeof a === 'number' && typeof b === 'number') return a - b;
-    throw new Error('运算符 - 类型不匹配');
+    throw new Error(_et('err.opSub'));
   }
   if (op === '*') {
     if (isMat(a)) {
@@ -136,22 +136,22 @@ function applyOp(op, a, b) {
       if (isMat(b)) return mat3(b.m.map(r => r.map(c => a * c)));
       return a * b;
     }
-    throw new Error('运算符 * 类型不匹配');
+    throw new Error(_et('err.opMul'));
   }
   if (op === '/') {
     if (isVec(a) && typeof b === 'number') return vec3(a.x / b, a.y / b, a.z / b);
     if (typeof a === 'number' && typeof b === 'number') return a / b;
-    throw new Error('运算符 / 类型不匹配');
+    throw new Error(_et('err.opDiv'));
   }
   if (op === '%') {
     if (typeof a === 'number' && typeof b === 'number') return a % b;
-    throw new Error('运算符 % 仅支持标量');
+    throw new Error(_et('err.opMod'));
   }
   if (op === '^') {
     if (typeof a === 'number' && typeof b === 'number') return Math.pow(a, b);
-    throw new Error('运算符 ^ 仅支持标量');
+    throw new Error(_et('err.opPow'));
   }
-  throw new Error('未知运算符: ' + op);
+  throw new Error(_etf('err.unknownOp', op));
 }
 
 function tokenize(expr) {
@@ -249,11 +249,11 @@ function execRpn(output, vars) {
       if (isVec(o) || isMat(o)) { s.push(o); continue; }
       if (o.t === 'comp') {
         const v = s.pop();
-        if (!isVec(v)) throw new Error('分量访问需要向量');
+        if (!isVec(v)) throw new Error(_et('err.compNeedsVec'));
         s.push(o.axis === 'x' ? v.x : o.axis === 'y' ? v.y : v.z);
       } else {
         const v = isFn ? vars(o.name) : vars[o.name];
-        if (v === undefined) throw new Error('未知变量: ' + o.name);
+        if (v === undefined) throw new Error(_etf('err.unknownVar', o.name));
         s.push(v);
       }
       continue;
@@ -325,7 +325,7 @@ function parseExprList(s) {
 
 // 给属性赋值；返回 true 表示是属性名，false 表示非属性（临时变量）
 function assignAttr(name, v, out, scope) {
-  const val = (typeof v === 'number') ? v : (() => { throw new Error('属性 ' + name + ' 需要标量值'); })();
+  const val = (typeof v === 'number') ? v : (() => { throw new Error(_etf('err.propScalar', name)); })();
   switch (name) {
     case 'x': out.pos[0] = val; scope.x = val; break;
     case 'y': out.pos[1] = val; scope.y = val; break;
@@ -350,14 +350,14 @@ function compileFunctionCode(code) {
   const stmts = [];
   for (const stmt of (code || '').split(';').map(s => s.trim()).filter(Boolean)) {
     const eq = stmt.indexOf('=');
-    if (eq < 0) throw new Error('表达式缺少 = : ' + stmt);
+    if (eq < 0) throw new Error(_etf('err.missingEq', stmt));
     const lhs = stmt.slice(0, eq).trim();
     const rhs = stmt.slice(eq + 1).trim();
     if (lhs.startsWith('[')) {
       const names = parseNameList(lhs);
       if (rhs.startsWith('[')) {
         const exprs = parseExprList(rhs).map(e => compileExpr(e));
-        if (names.length !== exprs.length) throw new Error('赋值数量不匹配: ' + stmt);
+        if (names.length !== exprs.length) throw new Error(_etf('err.assignCount2', stmt));
         stmts.push({ kind: 'pack', names, exprs });
       } else {
         stmts.push({ kind: 'unpack', names, expr: compileExpr(rhs) });
@@ -393,7 +393,7 @@ function execFunctionCode(compiled, env) {
       } else if (st.names.length === 1) {
         if (!assignAttr(st.names[0], v, out, scope)) scope[st.names[0]] = v;
       } else {
-        throw new Error('赋值数量不匹配');
+        throw new Error(_et('err.assignCount'));
       }
     }
   }

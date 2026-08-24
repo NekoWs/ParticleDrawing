@@ -26,23 +26,23 @@ function makeFloatWindow(id, title, opts) {
   // 标题栏
   const tb = document.createElement('div');
   tb.className = 'fwin-titlebar';
-  const t = document.createElement('span');
-  t.className = 'fwin-title';
-  t.textContent = title;
-  tb.appendChild(t);
+  const titleEl = document.createElement('span');
+  titleEl.className = 'fwin-title';
+  titleEl.textContent = title;
+  tb.appendChild(titleEl);
   const btns = document.createElement('span');
   btns.className = 'fwin-btns';
   let minimized = false;
 
   if (o.minimizable !== false) {
     const minBtn = document.createElement('button');
-    minBtn.className = 'fwin-btn'; minBtn.textContent = '─'; minBtn.title = '最小化';
+    minBtn.className = 'fwin-btn'; minBtn.textContent = '─'; minBtn.title = t('fwin.minimize');
     minBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleMin(); });
     btns.appendChild(minBtn);
   }
   if (o.closable !== false) {
     const closeBtn = document.createElement('button');
-    closeBtn.className = 'fwin-btn fwin-close'; closeBtn.textContent = '×'; closeBtn.title = '关闭';
+    closeBtn.className = 'fwin-btn fwin-close'; closeBtn.textContent = '×'; closeBtn.title = t('common.close');
     closeBtn.addEventListener('click', (e) => { e.stopPropagation(); if (o.onClose) o.onClose(); });
     btns.appendChild(closeBtn);
   }

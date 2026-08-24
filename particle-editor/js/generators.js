@@ -63,8 +63,8 @@ function resolveVarVals(fx, i, n, t) {
     if (name in memo) return memo[name];
     if (name in env) return env[name];
     const v = vars[name];
-    if (!v) throw new Error('未知变量: ' + name);
-    if (inStack.has(name)) throw new Error('变量循环引用: ' + name);
+    if (!v) throw new Error(_etf('err.unknownVar', name));
+    if (inStack.has(name)) throw new Error(_etf('err.varCycle', name));
     inStack.add(name);
     const kf = v.kf || [];
     const val = (kf.length > 0) ? varKfValue(kf, t0) : execRpn(getCompiledVarExpr(v), resolve);
@@ -73,7 +73,7 @@ function resolveVarVals(fx, i, n, t) {
     return val;
   }
   for (let k = 0; k < names.length; k++) {
-    if (ATTR_NAMES.includes(names[k])) throw new Error('变量名 ' + names[k] + ' 是属性保留字，请换名');
+    if (ATTR_NAMES.includes(names[k])) throw new Error(_etf('err.varReserved', names[k]));
     out[k] = resolve(names[k]);
   }
   return out;
@@ -98,8 +98,8 @@ function buildEnv(vars, ctx) {
     if (name in memo) return memo[name];
     if (name in env) return env[name];
     const v = vars[name];
-    if (!v) throw new Error('未知变量: ' + name);
-    if (inStack.has(name)) throw new Error('变量循环引用: ' + name);
+    if (!v) throw new Error(_etf('err.unknownVar', name));
+    if (inStack.has(name)) throw new Error(_etf('err.varCycle', name));
     inStack.add(name);
     const kf = v.kf || [];
     const val = (kf.length > 0) ? varKfValue(kf, ctx.t || 0) : execRpn(getCompiledVarExpr(v), resolve);
@@ -108,7 +108,7 @@ function buildEnv(vars, ctx) {
     return val;
   }
   for (const name in vars) {
-    if (ATTR_NAMES.includes(name)) throw new Error('变量名 ' + name + ' 是属性保留字，请换名');
+    if (ATTR_NAMES.includes(name)) throw new Error(_etf('err.varReserved', name));
     resolve(name);
   }
   for (const name in memo) env[name] = memo[name];
@@ -329,7 +329,7 @@ function applyPreset(fx, presetId) {
 function createFunctionObject(presetId) {
   pushUndo();
   const fx = {
-    id: nextFunctionId(), name: presetId ? FUNCTION_PRESETS[presetId].label : '函数对象',
+    id: nextFunctionId(), name: presetId ? t('fx.preset.' + presetId) : t('fx.defaultName'),
     center: [0, 0, 0], count: 30,
     code: '[x,y,z] = [0, 0, 0];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
     vars: {}, duration: 100, step: 5, preset: null, params: null,
@@ -342,7 +342,7 @@ function createFunctionObject(presetId) {
   try {
     rebuildFunctionObject(fx);
   } catch (e) {
-    modalAlert('表达式错误', e.message);
+    modalAlert(t('fx.exprError'), e.message);
   }
   refreshParticleTree();
   refreshFunctionPanel();

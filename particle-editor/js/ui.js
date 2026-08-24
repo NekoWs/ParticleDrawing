@@ -83,19 +83,19 @@ function modalPrompt(title, def, placeholder) {
   return buildModal({
     title,
     input: { value: def, placeholder },
-    buttons: [{ label: '取消', value: null }, { label: '确定', value: null, primary: true, inputValue: true }],
+    buttons: [{ label: t('common.cancel'), value: null }, { label: t('common.ok'), value: null, primary: true, inputValue: true }],
   });
 }
 function modalAlert(title, message) {
   return buildModal({
     title, message,
-    buttons: [{ label: '确定', value: undefined, primary: true }],
+    buttons: [{ label: t('common.ok'), value: undefined, primary: true }],
   });
 }
 function modalConfirm(title, message) {
   return buildModal({
     title, message,
-    buttons: [{ label: '取消', value: false }, { label: '确定', value: true, primary: true }],
+    buttons: [{ label: t('common.cancel'), value: false }, { label: t('common.ok'), value: true, primary: true }],
   });
 }
 
@@ -105,14 +105,14 @@ function showAboutModal() {
   content.className = 'about-body';
   const desc = document.createElement('div');
   desc.className = 'about-desc';
-  desc.textContent = 'ParticleDrawing 粒子动画编辑器 — 用于创作 .pdraw 动画并在 Minecraft 中播放。';
+  desc.textContent = t('about.desc');
   content.appendChild(desc);
   const mkRow = (label, href) => {
     const row = document.createElement('div');
     row.className = 'about-row';
     const lab = document.createElement('span');
     lab.className = 'about-label';
-    lab.textContent = label;
+    lab.textContent = t(label);
     row.appendChild(lab);
     if (href) {
       const a = document.createElement('a');
@@ -130,12 +130,12 @@ function showAboutModal() {
     }
     content.appendChild(row);
   };
-  mkRow('开发者', null);
+  mkRow('about.developer', null);
   mkRow('GitHub', 'https://github.com/NekoWs/ParticleDrawing/');
   mkRow('BiliBili', 'https://space.bilibili.com/593877814');
   buildModal({
-    title: '关于 ParticleDrawing',
+    title: t('about.title'),
     content,
-    buttons: [{ label: '确定', value: undefined, primary: true }],
+    buttons: [{ label: t('common.ok'), value: undefined, primary: true }],
   });
 }

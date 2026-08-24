@@ -157,13 +157,13 @@ function setDirty(v) {
 
 function nextId() {
   let n = 0;
-  while (state.particles.some(p => p.id === 'p' + n)) n++;
-  return 'p' + n;
+  while (state.particles.some(p => p.id === '粒子' + n)) n++;
+  return '粒子' + n;
 }
 function nextGroupName() {
   let n = 0;
-  while (('g' + n) in state.groups) n++;
-  return 'g' + n;
+  while (('组' + n) in state.groups) n++;
+  return '组' + n;
 }
 function nextFunctionId() {
   let n = 0;

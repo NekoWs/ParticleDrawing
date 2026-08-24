@@ -225,14 +225,14 @@ function refreshFunctionPanel() {
   const box = document.getElementById('fx-panel');
   if (!box) return;
   const fx = getFunction(state.selectedFunction);
-  if (!fx) { box.innerHTML = '<p class="hint">选中一个函数对象以编辑属性</p>'; return; }
+  if (!fx) { box.innerHTML = '<p class="hint">' + t('fx.noSelection') + '</p>'; return; }
   box.innerHTML = '';
   box.appendChild(buildFunctionPanel(fx));
 }
 
 function commitFunctionRebuild(fx) {
   try { rebuildFunctionObject(fx); }
-  catch (e) { modalAlert('表达式错误', e.message); }
+  catch (e) { modalAlert(t('fx.exprError'), e.message); }
 }
 
 function buildFunctionPanel(fx) {
@@ -241,7 +241,7 @@ function buildFunctionPanel(fx) {
 
   const nameRow = document.createElement('label');
   nameRow.className = 'row';
-  nameRow.textContent = '名称 ';
+  nameRow.textContent = t('fx.name');
   const nameIn = document.createElement('input');
   nameIn.type = 'text'; nameIn.value = fx.name;
   nameIn.onchange = () => { pushUndo(); fx.name = nameIn.value.trim() || fx.name; refreshParticleTree(); };
@@ -251,7 +251,7 @@ function buildFunctionPanel(fx) {
   // 采样数（紧跟在名称下方）
   const countRow = document.createElement('label');
   countRow.className = 'row';
-  countRow.textContent = '采样数 ';
+  countRow.textContent = t('fx.sampleCount');
   const countIn = document.createElement('input');
   countIn.type = 'number'; countIn.min = '1'; countIn.value = fx.count;
   countIn.onchange = () => { pushUndo(); fx.count = Math.max(1, Math.round(parseInt(countIn.value) || 1)); commitFunctionRebuild(fx); };
@@ -262,7 +262,7 @@ function buildFunctionPanel(fx) {
   const centerRow = document.createElement('div');
   centerRow.className = 'row';
   const centerLabel = document.createElement('span');
-  centerLabel.textContent = '中心点 ';
+  centerLabel.textContent = t('fx.center');
   centerRow.appendChild(centerLabel);
   ['X', 'Y', 'Z'].forEach((axis, idx) => {
     const inp = document.createElement('input');
@@ -283,7 +283,7 @@ function buildFunctionPanel(fx) {
     for (const prm of preset.params) {
       const row = document.createElement('label');
       row.className = 'row';
-      row.textContent = prm.label + ' ';
+      row.textContent = t('fx.param.' + prm.key) + ' ';
       const inp = document.createElement('input');
       inp.type = 'number'; inp.step = '0.1'; inp.value = fx.params[prm.key] != null ? fx.params[prm.key] : prm.def;
       inp.onchange = () => {
@@ -302,13 +302,13 @@ function buildFunctionPanel(fx) {
   // 时长 / 采样间隔
   const durRow = document.createElement('div');
   durRow.className = 'row';
-  const durLabel = document.createElement('span'); durLabel.textContent = '时长 ';
+  const durLabel = document.createElement('span'); durLabel.textContent = t('fx.duration');
   durRow.appendChild(durLabel);
   const durIn = document.createElement('input');
   durIn.type = 'number'; durIn.min = '0'; durIn.value = fx.duration; durIn.style.width = '52px';
   durIn.onchange = () => { pushUndo(); fx.duration = Math.max(0, parseInt(durIn.value) || 0); commitFunctionRebuild(fx); };
   durRow.appendChild(durIn);
-  const stepLabel = document.createElement('span'); stepLabel.textContent = ' 间隔 ';
+  const stepLabel = document.createElement('span'); stepLabel.textContent = t('fx.interval');
   durRow.appendChild(stepLabel);
   const stepIn = document.createElement('input');
   stepIn.type = 'number'; stepIn.min = '1'; stepIn.value = fx.step; stepIn.style.width = '52px';
@@ -319,11 +319,11 @@ function buildFunctionPanel(fx) {
   // 公式代码块
   const codeLabel = document.createElement('div');
   codeLabel.className = 'row';
-  codeLabel.textContent = '公式代码块';
+  codeLabel.textContent = t('fx.codeBlock');
   const puzzleBtn = document.createElement('button');
   puzzleBtn.className = 'mini';
-  puzzleBtn.textContent = '🧩 拼图';
-  puzzleBtn.title = '以拼图形式编辑代码段';
+  puzzleBtn.textContent = t('fx.puzzle');
+  puzzleBtn.title = t('fx.puzzleHint');
   puzzleBtn.onclick = () => openBlockDrawer(fx);
   codeLabel.appendChild(puzzleBtn);
   wrap.appendChild(codeLabel);
@@ -337,7 +337,7 @@ function buildFunctionPanel(fx) {
   // 变量表
   const vhead = document.createElement('div');
   vhead.className = 'vars-head';
-  vhead.innerHTML = '<span>变量列表</span>';
+  vhead.innerHTML = '<span>' + t('fx.varList') + '</span>';
   const vadd = document.createElement('button');
   vadd.className = 'mini'; vadd.textContent = '+';
   vadd.onclick = () => {
@@ -386,7 +386,7 @@ function buildVarRow(fx, name) {
   const fold = document.createElement('button');
   fold.className = 'var-fold' + (expanded ? ' open' : '');
   fold.textContent = expanded ? '▾' : '▸';
-  fold.title = expanded ? '折叠关键帧列表' : '展开关键帧列表';
+  fold.title = expanded ? t('fx.collapseKf') : t('fx.expandKf');
   fold.onclick = () => { varExpandState[key] = !expanded; refreshFunctionPanel(); };
   row.appendChild(fold);
 
@@ -399,7 +399,7 @@ function buildVarRow(fx, name) {
     vIn.value = r3(varKfValue(kfs, state.time)).toFixed(2);
     vIn.dataset.fxKf = fx.id + '|' + name;
     vIn.classList.add('kf-synced');
-    vIn.title = '有关键帧：值由时间轴驱动（删除全部关键帧后可编辑表达式）';
+    vIn.title = t('fx.kfSyncedHint');
   } else {
     vIn.value = v.expr || '0';
   }
@@ -407,7 +407,7 @@ function buildVarRow(fx, name) {
     pushUndo();
     const nn = nIn.value.trim();
     if (nn && nn !== name) {
-      if (ATTR_NAMES.includes(nn)) { modalAlert('变量名错误', '变量名 ' + nn + ' 是属性保留字'); nIn.value = name; refreshFunctionPanel(); return; }
+      if (ATTR_NAMES.includes(nn)) { modalAlert(t('fx.varNameError'), tf('fx.varNameReserved', nn)); nIn.value = name; refreshFunctionPanel(); return; }
       fx.vars[nn] = fx.vars[name]; delete fx.vars[name];
     }
     commitFunctionRebuild(fx); refreshFunctionPanel();
@@ -422,7 +422,7 @@ function buildVarRow(fx, name) {
     const badge = document.createElement('span');
     badge.className = 'kf-count';
     badge.textContent = '◇ ' + kfs.length;
-    badge.title = '关键帧数（点击 ▸ 展开查看）';
+    badge.title = t('fx.kfCountHint');
     badge.style.color = varKfHue(fx, name);
     row.appendChild(badge);
   }
@@ -437,7 +437,7 @@ function buildVarRow(fx, name) {
     kfWrap.style.borderLeft = '3px solid ' + hue;  // 色调左边线，区分归属变量
     kfs.forEach((k, idx) => kfWrap.appendChild(buildVarKfRow(fx, name, k, idx === 0)));
     const addBtn = document.createElement('button');
-    addBtn.className = 'mini'; addBtn.textContent = '+ 关键帧';
+    addBtn.className = 'mini'; addBtn.textContent = t('fx.addKf');
     addBtn.onclick = () => {
       pushUndo();
       const v = fx.vars[name];

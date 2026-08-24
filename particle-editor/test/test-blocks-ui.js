@@ -41,6 +41,8 @@ global.localStorage = { getItem(){ return null; }, setItem(){}, removeItem(){} }
 global.indexedDB = undefined;
 
 const src = [
+  fs.readFileSync('js/langs.js', 'utf8'),
+  fs.readFileSync('js/i18n.js', 'utf8'),
   fs.readFileSync('js/easing.js', 'utf8'),
   fs.readFileSync('js/constants.js', 'utf8'),
   fs.readFileSync('js/blocks.js', 'utf8'),

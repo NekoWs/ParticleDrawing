@@ -12,9 +12,13 @@ function updateLoopIndicator() {
   if (el) el.style.opacity = state.loop ? '1' : '0.25';
 }
 
+function syncPlayButton() {
+  document.getElementById('btn-play').textContent = state.playing ? t('timeline.pause') : t('timeline.play');
+}
+
 function togglePlay() {
   state.playing = !state.playing;
-  document.getElementById('btn-play').textContent = state.playing ? '⏸ 暂停' : '▶ 播放';
+  syncPlayButton();
   resetVelOffsets();
 }
 
@@ -25,7 +29,21 @@ evShift = () => shiftHeld;
 window.addEventListener('keydown', (e) => { if (e.key === 'Control') document.body.classList.add('ctrl-held'); });
 window.addEventListener('keyup', (e) => { if (e.key === 'Control') document.body.classList.remove('ctrl-held'); });
 
+// 重建函数对象预设下拉（语言切换后重新取标签）
+function refreshFxPresetOptions() {
+  const sel = document.getElementById('fx-preset-add');
+  if (!sel) return;
+  sel.innerHTML = '';
+  for (const id in FUNCTION_PRESETS) {
+    const o = document.createElement('option'); o.value = id; o.textContent = t('fx.preset.' + id);
+    sel.appendChild(o);
+  }
+  sel.value = 'blank';
+}
+
 function initUI() {
+  applyI18nDom();
+  syncPlayButton();
   const tlEase = document.getElementById('tl-easing');
   tlEase.innerHTML = easingCurveSVG(state.defaultEasing);
   tlEase.onclick = () => openEasingEditor(state.defaultEasing, (e) => {
@@ -43,6 +61,13 @@ function initUI() {
   });
   const closeMenus = () => document.querySelectorAll('.menu').forEach(m => m.classList.remove('open'));
   document.getElementById('btn-about').addEventListener('click', () => { closeMenus(); showAboutModal(); });
+  // 语言切换
+  document.getElementById('menu-lang').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('[data-lang]');
+    if (!btn) return;
+    closeMenus();
+    setLanguage(btn.dataset.lang);
+  });
   document.getElementById('btn-new').addEventListener('click', () => { closeMenus(); newFile(); });
   document.getElementById('btn-open').addEventListener('click', () => { closeMenus(); openFile(); });
   document.getElementById('btn-save').addEventListener('click', () => { closeMenus(); saveFile(); });
@@ -75,11 +100,7 @@ function initUI() {
 
   // 函数对象
   const fxPresetSel = document.getElementById('fx-preset-add');
-  for (const id in FUNCTION_PRESETS) {
-    const o = document.createElement('option'); o.value = id; o.textContent = FUNCTION_PRESETS[id].label;
-    fxPresetSel.appendChild(o);
-  }
-  fxPresetSel.value = 'blank';
+  refreshFxPresetOptions();
   document.getElementById('btn-fx-preset-add').addEventListener('click', () => {
     if (fxPresetSel.value) createFunctionObject(fxPresetSel.value);
   });
@@ -230,7 +251,7 @@ function applyScaleFromInputs() {
     if (e.target.closest('.ptree-head')) return;
     e.preventDefault();
     showContextMenu(e.clientX, e.clientY, [
-      { label: '添加粒子', action: () => { pushUndo(); addParticle({}); rebuildPoints(); refreshParticleTree(); } },
+      { label: t('tree.addParticle'), action: () => { pushUndo(); addParticle({}); rebuildPoints(); refreshParticleTree(); } },
     ]);
   });
   tree.addEventListener('pointerdown', (e) => {
@@ -326,7 +347,7 @@ function animate(now) {
     const mx = maxTick();
     if (state.time >= mx && mx > 0) {
       if (state.loop) { state.time = 0; resetVelOffsets(); }
-      else { state.time = mx; state.playing = false; document.getElementById('btn-play').textContent = '▶ 播放'; resetVelOffsets(); }
+      else { state.time = mx; state.playing = false; syncPlayButton(); resetVelOffsets(); }
     }
     updateTimeUI();
     rebuildPoints(false);

@@ -793,18 +793,6 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
     }
     return;
   }
-  if (state.tool === 'erase') {
-    const idx = pickParticleAt(ev.clientX, ev.clientY);
-    const p = particleAt(idx);
-    if (p) {
-      pushUndo();
-      state.particles.splice(idx, 1);
-      state.selected.delete(p.id);
-      state.tracks = state.tracks.filter(tr => !tr.ids.includes(p.id));
-      rebuildPoints(); refreshParticleTree();
-    }
-    return;
-  }
   if (['line', 'circle', 'rect', 'freehand'].includes(state.tool)) {
     const pt = planePointAt(ev.clientX, ev.clientY);
     if (!pt) return;
@@ -1038,7 +1026,7 @@ function showDrawCountEditor(cx, cy) {
   closeDrawCountEditor();
   const box = document.createElement('div');
   box.className = 'draw-count-editor';
-  box.innerHTML = '<span class="dce-label">粒子数量</span>';
+  box.innerHTML = '<span class="dce-label">' + t('draw.countLabel') + '</span>';
   const num = document.createElement('input');
   num.type = 'number'; num.min = '2'; num.max = DRAW_COUNT_MAX; num.value = state.drawCount;
   box.appendChild(num);

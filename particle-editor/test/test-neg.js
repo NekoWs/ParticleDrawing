@@ -1,5 +1,5 @@
 ﻿const fs = require('fs');
-const src = fs.readFileSync('js/easing.js','utf8');
+const src = fs.readFileSync('js/langs.js','utf8') + '\n' + fs.readFileSync('js/i18n.js','utf8') + '\n' + fs.readFileSync('js/easing.js','utf8');
 eval(src);
 let fail = 0;
 function ok(n,c){ console.log((c?'PASS ':'FAIL ')+n); if(!c) fail++; }

@@ -274,11 +274,11 @@ function updateTopbarTitle() {
 }
 
 async function openFile() {
-  if ((await confirmDiscardChanges('打开')) === 'cancel') return;
+  if ((await confirmDiscardChanges(t('common.open'))) === 'cancel') return;
   if (window.showOpenFilePicker) {
     try {
       const [h] = await window.showOpenFilePicker({
-        types: [{ description: 'ParticleDrawing 工程', accept: { 'application/json': ['.pdraw'] } }],
+        types: [{ description: t('filePicker.project'), accept: { 'application/json': ['.pdraw'] } }],
         multiple: false,
       });
       state.fileHandle = h;
@@ -318,7 +318,7 @@ async function saveFileAs() {
   const json = JSON.stringify(exportProject());
   if (window.showSaveFilePicker) {
     try {
-      const h = await window.showSaveFilePicker({ suggestedName: state.name + '.pdraw', types: [{ description: '工程文件', accept: { 'application/json': ['.pdraw'] } }] });
+      const h = await window.showSaveFilePicker({ suggestedName: state.name + '.pdraw', types: [{ description: t('filePicker.projectFile'), accept: { 'application/json': ['.pdraw'] } }] });
       state.fileHandle = h;
       const w = await h.createWritable();
       await w.write(json); await w.close();
@@ -339,7 +339,7 @@ async function exportAnimation() {
   const json = JSON.stringify(exportProject());
   if (window.showSaveFilePicker) {
     try {
-      const h = await window.showSaveFilePicker({ suggestedName: state.name + '.pdraw', types: [{ description: '工程文件', accept: { 'application/json': ['.pdraw'] } }] });
+      const h = await window.showSaveFilePicker({ suggestedName: state.name + '.pdraw', types: [{ description: t('filePicker.projectFile'), accept: { 'application/json': ['.pdraw'] } }] });
       const w = await h.createWritable();
       await w.write(json); await w.close();
       return;
@@ -353,9 +353,9 @@ async function exportAnimation() {
 
 // 新建空白动画
 async function newFile() {
-  const r = await confirmDiscardChanges('新建');
+  const r = await confirmDiscardChanges(t('common.new'));
   if (r === 'cancel') return;
-  const name = await modalPrompt('新建项目', 'my_animation', '项目名称');
+  const name = await modalPrompt(t('newProject.title'), 'my_animation', t('newProject.name'));
   if (!name || !name.trim()) return;
   pushUndo();
   state.particles = []; state.tracks = []; state.groups = {}; state.functions = [];
@@ -378,12 +378,12 @@ async function newFile() {
 async function confirmDiscardChanges(actionLabel) {
   if (!state.dirty) return 'discard';
   const r = await buildModal({
-    title: '未保存的更改',
-    message: '当前工程有未保存的修改。',
+    title: t('confirm.unsavedTitle'),
+    message: t('confirm.unsavedMsg'),
     buttons: [
-      { label: '取消', value: 'cancel' },
-      { label: '不保存', value: 'discard', danger: true },
-      { label: '保存并' + actionLabel, value: 'save', primary: true },
+      { label: t('common.cancel'), value: 'cancel' },
+      { label: t('confirm.discard'), value: 'discard', danger: true },
+      { label: t('confirm.saveAnd') + actionLabel, value: 'save', primary: true },
     ],
   });
   if (r === 'save') await saveFile();

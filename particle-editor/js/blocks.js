@@ -215,7 +215,7 @@ function exprToCode(node, parentPrec) {
       for (let i = 0; i < n; i++) { const pr = PREC[node.ops[i]]; if (pr < p) p = pr; }
       break;
     }
-    default: throw new Error('未知表达式节点: ' + node.kind);
+    default: throw new Error(_etf('err.unknownExprNode', node.kind));
   }
   return (p < parentPrec) ? '(' + s + ')' : s;
 }
@@ -235,7 +235,7 @@ function stmtToCode(s) {
     case 'light': return 'light = ' + exprToCode(s.expr, 0);
     case 'attr': return s.name + ' = ' + exprToCode(s.expr, 0);
     case 'set': return s.name + ' = ' + exprToCode(s.expr, 0);
-    default: throw new Error('未知语句块: ' + s.kind);
+    default: throw new Error(_etf('err.unknownStmt', s.kind));
   }
 }
 
@@ -285,11 +285,11 @@ function parseExpr(str) {
   let pos = 0;
   const peek = () => toks[pos];
   const next = () => toks[pos++];
-  const expect = (t) => { const tk = next(); if (!tk || tk.t !== t) throw new Error('表达式缺少 ' + t + ' : ' + str); return tk; };
+  const expect = (t) => { const tk = next(); if (!tk || tk.t !== t) throw new Error(_etf('err.exprNeed', t, str)); return tk; };
 
   function parsePrimary() {
     const tk = next();
-    if (!tk) throw new Error('表达式意外结束');
+    if (!tk) throw new Error(_et('err.exprEnd'));
     let node;
     if (tk.t === 'num') node = { kind: 'num', value: tk.v };
     else if (tk.t === 'var') node = { kind: 'var', name: tk.name };
@@ -299,7 +299,7 @@ function parseExpr(str) {
       if (inner.kind === 'num') node = { kind: 'num', value: -inner.value };
       else node = { kind: 'neg', a: inner };
     } else if (tk.t === 'func') {
-      if (!peek() || peek().t !== '(') throw new Error('函数缺少括号: ' + tk.name);
+      if (!peek() || peek().t !== '(') throw new Error(_etf('err.funcNoParen', tk.name));
       next(); // '('
       const args = [];
       if (peek() && peek().t !== ')') {
@@ -312,7 +312,7 @@ function parseExpr(str) {
       node = parseAddSub();
       expect(')');
     } else {
-      throw new Error('意外符号: ' + (tk.t || JSON.stringify(tk)));
+      throw new Error(_etf('err.unexpectedTok', tk.t || JSON.stringify(tk)));
     }
     while (peek() && peek().t === 'comp') {
       const c = next();
@@ -373,7 +373,7 @@ function parseExpr(str) {
   }
 
   const node = parseAddSub();
-  if (pos < toks.length) throw new Error('表达式有多余内容: ' + str);
+  if (pos < toks.length) throw new Error(_etf('err.exprExtra', str));
   return node;
 }
 
@@ -384,29 +384,29 @@ const isNames = (names, expect) => names.length === expect.length && names.every
 
 function stmtToNode(stmt) {
   const eq = stmt.indexOf('=');
-  if (eq < 0) throw new Error('语句缺少 = : ' + stmt);
+  if (eq < 0) throw new Error(_etf('err.stmtMissingEq', stmt));
   const lhs = stmt.slice(0, eq).trim();
   const rhs = stmt.slice(eq + 1).trim();
   if (lhs.startsWith('[')) {
     const names = parseNameList(lhs);
     if (rhs.startsWith('[')) {
       const exprs = parseExprList(rhs).map(e => parseExpr(e));
-      if (names.length !== exprs.length) throw new Error('赋值数量不匹配: ' + stmt);
+      if (names.length !== exprs.length) throw new Error(_etf('err.assignCount2', stmt));
       if (isNames(names, ['x', 'y', 'z'])) return { kind: 'pos', slots: exprs };
       if (isNames(names, ['vx', 'vy', 'vz'])) return { kind: 'vel', slots: exprs };
       if (isNames(names, ['r', 'g', 'b', 'a'])) return { kind: 'col', slots: exprs };
-      throw new Error('无法识别的打包赋值: ' + stmt);
+      throw new Error(_etf('err.unknownPack', stmt));
     }
     const e = parseExpr(rhs);
     if (isNames(names, ['x', 'y', 'z'])) return { kind: 'pos_vec', expr: e };
     if (isNames(names, ['vx', 'vy', 'vz'])) return { kind: 'vel_vec', expr: e };
-    throw new Error('无法识别的向量拆包: ' + stmt);
+    throw new Error(_etf('err.unknownUnpack', stmt));
   }
   if (lhs === 'sc') return { kind: 'scl', expr: parseExpr(rhs) };
   if (lhs === 'glow') {
     const e = parseExpr(rhs);
     if (e.kind === 'num' && (e.value === 1 || e.value === 0)) return { kind: 'glow', on: e.value === 1 };
-    throw new Error('发光赋值只能是 0 或 1: ' + stmt);
+    throw new Error(_etf('err.glowBinary', stmt));
   }
   if (lhs === 'light') return { kind: 'light', expr: parseExpr(rhs) };
   if (ATTR_NAMES.includes(lhs)) return { kind: 'attr', name: lhs, expr: parseExpr(rhs) };

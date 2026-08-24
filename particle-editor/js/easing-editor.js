@@ -27,7 +27,7 @@ function makeEasingBtn(easing, applyFn) {
   const btn = document.createElement('button');
   btn.className = 'ease-btn';
   btn.innerHTML = easingCurveSVG(easing);
-  btn.title = '编辑缓动函数';
+  btn.title = t('easing.editTitle');
   btn.onclick = (e) => { e.stopPropagation(); openEasingEditor(easing, applyFn, btn); };
   return btn;
 }
@@ -45,7 +45,7 @@ function openEasingEditor(easing, applyFn, anchor) {
   pop.className = 'easing-editor';
   const title = document.createElement('div');
   title.className = 'ee-title';
-  title.textContent = '缓动函数编辑器';
+  title.textContent = t('easing.editorTitle');
   pop.appendChild(title);
 
   const inputs = document.createElement('div');
@@ -91,11 +91,11 @@ function openEasingEditor(easing, applyFn, anchor) {
   const presetSel = document.createElement('select');
   presetSel.className = 'ee-presets';
   const opt0 = document.createElement('option');
-  opt0.value = ''; opt0.textContent = '预设…';
+  opt0.value = ''; opt0.textContent = t('easing.presets');
   presetSel.appendChild(opt0);
   for (let i = 0; i < EASINGS.length; i++) {
     const o = document.createElement('option');
-    o.value = i; o.textContent = EASINGS[i][0];
+    o.value = i; o.textContent = t(EASINGS[i][0]);
     presetSel.appendChild(o);
   }
   if (Number.isInteger(easing)) presetSel.value = String(easing); // 预设下拉回显当前缓动

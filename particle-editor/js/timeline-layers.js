@@ -28,9 +28,9 @@ function tlLayerRows() {
 }
 
 function rowLabel(r) {
-  if (r.kind === 'group') return '组 ' + r.name + ' (' + r.members.length + ')';
-  if (r.kind === 'fx') return 'f ' + r.fx.name;
-  return 'p ' + r.p.id;
+  if (r.kind === 'group') return r.name + ' (' + r.members.length + ')';
+  if (r.kind === 'fx') return r.fx.name;
+  return r.p.id;
 }
 
 function particleLifeEnd(p) {

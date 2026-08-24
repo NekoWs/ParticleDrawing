@@ -57,7 +57,7 @@ function nodeToBlockType(n) {
     case 'var': return { cls: n.name === 'pi' || n.name === 'e' ? 'blk-const' : 'blk-var', label: n.name };
     case 'func': return { cls: GROUP_COLOR[funcGroup(n.name)], label: n.name };
     case 'op': return { cls: 'blk-math', label: n.op };
-    case 'chain': return { cls: 'blk-math', label: '算式' };
+    case 'chain': return { cls: 'blk-math', label: t('blk.chain') };
     case 'comp': return { cls: 'blk-vec', label: '.' + n.axis };
     case 'neg': return { cls: 'blk-math', label: '−' };
     default: return { cls: 'blk-var', label: '?' };
@@ -102,18 +102,18 @@ function makeSlot(ref, label) {
   else {
     const ph = document.createElement('span');
     ph.className = 'blk-slot-empty';
-    ph.textContent = (label || '') + (label ? ' ' : '') + TYPE_LABEL[ref.type];
+    ph.textContent = (label || '') + (label ? ' ' : '') + t(TYPE_LABEL[ref.type]);
     el.appendChild(ph);
   }
   return el;
 }
 
 function makeExprBlock(n) {
-  const t = nodeToBlockType(n);
+  const bt = nodeToBlockType(n);
   const el = document.createElement('span');
-  el.className = 'blk-expr ' + t.cls + ' blk-drag';
+  el.className = 'blk-expr ' + bt.cls + ' blk-drag';
   el._node = n;
-  el._dragLabel = t.label;
+  el._dragLabel = bt.label;
   el._info = nodeInfo(n);
 
   if (n.kind === 'num') {
@@ -139,7 +139,7 @@ function makeExprBlock(n) {
     const spec = FUNC_BLOCKS[n.name].args;
     spec.forEach((arg, i) => {
       if (i > 0) el.appendChild(document.createTextNode(', '));
-      el.appendChild(makeSlot(slotRef(() => n.args[i], v => { n.args[i] = v; }, arg[1]), arg[0]));
+      el.appendChild(makeSlot(slotRef(() => n.args[i], v => { n.args[i] = v; }, arg[1]), t(arg[0])));
     });
     el.appendChild(document.createTextNode(')'));
     return el;
@@ -170,7 +170,7 @@ function makeExprBlock(n) {
     const ax = document.createElement('span');
     ax.className = 'blk-comp-axis';
     ax.textContent = '.' + n.axis;
-    ax.title = '点击切换分量';
+    ax.title = t('blk.clickSwapComp');
     ax.addEventListener('click', () => { bctxPushUndo(); n.axis = n.axis === 'x' ? 'y' : n.axis === 'y' ? 'z' : 'x'; renderChain(); });
     el.appendChild(ax);
     return el;
@@ -198,8 +198,8 @@ function makeOpSlot(chain, index) {
 function makeChainAppend(chain) {
   const el = document.createElement('span');
   el.className = 'blk-chain-append';
-  el.textContent = '+ 项';
-  el.title = '拖入数值或运算符以追加';
+  el.textContent = t('blk.addTerm');
+  el.title = t('blk.addTermHint');
   el._chainAppend = { chain };
   return el;
 }
@@ -213,7 +213,7 @@ function makeStatementBlock(s, isChain, chainIndex) {
   const cls = GROUP_COLOR[STMT_BLOCKS[s.kind].group] || 'blk-var';
   el.className = 'blk-stmt ' + cls + (BIG_BLOCKS[s.kind] ? ' big' : '') + ' blk-drag';
   el._stmt = s;
-  el._dragLabel = STMT_BLOCKS[s.kind].label;
+  el._dragLabel = t(STMT_BLOCKS[s.kind].label);
   el._info = STMT_BLOCKS[s.kind].desc;
 
   if (s.kind === 'set') {
@@ -273,17 +273,17 @@ function makeStatementBlock(s, isChain, chainIndex) {
   } else if (s.kind === 'glow') {
     const sw = document.createElement('button');
     sw.className = 'blk-toggle' + (s.on ? ' on' : '');
-    sw.textContent = s.on ? '发光:开' : '发光:关';
+    sw.textContent = s.on ? t('blk.glowOn') : t('blk.glowOff');
     sw.addEventListener('click', () => { bctxPushUndo(); s.on = !s.on; renderChain(); });
     el.appendChild(sw);
   } else if (s.kind === 'col') {
     // 颜色块：一行显示「颜色 [取色器] 透明度 (数值)」
-    el.appendChild(document.createTextNode(STMT_BLOCKS[s.kind].label + ' '));
+    el.appendChild(document.createTextNode(t(STMT_BLOCKS[s.kind].label) + ' '));
     const colorIn = document.createElement('input');
     colorIn.type = 'color';
     colorIn.className = 'blk-color-input';
     colorIn.value = rgbToHexColor(s.slots[0], s.slots[1], s.slots[2]);
-    colorIn.title = '取色器';
+    colorIn.title = t('blk.colorPicker');
     colorIn.addEventListener('input', () => {
       const [r, g, b] = hexToRgbColor(colorIn.value);
       if (s.slots[0] && s.slots[0].kind === 'num') s.slots[0].value = r;
@@ -298,26 +298,26 @@ function makeStatementBlock(s, isChain, chainIndex) {
     colorIn.addEventListener('pointerdown', e => e.stopPropagation());
     el.appendChild(colorIn);
     const aLabel = document.createElement('span');
-    aLabel.className = 'row-label'; aLabel.textContent = '透明度';
+    aLabel.className = 'row-label'; aLabel.textContent = t('props.opacity');
     el.appendChild(aLabel);
     el.appendChild(makeSlot(slotRef(() => s.slots[3], v => { s.slots[3] = v; }, T_SCALAR), ''));
   } else if (BIG_BLOCKS[s.kind]) {
     const head = document.createElement('div');
     head.className = 'big-head';
-    head.textContent = STMT_BLOCKS[s.kind].label;
+    head.textContent = t(STMT_BLOCKS[s.kind].label);
     el.appendChild(head);
     const spec = STMT_SLOTS[s.kind];
     spec.forEach((sl, i) => {
       const row = document.createElement('div');
       row.className = 'big-row';
       const lab = document.createElement('span');
-      lab.className = 'row-label'; lab.textContent = sl[0];
+      lab.className = 'row-label'; lab.textContent = t(sl[0]);
       row.appendChild(lab);
       row.appendChild(makeSlot(slotRef(() => s.slots[i], v => { s.slots[i] = v; }, sl[1]), ''));
       el.appendChild(row);
     });
   } else {
-    el.appendChild(document.createTextNode(STMT_BLOCKS[s.kind].label + ' '));
+    el.appendChild(document.createTextNode(t(STMT_BLOCKS[s.kind].label) + ' '));
     if (s.kind === 'pos_vec' || s.kind === 'vel_vec') {
       el.appendChild(makeSlot(slotRef(() => s.expr, v => { s.expr = v; }, T_VEC), ''));
     } else {
@@ -375,7 +375,7 @@ function newStmtNode(kind) {
     case 'set': return { kind, name: freshTempName(), expr: N0() };
     case 'attr': return { kind, name: 'x', expr: N0() };
     case 'pos_vec': case 'vel_vec': return { kind, expr: NVEC() };
-    default: throw new Error('未知语句块: ' + kind);
+    default: throw new Error(_etf('err.unknownStmt', kind));
   }
 }
 function freshTempName() {
@@ -485,7 +485,7 @@ function renderPalette() {
     sec.className = 'pal-group';
     const title = document.createElement('div');
     title.className = 'pal-title';
-    title.textContent = g.label;
+    title.textContent = t(g.label);
     sec.appendChild(title);
     const items = document.createElement('div');
     items.className = 'pal-items';
@@ -498,20 +498,20 @@ function renderPalette() {
 /** 函数积木注解：用途（参数含义…）。 */
 function funcInfo(name) {
   const f = FUNC_BLOCKS[name];
-  const args = (f.args || []).map(a => a[0]).join(', ');
-  return f.desc + (args ? '（' + args + '）' : '');
+  const args = (f.args || []).map(a => t(a[0])).join(', ');
+  return t(f.desc) + (args ? '（' + args + '）' : '');
 }
 
 /** 积木节点含义（供放大镜查看）。 */
 function nodeInfo(n) {
   switch (n.kind) {
-    case 'num': return '常量数值';
-    case 'var': return BUILTIN_VAR_INFO[n.name] || '变量';
+    case 'num': return t('blk.constNum');
+    case 'var': return (BUILTIN_VAR_INFO[n.name] && t(BUILTIN_VAR_INFO[n.name])) || t('blk.var');
     case 'func': return funcInfo(n.name);
-    case 'op': return OP_LABELS[n.op] || '运算符';
-    case 'chain': return '动态算式（可追加项）';
-    case 'comp': return '取向量的 x/y/z 分量';
-    case 'neg': return '取负';
+    case 'op': return (OP_LABELS[n.op] && t(OP_LABELS[n.op])) || t('blk.op');
+    case 'chain': return t('blk.chainDesc');
+    case 'comp': return t('blk.compDesc');
+    case 'neg': return t('blk.neg');
     default: return '';
   }
 }
@@ -527,14 +527,14 @@ function buildPaletteGroup(g) {
     ['scl', 'glow', 'light'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: STMT_BLOCKS[k].label, info: STMT_BLOCKS[k].desc }));
   } else if (g.id === 'var') {
     items.push({ key: 'stmt:set', type: 'stmt', kind: 'set', label: STMT_BLOCKS.set.label, info: STMT_BLOCKS.set.desc });
-    for (const name of availableVars()) items.push({ key: 'var:' + name, type: 'expr', template: { kind: 'var', name }, label: name, info: BUILTIN_VAR_INFO[name] || '变量' });
+    for (const name of availableVars()) items.push({ key: 'var:' + name, type: 'expr', template: { kind: 'var', name }, label: name, info: (BUILTIN_VAR_INFO[name] && t(BUILTIN_VAR_INFO[name])) || t('blk.var') });
   } else if (g.id === 'const') {
-    items.push({ key: 'expr:num', type: 'expr', template: { kind: 'num', value: 1 }, label: '数字', info: '常量数值' });
-    items.push({ key: 'expr:pi', type: 'expr', template: { kind: 'var', name: 'pi' }, label: 'pi', info: '圆周率 π ≈ 3.14159' });
-    items.push({ key: 'expr:e', type: 'expr', template: { kind: 'var', name: 'e' }, label: 'e', info: '自然常数 e ≈ 2.71828' });
+    items.push({ key: 'expr:num', type: 'expr', template: { kind: 'num', value: 1 }, label: t('blk.type.scalar'), info: t('blk.constNum') });
+    items.push({ key: 'expr:pi', type: 'expr', template: { kind: 'var', name: 'pi' }, label: 'pi', info: t('blk.piInfo') });
+    items.push({ key: 'expr:e', type: 'expr', template: { kind: 'var', name: 'e' }, label: 'e', info: t('blk.eInfo') });
   } else if (g.id === 'math') {
     // 动态算式 + 独立运算符拼图
-    items.push({ key: 'expr:chain', type: 'expr', template: { kind: 'chain', terms: [{ kind: 'num', value: 0 }, { kind: 'num', value: 0 }], ops: ['+'] }, label: '算式', info: '动态算式（可追加项）' });
+    items.push({ key: 'expr:chain', type: 'expr', template: { kind: 'chain', terms: [{ kind: 'num', value: 0 }, { kind: 'num', value: 0 }], ops: ['+'] }, label: t('blk.chain'), info: t('blk.chainDesc') });
     for (const op of OP_SYMBOLS) items.push({ key: 'opval:' + op, type: 'opval', op, label: op, info: OP_LABELS[op] || op });
     for (const name in FUNC_BLOCKS) {
       const r = FUNC_BLOCKS[name].ret;
@@ -544,7 +544,7 @@ function buildPaletteGroup(g) {
     ['vec', 'cross', 'norm', 'polar', 'sphere', 'torus', 'dot', 'len'].forEach(name => {
       if (FUNC_BLOCKS[name]) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) });
     });
-    items.push({ key: 'expr:comp', type: 'expr', template: { kind: 'comp', axis: 'x', target: null }, label: '.分量', info: '取向量的 x/y/z 分量' });
+    items.push({ key: 'expr:comp', type: 'expr', template: { kind: 'comp', axis: 'x', target: null }, label: t('blk.comp'), info: t('blk.compDesc') });
   } else if (g.id === 'mat') {
     ['rotX', 'rotY', 'rotZ', 'rotAxis'].forEach(name => items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) }));
   }
@@ -615,9 +615,9 @@ function renderChain() {
   chainStack.style.top = layout.chain.y + 'px';
   const start = document.createElement('div');
   start.className = 'blk-start blk-drag';
-  start.textContent = '起点';
+  start.textContent = t('blk.start');
   start._chainHead = true;
-  start._dragLabel = '起点';
+  start._dragLabel = t('blk.start');
   chainStack.appendChild(start);
   chainStack.appendChild(makeStmtDropZone(0));
   bctx.chain.forEach((s, i) => {
@@ -634,9 +634,9 @@ function renderChain() {
     fragStack._frag = f;
     const fragHead = document.createElement('div');
     fragHead.className = 'blk-start frag blk-drag';
-    fragHead.textContent = '碎片';
+    fragHead.textContent = t('blk.fragment');
     fragHead._fragHead = f;
-    fragHead._dragLabel = '碎片';
+    fragHead._dragLabel = t('blk.fragment');
     fragStack.appendChild(fragHead);
     fragStack.appendChild(makeStmtDropZone(0));
     f.stmts.forEach((s, i) => {
@@ -678,7 +678,7 @@ function makeVarBlock(name) {
   wrap.className = 'blk-var-row' + (hasKf ? ' disabled' : '');
   if (hasKf) {
     const hint = document.createElement('span');
-    hint.textContent = name + '（有关键帧，由时间轴驱动）';
+    hint.textContent = tf('blk.varHasKf', name);
     wrap.appendChild(hint);
     return wrap;
   }
@@ -710,7 +710,7 @@ function makeAttrBlock(name) {
   const tag = document.createElement('span');
   tag.className = 'blk-attr-tag blk-drag';
   tag.textContent = name;
-  tag.title = '拖入表达式以引用属性 ' + name;
+  tag.title = tf('blk.attrRefHint', name);
   tag._attrVar = name;
   tag._dragLabel = name;
   wrap.appendChild(tag);
@@ -724,7 +724,7 @@ function makeCountBlock() {
   const tag = document.createElement('span');
   tag.className = 'blk-attr-tag';
   tag.style.cursor = 'default';
-  tag.textContent = '采样数';
+  tag.textContent = t('blk.sampleCount');
   tag.title = BUILTIN_VAR_INFO.n;
   wrap.appendChild(tag);
   wrap.appendChild(document.createTextNode(' = '));
@@ -845,7 +845,7 @@ function makeGhost(el, clientX, clientY) {
     }
     ghost.appendChild(clone);
   } else {
-    ghost.textContent = el._dragLabel || '积木';
+    ghost.textContent = el._dragLabel || t('blk.block');
   }
   ghost.style.left = (clientX - bdrag.grabDx) + 'px';
   ghost.style.top = (clientY - bdrag.grabDy) + 'px';
@@ -1178,7 +1178,7 @@ function ensurePuzzleDom() {
   const toolbar = document.createElement('div');
   toolbar.id = 'puzzle-toolbar';
   const mkBtn = (id, text, cls) => { const b = document.createElement('button'); b.id = id; b.textContent = text; b.className = cls || 'btn'; return b; };
-  const title = document.createElement('span'); title.className = 'pz-title'; title.textContent = '拼图代码块';
+  const title = document.createElement('span'); title.className = 'pz-title'; title.textContent = t('blk.title');
   const fxName = document.createElement('span'); fxName.className = 'pz-fx'; fxName.id = 'puzzle-fx-name';
   const spacer = document.createElement('span'); spacer.className = 'pz-spacer';
   toolbar.appendChild(title); toolbar.appendChild(fxName); toolbar.appendChild(spacer);
@@ -1186,20 +1186,20 @@ function ensurePuzzleDom() {
   lensBtn.id = 'puzzle-lens';
   lensBtn.className = 'pz-lens';
   lensBtn.textContent = '🔍';
-  lensBtn.title = '拖动到拼图上查看含义';
+  lensBtn.title = t('blk.lensHint');
   lensBtn.addEventListener('pointerdown', beginLensDrag);
   toolbar.appendChild(lensBtn);
-  toolbar.appendChild(mkBtn('puzzle-ok', '确定', 'btn bd-ok'));
-  toolbar.appendChild(mkBtn('puzzle-cancel', '取消'));
+  toolbar.appendChild(mkBtn('puzzle-ok', t('common.ok'), 'btn bd-ok'));
+  toolbar.appendChild(mkBtn('puzzle-cancel', t('common.cancel')));
   document.body.appendChild(toolbar);
 
   // 场景悬浮窗（右下角）
   const vw = window.innerWidth || 1200, vh = window.innerHeight || 800;
-  const sceneWin = makeFloatWindow('fwin-scene', '场景', { x: vw - 440, y: vh - 320, w: 420, h: 300, minW: 240, minH: 160, onResize: () => { if (typeof resize === 'function') resize(); } });
+  const sceneWin = makeFloatWindow('fwin-scene', t('blk.scene'), { x: vw - 440, y: vh - 320, w: 420, h: 300, minW: 240, minH: 160, onResize: () => { if (typeof resize === 'function') resize(); } });
   document.body.appendChild(sceneWin.el);
 
   // 代码回显悬浮窗（默认在场景上方）
-  const echoWin = makeFloatWindow('fwin-echo', '代码', { x: vw - 440, y: vh - 560, w: 340, h: 200, minW: 200, minH: 120 });
+  const echoWin = makeFloatWindow('fwin-echo', t('blk.code'), { x: vw - 440, y: vh - 560, w: 340, h: 200, minW: 200, minH: 120 });
   const echoText = document.createElement('div');
   echoText.className = 'echo-text'; echoText.id = 'echo-text';
   echoWin.body.appendChild(echoText);
@@ -1275,14 +1275,14 @@ function openBlockDrawer(fx) {
   ensurePuzzleDom();
   let chain;
   try { chain = codeToStatements(fx.code); }
-  catch (e) { modalAlert('无法用拼图打开', '代码解析失败\n' + e.message + '\n\n请先在文本视图修正代码。'); return; }
+  catch (e) { modalAlert(t('blk.openFailTitle'), tf('blk.parseFail', e.message)); return; }
   const varExprs = {};
   const varOrder = [];
   for (const name of Object.keys(fx.vars)) {
     const v = fx.vars[name];
     if ((v.kf || []).length > 0) continue;
     try { varExprs[name] = parseVarExpr(v.expr || '0'); varOrder.push(name); }
-    catch (e) { modalAlert('变量表达式错误', '变量 ' + name + ' 的表达式解析失败：' + e.message); return; }
+    catch (e) { modalAlert(t('blk.varExprErrTitle'), tf('blk.varExprErr', name, e.message)); return; }
   }
   const saved = fx.ui || {};
   bctx = {

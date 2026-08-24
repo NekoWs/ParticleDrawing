@@ -3,11 +3,11 @@
  * ======================================================================= */
 
 function createGroup() {
-  if (state.selected.size < 1) { modalAlert('提示', '请先选中粒子'); return; }
+  if (state.selected.size < 1) { modalAlert(t('tree.hint'), t('tree.selectParticlesFirst')); return; }
   pushUndo();
   const name = nextGroupName();
   const idSet = new Set([...state.selected].filter(id => !isDerivedParticle(getParticle(id))));
-  if (idSet.size < 1) { popUndo(); modalAlert('提示', '派生粒子不可建立普通组'); return; }
+  if (idSet.size < 1) { popUndo(); modalAlert(t('tree.hint'), t('tree.derivedNoGroup')); return; }
   for (const g in state.groups) {
     state.groups[g] = state.groups[g].filter(id => !idSet.has(id));
     if (state.groups[g].length === 0) delete state.groups[g];
@@ -35,7 +35,7 @@ function refreshParticleTree() {
   if (!box) return;
   box.innerHTML = '';
   if (state.particles.length === 0 && Object.keys(state.groups).length === 0 && state.functions.length === 0) {
-    box.innerHTML = '<div class="hint" style="padding:8px">暂无粒子，请使用右侧工具绘制</div>';
+    box.innerHTML = '<div class="hint" style="padding:8px">' + t('tree.empty') + '</div>';
     return;
   }
   const grouped = groupedIds();
@@ -143,7 +143,7 @@ function renderParticleNode(p) {
   };
   const pid = document.createElement('span');
   pid.className = 'pid'; pid.textContent = p.id;
-  pid.title = '双击重命名';
+  pid.title = t('tree.dblclickRename');
   pid.addEventListener('dblclick', (e) => {
     e.stopPropagation();
     startRename(pid, (v) => renameParticle(p.id, v), () => refreshParticleTree());
@@ -153,7 +153,7 @@ function renderParticleNode(p) {
   if (trackCount > 0) {
     const cnt = document.createElement('span');
     cnt.className = 'ptree-track-count';
-    cnt.textContent = trackCount + ' 轨道';
+    cnt.textContent = tf('tree.trackCount', trackCount);
     head.appendChild(cnt);
   }
   head.onclick = () => {
@@ -180,7 +180,7 @@ function renderParticleNode(p) {
     e.preventDefault();
     e.stopPropagation();
     showContextMenu(e.clientX, e.clientY, [
-      { label: '删除粒子', danger: true, action: () => { state.selected = new Set([p.id]); deleteSelected(); } },
+      { label: t('tree.deleteParticle'), danger: true, action: () => { state.selected = new Set([p.id]); deleteSelected(); } },
     ]);
   });
   root.appendChild(head);
@@ -251,7 +251,7 @@ function renderCompRow(id, prop, comp) {
   row.className = 'ptree-comp-row';
   const label = document.createElement('span');
   label.className = 'clabel';
-  label.textContent = COMP_LABELS[comp];
+  label.textContent = COMP_LABELS[comp]; // 分量标签 X/Y/Z 无需翻译
   row.appendChild(label);
   const val = document.createElement('input');
   val.className = 'cval';
@@ -274,7 +274,7 @@ function renderCompRow(id, prop, comp) {
   const addBtn = document.createElement('button');
   addBtn.className = 'kf-add';
   addBtn.innerHTML = '◇+';
-  addBtn.title = '添加关键帧（当前时间）';
+  addBtn.title = t('tree.addKfHint');
   addBtn.onclick = () => addComponentKeyframe(id, prop, comp);
   row.appendChild(addBtn);
   bindCompTimeline(canvas, id, pr);
@@ -315,14 +315,14 @@ function renderGroupNode(name) {
   const label = document.createElement('span');
   label.className = 'pid';
   label.textContent = name;
-  label.title = '双击重命名';
+  label.title = t('tree.dblclickRename');
   label.addEventListener('dblclick', (e) => {
     e.stopPropagation();
     startRename(label, (v) => renameGroup(name, v), () => refreshParticleTree());
   });
   const count = document.createElement('span');
   count.className = 'pstyle';
-  count.textContent = members.length + ' 成员';
+  count.textContent = tf('tree.memberCount', members.length);
   head.appendChild(arrow); head.appendChild(label); head.appendChild(count);
   head.onclick = () => {
     state.selected.clear();
@@ -334,7 +334,7 @@ function renderGroupNode(name) {
     e.preventDefault();
     e.stopPropagation();
     showContextMenu(e.clientX, e.clientY, [
-      { label: '删除组及其粒子', danger: true, action: () => deleteGroup(name) },
+      { label: t('tree.deleteGroup'), danger: true, action: () => deleteGroup(name) },
     ]);
   });
   root.appendChild(head);
@@ -358,7 +358,7 @@ function renderGroupPropsNode(name) {
   arrow.className = 'arrow';
   arrow.textContent = collapsed ? '▸' : '▾';
   const label = document.createElement('span');
-  label.textContent = '属性';
+  label.textContent = t('tab.props');
   head.appendChild(arrow); head.appendChild(label);
   head.onclick = () => {
     if (collapsed) state.expandedProps.delete(key); else state.expandedProps.add(key);
@@ -379,7 +379,7 @@ function renderGroupMembersNode(name, members) {
   arrow.className = 'arrow';
   arrow.textContent = expanded ? '▾' : '▸';
   const label = document.createElement('span');
-  label.textContent = '粒子列表 (' + members.length + ')';
+  label.textContent = tf('tree.particleListCount', members.length);
   head.appendChild(arrow); head.appendChild(label);
   head.onclick = () => {
     if (expanded) state.expandedProps.delete(key); else state.expandedProps.add(key);
@@ -432,14 +432,14 @@ function renderFunctionNode(fx) {
   const label = document.createElement('span');
   label.className = 'pid';
   label.textContent = fx.name;
-  label.title = '双击重命名';
+  label.title = t('tree.dblclickRename');
   label.addEventListener('dblclick', (e) => {
     e.stopPropagation();
     startRename(label, (v) => renameFunction(fx.id, v), () => refreshParticleTree());
   });
   const count = document.createElement('span');
   count.className = 'pstyle';
-  count.textContent = fx.count + ' 粒子';
+  count.textContent = tf('tree.fxParticleCount', fx.count);
   head.appendChild(arrow); head.appendChild(label); head.appendChild(count);
   head.onclick = () => {
     state.selected.clear();
@@ -452,7 +452,7 @@ function renderFunctionNode(fx) {
     e.preventDefault();
     e.stopPropagation();
     showContextMenu(e.clientX, e.clientY, [
-      { label: '删除函数对象', danger: true, action: () => deleteFunctionObject(fx.id) },
+      { label: t('tree.deleteFx'), danger: true, action: () => deleteFunctionObject(fx.id) },
     ]);
   });
   root.appendChild(head);
@@ -476,7 +476,7 @@ function renderFunctionPropsNode(fx) {
   arrow.className = 'arrow';
   arrow.textContent = collapsed ? '▸' : '▾';
   const label = document.createElement('span');
-  label.textContent = '属性';
+  label.textContent = t('tab.props');
   head.appendChild(arrow); head.appendChild(label);
   head.onclick = () => {
     if (collapsed) state.expandedProps.delete(key); else state.expandedProps.add(key);
@@ -498,7 +498,7 @@ function renderFunctionMembersNode(fx) {
   arrow.className = 'arrow';
   arrow.textContent = expanded ? '▾' : '▸';
   const label = document.createElement('span');
-  label.textContent = '粒子列表 (' + members.length + ')';
+  label.textContent = tf('tree.particleListCount', members.length);
   head.appendChild(arrow); head.appendChild(label);
   head.onclick = () => {
     if (expanded) state.expandedProps.delete(key); else state.expandedProps.add(key);
@@ -693,7 +693,7 @@ function bindCompTimeline(canvas, id, pr) {
     if (hit) {
       selectKeyframe(id, pr, hit[0]);
       showContextMenu(ev.clientX, ev.clientY, [
-        { label: '删除关键帧', danger: true, action: () => { selectKeyframe(null); removeKeyframe(id, pr, hit[0]); } },
+        { label: t('tree.deleteKf'), danger: true, action: () => { selectKeyframe(null); removeKeyframe(id, pr, hit[0]); } },
       ]);
     }
   });
@@ -791,14 +791,14 @@ function openKeyframeEditor(canvas, id, pr, tick) {
   box.className = 'kf-editor';
   const title = document.createElement('div');
   title.className = 'ke-title';
-  title.textContent = '编辑关键帧 · ' + PROP_LABELS[prop] + ' ' + COMP_LABELS[comp];
+  title.textContent = tf('tree.editKf', t(PROP_LABELS[prop]), COMP_LABELS[comp]);
   box.appendChild(title);
 
   const mkLabel = (text) => { const s = document.createElement('span'); s.className = 'ke-label'; s.textContent = text; return s; };
 
   const tRow = document.createElement('div');
   tRow.className = 'row';
-  tRow.appendChild(mkLabel('时间'));
+  tRow.appendChild(mkLabel(t('tree.time')));
   const tIn = document.createElement('input');
   tIn.type = 'number'; tIn.min = '0'; tIn.value = kf[0];
   tRow.appendChild(tIn);
@@ -806,7 +806,7 @@ function openKeyframeEditor(canvas, id, pr, tick) {
 
   const vRow = document.createElement('div');
   vRow.className = 'row';
-  vRow.appendChild(mkLabel('值'));
+  vRow.appendChild(mkLabel(t('tree.value')));
   const vIn = document.createElement('input');
   vIn.type = 'number'; vIn.step = '0.01'; vIn.value = Math.round(kf[1] * 1000) / 1000;
   vRow.appendChild(vIn);
@@ -814,7 +814,7 @@ function openKeyframeEditor(canvas, id, pr, tick) {
 
   const eRow = document.createElement('div');
   eRow.className = 'row';
-  eRow.appendChild(mkLabel('缓动'));
+  eRow.appendChild(mkLabel(t('tree.easingLabel')));
   const easeBtn = makeEasingBtn(kf[2], (nv) => { kf[2] = nv; easeBtn.innerHTML = easingCurveSVG(nv); });
   eRow.appendChild(easeBtn);
   box.appendChild(eRow);
@@ -822,7 +822,7 @@ function openKeyframeEditor(canvas, id, pr, tick) {
   const btnRow = document.createElement('div');
   btnRow.className = 'ke-btns';
   const okBtn = document.createElement('button');
-  okBtn.textContent = '确定';
+  okBtn.textContent = t('common.ok');
   okBtn.onclick = () => {
     pushUndo();
     kf[0] = Math.max(0, parseInt(tIn.value) || 0);
@@ -833,7 +833,7 @@ function openKeyframeEditor(canvas, id, pr, tick) {
     refreshParticleTree();
   };
   const cancelBtn = document.createElement('button');
-  cancelBtn.textContent = '取消';
+  cancelBtn.textContent = t('common.cancel');
   cancelBtn.onclick = () => {
     kf[0] = orig[0]; kf[1] = orig[1]; kf[2] = orig[2];
     closeKeyframeEditor();

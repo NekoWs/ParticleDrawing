@@ -698,7 +698,7 @@ function openColorPicker(x, y, rgba, onCommit) {
   const row = document.createElement('div'); row.className = 'cp-row';
   const hex = document.createElement('input'); hex.className = 'cp-hex'; hex.type = 'text'; hex.maxLength = 9;
   const okBtn = document.createElement('button');
-  okBtn.className = 'mini'; okBtn.textContent = '确定';
+  okBtn.className = 'mini'; okBtn.textContent = t('common.ok');
   row.appendChild(hex); row.appendChild(okBtn);
 
   let hsv = rgbToHsv(rgba);
@@ -821,17 +821,17 @@ function makeTexture(name, w, h, data) {
 }
 
 async function uploadTextureFile(file) {
-  if (file.size > 5 * 1024 * 1024) { await modalAlert('上传失败', '贴图超过 5MB 上限'); return; }
-  if (!file.name.toLowerCase().endsWith('.png')) { await modalAlert('上传失败', '仅支持 PNG 格式'); return; }
+  if (file.size > 5 * 1024 * 1024) { await modalAlert(t('alert.uploadFailed'), t('alert.texTooBig')); return; }
+  if (!file.name.toLowerCase().endsWith('.png')) { await modalAlert(t('alert.uploadFailed'), t('alert.pngOnly')); return; }
   let bmp;
   try { bmp = await createImageBitmap(file); }
-  catch (e) { await modalAlert('上传失败', '无法解析该 PNG 文件'); return; }
+  catch (e) { await modalAlert(t('alert.uploadFailed'), t('alert.pngParseFail')); return; }
   const w = bmp.width, h = bmp.height;
   const cnv = document.createElement('canvas'); cnv.width = w; cnv.height = h;
   const ctx = cnv.getContext('2d'); ctx.drawImage(bmp, 0, 0);
   const data = new Uint8ClampedArray(ctx.getImageData(0, 0, w, h).data);
   const base = file.name.replace(/\.png$/i, '') || 'tex';
-  const name = await modalPrompt('上传贴图', base, '贴图名称');
+  const name = await modalPrompt(t('tex.upload'), base, t('tex.namePrompt'));
   if (!name || !name.trim()) return;
   let n = name.trim(), k = 1;
   while (getTexture(n)) n = name.trim() + '_' + (k++);
@@ -858,16 +858,16 @@ function createNewTexture() {
 
 // 导出：把当前贴图以 PNG 格式下载（贴图本身随工程 Ctrl+S 实时保存，无需单独保存）
 async function exportTexture() {
-  const t = getCurrentTexture();
-  if (!t) { await modalAlert('导出失败', '当前无贴图，请先新建或上传'); return; }
+  const tex = getCurrentTexture();
+  if (!tex) { await modalAlert(t('alert.exportFailed'), t('alert.noTexture')); return; }
   const cnv = document.createElement('canvas');
-  cnv.width = t.width; cnv.height = t.height;
-  cnv.getContext('2d').putImageData(new ImageData(t.data.slice(), t.width, t.height), 0, 0);
+  cnv.width = tex.width; cnv.height = tex.height;
+  cnv.getContext('2d').putImageData(new ImageData(tex.data.slice(), tex.width, tex.height), 0, 0);
   const blob = await new Promise(r => cnv.toBlob(r, 'image/png'));
-  if (!blob) { await modalAlert('导出失败', '无法生成 PNG'); return; }
+  if (!blob) { await modalAlert(t('alert.exportFailed'), t('alert.pngGenFail')); return; }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = t.name + '.png';
+  a.download = tex.name + '.png';
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
@@ -917,16 +917,16 @@ function replaceTextureRef(oldName, newName) {
 }
 
 async function renameTextureItem(oldName) {
-  const t = getTexture(oldName);
-  if (!t) return;
-  const res = await modalPrompt('重命名贴图', oldName, '新名称');
+  const tex = getTexture(oldName);
+  if (!tex) return;
+  const res = await modalPrompt(t('tex.renameTitle'), oldName, t('tex.newName'));
   if (!res) return;
   const name = res.trim();
-  if (!name) { await modalAlert('重命名失败', '名称不能为空'); return; }
+  if (!name) { await modalAlert(t('alert.renameFailed'), t('alert.nameEmpty')); return; }
   if (name === oldName) return;
-  if (getTexture(name)) { await modalAlert('重命名失败', '已存在同名贴图「' + name + '」'); return; }
+  if (getTexture(name)) { await modalAlert(t('alert.renameFailed'), tf('alert.texExists', name)); return; }
   // 内存态改名 + 同步全部引用
-  const nt = { name, width: t.width, height: t.height, data: t.data };
+  const nt = { name, width: tex.width, height: tex.height, data: tex.data };
   delete state.textures[oldName];
   state.textures[name] = nt;
   replaceTextureRef(oldName, name);
@@ -938,7 +938,7 @@ async function renameTextureItem(oldName) {
 }
 
 async function deleteTextureItem(name) {
-  const ok = await modalConfirm('删除贴图', '确定删除「' + name + '」吗？\n引用它的对象将恢复为无贴图。');
+  const ok = await modalConfirm(t('tex.deleteTitle'), tf('alert.deleteTexConfirm', name));
   if (!ok) return;
   delete state.textures[name];
   if (state.currentTexture === name) state.currentTexture = null;
@@ -962,14 +962,14 @@ function refreshTexList() {
   const names = Object.keys(state.textures);
   if (names.length === 0) return;
   for (const name of names) {
-    const t = state.textures[name];
+    const tex = state.textures[name];
     const item = document.createElement('button');
     item.className = 'tex-item' + (name === state.currentTexture ? ' active' : '');
     item.title = name;
     const cnv = document.createElement('canvas');
-    cnv.width = t.width; cnv.height = t.height;
+    cnv.width = tex.width; cnv.height = tex.height;
     const ctx = cnv.getContext('2d');
-    ctx.putImageData(new ImageData(t.data.slice(), t.width, t.height), 0, 0);
+    ctx.putImageData(new ImageData(tex.data.slice(), tex.width, tex.height), 0, 0);
     cnv.classList.add('tex-item-thumb');
     const label = document.createElement('span');
     label.className = 'tex-item-name';
@@ -987,9 +987,9 @@ function refreshTexList() {
       e.preventDefault();
       e.stopPropagation();
       showContextMenu(e.clientX, e.clientY, [
-        { label: '重命名', action: () => renameTextureItem(name) },
-        { label: '修改大小', action: () => openTexResizePop(item, name) },
-        { label: '删除', danger: true, action: () => deleteTextureItem(name) },
+        { label: t('common.rename'), action: () => renameTextureItem(name) },
+        { label: t('tex.resize'), action: () => openTexResizePop(item, name) },
+        { label: t('common.delete'), danger: true, action: () => deleteTextureItem(name) },
       ]);
     };
     box.appendChild(item);
@@ -1003,13 +1003,13 @@ function closeTexResizePop() {
 }
 function openTexResizePop(item, name) {
   closeTexResizePop();
-  const t = getTexture(name);
-  if (!t) return;
+  const tex = getTexture(name);
+  if (!tex) return;
   const box = document.createElement('div');
   box.className = 'tex-resize-pop';
   const title = document.createElement('div');
   title.className = 'trp-title';
-  title.textContent = '修改大小 · ' + name;
+  title.textContent = tf('tex.resizeTitle', name);
   box.appendChild(title);
   const row = document.createElement('div');
   row.className = 'trp-row';
@@ -1020,15 +1020,15 @@ function openTexResizePop(item, name) {
     row.appendChild(lab); row.appendChild(inp);
     return inp;
   };
-  const wIn = mk('宽', t.width), hIn = mk('高', t.height);
+  const wIn = mk(t('tex.width'), tex.width), hIn = mk(t('tex.height'), tex.height);
   box.appendChild(row);
   const btns = document.createElement('div');
   btns.className = 'trp-btns';
   const cancelBtn = document.createElement('button');
-  cancelBtn.className = 'mini'; cancelBtn.textContent = '取消';
+  cancelBtn.className = 'mini'; cancelBtn.textContent = t('common.cancel');
   cancelBtn.onclick = () => closeTexResizePop();
   const okBtn = document.createElement('button');
-  okBtn.className = 'mini'; okBtn.textContent = '确定';
+  okBtn.className = 'mini'; okBtn.textContent = t('common.ok');
   okBtn.onclick = () => {
     const w = parseInt(wIn.value), h = parseInt(hIn.value);
     if (!isFinite(w) || !isFinite(h) || w < 1 || h < 1) return;
@@ -1091,14 +1091,14 @@ function refreshUVPanel() {
   if (!box) return;
   box.innerHTML = '';
   const target = currentUVTarget();
-  if (!target) { box.innerHTML = '<p class="hint">选中对象以编辑贴图 / UV</p>'; return; }
+  if (!target) { box.innerHTML = '<p class="hint">' + t('tex.selectHint') + '</p>'; return; }
   const uv = readTargetUV(target) || defaultUV(16, 16);
 
   // 贴图引用下拉
   const texRow = document.createElement('label'); texRow.className = 'row';
-  texRow.appendChild(document.createTextNode('贴图 '));
+  texRow.appendChild(document.createTextNode(t('tex.texLabel')));
   const texSel = document.createElement('select');
-  texSel.appendChild(new Option('无', ''));
+  texSel.appendChild(new Option(t('tex.none'), ''));
   for (const name of Object.keys(state.textures)) texSel.appendChild(new Option(name, name));
   texSel.value = uv.texture || '';
   texSel.onchange = () => {
@@ -1116,7 +1116,7 @@ function refreshUVPanel() {
 
   // UV 模式
   const modeRow = document.createElement('label'); modeRow.className = 'row';
-  modeRow.appendChild(document.createTextNode('UV 模式 '));
+  modeRow.appendChild(document.createTextNode(t('tex.uvMode')));
   const modeSel = document.createElement('select');
   for (const [m, label] of Object.entries(UV_MODES)) modeSel.appendChild(new Option(label, m));
   modeSel.value = uv.mode;
@@ -1130,15 +1130,15 @@ function refreshUVPanel() {
   box.appendChild(modeRow);
 
   if (uv.mode !== 'fill') {
-    box.appendChild(uvVecField('贴图大小', nu => nu.texSize, (nu, v) => nu.texSize = v, uv, false, 'x'));
-    box.appendChild(uvVecField('UV 起点', nu => nu.uvStart, (nu, v) => nu.uvStart = v, uv, true, '|'));
-    box.appendChild(uvVecField('UV 大小', nu => nu.uvSize, (nu, v) => nu.uvSize = v, uv, false, 'x'));
+    box.appendChild(uvVecField('tex.texSize', nu => nu.texSize, (nu, v) => nu.texSize = v, uv, false, 'x'));
+    box.appendChild(uvVecField('tex.uvStart', nu => nu.uvStart, (nu, v) => nu.uvStart = v, uv, true, '|'));
+    box.appendChild(uvVecField('tex.uvSize', nu => nu.uvSize, (nu, v) => nu.uvSize = v, uv, false, 'x'));
   }
   if (uv.mode === 'animated') {
-    box.appendChild(uvVecField('UV 步长', nu => nu.uvStep, (nu, v) => nu.uvStep = v, uv, true, '|'));
-    box.appendChild(uvNumField('帧率', nu => nu.fps, (nu, v) => nu.fps = v, uv));
+    box.appendChild(uvVecField('tex.uvStep', nu => nu.uvStep, (nu, v) => nu.uvStep = v, uv, true, '|'));
+    box.appendChild(uvNumField('tex.fps', nu => nu.fps, (nu, v) => nu.fps = v, uv));
     box.appendChild(uvFrameField(uv));
-    box.appendChild(uvChkField('循环', nu => nu.loop, (nu, v) => nu.loop = v, uv));
+    box.appendChild(uvChkField('timeline.loop', nu => nu.loop, (nu, v) => nu.loop = v, uv));
   }
 }
 
@@ -1170,7 +1170,7 @@ function texAnimOverlayActive() {
 // sep：两框间分隔符——'x' 显示乘号（贴图大小/UV 大小），'|' 显示细竖线（UV 起点/UV 步长），null 不显示
 function uvVecField(labelText, get, set, uv, affectsAuto, sep) {
   const row = document.createElement('div'); row.className = 'row';
-  const lab = document.createElement('span'); lab.textContent = labelText;
+  const lab = document.createElement('span'); lab.textContent = t(labelText);
   row.appendChild(lab);
   const group = document.createElement('span'); group.className = 'uv-field';
   const mk = (i, axis) => {
@@ -1194,19 +1194,19 @@ function uvVecField(labelText, get, set, uv, affectsAuto, sep) {
     const s = document.createElement('span');
     s.className = 'uv-sep' + (sep === 'x' ? ' uv-sep-mul' : '');
     s.textContent = sep === 'x' ? '×' : '';
-    if (sep === 'x') s.title = '乘以'; 
+    if (sep === 'x') s.title = t('tex.multiply'); 
     group.appendChild(s);
   }
   group.appendChild(mk(1, 'Y'));
   const suffix = document.createElement('span'); suffix.className = 'uv-suffix';
-  suffix.textContent = labelText === 'UV 步长' ? '像素' : (labelText === '贴图大小' ? 'px' : '');
+  suffix.textContent = labelText === 'tex.uvStep' ? t('tex.px') : (labelText === 'tex.texSize' ? 'px' : '');
   if (suffix.textContent) group.appendChild(suffix);
   row.appendChild(group);
   return row;
 }
 function uvNumField(labelText, get, set, uv) {
   const row = document.createElement('div'); row.className = 'row';
-  const lab = document.createElement('span'); lab.textContent = labelText;
+  const lab = document.createElement('span'); lab.textContent = t(labelText);
   row.appendChild(lab);
   const group = document.createElement('span'); group.className = 'uv-field';
   const inp = document.createElement('input');
@@ -1219,7 +1219,7 @@ function uvNumField(labelText, get, set, uv) {
   });
   group.appendChild(inp);
   const suffix = document.createElement('span'); suffix.className = 'uv-suffix';
-  suffix.textContent = '/ 秒'; group.appendChild(suffix);
+  suffix.textContent = t('tex.perSec'); group.appendChild(suffix);
   row.appendChild(group);
   return row;
 }
@@ -1227,11 +1227,11 @@ function uvNumField(labelText, get, set, uv) {
 // >1 的输入作为「小于实际帧数的上限」。时间轴风格「输入 / 自动 N」。
 function uvFrameField(uv) {
   const row = document.createElement('div'); row.className = 'row';
-  const lab = document.createElement('span'); lab.textContent = '最大帧数';
+  const lab = document.createElement('span'); lab.textContent = t('tex.maxFrames');
   row.appendChild(lab);
   const group = document.createElement('span'); group.className = 'uv-field';
   const inp = document.createElement('input');
-  inp.type = 'number'; inp.min = '0'; inp.title = '0 或 1 = 自动（按 UV 步长算满）；>1 = 最大上限';
+  inp.type = 'number'; inp.min = '0'; inp.title = t('tex.maxFramesHint');
   const shown = (uv.maxFrame != null && uv.maxFrame > 1) ? uv.maxFrame : 1; // 1 表示自动
   inp.value = shown;
   const t = getTexture(uv.texture);
@@ -1260,6 +1260,6 @@ function uvChkField(labelText, get, set, uv) {
     set(nu, inp.checked);
     writeTargetUV(currentUVTarget(), nu);
   });
-  row.appendChild(inp); row.appendChild(document.createTextNode(labelText));
+  row.appendChild(inp); row.appendChild(document.createTextNode(t(labelText)));
   return row;
 }
