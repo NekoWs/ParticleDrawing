@@ -208,15 +208,22 @@ function rebuildAtlas() {
   const cols = Math.ceil(Math.sqrt(names.length));
   let maxW = 0, maxH = 0;
   for (const n of names) { const t = state.textures[n]; maxW = Math.max(maxW, t.width); maxH = Math.max(maxH, t.height); }
-  const atlasW = Math.max(2, cols * maxW), atlasH = Math.max(2, Math.ceil(names.length / cols) * maxH);
+  // 四周各留 1 像素透明护栏：让所有贴图内容严格落在 (0,1) 内部，
+  // 避免 NearestFilter 在 v=0 / v=1 精确边界采样时取到错误行（「1」格误采到底部）。
+  const gutter = 1;
+  const cellW = maxW + gutter, cellH = maxH + gutter;
+  const rows = Math.ceil(names.length / cols);
+  const atlasW = Math.max(2, cols * cellW + gutter);
+  const atlasH = Math.max(2, rows * cellH + gutter);
 
-  // DataTexture：直接写 RGBA 像素数组，方向由我们完全掌控，不经过 CanvasTexture 的隐式上传翻转。
+  // DataTexture：直接写 RGBA 像素数组，方向完全由我们掌控，不经过 CanvasTexture 隐式上传翻转。
   // 约定：data 行 0 = 贴图顶（与游戏端 MC 纹理 v=0=图顶 完全一致）；flipY=false。
   const data = new Uint8Array(atlasW * atlasH * 4); // 全 0 = 透明
   const map = {};
   names.forEach((name, i) => {
     const t = state.textures[name];
-    const cx = (i % cols) * maxW, cy = Math.floor(i / cols) * maxH;
+    const cx = gutter + (i % cols) * cellW;
+    const cy = gutter + Math.floor(i / cols) * cellH;
     for (let y = 0; y < t.height; y++) {
       for (let x = 0; x < t.width; x++) {
         const s = (y * t.width + x) * 4;
@@ -241,6 +248,9 @@ function rebuildAtlas() {
   texAtlasTexture.flipY = false;      // v=0 = 数组行 0 = 贴图顶
   texAtlasTexture.minFilter = THREE.NearestFilter;
   texAtlasTexture.magFilter = THREE.NearestFilter;
+  texAtlasTexture.generateMipmaps = false;   // 无 mipmap，避免 NPOT 边界伪影
+  texAtlasTexture.wrapS = THREE.ClampToEdgeWrapping;
+  texAtlasTexture.wrapT = THREE.ClampToEdgeWrapping;
   texAtlasTexture.needsUpdate = true;
   pointsMaterial.uniforms.uMap.value = texAtlasTexture;
 }
