@@ -509,21 +509,13 @@ function computeParticleUV(p, out) {
     out.sx = 0; out.sy = 0; out.sw = tex.w; out.sh = tex.h;
     out.mode = 2;
   } else if (uv.mode === 'animated') {
-    // 帧号在 JS（float64）里确定，与贴图预览 currentUVFrame / 游戏端完全同源，消除 shader
-    // float32 的 floor(uTime*fps) mod 在大数值/回绕处的精度与边界脆弱性。
-    const maxF = effMaxFrame(uv, autoFramesFor(uv, tex.w, tex.h));
-    const raw = Math.floor((performance.now() / 1000) * (uv.fps || 1));
-    const frame = uv.loop ? ((raw % maxF) + maxF) % maxF : Math.min(raw, maxF - 1);
-    // 行主 flipbook：先横向填满一行再换行（与 game currentUvStart、overlay 一致）
-    const stepx = uv.uvStep[0] || 0, stepy = uv.uvStep[1] || 0;
-    const cols = (stepx > 0 && uv.uvStart[0] < tex.w) ? Math.floor((tex.w - 1 - uv.uvStart[0]) / stepx) + 1 : 1;
-    out.sx = uv.uvStart[0] + stepx * (frame % cols);
-    out.sy = uv.uvStart[1] + stepy * Math.floor(frame / cols);
+    const off = animatedUVOffsetAt(uv, tex.w, tex.h);
+    out.sx = off[0]; out.sy = off[1];
     // uvSize 为 0 时使用贴图大小（铺满整张贴图）
     out.sw = uv.uvSize[0] || tex.w; out.sh = uv.uvSize[1] || tex.h;
-    out.stepx = 0; out.stepy = 0;   // 帧已在 JS 侧计入偏移，shader 不再动画
+    out.stepx = 0; out.stepy = 0;   // 帧已计入偏移，shader 不再动画
     out.fps = uv.fps;
-    out.maxFrame = maxF;
+    out.maxFrame = effMaxFrame(uv, autoFramesFor(uv, tex.w, tex.h));
     out.mode = 1;                    // 按静态矩形采样（偏移已含帧）
   } else {
     out.sx = uv.uvStart[0]; out.sy = uv.uvStart[1];
@@ -531,6 +523,44 @@ function computeParticleUV(p, out) {
     out.sw = uv.uvSize[0] || tex.w; out.sh = uv.uvSize[1] || tex.h;
     out.mode = 1;
   }
+}
+
+/**
+ * 动画贴图当前帧的行主 flipbook 偏移 [sx, sy]（帧号按墙钟、float64 确定性计算，
+ * 与贴图预览 currentUVFrame、游戏端 currentUvStart 完全同源）。
+ */
+function animatedUVOffsetAt(uv, texW, texH) {
+  const maxF = effMaxFrame(uv, autoFramesFor(uv, texW, texH));
+  const raw = Math.floor((performance.now() / 1000) * (uv.fps || 1));
+  const frame = uv.loop ? ((raw % maxF) + maxF) % maxF : Math.min(raw, maxF - 1);
+  const stepx = uv.uvStep[0] || 0, stepy = uv.uvStep[1] || 0;
+  const cols = (stepx > 0 && uv.uvStart[0] < texW) ? Math.floor((texW - 1 - uv.uvStart[0]) / stepx) + 1 : 1;
+  return [uv.uvStart[0] + stepx * (frame % cols), uv.uvStart[1] + stepy * Math.floor(frame / cols)];
+}
+
+/** 是否存在动画贴图粒子（决定是否需要每帧轻量推进 UV 帧）。 */
+let hasAnimatedTex = false;
+
+/** 每帧只推进动画贴图粒子的 sx/sy（轻量，不重建位置/颜色/整段缓冲区）。 */
+function updateAnimatedUV() {
+  if (!hasAnimatedTex) return;
+  if (typeof resolveUV !== 'function') return;
+  const attr = points.geometry.getAttribute('aUVScale');
+  if (!attr) return;
+  const arr = attr.array;
+  let changed = false;
+  for (let i = 0; i < state.particles.length; i++) {
+    const p = state.particles[i];
+    const uv = resolveUV(p).uv;
+    if (!uv || uv.mode !== 'animated' || !uv.texture) continue;
+    const tex = texAtlasMap[uv.texture];
+    if (!tex) continue;
+    const off = animatedUVOffsetAt(uv, tex.w, tex.h);
+    arr[i * 4] = off[0];
+    arr[i * 4 + 1] = off[1];
+    changed = true;
+  }
+  if (changed) attr.needsUpdate = true;
 }
 
 // 设置 UV 相关 attribute（在 geometry 重建后调用）
@@ -752,6 +782,13 @@ function rebuildPoints(full) {
     ssiz[i * 2 + 1] = Math.max(0.02, sy);
   }
   setPointsGeometry(selectedPoints, spos, rpSelCol, ssiz);
+
+  // 是否存在动画贴图粒子——决定主循环是否每帧轻量推进 UV 帧（updateAnimatedUV）
+  hasAnimatedTex = state.particles.some(p => {
+    if (typeof resolveUV !== 'function') return false;
+    const uv = resolveUV(p).uv;
+    return !!(uv && uv.mode === 'animated' && uv.texture);
+  });
 
   updateGizmo();
   drawTimeline();

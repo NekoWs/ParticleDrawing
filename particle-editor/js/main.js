@@ -323,11 +323,12 @@ function animate(now) {
       else { state.time = mx; state.playing = false; document.getElementById('btn-play').textContent = '▶ 播放'; resetVelOffsets(); }
     }
     updateTimeUI();
+    rebuildPoints(false);
     syncFunctionVarValues();
   }
-  // UV 动画贴图的帧按墙钟推进：即使暂停也继续刷新（与贴图预览 overlay 一致），
-  // 帧号在 computeParticleUV(JS float64) 里计算，暂停时位置/颜色不变、仅 UV 偏移随墙钟变化。
-  rebuildPoints(false);
+  // 仅动画贴图粒子需要每帧随墙钟推进 UV 帧：轻量更新（只改 sx/sy），
+  // 避免对数十万粒子每帧完整 rebuildPoints 造成卡顿。
+  if (typeof updateAnimatedUV === 'function') updateAnimatedUV();
   // 标尺与图层区每帧重绘（播放头推进、粒子增删/拖拽都依赖；canvas 开销可忽略）
   drawTimeline();
   if (typeof drawTimelineLayers === 'function') drawTimelineLayers();
