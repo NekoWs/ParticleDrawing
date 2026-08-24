@@ -86,6 +86,13 @@ function initUI() {
 
   // 属性
   document.getElementById('prop-glow').addEventListener('change', (ev) => { pushUndo(); currentSelected().forEach(p => { p.glow = ev.target.checked; }); rebuildPoints(); });
+  document.getElementById('prop-life').addEventListener('change', (ev) => {
+    const v = parseInt(ev.target.value, 10);
+    const life = (isNaN(v) || v < 0) ? -1 : v;
+    pushUndo();
+    currentSelected().forEach(p => { if (!isDerivedParticle(p)) p.life = life; });
+    if (typeof refreshAllPanelsLight === 'function') refreshAllPanelsLight(); else rebuildPoints();
+  });
   document.getElementById('prop-light').addEventListener('input', (ev) => { beginContinuous(); document.getElementById('light-val').textContent = ev.target.value; currentSelected().forEach(p => { p.lightLevel = parseInt(ev.target.value); }); rebuildPoints(); });
   document.getElementById('prop-light').addEventListener('change', endContinuous);
   document.getElementById('prop-alpha').addEventListener('input', (ev) => { beginContinuous(); document.getElementById('alpha-val').textContent = parseFloat(ev.target.value).toFixed(2); applyColorFromInputs(); });

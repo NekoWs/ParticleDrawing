@@ -21,7 +21,7 @@ function updatePropPanel() {
   if (sel.length === 0 && !isFx && !gname) return;
   // 派生粒子基础属性只读；函数对象 pos/scl 可编辑（写整体轨道）
   const readOnly = !isFx && !gname && sel.some(isDerivedParticle);
-  ['prop-color', 'prop-alpha', 'prop-glow', 'prop-light'].forEach(id => {
+  ['prop-color', 'prop-alpha', 'prop-glow', 'prop-light', 'prop-life'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = readOnly || isFx || gname;
   });
@@ -74,6 +74,16 @@ function updatePropPanel() {
   const lInput = document.getElementById('prop-light');
   if (lSame) { lInput.value = first.lightLevel; document.getElementById('light-val').textContent = first.lightLevel; }
   else { lInput.value = 0; document.getElementById('light-val').textContent = '-'; }
+
+  // 寿命（tick；-1=无限）
+  const lifeEl = document.getElementById('prop-life');
+  if (lifeEl) {
+    const lifeSame = same(q => (typeof q.life === 'number' ? q.life : -1));
+    if (lifeSame) {
+      lifeEl.value = (typeof first.life === 'number' ? first.life : -1);
+      lifeEl.placeholder = '';
+    } else { lifeEl.value = ''; lifeEl.placeholder = '-'; }
+  }
 
   const pos = currentVisual(first).pos;
   const setPos = (id, val, sameVal) => { const el = document.getElementById(id); el.value = sameVal ? val : ''; el.placeholder = sameVal ? '' : '-'; };

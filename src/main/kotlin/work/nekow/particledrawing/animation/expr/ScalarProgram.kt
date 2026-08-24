@@ -11,25 +11,28 @@ import kotlin.math.*
  * 含向量/矩阵/分量访问/拆包的代码块不在快路径内，由 [ExpressionEvaluator] 通用解释器回退处理。
  */
 
-/** 寄存器槽布局：0..2 内建 i/n/t，3..15 属性，16.. 变量，之后临时变量。 */
+/** 寄存器槽布局：0..2 内建 i/n/t，3..16 属性（含 maxAge），17.. 变量，之后临时变量。 */
 internal object Reg {
     const val I = 0; const val N = 1; const val T = 2
     const val X = 3; const val Y = 4; const val Z = 5
     const val R = 6; const val G = 7; const val B = 8; const val A = 9
     const val VX = 10; const val VY = 11; const val VZ = 12
     const val SC = 13; const val GLOW = 14; const val LIGHT = 15
-    const val ATTR_COUNT = 13
-    const val VAR_START = 16
+    /** 函数对象寿命输出：代码里 `maxAge = ...`（tick；<0=无限）。仅表达式模式消费。 */
+    const val MAXAGE = 16
+    const val ATTR_COUNT = 14
+    const val VAR_START = 17
 }
 
-/** 属性寄存器初始值（X,Y,Z,R,G,B,A,VX,VY,VZ,SC,GLOW,LIGHT）。 */
-private val ATTR_INIT = doubleArrayOf(0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+/** 属性寄存器初始值（X,Y,Z,R,G,B,A,VX,VY,VZ,SC,GLOW,LIGHT,MAXAGE）；maxAge 缺省 -1=无限。 */
+private val ATTR_INIT = doubleArrayOf(0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0)
 
 private val ATTR_SLOTS = mapOf(
     "x" to Reg.X, "y" to Reg.Y, "z" to Reg.Z,
     "r" to Reg.R, "g" to Reg.G, "b" to Reg.B, "a" to Reg.A,
     "vx" to Reg.VX, "vy" to Reg.VY, "vz" to Reg.VZ,
     "sc" to Reg.SC, "glow" to Reg.GLOW, "light" to Reg.LIGHT,
+    "maxAge" to Reg.MAXAGE,
 )
 
 /**

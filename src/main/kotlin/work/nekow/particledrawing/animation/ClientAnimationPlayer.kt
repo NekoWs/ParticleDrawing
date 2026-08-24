@@ -227,7 +227,6 @@ class ClientAnimationPlayer(
             for (i in 0 until fx.count) {
                 val id = fx.id + ":p" + i
                 val s = states[id] ?: continue
-                s.visible = fxLocalT >= 0
                 if (cf != null) {
                     cf.eval(i.toDouble(), n, t, regs!!, stack!!)
                     var px = regs[Reg.X] + cx
@@ -250,7 +249,14 @@ class ClientAnimationPlayer(
                     s.scale = fxScale(fx.id, scaleRaw, t)
                     s.glowing = regs[Reg.GLOW] > 0.5
                     s.lightLevel = regs[Reg.LIGHT].toInt().coerceIn(0, 15)
+                    // 逐粒子寿命：代码里 maxAge = ...（tick；<0/未写=无限）
+                    val maxAge = regs[Reg.MAXAGE]
+                    s.visible = fxLocalT >= 0 && run {
+                        val lifeOverride = if (maxAge.isFinite() && maxAge >= 0) maxAge else -1.0
+                        lifeOverride < 0 || fxLocalT < lifeOverride
+                    }
                 } else {
+                    // 通用解释器回退路径：不支持逐粒子 maxAge，仅函数对象级 st 门控
                     val base = evaluateFunctionParticle(fx, i, fx.count, t)
                     var pos = base.first
                     if (hasRot) pos = rotateAround(pos, rotPivot, rot)
@@ -260,6 +266,7 @@ class ClientAnimationPlayer(
                     s.scale = fxScale(fx.id, base.third[0].toDouble(), t)
                     s.glowing = base.fourth
                     s.lightLevel = base.fifth
+                    s.visible = fxLocalT >= 0
                 }
             }
         }
