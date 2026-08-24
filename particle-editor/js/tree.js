@@ -230,7 +230,7 @@ function renderPropNode(id, prop) {
   const expanded = state.expandedProps.has(key);
   const head = document.createElement('div');
   head.className = 'ptree-prop-head';
-  head.innerHTML = '<span class="arrow">' + (expanded ? '▾' : '▸') + '</span><span class="plabel">' + PROP_LABELS[prop] + '</span>';
+  head.innerHTML = '<span class="arrow">' + (expanded ? '▾' : '▸') + '</span><span class="plabel">' + t(PROP_LABELS[prop]) + '</span>';
   head.onclick = () => {
     if (expanded) state.expandedProps.delete(key); else state.expandedProps.add(key);
     refreshParticleTree();

@@ -391,7 +391,7 @@ window.addEventListener('beforeunload', (ev) => {
     ev.preventDefault();
     const file = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
     if (!file) return;
-    if ((await confirmDiscardChanges('打开')) === 'cancel') return;
+    if ((await confirmDiscardChanges(t('common.open'))) === 'cancel') return;
     state.fileHandle = null;
     loadFile(file);
   });

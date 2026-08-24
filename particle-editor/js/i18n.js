@@ -66,4 +66,10 @@ function setLanguage(lang) {
   if (typeof drawTimelineLayers === 'function') drawTimelineLayers();
   if (typeof refreshCompTimelines === 'function') refreshCompTimelines();
   if (typeof closeContextMenu === 'function') closeContextMenu();
+  // 拼图模式打开时：重渲染调色板与代码链
+  if (document.body.classList.contains('puzzle-mode')) {
+    if (typeof renderPalette === 'function') renderPalette();
+    if (typeof renderChain === 'function') renderChain();
+    if (typeof refreshCodeEcho === 'function') refreshCodeEcho();
+  }
 }

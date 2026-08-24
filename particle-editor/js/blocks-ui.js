@@ -214,7 +214,7 @@ function makeStatementBlock(s, isChain, chainIndex) {
   el.className = 'blk-stmt ' + cls + (BIG_BLOCKS[s.kind] ? ' big' : '') + ' blk-drag';
   el._stmt = s;
   el._dragLabel = t(STMT_BLOCKS[s.kind].label);
-  el._info = STMT_BLOCKS[s.kind].desc;
+  el._info = t(STMT_BLOCKS[s.kind].desc);
 
   if (s.kind === 'set') {
     const name = document.createElement('input');
@@ -519,14 +519,14 @@ function nodeInfo(n) {
 function buildPaletteGroup(g) {
   const items = [];
   if (g.id === 'pos') {
-    ['pos', 'pos_vec', 'vel', 'vel_vec'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: STMT_BLOCKS[k].label, info: STMT_BLOCKS[k].desc }));
-    items.push({ key: 'stmt:attr', type: 'stmt', kind: 'attr', label: STMT_BLOCKS.attr.label, info: STMT_BLOCKS.attr.desc });
+    ['pos', 'pos_vec', 'vel', 'vel_vec'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k].label), info: t(STMT_BLOCKS[k].desc) }));
+    items.push({ key: 'stmt:attr', type: 'stmt', kind: 'attr', label: t(STMT_BLOCKS.attr.label), info: t(STMT_BLOCKS.attr.desc) });
   } else if (g.id === 'color') {
-    items.push({ key: 'stmt:col', type: 'stmt', kind: 'col', label: STMT_BLOCKS.col.label, info: STMT_BLOCKS.col.desc });
+    items.push({ key: 'stmt:col', type: 'stmt', kind: 'col', label: t(STMT_BLOCKS.col.label), info: t(STMT_BLOCKS.col.desc) });
   } else if (g.id === 'appearance') {
-    ['scl', 'glow', 'light'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: STMT_BLOCKS[k].label, info: STMT_BLOCKS[k].desc }));
+    ['scl', 'glow', 'light'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k].label), info: t(STMT_BLOCKS[k].desc) }));
   } else if (g.id === 'var') {
-    items.push({ key: 'stmt:set', type: 'stmt', kind: 'set', label: STMT_BLOCKS.set.label, info: STMT_BLOCKS.set.desc });
+    items.push({ key: 'stmt:set', type: 'stmt', kind: 'set', label: t(STMT_BLOCKS.set.label), info: t(STMT_BLOCKS.set.desc) });
     for (const name of availableVars()) items.push({ key: 'var:' + name, type: 'expr', template: { kind: 'var', name }, label: name, info: (BUILTIN_VAR_INFO[name] && t(BUILTIN_VAR_INFO[name])) || t('blk.var') });
   } else if (g.id === 'const') {
     items.push({ key: 'expr:num', type: 'expr', template: { kind: 'num', value: 1 }, label: t('blk.type.scalar'), info: t('blk.constNum') });
@@ -535,7 +535,7 @@ function buildPaletteGroup(g) {
   } else if (g.id === 'math') {
     // 动态算式 + 独立运算符拼图
     items.push({ key: 'expr:chain', type: 'expr', template: { kind: 'chain', terms: [{ kind: 'num', value: 0 }, { kind: 'num', value: 0 }], ops: ['+'] }, label: t('blk.chain'), info: t('blk.chainDesc') });
-    for (const op of OP_SYMBOLS) items.push({ key: 'opval:' + op, type: 'opval', op, label: op, info: OP_LABELS[op] || op });
+    for (const op of OP_SYMBOLS) items.push({ key: 'opval:' + op, type: 'opval', op, label: op, info: (OP_LABELS[op] && t(OP_LABELS[op])) || op });
     for (const name in FUNC_BLOCKS) {
       const r = FUNC_BLOCKS[name].ret;
       if (r === T_SCALAR && !['vec', 'dot', 'cross', 'len', 'norm'].includes(name)) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) });

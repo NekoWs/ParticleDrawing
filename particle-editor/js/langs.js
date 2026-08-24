@@ -94,6 +94,7 @@ var LANGS = {
     'prop.pos': '位置', 'prop.rot': '旋转', 'prop.vel': '速度', 'prop.col': '颜色', 'prop.scl': '缩放',
     'draw.countLabel': '粒子数量',
     'fx.defaultName': '函数对象',
+    'default.particleName': '粒子', 'default.groupName': '组',
     'err.varCycle': '变量循环引用: {0}', 'err.varReserved': '变量名 {0} 是属性保留字，请换名',
   },
   en: {
@@ -189,12 +190,15 @@ var LANGS = {
     'prop.pos': 'Position', 'prop.rot': 'Rotation', 'prop.vel': 'Velocity', 'prop.col': 'Color', 'prop.scl': 'Scale',
     'draw.countLabel': 'Particle Count',
     'fx.defaultName': 'Function Object',
+    'default.particleName': 'Particle', 'default.groupName': 'Group',
+    '静态': 'Static', '填充': 'Fill', '动画': 'Animated',
     'err.varCycle': 'variable circular reference: {0}', 'err.varReserved': 'Variable name {0} is a reserved attribute name, please rename',
     // —— 拼图积木（表驱动标签：以中文原文为键） ——
     '数字': 'Number', '向量': 'Vector', '矩阵': 'Matrix', '任意': 'Any',
     '光照': 'Light',
     '粒子序号（0 ~ n-1）': 'Particle index (0 ~ n-1)', '采样数（粒子总数）': 'Sample count (total particles)', '当前时间（tick）': 'Current time (tick)',
     '位置': 'Position', '位置 ← 向量': 'Position ← Vector', '速度': 'Velocity', '设置属性': 'Set Property', '临时变量': 'Local Variable',
+    '颜色': 'Color', '缩放': 'Scale', '发光': 'Glow', '光照等级': 'Light Level',
     '设置粒子位置 [x, y, z]': 'Set particle position [x, y, z]', '用向量设置粒子位置': 'Set position from a vector',
     '设置粒子速度 [vx, vy, vz]': 'Set particle velocity [vx, vy, vz]', '用向量设置粒子速度': 'Set velocity from a vector',
     '设置粒子颜色 [r, g, b, a]': 'Set particle color [r, g, b, a]', '设置粒子缩放': 'Set particle scale',
