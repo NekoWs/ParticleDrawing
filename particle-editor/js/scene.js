@@ -222,11 +222,12 @@ function rebuildAtlas() {
     const img = ctx.createImageData(t.width, t.height);
     img.data.set(t.data);
     ctx.putImageData(img, cx, cy);
-    // flipY=false：v=0 对应 canvas 行 0（图顶），与游戏端 MC 纹理约定（v=0=图顶）一致，
-    // 采样时无需任何手动翻转。因此 region v0=顶、v1=底。
+    // CanvasTexture 默认 flipY=true：canvas 行 0（图顶）→ 纹理 v=0。region v0=顶、v1=底，
+    // 采样时 coef.y 直接自顶向下——配合 shader 里“不再手动翻转 uvLocal.y”即可正立、
+    // 顺序自上而下。此处保持与原始实现一致（勿再改 flipY/v0/v1 约定）。
     map[name] = {
-      u0: cx / atlasW, v0: cy / atlasH,
-      u1: (cx + t.width) / atlasW, v1: (cy + t.height) / atlasH,
+      u0: cx / atlasW, v0: 1 - (cy + t.height) / atlasH,
+      u1: (cx + t.width) / atlasW, v1: 1 - cy / atlasH,
       w: t.width, h: t.height,
     };
   });
@@ -237,7 +238,7 @@ function rebuildAtlas() {
     texAtlasTexture = null;
   }
   texAtlasTexture = new THREE.CanvasTexture(canvas);
-  texAtlasTexture.flipY = false;
+  texAtlasTexture.flipY = true;
   texAtlasTexture.minFilter = THREE.NearestFilter;
   texAtlasTexture.magFilter = THREE.NearestFilter;
   pointsMaterial.uniforms.uMap.value = texAtlasTexture;
