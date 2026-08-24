@@ -526,12 +526,23 @@ function computeParticleUV(p, out) {
 }
 
 /**
- * 动画贴图当前帧的行主 flipbook 偏移 [sx, sy]（帧号按墙钟、float64 确定性计算，
+ * 动画贴图 UV 帧的时间驱动源（秒）。
+ * 播放或拖动时间轴时，帧应由当前时间轴刻度决定（所有粒子同步到时间轴，供预览整体动画流程）；
+ * 暂停空闲时，则退回墙钟循环播放，供单独预览贴图动画。
+ * state.time 为「刻度」单位（20 刻度 = 1 秒），故除以 20 换算成秒。
+ */
+function uvDriveSeconds() {
+  if (state.playing || state.scrubbing) return state.time / 20;
+  return performance.now() / 1000;
+}
+
+/**
+ * 动画贴图当前帧的行主 flipbook 偏移 [sx, sy]（帧号按 uvDriveSeconds 的 float64 确定性计算，
  * 与贴图预览 currentUVFrame、游戏端 currentUvStart 完全同源）。
  */
 function animatedUVOffsetAt(uv, texW, texH) {
   const maxF = effMaxFrame(uv, autoFramesFor(uv, texW, texH));
-  const raw = Math.floor((performance.now() / 1000) * (uv.fps || 1));
+  const raw = Math.floor(uvDriveSeconds() * (uv.fps || 1));
   const frame = uv.loop ? ((raw % maxF) + maxF) % maxF : Math.min(raw, maxF - 1);
   const stepx = uv.uvStep[0] || 0, stepy = uv.uvStep[1] || 0;
   const cols = (stepx > 0 && uv.uvStart[0] < texW) ? Math.floor((texW - 1 - uv.uvStart[0]) / stepx) + 1 : 1;

@@ -115,7 +115,8 @@ function initUI() {
   // 时间轴
   document.getElementById('btn-play').addEventListener('click', togglePlay);
   document.getElementById('tl-speed').addEventListener('change', (ev) => { state.playSpeed = Math.max(0.1, parseFloat(ev.target.value) || 1); });
-  document.getElementById('tl-time').addEventListener('input', (ev) => { state.time = parseFloat(ev.target.value) || 0; resetVelOffsets(); updateTimeUI(); rebuildPoints(); syncFunctionVarValues(); if (typeof drawTimelineLayers === 'function') drawTimelineLayers(); });
+  document.getElementById('tl-time').addEventListener('input', (ev) => { state.time = parseFloat(ev.target.value) || 0; state.scrubbing = true; resetVelOffsets(); updateTimeUI(); rebuildPoints(); syncFunctionVarValues(); if (typeof drawTimelineLayers === 'function') drawTimelineLayers(); });
+  document.getElementById('tl-time').addEventListener('change', () => { state.scrubbing = false; });
   document.getElementById('tl-loop').addEventListener('change', (ev) => { state.loop = ev.target.checked; updateLoopIndicator(); });
   if (typeof tlInitLayerEvents === 'function') tlInitLayerEvents();
 
@@ -139,6 +140,7 @@ function initUI() {
       tlDrag = { mode: 'pan', lastX: ev.clientX };
     } else {
       tlDrag = { mode: 'scrub', lastX: ev.clientX };
+      state.scrubbing = true;
       state.time = Math.max(0, timelineXToTick(ev.clientX));
       resetVelOffsets();
       updateTimeUI();
@@ -159,8 +161,8 @@ function initUI() {
     drawTimeline();
     if (tlDrag.mode === 'scrub') { rebuildPoints(); syncFunctionVarValues(); }
   });
-  tlCanvas.addEventListener('pointerup', () => { tlDrag = null; });
-  tlCanvas.addEventListener('pointerleave', () => { tlDrag = null; });
+  tlCanvas.addEventListener('pointerup', () => { tlDrag = null; state.scrubbing = false; });
+  tlCanvas.addEventListener('pointerleave', () => { tlDrag = null; state.scrubbing = false; });
   tlCanvas.addEventListener('wheel', (ev) => {
     ev.preventDefault();
     timelineViewStart += ev.deltaY / TL_PX_PER_TICK;

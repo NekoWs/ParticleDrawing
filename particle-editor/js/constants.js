@@ -140,6 +140,7 @@ const state = {
   fileHandle: null,
   time: 0,
   playing: false,
+  scrubbing: false,   // 正在拖动/输入时间轴：动画贴图帧改由 state.time 驱动
   playSpeed: 1,
   defaultEasing: DEFAULT_EASING,
   captureKeyframes: true, // 始终开启「捕获关键帧」（按钮已移除）
