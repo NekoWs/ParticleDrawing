@@ -17,6 +17,24 @@ __assert('defaultUV uvStep [0,0]', defaultUV(32, 16).uvStep[0] === 0 && defaultU
 __assert('defaultUV loop true', defaultUV(16, 16).loop === true);
 __assert('UV_MODES', UV_MODES.static === '静态' && UV_MODES.fill === '填充' && UV_MODES.animated === '动画');
 
+// demo 竖向动画用例（4x24 贴图、uvStart[0,0]、uvSize[4,4]、uvStep[0,4]、maxFrame 8）：
+// 帧数应为 6，且帧序号 0..5 映射到 sy=0/4/8/12/16/20，绝无第 7 帧（sy=24 越界）。
+const demoUv = { mode: 'animated', uvStart: [0, 0], uvSize: [4, 4], uvStep: [0, 4], maxFrame: 8, fps: 1, loop: true };
+const demoAuto = autoFramesFor(demoUv, 4, 24);
+__assert('demo autoFrames=6', demoAuto === 6);
+const demoEff = effMaxFrame(demoUv, demoAuto);
+__assert('demo effMaxFrame=6', demoEff === 6);
+{
+  const stepx = demoUv.uvStep[0], stepy = demoUv.uvStep[1];
+  const cols = (stepx > 0 && demoUv.uvStart[0] < 4) ? Math.floor((4 - 1 - demoUv.uvStart[0]) / stepx) + 1 : 1;
+  const cells = [];
+  for (let f = 0; f < demoEff; f++) {
+    cells.push([demoUv.uvStart[0] + stepx * (f % cols), demoUv.uvStart[1] + stepy * Math.floor(f / cols)]);
+  }
+  const ok = cells.length === 6 && cells[5][1] === 20 && cells.every(c => c[1] >= 0 && c[1] + demoUv.uvSize[1] <= 24);
+  __assert('demo frame cells 6 in-range', ok);
+}
+
 const uv = { texture: 't1', mode: 'animated', texSize: [32, 16], uvStart: [4, 0], uvSize: [8, 8], uvStep: [8, 0], fps: 10, maxFrame: 4, loop: true };
 const puv = parseUV(serializeUV(uv));
 __assert('uv roundtrip texSize', puv.texSize[0] === 32 && puv.texSize[1] === 16);
