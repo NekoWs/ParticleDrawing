@@ -162,8 +162,9 @@ const pointsMaterial = new THREE.ShaderMaterial({
     varying float vUVMode;
     void main() {
       vec2 uvLocal = (gl_PointCoord - 0.5) / vAspect + 0.5;
-      // gl_PointCoord 的 (0,0) 在左上角，无需额外翻转——
-      // 配合下方“交换 v 端点”即可让格顶(sy=0)采样到图顶、格底采样到图底，正立且自上而下。
+      // 翻转 y 坐标：flipY=true 时 canvas 行 0（图片顶部）→ 纹理 v=0，
+      // 但 UV 坐标中 y=0 应对应图片顶部，所以需要翻转
+      uvLocal.y = 1.0 - uvLocal.y;
       if (uvLocal.x < 0.0 || uvLocal.x > 1.0 || uvLocal.y < 0.0 || uvLocal.y > 1.0) discard;
       if (vUVMode < 0.5) {
         gl_FragColor = vec4(vColor.rgb, vColor.a) * uOpacity;
@@ -180,9 +181,7 @@ const pointsMaterial = new THREE.ShaderMaterial({
         // 采样系数钳制到 [0,1]：即使 UV 起点/大小/动画推进越出贴图区，
         // 也不会让采样滑出整张贴图在 atlas 中的区间（否则会采到相邻贴图/空白，右缘出现细条）
         vec2 coef = clamp(mix(sp, ep, uvLocal), 0.0, 1.0);
-        // 交换 v 端点：atlas 因 flipY=true 时 v=0=图底、v=1=图顶，而 start(格顶) 要对应图顶，
-        // 故 y 方向用 mix(v1, v0, coef.y)。x 方向不变。
-        vec2 atlasCoord = vec2(mix(vUV.x, vUV.z, coef.x), mix(vUV.w, vUV.y, coef.y));
+        vec2 atlasCoord = mix(vUV.xy, vUV.zw, coef);
         vec4 tex = texture2D(uMap, atlasCoord);
         gl_FragColor = vec4(vColor.rgb, vColor.a) * tex * uOpacity;
       }
