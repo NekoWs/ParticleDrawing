@@ -399,7 +399,16 @@ function currentVisualDerived(p, T) {
 function maxTick() {
   let m = 0;
   for (const tr of state.tracks) for (const k of tr.kf) m = Math.max(m, k[0]);
-  return m;
+  // 粒子起始时间计入时长；函数对象跨度 = st + extent（变量关键帧 或 依赖 t 时的 duration）
+  for (const p of state.particles) if (!p.fx && (p.st || 0) > m) m = p.st;
+  for (const fx of state.functions) {
+    let extent = 0, hasVarAnim = false;
+    for (const v of Object.values(fx.vars)) for (const k of (v.kf || [])) { hasVarAnim = true; if (k[0] > extent) extent = k[0]; }
+    if (!hasVarAnim && /\bt\b/.test(fx.code || '')) extent = Math.max(extent, fx.duration || 0);
+    const end = (fx.st || 0) + extent;
+    if (end > m) m = end;
+  }
+  return Math.ceil(m);
 }
 
 // 速度位移积分：按时间计算（任何时刻都生效，含非播放/拖动时间轴），渲染期叠加不改数据。
@@ -672,6 +681,15 @@ function rebuildPoints(full) {
         ssx = v.scale[0]; ssy = v.scale[1];
       }
     }
+    // 入场门控：t < st 粒子隐藏；fade 预设在出场窗口内做 alpha 渐显（静态粒子用自身 st，派生粒子用函数对象的）
+    const gate = p.fx ? (functionIndexCache.get(p.fx) || {}) : p;
+    const gst = gate.st || 0;
+    let vis = T >= gst ? 1 : 0;
+    if (vis > 0 && gate.ent && gate.ent.p === 'fade') {
+      const fd = gate.ent.d || 5;
+      if (T - gst < fd) vis *= Math.max(0, (T - gst) / fd);
+    }
+    ca *= vis;
     positions[i * 3] = px; positions[i * 3 + 1] = py; positions[i * 3 + 2] = pz;
     colors[i * 4] = cr; colors[i * 4 + 1] = cg; colors[i * 4 + 2] = cb; colors[i * 4 + 3] = ca;
     computeParticleUV(p, UVOUT);
@@ -682,8 +700,12 @@ function rebuildPoints(full) {
     const texScaleX = Math.max(1, texW) / 16;
     const texScaleY = Math.max(1, texH) / 16;
     let sx = ssx * SZF * texScaleX, sy = ssy * SZF * texScaleY;
-    sizes[i * 2] = sx > 0.02 ? sx : 0.02;
-    sizes[i * 2 + 1] = sy > 0.02 ? sy : 0.02;
+    if (vis === 0) {
+      sizes[i * 2] = 0; sizes[i * 2 + 1] = 0;   // 尺寸归零 → 无片段光栅化，预览层完全隐藏
+    } else {
+      sizes[i * 2] = sx > 0.02 ? sx : 0.02;
+      sizes[i * 2 + 1] = sy > 0.02 ? sy : 0.02;
+    }
     const i4 = i * 4, i2 = i * 2;
     rpUV[i4] = UVOUT.au0; rpUV[i4 + 1] = UVOUT.av0; rpUV[i4 + 2] = UVOUT.au1; rpUV[i4 + 3] = UVOUT.av1;
     rpUVScale[i4] = UVOUT.sx; rpUVScale[i4 + 1] = UVOUT.sy; rpUVScale[i4 + 2] = UVOUT.sw; rpUVScale[i4 + 3] = UVOUT.sh;

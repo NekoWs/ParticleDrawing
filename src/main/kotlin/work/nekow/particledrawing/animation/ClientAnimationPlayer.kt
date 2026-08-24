@@ -25,6 +25,8 @@ class ClientAnimationPlayer(
         var glowing: Boolean,
         var lightLevel: Int,
         var uv: UvData?,
+        /** t ≥ st 才为 true；隐藏门控在同步层生效（未出场粒子不生成/已回收）。 */
+        var visible: Boolean = true,
     )
 
     private var currentTick = 0
@@ -45,23 +47,30 @@ class ClientAnimationPlayer(
 
     private val maxTick: Int = run {
         var max = animation.tracks.flatMap { it.keyframes }.maxOfOrNull { it.tick }?.toDouble() ?: 0.0
+        // 粒子起始时间计入时长：晚出场的粒子不能被截断
+        for (p in animation.particles) if (p.st > max) max = p.st.toDouble()
         for (fx in animation.functions) {
+            // 函数对象跨度 = st + 自身 extent（变量关键帧 或 依赖 t 时的 duration）
+            var extent = 0.0
             var hasVarAnim = false
             for (v in fx.vars.values) {
                 val kfMax = v.kf.maxOfOrNull { it.tick } ?: continue
                 hasVarAnim = true
-                if (kfMax > max) max = kfMax
+                if (kfMax > extent) extent = kfMax
             }
-            // 仅当代码本身依赖时间 t（且变量无关键帧动画）时，duration 才是动画时长
-            if (!hasVarAnim && usesTimeVar(fx.code) && fx.duration > max) max = fx.duration.toDouble()
+            if (!hasVarAnim && usesTimeVar(fx.code)) extent = maxOf(extent, fx.duration.toDouble())
+            if (fx.st + extent > max) max = fx.st + extent
         }
         max.toInt()
     }
 
     // 静态动画（无轨道/时间轴，且公式与变量均不含 random()）：init 已算好 t=0 状态，每 tick 无需重算。
     // 5w 粒子的静态粒子云若每刻重算会白费约 70ms/tick。
+    // 存在 st 门控或入场预设时必然随时间变化，强制按动态处理。
     private val isStaticAnimation: Boolean = run {
         if (maxTick > 0) return@run false
+        if (animation.particles.any { it.st > 0 || it.ent != null }) return@run false
+        if (animation.functions.any { it.st > 0 || it.ent != null }) return@run false
         animation.functions.none { fx ->
             usesRandom(fx.code) || fx.vars.values.any { v -> usesRandom(v.expr) }
         }
@@ -187,11 +196,14 @@ class ClientAnimationPlayer(
     private fun advanceTo(t: Double) {
         for (p in animation.particles) {
             val s = states[p.id] ?: continue
+            val localT = t - p.st
+            s.visible = localT >= 0
             s.pos = origin.add(particlePosition(p, t))
-            s.color = particleColor(p, t)
+            s.color = applyEntrance(particleColor(p, t), p.ent, localT)
             s.scale = particleScale(p, t)
         }
         for (fx in animation.functions) {
+            val fxLocalT = t - fx.st
             val cf = compiledFunctions[fx.id]
             val regs = cf?.allocRegs()
             val stack = cf?.allocStack()
@@ -210,6 +222,7 @@ class ClientAnimationPlayer(
             for (i in 0 until fx.count) {
                 val id = fx.id + ":p" + i
                 val s = states[id] ?: continue
+                s.visible = fxLocalT >= 0
                 if (cf != null) {
                     cf.eval(i.toDouble(), n, t, regs!!, stack!!)
                     var px = regs[Reg.X] + cx
@@ -221,11 +234,12 @@ class ClientAnimationPlayer(
                     }
                     px += dx; py += dy; pz += dz
                     s.pos = origin.add(px, py, pz)
+                    val baseA = regs[Reg.A].coerceIn(0.0, 1.0).toFloat()
                     s.color = Color.of(
                         regs[Reg.R].coerceIn(0.0, 1.0).toFloat(),
                         regs[Reg.G].coerceIn(0.0, 1.0).toFloat(),
                         regs[Reg.B].coerceIn(0.0, 1.0).toFloat(),
-                        regs[Reg.A].coerceIn(0.0, 1.0).toFloat(),
+                        (baseA * entranceFactor(fx.ent, fxLocalT)),
                     )
                     val scaleRaw = if (regs[Reg.SC].isFinite()) regs[Reg.SC] else 1.0
                     s.scale = fxScale(fx.id, scaleRaw, t)
@@ -237,13 +251,26 @@ class ClientAnimationPlayer(
                     if (hasRot) pos = rotateAround(pos, rotPivot, rot)
                     pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
                     s.pos = origin.add(pos)
-                    s.color = base.second
+                    s.color = applyEntrance(base.second, fx.ent, fxLocalT)
                     s.scale = fxScale(fx.id, base.third[0].toDouble(), t)
                     s.glowing = base.fourth
                     s.lightLevel = base.fifth
                 }
             }
         }
+    }
+
+    /** 入场预设的 alpha 系数（仅 fade：localT ∈ [0,dur) 线性 0→1）；其余/超窗恒 1。 */
+    private fun entranceFactor(ent: Entrance?, localT: Double): Float {
+        if (ent == null || ent.preset != "fade" || localT >= ent.dur) return 1f
+        if (localT <= 0) return 0f
+        return (localT / ent.dur.coerceAtLeast(1)).toFloat()
+    }
+
+    private fun applyEntrance(c: Color, ent: Entrance?, localT: Double): Color {
+        val k = entranceFactor(ent, localT)
+        if (k >= 1f) return c
+        return Color.of(c.r, c.g, c.b, (c.a * k))
     }
 
     private fun evaluateFunctionParticle(fx: FunctionObject, i: Int, n: Int, t: Double): Five<Vec3, Color, FloatArray, Boolean, Int> {

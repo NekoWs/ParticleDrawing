@@ -395,6 +395,16 @@ ServerAnimationManager.activePlaybacksAll()         // 全部维度
 ServerAnimationManager.playbackPlayers(animId)      // 该次播放覆盖的玩家 ID
 ```
 
+### 入场编排（粒子起始时间 + 入场预设）
+
+每个粒子/函数对象可带 `st`（起始 tick）：`t < st` 时粒子**完全不在渲染管线中**（不是 alpha=0，而是不生成），
+到点瞬间出现；循环回卷后会重新按各自 `st` 重放入场顺序。时长（`maxTick`）自动计入最晚的 `st`。
+
+- 编辑器：底部时间轴下方为 AE 式图层区——组聚合条（可展开成员行）、函数对象条（长度=动画跨度），
+  横向拖拽即改 `st`（整数刻度吸附），组条拖拽整体平移；
+- 文件字段：粒子与函数对象均可选 `"st": <tick>`；`"ent": {"p": "fade", "d": <tick>}` 为出场后淡入预设
+  （`d` 内 alpha 线性 0→1）。预设词表是扩展接口：新增 preset 约定即可接入更复杂的入场动画。
+
 ### 典型场景：技能动画 + 动态参数
 
 ```kotlin

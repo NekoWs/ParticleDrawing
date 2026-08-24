@@ -104,8 +104,9 @@ function initUI() {
   // 时间轴
   document.getElementById('btn-play').addEventListener('click', togglePlay);
   document.getElementById('tl-speed').addEventListener('change', (ev) => { state.playSpeed = Math.max(0.1, parseFloat(ev.target.value) || 1); });
-  document.getElementById('tl-time').addEventListener('input', (ev) => { state.time = parseFloat(ev.target.value) || 0; resetVelOffsets(); updateTimeUI(); rebuildPoints(); syncFunctionVarValues(); });
+  document.getElementById('tl-time').addEventListener('input', (ev) => { state.time = parseFloat(ev.target.value) || 0; resetVelOffsets(); updateTimeUI(); rebuildPoints(); syncFunctionVarValues(); if (typeof drawTimelineLayers === 'function') drawTimelineLayers(); });
   document.getElementById('tl-loop').addEventListener('change', (ev) => { state.loop = ev.target.checked; updateLoopIndicator(); });
+  if (typeof tlInitLayerEvents === 'function') tlInitLayerEvents();
 
   // 文件导入
   document.getElementById('file-import').addEventListener('change', (ev) => {
@@ -309,6 +310,8 @@ function animate(now) {
       else { state.time = mx; state.playing = false; document.getElementById('btn-play').textContent = '▶ 播放'; resetVelOffsets(); }
     }
     updateTimeUI();
+    drawTimeline();
+    if (typeof drawTimelineLayers === 'function') drawTimelineLayers();
     rebuildPoints(false);
     syncFunctionVarValues();
   }

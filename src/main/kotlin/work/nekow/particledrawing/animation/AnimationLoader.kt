@@ -103,7 +103,7 @@ object AnimationLoader {
             vars[vname] = FunctionVar(expr, kf)
         }
         val uv = parseUv(o.get("uv"))
-        return FunctionObject(id, name, center, count, code, vars, duration, step, uv)
+        return FunctionObject(id, name, center, count, code, vars, duration, step, uv, parseSt(o), parseEntrance(o))
     }
 
     private fun parseVarKeyframe(arr: JsonArray): Keyframe {
@@ -126,7 +126,19 @@ object AnimationLoader {
         val velArr = o.get("vel")?.asJsonArray
         val vel = if (velArr != null) Vec3(velArr[0].asDouble, velArr[1].asDouble, velArr[2].asDouble) else Vec3.ZERO
         val uv = parseUv(o.get("uv"))
-        return AnimParticle(id, color, scale, glowing, lightLevel, pos, vel, uv)
+        return AnimParticle(id, color, scale, glowing, lightLevel, pos, vel, uv, parseSt(o), parseEntrance(o))
+    }
+
+    /** 起始 tick（`st`，缺省 0；旧格式无此字段）。 */
+    private fun parseSt(o: JsonObject): Int = o.get("st")?.asInt ?: 0
+
+    /** 入场预设（`ent: {p, d}`）；缺省 null = 到点瞬间出现。未知 preset 原样保留，播放端按词表分派。 */
+    private fun parseEntrance(o: JsonObject): Entrance? {
+        val e = o.get("ent") ?: return null
+        if (!e.isJsonObject) return null
+        val eo = e.asJsonObject
+        val preset = eo.get("p")?.asString ?: return null
+        return Entrance(preset, eo.get("d")?.asInt ?: 5)
     }
 
     /** 解析 scale：v3 为数组 [sx,sy,sz]，兼容旧版标量（扩展为 [v,v,v]）。 */

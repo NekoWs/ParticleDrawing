@@ -16,6 +16,8 @@ object ClientAnimationManager {
         val player: ClientAnimationPlayer,
         val particleUuids: MutableMap<String, UUID>,
         val animation: ParticleAnimation,
+        // 当前已生成（在场）的状态 id 集合——st 门控的生成/回收以它为基准做差分
+        val liveIds: HashSet<String> = HashSet(),
     )
 
     private val entries = ConcurrentHashMap<UUID, Entry>()
@@ -65,16 +67,20 @@ object ClientAnimationManager {
 
         val player = ClientAnimationPlayer(animation, origin)
         val uuids = HashMap<String, UUID>()
+        val liveIds = HashSet<String>()
         for (state in player.currentStates()) {
+            // st 门控：未出场粒子不生成（隐藏 = 渲染管线中不存在，与 alpha 无关）
+            if (!state.visible) continue
             val uuid = UUID.randomUUID()
             uuids[state.id] = uuid
+            liveIds.add(state.id)
             ClientParticleEngine.instance()?.spawnParticle(
                 uuid, state.pos.x, state.pos.y, state.pos.z,
                 state.color.r, state.color.g, state.color.b, state.color.a,
                 state.scale[0], -1, null, state.glowing, state.lightLevel, state.uv
             )
         }
-        entries[animationId] = Entry(player, uuids, animation)
+        entries[animationId] = Entry(player, uuids, animation, liveIds)
     }
 
     /** 重载所有正在播放动画的内嵌贴图（/pdraw reload 使用）。 */
@@ -122,11 +128,30 @@ object ClientAnimationManager {
 
     private fun sync(entry: Entry) {
         val snap = entry.player.consumeJustLooped()
+        val engine = ClientParticleEngine.instance() ?: return
         for (state in entry.player.currentStates()) {
             val uuid = entry.particleUuids[state.id] ?: continue
-            ClientParticleEngine.instance()?.updateParticleDirectArray(
-                uuid, state.pos, state.color, state.scale, state.glowing, state.lightLevel, snap
-            )
+            val live = state.id in entry.liveIds
+            when {
+                // 出场窗口结束 → 回收（循环回卷后再次满足 st 时重新生成）
+                !state.visible && live -> {
+                    engine.destroyParticles(arrayOf(uuid))
+                    entry.liveIds.remove(state.id)
+                }
+                // 刚到达 st → 生成
+                state.visible && !live -> {
+                    engine.spawnParticle(
+                        uuid, state.pos.x, state.pos.y, state.pos.z,
+                        state.color.r, state.color.g, state.color.b, state.color.a,
+                        state.scale[0], -1, null, state.glowing, state.lightLevel, state.uv
+                    )
+                    entry.liveIds.add(state.id)
+                }
+                state.visible && live ->
+                    ClientParticleEngine.instance()?.updateParticleDirectArray(
+                        uuid, state.pos, state.color, state.scale, state.glowing, state.lightLevel, snap
+                    )
+            }
         }
     }
 

@@ -1143,3 +1143,11 @@ body.puzzle-mode #viewport #box-overlay { display: none; }
   background: #23272f; color: #e8eaf0; cursor: pointer; font-size: 12px;
 }
 .kf-editor .ke-btns button:first-child { background: #2a3f5f; border-color: #3a6fa0; }
+
+/* ---- 时间轴图层区（AE 式入场编排） ---- */
+#tl-layers-canvas {
+  width: 100%; height: 132px; display: block;
+  margin-top: 4px; border-radius: var(--radius-sm);
+  background: #181b22; cursor: grab;
+}
+#tl-layers-canvas:active { cursor: grabbing; }

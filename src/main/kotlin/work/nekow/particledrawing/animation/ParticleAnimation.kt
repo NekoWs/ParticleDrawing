@@ -27,6 +27,7 @@ class ParticleAnimation(
  * 函数对象（.pdraw 的 f 字段）：公式代码块 + 变量，客户端实时求值生成派生粒子。
  *
  * @param uv 函数对象级 UV（作用域 f 级，派生粒子继承覆盖的根）；无贴图时派生粒子渲染为纯色方块
+ * @param st 起始 tick：t < st 时全部派生粒子隐藏；条长（动画跨度）由 duration/变量关键帧决定
  */
 class FunctionObject(
     val id: String,
@@ -37,7 +38,9 @@ class FunctionObject(
     val vars: Map<String, FunctionVar>,
     val duration: Int,
     val step: Int,
-    val uv: UvData? = null
+    val uv: UvData? = null,
+    val st: Int = 0,
+    val ent: Entrance? = null
 )
 
 /**
@@ -50,11 +53,21 @@ class FunctionVar(
 )
 
 /**
+ * 入场表现预设（粒子/函数对象的 `ent` 字段）。
+ *
+ * - `st` 之前粒子**完全不存在于渲染管线**（隐藏门控，与 alpha 无关）；
+ * - [preset] 目前支持 `"fade"`（出场后 [dur] tick 内 alpha 线性 0→1）；
+ *   高级入场动画在此扩展新 preset 约定即可，播放端按 preset 分派。
+ */
+data class Entrance(val preset: String, val dur: Int = 5)
+
+/**
  * 动画中的单个粒子定义。
  *
  * @param scale 非均匀缩放 [sx, sy, sz]（编辑器 scale 拆分 XYZ；无贴图渲染为纯色方块，当前仅 sx 参与
  *              billboard 尺寸，sy/sz 暂存数据，见 HANDOFF 六.A.2 与 B.3）
- * @param uv 粒子级 UV（作用域 p 级，最高优先级）
+ * @param st 起始 tick：t < st 时粒子隐藏；缺省 0（旧格式兼容）
+ * @param ent 入场表现预设；null = 到点瞬间出现
  */
 class AnimParticle(
     val id: String,
@@ -64,7 +77,9 @@ class AnimParticle(
     val lightLevel: Int,
     val pos: Vec3,
     val vel: Vec3,
-    val uv: UvData? = null
+    val uv: UvData? = null,
+    val st: Int = 0,
+    val ent: Entrance? = null
 )
 
 /**

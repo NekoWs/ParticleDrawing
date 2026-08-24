@@ -88,6 +88,8 @@ function serializeParticle(pt) {
   const v = pt.vel || [0, 0, 0];
   if (v[0] || v[1] || v[2]) o.vel = roundArr(v);
   if (pt.uv && pt.uv.texture) o.uv = serializeUV(pt.uv);
+  if (pt.st) o.st = pt.st;
+  if (pt.ent) o.ent = { p: pt.ent.p, d: pt.ent.d != null ? pt.ent.d : 5 };
   return o;
 }
 
@@ -117,6 +119,8 @@ function serializeFunction(fx) {
     vars: serializeVars(fx.vars),
     duration: fx.duration, step: fx.step,
   };
+  if (fx.st) o.st = fx.st;
+  if (fx.ent) o.ent = { p: fx.ent.p, d: fx.ent.d != null ? fx.ent.d : 5 };
   if (fx.preset) o.preset = fx.preset;
   if (fx.params) o.params = { ...fx.params };
   if (fx.ui) o.ui = JSON.parse(JSON.stringify(fx.ui));
@@ -129,6 +133,8 @@ function parseFunction(o) {
     code: o.code != null ? String(o.code) : "",
     vars: parseVars(o.vars),
     duration: o.duration || 0, step: o.step || 5,
+    st: o.st || 0,
+    ent: o.ent && o.ent.p ? { p: String(o.ent.p), d: o.ent.d != null ? o.ent.d : 5 } : null,
     preset: o.preset || null, params: o.params ? { ...o.params } : null,
     ui: o.ui || null,
     uv: parseUV(o.uv),
@@ -176,6 +182,8 @@ function parseParticlesTracks(obj) {
       glow: !!pt.g, lightLevel: pt.l || 0, pos: (pt.pos || [0, 0, 0]).slice(0, 3),
       vel: (pt.vel || [0, 0, 0]).slice(0, 3),
       uv: parseUV(pt.uv),
+      st: pt.st || 0,
+      ent: pt.ent && pt.ent.p ? { p: String(pt.ent.p), d: pt.ent.d != null ? pt.ent.d : 5 } : null,
     };
   });
   state.groups = {};
