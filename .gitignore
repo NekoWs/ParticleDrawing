@@ -50,3 +50,6 @@ repo/
 /.freebuff/
 /opencode.json
 /.kotlin/
+
+# 本地交接文档（不纳入版本库）
+/HANDOFF.md
