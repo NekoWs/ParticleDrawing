@@ -317,7 +317,7 @@ function setFunctionTrackMode(fxId, prop, mode) {
  * ======================================================================= */
 
 function addParticle(base) {
-  const p = Object.assign({ id: nextId(), color: [1, 1, 1, 1], scale: [1, 1, 1], glow: false, lightLevel: 0, pos: [0, 0, 0], vel: [0, 0, 0] }, base);
+  const p = Object.assign({ id: nextId(), color: [1, 1, 1, 1], scale: [1, 1, 1], glow: false, lightLevel: 0, pos: [0, 0, 0], vel: [0, 0, 0], life: 20 }, base);
   if (!Array.isArray(p.scale)) p.scale = [p.scale, p.scale, p.scale];
   state.particles.push(p);
   return p;

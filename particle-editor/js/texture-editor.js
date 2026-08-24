@@ -221,25 +221,28 @@ function updateTexOverlay() {
   const t = currentUVTarget();
   const u = t ? readTargetUV(t) : null;
   const uvMatches = !!(u && u.texture && u.texture === state.currentTexture);
+  const ttex = u && u.texture ? getTexture(u.texture) : null;
+  // uvSize 为 0 表示铺满整张贴图（与 computeParticleUV 的 out.sw = uvSize || tex.w 一致）
+  const effFw = u && ttex ? (u.uvSize[0] || ttex.width) : 0;
+  const effFh = u && ttex ? (u.uvSize[1] || ttex.height) : 0;
   if (uvMatches) {
     if (u.mode === 'fill') {
       const s = currentTexSize();
       setBox(uv, 0, 0, s.w, s.h, TEX_UV_COLOR, false);
     } else {
-      let sx = u.uvStart[0], sy = u.uvStart[1], sw = u.uvSize[0], sh = u.uvSize[1];
+      let sx = u.uvStart[0], sy = u.uvStart[1];
       if (u.mode === 'animated') {
         const f = currentUVFrame(u);
         // 行主 flipbook，与 Kotlin currentUvStart / shader 完全一致：
         // 先沿 x 步进填满一行，再换行沿 y 步进；单列（stepx=0）退化为纯竖向。
-        const t = getTexture(u.texture);
-        const texW = t ? t.width : 16;
+        const texW = ttex ? ttex.width : 16;
         const stepx = u.uvStep[0] || 0;
         const startX = u.uvStart[0] || 0;
         const cols = (stepx > 0 && startX < texW) ? Math.floor((texW - 1 - startX) / stepx) + 1 : 1;
         sx += stepx * (f % cols);
         sy += (u.uvStep[1] || 0) * Math.floor(f / cols);
       }
-      setBox(uv, sx, sy, sw, sh, TEX_UV_COLOR, false);
+      setBox(uv, sx, sy, effFw, effFh, TEX_UV_COLOR, false);
     }
   } else {
     setBox(uv, 0, 0, 0, 0, '', false);
@@ -247,14 +250,13 @@ function updateTexOverlay() {
 
   // 动画模式：帧覆盖范围线框（比网格深一些），提示 UV 步进后每帧的实际范围；
   // 内部按 uvStep 分格，逐帧可对齐
-  const ttex = u && u.texture ? getTexture(u.texture) : null;
-  if (uvMatches && u.mode === 'animated' && ttex && u.uvSize[0] > 0 && u.uvSize[1] > 0) {
+  if (uvMatches && u.mode === 'animated' && ttex && effFw > 0 && effFh > 0) {
     const stepx = u.uvStep[0] || 0, stepy = u.uvStep[1] || 0;
     const startX = u.uvStart[0] || 0, startY = u.uvStart[1] || 0;
     const cols = (stepx > 0 && startX < ttex.width) ? Math.floor((ttex.width - 1 - startX) / stepx) + 1 : 1;
     const maxF = effMaxFrame(u, autoFramesFor(u, ttex.width, ttex.height));
     const lastCol = (maxF - 1) % cols, lastRow = Math.floor((maxF - 1) / cols);
-    const spanW = stepx * lastCol + u.uvSize[0], spanH = stepy * lastRow + u.uvSize[1];
+    const spanW = stepx * lastCol + effFw, spanH = stepy * lastRow + effFh;
     setBox(cells, startX, startY, spanW, spanH, TEX_CELL_COLOR, false);
     if (stepx > 0 || stepy > 0) {
       const gx = stepx > 0 ? 'repeating-linear-gradient(to right, ' + TEX_CELL_COLOR + ' 0, ' + TEX_CELL_COLOR + ' 1px, transparent 1px, transparent ' + (stepx * z) + 'px)' : '';
@@ -403,13 +405,21 @@ function selectionRect() {
 }
 function clearRegion(x, y, w, h) {
   const t = getCurrentTexture(); if (!t) return;
-  for (let yy = y; yy < y + h; yy++) {
-    const i0 = yy * t.width * 4 + x * 4;
-    t.data.fill(0, i0, i0 + w * 4);
+  const x0 = Math.max(0, x), y0 = Math.max(0, y);
+  const x1 = Math.min(t.width, x + w), y1 = Math.min(t.height, y + h);
+  for (let yy = y0; yy < y1; yy++) {
+    const i0 = yy * t.width * 4 + x0 * 4;
+    t.data.fill(0, i0, i0 + (x1 - x0) * 4);
   }
 }
 function stampRegion(t, snap, x, y, w, h) {
-  for (let yy = 0; yy < h; yy++) t.data.set(snap.subarray(yy * w * 4, (yy + 1) * w * 4), ((y + yy) * t.width + x) * 4);
+  // 允许目标位置在贴图外：仅盖章贴图内的部分（溢出舍弃）
+  const x0 = Math.max(0, x), y0 = Math.max(0, y);
+  const x1 = Math.min(t.width, x + w), y1 = Math.min(t.height, y + h);
+  for (let yy = y0; yy < y1; yy++) {
+    const srcOff = ((yy - y) * w + (x0 - x)) * 4;
+    t.data.set(snap.subarray(srcOff, srcOff + (x1 - x0) * 4), (yy * t.width + x0) * 4);
+  }
 }
 
 // Alt 临时吸管：按住切到 picker，松开切回上一个工具（仅鼠标在贴图编辑器内时生效）
@@ -432,8 +442,8 @@ function texAltPreview(on) {
   texState.hover = null;
   renderTexCanvas();
 }
-window.addEventListener('keydown', (e) => { if (e.key === 'Alt' && texActive) texAltPreview(true); });
-window.addEventListener('keyup', (e) => { if (e.key === 'Alt') texAltPreview(false); });
+window.addEventListener('keydown', (e) => { if (e.key === 'Alt' && texActive) { e.preventDefault(); texAltPreview(true); } });
+window.addEventListener('keyup', (e) => { if (e.key === 'Alt') { e.preventDefault(); texAltPreview(false); } });
 window.addEventListener('blur', () => texAltPreview(false));
 
 function initTextureEditor() {
@@ -453,6 +463,7 @@ function initTextureEditor() {
       return;
     }
     if (ev.button === 2) { // 右键按住：临时橡皮擦（松开回到原工具）
+      if (!getCurrentTexture()) createNewTexture(); // 无贴图时自动创建
       texDrag = { mode: 'erase', last: texPixelAt(ev) };
       pushTexUndo();
       wrap.setPointerCapture(ev.pointerId);
@@ -468,6 +479,12 @@ function initTextureEditor() {
     }
     const selRect = selectionRect();
     const insideSel = texState.tool === 'selmove' && selRect && p.x >= selRect.x && p.x < selRect.x + selRect.w && p.y >= selRect.y && p.y < selRect.y + selRect.h;
+    // 已有选区时：任意工具点击（selmove 选区内部除外）先去掉当前选区
+    if (texState.selection && !insideSel) {
+      texState.selection = null;
+      texState.selecting = null;
+      renderTexCanvas();
+    }
     if (texState.tool === 'select' || (texState.tool === 'selmove' && !insideSel)) {
       // 拖出新矩形选区
       texDrag = { mode: 'select', x0: p.x, y0: p.y };
@@ -497,14 +514,16 @@ function initTextureEditor() {
       return;
     }
     if (texState.tool === 'bucket') {
+      if (!getCurrentTexture()) createNewTexture(); // 无贴图时自动创建
       pushTexUndo();
-      if (!getCurrentTexture()) return;
       floodFill(p.x, p.y, texState.color, texSetPixel);
       renderTexCanvas();
       if (typeof rebuildAtlas === 'function') rebuildAtlas();
       setDirty(true);
       return;
     }
+    // 铅笔等绘制工具：无贴图时自动创建一个 16×16 贴图再绘制
+    if (!getCurrentTexture()) createNewTexture();
     texDrag = { mode: texState.tool, last: p };
     pushTexUndo();
     applyStroke(p, texDrag.mode);
@@ -528,12 +547,12 @@ function initTextureEditor() {
         const p = texPixelAt(ev);
         const t = getCurrentTexture();
         if (t) {
-          const { w: tw, h: th } = currentTexSize();
-          const nx = Math.max(0, Math.min(tw - texDrag.w, p.x - texDrag.grabX));
-          const ny = Math.max(0, Math.min(th - texDrag.h, p.y - texDrag.grabY));
+          // 允许移动到贴图外：不 clamp，越界部分由 clear/stamp 裁剪舍弃
+          const nx = p.x - texDrag.grabX;
+          const ny = p.y - texDrag.grabY;
           if (nx !== texDrag.prevX || ny !== texDrag.prevY) {
-            clearRegion(texDrag.prevX, texDrag.prevY, texDrag.w, texDrag.h); // 清除上一盖章位置残影
-            stampRegion(t, texDrag.snap, nx, ny, texDrag.w, texDrag.h);
+            clearRegion(texDrag.prevX, texDrag.prevY, texDrag.w, texDrag.h); // 清除上一盖章位置残影（边界内部分）
+            stampRegion(t, texDrag.snap, nx, ny, texDrag.w, texDrag.h);     // 贴图内部分才盖章
             texDrag.prevX = nx; texDrag.prevY = ny;
             texState.selection = { x0: nx, y0: ny, x1: nx + texDrag.w, y1: ny + texDrag.h };
             renderTexCanvas();
@@ -694,6 +713,9 @@ function openColorPicker(x, y, rgba, onCommit) {
     const c = hsvToRgb([hsv[0], hsv[1], hsv[2]]);
     hex.value = '#' + c.map(v => v.toString(16).padStart(2, '0')).join('') + (a < 1 ? Math.round(a * 255).toString(16).padStart(2, '0') : '');
     paintAlpha();
+    // 实时同步编辑器颜色：拖动/输入即时生效，无需点确定
+    texState.color = [c[0], c[1], c[2], Math.round(a * 255)];
+    updateColorButton();
   };
   paintSV(); paintHue(); sync();
 

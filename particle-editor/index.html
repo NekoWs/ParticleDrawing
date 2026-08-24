@@ -34,11 +34,7 @@
         </div>
       </div>
       <div class="menu">
-        <button class="menu-btn" data-menu="about">关于</button>
-        <div class="dropdown" id="menu-about">
-          <div class="dd-text">ParticleDrawing 粒子动画编辑器</div>
-          <div class="dd-text">导出 .pdraw 供模组 /pdraw play 播放</div>
-        </div>
+        <button class="menu-btn" data-menu="about" id="btn-about">关于</button>
       </div>
     </nav>
     <span id="topbar-title">my_animation.pdraw</span>
@@ -91,7 +87,7 @@
         </div>
         <label class="chk"><input id="prop-glow" type="checkbox" />发光</label>
         <label class="row">光照等级 <input id="prop-light" type="range" min="0" max="15" step="1" value="15" /><span id="light-val">15</span></label>
-        <label class="row">寿命(tick) <input id="prop-life" type="number" min="-1" step="1" value="-1" title="-1 或留空 = 无限（活到动画结束）" /></label>
+        <label class="row">寿命(tick) <input id="prop-life" type="number" min="-1" step="1" value="20" title="-1 或留空 = 无限（活到动画结束）" /></label>
         <label class="row">X <input id="prop-posx" type="number" step="0.1" value="0" /></label>
         <label class="row">Y <input id="prop-posy" type="number" step="0.1" value="0" /></label>
         <label class="row">Z <input id="prop-posz" type="number" step="0.1" value="0" /></label>

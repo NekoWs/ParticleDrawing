@@ -66,11 +66,15 @@ function refreshTreeSelection() {
 
 function closeContextMenu() {
   const m = document.getElementById('context-menu');
-  if (m) m.remove();
+  if (!m || m.classList.contains('closing')) return;
+  m.classList.add('closing');
+  setTimeout(() => m.remove(), 130); // 等收起动画（左上→右下展开的逆过程）播完再移除
 }
 
 function showContextMenu(x, y, items) {
   closeContextMenu();
+  // 新菜单即将出现：立即清掉仍在播放收起动画的旧菜单，避免重叠
+  document.querySelectorAll('#context-menu.closing').forEach(e => e.remove());
   const menu = document.createElement('div');
   menu.id = 'context-menu';
   menu.className = 'context-menu';

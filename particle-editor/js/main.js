@@ -42,6 +42,7 @@ function initUI() {
     menu.addEventListener('mouseleave', () => menu.classList.remove('open'));
   });
   const closeMenus = () => document.querySelectorAll('.menu').forEach(m => m.classList.remove('open'));
+  document.getElementById('btn-about').addEventListener('click', () => { closeMenus(); showAboutModal(); });
   document.getElementById('btn-new').addEventListener('click', () => { closeMenus(); newFile(); });
   document.getElementById('btn-open').addEventListener('click', () => { closeMenus(); openFile(); });
   document.getElementById('btn-save').addEventListener('click', () => { closeMenus(); saveFile(); });

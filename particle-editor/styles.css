@@ -273,6 +273,13 @@ body {
 .uv-field .uv-suffix em { font-style: normal; color: var(--accent); }
 .uv-panel .row { width: 100%; justify-content: space-between; padding: 5px 5px 5px 15px; background: var(--panel-2); border-radius: 10px; }
 
+/* 属性 / 函数对象选项卡的 row 采用与贴图 UV 面板一致的卡片样式 */
+#pane-props .row,
+#pane-fx .fx-panel .row {
+  width: 100%; justify-content: space-between; padding: 5px 5px 5px 15px;
+  background: var(--panel-2); border-radius: 10px;
+}
+
 /* ---- 取色板 ---- */
 .color-picker {
   position: fixed; z-index: 100; width: 210px; background: var(--panel-2);
@@ -348,6 +355,15 @@ body {
 @keyframes modalFadeOut { from { opacity: 1; } to { opacity: 0; } }
 @keyframes modalPopIn { from { opacity: 0; transform: translateY(10px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes modalPopOut { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(6px) scale(0.97); } }
+
+/* ---- 关于弹窗 ---- */
+.about-body { display: flex; flex-direction: column; gap: 8px; }
+.about-desc { color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+.about-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.about-label { flex: none; width: 56px; color: var(--muted); }
+.about-value { color: var(--text); font-weight: 600; }
+.about-link { color: var(--accent); text-decoration: none; word-break: break-all; }
+.about-link:hover { text-decoration: underline; }
 
 .toolbar {
   position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
@@ -495,7 +511,12 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .easing-editor {
   position: fixed; z-index: 2100; width: 216px; background: var(--panel-3);
   border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; box-shadow: var(--shadow);
+  transform-origin: top left;
+  animation: eePopIn 0.16s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
+.easing-editor.closing { animation: eePopOut 0.14s ease-in forwards; }
+@keyframes eePopIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+@keyframes eePopOut { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.92); } }
 .ee-title { font-weight: 600; margin-bottom: 8px; }
 .ee-inputs { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
 .ee-input-row { display: flex; align-items: center; gap: 4px; }
@@ -531,7 +552,12 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .context-menu {
   position: fixed; z-index: 200; min-width: 150px; background: var(--panel-3);
   border: 1px solid var(--border); border-radius: var(--radius); padding: 5px; box-shadow: var(--shadow);
+  transform-origin: top left;
+  animation: cmPopIn 0.12s ease-out;
 }
+.context-menu.closing { animation: cmPopOut 0.1s ease-in forwards; }
+@keyframes cmPopIn { from { opacity: 0; transform: scale(0.7); } to { opacity: 1; transform: scale(1); } }
+@keyframes cmPopOut { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.75); } }
 .cm-item {
   display: block; width: 100%; text-align: left; background: none; border: none;
   color: var(--text); padding: 8px 12px; cursor: pointer; border-radius: var(--radius-sm); font-size: 13px;

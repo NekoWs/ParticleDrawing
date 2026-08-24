@@ -36,6 +36,8 @@ let easingEditor = null;
 
 function openEasingEditor(easing, applyFn, anchor) {
   closeEasingEditor();
+  // 立即清掉仍在播放收起动画的旧弹窗，避免与新弹窗重叠
+  document.querySelectorAll('#easing-editor.closing').forEach(e => e.remove());
   const bezier = easingToBezier(easing);
   easingEditor = { bezier, apply: applyFn, anchor, dragging: -1, inputs: {} };
   const pop = document.createElement('div');
@@ -135,9 +137,11 @@ function onEasingDocPointerDown(e) {
 
 function closeEasingEditor() {
   easingEditor = null;
-  const pop = document.getElementById('easing-editor');
-  if (pop) pop.remove();
   document.removeEventListener('pointerdown', onEasingDocPointerDown);
+  const pop = document.getElementById('easing-editor');
+  if (!pop || pop.classList.contains('closing')) return;
+  pop.classList.add('closing');
+  setTimeout(() => pop.remove(), 160); // 等收起动画播完再移除
 }
 
 function cubicBezierX(t, x1, x2) {

@@ -3,22 +3,26 @@
  * ======================================================================= */
 
 let uiModalOverlay = null;
+let uiModalClosePromise = Promise.resolve();
 
+// 关闭当前弹窗：播放消失动画，动画结束后再移除 DOM。
+// 返回的 Promise 在移除后 resolve（供 buildModal 等待，避免新弹窗与旧弹窗动画重叠）。
 function closeUIModal() {
-  if (!uiModalOverlay) return;
+  if (!uiModalOverlay) return Promise.resolve();
   const ov = uiModalOverlay;
   uiModalOverlay = null;
   ov.classList.add('closing');
-  // 出现/消失动画结束后再移除 DOM
-  const finish = () => ov.remove();
-  ov.addEventListener('animationend', finish, { once: true });
-  setTimeout(finish, 260); // 保险：animationend 未触发时兜底移除
+  uiModalClosePromise = new Promise((res) => {
+    setTimeout(() => { ov.remove(); res(); }, 230); // 迟于动画时长（0.18s/0.16s）再移除
+  });
+  return uiModalClosePromise;
 }
 
 // 底层：构建弹窗，返回 { box, input, resolve }
-function buildModal({ title, message, input, buttons }) {
+async function buildModal({ title, message, input, buttons, content }) {
+  closeUIModal();          // 触发旧弹窗关闭动画
+  await uiModalClosePromise; // 等旧弹窗动画结束再显示新弹窗（避免重叠）
   return new Promise((resolve) => {
-    closeUIModal();
     const overlay = document.createElement('div');
     overlay.className = 'ui-modal-overlay';
     const box = document.createElement('div');
@@ -31,6 +35,7 @@ function buildModal({ title, message, input, buttons }) {
       const m = document.createElement('div'); m.className = 'ui-modal-msg'; m.textContent = message;
       box.appendChild(m);
     }
+    if (content) box.appendChild(content);
     let inp = null;
     if (input) {
       inp = document.createElement('input');
@@ -91,5 +96,46 @@ function modalConfirm(title, message) {
   return buildModal({
     title, message,
     buttons: [{ label: '取消', value: false }, { label: '确定', value: true, primary: true }],
+  });
+}
+
+// 关于弹窗（替代顶部悬停展示）
+function showAboutModal() {
+  const content = document.createElement('div');
+  content.className = 'about-body';
+  const desc = document.createElement('div');
+  desc.className = 'about-desc';
+  desc.textContent = 'ParticleDrawing 粒子动画编辑器 — 用于创作 .pdraw 动画并在 Minecraft 中播放。';
+  content.appendChild(desc);
+  const mkRow = (label, href) => {
+    const row = document.createElement('div');
+    row.className = 'about-row';
+    const lab = document.createElement('span');
+    lab.className = 'about-label';
+    lab.textContent = label;
+    row.appendChild(lab);
+    if (href) {
+      const a = document.createElement('a');
+      a.className = 'about-link';
+      a.href = href;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = href;
+      row.appendChild(a);
+    } else {
+      const v = document.createElement('span');
+      v.className = 'about-value';
+      v.textContent = 'NekoW';
+      row.appendChild(v);
+    }
+    content.appendChild(row);
+  };
+  mkRow('开发者', null);
+  mkRow('GitHub', 'https://github.com/NekoWs/ParticleDrawing/');
+  mkRow('BiliBili', 'https://space.bilibili.com/593877814');
+  buildModal({
+    title: '关于 ParticleDrawing',
+    content,
+    buttons: [{ label: '确定', value: undefined, primary: true }],
   });
 }
