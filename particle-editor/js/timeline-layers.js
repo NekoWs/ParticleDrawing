@@ -141,6 +141,15 @@ function timelineXToTickL(clientX) {
   return timelineViewStart + (clientX - rect.left) / TL_PX_PER_TICK;
 }
 
+/** 轻刷新：st 改动后同步时长显示、标尺、图层区与预览。 */
+function refreshAllPanelsLight() {
+  const maxEl = document.getElementById('tl-max');
+  if (maxEl) maxEl.textContent = maxTick();
+  if (typeof drawTimeline === 'function') drawTimeline();
+  drawTimelineLayers();
+  rebuildPoints(false);
+}
+
 function tlInitLayerEvents() {
   const canvas = document.getElementById('tl-layers-canvas');
   if (!canvas) return;
