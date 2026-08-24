@@ -162,8 +162,8 @@ const pointsMaterial = new THREE.ShaderMaterial({
     varying float vUVMode;
     void main() {
       vec2 uvLocal = (gl_PointCoord - 0.5) / vAspect + 0.5;
-      // 不再做 y 翻转：atlas 用 CanvasTexture flipY=true 上传，图顶已位于高 v；
-      // 此前又手翻一次导致整体上下颠倒（竖向动画 654321 / 编辑器 154321）。
+      // gl_PointCoord 的 (0,0) 在左上角，无需额外翻转——
+      // 配合下方“交换 v 端点”即可让格顶(sy=0)采样到图顶、格底采样到图底，正立且自上而下。
       if (uvLocal.x < 0.0 || uvLocal.x > 1.0 || uvLocal.y < 0.0 || uvLocal.y > 1.0) discard;
       if (vUVMode < 0.5) {
         gl_FragColor = vec4(vColor.rgb, vColor.a) * uOpacity;
@@ -173,21 +173,16 @@ const pointsMaterial = new THREE.ShaderMaterial({
           float maxF = max(1.0, vUVAnim.w);
           float frame = floor(uTime * vUVAnim.z);
           frame = (vUVMode > 3.5) ? min(frame, maxF - 1.0) : mod(frame, maxF);
-          // 行主 flipbook（与 Kotlin currentUvStart 一致）：先横向填满一行再换行
-          float cols = (vUVAnim.x > 0.0 && vUVScale.x < vUVTex.x)
-            ? floor((vUVTex.x - 1.0 - vUVScale.x) / vUVAnim.x) + 1.0
-            : 1.0;
-          float cf = mod(frame, cols);
-          float rf = floor(frame / cols);
-          start.x += vUVAnim.x * cf;
-          start.y += vUVAnim.y * rf;
+          start += vUVAnim.xy * frame;
         }
         vec2 sp = start / vUVTex;
         vec2 ep = sp + vUVScale.zw / vUVTex;
         // 采样系数钳制到 [0,1]：即使 UV 起点/大小/动画推进越出贴图区，
         // 也不会让采样滑出整张贴图在 atlas 中的区间（否则会采到相邻贴图/空白，右缘出现细条）
         vec2 coef = clamp(mix(sp, ep, uvLocal), 0.0, 1.0);
-        vec2 atlasCoord = mix(vUV.xy, vUV.zw, coef);
+        // 交换 v 端点：atlas 因 flipY=true 时 v=0=图底、v=1=图顶，而 start(格顶) 要对应图顶，
+        // 故 y 方向用 mix(v1, v0, coef.y)。x 方向不变。
+        vec2 atlasCoord = vec2(mix(vUV.x, vUV.z, coef.x), mix(vUV.w, vUV.y, coef.y));
         vec4 tex = texture2D(uMap, atlasCoord);
         gl_FragColor = vec4(vColor.rgb, vColor.a) * tex * uOpacity;
       }
@@ -222,9 +217,9 @@ function rebuildAtlas() {
     const img = ctx.createImageData(t.width, t.height);
     img.data.set(t.data);
     ctx.putImageData(img, cx, cy);
-    // CanvasTexture 默认 flipY=true：canvas 行 0（图顶）→ 纹理 v=0。region v0=顶、v1=底，
-    // 采样时 coef.y 直接自顶向下——配合 shader 里“不再手动翻转 uvLocal.y”即可正立、
-    // 顺序自上而下。此处保持与原始实现一致（勿再改 flipY/v0/v1 约定）。
+    // CanvasTexture 默认 flipY=true：canvas 行 y（0=顶部）上传后位于纹理 v = 1 - y/H。
+    // 因此贴图区域 (cx,cy,w,h) 的真实纹理 v 区间为 [1-(cy+h)/H, 1-cy/H]（顶部对应高 v）。
+    // 若直接用 v0=cy/H 会被整体翻转错位（多贴图时采样落到空白/其它贴图，表现为粒子不显示贴图）。
     map[name] = {
       u0: cx / atlasW, v0: 1 - (cy + t.height) / atlasH,
       u1: (cx + t.width) / atlasW, v1: 1 - cy / atlasH,
