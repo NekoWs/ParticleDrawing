@@ -509,15 +509,22 @@ function computeParticleUV(p, out) {
     out.sx = 0; out.sy = 0; out.sw = tex.w; out.sh = tex.h;
     out.mode = 2;
   } else if (uv.mode === 'animated') {
-    out.sx = uv.uvStart[0]; out.sy = uv.uvStart[1];
+    // 帧号在 JS（float64）里确定，与贴图预览 currentUVFrame / 游戏端完全同源，消除 shader
+    // float32 的 floor(uTime*fps) mod 在大数值/回绕处的精度与边界脆弱性。
+    const maxF = effMaxFrame(uv, autoFramesFor(uv, tex.w, tex.h));
+    const raw = Math.floor((performance.now() / 1000) * (uv.fps || 1));
+    const frame = uv.loop ? ((raw % maxF) + maxF) % maxF : Math.min(raw, maxF - 1);
+    // 行主 flipbook：先横向填满一行再换行（与 game currentUvStart、overlay 一致）
+    const stepx = uv.uvStep[0] || 0, stepy = uv.uvStep[1] || 0;
+    const cols = (stepx > 0 && uv.uvStart[0] < tex.w) ? Math.floor((tex.w - 1 - uv.uvStart[0]) / stepx) + 1 : 1;
+    out.sx = uv.uvStart[0] + stepx * (frame % cols);
+    out.sy = uv.uvStart[1] + stepy * Math.floor(frame / cols);
     // uvSize 为 0 时使用贴图大小（铺满整张贴图）
     out.sw = uv.uvSize[0] || tex.w; out.sh = uv.uvSize[1] || tex.h;
-    out.stepx = uv.uvStep[0]; out.stepy = uv.uvStep[1];
+    out.stepx = 0; out.stepy = 0;   // 帧已在 JS 侧计入偏移，shader 不再动画
     out.fps = uv.fps;
-    // 自动帧数（常量层共享函数，与贴图预览一致）：行末换行；maxFrame 0/1/未设置为「自动」
-    const autoFrames = autoFramesFor(uv, tex.w, tex.h);
-    out.maxFrame = effMaxFrame(uv, autoFrames);
-    out.mode = uv.loop ? 3 : 4;
+    out.maxFrame = maxF;
+    out.mode = 1;                    // 按静态矩形采样（偏移已含帧）
   } else {
     out.sx = uv.uvStart[0]; out.sy = uv.uvStart[1];
     // uvSize 为 0 时使用贴图大小（铺满整张贴图）
