@@ -116,7 +116,10 @@ function hexToRgb(hex) {
 
 const TL_PX_PER_TICK = 4;
 let timelineViewStart = -25;
-let compTimelineViewStart = 0;
+// 组件时间轴左侧负轴（负几个 tick）：tick 0 不贴画布左缘，
+// 配合钉边缘余量让播放头/关键帧能真正停在 0t 上
+const COMP_TL_MIN_VIEW_START = -5;
+let compTimelineViewStart = COMP_TL_MIN_VIEW_START;
 
 function drawTimeline() {
   const canvas = document.getElementById('timeline');
@@ -157,6 +160,61 @@ function timelineXToTick(clientX) {
   const canvas = document.getElementById('timeline');
   const rect = canvas.getBoundingClientRect();
   return timelineViewStart + (clientX - rect.left) / TL_PX_PER_TICK;
+}
+
+/**
+ * scrub 播放头拖动：AE 式「滞后自动平移」。
+ * 入参 drag 为拖动状态对象（本函数读写 drag.edge/edgeVs/peakOut，用于跨帧记忆追赶方向与峰值）；
+ * clientX 为当前指针 screenX；rect 为时间轴 canvas 的 getBoundingClientRect() 结果；
+ * pinMarginPx 为钉边缘时播放头留在可视区内的距离（像素），保证游标不被边缘裁掉/因亚像素宽度差而消失。
+ * 返回 { viewStart, time }，调用方写回 viewStart 变量与 state.time。
+ *
+ * 语义：
+ *  - 指针在可视区内：播放头 1:1 跟随指针，视图不动。
+ *  - 指针越出右缘/左缘：视图单向往外追赶（播放头钉在边缘内侧 pinMarginPx 处）。
+ *  - 滞后：指针反向但仍停留在可视区外时，视图不回缩（播放头继续钉边缘）；
+ *    只有指针重新进入可视区后，才恢复 1:1 跟随。
+ */
+function scrubAutoPan(drag, clientX, rect, viewStart, time, pxPerTick, minStart, pinMarginPx) {
+  const W = rect.width;
+  const x = clientX - rect.left;         // 相对画布左缘（可 <0 或 >W）
+  const m = Math.max(0, pinMarginPx || 0); // 钉边缘的可见余量（像素）
+  if (drag.edge === undefined) drag.edge = 0;
+
+  if (drag.edge === 0) {
+    if (x >= W) {                        // 越过右缘 → 进入右追赶
+      drag.edge = 1;
+      drag.edgeVs = viewStart;
+      drag.peakOut = x - W;
+      return { viewStart, time: viewStart + (W - m) / pxPerTick };  // 钉右缘内侧
+    }
+    if (x <= 0) {                        // 越过左缘 → 进入左追赶
+      drag.edge = -1;
+      drag.edgeVs = viewStart;
+      drag.peakOut = -x;
+      return { viewStart, time: Math.max(0, viewStart + m / pxPerTick) };   // 钉左缘内侧
+    }
+    return { viewStart, time: Math.max(0, viewStart + x / pxPerTick) }; // 可视区内：跟随指针
+  }
+
+  if (drag.edge === 1) {
+    if (x >= W) {                        // 仍在右缘外：单调右追，反向不回缩
+      drag.peakOut = Math.max(drag.peakOut, x - W);
+      const vs = drag.edgeVs + drag.peakOut / pxPerTick;
+      return { viewStart: vs, time: vs + (W - m) / pxPerTick };     // 钉右缘内侧
+    }
+    drag.edge = 0;                       // 指针回到可视区 → 恢复跟随
+    return { viewStart, time: Math.max(0, viewStart + x / pxPerTick) };
+  }
+
+  // drag.edge === -1
+  if (x <= 0) {                          // 仍在左缘外：单调左追，反向不回缩
+    drag.peakOut = Math.max(drag.peakOut, -x);
+    const vs = Math.max(minStart, drag.edgeVs - drag.peakOut / pxPerTick);
+    return { viewStart: vs, time: Math.max(0, vs + m / pxPerTick) };          // 钉左缘内侧
+  }
+  drag.edge = 0;                         // 指针回到可视区 → 恢复跟随
+  return { viewStart, time: Math.max(0, viewStart + x / pxPerTick) };
 }
 
 /* =========================================================================

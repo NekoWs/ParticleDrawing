@@ -154,7 +154,10 @@ function initUI() {
       timelineViewStart -= (ev.clientX - tlDrag.lastX) / TL_PX_PER_TICK;
       timelineViewStart = Math.max(-25, timelineViewStart);
     } else {
-      state.time = Math.max(0, timelineXToTick(ev.clientX));
+      // scrub：AE 式滞后自动平移（越界时视图单向外追、游标钉边缘；反向时若指针仍在可视区外则视图不回缩）
+      const r = scrubAutoPan(tlDrag, ev.clientX, tlCanvas.getBoundingClientRect(), timelineViewStart, state.time, TL_PX_PER_TICK, -25);
+      timelineViewStart = r.viewStart;
+      state.time = r.time;
       updateTimeUI();
     }
     tlDrag.lastX = ev.clientX;

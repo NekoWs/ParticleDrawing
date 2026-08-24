@@ -562,6 +562,13 @@ function drawCompTimeline(canvas, pr, id) {
   const viewStart = compTimelineViewStart;
   ctx.fillStyle = '#1f222a'; ctx.fillRect(0, 0, w, h);
   ctx.strokeStyle = '#3a3f4b'; ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+  // 刻度竖线：每 5 tick 短、每 10 tick 长（与底部标尺/图层区同一视口对齐；数字只在标尺显示）
+  const viewEnd = viewStart + w / pxPerTick;
+  for (let t = Math.max(0, Math.floor(viewStart / 5) * 5); t <= viewEnd; t += 5) {
+    const tx = (t - viewStart) * pxPerTick;
+    const half = ((t % 10) + 10) % 10 === 0 ? 9 : 4;
+    ctx.beginPath(); ctx.moveTo(tx, h / 2 - half); ctx.lineTo(tx, h / 2 + half); ctx.stroke();
+  }
   const tr = findTrackByPr(pr, id);
   const kfs = tr ? tr.kf : [];
   for (const kf of kfs) {
@@ -629,14 +636,18 @@ function bindCompTimeline(canvas, id, pr) {
     if (!drag) return;
     if (drag.mode === 'pan') {
       compTimelineViewStart -= (ev.clientX - drag.lastX) / TL_PX_PER_TICK;
-      compTimelineViewStart = Math.max(0, compTimelineViewStart);
+      compTimelineViewStart = Math.max(COMP_TL_MIN_VIEW_START, compTimelineViewStart);
       drag.lastX = ev.clientX;
       refreshCompTimelines();
       return;
     }
-    const tick = canvasTickAt(canvas, ev.clientX);
     if (drag.mode === 'keyframe') {
-      const nt = Math.max(0, Math.round(tick)); // 关键帧对齐整数 tick
+      // 关键帧拖拽同样做 AE 式滞后自动平移：越界时视图单向外追、关键帧钉在边缘内侧 4px；
+      // 反向时若指针仍在可视区外则视图不回缩，回到可视区后恢复 1:1 跟随。
+      const r = scrubAutoPan(drag, ev.clientX, canvas.getBoundingClientRect(), compTimelineViewStart, drag.kfTick, TL_PX_PER_TICK, COMP_TL_MIN_VIEW_START, 4);
+      const vsChanged = r.viewStart !== compTimelineViewStart;
+      compTimelineViewStart = r.viewStart;
+      const nt = Math.max(0, Math.round(r.time)); // 关键帧对齐整数 tick
       if (nt !== drag.kfTick) {
         // 直接改关键帧时间 + 重绘，不重建 DOM（否则 canvas 被替换导致拖拽中断）
         const tr = findTrackByPr(pr, id);
@@ -651,9 +662,14 @@ function bindCompTimeline(canvas, id, pr) {
           }
           rebuildPoints();
         }
+      } else if (vsChanged) {
+        refreshCompTimelines();
       }
     } else {
-      setTimeTo(tick);
+      // scrub：AE 式滞后自动平移（越界时视图单向外追、游标钉在边缘内侧 4px；反向时若指针仍在可视区外则视图不回缩）
+      const r = scrubAutoPan(drag, ev.clientX, canvas.getBoundingClientRect(), compTimelineViewStart, state.time, TL_PX_PER_TICK, COMP_TL_MIN_VIEW_START, 4);
+      compTimelineViewStart = r.viewStart;
+      setTimeTo(r.time);
     }
   });
   canvas.addEventListener('pointerup', () => { drag = null; });
