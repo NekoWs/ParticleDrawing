@@ -213,10 +213,15 @@ function updateTexOverlay() {
       let sx = u.uvStart[0], sy = u.uvStart[1], sw = u.uvSize[0], sh = u.uvSize[1];
       if (u.mode === 'animated') {
         const f = currentUVFrame(u);
-        sx += u.uvStep[0] * f;
-        // 竖向分量取反：atlas 用 CanvasTexture flipY=true，shader 中 +stepy 沿图像向上推进，
-        // 而 overlay 画布以顶部为行 0（y 向下）——水平方向不受 flip 影响，竖向需反号对齐。
-        sy -= u.uvStep[1] * f;
+        // 行主 flipbook，与 Kotlin currentUvStart / shader 完全一致：
+        // 先沿 x 步进填满一行，再换行沿 y 步进；单列（stepx=0）退化为纯竖向。
+        const t = getTexture(u.texture);
+        const texW = t ? t.width : 16;
+        const stepx = u.uvStep[0] || 0;
+        const startX = u.uvStart[0] || 0;
+        const cols = (stepx > 0 && startX < texW) ? Math.floor((texW - 1 - startX) / stepx) + 1 : 1;
+        sx += stepx * (f % cols);
+        sy += (u.uvStep[1] || 0) * Math.floor(f / cols);
       }
       setBox(uv, sx, sy, sw, sh, TEX_UV_COLOR, false);
     }
@@ -438,8 +443,12 @@ function initTextureEditor() {
       if (s && Math.abs(s.x1 - s.x0) < 1 && Math.abs(s.y1 - s.y0) < 1) texState.selection = null;
       renderTexCanvas();
     }
+    const wasPan = texDrag && texDrag.mode === 'pan';
     texDrag = null;
     texState.selecting = null;
+    // 右键平移释放瞬间，浏览器可能在外部元素上补发 contextmenu（此时 texDrag 已置空，
+    // 靠短暂时间窗口抑制）。捕获保证 pointerup 仍落回 wrap。
+    if (wasPan) texCtxSuppressUntil = performance.now() + 400;
   });
 
   wrap.addEventListener('wheel', (ev) => {
@@ -457,9 +466,12 @@ function initTextureEditor() {
 
   wrap.addEventListener('contextmenu', (ev) => ev.preventDefault());
 
-  // 右键平移拖拽时，指针可能离开编辑器页面并在外部释放——window 级抑制浏览器的右键菜单
+  // 右键平移拖拽时，指针可能离开编辑器页面并在外部释放——window 级抑制浏览器右键菜单。
+  // 用「时间窗口」而非 texDrag 现场判断：contextmenu 事件普遍在 pointerup 之后派发，
+  // 此时 texDrag 已复位，故松开时打一个 400ms 抑制标记。
+  let texCtxSuppressUntil = 0;
   window.addEventListener('contextmenu', (ev) => {
-    if (texDrag && texDrag.mode === 'pan') ev.preventDefault();
+    if ((texDrag && texDrag.mode === 'pan') || performance.now() < texCtxSuppressUntil) ev.preventDefault();
   });
 
   // 工具切换

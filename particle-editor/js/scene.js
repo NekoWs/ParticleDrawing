@@ -174,7 +174,14 @@ const pointsMaterial = new THREE.ShaderMaterial({
           float maxF = max(1.0, vUVAnim.w);
           float frame = floor(uTime * vUVAnim.z);
           frame = (vUVMode > 3.5) ? min(frame, maxF - 1.0) : mod(frame, maxF);
-          start += vUVAnim.xy * frame;
+          // 行主 flipbook（与 Kotlin currentUvStart 一致）：先横向填满一行再换行
+          float cols = (vUVAnim.x > 0.0 && vUVScale.x < vUVTex.x)
+            ? floor((vUVTex.x - 1.0 - vUVScale.x) / vUVAnim.x) + 1.0
+            : 1.0;
+          float cf = mod(frame, cols);
+          float rf = floor(frame / cols);
+          start.x += vUVAnim.x * cf;
+          start.y += vUVAnim.y * rf;
         }
         vec2 sp = start / vUVTex;
         vec2 ep = sp + vUVScale.zw / vUVTex;
