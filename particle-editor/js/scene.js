@@ -161,26 +161,29 @@ const pointsMaterial = new THREE.ShaderMaterial({
     varying vec2 vUVTex;
     varying float vUVMode;
     void main() {
+      // gl_PointCoord 约定：(0,0)=左上角（ES 规范）。vAspect 把非正方形粒子裁剪回居中方块。
       vec2 uvLocal = (gl_PointCoord - 0.5) / vAspect + 0.5;
-      // 翻转 y 坐标：flipY=true 时 canvas 行 0（图片顶部）→ 纹理 v=0，
-      // 但 UV 坐标中 y=0 应对应图片顶部，所以需要翻转
-      uvLocal.y = 1.0 - uvLocal.y;
       if (uvLocal.x < 0.0 || uvLocal.x > 1.0 || uvLocal.y < 0.0 || uvLocal.y > 1.0) discard;
       if (vUVMode < 0.5) {
         gl_FragColor = vec4(vColor.rgb, vColor.a) * uOpacity;
       } else {
-        vec2 start = vUVScale.xy;
+        vec2 start = vUVScale.xy;              // 贴图像素坐标（自顶向下）
         if (vUVMode > 2.5) {
           float maxF = max(1.0, vUVAnim.w);
           float frame = floor(uTime * vUVAnim.z);
           frame = (vUVMode > 3.5) ? min(frame, maxF - 1.0) : mod(frame, maxF);
-          start += vUVAnim.xy * frame;
+          // 行主 flipbook（与游戏 currentUvStart 一致）：先横向填满一行再换行
+          float cols = (vUVAnim.x > 0.0 && vUVScale.x < vUVTex.x)
+            ? floor((vUVTex.x - 1.0 - vUVScale.x) / vUVAnim.x) + 1.0
+            : 1.0;
+          start.x += vUVAnim.x * mod(frame, cols);
+          start.y += vUVAnim.y * floor(frame / cols);
         }
-        vec2 sp = start / vUVTex;
+        vec2 sp = start / vUVTex;              // 归一化到贴图（0..1，自顶向下）
         vec2 ep = sp + vUVScale.zw / vUVTex;
-        // 采样系数钳制到 [0,1]：即使 UV 起点/大小/动画推进越出贴图区，
-        // 也不会让采样滑出整张贴图在 atlas 中的区间（否则会采到相邻贴图/空白，右缘出现细条）
+        // 钳制到 [0,1]，避免越界采样到 atlas 相邻区/空白
         vec2 coef = clamp(mix(sp, ep, uvLocal), 0.0, 1.0);
+        // vUV.xy=(u0,v0顶)、vUV.zw=(u1,v1底)：直接 mix，v 自顶向下，与 atlas 的 v=0=顶 一致
         vec2 atlasCoord = mix(vUV.xy, vUV.zw, coef);
         vec4 tex = texture2D(uMap, atlasCoord);
         gl_FragColor = vec4(vColor.rgb, vColor.a) * tex * uOpacity;
@@ -206,35 +209,39 @@ function rebuildAtlas() {
   let maxW = 0, maxH = 0;
   for (const n of names) { const t = state.textures[n]; maxW = Math.max(maxW, t.width); maxH = Math.max(maxH, t.height); }
   const atlasW = Math.max(2, cols * maxW), atlasH = Math.max(2, Math.ceil(names.length / cols) * maxH);
-  const canvas = document.createElement('canvas');
-  canvas.width = atlasW; canvas.height = atlasH;
-  const ctx = canvas.getContext('2d');
+
+  // DataTexture：直接写 RGBA 像素数组，方向由我们完全掌控，不经过 CanvasTexture 的隐式上传翻转。
+  // 约定：data 行 0 = 贴图顶（与游戏端 MC 纹理 v=0=图顶 完全一致）；flipY=false。
+  const data = new Uint8Array(atlasW * atlasH * 4); // 全 0 = 透明
   const map = {};
   names.forEach((name, i) => {
     const t = state.textures[name];
     const cx = (i % cols) * maxW, cy = Math.floor(i / cols) * maxH;
-    const img = ctx.createImageData(t.width, t.height);
-    img.data.set(t.data);
-    ctx.putImageData(img, cx, cy);
-    // CanvasTexture 默认 flipY=true：canvas 行 y（0=顶部）上传后位于纹理 v = 1 - y/H。
-    // 因此贴图区域 (cx,cy,w,h) 的真实纹理 v 区间为 [1-(cy+h)/H, 1-cy/H]（顶部对应高 v）。
-    // 若直接用 v0=cy/H 会被整体翻转错位（多贴图时采样落到空白/其它贴图，表现为粒子不显示贴图）。
+    for (let y = 0; y < t.height; y++) {
+      for (let x = 0; x < t.width; x++) {
+        const s = (y * t.width + x) * 4;
+        const d = ((cy + y) * atlasW + (cx + x)) * 4;
+        data[d] = t.data[s];
+        data[d + 1] = t.data[s + 1];
+        data[d + 2] = t.data[s + 2];
+        data[d + 3] = t.data[s + 3];
+      }
+    }
+    // v0 = 区域顶、v1 = 区域底（自顶向下，v=0=顶）
     map[name] = {
-      u0: cx / atlasW, v0: 1 - (cy + t.height) / atlasH,
-      u1: (cx + t.width) / atlasW, v1: 1 - cy / atlasH,
+      u0: cx / atlasW, v0: cy / atlasH,
+      u1: (cx + t.width) / atlasW, v1: (cy + t.height) / atlasH,
       w: t.width, h: t.height,
     };
   });
   texAtlasMap = map;
-  // 当 atlas 尺寸变化时，需要销毁旧纹理并创建新纹理（Three.js CanvasTexture 不支持尺寸变化）
-  if (texAtlasTexture) {
-    texAtlasTexture.dispose();
-    texAtlasTexture = null;
-  }
-  texAtlasTexture = new THREE.CanvasTexture(canvas);
-  texAtlasTexture.flipY = true;
+
+  if (texAtlasTexture) { texAtlasTexture.dispose(); texAtlasTexture = null; }
+  texAtlasTexture = new THREE.DataTexture(data, atlasW, atlasH, THREE.RGBAFormat);
+  texAtlasTexture.flipY = false;      // v=0 = 数组行 0 = 贴图顶
   texAtlasTexture.minFilter = THREE.NearestFilter;
   texAtlasTexture.magFilter = THREE.NearestFilter;
+  texAtlasTexture.needsUpdate = true;
   pointsMaterial.uniforms.uMap.value = texAtlasTexture;
 }
 
