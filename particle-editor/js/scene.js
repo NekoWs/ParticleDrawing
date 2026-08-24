@@ -188,7 +188,9 @@ const pointsMaterial = new THREE.ShaderMaterial({
         // 采样系数钳制到 [0,1]：即使 UV 起点/大小/动画推进越出贴图区，
         // 也不会让采样滑出整张贴图在 atlas 中的区间（否则会采到相邻贴图/空白，右缘出现细条）
         vec2 coef = clamp(mix(sp, ep, uvLocal), 0.0, 1.0);
-        vec2 atlasCoord = mix(vUV.xy, vUV.zw, coef);
+        // atlas 区域 v0=图像底部、v1=图像顶部（flipY 约定）；竖向下采样需交换端点，
+        // 使「格顶(小 coef.y)」→ v1(顶)，否则贴图上下颠倒（竖向动画整列倒序 + 首帧边界重复）。
+        vec2 atlasCoord = vec2(mix(vUV.x, vUV.z, coef.x), mix(vUV.w, vUV.y, coef.y));
         vec4 tex = texture2D(uMap, atlasCoord);
         gl_FragColor = vec4(vColor.rgb, vColor.a) * tex * uOpacity;
       }
