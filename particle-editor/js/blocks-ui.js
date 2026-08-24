@@ -3,28 +3,28 @@
  * 依赖 blocks.js、float-window.js、easing.js、constants.js、undo.js、panels.js、generators.js
  * ======================================================================= */
 
-/* —— 类型 → 中文标签 —— */
-const TYPE_LABEL = { scalar: '数字', vec: '向量', mat: '矩阵', any: '任意' };
+/* —— 类型 → 标签（i18n 键 blk.type.*） —— */
+const TYPE_LABEL = { scalar: 'blk.type.scalar', vec: 'blk.type.vec', mat: 'blk.type.mat', any: 'blk.type.any' };
 /* —— 积木类别配色 —— */
 const GROUP_COLOR = {
   pos: 'blk-pos', color: 'blk-color', appearance: 'blk-appearance',
   math: 'blk-math', vec: 'blk-vec', mat: 'blk-mat', var: 'blk-var', const: 'blk-const',
 };
 
-/* —— 语句块槽规格 —— */
+/* —— 语句块槽规格（ASCII 名原样显示；中文语义槽用 i18n 键 blk.slot.*） —— */
 const STMT_SLOTS = {
   pos: [['X', T_SCALAR], ['Y', T_SCALAR], ['Z', T_SCALAR]],
   vel: [['vx', T_SCALAR], ['vy', T_SCALAR], ['vz', T_SCALAR]],
   col: [['R', T_SCALAR], ['G', T_SCALAR], ['B', T_SCALAR], ['A', T_SCALAR]],
-  scl: [['缩放', T_SCALAR]],
-  light: [['光照', T_SCALAR]],
+  scl: [['blk.slot.scale', T_SCALAR]],
+  light: [['blk.slot.light', T_SCALAR]],
 };
 const BIG_BLOCKS = { pos: true, vel: true };
 
 const BUILTIN_VAR_INFO = {
-  i: '粒子序号（0 ~ n-1）',
-  n: '采样数（粒子总数）',
-  t: '当前时间（tick）',
+  i: 'blk.var.i',
+  n: 'blk.var.n',
+  t: 'blk.var.t',
 };
 const BUILTIN_VAR_NAMES = ['i', 'n', 't'];
 
@@ -725,7 +725,7 @@ function makeCountBlock() {
   tag.className = 'blk-attr-tag';
   tag.style.cursor = 'default';
   tag.textContent = t('blk.sampleCount');
-  tag.title = BUILTIN_VAR_INFO.n;
+  tag.title = t(BUILTIN_VAR_INFO.n);
   wrap.appendChild(tag);
   wrap.appendChild(document.createTextNode(' = '));
   const inp = document.createElement('input');

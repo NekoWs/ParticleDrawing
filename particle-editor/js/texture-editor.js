@@ -1118,7 +1118,7 @@ function refreshUVPanel() {
   const modeRow = document.createElement('label'); modeRow.className = 'row';
   modeRow.appendChild(document.createTextNode(t('tex.uvMode')));
   const modeSel = document.createElement('select');
-  for (const [m, label] of Object.entries(UV_MODES)) modeSel.appendChild(new Option(t(label), m));
+  for (const m of Object.keys(UV_MODES)) modeSel.appendChild(new Option(t('uv.mode.' + m), m));
   modeSel.value = uv.mode;
   modeSel.onchange = () => {
     const nu = normalizeUV({ ...readTargetUV(target), mode: modeSel.value });

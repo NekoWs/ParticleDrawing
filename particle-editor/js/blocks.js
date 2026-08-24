@@ -25,78 +25,79 @@ const T_ANY = 'any'; // 临时变量（类型由赋值决定，放宽约束）
 // PREC 复用 easing.js 的定义；ATOM_PREC 为原子表达式的虚拟优先级
 const ATOM_PREC = 10;
 
-/* —— 函数块定义：label 显示名，ret 返回类型，args 参数槽 [标签, 类型] —— */
+/* —— 函数块定义：label 显示名，ret 返回类型，args 参数槽 [标签|i18n键, 类型]，desc|i18n键 —— */
+/* 标签约定：以 "blk." 开头的为 i18n 键，其余（a/b/x/y/z/θ/φ/R/r 等）原样显示。 */
 const FUNC_BLOCKS = {
-  sin: { ret: T_SCALAR, args: [['角度', T_SCALAR]], desc: '正弦函数' },
-  cos: { ret: T_SCALAR, args: [['角度', T_SCALAR]], desc: '余弦函数' },
-  tan: { ret: T_SCALAR, args: [['角度', T_SCALAR]], desc: '正切函数' },
-  asin: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '反正弦函数' },
-  acos: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '反余弦函数' },
-  atan: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '反正切函数' },
-  atan2: { ret: T_SCALAR, args: [['y', T_SCALAR], ['x', T_SCALAR]], desc: '反正切函数' },
-  sqrt: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '平方根' },
-  abs: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '绝对值' },
-  sign: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '符号函数（正 1 / 负 -1 / 零 0）' },
-  exp: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '指数函数 e^x' },
-  log: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '以 10 为底的常用对数' },
-  ln: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '以 e 为底的自然对数' },
-  floor: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '向下取整' },
-  ceil: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '向上取整' },
-  round: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '四舍五入' },
-  fract: { ret: T_SCALAR, args: [['值', T_SCALAR]], desc: '取小数部分' },
-  pow: { ret: T_SCALAR, args: [['底数', T_SCALAR], ['指数', T_SCALAR]], desc: '幂运算' },
-  min: { ret: T_SCALAR, args: [['a', T_SCALAR], ['b', T_SCALAR]], desc: '取两者较小值' },
-  max: { ret: T_SCALAR, args: [['a', T_SCALAR], ['b', T_SCALAR]], desc: '取两者较大值' },
-  clamp: { ret: T_SCALAR, args: [['值', T_SCALAR], ['下界', T_SCALAR], ['上界', T_SCALAR]], desc: '把值限制在区间内' },
-  lerp: { ret: T_SCALAR, args: [['a', T_SCALAR], ['b', T_SCALAR], ['t', T_SCALAR]], desc: '线性插值 a→b' },
-  step: { ret: T_SCALAR, args: [['边界', T_SCALAR], ['值', T_SCALAR]], desc: '阶跃（x≥边界返回 1，否则 0）' },
-  smoothstep: { ret: T_SCALAR, args: [['下界', T_SCALAR], ['上界', T_SCALAR], ['值', T_SCALAR]], desc: '平滑阶跃插值' },
-  mod: { ret: T_SCALAR, args: [['值', T_SCALAR], ['模', T_SCALAR]], desc: '取模（GLSL 语义）' },
-  random: { ret: T_SCALAR, args: [], desc: '随机数（0 到 1 之间）' },
-  rand: { ret: T_SCALAR, args: [['种子', T_SCALAR]], desc: '固定伪随机（同一种子恒返回相同的 [0,1) 值）' },
-  vec: { ret: T_VEC, args: [['x', T_SCALAR], ['y', T_SCALAR], ['z', T_SCALAR]], desc: '由分量构造向量' },
-  dot: { ret: T_SCALAR, args: [['a', T_VEC], ['b', T_VEC]], desc: '向量点积' },
-  cross: { ret: T_VEC, args: [['a', T_VEC], ['b', T_VEC]], desc: '向量叉积' },
-  len: { ret: T_SCALAR, args: [['向量', T_ANY]], desc: '向量长度' },
-  norm: { ret: T_VEC, args: [['向量', T_VEC]], desc: '向量归一化' },
-  rotX: { ret: T_MAT, args: [['角度', T_SCALAR]], desc: '绕 X 轴旋转矩阵' },
-  rotY: { ret: T_MAT, args: [['角度', T_SCALAR]], desc: '绕 Y 轴旋转矩阵' },
-  rotZ: { ret: T_MAT, args: [['角度', T_SCALAR]], desc: '绕 Z 轴旋转矩阵' },
-  rotAxis: { ret: T_MAT, args: [['轴', T_VEC], ['角度', T_SCALAR]], desc: '绕任意轴旋转矩阵' },
-  polar: { ret: T_VEC, args: [['半径', T_SCALAR], ['角度', T_SCALAR]], desc: '极坐标转向量' },
-  sphere: { ret: T_VEC, args: [['半径', T_SCALAR], ['θ', T_SCALAR], ['φ', T_SCALAR]], desc: '球坐标转向量' },
-  torus: { ret: T_VEC, args: [['R', T_SCALAR], ['r', T_SCALAR], ['θ', T_SCALAR], ['φ', T_SCALAR]], desc: '环面坐标转向量' },
+  sin: { ret: T_SCALAR, args: [['blk.arg.angle', T_SCALAR]], desc: 'blk.func.sin.desc' },
+  cos: { ret: T_SCALAR, args: [['blk.arg.angle', T_SCALAR]], desc: 'blk.func.cos.desc' },
+  tan: { ret: T_SCALAR, args: [['blk.arg.angle', T_SCALAR]], desc: 'blk.func.tan.desc' },
+  asin: { ret: T_SCALAR, args: [['blk.arg.value', T_SCALAR]], desc: 'blk.func.asin.desc' },
+  acos: { ret: T_SCALAR, args: [['blk.arg.value', T_SCALAR]], desc: 'blk.func.acos.desc' },
+  atan: { ret: T_SCALAR, args: [['blk.arg.value', T_SCALAR]], desc: 'blk.func.atan.desc' },
+  atan2: { ret: T_SCALAR, args: [['y', T_SCALAR], ['x', T_SCALAR]], desc: 'blk.func.atan2.desc' },
+  sqrt: { ret: T_SCALAR, args: [['blk.arg.value', T_SCALAR]], desc: 'blk.func.sqrt.desc' },
+  abs: { ret: T_SCALAR, args: [['blk.arg.value', T_SCALAR]], desc: 'blk.func.abs.desc' },
+  sign: { ret: T_SCALAR, args: [['blk.arg.value', T_SCALAR]], desc: 'blk.func.sign.desc' },
+  exp: { ret: T_SCALAR, args: [['blk.arg.value', T_SCALAR]], desc: 'blk.func.exp.desc' },
+  log: { ret: T_SCALAR, args: [['blk.arg.value', T_SCALAR]], desc: 'blk.func.log.desc' },
+  ln: { ret: T_SCALAR, args: [['blk.arg.value', T_SCALAR]], desc: 'blk.func.ln.desc' },
+  floor: { ret: T_SCALAR, args: [['blk.arg.value', T_SCALAR]], desc: 'blk.func.floor.desc' },
+  ceil: { ret: T_SCALAR, args: [['blk.arg.value', T_SCALAR]], desc: 'blk.func.ceil.desc' },
+  round: { ret: T_SCALAR, args: [['blk.arg.value', T_SCALAR]], desc: 'blk.func.round.desc' },
+  fract: { ret: T_SCALAR, args: [['blk.arg.value', T_SCALAR]], desc: 'blk.func.fract.desc' },
+  pow: { ret: T_SCALAR, args: [['blk.arg.base', T_SCALAR], ['blk.arg.exp', T_SCALAR]], desc: 'blk.func.pow.desc' },
+  min: { ret: T_SCALAR, args: [['a', T_SCALAR], ['b', T_SCALAR]], desc: 'blk.func.min.desc' },
+  max: { ret: T_SCALAR, args: [['a', T_SCALAR], ['b', T_SCALAR]], desc: 'blk.func.max.desc' },
+  clamp: { ret: T_SCALAR, args: [['blk.arg.value', T_SCALAR], ['blk.arg.lo', T_SCALAR], ['blk.arg.hi', T_SCALAR]], desc: 'blk.func.clamp.desc' },
+  lerp: { ret: T_SCALAR, args: [['a', T_SCALAR], ['b', T_SCALAR], ['t', T_SCALAR]], desc: 'blk.func.lerp.desc' },
+  step: { ret: T_SCALAR, args: [['blk.arg.edge', T_SCALAR], ['blk.arg.value', T_SCALAR]], desc: 'blk.func.step.desc' },
+  smoothstep: { ret: T_SCALAR, args: [['blk.arg.lo', T_SCALAR], ['blk.arg.hi', T_SCALAR], ['blk.arg.value', T_SCALAR]], desc: 'blk.func.smoothstep.desc' },
+  mod: { ret: T_SCALAR, args: [['blk.arg.value', T_SCALAR], ['blk.arg.mod', T_SCALAR]], desc: 'blk.func.mod.desc' },
+  random: { ret: T_SCALAR, args: [], desc: 'blk.func.random.desc' },
+  rand: { ret: T_SCALAR, args: [['blk.arg.seed', T_SCALAR]], desc: 'blk.func.rand.desc' },
+  vec: { ret: T_VEC, args: [['x', T_SCALAR], ['y', T_SCALAR], ['z', T_SCALAR]], desc: 'blk.func.vec.desc' },
+  dot: { ret: T_SCALAR, args: [['a', T_VEC], ['b', T_VEC]], desc: 'blk.func.dot.desc' },
+  cross: { ret: T_VEC, args: [['a', T_VEC], ['b', T_VEC]], desc: 'blk.func.cross.desc' },
+  len: { ret: T_SCALAR, args: [['blk.arg.vec', T_ANY]], desc: 'blk.func.len.desc' },
+  norm: { ret: T_VEC, args: [['blk.arg.vec', T_VEC]], desc: 'blk.func.norm.desc' },
+  rotX: { ret: T_MAT, args: [['blk.arg.angle', T_SCALAR]], desc: 'blk.func.rotX.desc' },
+  rotY: { ret: T_MAT, args: [['blk.arg.angle', T_SCALAR]], desc: 'blk.func.rotY.desc' },
+  rotZ: { ret: T_MAT, args: [['blk.arg.angle', T_SCALAR]], desc: 'blk.func.rotZ.desc' },
+  rotAxis: { ret: T_MAT, args: [['blk.arg.axis', T_VEC], ['blk.arg.angle', T_SCALAR]], desc: 'blk.func.rotAxis.desc' },
+  polar: { ret: T_VEC, args: [['blk.arg.radius', T_SCALAR], ['blk.arg.angle', T_SCALAR]], desc: 'blk.func.polar.desc' },
+  sphere: { ret: T_VEC, args: [['blk.arg.radius', T_SCALAR], ['θ', T_SCALAR], ['φ', T_SCALAR]], desc: 'blk.func.sphere.desc' },
+  torus: { ret: T_VEC, args: [['R', T_SCALAR], ['r', T_SCALAR], ['θ', T_SCALAR], ['φ', T_SCALAR]], desc: 'blk.func.torus.desc' },
 };
 
-/* —— 语句块定义：label 显示名，group 调色板分组 —— */
+/* —— 语句块定义：label/desc 为 i18n 键（blk.stmt.<kind>.*），group 调色板分组 —— */
 const STMT_BLOCKS = {
-  pos: { label: '位置', group: 'pos', slotCount: 3, desc: '设置粒子位置 [x, y, z]' },
-  pos_vec: { label: '位置 ← 向量', group: 'pos', slotCount: 1, desc: '用向量设置粒子位置' },
-  vel: { label: '速度', group: 'pos', slotCount: 3, desc: '设置粒子速度 [vx, vy, vz]' },
-  vel_vec: { label: '速度', group: 'pos', slotCount: 1, desc: '用向量设置粒子速度' },
-  col: { label: '颜色', group: 'color', slotCount: 4, desc: '设置粒子颜色 [r, g, b, a]' },
-  scl: { label: '缩放', group: 'appearance', slotCount: 1, desc: '设置粒子缩放' },
-  glow: { label: '发光', group: 'appearance', toggle: true, desc: '设置粒子是否发光' },
-  light: { label: '光照等级', group: 'appearance', slotCount: 1, desc: '设置粒子光照等级' },
-  attr: { label: '设置属性', group: 'pos', named: true, desc: '设置单个属性值（x/y/z/…）' },
-  set: { label: '临时变量', group: 'var', named: true, desc: '定义临时变量并赋值' },
+  pos: { label: 'blk.stmt.pos.label', group: 'pos', slotCount: 3, desc: 'blk.stmt.pos.desc' },
+  pos_vec: { label: 'blk.stmt.pos_vec.label', group: 'pos', slotCount: 1, desc: 'blk.stmt.pos_vec.desc' },
+  vel: { label: 'blk.stmt.vel.label', group: 'pos', slotCount: 3, desc: 'blk.stmt.vel.desc' },
+  vel_vec: { label: 'blk.stmt.vel_vec.label', group: 'pos', slotCount: 1, desc: 'blk.stmt.vel_vec.desc' },
+  col: { label: 'blk.stmt.col.label', group: 'color', slotCount: 4, desc: 'blk.stmt.col.desc' },
+  scl: { label: 'blk.stmt.scl.label', group: 'appearance', slotCount: 1, desc: 'blk.stmt.scl.desc' },
+  glow: { label: 'blk.stmt.glow.label', group: 'appearance', toggle: true, desc: 'blk.stmt.glow.desc' },
+  light: { label: 'blk.stmt.light.label', group: 'appearance', slotCount: 1, desc: 'blk.stmt.light.desc' },
+  attr: { label: 'blk.stmt.attr.label', group: 'pos', named: true, desc: 'blk.stmt.attr.desc' },
+  set: { label: 'blk.stmt.set.label', group: 'var', named: true, desc: 'blk.stmt.set.desc' },
 };
 
-/* —— 调色板分组（顺序即显示顺序） —— */
+/* —— 调色板分组（顺序即显示顺序；label 为 i18n 键 blk.pal.<id>） —— */
 const PALETTE_GROUPS = [
-  { id: 'pos', label: '位置 / 速度' },
-  { id: 'color', label: '颜色' },
-  { id: 'appearance', label: '外观' },
-  { id: 'math', label: '数学' },
-  { id: 'vec', label: '向量' },
-  { id: 'mat', label: '矩阵' },
-  { id: 'var', label: '变量' },
-  { id: 'const', label: '常量' },
+  { id: 'pos', label: 'blk.pal.pos' },
+  { id: 'color', label: 'blk.pal.color' },
+  { id: 'appearance', label: 'blk.pal.appearance' },
+  { id: 'math', label: 'blk.pal.math' },
+  { id: 'vec', label: 'blk.pal.vec' },
+  { id: 'mat', label: 'blk.pal.mat' },
+  { id: 'var', label: 'blk.pal.var' },
+  { id: 'const', label: 'blk.pal.const' },
 ];
 
-/* —— 运算符块（组内 math） —— */
+/* —— 运算符块（组内 math；值为 i18n 键 blk.op.*） —— */
 const OP_SYMBOLS = ['+', '-', '*', '/', '%', '^'];
-const OP_LABELS = { '+': '加', '-': '减', '*': '乘', '/': '除', '%': '取余', '^': '幂' };
+const OP_LABELS = { '+': 'blk.op.add', '-': 'blk.op.sub', '*': 'blk.op.mul', '/': 'blk.op.div', '%': 'blk.op.mod', '^': 'blk.op.pow' };
 
 /* =========================================================================
  * 类型

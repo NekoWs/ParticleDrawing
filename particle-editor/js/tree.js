@@ -230,7 +230,7 @@ function renderPropNode(id, prop) {
   const expanded = state.expandedProps.has(key);
   const head = document.createElement('div');
   head.className = 'ptree-prop-head';
-  head.innerHTML = '<span class="arrow">' + (expanded ? '▾' : '▸') + '</span><span class="plabel">' + t(PROP_LABELS[prop]) + '</span>';
+  head.innerHTML = '<span class="arrow">' + (expanded ? '▾' : '▸') + '</span><span class="plabel">' + t('prop.' + prop) + '</span>';
   head.onclick = () => {
     if (expanded) state.expandedProps.delete(key); else state.expandedProps.add(key);
     refreshParticleTree();
@@ -791,7 +791,7 @@ function openKeyframeEditor(canvas, id, pr, tick) {
   box.className = 'kf-editor';
   const title = document.createElement('div');
   title.className = 'ke-title';
-  title.textContent = tf('tree.editKf', t(PROP_LABELS[prop]), COMP_LABELS[comp]);
+  title.textContent = tf('tree.editKf', t('prop.' + prop), COMP_LABELS[comp]);
   box.appendChild(title);
 
   const mkLabel = (text) => { const s = document.createElement('span'); s.className = 'ke-label'; s.textContent = text; return s; };
