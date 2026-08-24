@@ -222,12 +222,11 @@ function rebuildAtlas() {
     const img = ctx.createImageData(t.width, t.height);
     img.data.set(t.data);
     ctx.putImageData(img, cx, cy);
-    // CanvasTexture 默认 flipY=true：canvas 行 y（0=顶部）上传后位于纹理 v = 1 - y/H。
-    // 因此贴图区域 (cx,cy,w,h) 的真实纹理 v 区间为 [1-(cy+h)/H, 1-cy/H]（顶部对应高 v）。
-    // 若直接用 v0=cy/H 会被整体翻转错位（多贴图时采样落到空白/其它贴图，表现为粒子不显示贴图）。
+    // flipY=false：v=0 对应 canvas 行 0（图顶），与游戏端 MC 纹理约定（v=0=图顶）一致，
+    // 采样时无需任何手动翻转。因此 region v0=顶、v1=底。
     map[name] = {
-      u0: cx / atlasW, v0: 1 - (cy + t.height) / atlasH,
-      u1: (cx + t.width) / atlasW, v1: 1 - cy / atlasH,
+      u0: cx / atlasW, v0: cy / atlasH,
+      u1: (cx + t.width) / atlasW, v1: (cy + t.height) / atlasH,
       w: t.width, h: t.height,
     };
   });
@@ -238,7 +237,7 @@ function rebuildAtlas() {
     texAtlasTexture = null;
   }
   texAtlasTexture = new THREE.CanvasTexture(canvas);
-  texAtlasTexture.flipY = true;
+  texAtlasTexture.flipY = false;
   texAtlasTexture.minFilter = THREE.NearestFilter;
   texAtlasTexture.magFilter = THREE.NearestFilter;
   pointsMaterial.uniforms.uMap.value = texAtlasTexture;
