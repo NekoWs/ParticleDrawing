@@ -11,7 +11,7 @@ import net.minecraft.resources.Identifier
  * 大贴图会被服务端按 [CHUNK_SIZE] 拆分，逐块发送；客户端按 [name] 累积，收到 `eof=true`
  * 的块后拼接写盘。`eof=false` 且 data 为空的块表示「空文件」。
  *
- * @param name 相对文件名（如 "foo.pdraw"、"textures/bar.png"，含目录）
+ * @param name 相对文件名（如 "foo.pdrawc"，含目录）
  * @param eof 是否为该文件的最后一块（拼完即可落盘）
  * @param data 本块字节内容
  */

@@ -8,7 +8,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 客户端动画管理器：本地播放服务端下发的 .pdraw 动画，每客户端 tick 推进并同步渲染。
+ * 客户端动画管理器：本地播放服务端下发的 .pdrawc 动画，每客户端 tick 推进并同步渲染。
  */
 object ClientAnimationManager {
 
@@ -51,11 +51,11 @@ object ClientAnimationManager {
     @JvmStatic
     fun activeAnimationCount(): Int = entries.size
 
-    /** 开始本地播放一个动画。 */
+    /** 开始本地播放一个动画（解析 .pdrawc 字节并验签，失败则拒绝播放）。 */
     @JvmStatic
-    fun play(animationId: UUID, json: String, origin: Vec3) {
+    fun play(animationId: UUID, data: ByteArray, origin: Vec3) {
         val animation = try {
-            AnimationLoader.parse(json)
+            AnimationLoader.parse(data)
         } catch (_: Exception) {
             return
         }

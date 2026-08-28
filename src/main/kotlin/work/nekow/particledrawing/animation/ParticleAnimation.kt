@@ -6,11 +6,11 @@ import work.nekow.particledrawing.animation.expr.Keyframe
 import work.nekow.particledrawing.core.easing.EasingType
 
 /**
- * 解析后的粒子动画（对应网页编辑器导出的 .pdraw 工程文件）。
+ * 解析后的粒子动画（对应网页编辑器导出的 .pdrawc 播放文件）。
  *
- * @param textures 工程引用的贴图名列表（对应 .pdraw 顶层的 `tex`）
- * @param groupUV 组级 UV 映射（`guv`，组名 -> UV 参数）
- * @param texData 内嵌贴图数据（v4+，`texData`，贴图名 -> PNG 字节数组）；旧格式为空
+ * @param textures 播放文件引用的贴图名列表
+ * @param groupUV 组级 UV 映射（组名 -> UV 参数）
+ * @param texData 内嵌贴图数据（贴图名 -> PNG 字节数组）
  */
 class ParticleAnimation(
     val loop: Boolean,
@@ -24,7 +24,7 @@ class ParticleAnimation(
 )
 
 /**
- * 函数对象（.pdraw 的 f 字段）：公式代码块 + 变量，客户端实时求值生成派生粒子。
+ * 函数对象：公式代码块 + 变量，客户端实时求值生成派生粒子。
  *
  * @param uv 函数对象级 UV（作用域 f 级，派生粒子继承覆盖的根）；无贴图时派生粒子渲染为纯色方块
  * @param st 起始 tick：t < st 时全部派生粒子隐藏；条长（动画跨度）由 duration/变量关键帧决定
@@ -44,11 +44,11 @@ class FunctionObject(
 )
 
 /**
- * 函数对象变量：表达式（无关键帧时求值）或关键帧（关键帧优先，b[2] 缓动）。
- * expr/kf 可变，支持服务端下发变量更新。
+ * 函数对象变量：数值基值 + 关键帧（关键帧非空时按时间轴插值，忽略基值）。
+ * base/kf 可变，支持服务端下发变量更新。
  */
 class FunctionVar(
-    var expr: String,
+    var base: Double,
     var kf: List<Keyframe>
 )
 

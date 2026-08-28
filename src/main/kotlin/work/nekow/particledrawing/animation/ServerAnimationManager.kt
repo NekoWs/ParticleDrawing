@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 服务端动画管理器（权威播放/停止/变量）。
- * 只负责向客户端下发 .pdraw 动画定义、停止命令与变量更新，粒子播放与渲染全部在客户端本地进行。
+ * 只负责向客户端下发 .pdrawc 动画定义、停止命令与变量更新，粒子播放与渲染全部在客户端本地进行。
  *
  * 外部模组典型用法：
  * ```kotlin
@@ -31,11 +31,11 @@ object ServerAnimationManager {
 
     private val playbacks = ConcurrentHashMap<UUID, Playback>()
 
-    /** 启动播放：向玩家下发 .pdraw JSON 与原点，返回动画 ID。 */
+    /** 启动播放：向玩家下发 .pdrawc 字节与原点，返回动画 ID。 */
     @JvmStatic
-    fun play(dimensionId: UUID, players: Collection<ServerPlayer>, json: String, origin: Vec3): UUID {
+    fun play(dimensionId: UUID, players: Collection<ServerPlayer>, data: ByteArray, origin: Vec3): UUID {
         val id = UUID.randomUUID()
-        val payload = PlayAnimationPayload(id, origin.x, origin.y, origin.z, json)
+        val payload = PlayAnimationPayload(id, origin.x, origin.y, origin.z, data)
         val ids = HashSet<UUID>()
         for (player in players) {
             PacketDistributor.sendToPlayer(player, payload)
@@ -46,17 +46,17 @@ object ServerAnimationManager {
     }
 
     /**
-     * 按名称播放 `<gameDir>/animations/<name>.pdraw`（一行式入口）。
-     * @param name 动画名（不含 .pdraw 后缀）
-     * @return 动画 ID；找不到文件时为 null
+     * 按名称播放 `<gameDir>/animations/<name>.pdrawc`（一行式入口，读取时做服务端验签）。
+     * @param name 动画名（不含 .pdrawc 后缀）
+     * @return 动画 ID；找不到文件或验签失败时为 null
      */
     @JvmStatic
     fun playByName(
         dimensionId: UUID, players: Collection<ServerPlayer>,
         name: String, origin: Vec3
     ): UUID? {
-        val json = AnimationLoader.load(name) ?: return null
-        return play(dimensionId, players, json, origin)
+        val data = AnimationLoader.load(name) ?: return null
+        return play(dimensionId, players, data, origin)
     }
 
     /** 停止指定维度全部播放。 */

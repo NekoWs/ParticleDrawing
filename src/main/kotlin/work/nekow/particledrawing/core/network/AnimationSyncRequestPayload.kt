@@ -8,10 +8,10 @@ import net.minecraft.resources.Identifier
 /**
  * 客户端 → 服务器「动画文件同步请求」（playToServer）。
  *
- * 客户端在配置阶段携带本地已有动画文件（.pdraw 与 textures 目录下的 .png）的 SHA-1 哈希清单，
+ * 客户端在配置阶段携带本地已有动画文件（.pdrawc）的 SHA-1 哈希清单，
  * 服务器据此做增量同步：只下发客户端缺失或内容不同的文件。
  *
- * @param hashes 相对文件名（如 "foo.pdraw"、"textures/bar.png"） -> SHA-1 hex（小写）
+ * @param hashes 相对文件名（如 "foo.pdrawc"） -> SHA-1 hex（小写）
  */
 @Suppress("unused")
 data class AnimationSyncRequestPayload(

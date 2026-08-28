@@ -2,8 +2,11 @@ package work.nekow.particledrawing.command
 
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
+import com.mojang.brigadier.suggestion.Suggestions
+import com.mojang.brigadier.suggestion.SuggestionsBuilder
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
+import net.minecraft.commands.SharedSuggestionProvider
 import net.minecraft.commands.arguments.coordinates.Vec3Argument
 import net.minecraft.network.chat.Component
 import net.minecraft.world.phys.Vec3
@@ -21,6 +24,7 @@ import work.nekow.particledrawing.core.client.ClientAnimationManager
 import work.nekow.particledrawing.core.client.ClientParticleEngine
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.Locale
+import java.util.concurrent.CompletableFuture
 
 /**
  * 命令注册。提供 /pdraw 及其子命令，用于加载播放网页编辑器导出的动画。
@@ -44,6 +48,7 @@ object ParticleDrawCommands {
                 .then(Commands.literal("list").executes(::listAnimations))
                 .then(Commands.literal("play")
                     .then(Commands.argument("name", StringArgumentType.string())
+                        .suggests(::suggestAnimations)
                         .executes(::playAnimation)
                         .then(Commands.argument("pos", Vec3Argument.vec3()).executes(::playAnimation))))
                 .then(Commands.literal("stop").executes(::stopAnimations))
@@ -71,13 +76,20 @@ object ParticleDrawCommands {
     private fun listAnimations(ctx: CommandContext<CommandSourceStack>): Int {
         val names = AnimationLoader.list()
         val msg = if (names.isEmpty()) {
-            "暂无动画，请将导出的 .pdraw 放入 animations/ 目录"
+            "暂无动画，请将导出的 .pdrawc 放入 animations/ 目录"
         } else {
             "可用动画: " + names.joinToString(", ")
         }
         ctx.source.sendSuccess({ Component.literal(msg) }, false)
         return names.size
     }
+
+    /** /pdraw play <name> 的参数补全：列出 animations/ 下可播放的 .pdrawc 名称。 */
+    private fun suggestAnimations(
+        ctx: CommandContext<CommandSourceStack>,
+        builder: SuggestionsBuilder,
+    ): CompletableFuture<Suggestions> =
+        SharedSuggestionProvider.suggest(AnimationLoader.list(), builder)
 
     /**
      * /pdraw play <name> [pos] —— 播放动画（客户端本地播放）。
@@ -86,9 +98,10 @@ object ParticleDrawCommands {
      */
     private fun playAnimation(ctx: CommandContext<CommandSourceStack>): Int {
         val name = StringArgumentType.getString(ctx, "name")
-        val json = AnimationLoader.load(name)
+        val data = AnimationLoader.load(name)
             ?: run {
-                ctx.source.sendFailure(Component.literal("未找到动画: $name"))
+                val reason = if (AnimationLoader.has(name)) "动画验签失败: $name" else "未找到动画: $name"
+                ctx.source.sendFailure(Component.literal(reason))
                 return 0
             }
 
@@ -101,7 +114,7 @@ object ParticleDrawCommands {
             player.position().add(player.lookAngle.scale(3.0))
         }
 
-        ServerAnimationManager.play(dim, level.players(), json, origin)
+        ServerAnimationManager.play(dim, level.players(), data, origin)
         ctx.source.sendSuccess(
             { Component.literal("正在播放动画: $name") },
             false

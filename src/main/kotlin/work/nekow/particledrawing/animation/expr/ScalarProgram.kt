@@ -197,8 +197,8 @@ internal class CompiledFunction(
     }
 }
 
-/** 变量编译输入。 */
-internal class VarDef(val name: String, val expr: String, val kf: List<Keyframe>)
+/** 变量编译输入（数值基值 + 关键帧；编辑器变量不再使用表达式）。 */
+internal class VarDef(val name: String, val base: Double, val kf: List<Keyframe>)
 
 /**
  * 编译函数对象代码块 + 变量为纯标量快路径；任何非纯标量因素返回 null（回退通用解释器）。
@@ -214,7 +214,7 @@ internal fun compileFunctionObject(code: String, varDefs: List<VarDef>, extNames
     for (k in varDefs.indices) nameToSlot[varDefs[k].name] = Reg.VAR_START + extCount + k
 
     val varConsts = tryFoldConsts(varDefs)
-    val varsResult = if (varConsts == null) compileVarPrograms(varDefs, nameToSlot, Reg.VAR_START + extCount) ?: return null else null
+    val varsResult = if (varConsts == null) compileVarPrograms(varDefs, Reg.VAR_START + extCount) else null
 
     val codeResult = compileScalarCode(code, nameToSlot, extCount + varCount) ?: return null
 
@@ -237,18 +237,11 @@ internal fun compileFunctionObject(code: String, varDefs: List<VarDef>, extNames
     )
 }
 
-/** 常量折叠：所有变量无关键帧且表达式不含任何变量引用时，预计算一次；否则 null。 */
+/** 常量折叠：所有变量都无关键帧时，直接取数值基值；否则 null。 */
 private fun tryFoldConsts(varDefs: List<VarDef>): DoubleArray? {
+    for (v in varDefs) if (v.kf.isNotEmpty()) return null
     val vals = DoubleArray(varDefs.size)
-    for (k in varDefs.indices) {
-        val v = varDefs[k]
-        if (v.kf.isNotEmpty()) return null
-        val rpn = ExpressionEvaluator.compile(v.expr)
-        for (o in rpn) if (o is ExpressionEvaluator.Token.Var) return null
-        val result = ExpressionEvaluator.evaluate(v.expr, emptyMap())
-        if (result !is Double) return null
-        vals[k] = result
-    }
+    for (k in varDefs.indices) vals[k] = varDefs[k].base
     return vals
 }
 
@@ -259,65 +252,28 @@ private class VarProgramsResult(
     val stackSize: Int,
 )
 
-/** 编译变量指令程序（非常量变量），按拓扑序求值，检测循环引用；失败返回 null。[varBase] 为变量寄存器起始槽位。 */
-private fun compileVarPrograms(varDefs: List<VarDef>, nameToSlot: Map<String, Int>, varBase: Int): VarProgramsResult? {
+/** 编译变量指令程序（含关键帧时使用；无关键帧的变量压入数值基值）。[varBase] 为变量寄存器起始槽位。 */
+private fun compileVarPrograms(varDefs: List<VarDef>, varBase: Int): VarProgramsResult {
     val n = varDefs.size
-    val deps = Array(n) { BooleanArray(n) }
-    for (k in 0 until n) {
-        val v = varDefs[k]
-        if (v.kf.isNotEmpty()) continue
-        val rpn = ExpressionEvaluator.compile(v.expr)
-        for (o in rpn) {
-            if (o is ExpressionEvaluator.Token.Var) {
-                val name = o.name
-                if (name == "i" || name == "n" || name == "t") continue
-                val dep = nameToSlot[name] ?: return null
-                deps[k][dep - Reg.VAR_START] = true
-            }
-        }
-    }
-    val order = ArrayList<Int>(n)
-    val state = IntArray(n)
-    fun dfs(x: Int): Boolean {
-        if (state[x] == 1) return false
-        if (state[x] == 2) return true
-        state[x] = 1
-        for (j in 0 until n) if (deps[x][j] && !dfs(j)) return false
-        state[x] = 2
-        order.add(x)
-        return true
-    }
-    for (k in 0 until n) if (!dfs(k)) return null
-
     val progs = arrayOfNulls<ScalarProgram>(n)
     val kfList = ArrayList<List<Keyframe>>()
-    var stackSize = 0
     for (k in 0 until n) {
         val v = varDefs[k]
         val ops = ArrayList<ScalarOp>()
         val args = ArrayList<Int>()
         val consts = ArrayList<Double>()
-        val maxDepth = intArrayOf(0)
         if (v.kf.isNotEmpty()) {
             val kfIdx = kfList.size
             kfList.add(v.kf)
             ops.add(ScalarOp.VAR_KF); args.add(kfIdx)
-            maxDepth[0] = 1
         } else {
-            val rpn = ExpressionEvaluator.compile(v.expr)
-            val slotOf: (String) -> Int? = { name ->
-                when (name) {
-                    "i" -> Reg.I; "n" -> Reg.N; "t" -> Reg.T
-                    else -> nameToSlot[name]
-                }
-            }
-            if (!emitRpn(rpn, ops, args, consts, slotOf, maxDepth)) return null
+            ops.add(ScalarOp.PUSH_CONST); args.add(consts.size); consts.add(v.base)
         }
         ops.add(ScalarOp.POP_REG); args.add(varBase + k)
         progs[k] = ScalarProgram(ops.toTypedArray(), args.toIntArray(), consts.toDoubleArray())
-        if (maxDepth[0] > stackSize) stackSize = maxDepth[0]
     }
-    return VarProgramsResult(progs.requireNoNulls(), order.toIntArray(), kfList.toTypedArray(), stackSize)
+    val order = IntArray(n) { it }
+    return VarProgramsResult(progs.requireNoNulls(), order, kfList.toTypedArray(), 1)
 }
 
 private class ScalarCodeResult(val program: ScalarProgram, val tempCount: Int, val stackSize: Int)

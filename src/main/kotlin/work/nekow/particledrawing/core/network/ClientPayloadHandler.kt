@@ -132,7 +132,7 @@ internal object ClientPayloadHandler {
         context.enqueueWork {
             ClientAnimationManager.play(
                 payload.animationId,
-                payload.json,
+                payload.data,
                 Vec3(payload.originX, payload.originY, payload.originZ)
             )
         }

@@ -2,6 +2,7 @@ package work.nekow.particledrawing.core.client
 
 import net.neoforged.neoforge.network.handling.IPayloadContext
 import work.nekow.particledrawing.animation.AnimationLoader
+import work.nekow.particledrawing.animation.PdrawcReader
 import work.nekow.particledrawing.core.network.AnimationSyncRequestPayload
 import work.nekow.particledrawing.core.server.AnimationSyncService
 import java.io.ByteArrayOutputStream
@@ -37,7 +38,11 @@ object ClientAnimationSyncManager {
         val out = pendingFiles.getOrPut(name) { ByteArrayOutputStream() }
         out.write(data)
         if (eof) {
-            writeFile(name, out.toByteArray())
+            val bytes = out.toByteArray()
+            // .pdrawc 落盘前验签，验签失败的文件不写入（下次进服会重新同步）
+            if (!name.endsWith(".pdrawc") || PdrawcReader.verify(bytes)) {
+                writeFile(name, bytes)
+            }
             pendingFiles.remove(name)
         }
     }

@@ -74,9 +74,7 @@ class ClientAnimationPlayer(
         if (maxTick > 0) return@run false
         if (animation.particles.any { it.st > 0 || it.ent != null }) return@run false
         if (animation.functions.any { it.st > 0 || it.ent != null }) return@run false
-        animation.functions.none { fx ->
-            usesRandom(fx.code) || fx.vars.values.any { v -> usesRandom(v.expr) }
-        }
+        animation.functions.none { fx -> usesRandom(fx.code) }
     }
 
     // ---- 预构建求值索引（避免每 tick 线性扫描轨道 / 组 / 粒子） ----
@@ -94,7 +92,7 @@ class ClientAnimationPlayer(
     private fun buildCompiledFunctions(): MutableMap<String, CompiledFunction?> {
         val map = HashMap<String, CompiledFunction?>()
         for (fx in animation.functions) {
-            val varDefs = fx.vars.map { (name, v) -> VarDef(name, v.expr, v.kf) }
+            val varDefs = fx.vars.map { (name, v) -> VarDef(name, v.base, v.kf) }
             map[fx.id] = compileFunctionObject(fx.code, varDefs)
         }
         return map
@@ -188,9 +186,9 @@ class ClientAnimationPlayer(
     fun updateVariable(name: String, value: String) {
         for (fx in animation.functions) {
             val v = fx.vars[name] ?: continue
-            v.expr = value
+            v.base = value.toDoubleOrNull() ?: 0.0
             v.kf = emptyList()
-            val varDefs = fx.vars.map { (n, vv) -> VarDef(n, vv.expr, vv.kf) }
+            val varDefs = fx.vars.map { (n, vv) -> VarDef(n, vv.base, vv.kf) }
             compiledFunctions[fx.id] = compileFunctionObject(fx.code, varDefs)
             return
         }
@@ -303,38 +301,10 @@ class ClientAnimationPlayer(
         env["i"] = i.toDouble()
         env["n"] = n.toDouble()
         env["t"] = t
-        val memo = HashMap<String, Any>()
-        val inStack = HashSet<String>()
-
-        fun resolve(name: String): Any {
-            memo[name]?.let { return it }
-            env[name]?.let { return it }
-            val v = vars[name] ?: throw IllegalArgumentException("未知变量: " + name)
-            if (name in inStack) throw IllegalArgumentException("变量循环引用: " + name)
-            inStack.add(name)
-            val value = if (v.kf.isNotEmpty()) {
-                ExpressionEvaluator.varKfValue(v.kf, t)
-            } else {
-                val resolver = object : java.util.AbstractMap<String, Any>() {
-                    override val entries: MutableSet<MutableMap.MutableEntry<String, Any>> get() = mutableSetOf()
-                    override fun get(key: String): Any {
-                        memo[key]?.let { return it }
-                        env[key]?.let { return it }
-                        return resolve(key)
-                    }
-                }
-                ExpressionEvaluator.evaluate(v.expr, resolver)
-            }
-            inStack.remove(name)
-            memo[name] = value
-            return value
-        }
-
-        for (name in vars.keys) {
+        for ((name, v) in vars) {
             if (name in ATTR_NAMES) throw IllegalArgumentException("变量名 " + name + " 是属性保留字")
-            resolve(name)
+            env[name] = if (v.kf.isNotEmpty()) ExpressionEvaluator.varKfValue(v.kf, t) else v.base
         }
-        for ((k, v) in memo) env[k] = v
         return env
     }
 

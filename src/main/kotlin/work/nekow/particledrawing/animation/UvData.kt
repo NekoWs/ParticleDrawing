@@ -1,8 +1,8 @@
 package work.nekow.particledrawing.animation
 
 /**
- * 编辑器的贴图 / UV 参数（对象级静态属性，不做关键帧），对应 .pdraw 中粒子 / 函数对象的
- * `uv` 字段与顶层 `guv`（组 UV）。继承覆盖顺序：粒子 p.uv > 组 guv[gname] > 函数对象 fx.uv。
+ * 编辑器的贴图 / UV 参数（对象级静态属性，不做关键帧），对应粒子 / 函数对象的
+ * `uv` 与组 UV。继承覆盖顺序：粒子 p.uv > 组 guv[gname] > 函数对象 fx.uv。
  *
  * 所有 UV 坐标单位为贴图像素；`texture == null` 表示无贴图（渲染为纯色方块）。
  */

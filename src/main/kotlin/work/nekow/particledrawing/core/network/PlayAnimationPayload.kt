@@ -7,17 +7,17 @@ import net.minecraft.resources.Identifier
 import java.util.UUID
 
 /**
- * 服务端下发「播放动画」：携带 .pdraw 工程文件 JSON 全文与播放原点。
+ * 服务端下发「播放动画」：携带 .pdrawc 二进制播放文件全文与播放原点。
  *
  * @param animationId 本次播放的唯一 ID（用于后续变量更新/停止）
  * @param originX/Y/Z 播放原点（世界坐标）
- * @param json .pdraw 工程文件 JSON 全文
+ * @param data .pdrawc 二进制字节（客户端解析时验签）
  */
 @Suppress("unused")
 data class PlayAnimationPayload(
     val animationId: UUID,
     val originX: Double, val originY: Double, val originZ: Double,
-    val json: String,
+    val data: ByteArray,
 ) : CustomPacketPayload {
 
     companion object {
@@ -34,8 +34,8 @@ data class PlayAnimationPayload(
                     val ox = buf.readDouble()
                     val oy = buf.readDouble()
                     val oz = buf.readDouble()
-                    val json = String(buf.readByteArray(), Charsets.UTF_8)
-                    return PlayAnimationPayload(id, ox, oy, oz, json)
+                    val data = buf.readByteArray()
+                    return PlayAnimationPayload(id, ox, oy, oz, data)
                 }
 
                 override fun encode(buf: FriendlyByteBuf, p: PlayAnimationPayload) {
@@ -43,8 +43,7 @@ data class PlayAnimationPayload(
                     buf.writeDouble(p.originX)
                     buf.writeDouble(p.originY)
                     buf.writeDouble(p.originZ)
-                    // 用字节数组而非 writeUtf：writeUtf 有 32767 字符硬上限，较大 .pdraw 工程会超限
-                    buf.writeByteArray(p.json.toByteArray(Charsets.UTF_8))
+                    buf.writeByteArray(p.data)
                 }
             }
     }

@@ -9,13 +9,13 @@ import java.nio.file.Path
 /**
  * 服务器端动画文件同步服务（纯逻辑，无网络依赖）。
  *
- * 服务器 `<gameDir>/animations/`（.pdraw 与 textures 下的 .png）为权威源；对比客户端上报的
+ * 服务器 `<gameDir>/animations/` 的 .pdrawc 为权威源；对比客户端上报的
  * SHA-1 清单，返回客户端缺失或内容变化的差异文件，供配置阶段增量下发。
  */
 object AnimationSyncService {
 
-    /** 需要同步的扩展名（相对 animations/ 根）。贴图已内嵌于 pdraw v4+，不再单独同步 PNG。 */
-    private val SYNC_EXTENSIONS = setOf(".pdraw")
+    /** 需要同步的扩展名（相对 animations/ 根）。贴图已内嵌于 .pdrawc，不再单独同步 PNG。 */
+    private val SYNC_EXTENSIONS = setOf(".pdrawc")
 
     /** 待同步文件描述（相对文件名 + 文件字节）。 */
     data class SyncFile(val name: String, val bytes: ByteArray)
@@ -72,7 +72,7 @@ object AnimationSyncService {
         return true
     }
 
-    /** 计算本地动画文件（.pdraw 与 textures 下的 .png）相对 animations/ 的 SHA-1 清单。 */
+    /** 计算本地动画文件（.pdrawc）相对 animations/ 的 SHA-1 清单。 */
     fun computeLocalHashes(root: Path): Map<String, String> {
         if (!Files.isDirectory(root)) return emptyMap()
         val result = LinkedHashMap<String, String>()
