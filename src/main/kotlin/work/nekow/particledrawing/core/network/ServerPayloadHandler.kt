@@ -12,9 +12,15 @@ internal object ServerPayloadHandler {
     /**
      * 处理客户端「动画同步请求」：对比差异，将缺失/变化文件分块下发，最后发完成信号
      * 并通知服务端完成当前配置任务（客户端禁止调用 finishCurrentTask）。
+     * 内存连接（单机 / LAN 主机）与客户端共享同一目录，直接完成配置任务、不下发文件。
      */
     fun handleSyncRequest(payload: AnimationSyncRequestPayload, context: IPayloadContext) {
         context.enqueueWork {
+            if (context.connection().isMemoryConnection()) {
+                context.reply(AnimationSyncDonePayload(0))
+                context.finishCurrentTask(AnimationSyncConfigTask.TYPE)
+                return@enqueueWork
+            }
             val diff = AnimationSyncService.computeDiff(payload.hashes)
             for (file in diff) {
                 sendFile(context, file.name, file.bytes)
