@@ -160,6 +160,9 @@ object DynamicLightManager {
         val cullDistSq = renderDistance * renderDistance
         val perCell = ParticleDrawingConfig.CLIENT.maxDynamicLightsPerCell.get().coerceAtLeast(1)
 
+        fun lightScore(dx: Double, dy: Double, dz: Double, luminance: Double): Double =
+            luminance / (1.0 + sqrt(dx * dx + dy * dy + dz * dz))
+
         // 每个 cell 一个最小堆，保留该 cell 内亮度最高的 perCell 个光源
         val cellHeaps = HashMap<Long, PriorityQueue<Pair<Double, LightSource>>>()
         for (p in glowing) {
@@ -172,7 +175,7 @@ object DynamicLightManager {
             val distSq = dx * dx + dy * dy + dz * dz
             if (distSq > cullDistSq) continue
             val luminance = p.lightLevel().toDouble()
-            val score = luminance / (1.0 + sqrt(distSq))
+            val score = lightScore(dx, dy, dz, luminance)
             val src = LightSource(p.id(), x, y, z, luminance)
             val key = cellKey(cellCoord(x), cellCoord(y), cellCoord(z))
             val heap = cellHeaps.getOrPut(key) { PriorityQueue(compareBy { it.first }) }
@@ -195,8 +198,7 @@ object DynamicLightManager {
                 val dx = src.x - camX
                 val dy = src.y - camY
                 val dz = src.z - camZ
-                val distSq = dx * dx + dy * dy + dz * dz
-                val score = src.luminance / (1.0 + sqrt(distSq))
+                val score = lightScore(dx, dy, dz, src.luminance)
                 if (heap.size < maxLights) {
                     heap.add(score to src)
                 } else if (score > heap.peek().first) {

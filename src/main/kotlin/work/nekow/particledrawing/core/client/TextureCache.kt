@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.NativeImage
 import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.texture.DynamicTexture
 import net.minecraft.resources.Identifier
+import work.nekow.particledrawing.util.HashUtils
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
@@ -61,15 +62,6 @@ object TextureCache {
     /**
      * 贴图名 → Identifier path（MD5 hex，保证 [a-z0-9] 合法且不碰撞）。
      */
-    private fun sanitize(name: String): String {
-        val hash = MessageDigest.getInstance("MD5").digest(name.toByteArray(Charsets.UTF_8))
-        return buildString(hash.size * 2) {
-            for (b in hash) {
-                append(HEX_CHARS[(b.toInt() ushr 4) and 0xF])
-                append(HEX_CHARS[b.toInt() and 0xF])
-            }
-        }
-    }
-
-    private val HEX_CHARS = "0123456789abcdef".toCharArray()
+    private fun sanitize(name: String): String =
+        HashUtils.toHex(MessageDigest.getInstance("MD5").digest(name.toByteArray(Charsets.UTF_8)))
 }

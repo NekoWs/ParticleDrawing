@@ -60,10 +60,7 @@ object ClientAnimationManager {
             return
         }
         // 播放前预加载内嵌贴图
-        for (texName in animation.textures) {
-            val bytes = animation.texData[texName] ?: continue
-            try { TextureCache.load(texName, bytes) } catch (_: Exception) {}
-        }
+        preloadTextures(animation)
 
         val player = ClientAnimationPlayer(animation, origin)
         val uuids = HashMap<String, UUID>()
@@ -74,11 +71,7 @@ object ClientAnimationManager {
             val uuid = UUID.randomUUID()
             uuids[state.id] = uuid
             liveIds.add(state.id)
-            ClientParticleEngine.instance()?.spawnParticle(
-                uuid, state.pos.x, state.pos.y, state.pos.z,
-                state.color.r, state.color.g, state.color.b, state.color.a,
-                state.scale[0], -1, null, state.glowing, state.lightLevel, state.uv
-            )
+            ClientParticleEngine.instance()?.let { spawnState(it, uuid, state) }
         }
         entries[animationId] = Entry(player, uuids, animation, liveIds)
     }
@@ -88,10 +81,7 @@ object ClientAnimationManager {
     fun reloadTextures() {
         TextureCache.clear()
         for ((_, entry) in entries) {
-            for (texName in entry.animation.textures) {
-                val bytes = entry.animation.texData[texName] ?: continue
-                try { TextureCache.load(texName, bytes) } catch (_: Exception) {}
-            }
+            preloadTextures(entry.animation)
         }
     }
 
@@ -140,11 +130,7 @@ object ClientAnimationManager {
                 }
                 // 刚到达 st → 生成
                 state.visible && !live -> {
-                    engine.spawnParticle(
-                        uuid, state.pos.x, state.pos.y, state.pos.z,
-                        state.color.r, state.color.g, state.color.b, state.color.a,
-                        state.scale[0], -1, null, state.glowing, state.lightLevel, state.uv
-                    )
+                    spawnState(engine, uuid, state)
                     entry.liveIds.add(state.id)
                 }
                 state.visible && live ->
@@ -158,6 +144,21 @@ object ClientAnimationManager {
     private fun stopInternal(animationId: UUID) {
         val entry = entries.remove(animationId) ?: return
         ClientParticleEngine.instance()?.destroyParticles(entry.particleUuids.values.toTypedArray())
+    }
+
+    private fun spawnState(engine: ClientParticleEngine, uuid: UUID, state: ClientAnimationPlayer.ParticleState) {
+        engine.spawnParticle(
+            uuid, state.pos.x, state.pos.y, state.pos.z,
+            state.color.r, state.color.g, state.color.b, state.color.a,
+            state.scale[0], -1, null, state.glowing, state.lightLevel, state.uv
+        )
+    }
+
+    private fun preloadTextures(animation: ParticleAnimation) {
+        for (texName in animation.textures) {
+            val bytes = animation.texData[texName] ?: continue
+            try { TextureCache.load(texName, bytes) } catch (_: Exception) {}
+        }
     }
 }
 

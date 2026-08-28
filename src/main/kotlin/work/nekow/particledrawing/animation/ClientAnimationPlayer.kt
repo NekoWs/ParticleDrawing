@@ -8,8 +8,7 @@ import work.nekow.particledrawing.animation.expr.Reg
 import work.nekow.particledrawing.animation.expr.VarDef
 import work.nekow.particledrawing.animation.expr.compileFunctionObject
 import work.nekow.particledrawing.api.Color
-import kotlin.math.cos
-import kotlin.math.sin
+import work.nekow.particledrawing.util.rotateAround
 
 @Suppress("unused")
 class ClientAnimationPlayer(
@@ -127,15 +126,22 @@ class ClientAnimationPlayer(
         val byId = HashMap<String, AnimParticle>()
         for (p in animation.particles) byId[p.id] = p
         val map = HashMap<String, Vec3>()
-        for ((gname, members) in animation.groups) {
-            var sx = 0.0; var sy = 0.0; var sz = 0.0; var n = 0
-            for (id in members) {
-                val m = byId[id] ?: continue
-                sx += m.pos.x; sy += m.pos.y; sz += m.pos.z; n++
-            }
-            if (n > 0) map[gname] = Vec3(sx / n, sy / n, sz / n)
+        for (gname in animation.groups.keys) {
+            centroidOf(gname, byId)?.let { map[gname] = it }
         }
         return map
+    }
+
+    /** 组质心（成员位置平均）；空组或不存在返回 null。 */
+    private fun centroidOf(gname: String, byId: Map<String, AnimParticle>): Vec3? {
+        val members = animation.groups[gname] ?: return null
+        var sx = 0.0; var sy = 0.0; var sz = 0.0; var n = 0
+        for (id in members) {
+            val m = byId[id] ?: continue
+            sx += m.pos.x; sy += m.pos.y; sz += m.pos.z; n++
+        }
+        if (n == 0) return null
+        return Vec3(sx / n, sy / n, sz / n)
     }
 
     private fun buildParticleFxCache(): Map<String, FunctionObject?> {
@@ -503,14 +509,9 @@ class ClientAnimationPlayer(
     }
 
     private fun groupCentroid(gname: String): Vec3 {
-        val members = animation.groups[gname] ?: return Vec3.ZERO
-        var sx = 0.0; var sy = 0.0; var sz = 0.0; var n = 0
-        for (id in members) {
-            val m = animation.particles.find { it.id == id } ?: continue
-            sx += m.pos.x; sy += m.pos.y; sz += m.pos.z; n++
-        }
-        if (n == 0) return Vec3.ZERO
-        return Vec3(sx / n, sy / n, sz / n)
+        val byId = HashMap<String, AnimParticle>(animation.particles.size)
+        for (p in animation.particles) byId[p.id] = p
+        return centroidOf(gname, byId) ?: Vec3.ZERO
     }
 
     private fun particleColor(p: AnimParticle, t: Double): Color {
@@ -567,20 +568,10 @@ class ClientAnimationPlayer(
 
     private fun rotateAround(p: Vec3, pivot: Vec3, rot: DoubleArray): Vec3 {
         var r = p.subtract(pivot)
-        if (rot[0] != 0.0) r = rotateVec(r, Vec3(1.0, 0.0, 0.0), Math.toRadians(rot[0]))
-        if (rot[1] != 0.0) r = rotateVec(r, Vec3(0.0, 1.0, 0.0), Math.toRadians(rot[1]))
-        if (rot[2] != 0.0) r = rotateVec(r, Vec3(0.0, 0.0, 1.0), Math.toRadians(rot[2]))
+        if (rot[0] != 0.0) r = r.rotateAround(Vec3(1.0, 0.0, 0.0), Math.toRadians(rot[0]))
+        if (rot[1] != 0.0) r = r.rotateAround(Vec3(0.0, 1.0, 0.0), Math.toRadians(rot[1]))
+        if (rot[2] != 0.0) r = r.rotateAround(Vec3(0.0, 0.0, 1.0), Math.toRadians(rot[2]))
         return pivot.add(r)
-    }
-
-    private fun rotateVec(v: Vec3, axis: Vec3, angle: Double): Vec3 {
-        val c = cos(angle); val s = sin(angle)
-        val dot = v.x * axis.x + v.y * axis.y + v.z * axis.z
-        return Vec3(
-            v.x * c + (axis.y * v.z - axis.z * v.y) * s + axis.x * dot * (1 - c),
-            v.y * c + (axis.z * v.x - axis.x * v.z) * s + axis.y * dot * (1 - c),
-            v.z * c + (axis.x * v.y - axis.y * v.x) * s + axis.z * dot * (1 - c),
-        )
     }
 
     private data class Five<A, B, C, D, E>(val first: A, val second: B, val third: C, val fourth: D, val fifth: E)

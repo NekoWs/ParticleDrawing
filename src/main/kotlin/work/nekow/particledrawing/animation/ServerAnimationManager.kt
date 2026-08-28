@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.animation
 
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.phys.Vec3
 import net.neoforged.neoforge.network.PacketDistributor
@@ -76,10 +77,7 @@ object ServerAnimationManager {
     @JvmStatic
     fun stop(animationId: UUID, players: Collection<ServerPlayer>): Boolean {
         val pb = playbacks.remove(animationId) ?: return false
-        val payload = StopAnimationPayload(animationId)
-        for (player in players) {
-            if (player.uuid in pb.playerIds) PacketDistributor.sendToPlayer(player, payload)
-        }
+        sendToPlaybackPlayers(pb, players, StopAnimationPayload(animationId))
         return true
     }
 
@@ -87,10 +85,7 @@ object ServerAnimationManager {
     @JvmStatic
     fun updateVariable(animationId: UUID, name: String, value: String, players: Collection<ServerPlayer>) {
         val pb = playbacks[animationId] ?: return
-        val payload = VariableUpdatePayload(animationId, name, value)
-        for (player in players) {
-            if (player.uuid in pb.playerIds) PacketDistributor.sendToPlayer(player, payload)
-        }
+        sendToPlaybackPlayers(pb, players, VariableUpdatePayload(animationId, name, value))
     }
 
     /** 更新某维度全部播放的变量（广播到所有正在播放的实例）。 */
@@ -117,4 +112,10 @@ object ServerAnimationManager {
     @JvmStatic
     fun playbackPlayers(animationId: UUID): Set<UUID> =
         playbacks[animationId]?.playerIds ?: emptySet()
+
+    private fun sendToPlaybackPlayers(pb: Playback, players: Collection<ServerPlayer>, payload: CustomPacketPayload) {
+        for (player in players) {
+            if (player.uuid in pb.playerIds) PacketDistributor.sendToPlayer(player, payload)
+        }
+    }
 }

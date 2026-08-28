@@ -5,6 +5,7 @@ import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.core.easing.EasingCurve
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.util.rotateAround
 import java.util.UUID
 
 private val LINEAR = EasingCurve(0.0, 0.0, 1.0, 1.0)
@@ -395,18 +396,6 @@ class RenderParticle(
         if (ry != 0.0) r = r.rotateAround(Vec3(0.0, 1.0, 0.0), ry)
         if (rz != 0.0) r = r.rotateAround(Vec3(0.0, 0.0, 1.0), rz)
         return r
-    }
-
-    private fun Vec3.rotateAround(unitAxis: Vec3, radians: Double): Vec3 {
-        val c = kotlin.math.cos(radians)
-        val s = kotlin.math.sin(radians)
-        val dot = dot(unitAxis)
-        val cross = unitAxis.cross(this)
-        return Vec3(
-            x * c + cross.x * s + unitAxis.x * dot * (1 - c),
-            y * c + cross.y * s + unitAxis.y * dot * (1 - c),
-            z * c + cross.z * s + unitAxis.z * dot * (1 - c)
-        )
     }
 
     companion object {

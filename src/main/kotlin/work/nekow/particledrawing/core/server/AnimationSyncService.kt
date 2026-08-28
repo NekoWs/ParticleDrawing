@@ -23,23 +23,9 @@ object AnimationSyncService {
     /** 递归收集 animations/ 下所有待同步文件。 */
     fun collectServerFiles(): Map<String, ByteArray> {
         val root = AnimationLoader.DIRECTORY
-        if (!Files.isDirectory(root)) return emptyMap()
         val result = LinkedHashMap<String, ByteArray>()
-        try {
-            Files.walk(root).use { stream ->
-                stream.filter { Files.isRegularFile(it) }
-                    .filter { it.fileName.toString().let { n -> SYNC_EXTENSIONS.any { ext -> n.endsWith(ext) } } }
-                    .forEach { path ->
-                        val rel = root.relativize(path).toString().replace('\\', '/')
-                        try {
-                            result[rel] = Files.readAllBytes(path)
-                        } catch (_: IOException) {
-                            // 读取失败跳过
-                        }
-                    }
-            }
-        } catch (_: IOException) {
-            return emptyMap()
+        forEachSyncFile(root) { rel, path ->
+            try { result[rel] = Files.readAllBytes(path) } catch (_: IOException) { /* 读取失败跳过 */ }
         }
         return result
     }
@@ -74,25 +60,28 @@ object AnimationSyncService {
 
     /** 计算本地动画文件（.pdrawc）相对 animations/ 的 SHA-1 清单。 */
     fun computeLocalHashes(root: Path): Map<String, String> {
-        if (!Files.isDirectory(root)) return emptyMap()
         val result = LinkedHashMap<String, String>()
+        forEachSyncFile(root) { rel, path ->
+            if (path.toFile().length() <= 64L * 1024 * 1024) {
+                try { result[rel] = HashUtils.sha1Hex(Files.readAllBytes(path)) } catch (_: IOException) { /* 忽略 */ }
+            }
+        }
+        return result
+    }
+
+    /** 遍历 root 下待同步文件，action 收到相对名与绝对 Path；遍历失败静默返回。 */
+    private fun forEachSyncFile(root: Path, action: (String, Path) -> Unit) {
+        if (!Files.isDirectory(root)) return
         try {
             Files.walk(root).use { stream ->
                 stream.filter { Files.isRegularFile(it) }
                     .filter { it.fileName.toString().let { n -> SYNC_EXTENSIONS.any { ext -> n.endsWith(ext) } } }
                     .forEach { path ->
-                        if (path.toFile().length() > 64L * 1024 * 1024) return@forEach
-                        val rel = root.relativize(path).toString().replace('\\', '/')
-                        try {
-                            result[rel] = HashUtils.sha1Hex(Files.readAllBytes(path))
-                        } catch (_: IOException) {
-                            // 忽略
-                        }
+                        action(root.relativize(path).toString().replace('\\', '/'), path)
                     }
             }
         } catch (_: IOException) {
-            return emptyMap()
+            // 遍历失败返回空结果
         }
-        return result
     }
 }

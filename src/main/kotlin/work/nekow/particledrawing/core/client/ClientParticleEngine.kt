@@ -146,24 +146,7 @@ class ClientParticleEngine {
     /** 直接同步粒子状态（接收 Vec3/Color 引用，避免逐 tick 重复分配对象）。 */
     fun updateParticleDirect(id: UUID, pos: Vec3, color: Color, scale: Float,
                              glowing: Boolean, lightLevel: Int, snap: Boolean = false) {
-        val rp = particles[id] ?: return
-        directIds.add(id)
-        val wasGlowing = rp.glowing() && rp.lightLevel() > 0
-        rp.setPositionDirect(pos)
-        rp.setColorDirect(color)
-        rp.setScaleDirect(scale)
-        rp.setGlowing(glowing)
-        rp.setLightLevel(lightLevel)
-        val nowGlowing = glowing && lightLevel > 0
-        if (wasGlowing != nowGlowing) {
-            if (nowGlowing) glowingIds.add(id) else glowingIds.remove(id)
-        }
-        bridges[id]?.let {
-            it.syncPosition(pos.x, pos.y, pos.z, snap)
-            it.syncColor(color.r, color.g, color.b, color.a)
-            it.syncScale(scale)
-            it.setGlowing(glowing)
-        }
+        applyDirect(id, pos, color, glowing, lightLevel, snap, scale, null)
     }
 
     /**
@@ -172,12 +155,18 @@ class ClientParticleEngine {
      */
     fun updateParticleDirectArray(id: UUID, pos: Vec3, color: Color, scaleArray: FloatArray,
                                   glowing: Boolean, lightLevel: Int, snap: Boolean = false) {
+        applyDirect(id, pos, color, glowing, lightLevel, snap, 0f, scaleArray)
+    }
+
+    private fun applyDirect(id: UUID, pos: Vec3, color: Color,
+                            glowing: Boolean, lightLevel: Int, snap: Boolean,
+                            scale: Float, scaleArray: FloatArray?) {
         val rp = particles[id] ?: return
         directIds.add(id)
         val wasGlowing = rp.glowing() && rp.lightLevel() > 0
         rp.setPositionDirect(pos)
         rp.setColorDirect(color)
-        rp.setScaleArrayDirect(scaleArray)
+        if (scaleArray != null) rp.setScaleArrayDirect(scaleArray) else rp.setScaleDirect(scale)
         rp.setGlowing(glowing)
         rp.setLightLevel(lightLevel)
         val nowGlowing = glowing && lightLevel > 0
@@ -187,7 +176,7 @@ class ClientParticleEngine {
         bridges[id]?.let {
             it.syncPosition(pos.x, pos.y, pos.z, snap)
             it.syncColor(color.r, color.g, color.b, color.a)
-            it.syncScaleArray(scaleArray)
+            if (scaleArray != null) it.syncScaleArray(scaleArray) else it.syncScale(scale)
             it.setGlowing(glowing)
         }
     }

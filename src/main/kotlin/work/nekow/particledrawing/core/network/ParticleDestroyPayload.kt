@@ -28,25 +28,15 @@ data class ParticleDestroyPayload(
             object : StreamCodec<FriendlyByteBuf, ParticleDestroyPayload> {
                 override fun decode(buf: FriendlyByteBuf): ParticleDestroyPayload {
                     val count = buf.readVarInt()
-                    val ids = Array(count) {
-                        UUID(buf.readLong(), buf.readLong())
-                    }
-                    val hasGroup = buf.readBoolean()
-                    val groupId = if (hasGroup) UUID(buf.readLong(), buf.readLong()) else null
+                    val ids = Array(count) { StreamCodecs.UUID_CODEC.decode(buf) }
+                    val groupId = StreamCodecs.readNullableUUID(buf)
                     return ParticleDestroyPayload(ids, groupId)
                 }
 
                 override fun encode(buf: FriendlyByteBuf, payload: ParticleDestroyPayload) {
                     buf.writeVarInt(payload.particleIds.size)
-                    for (id in payload.particleIds) {
-                        buf.writeLong(id.mostSignificantBits)
-                        buf.writeLong(id.leastSignificantBits)
-                    }
-                    buf.writeBoolean(payload.groupId != null)
-                    if (payload.groupId != null) {
-                        buf.writeLong(payload.groupId.mostSignificantBits)
-                        buf.writeLong(payload.groupId.leastSignificantBits)
-                    }
+                    for (id in payload.particleIds) StreamCodecs.UUID_CODEC.encode(buf, id)
+                    StreamCodecs.writeNullableUUID(buf, payload.groupId)
                 }
             }
 
