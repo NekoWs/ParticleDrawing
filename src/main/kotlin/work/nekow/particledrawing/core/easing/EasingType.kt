@@ -10,7 +10,8 @@ import kotlin.math.abs
 class EasingType private constructor(
     val name: String?,
     val ordinal: Int,
-    val curve: EasingCurve
+    val curve: EasingCurve,
+    private val step: Boolean = false
 ) {
 
     /**
@@ -18,7 +19,10 @@ class EasingType private constructor(
      * @param t 动画进度，范围 [0, 1]
      * @return 缓动后的值
      */
-    fun evaluate(t: Float): Float = curve.evaluate(t)
+    fun evaluate(t: Float): Float {
+        if (step) return if (t >= 1f) 1f else 0f // 无缓动：阶跃（保持到下一关键帧）
+        return curve.evaluate(t)
+    }
 
     /**
      * 判断当前是否为预设缓动类型。
@@ -26,11 +30,15 @@ class EasingType private constructor(
      */
     fun isPreset(): Boolean = ordinal >= 0
 
+    /** 判断是否为无缓动（阶跃）类型。 */
+    fun isStep(): Boolean = step
+
     /**
      * 序列化为双精度数组以便网络传输。
      * @return 包含类型标识与控制点参数的数组
      */
     fun serialize(): DoubleArray {
+        if (step) return doubleArrayOf(STEP_ORDINAL.toDouble(), 0.0, 0.0, 0.0, 0.0)
         return if (isPreset()) {
             doubleArrayOf(ordinal.toDouble(), 0.0, 0.0, 0.0, 0.0)
         } else {
@@ -49,12 +57,14 @@ class EasingType private constructor(
     }
 
     override fun toString(): String {
+        if (step) return "EasingType.NONE"
         if (isPreset()) return "EasingType.$name"
         return String.format("EasingType.cubic-bezier(%.2f,%.2f,%.2f,%.2f)",
             curve.x1, curve.y1, curve.x2, curve.y2)
     }
 
     companion object {
+        private const val STEP_ORDINAL = -2
         @JvmField val LINEAR       = EasingType("LINEAR",             0, EasingCurve(0.0,   0.0,   1.0,  1.0))
         @JvmField val EASE_IN      = EasingType("EASE_IN",            1, EasingCurve(0.42,  0.0,   1.0,  1.0))
         @JvmField val EASE_OUT     = EasingType("EASE_OUT",           2, EasingCurve(0.0,   0.0,   0.58, 1.0))
@@ -69,6 +79,9 @@ class EasingType private constructor(
         @JvmField val EASE_OUT_BOUNCE = EasingType("EASE_OUT_BOUNCE",11, EasingCurve(0.29, -0.61,  0.47, 0.99))
         @JvmField val EASE_IN_ELASTIC = EasingType("EASE_IN_ELASTIC",12, EasingCurve(0.56,  0.01,  0.73, 1.61))
         @JvmField val EASE_OUT_ELASTIC= EasingType("EASE_OUT_ELASTIC",13, EasingCurve(0.25, -0.61,  0.44, 0.99))
+
+        /** 无缓动（阶跃）：保持前一关键帧值直到下一关键帧。 */
+        @JvmField val NONE = EasingType("NONE", STEP_ORDINAL, EasingCurve(0.0, 0.0, 1.0, 1.0), step = true)
 
         @JvmField val PRESETS: List<EasingType> = listOf(
             LINEAR, EASE_IN, EASE_OUT, EASE_IN_OUT,
@@ -120,6 +133,7 @@ class EasingType private constructor(
         @JvmStatic
         fun deserialize(data: DoubleArray): EasingType {
             val ordinal = data[0].toInt()
+            if (ordinal == STEP_ORDINAL) return NONE
             if (ordinal in PRESET_ARRAY.indices) {
                 return PRESET_ARRAY[ordinal]
             }

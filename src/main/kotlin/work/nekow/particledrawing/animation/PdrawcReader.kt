@@ -246,6 +246,7 @@ object PdrawcReader {
             1 -> EasingType.custom(
                 r.f32().toDouble(), r.f32().toDouble(), r.f32().toDouble(), r.f32().toDouble()
             )
+            2 -> EasingType.NONE
             else -> throw IllegalArgumentException("pdrawc 未知缓动类型")
         }
     }

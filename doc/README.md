@@ -23,7 +23,7 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | 类 | 作用 |
 | --- | --- |
 | `EasingCurve` | 三次贝塞尔缓动曲线 |
-| `EasingType` | 缓动类型：14 种预设 + 自定义曲线，支持序列化 |
+| `EasingType` | 缓动类型：14 种预设 + 无缓动（阶跃）+ 自定义曲线，支持序列化 |
 
 ### core.animation —— .pdraw 动画播放
 

@@ -339,6 +339,8 @@ handle.remove()
 
 预设：`LINEAR`、`EASE_IN/OUT/IN_OUT`、各 `*_QUAD / *_CUBIC / *_BOUNCE / *_ELASTIC` 变体，共 14 种。
 
+无缓动（阶跃）：`EasingType.NONE`，保持前一关键帧值直到下一关键帧。
+
 自定义贝塞尔：
 
 ```kotlin
