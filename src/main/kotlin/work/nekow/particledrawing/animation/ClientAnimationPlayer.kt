@@ -89,6 +89,12 @@ class ClientAnimationPlayer(
     // ---- 函数对象纯标量快路径编译缓存（null = 含向量/矩阵，回退通用解释器） ----
     private val compiledFunctions: MutableMap<String, CompiledFunction?> = buildCompiledFunctions()
 
+    // 视觉会随时间变化的普通粒子（有轨道/速度/入场过渡）；其余静态粒子每 tick 只更新可见性。
+    private val dynamicParticleIds: Set<String> = buildDynamicParticleIds()
+
+    // 函数对象纯标量求值缓冲复用：regs/stack 每次 eval 整体重写，跨 tick 复用安全。
+    private val fxBuffers = HashMap<String, Pair<DoubleArray, DoubleArray>>()
+
     private fun buildCompiledFunctions(): MutableMap<String, CompiledFunction?> {
         val map = HashMap<String, CompiledFunction?>()
         for (fx in animation.functions) {
@@ -141,6 +147,32 @@ class ClientAnimationPlayer(
         return map
     }
 
+    /**
+     * 标记「视觉会随时间变化」的普通粒子：自身或所属组存在 set/op 轨道、速度非零、带入场过渡。
+     * 其余粒子（如 64×64 图片导入的 4096 个静态像素粒子）位置/颜色/缩放恒定，
+     * advanceTo 只更新其 st/life 可见性，避免每 tick 重算与大量 Vec3/Color/FloatArray 分配。
+     * 派生粒子（fx）由函数对象循环求值，不在本集合内。
+     */
+    private fun buildDynamicParticleIds(): Set<String> {
+        val ids = HashSet<String>()
+        for (p in animation.particles) {
+            if (p.vel.x != 0.0 || p.vel.y != 0.0 || p.vel.z != 0.0) ids.add(p.id)
+            if (p.ent != null) ids.add(p.id)
+        }
+        for (tr in animation.tracks) {
+            if (tr.keyframes.isEmpty()) continue
+            for (id in tr.ids) {
+                if (id.startsWith("g:")) {
+                    val members = animation.groups[id.removePrefix("g:")] ?: continue
+                    ids.addAll(members)
+                } else if (!id.startsWith("f:")) {
+                    ids.add(id)
+                }
+            }
+        }
+        return ids
+    }
+
     init {
         for (p in animation.particles) {
             states[p.id] = ParticleState(p.id, origin.add(p.pos), p.color, p.scale.copyOf(), p.glowing, p.lightLevel, resolveUV(p.id, p.uv))
@@ -190,6 +222,7 @@ class ClientAnimationPlayer(
             v.kf = emptyList()
             val varDefs = fx.vars.map { (n, vv) -> VarDef(n, vv.base, vv.kf) }
             compiledFunctions[fx.id] = compileFunctionObject(fx.code, varDefs)
+            fxBuffers.remove(fx.id) // 重编译可能改变 reg/stack 尺寸，旧缓冲不可复用
             return
         }
     }
@@ -201,15 +234,18 @@ class ClientAnimationPlayer(
             val life = p.life
             // st 门控 + 寿命到期回收（life=-1 无限）
             s.visible = localT >= 0 && (life < 0 || localT < life)
-            s.pos = origin.add(particlePosition(p, t))
-            s.color = applyEntrance(particleColor(p, t), p.ent, localT)
-            s.scale = particleScale(p, t)
+            if (p.id in dynamicParticleIds) {
+                s.pos = origin.add(particlePosition(p, t))
+                s.color = applyEntrance(particleColor(p, t), p.ent, localT)
+                s.scale = particleScale(p, t)
+            }
         }
         for (fx in animation.functions) {
             val fxLocalT = t - fx.st
             val cf = compiledFunctions[fx.id]
-            val regs = cf?.allocRegs()
-            val stack = cf?.allocStack()
+            val bufs = if (cf != null) fxBuffers.getOrPut(fx.id) { cf.allocRegs() to cf.allocStack() } else null
+            val regs = bufs?.first
+            val stack = bufs?.second
             val cx = fx.center[0]; val cy = fx.center[1]; val cz = fx.center[2]
             // 整体变换 / op 增量 / 整体缩放 每 tick 只算一次（与粒子序号无关）
             val rx = scalarAt("rot.x", "f:" + fx.id, t, 0.0)

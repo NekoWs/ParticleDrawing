@@ -45,7 +45,7 @@ fun main() {
     // ---- 性能：快路径 5w ----
     var total = 0.0
     for (p in presets) {
-        val varDefs = p.vars.map { (name, expr) -> VarDef(name, expr, emptyList()) }
+        val varDefs = p.vars.map { (name, expr) -> VarDef(name, expr.toDouble(), emptyList()) }
         val cf = compileFunctionObject(p.code, varDefs) ?: run {
             continue
         }
@@ -68,7 +68,7 @@ fun main() {
     println()
     var ok = true
     for (p in presets) {
-        val varDefs = p.vars.map { (name, expr) -> VarDef(name, expr, emptyList()) }
+        val varDefs = p.vars.map { (name, expr) -> VarDef(name, expr.toDouble(), emptyList()) }
         val cf = compileFunctionObject(p.code, varDefs) ?: run { println("${p.name}: 回退，跳过"); continue }
         val regs = cf.allocRegs()
         val stack = cf.allocStack()
