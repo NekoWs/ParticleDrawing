@@ -437,6 +437,7 @@ class ClientAnimationPlayer(
             setComponentValueAt(p, "pos", "y", t),
             setComponentValueAt(p, "pos", "z", t),
         )
+        pos = applyGroupScale(p, pos, t)
         pos = applyGroupRotation(p, pos, t)
         pos = pos.add(
             compOpDelta(p, "pos", "x", t),
@@ -471,6 +472,36 @@ class ClientAnimationPlayer(
         return value
     }
 
+    /** 组整体缩放：作用于成员相对组质心的偏移，而非粒子大小。 */
+    private fun applyGroupScale(p: AnimParticle, value: Vec3, t: Double): Vec3 {
+        val gs = particleGroupIndex[p.id] ?: return value
+        for (gname in gs) {
+            val s = groupScaleAt(gname, t)
+            if (s[0] == 1.0 && s[1] == 1.0 && s[2] == 1.0) continue
+            val pivot = groupCentroidCache[gname] ?: groupCentroid(gname)
+            return Vec3(
+                pivot.x + (value.x - pivot.x) * s[0],
+                pivot.y + (value.y - pivot.y) * s[1],
+                pivot.z + (value.z - pivot.z) * s[2],
+            )
+        }
+        return value
+    }
+
+    private fun groupScaleAt(gname: String, t: Double): DoubleArray =
+        doubleArrayOf(
+            groupScaleComponent(gname, "x", t),
+            groupScaleComponent(gname, "y", t),
+            groupScaleComponent(gname, "z", t),
+        )
+
+    private fun groupScaleComponent(gname: String, comp: String, t: Double): Double {
+        val tr = findTrackByPr("scl.$comp", "g:$gname") ?: return 1.0
+        if (tr.keyframes.isEmpty()) return 1.0
+        return if (tr.mode == AnimTrack.Mode.OP) 1.0 + trackValueAt(tr, t, 0.0)
+        else trackValueAt(tr, t, 1.0)
+    }
+
     private fun groupCentroid(gname: String): Vec3 {
         val members = animation.groups[gname] ?: return Vec3.ZERO
         var sx = 0.0; var sy = 0.0; var sz = 0.0; var n = 0
@@ -492,11 +523,19 @@ class ClientAnimationPlayer(
     }
 
     private fun particleScale(p: AnimParticle, t: Double): FloatArray {
+        // 粒子缩放只有 X/Y（billboard 尺寸由 sx/sy 决定）；组 scl 不再影响粒子大小，改为位置级整体缩放。
         return floatArrayOf(
-            componentValueAt(p, "scl", "x", t).toFloat().coerceAtLeast(0.01f),
-            componentValueAt(p, "scl", "y", t).toFloat().coerceAtLeast(0.01f),
-            componentValueAt(p, "scl", "z", t).toFloat().coerceAtLeast(0.01f),
+            ownScaleComponent(p, "x", t).toFloat().coerceAtLeast(0.01f),
+            ownScaleComponent(p, "y", t).toFloat().coerceAtLeast(0.01f),
+            1f,
         )
+    }
+
+    private fun ownScaleComponent(p: AnimParticle, comp: String, t: Double): Double {
+        var v = baseComponent(p, "scl", comp)
+        val tr = findTrackByPr("scl.$comp", p.id)
+        if (tr != null && tr.mode != AnimTrack.Mode.OP && tr.keyframes.isNotEmpty()) v = trackValueAt(tr, t, v)
+        return v
     }
 
     /**
