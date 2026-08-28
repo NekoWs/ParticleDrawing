@@ -92,8 +92,8 @@ class BridgeParticle(
 
     /** 解析当前 UV 指向的贴图（贴图在 spawn 前已由动画管理器预加载）。 */
     private fun resolveTexture(): TextureCache.Entry? {
-        val tex = uv?.texture ?: return null
-        return TextureCache.get(tex)
+        val tex = uv?.texture ?: return TextureCache.defaultWhite()
+        return TextureCache.get(tex) ?: TextureCache.defaultWhite()
     }
 
     /** 更新发光状态（本地动画逐 tick 求值时同步）。 */
@@ -249,7 +249,7 @@ class BridgeParticle(
 
     override fun getU0(): Float {
         val entry = texEntry ?: return super.getU0()
-        val u = uv ?: return super.getU0()
+        val u = uv ?: return 0f // 默认全白纹理：整图 UV
         if (u.mode == UvData.Mode.FILL) return 0f
         val sx = currentUvStart(entry.width, entry.height)[0]
         return (sx.toFloat() / entry.width).coerceIn(0f, 1f)
@@ -257,7 +257,7 @@ class BridgeParticle(
 
     override fun getU1(): Float {
         val entry = texEntry ?: return super.getU1()
-        val u = uv ?: return super.getU1()
+        val u = uv ?: return 1f // 默认全白纹理：整图 UV
         if (u.mode == UvData.Mode.FILL) return 1f
         val sx = currentUvStart(entry.width, entry.height)[0]
         val w = if (u.uvSize[0] > 0) u.uvSize[0] else entry.width
@@ -266,7 +266,7 @@ class BridgeParticle(
 
     override fun getV0(): Float {
         val entry = texEntry ?: return super.getV0()
-        val u = uv ?: return super.getV0()
+        val u = uv ?: return 0f // 默认全白纹理：整图 UV
         if (u.mode == UvData.Mode.FILL) return 0f
         val sy = currentUvStart(entry.width, entry.height)[1]
         val h = if (u.uvSize[1] > 0) u.uvSize[1] else entry.height
@@ -276,7 +276,7 @@ class BridgeParticle(
 
     override fun getV1(): Float {
         val entry = texEntry ?: return super.getV1()
-        val u = uv ?: return super.getV1()
+        val u = uv ?: return 1f // 默认全白纹理：整图 UV
         if (u.mode == UvData.Mode.FILL) return 1f
         val sy = currentUvStart(entry.width, entry.height)[1]
         val h = if (u.uvSize[1] > 0) u.uvSize[1] else entry.height
@@ -309,8 +309,10 @@ class BridgeParticle(
     companion object {
         /**
          * 编辑器 → Minecraft 世界单位的缩放因子。
+         * 原版 quad 顶点把 scale 当「半宽」使用（±scale），而编辑器 aSize 是整宽，
+         * 因此这里取编辑器 PARTICLE_SIZE_FACTOR(0.2) 的一半，使最终整宽一致。
          */
-        const val EDITOR_TO_MC_SCALE: Float = 0.2f
+        const val EDITOR_TO_MC_SCALE: Float = 0.1f
 
         /**
          * 非均匀缩放宽度（由 extractRotatedQuad 在调用父类前设置，-1 表示均匀缩放）。

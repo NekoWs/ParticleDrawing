@@ -20,6 +20,7 @@ object TextureCache {
 
     private const val NAMESPACE = "particledrawing"
     private const val PREFIX = "custom"
+    private const val DEFAULT_WHITE = "default_white"
 
     /** 已成功注册的贴图 → Identifier 与原始尺寸（供 UV 归一化）。 */
     data class Entry(val id: Identifier, val width: Int, val height: Int)
@@ -57,6 +58,27 @@ object TextureCache {
     @JvmStatic
     fun clear() {
         entries.clear()
+    }
+
+    /**
+     * 无贴图粒子的默认全白纹理（8×8 实心白色），替代原版 generic_0 的单像素点：
+     * 使游戏内默认粒子与编辑器中的全白方形点尺寸一致。
+     */
+    @JvmStatic
+    fun defaultWhite(): Entry {
+        entries[DEFAULT_WHITE]?.let { return it }
+        val img = NativeImage(8, 8, false)
+        for (y in 0 until 8) {
+            for (x in 0 until 8) {
+                img.setPixel(x, y, -1) // ARGB 0xFFFFFFFF → 不透明白
+            }
+        }
+        val dt = DynamicTexture({ "PD:$DEFAULT_WHITE" }, img)
+        val id = Identifier.fromNamespaceAndPath(NAMESPACE, PREFIX + "/" + DEFAULT_WHITE)
+        Minecraft.getInstance().textureManager.register(id, dt)
+        val entry = Entry(id, 8, 8)
+        entries[DEFAULT_WHITE] = entry
+        return entry
     }
 
     /**
