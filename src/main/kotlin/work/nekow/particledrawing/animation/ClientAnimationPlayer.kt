@@ -197,7 +197,7 @@ class ClientAnimationPlayer(
         if (finished) return false
         frameCount++
         currentTick++
-        if (currentTick > maxTick) {
+        if (currentTick >= maxTick) {
             if (animation.loop) { currentTick = 0; justLooped = true }
             else { finished = true; return false }
         }
