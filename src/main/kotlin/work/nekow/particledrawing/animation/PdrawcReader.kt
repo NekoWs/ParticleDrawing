@@ -25,8 +25,7 @@ import java.util.zip.InflaterInputStream
 object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
-    private const val VERSION_MIN = 1 // v1：body 未压缩（向后兼容旧导出）
-    private const val VERSION = 2     // v2：body 为 raw DEFLATE 压缩
+    private const val VERSION = 3     // v3：setup/process/seed 脚本模型 + raw DEFLATE body
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 
@@ -70,11 +69,10 @@ object PdrawcReader {
 
         if (!r.bytes(4).contentEquals(MAGIC)) throw IllegalArgumentException("pdrawc 魔数错误")
         val version = r.varint()
-        if (version !in VERSION_MIN..VERSION) throw IllegalArgumentException("pdrawc 版本不支持: $version")
+        if (version != VERSION) throw IllegalArgumentException("pdrawc 版本不支持: $version")
         r.bytes(PUB_LEN) // 公钥已用于验签，跳过
 
-        // v2：body 为 raw DEFLATE；v1：body 未压缩（向后兼容旧导出）
-        val bodyBytes = if (version == 2) inflateRaw(r.remainingBytes()) else r.remainingBytes()
+        val bodyBytes = inflateRaw(r.remainingBytes())
         val br = Reader(ByteBuffer.wrap(bodyBytes).order(ByteOrder.LITTLE_ENDIAN))
 
         val loop = br.u8() != 0
@@ -138,7 +136,9 @@ object PdrawcReader {
         for (fi in 0 until fxCount) {
             val center = doubleArrayOf(br.f32().toDouble(), br.f32().toDouble(), br.f32().toDouble())
             val count = br.varint()
-            val code = br.str()
+            val setup = br.str()
+            val process = br.str()
+            val seed = br.varint()
             val duration = br.varint()
             val st = br.varint()
             val flags = br.u8()
@@ -153,7 +153,7 @@ object PdrawcReader {
                 vars[name] = FunctionVar(base, kf)
             }
             // step 为编辑器参数，播放端不使用，固定 0
-            functions.add(FunctionObject("fx$fi", "fx$fi", center, count, code, vars, duration, 0, uv, st, ent))
+            functions.add(FunctionObject("fx$fi", "fx$fi", center, count, setup, process, seed, vars, duration, 0, uv, st, ent))
         }
 
         // 轨道
@@ -201,7 +201,7 @@ object PdrawcReader {
         val r = Reader(ByteBuffer.wrap(unsigned).order(ByteOrder.LITTLE_ENDIAN))
         return try {
             if (!r.bytes(4).contentEquals(MAGIC)) return null
-            if (r.varint() !in VERSION_MIN..VERSION) return null
+            if (r.varint() != VERSION) return null
             r.bytes(PUB_LEN)
         } catch (_: Exception) {
             null

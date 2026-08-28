@@ -1,0 +1,105 @@
+package work.nekow.particledrawing
+
+import work.nekow.particledrawing.animation.script.ScriptRuntime
+import work.nekow.particledrawing.animation.script.parseProgram
+import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.sqrt
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class ScriptRuntimeConformanceTest {
+
+    private fun uvFor(count: Int, i: Int, gridCols: Int?): Pair<Double, Double> {
+        val C = gridCols ?: maxOf(1, ceil(sqrt(count.toDouble())).toInt())
+        val R = maxOf(1, ceil(count.toDouble() / C).toInt())
+        val col = i % C
+        val row = floor(i.toDouble() / C).toInt()
+        val uvX = if (C == 1) 0.0 else col.toDouble() / (C - 1.0)
+        val uvY = if (R == 1) 0.0 else row.toDouble() / (R - 1.0)
+        return uvX to uvY
+    }
+
+    private fun eval(setup: String, process: String, funcs: String, seed: Int, count: Int, i: Int): ScriptRuntime.ScriptOut {
+        val program = parseProgram("$funcs\nsetup {\n$setup\n}\nprocess {\n$process\n}\n")
+        val obj = ScriptRuntime.createObjectState(seed)
+        ScriptRuntime.runSetup(program, obj, ScriptRuntime.SetupEnv(count.toDouble(), 0.0, emptyMap()))
+        val statics = ScriptRuntime.createStatics()
+        val uv = uvFor(count, i, null)
+        val ctx = ScriptRuntime.ProcessCtx(
+            i = i.toDouble(), n = count.toDouble(), t = 0.0, dt = 0.0,
+            life = 0.0, uv_x = uv.first, uv_y = uv.second, vars = emptyMap(),
+        )
+        return ScriptRuntime.evalProcess(program, obj, statics, ctx)
+    }
+
+    @Test
+    fun attrsArith() {
+        val out = eval("", "[x,y,z] = [i*2, i+1, n]; r = i/n; sc = 0.5; vx = i; glow = 1; light = 12;", "", 0, 3, 0)
+        assertEquals(listOf(0.0, 1.0, 3.0), out.pos.toList())
+        assertEquals(listOf(0.0, 1.0, 1.0, 1.0), out.color.toList())
+        assertEquals(0.5, out.scale, 1e-12)
+        assertEquals(true, out.glow)
+        assertEquals(12.0, out.light, 1e-12)
+    }
+
+    @Test
+    fun arrays() {
+        val out = eval(
+            "global arr = []; arr.push(3); arr.push(1); arr.push(2); global brr = arr.slice(0, 3);",
+            "x = arr[0]; y = arr.find(2); z = arr.includes(9) ? 1 : 0; sc = brr.size();",
+            "", 0, 1, 0,
+        )
+        assertEquals(listOf(3.0, 2.0, 0.0), out.pos.toList())
+        assertEquals(3.0, out.scale, 1e-12)
+    }
+
+    @Test
+    fun controlFlow() {
+        val out = eval(
+            "",
+            "s = 0; for (k = 0; k < 5; k = k + 1) { s = s + k; } while (s < 11) { s = s + 1; } if (s > 10) { x = s; } else { x = -1; } y = (s == 12) ? 2 : 0;",
+            "", 0, 1, 0,
+        )
+        assertEquals(listOf(11.0, 0.0, 0.0), out.pos.toList())
+    }
+
+    @Test
+    fun funcRecursion() {
+        val out = eval(
+            "",
+            "x = fib(6); y = fac(4);",
+            "func fib(nn) { if (nn < 2) { return nn; } return fib(nn-1) + fib(nn-2); }\nfunc fac(nn) { if (nn <= 1) { return 1; } return nn * fac(nn-1); }",
+            0, 1, 0,
+        )
+        assertEquals(listOf(8.0, 24.0, 0.0), out.pos.toList())
+    }
+
+    @Test
+    fun vecMat() {
+        val out = eval(
+            "",
+            "v = vec(1,2,3); m = rotZ(pi/2); w = m * v; [x,y,z] = w; [r,g,b,a] = [len(w)/4, dot(v,w)/12, cross(v,w).y/10, 1];",
+            "", 0, 1, 0,
+        )
+        assertEquals(-2.0, out.pos[0], 1e-12)
+        assertEquals(1.0, out.pos[1], 1e-12)
+        assertEquals(3.0, out.pos[2], 1e-12)
+        assertEquals(0.9354143466934853, out.color[0], 1e-12)
+        assertEquals(0.75, out.color[1], 1e-12)
+        assertEquals(0.0, out.color[2], 1e-12)
+    }
+
+    @Test
+    fun noiseRandSeeded() {
+        val out0 = eval("", "x = noise(i, 0.5, 1.5) * 10; y = rand() * 10; z = rand(7) * 10;", "", 42, 2, 0)
+        assertEquals(6.146115226337443, out0.pos[0], 1e-12)
+        assertEquals(6.011037519201636, out0.pos[1], 1e-12)
+        assertEquals(0.11704753153026104, out0.pos[2], 1e-12)
+
+        val out1 = eval("", "x = noise(i, 0.5, 1.5) * 10; y = rand() * 10; z = rand(7) * 10;", "", 42, 2, 1)
+        assertEquals(4.786, out1.pos[0], 1e-12)
+        assertEquals(6.011037519201636, out1.pos[1], 1e-12)
+        assertEquals(0.11704753153026104, out1.pos[2], 1e-12)
+    }
+}

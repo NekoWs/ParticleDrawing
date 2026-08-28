@@ -1,14 +1,16 @@
 package work.nekow.particledrawing.animation
 
 import net.minecraft.world.phys.Vec3
-import work.nekow.particledrawing.animation.expr.ATTR_NAMES
-import work.nekow.particledrawing.animation.expr.CompiledFunction
-import work.nekow.particledrawing.animation.expr.ExpressionEvaluator
-import work.nekow.particledrawing.animation.expr.Reg
-import work.nekow.particledrawing.animation.expr.VarDef
-import work.nekow.particledrawing.animation.expr.compileFunctionObject
+import work.nekow.particledrawing.animation.script.ScriptProgram
+import work.nekow.particledrawing.animation.script.ScriptRuntime
+import work.nekow.particledrawing.animation.script.parseProgram
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.util.rotateAround
+import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.max
+import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 @Suppress("unused")
 class ClientAnimationPlayer(
@@ -32,6 +34,8 @@ class ClientAnimationPlayer(
     private val states = LinkedHashMap<String, ParticleState>()
     private var finished = false
     private var justLooped = false
+    private var prevAdvanceT = 0.0
+    private var advanceInitialized = false
 
     // ---- 调试统计 ----
     var lastAdvanceNanos: Long = 0; private set
@@ -60,7 +64,7 @@ class ClientAnimationPlayer(
                 hasVarAnim = true
                 if (kfMax > extent) extent = kfMax
             }
-            if (!hasVarAnim && usesTimeVar(fx.code)) extent = maxOf(extent, fx.duration.toDouble())
+            if (!hasVarAnim && usesTimeVar(fx)) extent = maxOf(extent, fx.duration.toDouble())
             if (fx.st + extent > max) max = fx.st + extent
         }
         max.toInt()
@@ -73,7 +77,7 @@ class ClientAnimationPlayer(
         if (maxTick > 0) return@run false
         if (animation.particles.any { it.st > 0 || it.ent != null }) return@run false
         if (animation.functions.any { it.st > 0 || it.ent != null }) return@run false
-        animation.functions.none { fx -> usesRandom(fx.code) }
+        animation.functions.none { fx -> usesRandom(fx) }
     }
 
     // ---- 预构建求值索引（避免每 tick 线性扫描轨道 / 组 / 粒子） ----
@@ -85,22 +89,31 @@ class ClientAnimationPlayer(
     private val groupCentroidCache: Map<String, Vec3> = buildGroupCentroids()
     private val particleFxCache: Map<String, FunctionObject?> = buildParticleFxCache()
 
-    // ---- 函数对象纯标量快路径编译缓存（null = 含向量/矩阵，回退通用解释器） ----
-    private val compiledFunctions: MutableMap<String, CompiledFunction?> = buildCompiledFunctions()
+    // ---- 函数对象脚本程序缓存（setup 执行一次；process 每粒子每 tick） ----
+    private data class FxScriptState(
+        val program: ScriptProgram,
+        val objState: ScriptRuntime.ObjectState,
+        val statics: MutableMap<String, MutableMap<String, Any?>> = HashMap(),
+    )
+    private val fxScripts: MutableMap<String, FxScriptState?> = buildFxScripts()
 
     // 视觉会随时间变化的普通粒子（有轨道/速度/入场过渡）；其余静态粒子每 tick 只更新可见性。
     private val dynamicParticleIds: Set<String> = buildDynamicParticleIds()
 
-    // 函数对象纯标量求值缓冲复用：regs/stack 每次 eval 整体重写，跨 tick 复用安全。
-    private val fxBuffers = HashMap<String, Pair<DoubleArray, DoubleArray>>()
-
-    private fun buildCompiledFunctions(): MutableMap<String, CompiledFunction?> {
-        val map = HashMap<String, CompiledFunction?>()
-        for (fx in animation.functions) {
-            val varDefs = fx.vars.map { (name, v) -> VarDef(name, v.base, v.kf) }
-            map[fx.id] = compileFunctionObject(fx.code, varDefs)
-        }
+    private fun buildFxScripts(): MutableMap<String, FxScriptState?> {
+        val map = HashMap<String, FxScriptState?>()
+        for (fx in animation.functions) map[fx.id] = buildFxScript(fx)
         return map
+    }
+
+    private fun buildFxScript(fx: FunctionObject): FxScriptState? = try {
+        val program = parseProgram("setup {\n${fx.setup}\n}\nprocess {\n${fx.process}\n}\n")
+        val obj = ScriptRuntime.createObjectState(fx.seed)
+        ScriptRuntime.runSetup(program, obj, ScriptRuntime.SetupEnv(fx.count.toDouble(), fx.st.toDouble(), varsAt(fx, fx.st.toDouble())))
+        FxScriptState(program, obj)
+    } catch (e: Exception) {
+        println("[pdrawc] 函数对象 ${fx.id} 编译失败：${e.message}")
+        null
     }
 
     private fun buildTrackIndex(): Map<String, Map<String, AnimTrack>> {
@@ -184,9 +197,16 @@ class ClientAnimationPlayer(
             states[p.id] = ParticleState(p.id, origin.add(p.pos), p.color, p.scale.copyOf(), p.glowing, p.lightLevel, resolveUV(p.id, p.uv))
         }
         for (fx in animation.functions) {
+            val st = fxScripts[fx.id] ?: continue
             for (i in 0 until fx.count) {
                 val id = fx.id + ":p" + i
-                val base = evaluateFunctionParticle(fx, i, fx.count, 0.0)
+                val statics = st.statics.getOrPut(id) { HashMap() }
+                val base = try {
+                    evalScriptParticle(fx, st, statics, i, fx.count.toDouble(), 0.0, 0.0)
+                } catch (e: Exception) {
+                    println("[pdrawc] 函数对象 ${fx.id} 粒子 $i 求值失败：${e.message}")
+                    continue
+                }
                 states[id] = ParticleState(id, origin.add(base.first), base.second, base.third, base.fourth, base.fifth, resolveUV(id, fx.uv))
             }
         }
@@ -216,8 +236,8 @@ class ClientAnimationPlayer(
     fun consumeJustLooped(): Boolean { val v = justLooped; justLooped = false; return v }
     fun isStatic(): Boolean = isStaticAnimation
 
-    private fun usesTimeVar(code: String): Boolean = Regex("\\bt\\b").containsMatchIn(code)
-    private fun usesRandom(code: String): Boolean = Regex("\\brandom\\s*\\(").containsMatchIn(code)
+    private fun usesTimeVar(fx: FunctionObject): Boolean = Regex("\\bt\\b").containsMatchIn(fx.process) || Regex("\\bt\\b").containsMatchIn(fx.setup)
+    private fun usesRandom(fx: FunctionObject): Boolean = Regex("\\brandom\\s*\\(").containsMatchIn(fx.process) || Regex("\\brand\\s*\\(").containsMatchIn(fx.process)
     fun currentStates(): Collection<ParticleState> = states.values
     fun stop() { finished = true }
 
@@ -226,9 +246,7 @@ class ClientAnimationPlayer(
             val v = fx.vars[name] ?: continue
             v.base = value.toDoubleOrNull() ?: 0.0
             v.kf = emptyList()
-            val varDefs = fx.vars.map { (n, vv) -> VarDef(n, vv.base, vv.kf) }
-            compiledFunctions[fx.id] = compileFunctionObject(fx.code, varDefs)
-            fxBuffers.remove(fx.id) // 重编译可能改变 reg/stack 尺寸，旧缓冲不可复用
+            fxScripts[fx.id] = buildFxScript(fx)
             return
         }
     }
@@ -247,11 +265,8 @@ class ClientAnimationPlayer(
             }
         }
         for (fx in animation.functions) {
+            val st = fxScripts[fx.id] ?: continue
             val fxLocalT = t - fx.st
-            val cf = compiledFunctions[fx.id]
-            val bufs = if (cf != null) fxBuffers.getOrPut(fx.id) { cf.allocRegs() to cf.allocStack() } else null
-            val regs = bufs?.first
-            val stack = bufs?.second
             val cx = fx.center[0]; val cy = fx.center[1]; val cz = fx.center[2]
             // 整体变换 / op 增量 / 整体缩放 每 tick 只算一次（与粒子序号无关）
             val rx = scalarAt("rot.x", "f:" + fx.id, t, 0.0)
@@ -264,52 +279,31 @@ class ClientAnimationPlayer(
             val dy = opDeltaAt("pos.y", "f:" + fx.id, t)
             val dz = opDeltaAt("pos.z", "f:" + fx.id, t)
             val n = fx.count.toDouble()
+            val dt = if (advanceInitialized && t == prevAdvanceT + 1.0) 1.0 / 20.0 else 0.0
             for (i in 0 until fx.count) {
                 val id = fx.id + ":p" + i
                 val s = states[id] ?: continue
-                if (cf != null) {
-                    cf.eval(i.toDouble(), n, t, regs!!, stack!!)
-                    var px = regs[Reg.X] + cx
-                    var py = regs[Reg.Y] + cy
-                    var pz = regs[Reg.Z] + cz
-                    if (hasRot) {
-                        val rotated = rotateAround(Vec3(px, py, pz), rotPivot, rot)
-                        px = rotated.x; py = rotated.y; pz = rotated.z
-                    }
-                    px += dx; py += dy; pz += dz
-                    s.pos = origin.add(px, py, pz)
-                    val baseA = regs[Reg.A].coerceIn(0.0, 1.0).toFloat()
-                    s.color = Color.of(
-                        regs[Reg.R].coerceIn(0.0, 1.0).toFloat(),
-                        regs[Reg.G].coerceIn(0.0, 1.0).toFloat(),
-                        regs[Reg.B].coerceIn(0.0, 1.0).toFloat(),
-                        (baseA * entranceFactor(fx.ent, fxLocalT)),
-                    )
-                    val scaleRaw = if (regs[Reg.SC].isFinite()) regs[Reg.SC] else 1.0
-                    s.scale = fxScale(fx.id, scaleRaw, t)
-                    s.glowing = regs[Reg.GLOW] > 0.5
-                    s.lightLevel = regs[Reg.LIGHT].toInt().coerceIn(0, 15)
-                    // 逐粒子寿命：代码里 maxAge = ...（tick；<0/未写=无限）
-                    val maxAge = regs[Reg.MAXAGE]
-                    s.visible = fxLocalT >= 0 && run {
-                        val lifeOverride = if (maxAge.isFinite() && maxAge >= 0) maxAge else -1.0
-                        lifeOverride < 0 || fxLocalT < lifeOverride
-                    }
-                } else {
-                    // 通用解释器回退路径：不支持逐粒子 maxAge，仅函数对象级 st 门控
-                    val base = evaluateFunctionParticle(fx, i, fx.count, t)
-                    var pos = base.first
-                    if (hasRot) pos = rotateAround(pos, rotPivot, rot)
-                    pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
-                    s.pos = origin.add(pos)
-                    s.color = applyEntrance(base.second, fx.ent, fxLocalT)
-                    s.scale = fxScale(fx.id, base.third[0].toDouble(), t)
-                    s.glowing = base.fourth
-                    s.lightLevel = base.fifth
+                val statics = st.statics.getOrPut(id) { HashMap() }
+                val base = try {
+                    evalScriptParticle(fx, st, statics, i, n, t, dt)
+                } catch (e: Exception) {
+                    println("[pdrawc] 函数对象 ${fx.id} 粒子 $i 求值失败：${e.message}")
                     s.visible = fxLocalT >= 0
+                    continue
                 }
+                var pos = base.first
+                if (hasRot) pos = rotateAround(pos, rotPivot, rot)
+                pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
+                s.pos = origin.add(pos)
+                s.color = applyEntrance(base.second, fx.ent, fxLocalT)
+                s.scale = fxScale(fx.id, base.third[0].toDouble(), t)
+                s.glowing = base.fourth
+                s.lightLevel = base.fifth
+                s.visible = fxLocalT >= 0
             }
         }
+        prevAdvanceT = t
+        advanceInitialized = true
     }
 
     /** 入场预设的 alpha 系数（仅 fade：localT ∈ [0,dur) 线性 0→1）；其余/超窗恒 1。 */
@@ -325,29 +319,65 @@ class ClientAnimationPlayer(
         return Color.of(c.r, c.g, c.b, (c.a * k))
     }
 
-    private fun evaluateFunctionParticle(fx: FunctionObject, i: Int, n: Int, t: Double): Five<Vec3, Color, FloatArray, Boolean, Int> {
-        val env = buildEnv(fx.vars, i, n, t)
-        val out = ExpressionEvaluator.evalFunctionCode(fx.code, env)
+    private fun varsAt(fx: FunctionObject, t: Double): Map<String, Double> {
+        val out = HashMap<String, Double>()
+        for ((name, v) in fx.vars) out[name] = varValue(v, t)
+        return out
+    }
+
+    private fun varValue(v: FunctionVar, t: Double): Double {
+        val kf = v.kf
+        if (kf.isEmpty()) return v.base
+        if (t <= kf[0].tick) return kf[0].value
+        if (t >= kf.last().tick) return kf.last().value
+        var lo = 0
+        var hi = kf.size - 1
+        while (lo + 1 < hi) {
+            val mid = (lo + hi) ushr 1
+            if (kf[mid].tick <= t) lo = mid else hi = mid
+        }
+        val a = kf[lo]; val b = kf[lo + 1]
+        val dur = (b.tick - a.tick).toDouble()
+        val f = if (dur == 0.0) 1.0 else (t - a.tick) / dur
+        val e = b.easing.evaluate(f.toFloat()).toDouble()
+        return a.value + (b.value - a.value) * e
+    }
+
+    private fun uvFor(fx: FunctionObject, n: Double, i: Double): Pair<Double, Double> {
+        val grid = fx.vars["grid_cols"]
+        val base = grid?.base
+        val C = if (base != null && base.isFinite()) max(1.0, base.roundToInt().toDouble()) else ceil(sqrt(n))
+        val R = max(1.0, ceil(n / C))
+        val col = i % C
+        val row = floor(i / C)
+        val uvX = if (C == 1.0) 0.0 else col / (C - 1.0)
+        val uvY = if (R == 1.0) 0.0 else row / (R - 1.0)
+        return uvX to uvY
+    }
+
+    private fun lifeAt(fx: FunctionObject, t: Double): Double {
+        val dur = fx.duration
+        if (dur <= 0) return 0.0
+        val st = fx.st
+        return ((t - st) / dur).coerceIn(0.0, 1.0)
+    }
+
+    private fun evalScriptParticle(fx: FunctionObject, st: FxScriptState, statics: MutableMap<String, Any?>, i: Int, n: Double, t: Double, dt: Double): Five<Vec3, Color, FloatArray, Boolean, Int> {
+        val uv = uvFor(fx, n, i.toDouble())
+        val ctx = ScriptRuntime.ProcessCtx(
+            i = i.toDouble(), n = n, t = t, dt = dt,
+            life = lifeAt(fx, t), uv_x = uv.first, uv_y = uv.second,
+            vars = varsAt(fx, t),
+        )
+        val out = ScriptRuntime.evalProcess(st.program, st.objState, statics, ctx)
         val center = fx.center
         val clamp01 = { v: Double -> v.coerceIn(0.0, 1.0) }
-        val pos = Vec3(out.pos.x + center[0], out.pos.y + center[1], out.pos.z + center[2])
+        val pos = Vec3(out.pos[0] + center[0], out.pos[1] + center[1], out.pos[2] + center[2])
         val color = Color.of(clamp01(out.color[0]).toFloat(), clamp01(out.color[1]).toFloat(), clamp01(out.color[2]).toFloat(), clamp01(out.color[3]).toFloat())
         val s = if (out.scale.isFinite()) out.scale.toFloat().coerceAtLeast(0.01f) else 1f
         val scale = floatArrayOf(s, s, s)
         val light = out.light.toInt().coerceIn(0, 15)
         return Five(pos, color, scale, out.glow, light)
-    }
-
-    private fun buildEnv(vars: Map<String, FunctionVar>, i: Int, n: Int, t: Double): Map<String, Any> {
-        val env = HashMap<String, Any>()
-        env["i"] = i.toDouble()
-        env["n"] = n.toDouble()
-        env["t"] = t
-        for ((name, v) in vars) {
-            if (name in ATTR_NAMES) throw IllegalArgumentException("变量名 " + name + " 是属性保留字")
-            env[name] = if (v.kf.isNotEmpty()) ExpressionEvaluator.varKfValue(v.kf, t) else v.base
-        }
-        return env
     }
 
     private fun compPr(prop: String, comp: String): String = if (comp.isEmpty()) prop else prop + "." + comp
