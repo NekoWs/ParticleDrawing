@@ -61,6 +61,8 @@ object ClientAnimationSyncManager {
     @JvmStatic
     fun onFileChunk(name: String, eof: Boolean, data: ByteArray) {
         val root = currentRoot ?: return
+        // 累积前先校验相对名，避免把非法路径/异常名缓存在 pendingFiles 里
+        if (!AnimationSyncService.sanitizeRelativeName(name.replace('\\', '/'))) return
         val out = pendingFiles.getOrPut(name) { ByteArrayOutputStream() }
         out.write(data)
         if (eof) {

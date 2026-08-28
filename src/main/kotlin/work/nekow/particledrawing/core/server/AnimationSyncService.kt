@@ -62,9 +62,7 @@ object AnimationSyncService {
     fun computeLocalHashes(root: Path): Map<String, String> {
         val result = LinkedHashMap<String, String>()
         forEachSyncFile(root) { rel, path ->
-            if (path.toFile().length() <= 64L * 1024 * 1024) {
-                try { result[rel] = HashUtils.sha1Hex(Files.readAllBytes(path)) } catch (_: IOException) { /* 忽略 */ }
-            }
+            try { result[rel] = HashUtils.sha1Hex(Files.readAllBytes(path)) } catch (_: IOException) { /* 忽略 */ }
         }
         return result
     }

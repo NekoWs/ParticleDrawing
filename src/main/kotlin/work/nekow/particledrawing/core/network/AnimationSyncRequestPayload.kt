@@ -24,11 +24,17 @@ data class AnimationSyncRequestPayload(
             Identifier.fromNamespaceAndPath("particledrawing", "animation_sync_request")
         )
 
+        /** 单次上报的哈希条目上限，防恶意客户端用超大 varint 触发内存分配。 */
+        private const val MAX_HASHES = 100_000
+
         @JvmField
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, AnimationSyncRequestPayload> =
             object : StreamCodec<FriendlyByteBuf, AnimationSyncRequestPayload> {
                 override fun decode(buf: FriendlyByteBuf): AnimationSyncRequestPayload {
                     val n = buf.readVarInt()
+                    if (n < 0 || n > MAX_HASHES) {
+                        throw IllegalArgumentException("animation_sync_request 哈希条目数超限: $n")
+                    }
                     val map = HashMap<String, String>(n)
                     repeat(n) {
                         map[buf.readUtf()] = buf.readUtf()
