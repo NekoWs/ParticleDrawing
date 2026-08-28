@@ -37,7 +37,7 @@ object ClientAnimationSyncManager {
     fun onBegin(context: IPayloadContext) {
         pendingFiles.clear()
         currentRoot = null
-        if (context.connection().isMemoryConnection()) {
+        if (context.connection().isMemoryConnection) {
             // 单机 / LAN 主机：服务器与客户端共享同一目录，无需同步文件
             context.reply(AnimationSyncRequestPayload(emptyMap()))
             return
