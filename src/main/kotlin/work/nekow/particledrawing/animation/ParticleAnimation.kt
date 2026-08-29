@@ -36,6 +36,7 @@ class FunctionObject(
     val count: Int,
     val setup: String,
     val process: String,
+    val funcs: String = "",
     val seed: Int,
     val vars: Map<String, FunctionVar>,
     val duration: Int,

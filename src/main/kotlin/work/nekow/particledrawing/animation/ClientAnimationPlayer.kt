@@ -107,7 +107,8 @@ class ClientAnimationPlayer(
     }
 
     private fun buildFxScript(fx: FunctionObject): FxScriptState? = try {
-        val program = parseProgram("setup {\n${fx.setup}\n}\nprocess {\n${fx.process}\n}\n")
+        val funcsPrefix = if (fx.funcs.isNotBlank()) fx.funcs.trim() + "\n" else ""
+        val program = parseProgram(funcsPrefix + "setup {\n${fx.setup}\n}\nprocess {\n${fx.process}\n}\n")
         val obj = ScriptRuntime.createObjectState(fx.seed)
         ScriptRuntime.runSetup(program, obj, ScriptRuntime.SetupEnv(fx.count.toDouble(), fx.st.toDouble(), varsAt(fx, fx.st.toDouble())))
         FxScriptState(program, obj)
@@ -236,8 +237,8 @@ class ClientAnimationPlayer(
     fun consumeJustLooped(): Boolean { val v = justLooped; justLooped = false; return v }
     fun isStatic(): Boolean = isStaticAnimation
 
-    private fun usesTimeVar(fx: FunctionObject): Boolean = Regex("\\bt\\b").containsMatchIn(fx.process) || Regex("\\bt\\b").containsMatchIn(fx.setup)
-    private fun usesRandom(fx: FunctionObject): Boolean = Regex("\\brandom\\s*\\(").containsMatchIn(fx.process) || Regex("\\brand\\s*\\(").containsMatchIn(fx.process)
+    private fun usesTimeVar(fx: FunctionObject): Boolean = Regex("\\bt\\b").containsMatchIn(fx.process) || Regex("\\bt\\b").containsMatchIn(fx.setup) || Regex("\\bt\\b").containsMatchIn(fx.funcs)
+    private fun usesRandom(fx: FunctionObject): Boolean = Regex("\\brandom\\s*\\(").containsMatchIn(fx.process) || Regex("\\brand\\s*\\(").containsMatchIn(fx.process) || Regex("\\brandom\\s*\\(").containsMatchIn(fx.funcs) || Regex("\\brand\\s*\\(").containsMatchIn(fx.funcs)
     fun currentStates(): Collection<ParticleState> = states.values
     fun stop() { finished = true }
 
