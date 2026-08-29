@@ -368,6 +368,7 @@ class ClientAnimationPlayer(
             i = i.toDouble(), n = n, t = t, dt = dt,
             life = lifeAt(fx, t), uv_x = uv.first, uv_y = uv.second,
             vars = varsAt(fx, t),
+            fastMath = fx.fastMath,
         )
         val out = ScriptRuntime.evalProcess(st.program, st.objState, statics, ctx)
         val center = fx.center

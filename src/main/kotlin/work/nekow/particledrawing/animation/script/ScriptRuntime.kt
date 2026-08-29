@@ -36,6 +36,7 @@ object ScriptRuntime {
         var uv_y: Double,
         val vars: Map<String, Double>,
         val out: ScriptOut = ScriptOut(),
+        var fastMath: Boolean = false,
     )
 
     class SetupEnv(val n: Double, val t: Double, val vars: Map<String, Double>)
@@ -43,6 +44,7 @@ object ScriptRuntime {
     private class Flow(val kind: String, val value: Any? = null) : Throwable()
 
     private val ATTR_SET = setOf("x", "y", "z", "r", "g", "b", "a", "vx", "vy", "vz", "sc", "glow", "light")
+    private val BUILTIN_NAMES = setOf("i", "idx", "n", "t", "dt", "uv_x", "uv_y", "life")
     private val BUILTINS = setOf(
         "print", "assert",
         "vec2", "vec3", "vec", "mat3", "translate", "scale", "rotate", "lookAt", "rotX", "rotY", "rotZ", "rotAxis",
@@ -238,10 +240,15 @@ object ScriptRuntime {
         }
 
         private fun assignName(name: String, value: Any?, n: Node) {
-            if (name in ATTR_SET) {
-                if (phase != "process") err("particle property '$name' is not available in setup", n)
+            if (phase == "process" && name in ATTR_SET) {
                 attrWrite(name, num(value, "particle property '$name'", n), n)
                 return
+            }
+            if (phase == "process" && name in BUILTIN_NAMES) {
+                err("cannot assign to read-only name '$name'", n)
+            }
+            if (phase == "setup" && (name == "n" || name == "t")) {
+                err("cannot assign to read-only name '$name'", n)
             }
             for (i in scopes.indices.reversed()) {
                 val s = scopes[i]
@@ -252,7 +259,7 @@ object ScriptRuntime {
                 err("global '$name' is read-only here", n)
             }
             if (phase == "process" && statics != null && statics.containsKey(name)) { statics[name] = value; return }
-            if (name in BUILTINS || name in CONSTANTS || program.functions.containsKey(name) || (ctx != null && ctx.vars.containsKey(name))) {
+            if (name in CONSTANTS || (ctx != null && ctx.vars.containsKey(name))) {
                 err("cannot assign to read-only name '$name'", n)
             }
             currentScope()[name] = value
@@ -325,13 +332,8 @@ object ScriptRuntime {
                 val s = scopes[i]
                 if (s.containsKey(name)) return s[name]
             }
-            if (objState.globals.containsKey(name)) return objState.globals[name]
-            if (phase == "process" && statics != null && statics.containsKey(name)) return statics[name]
-            if (phase == "setup") {
-                if (name == "n") return setupEnv?.n ?: 0.0
-                if (name == "t") return setupEnv?.t ?: 0.0
-                if (setupEnv?.vars?.containsKey(name) == true) return setupEnv.vars[name]
-            } else {
+            // process 的内置量 / 粒子属性先于 global，避免 setup 同名 global 遮蔽它们。
+            if (phase == "process") {
                 when (name) {
                     "i", "idx" -> return ctx?.i ?: 0.0
                     "n" -> return ctx?.n ?: 0.0
@@ -341,8 +343,16 @@ object ScriptRuntime {
                     "uv_y" -> return ctx?.uv_y ?: 0.0
                     "life" -> return ctx?.life ?: 0.0
                 }
-                if (ctx?.vars?.containsKey(name) == true) return ctx.vars[name]
                 if (name in ATTR_SET) return attrRead(name, n)
+            }
+            if (objState.globals.containsKey(name)) return objState.globals[name]
+            if (phase == "process" && statics != null && statics.containsKey(name)) return statics[name]
+            if (phase == "setup") {
+                if (name == "n") return setupEnv?.n ?: 0.0
+                if (name == "t") return setupEnv?.t ?: 0.0
+                if (setupEnv?.vars?.containsKey(name) == true) return setupEnv.vars[name]
+            } else {
+                if (ctx?.vars?.containsKey(name) == true) return ctx.vars[name]
             }
             if (name in CONSTANTS) return CONSTANTS[name]
             if (program.functions.containsKey(name)) return FuncVal(name)
@@ -547,6 +557,14 @@ object ScriptRuntime {
             if (name !in BUILTINS) {
                 if (program.functions.containsKey(name)) return callUserFunc(program.functions[name]!!, args, n)
                 err("unknown function '$name'", n)
+            }
+            // 快速标量数学：仅 process 且 fx.fastMath 开启时替换（类型校验与精确路径一致）。
+            if (phase == "process" && ctx?.fastMath == true) {
+                val fast = ScriptFastMath.FAST_MATH[name]
+                if (fast != null) {
+                    for (a in args) num(a, name, n)
+                    return fast(args.map { it as Double })
+                }
             }
             val seed = objState.seed
             return when (name) {

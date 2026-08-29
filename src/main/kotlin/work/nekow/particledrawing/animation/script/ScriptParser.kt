@@ -492,10 +492,19 @@ class ScriptParser(private val source: String) {
 
     private fun validateGlobalStaticName(tok: Token) {
         val name = tok.text
-        if (name in KEYWORDS || name in ATTR_SET || name in BUILTIN_NAMES ||
-            name in CONSTANT_NAMES || BuiltinRegistry.names.contains(name)
-        ) {
+        if (name in KEYWORDS || name in CONSTANT_NAMES) {
             errorAt(tok, "reserved name cannot be declared: '$name'")
+            return
+        }
+        if (phase == "setup") {
+            // setup 只保留 n/t 只读内置量；粒子属性与其余内置名都允许作为变量。
+            if (name == "n" || name == "t") {
+                errorAt(tok, "reserved name cannot be declared: '$name'")
+            }
+        } else if (phase == "process") {
+            if (name in ATTR_SET || name in BUILTIN_NAMES) {
+                errorAt(tok, "reserved name cannot be declared: '$name'")
+            }
         }
     }
 

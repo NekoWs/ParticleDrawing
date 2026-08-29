@@ -102,4 +102,51 @@ class ScriptRuntimeConformanceTest {
         assertEquals(6.011037519201636, out1.pos[1], 1e-12)
         assertEquals(0.11704753153026104, out1.pos[2], 1e-12)
     }
+
+    @Test
+    fun setupAllowsAttrAndNonSetupBuiltinNames() {
+        val program = parseProgram("setup { global x = 3; global i = 7; global dt = 0.5; }")
+        val obj = ScriptRuntime.createObjectState(0)
+        ScriptRuntime.runSetup(program, obj, ScriptRuntime.SetupEnv(10.0, 0.0, emptyMap()))
+        assertEquals(3.0, obj.globals["x"])
+        assertEquals(7.0, obj.globals["i"])
+        assertEquals(0.5, obj.globals["dt"])
+    }
+
+    @Test
+    fun processAttrAndBuiltinNotShadowedBySetupGlobals() {
+        val program = parseProgram("setup { global x = 99; global i = 88; } process { x = 5; y = x; z = i; }")
+        val obj = ScriptRuntime.createObjectState(0)
+        ScriptRuntime.runSetup(program, obj, ScriptRuntime.SetupEnv(10.0, 0.0, emptyMap()))
+        val statics = ScriptRuntime.createStatics()
+        val ctx = ScriptRuntime.ProcessCtx(3.0, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, emptyMap())
+        val out = ScriptRuntime.evalProcess(program, obj, statics, ctx)
+        assertEquals(5.0, out.pos[0], 1e-12)
+        assertEquals(5.0, out.pos[1], 1e-12)
+        assertEquals(3.0, out.pos[2], 1e-12)
+    }
+
+    @Test
+    fun functionNamesCanBeVariables() {
+        val program = parseProgram("process { sin = 3; x = sin; y = sin(1); }")
+        val obj = ScriptRuntime.createObjectState(0)
+        ScriptRuntime.runSetup(program, obj, ScriptRuntime.SetupEnv(10.0, 0.0, emptyMap()))
+        val ctx = ScriptRuntime.ProcessCtx(0.0, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, emptyMap())
+        val out = ScriptRuntime.evalProcess(program, obj, ScriptRuntime.createStatics(), ctx)
+        assertEquals(3.0, out.pos[0], 1e-12)
+        assertEquals(kotlin.math.sin(1.0), out.pos[1], 1e-12)
+    }
+
+    @Test
+    fun fastMathUsesFastBuiltinsInProcess() {
+        val program = parseProgram("process { x = sin(0.5); y = exp(1); z = atan(1); }")
+        val obj = ScriptRuntime.createObjectState(0)
+        ScriptRuntime.runSetup(program, obj, ScriptRuntime.SetupEnv(10.0, 0.0, emptyMap()))
+        val ctx = ScriptRuntime.ProcessCtx(0.0, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, emptyMap(), fastMath = true)
+        val out = ScriptRuntime.evalProcess(program, obj, ScriptRuntime.createStatics(), ctx)
+        // 期望值为编辑器 JS fastmath.js 逐位对拍生成的参考值。
+        assertEquals(0.479425538604203, out.pos[0], 0.0)
+        assertEquals(2.71828182442294, out.pos[1], 0.0)
+        assertEquals(0.7854079449038646, out.pos[2], 0.0)
+    }
 }

@@ -42,7 +42,8 @@ class FunctionObject(
     val step: Int,
     val uv: UvData? = null,
     val st: Int = 0,
-    val ent: Entrance? = null
+    val ent: Entrance? = null,
+    val fastMath: Boolean = false
 )
 
 /**

@@ -144,6 +144,7 @@ object PdrawcReader {
             val flags = br.u8()
             val ent = if (flags and 1 != 0) readEnt(br) else null
             val uv = if (flags and 2 != 0) readUV(br, texNames) else null
+            val fastMath = (flags and 4) != 0
             val varCount = br.varint()
             val vars = LinkedHashMap<String, FunctionVar>()
             for (j in 0 until varCount) {
@@ -153,7 +154,7 @@ object PdrawcReader {
                 vars[name] = FunctionVar(base, kf)
             }
             // step 为编辑器参数，播放端不使用，固定 0
-            functions.add(FunctionObject("fx$fi", "fx$fi", center, count, setup, process, seed, vars, duration, 0, uv, st, ent))
+            functions.add(FunctionObject("fx$fi", "fx$fi", center, count, setup, process, seed, vars, duration, 0, uv, st, ent, fastMath))
         }
 
         // 轨道
