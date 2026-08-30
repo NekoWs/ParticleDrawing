@@ -95,6 +95,7 @@ class ClientAnimationPlayer(
     private data class FxScriptState(
         val program: ScriptProgram,
         val objState: ScriptRuntime.ObjectState,
+        val executor: ScriptRuntime.ProcessExecutor,
         val statics: MutableMap<String, MutableMap<String, Any?>> = HashMap(),
     )
     private val fxScripts: MutableMap<String, FxScriptState?> = buildFxScripts()
@@ -113,7 +114,7 @@ class ClientAnimationPlayer(
         val program = parseProgram(funcsPrefix + "setup {\n${fx.setup}\n}\nprocess {\n${fx.process}\n}\n")
         val obj = ScriptRuntime.createObjectState(fx.seed)
         ScriptRuntime.runSetup(program, obj, ScriptRuntime.SetupEnv(fx.count.toDouble(), fx.st.toDouble(), varsAt(fx, fx.st.toDouble())))
-        FxScriptState(program, obj)
+        FxScriptState(program, obj, ScriptRuntime.createProcessExecutor(program, obj))
     } catch (e: Exception) {
         println("[pdrawc] 函数对象 ${fx.id} 编译失败：${e.message}")
         null
@@ -201,11 +202,13 @@ class ClientAnimationPlayer(
         }
         for (fx in animation.functions) {
             val st = fxScripts[fx.id] ?: continue
+            val vars = varsAt(fx, 0.0)
+            val grid = uvGrid(fx, fx.count.toDouble())
             for (i in 0 until fx.count) {
                 val id = fx.id + ":p" + i
                 val statics = st.statics.getOrPut(id) { HashMap() }
                 val base = try {
-                    evalScriptParticle(fx, st, statics, i, fx.count.toDouble(), 0.0, 0.0)
+                    evalScriptParticle(fx, st, statics, i, fx.count.toDouble(), 0.0, 0.0, vars, grid)
                 } catch (e: Exception) {
                     println("[pdrawc] 函数对象 ${fx.id} 粒子 $i 求值失败：${e.message}")
                     continue
@@ -289,12 +292,14 @@ class ClientAnimationPlayer(
             val dz = opDeltaAt("pos.z", "f:" + fx.id, t)
             val n = fx.count.toDouble()
             val dt = if (advanceInitialized && t == prevAdvanceT + 1.0) 1.0 / 20.0 else 0.0
+            val vars = varsAt(fx, t)
+            val grid = uvGrid(fx, n)
             for (i in 0 until fx.count) {
                 val id = fx.id + ":p" + i
                 val s = states[id] ?: continue
                 val statics = st.statics.getOrPut(id) { HashMap() }
                 val base = try {
-                    evalScriptParticle(fx, st, statics, i, n, t, dt)
+                    evalScriptParticle(fx, st, statics, i, n, t, dt, vars, grid)
                 } catch (e: Exception) {
                     println("[pdrawc] 函数对象 ${fx.id} 粒子 $i 求值失败：${e.message}")
                     s.visible = fxLocalT >= 0
@@ -354,16 +359,13 @@ class ClientAnimationPlayer(
         return a.value + (b.value - a.value) * e
     }
 
-    private fun uvFor(fx: FunctionObject, n: Double, i: Double): Pair<Double, Double> {
+    /** 每个函数对象每 tick 只算一次：uv 网格列数/行数（避免逐粒子 sqrt/ceil）。 */
+    private fun uvGrid(fx: FunctionObject, n: Double): Pair<Double, Double> {
         val grid = fx.vars["grid_cols"]
         val base = grid?.base
         val C = if (base != null && base.isFinite()) max(1.0, base.roundToInt().toDouble()) else ceil(sqrt(n))
         val R = max(1.0, ceil(n / C))
-        val col = i % C
-        val row = floor(i / C)
-        val uvX = if (C == 1.0) 0.0 else col / (C - 1.0)
-        val uvY = if (R == 1.0) 0.0 else row / (R - 1.0)
-        return uvX to uvY
+        return C to R
     }
 
     private fun lifeAt(fx: FunctionObject, t: Double): Double {
@@ -373,15 +375,29 @@ class ClientAnimationPlayer(
         return ((t - st) / dur).coerceIn(0.0, 1.0)
     }
 
-    private fun evalScriptParticle(fx: FunctionObject, st: FxScriptState, statics: MutableMap<String, Any?>, i: Int, n: Double, t: Double, dt: Double): Five<Vec3, Color, FloatArray, Boolean, Int> {
-        val uv = uvFor(fx, n, i.toDouble())
+    private fun evalScriptParticle(
+        fx: FunctionObject,
+        st: FxScriptState,
+        statics: MutableMap<String, Any?>,
+        i: Int,
+        n: Double,
+        t: Double,
+        dt: Double,
+        vars: Map<String, Double>,
+        grid: Pair<Double, Double>,
+    ): Five<Vec3, Color, FloatArray, Boolean, Int> {
+        val C = grid.first
+        val R = grid.second
+        val ii = i.toDouble()
+        val uvX = if (C == 1.0) 0.0 else (ii % C) / (C - 1.0)
+        val uvY = if (R == 1.0) 0.0 else floor(ii / C) / (R - 1.0)
         val ctx = ScriptRuntime.ProcessCtx(
-            i = i.toDouble(), n = n, t = t, dt = dt,
-            life = lifeAt(fx, t), uv_x = uv.first, uv_y = uv.second,
-            vars = varsAt(fx, t),
+            i = ii, n = n, t = t, dt = dt,
+            life = lifeAt(fx, t), uv_x = uvX, uv_y = uvY,
+            vars = vars,
             fastMath = fx.fastMath,
         )
-        val out = ScriptRuntime.evalProcess(st.program, st.objState, statics, ctx)
+        val out = st.executor.eval(statics, ctx)
         val center = fx.center
         val clamp01 = { v: Double -> v.coerceIn(0.0, 1.0) }
         val pos = Vec3(out.pos[0] + center[0], out.pos[1] + center[1], out.pos[2] + center[2])

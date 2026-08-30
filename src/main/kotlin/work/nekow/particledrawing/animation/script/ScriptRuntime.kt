@@ -82,15 +82,37 @@ object ScriptRuntime {
         return ctx.out
     }
 
+    /**
+     * 可复用的 process 执行器：同一函数对象在同一 tick 内逐粒子复用，避免每个粒子都
+     * 新建 Runtime / ArrayList / HashMap（20w 粒子场景下这是主要分配来源）。
+     */
+    class ProcessExecutor(program: ScriptProgram, obj: ObjectState) {
+        private val rt = Runtime("process", program, obj, null, null, null)
+        private val topScope = HashMap<String, Any?>()
+
+        fun eval(statics: MutableMap<String, Any?>, ctx: ProcessCtx): ScriptOut {
+            rt.resetProcess(statics, ctx, topScope)
+            try {
+                for (st in rt.program.process) rt.execStmt(st)
+            } finally {
+                rt.popScope()
+            }
+            return ctx.out
+        }
+    }
+
+    fun createProcessExecutor(program: ScriptProgram, obj: ObjectState): ProcessExecutor =
+        ProcessExecutor(program, obj)
+
     /* ---------------------------------------------------------------- */
 
     private class Runtime(
         val phase: String,
         val program: ScriptProgram,
         val objState: ObjectState,
-        val statics: MutableMap<String, Any?>?,
-        val setupEnv: SetupEnv?,
-        val ctx: ProcessCtx?,
+        private var statics: MutableMap<String, Any?>?,
+        private val setupEnv: SetupEnv?,
+        private var ctx: ProcessCtx?,
     ) {
         private val scopes = ArrayList<MutableMap<String, Any?>>()
         private var loopDepth = 0
@@ -100,6 +122,18 @@ object ScriptRuntime {
         fun pushScope(s: MutableMap<String, Any?>) { scopes.add(s) }
         fun popScope() { scopes.removeAt(scopes.size - 1) }
         fun currentScope(): MutableMap<String, Any?> = scopes[scopes.size - 1]
+
+        /** 复用执行器：清空作用域/调用深度，并切换到下一个粒子的 statics/ctx。 */
+        fun resetProcess(statics: MutableMap<String, Any?>?, ctx: ProcessCtx?, topScope: MutableMap<String, Any?>) {
+            this.statics = statics
+            this.ctx = ctx
+            scopes.clear()
+            loopDepth = 0
+            funcDepth = 0
+            inFunction = false
+            topScope.clear()
+            scopes.add(topScope)
+        }
 
         private fun err(msg: String, n: Node): Nothing {
             throw ScriptException(msg, n.line, n.col)
@@ -258,8 +292,10 @@ object ScriptRuntime {
                 if (phase == "setup" && !inFunction) { objState.globals[name] = value; return }
                 err("global '$name' is read-only here", n)
             }
-            if (phase == "process" && statics != null && statics.containsKey(name)) { statics[name] = value; return }
-            if (name in CONSTANTS || (ctx != null && ctx.vars.containsKey(name))) {
+            val st = statics
+            if (phase == "process" && st != null && st.containsKey(name)) { st[name] = value; return }
+            val c = ctx
+            if (name in CONSTANTS || (c != null && c.vars.containsKey(name))) {
                 err("cannot assign to read-only name '$name'", n)
             }
             currentScope()[name] = value
@@ -346,13 +382,15 @@ object ScriptRuntime {
                 if (name in ATTR_SET) return attrRead(name, n)
             }
             if (objState.globals.containsKey(name)) return objState.globals[name]
-            if (phase == "process" && statics != null && statics.containsKey(name)) return statics[name]
+            val st = statics
+            if (phase == "process" && st != null && st.containsKey(name)) return st[name]
             if (phase == "setup") {
                 if (name == "n") return setupEnv?.n ?: 0.0
                 if (name == "t") return setupEnv?.t ?: 0.0
                 if (setupEnv?.vars?.containsKey(name) == true) return setupEnv.vars[name]
             } else {
-                if (ctx?.vars?.containsKey(name) == true) return ctx.vars[name]
+                val c = ctx
+                if (c?.vars?.containsKey(name) == true) return c.vars[name]
             }
             if (name in CONSTANTS) return CONSTANTS[name]
             if (program.functions.containsKey(name)) return FuncVal(name)
