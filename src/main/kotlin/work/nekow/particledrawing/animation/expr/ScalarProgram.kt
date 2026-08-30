@@ -68,6 +68,8 @@ internal enum class ScalarOp(val pops: Int) {
     F_RANDOM(0),
     /** 固定种子伪随机（同一种子恒返回相同 [0,1) 值）。 */
     F_RAND(1),
+    /** 对象数组下标读取：弹出 double 下标，从 objects[arg] 读取并压回 double。 */
+    READ_ARR(1),
 }
 
 /** 标量函数名 -> 操作码（log/ln 同映射）。 */
@@ -97,7 +99,7 @@ internal class ScalarProgram(
     private val args: IntArray,
     private val consts: DoubleArray,
 ) {
-    fun exec(regs: DoubleArray, stack: DoubleArray, kfTable: Array<List<Keyframe>>?) {
+    fun exec(regs: DoubleArray, stack: DoubleArray, kfTable: Array<List<Keyframe>>?, objects: Array<Any?>? = null) {
         val ops = this.ops
         val args = this.args
         val consts = this.consts
@@ -145,6 +147,16 @@ internal class ScalarProgram(
                 ScalarOp.F_MOD -> { sp--; val a = stack[sp - 1]; val b = stack[sp]; stack[sp - 1] = a - b * floor(a / b) }
                 ScalarOp.F_RANDOM -> stack[sp++] = Math.random()
                 ScalarOp.F_RAND -> { val x = sin(stack[sp - 1] * 127.1 + 311.7) * 43758.5453; stack[sp - 1] = x - floor(x) }
+                ScalarOp.READ_ARR -> {
+                    val arr = objects!![args[idx]]
+                    if (arr !is List<*>) throw IllegalArgumentException("array index requires an array")
+                    val d = stack[sp - 1]
+                    if (d % 1.0 != 0.0) throw IllegalArgumentException("array index requires an integer")
+                    val n = d.toInt()
+                    if (n < 0 || n >= arr.size) throw IllegalArgumentException("array index $n out of bounds (size ${arr.size})")
+                    val v = arr[n]
+                    stack[sp - 1] = if (v is Number) v.toDouble() else throw IllegalArgumentException("array element is not a number")
+                }
                 ScalarOp.VAR_KF -> {
                     val kf = kfTable!![args[idx]]
                     stack[sp++] = ExpressionEvaluator.varKfValue(kf, regs[Reg.T])

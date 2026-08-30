@@ -84,9 +84,9 @@ object ScriptRuntime {
 
     fun evalProcess(program: ScriptProgram, obj: ObjectState, statics: MutableMap<String, Any?>, ctx: ProcessCtx): ScriptOut {
         if (!ctx.fastMath) {
-            val fast = scalarFast(program, ctx.vars.keys.toList())
+            val fast = scalarFast(program, obj, ctx.vars.keys.toList())
             if (fast != null) {
-                fast.eval(ctx, ctx.out, fast.allocRegs(), fast.allocStack())
+                fast.eval(obj, ctx, ctx.out, fast.allocRegs(), fast.allocStack())
                 return ctx.out
             }
         }
@@ -101,13 +101,14 @@ object ScriptRuntime {
         return ctx.out
     }
 
-    // 标量快路径缓存：按 program + varNames 签名复用编译产物（与 JS getCompiledProgram 一致）。
+    // 标量快路径缓存：按 program + varNames + globalNames 签名复用编译产物。
     private val scalarFastCache = HashMap<ScriptProgram, HashMap<String, ScriptScalarProgram?>>()
 
-    private fun scalarFast(program: ScriptProgram, varNames: List<String>): ScriptScalarProgram? {
-        val key = varNames.joinToString("\u0000")
+    private fun scalarFast(program: ScriptProgram, obj: ObjectState, varNames: List<String>): ScriptScalarProgram? {
+        val globalNames = obj.globals.keys.sorted()
+        val key = varNames.joinToString("\u0000") + "|" + globalNames.joinToString("\u0000")
         return scalarFastCache.getOrPut(program) { HashMap() }.getOrPut(key) {
-            ScriptScalarProgram.compile(program, varNames)
+            ScriptScalarProgram.compile(program, varNames, globalNames)
         }
     }
 
@@ -127,14 +128,14 @@ object ScriptRuntime {
         fun eval(statics: MutableMap<String, Any?>, ctx: ProcessCtx): ScriptOut {
             val varKey = ctx.vars.keys.joinToString("\u0000")
             if (fastVarKey != varKey) {
-                fast = scalarFast(rt.program, ctx.vars.keys.toList())
+                fast = scalarFast(rt.program, rt.objState, ctx.vars.keys.toList())
                 fastRegs = fast?.allocRegs()
                 fastStack = fast?.allocStack()
                 fastVarKey = varKey
             }
             val f = fast
             if (f != null && !ctx.fastMath) {
-                f.eval(ctx, ctx.out, fastRegs!!, fastStack!!)
+                f.eval(rt.objState, ctx, ctx.out, fastRegs!!, fastStack!!)
                 return ctx.out
             }
             ctx.resetOut()

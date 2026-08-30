@@ -21,15 +21,18 @@ class ScriptScalarProgram internal constructor(
     private val stackSize: Int,
     private val varNames: Array<String>,
     private val varSlots: IntArray,
+    private val objectNames: Array<String>,
     private val dtSlot: Int,
     private val uvXSlot: Int,
     private val uvYSlot: Int,
     private val lifeSlot: Int,
 ) {
+    private val objects = arrayOfNulls<Any?>(objectNames.size)
+
     fun allocRegs() = DoubleArray(regCount)
     fun allocStack() = DoubleArray(stackSize)
 
-    fun eval(ctx: ScriptRuntime.ProcessCtx, out: ScriptRuntime.ScriptOut, regs: DoubleArray, stack: DoubleArray) {
+    fun eval(objState: ScriptRuntime.ObjectState, ctx: ScriptRuntime.ProcessCtx, out: ScriptRuntime.ScriptOut, regs: DoubleArray, stack: DoubleArray) {
         regs[Reg.I] = ctx.i
         regs[Reg.N] = ctx.n
         regs[Reg.T] = ctx.t
@@ -39,8 +42,10 @@ class ScriptScalarProgram internal constructor(
         regs[lifeSlot] = ctx.life
         val vars = ctx.vars
         for (k in varNames.indices) regs[varSlots[k]] = vars[varNames[k]] ?: 0.0
+        val globals = objState.globals
+        for (k in objectNames.indices) objects[k] = globals[objectNames[k]]
         System.arraycopy(ATTR_INIT, 0, regs, Reg.X, ATTR_INIT.size)
-        scalar.exec(regs, stack, null)
+        scalar.exec(regs, stack, null, objects)
 
         out.pos[0] = regs[Reg.X]
         out.pos[1] = regs[Reg.Y]
@@ -96,7 +101,7 @@ class ScriptScalarProgram internal constructor(
             '/' to ScalarOp.DIV, '%' to ScalarOp.REM, '^' to ScalarOp.POW,
         )
 
-        fun compile(program: ScriptProgram, varNames: List<String>): ScriptScalarProgram? = try {
+        fun compile(program: ScriptProgram, varNames: List<String>, globalNames: List<String> = emptyList()): ScriptScalarProgram? = try {
             val stmts = program.process
             val ops = ArrayList<ScalarOp>()
             val args = ArrayList<Int>()
@@ -104,6 +109,9 @@ class ScriptScalarProgram internal constructor(
             val constIndex = HashMap<Double, Int>()
             val tempSlots = HashMap<String, Int>()
             val varSlots = HashMap<String, Int>()
+            val arraySlots = HashMap<String, Int>()
+            val objectNames = ArrayList<String>()
+            val globalNamesSet = globalNames.toHashSet()
 
             fun constIdx(v: Double): Int {
                 constIndex[v]?.let { return it }
@@ -162,6 +170,14 @@ class ScriptScalarProgram internal constructor(
                 return ensureTemp(name)
             }
 
+            fun ensureArraySlot(name: String): Int {
+                arraySlots[name]?.let { return it }
+                val slot = objectNames.size
+                arraySlots[name] = slot
+                objectNames.add(name)
+                return slot
+            }
+
             fun emitPush(op: ScalarOp, arg: Int) {
                 ops.add(op)
                 args.add(arg)
@@ -199,6 +215,14 @@ class ScriptScalarProgram internal constructor(
                         val fn = FUNC_OPS[node.callee.name] ?: return false
                         for (a in node.args) if (!compileExpr(a)) return false
                         emit(fn)
+                        return true
+                    }
+                    is IndexNode -> {
+                        // 仅支持「全局数组名 + 标量下标」读取（preset 常见 _gx[i]）。
+                        val target = node.target
+                        if (target !is VarNode || target.name !in globalNamesSet) return false
+                        if (!compileExpr(node.index)) return false
+                        emitPush(ScalarOp.READ_ARR, ensureArraySlot(target.name))
                         return true
                     }
                     else -> return false
@@ -244,6 +268,7 @@ class ScriptScalarProgram internal constructor(
                 computeStackSize(opsArr, argsArr),
                 varNamesArr,
                 varSlotsArr,
+                objectNames.toTypedArray(),
                 dtSlot,
                 uvXSlot,
                 uvYSlot,
