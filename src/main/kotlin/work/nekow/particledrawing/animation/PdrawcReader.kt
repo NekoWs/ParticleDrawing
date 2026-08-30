@@ -25,7 +25,7 @@ import java.util.zip.InflaterInputStream
 object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
-    private const val VERSION = 4     // v4：新增 spin（自转）与 center（公转中心）轨道
+    private const val VERSION = 5     // v5：新增组级/函数对象级自转空间（world/local）
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 
@@ -110,17 +110,20 @@ object PdrawcReader {
             particles.add(AnimParticle("p$i", color, scale, flags and 1 != 0, lightLevel, pos, vel, uv, st, ent, life))
         }
 
-        // 组（合成名 g0..gN，成员用粒子索引）
+        // 组（合成名 g0..gN，成员用粒子索引；v5 增加组级自转空间）
         val groupCount = br.varint()
         val groups = LinkedHashMap<String, List<String>>()
         val groupNames = ArrayList<String>(groupCount)
+        val groupSpinSpace = LinkedHashMap<String, Boolean>()
         for (gi in 0 until groupCount) {
+            val spinLocal = br.u8() != 0
             val memberCount = br.varint()
             val members = ArrayList<String>(memberCount)
             for (j in 0 until memberCount) members.add("p" + br.varint())
             val gname = "g$gi"
             groupNames.add(gname)
             groups[gname] = members
+            groupSpinSpace[gname] = spinLocal
         }
 
         // 组级 UV
@@ -148,6 +151,7 @@ object PdrawcReader {
             val uv = if (flags and 2 != 0) readUV(br, texNames) else null
             val fastMath = (flags and 4) != 0
             val funcs = if (flags and 8 != 0) br.str() else ""
+            val spinLocal = (flags and 16) != 0
             val varCount = br.varint()
             val vars = LinkedHashMap<String, FunctionVar>()
             for (j in 0 until varCount) {
@@ -157,7 +161,7 @@ object PdrawcReader {
                 vars[name] = FunctionVar(base, kf)
             }
             // step 为编辑器参数，播放端不使用，固定 0
-            functions.add(FunctionObject("fx$fi", "fx$fi", center, count, setup, process, funcs, seed, vars, duration, 0, uv, st, ent, fastMath))
+            functions.add(FunctionObject("fx$fi", "fx$fi", center, count, setup, process, funcs, seed, vars, duration, 0, uv, st, ent, fastMath, spinLocal))
         }
 
         // 轨道
@@ -188,7 +192,7 @@ object PdrawcReader {
 
         if (br.remaining() != 0) throw IllegalArgumentException("pdrawc 存在未解析的尾随字节")
 
-        return ParticleAnimation(loop, particles, tracks, groups, functions, texNames, groupUV, texData)
+        return ParticleAnimation(loop, particles, tracks, groups, functions, texNames, groupUV, texData, groupSpinSpace)
     }
 
     /** RFC 8032 Ed25519 公钥（32 字节压缩点）→ JDK [EdECPoint]。 */

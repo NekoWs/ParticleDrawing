@@ -85,6 +85,7 @@ class ClientAnimationPlayer(
     private val opTracks: List<AnimTrack> = animation.tracks.filter { it.mode == AnimTrack.Mode.OP }
     private val opTracksByPr: Map<String, List<AnimTrack>> = opTracks.filter { it.keyframes.isNotEmpty() }.groupBy { it.pr }
     private val groupSets: Map<String, Set<String>> = animation.groups.mapValues { (_, v) -> v.toSet() }
+    private val groupSpinLocal: Set<String> = animation.groupSpinSpace.filterValues { it }.keys
     private val particleGroupIndex: Map<String, Set<String>> = buildParticleGroupIndex()
     private val groupCentroidCache: Map<String, Vec3> = buildGroupCentroids()
     private val particleFxCache: Map<String, FunctionObject?> = buildParticleFxCache()
@@ -299,7 +300,7 @@ class ClientAnimationPlayer(
                     continue
                 }
                 var pos = base.first
-                if (hasSpin) pos = rotateAround(pos, spinPivot, spin)
+                if (hasSpin) pos = if (fx.spinLocal) rotateAroundLocal(pos, spinPivot, spin) else rotateAround(pos, spinPivot, spin)
                 // pos op 位移必须先于公转：函数对象的实际世界位置应绕公转中心旋转。
                 pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
                 if (hasRot) pos = rotateAround(pos, orbitPivot, rot)
@@ -530,14 +531,16 @@ class ClientAnimationPlayer(
             for (gname in gs) {
                 val spin = spinVectorAt("g:" + gname, t)
                 if (spin[0] == 0.0 && spin[1] == 0.0 && spin[2] == 0.0) continue
-                return rotateAround(value, groupCentroidCache[gname] ?: groupCentroid(gname), spin)
+                val pivot = groupCentroidCache[gname] ?: groupCentroid(gname)
+                return if (gname in groupSpinLocal) rotateAroundLocal(value, pivot, spin) else rotateAround(value, pivot, spin)
             }
         }
         val fx = particleFunction(p.id)
         if (fx != null) {
             val spin = spinVectorAt("f:" + fx.id, t)
             if (spin[0] == 0.0 && spin[1] == 0.0 && spin[2] == 0.0) return value
-            return rotateAround(value, Vec3(fx.center[0], fx.center[1], fx.center[2]), spin)
+            val pivot = Vec3(fx.center[0], fx.center[1], fx.center[2])
+            return if (fx.spinLocal) rotateAroundLocal(value, pivot, spin) else rotateAround(value, pivot, spin)
         }
         return value
     }
@@ -653,6 +656,23 @@ class ClientAnimationPlayer(
         if (rot[0] != 0.0) r = r.rotateAround(Vec3(1.0, 0.0, 0.0), Math.toRadians(rot[0]))
         if (rot[1] != 0.0) r = r.rotateAround(Vec3(0.0, 1.0, 0.0), Math.toRadians(rot[1]))
         if (rot[2] != 0.0) r = r.rotateAround(Vec3(0.0, 0.0, 1.0), Math.toRadians(rot[2]))
+        return pivot.add(r)
+    }
+
+    /** 局部自转：intrinsic XYZ（先绕局部 X，再绕已旋转的局部 Y，再绕已旋转的局部 Z）。 */
+    private fun rotateAroundLocal(p: Vec3, pivot: Vec3, rot: DoubleArray): Vec3 {
+        var r = p.subtract(pivot)
+        val rx = Math.toRadians(rot[0])
+        val ry = Math.toRadians(rot[1])
+        val rz = Math.toRadians(rot[2])
+        if (rot[0] != 0.0) r = r.rotateAround(Vec3(1.0, 0.0, 0.0), rx)
+        var yAxis = Vec3(0.0, 1.0, 0.0)
+        if (rot[0] != 0.0) yAxis = yAxis.rotateAround(Vec3(1.0, 0.0, 0.0), rx)
+        if (rot[1] != 0.0) r = r.rotateAround(yAxis, ry)
+        var zAxis = Vec3(0.0, 0.0, 1.0)
+        if (rot[0] != 0.0) zAxis = zAxis.rotateAround(Vec3(1.0, 0.0, 0.0), rx)
+        if (rot[1] != 0.0) zAxis = zAxis.rotateAround(yAxis, ry)
+        if (rot[2] != 0.0) r = r.rotateAround(zAxis, rz)
         return pivot.add(r)
     }
 
