@@ -269,12 +269,18 @@ class ClientAnimationPlayer(
             val st = fxScripts[fx.id] ?: continue
             val fxLocalT = t - fx.st
             val cx = fx.center[0]; val cy = fx.center[1]; val cz = fx.center[2]
-            // 整体变换 / op 增量 / 整体缩放 每 tick 只算一次（与粒子序号无关）
+            // 整体变换 / 自转 / 公转 / op 增量 / 整体缩放 每 tick 只算一次（与粒子序号无关）
+            val sx = scalarAt("spin.x", "f:" + fx.id, t, 0.0)
+            val sy = scalarAt("spin.y", "f:" + fx.id, t, 0.0)
+            val sz = scalarAt("spin.z", "f:" + fx.id, t, 0.0)
+            val hasSpin = sx != 0.0 || sy != 0.0 || sz != 0.0
+            val spinPivot = Vec3(cx, cy, cz)
+            val spin = doubleArrayOf(sx, sy, sz)
             val rx = scalarAt("rot.x", "f:" + fx.id, t, 0.0)
             val ry = scalarAt("rot.y", "f:" + fx.id, t, 0.0)
             val rz = scalarAt("rot.z", "f:" + fx.id, t, 0.0)
             val hasRot = rx != 0.0 || ry != 0.0 || rz != 0.0
-            val rotPivot = Vec3(cx, cy, cz)
+            val orbitPivot = orbitCenterAt("f:" + fx.id, t)
             val rot = doubleArrayOf(rx, ry, rz)
             val dx = opDeltaAt("pos.x", "f:" + fx.id, t)
             val dy = opDeltaAt("pos.y", "f:" + fx.id, t)
@@ -293,7 +299,8 @@ class ClientAnimationPlayer(
                     continue
                 }
                 var pos = base.first
-                if (hasRot) pos = rotateAround(pos, rotPivot, rot)
+                if (hasSpin) pos = rotateAround(pos, spinPivot, spin)
+                if (hasRot) pos = rotateAround(pos, orbitPivot, rot)
                 pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
                 s.pos = origin.add(pos)
                 s.color = applyEntrance(base.second, fx.ent, fxLocalT)
@@ -453,6 +460,20 @@ class ClientAnimationPlayer(
             scalarAt("rot.z", id, t, 0.0),
         )
 
+    private fun spinVectorAt(id: String, t: Double): DoubleArray =
+        doubleArrayOf(
+            scalarAt("spin.x", id, t, 0.0),
+            scalarAt("spin.y", id, t, 0.0),
+            scalarAt("spin.z", id, t, 0.0),
+        )
+
+    private fun orbitCenterAt(id: String, t: Double): Vec3 =
+        Vec3(
+            scalarAt("center.x", id, t, 0.0),
+            scalarAt("center.y", id, t, 0.0),
+            scalarAt("center.z", id, t, 0.0),
+        )
+
     private fun baseComponent(p: AnimParticle, prop: String, comp: String): Double = when (prop) {
         "pos" -> when (comp) { "x" -> p.pos.x; "y" -> p.pos.y; else -> p.pos.z }
         "col" -> when (comp) { "r" -> p.color.r.toDouble(); "g" -> p.color.g.toDouble(); "b" -> p.color.b.toDouble(); else -> p.color.a.toDouble() }
@@ -476,7 +497,9 @@ class ClientAnimationPlayer(
             setComponentValueAt(p, "pos", "z", t),
         )
         pos = applyGroupScale(p, pos, t)
-        pos = applyGroupRotation(p, pos, t)
+        pos = applyParticleOrbit(p, pos, t)
+        pos = applySelfRotation(p, pos, t)
+        pos = applyOrbitRotation(p, pos, t)
         pos = pos.add(
             compOpDelta(p, "pos", "x", t),
             compOpDelta(p, "pos", "y", t),
@@ -492,20 +515,46 @@ class ClientAnimationPlayer(
         return v
     }
 
-    private fun applyGroupRotation(p: AnimParticle, value: Vec3, t: Double): Vec3 {
+    private fun applyParticleOrbit(p: AnimParticle, value: Vec3, t: Double): Vec3 {
+        val fx = particleFunction(p.id)
+        if (fx != null) return value // 派生粒子没有独立公转轨道
+        val rot = rotVectorAt(p.id, t)
+        if (rot[0] == 0.0 && rot[1] == 0.0 && rot[2] == 0.0) return value
+        return rotateAround(value, orbitCenterAt(p.id, t), rot)
+    }
+
+    private fun applySelfRotation(p: AnimParticle, value: Vec3, t: Double): Vec3 {
+        val gs = particleGroupIndex[p.id]
+        if (gs != null) {
+            for (gname in gs) {
+                val spin = spinVectorAt("g:" + gname, t)
+                if (spin[0] == 0.0 && spin[1] == 0.0 && spin[2] == 0.0) continue
+                return rotateAround(value, groupCentroidCache[gname] ?: groupCentroid(gname), spin)
+            }
+        }
+        val fx = particleFunction(p.id)
+        if (fx != null) {
+            val spin = spinVectorAt("f:" + fx.id, t)
+            if (spin[0] == 0.0 && spin[1] == 0.0 && spin[2] == 0.0) return value
+            return rotateAround(value, Vec3(fx.center[0], fx.center[1], fx.center[2]), spin)
+        }
+        return value
+    }
+
+    private fun applyOrbitRotation(p: AnimParticle, value: Vec3, t: Double): Vec3 {
         val gs = particleGroupIndex[p.id]
         if (gs != null) {
             for (gname in gs) {
                 val rot = rotVectorAt("g:" + gname, t)
-                if (rot[0] == 0.0 && rot[1] == 0.0 && rot[2] == 0.0) return value
-                return rotateAround(value, groupCentroidCache[gname] ?: groupCentroid(gname), rot)
+                if (rot[0] == 0.0 && rot[1] == 0.0 && rot[2] == 0.0) continue
+                return rotateAround(value, orbitCenterAt("g:" + gname, t), rot)
             }
         }
         val fx = particleFunction(p.id)
         if (fx != null) {
             val rot = rotVectorAt("f:" + fx.id, t)
             if (rot[0] == 0.0 && rot[1] == 0.0 && rot[2] == 0.0) return value
-            return rotateAround(value, Vec3(fx.center[0], fx.center[1], fx.center[2]), rot)
+            return rotateAround(value, orbitCenterAt("f:" + fx.id, t), rot)
         }
         return value
     }

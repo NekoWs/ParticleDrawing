@@ -25,7 +25,7 @@ import java.util.zip.InflaterInputStream
 object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
-    private const val VERSION = 3     // v3：setup/process/seed 脚本模型 + raw DEFLATE body
+    private const val VERSION = 4     // v4：新增 spin（自转）与 center（公转中心）轨道
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 
@@ -35,6 +35,8 @@ object PdrawcReader {
         "col.r", "col.g", "col.b", "col.a",
         "scl.x", "scl.y", "scl.z",
         "rot.x", "rot.y", "rot.z",
+        "spin.x", "spin.y", "spin.z",
+        "center.x", "center.y", "center.z",
     )
 
     private val UV_MODES = arrayOf(UvData.Mode.STATIC, UvData.Mode.FILL, UvData.Mode.ANIMATED)
