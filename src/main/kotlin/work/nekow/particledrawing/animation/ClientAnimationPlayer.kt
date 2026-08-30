@@ -300,8 +300,9 @@ class ClientAnimationPlayer(
                 }
                 var pos = base.first
                 if (hasSpin) pos = rotateAround(pos, spinPivot, spin)
-                if (hasRot) pos = rotateAround(pos, orbitPivot, rot)
+                // pos op 位移必须先于公转：函数对象的实际世界位置应绕公转中心旋转。
                 pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
+                if (hasRot) pos = rotateAround(pos, orbitPivot, rot)
                 s.pos = origin.add(pos)
                 s.color = applyEntrance(base.second, fx.ent, fxLocalT)
                 s.scale = fxScale(fx.id, base.third[0].toDouble(), t)
