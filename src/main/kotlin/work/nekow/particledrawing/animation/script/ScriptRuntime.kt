@@ -37,7 +37,18 @@ object ScriptRuntime {
         val vars: Map<String, Double>,
         val out: ScriptOut = ScriptOut(),
         var fastMath: Boolean = false,
-    )
+    ) {
+        /** 复用同一个 ProcessCtx 执行多个粒子时，重置输出为进程默认值。 */
+        fun resetOut() {
+            val o = out
+            o.pos[0] = 0.0; o.pos[1] = 0.0; o.pos[2] = 0.0
+            o.color[0] = 1.0; o.color[1] = 1.0; o.color[2] = 1.0; o.color[3] = 1.0
+            o.vel[0] = 0.0; o.vel[1] = 0.0; o.vel[2] = 0.0
+            o.scale = 1.0
+            o.glow = false
+            o.light = 0.0
+        }
+    }
 
     class SetupEnv(val n: Double, val t: Double, val vars: Map<String, Double>)
 
@@ -79,6 +90,7 @@ object ScriptRuntime {
                 return ctx.out
             }
         }
+        ctx.resetOut()
         val rt = Runtime("process", program, obj, statics, null, ctx)
         rt.pushScope(HashMap())
         try {
@@ -125,6 +137,7 @@ object ScriptRuntime {
                 f.eval(ctx, ctx.out, fastRegs!!, fastStack!!)
                 return ctx.out
             }
+            ctx.resetOut()
             rt.resetProcess(statics, ctx, topScope)
             try {
                 for (st in rt.program.process) rt.execStmt(st)

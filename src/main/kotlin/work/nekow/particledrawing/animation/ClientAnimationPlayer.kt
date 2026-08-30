@@ -204,11 +204,12 @@ class ClientAnimationPlayer(
             val st = fxScripts[fx.id] ?: continue
             val vars = varsAt(fx, 0.0)
             val grid = uvGrid(fx, fx.count.toDouble())
+            val ctx = ScriptRuntime.ProcessCtx(0.0, fx.count.toDouble(), 0.0, 0.0, lifeAt(fx, 0.0), 0.0, 0.0, vars, fastMath = fx.fastMath)
             for (i in 0 until fx.count) {
                 val id = fx.id + ":p" + i
                 val statics = st.statics.getOrPut(id) { HashMap() }
                 val base = try {
-                    evalScriptParticle(fx, st, statics, i, fx.count.toDouble(), 0.0, 0.0, vars, grid)
+                    evalScriptParticle(fx, st, statics, i, fx.count.toDouble(), 0.0, 0.0, vars, grid, ctx)
                 } catch (e: Exception) {
                     println("[pdrawc] 函数对象 ${fx.id} 粒子 $i 求值失败：${e.message}")
                     continue
@@ -294,12 +295,13 @@ class ClientAnimationPlayer(
             val dt = if (advanceInitialized && t == prevAdvanceT + 1.0) 1.0 / 20.0 else 0.0
             val vars = varsAt(fx, t)
             val grid = uvGrid(fx, n)
+            val ctx = ScriptRuntime.ProcessCtx(0.0, n, t, dt, lifeAt(fx, t), 0.0, 0.0, vars, fastMath = fx.fastMath)
             for (i in 0 until fx.count) {
                 val id = fx.id + ":p" + i
                 val s = states[id] ?: continue
                 val statics = st.statics.getOrPut(id) { HashMap() }
                 val base = try {
-                    evalScriptParticle(fx, st, statics, i, n, t, dt, vars, grid)
+                    evalScriptParticle(fx, st, statics, i, n, t, dt, vars, grid, ctx)
                 } catch (e: Exception) {
                     println("[pdrawc] 函数对象 ${fx.id} 粒子 $i 求值失败：${e.message}")
                     s.visible = fxLocalT >= 0
@@ -385,18 +387,18 @@ class ClientAnimationPlayer(
         dt: Double,
         vars: Map<String, Double>,
         grid: Pair<Double, Double>,
+        ctx: ScriptRuntime.ProcessCtx,
     ): Five<Vec3, Color, FloatArray, Boolean, Int> {
         val C = grid.first
         val R = grid.second
         val ii = i.toDouble()
-        val uvX = if (C == 1.0) 0.0 else (ii % C) / (C - 1.0)
-        val uvY = if (R == 1.0) 0.0 else floor(ii / C) / (R - 1.0)
-        val ctx = ScriptRuntime.ProcessCtx(
-            i = ii, n = n, t = t, dt = dt,
-            life = lifeAt(fx, t), uv_x = uvX, uv_y = uvY,
-            vars = vars,
-            fastMath = fx.fastMath,
-        )
+        ctx.i = ii
+        ctx.n = n
+        ctx.t = t
+        ctx.dt = dt
+        ctx.life = lifeAt(fx, t)
+        ctx.uv_x = if (C == 1.0) 0.0 else (ii % C) / (C - 1.0)
+        ctx.uv_y = if (R == 1.0) 0.0 else floor(ii / C) / (R - 1.0)
         val out = st.executor.eval(statics, ctx)
         val center = fx.center
         val clamp01 = { v: Double -> v.coerceIn(0.0, 1.0) }
