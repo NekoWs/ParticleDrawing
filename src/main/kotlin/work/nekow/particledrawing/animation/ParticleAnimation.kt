@@ -21,7 +21,8 @@ class ParticleAnimation(
     val textures: List<String> = emptyList(),
     val groupUV: Map<String, UvData> = emptyMap(),
     val texData: Map<String, ByteArray> = emptyMap(),
-    val groupSpinSpace: Map<String, Boolean> = emptyMap()
+    val groupSpinSpace: Map<String, Boolean> = emptyMap(),
+    val groupRotSpace: Map<String, Boolean> = emptyMap()
 )
 
 /**
@@ -46,7 +47,8 @@ class FunctionObject(
     val st: Int = 0,
     val ent: Entrance? = null,
     val fastMath: Boolean = false,
-    val spinLocal: Boolean = false
+    val spinLocal: Boolean = false,
+    val rotLocal: Boolean = false
 )
 
 /**

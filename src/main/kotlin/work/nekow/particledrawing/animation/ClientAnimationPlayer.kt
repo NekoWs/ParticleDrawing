@@ -86,6 +86,7 @@ class ClientAnimationPlayer(
     private val opTracksByPr: Map<String, List<AnimTrack>> = opTracks.filter { it.keyframes.isNotEmpty() }.groupBy { it.pr }
     private val groupSets: Map<String, Set<String>> = animation.groups.mapValues { (_, v) -> v.toSet() }
     private val groupSpinLocal: Set<String> = animation.groupSpinSpace.filterValues { it }.keys
+    private val groupRotLocal: Set<String> = animation.groupRotSpace.filterValues { it }.keys
     private val particleGroupIndex: Map<String, Set<String>> = buildParticleGroupIndex()
     private val groupCentroidCache: Map<String, Vec3> = buildGroupCentroids()
     private val particleFxCache: Map<String, FunctionObject?> = buildParticleFxCache()
@@ -303,7 +304,7 @@ class ClientAnimationPlayer(
                 if (hasSpin) pos = if (fx.spinLocal) rotateAroundLocal(pos, spinPivot, spin) else rotateAround(pos, spinPivot, spin)
                 // pos op 位移必须先于公转：函数对象的实际世界位置应绕公转中心旋转。
                 pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
-                if (hasRot) pos = rotateAround(pos, orbitPivot, rot)
+                if (hasRot) pos = if (fx.rotLocal) rotateAroundLocalOrbit(pos, orbitPivot, rot, spin, fx.spinLocal) else rotateAround(pos, orbitPivot, rot)
                 s.pos = origin.add(pos)
                 s.color = applyEntrance(base.second, fx.ent, fxLocalT)
                 s.scale = fxScale(fx.id, base.third[0].toDouble(), t)
@@ -551,14 +552,24 @@ class ClientAnimationPlayer(
             for (gname in gs) {
                 val rot = rotVectorAt("g:" + gname, t)
                 if (rot[0] == 0.0 && rot[1] == 0.0 && rot[2] == 0.0) continue
-                return rotateAround(value, orbitCenterAt("g:" + gname, t), rot)
+                val pivot = orbitCenterAt("g:" + gname, t)
+                if (gname in groupRotLocal) {
+                    val spin = spinVectorAt("g:" + gname, t)
+                    return rotateAroundLocalOrbit(value, pivot, rot, spin, gname in groupSpinLocal)
+                }
+                return rotateAround(value, pivot, rot)
             }
         }
         val fx = particleFunction(p.id)
         if (fx != null) {
             val rot = rotVectorAt("f:" + fx.id, t)
             if (rot[0] == 0.0 && rot[1] == 0.0 && rot[2] == 0.0) return value
-            return rotateAround(value, orbitCenterAt("f:" + fx.id, t), rot)
+            val pivot = orbitCenterAt("f:" + fx.id, t)
+            if (fx.rotLocal) {
+                val spin = spinVectorAt("f:" + fx.id, t)
+                return rotateAroundLocalOrbit(value, pivot, rot, spin, fx.spinLocal)
+            }
+            return rotateAround(value, pivot, rot)
         }
         return value
     }
@@ -674,6 +685,36 @@ class ClientAnimationPlayer(
         if (rot[1] != 0.0) zAxis = zAxis.rotateAround(yAxis, ry)
         if (rot[2] != 0.0) r = r.rotateAround(zAxis, rz)
         return pivot.add(r)
+    }
+
+    /** 把向量按自转姿态旋转（绕原点；local = intrinsic XYZ）。 */
+    private fun forwardSpin(v: Vec3, spin: DoubleArray, local: Boolean): Vec3 =
+        if (local) rotateAroundLocal(v, Vec3.ZERO, spin) else rotateAround(v, Vec3.ZERO, spin)
+
+    /** 把向量按自转姿态的逆旋转（绕原点；local = intrinsic XYZ）。 */
+    private fun inverseSpin(v: Vec3, spin: DoubleArray, local: Boolean): Vec3 {
+        val rx = Math.toRadians(spin[0])
+        val ry = Math.toRadians(spin[1])
+        val rz = Math.toRadians(spin[2])
+        var r = v
+        if (local) {
+            if (spin[0] != 0.0) r = r.rotateAround(Vec3(1.0, 0.0, 0.0), -rx)
+            if (spin[1] != 0.0) r = r.rotateAround(Vec3(0.0, 1.0, 0.0), -ry)
+            if (spin[2] != 0.0) r = r.rotateAround(Vec3(0.0, 0.0, 1.0), -rz)
+        } else {
+            if (spin[2] != 0.0) r = r.rotateAround(Vec3(0.0, 0.0, 1.0), -rz)
+            if (spin[1] != 0.0) r = r.rotateAround(Vec3(0.0, 1.0, 0.0), -ry)
+            if (spin[0] != 0.0) r = r.rotateAround(Vec3(1.0, 0.0, 0.0), -rx)
+        }
+        return r
+    }
+
+    /** 局部公转：公转轴跟随对象自转后的姿态。M = M_spin · M_localOrbit · M_spinᵀ。 */
+    private fun rotateAroundLocalOrbit(p: Vec3, pivot: Vec3, rot: DoubleArray, spin: DoubleArray, spinLocal: Boolean): Vec3 {
+        val r = p.subtract(pivot)
+        val local = inverseSpin(r, spin, spinLocal)
+        val rotated = rotateAroundLocal(local, Vec3.ZERO, rot)
+        return pivot.add(forwardSpin(rotated, spin, spinLocal))
     }
 
     private data class Five<A, B, C, D, E>(val first: A, val second: B, val third: C, val fourth: D, val fifth: E)

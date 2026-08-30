@@ -115,8 +115,11 @@ object PdrawcReader {
         val groups = LinkedHashMap<String, List<String>>()
         val groupNames = ArrayList<String>(groupCount)
         val groupSpinSpace = LinkedHashMap<String, Boolean>()
+        val groupRotSpace = LinkedHashMap<String, Boolean>()
         for (gi in 0 until groupCount) {
-            val spinLocal = br.u8() != 0
+            val gflags = br.u8()
+            val spinLocal = (gflags and 1) != 0
+            val rotLocal = (gflags and 2) != 0
             val memberCount = br.varint()
             val members = ArrayList<String>(memberCount)
             for (j in 0 until memberCount) members.add("p" + br.varint())
@@ -124,6 +127,7 @@ object PdrawcReader {
             groupNames.add(gname)
             groups[gname] = members
             groupSpinSpace[gname] = spinLocal
+            groupRotSpace[gname] = rotLocal
         }
 
         // 组级 UV
@@ -152,6 +156,7 @@ object PdrawcReader {
             val fastMath = (flags and 4) != 0
             val funcs = if (flags and 8 != 0) br.str() else ""
             val spinLocal = (flags and 16) != 0
+            val rotLocal = (flags and 32) != 0
             val varCount = br.varint()
             val vars = LinkedHashMap<String, FunctionVar>()
             for (j in 0 until varCount) {
@@ -161,7 +166,7 @@ object PdrawcReader {
                 vars[name] = FunctionVar(base, kf)
             }
             // step 为编辑器参数，播放端不使用，固定 0
-            functions.add(FunctionObject("fx$fi", "fx$fi", center, count, setup, process, funcs, seed, vars, duration, 0, uv, st, ent, fastMath, spinLocal))
+            functions.add(FunctionObject("fx$fi", "fx$fi", center, count, setup, process, funcs, seed, vars, duration, 0, uv, st, ent, fastMath, spinLocal, rotLocal))
         }
 
         // 轨道
@@ -192,7 +197,7 @@ object PdrawcReader {
 
         if (br.remaining() != 0) throw IllegalArgumentException("pdrawc 存在未解析的尾随字节")
 
-        return ParticleAnimation(loop, particles, tracks, groups, functions, texNames, groupUV, texData, groupSpinSpace)
+        return ParticleAnimation(loop, particles, tracks, groups, functions, texNames, groupUV, texData, groupSpinSpace, groupRotSpace)
     }
 
     /** RFC 8032 Ed25519 公钥（32 字节压缩点）→ JDK [EdECPoint]。 */
