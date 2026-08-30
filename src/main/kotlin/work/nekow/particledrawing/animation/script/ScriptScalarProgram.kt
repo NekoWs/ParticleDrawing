@@ -1,0 +1,275 @@
+package work.nekow.particledrawing.animation.script
+
+import work.nekow.particledrawing.animation.expr.Reg
+import work.nekow.particledrawing.animation.expr.ScalarOp
+import work.nekow.particledrawing.animation.expr.ScalarProgram
+import kotlin.math.PI
+import kotlin.math.E
+import kotlin.math.roundToInt
+
+/**
+ * script-lang `process` 的纯标量直线代码快路径。
+ *
+ * 与 Web 端 `compileNativeProcess` 同理：仅当 process 只由「标量赋值/拆包」组成、
+ * 且表达式不含向量/矩阵/分量访问/数组索引/三元/比较/用户函数/rand/random 时启用。
+ * 产物复用动画表达式模块的 [ScalarProgram]（DoubleArray 寄存器 + DoubleArray 栈），
+ * 消除 AST 解释器的 HashMap 作用域查找与 Any 装箱；不支持时返回 null，调用方回退 AST Runtime。
+ */
+class ScriptScalarProgram internal constructor(
+    private val scalar: ScalarProgram,
+    private val regCount: Int,
+    private val stackSize: Int,
+    private val varNames: Array<String>,
+    private val varSlots: IntArray,
+    private val dtSlot: Int,
+    private val uvXSlot: Int,
+    private val uvYSlot: Int,
+    private val lifeSlot: Int,
+) {
+    fun allocRegs() = DoubleArray(regCount)
+    fun allocStack() = DoubleArray(stackSize)
+
+    fun eval(ctx: ScriptRuntime.ProcessCtx, out: ScriptRuntime.ScriptOut, regs: DoubleArray, stack: DoubleArray) {
+        regs[Reg.I] = ctx.i
+        regs[Reg.N] = ctx.n
+        regs[Reg.T] = ctx.t
+        regs[dtSlot] = ctx.dt
+        regs[uvXSlot] = ctx.uv_x
+        regs[uvYSlot] = ctx.uv_y
+        regs[lifeSlot] = ctx.life
+        val vars = ctx.vars
+        for (k in varNames.indices) regs[varSlots[k]] = vars[varNames[k]] ?: 0.0
+        System.arraycopy(ATTR_INIT, 0, regs, Reg.X, ATTR_INIT.size)
+        scalar.exec(regs, stack, null)
+
+        out.pos[0] = regs[Reg.X]
+        out.pos[1] = regs[Reg.Y]
+        out.pos[2] = regs[Reg.Z]
+        out.color[0] = clamp01(regs[Reg.R])
+        out.color[1] = clamp01(regs[Reg.G])
+        out.color[2] = clamp01(regs[Reg.B])
+        out.color[3] = clamp01(regs[Reg.A])
+        out.vel[0] = regs[Reg.VX]
+        out.vel[1] = regs[Reg.VY]
+        out.vel[2] = regs[Reg.VZ]
+        out.scale = regs[Reg.SC]
+        out.glow = regs[Reg.GLOW] > 0.5
+        out.light = regs[Reg.LIGHT].coerceIn(0.0, 15.0).roundToInt().toDouble()
+    }
+
+    companion object {
+        private val ATTR_INIT = doubleArrayOf(
+            0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+        )
+
+        private val ATTR_SLOTS: Map<String, Int> = mapOf(
+            "x" to Reg.X, "y" to Reg.Y, "z" to Reg.Z,
+            "r" to Reg.R, "g" to Reg.G, "b" to Reg.B, "a" to Reg.A,
+            "vx" to Reg.VX, "vy" to Reg.VY, "vz" to Reg.VZ,
+            "sc" to Reg.SC, "glow" to Reg.GLOW, "light" to Reg.LIGHT,
+        )
+
+        private val CONSTANTS: Map<String, Double> = mapOf(
+            "TAU" to 2 * PI,
+            "HALF_PI" to PI / 2,
+            "QUARTER_PI" to PI / 4,
+            "DEG2RAD" to PI / 180,
+            "RAD2DEG" to 180 / PI,
+            "pi" to PI,
+            "e" to E,
+        )
+
+        private val FUNC_OPS: Map<String, ScalarOp> = mapOf(
+            "sin" to ScalarOp.F_SIN, "cos" to ScalarOp.F_COS, "tan" to ScalarOp.F_TAN,
+            "asin" to ScalarOp.F_ASIN, "acos" to ScalarOp.F_ACOS, "atan" to ScalarOp.F_ATAN,
+            "atan2" to ScalarOp.F_ATAN2, "sqrt" to ScalarOp.F_SQRT, "abs" to ScalarOp.F_ABS,
+            "sign" to ScalarOp.F_SIGN, "exp" to ScalarOp.F_EXP, "log" to ScalarOp.F_LOG,
+            "ln" to ScalarOp.F_LOG, "floor" to ScalarOp.F_FLOOR, "ceil" to ScalarOp.F_CEIL,
+            "round" to ScalarOp.F_ROUND, "fract" to ScalarOp.F_FRACT, "pow" to ScalarOp.F_POW,
+            "min" to ScalarOp.F_MIN, "max" to ScalarOp.F_MAX, "clamp" to ScalarOp.F_CLAMP,
+            "lerp" to ScalarOp.F_LERP, "mix" to ScalarOp.F_LERP, "step" to ScalarOp.F_STEP,
+            "smoothstep" to ScalarOp.F_SMOOTHSTEP, "mod" to ScalarOp.F_MOD,
+        )
+
+        private val CHAR_OPS: Map<Char, ScalarOp> = mapOf(
+            '+' to ScalarOp.ADD, '-' to ScalarOp.SUB, '*' to ScalarOp.MUL,
+            '/' to ScalarOp.DIV, '%' to ScalarOp.REM, '^' to ScalarOp.POW,
+        )
+
+        fun compile(program: ScriptProgram, varNames: List<String>): ScriptScalarProgram? = try {
+            val stmts = program.process
+            val ops = ArrayList<ScalarOp>()
+            val args = ArrayList<Int>()
+            val consts = ArrayList<Double>()
+            val constIndex = HashMap<Double, Int>()
+            val tempSlots = HashMap<String, Int>()
+            val varSlots = HashMap<String, Int>()
+
+            fun constIdx(v: Double): Int {
+                constIndex[v]?.let { return it }
+                val idx = consts.size
+                consts.add(v)
+                constIndex[v] = idx
+                return idx
+            }
+
+            // 槽位布局：Reg.I/N/T 固定；dt/uv/life 放在 Reg.VAR_START 之后，变量与临时量紧随。
+            val base = Reg.VAR_START
+            val dtSlot = base
+            val uvXSlot = base + 1
+            val uvYSlot = base + 2
+            val lifeSlot = base + 3
+            var nextSlot = base + 4
+
+            // 先登记 fx.vars 槽位（readSlot 需要它们）。
+            val orderedVarNames = ArrayList<String>()
+            for (name in varNames) {
+                if (varSlots.containsKey(name)) continue
+                varSlots[name] = nextSlot++
+                orderedVarNames.add(name)
+            }
+
+            fun ensureTemp(name: String): Int {
+                tempSlots[name]?.let { return it }
+                val slot = nextSlot++
+                tempSlots[name] = slot
+                return slot
+            }
+
+            fun readSlot(name: String): Int? {
+                ATTR_SLOTS[name]?.let { return it }
+                when (name) {
+                    "i", "idx" -> return Reg.I
+                    "n" -> return Reg.N
+                    "t" -> return Reg.T
+                    "dt" -> return dtSlot
+                    "uv_x" -> return uvXSlot
+                    "uv_y" -> return uvYSlot
+                    "life" -> return lifeSlot
+                }
+                varSlots[name]?.let { return it }
+                tempSlots[name]?.let { return it }
+                return null
+            }
+
+            fun writeSlot(name: String): Int? {
+                ATTR_SLOTS[name]?.let { return it }
+                tempSlots[name]?.let { return it }
+                if (name == "i" || name == "idx" || name == "n" || name == "t" || name == "dt" ||
+                    name == "uv_x" || name == "uv_y" || name == "life" ||
+                    varSlots.containsKey(name) || CONSTANTS.containsKey(name)
+                ) return null
+                return ensureTemp(name)
+            }
+
+            fun emitPush(op: ScalarOp, arg: Int) {
+                ops.add(op)
+                args.add(arg)
+            }
+
+            fun emit(op: ScalarOp) {
+                ops.add(op)
+                args.add(0)
+            }
+
+            fun compileExpr(node: Node): Boolean {
+                when (node) {
+                    is NumNode -> { emitPush(ScalarOp.PUSH_CONST, constIdx(node.value)); return true }
+                    is VarNode -> {
+                        CONSTANTS[node.name]?.let { emitPush(ScalarOp.PUSH_CONST, constIdx(it)); return true }
+                        val slot = readSlot(node.name) ?: return false
+                        emitPush(ScalarOp.PUSH_REG, slot)
+                        return true
+                    }
+                    is UnaryNode -> {
+                        if (node.op != "-") return false
+                        if (!compileExpr(node.operand)) return false
+                        emit(ScalarOp.NEG)
+                        return true
+                    }
+                    is BinaryNode -> {
+                        val ch = node.op.firstOrNull() ?: return false
+                        val op = CHAR_OPS[ch] ?: return false
+                        if (!compileExpr(node.left) || !compileExpr(node.right)) return false
+                        emit(op)
+                        return true
+                    }
+                    is CallNode -> {
+                        if (node.callee !is VarNode) return false
+                        val fn = FUNC_OPS[node.callee.name] ?: return false
+                        for (a in node.args) if (!compileExpr(a)) return false
+                        emit(fn)
+                        return true
+                    }
+                    else -> return false
+                }
+            }
+
+            for (st in stmts) {
+                if (st !is AssignNode) return null
+                val value = st.value
+                when (val target = st.target) {
+                    is VarTarget -> {
+                        if (!compileExpr(value)) return null
+                        val slot = writeSlot(target.name) ?: return null
+                        emitPush(ScalarOp.POP_REG, slot)
+                    }
+                    is UnpackTarget -> {
+                        if (value !is ArrayNode || value.items.size != target.names.size) return null
+                        val tmp = IntArray(target.names.size)
+                        for (k in target.names.indices) {
+                            if (!compileExpr(value.items[k])) return null
+                            val slot = ensureTemp("__unpack$k")
+                            tmp[k] = slot
+                            emitPush(ScalarOp.POP_REG, slot)
+                        }
+                        for (k in target.names.indices) {
+                            val slot = writeSlot(target.names[k]) ?: return null
+                            emitPush(ScalarOp.PUSH_REG, tmp[k])
+                            emitPush(ScalarOp.POP_REG, slot)
+                        }
+                    }
+                    else -> return null
+                }
+            }
+
+            val opsArr = ops.toTypedArray()
+            val argsArr = args.toIntArray()
+            val constsArr = consts.toDoubleArray()
+            val varNamesArr = orderedVarNames.toTypedArray()
+            val varSlotsArr = IntArray(orderedVarNames.size) { varSlots[orderedVarNames[it]]!! }
+            ScriptScalarProgram(
+                ScalarProgram(opsArr, argsArr, constsArr),
+                nextSlot,
+                computeStackSize(opsArr, argsArr),
+                varNamesArr,
+                varSlotsArr,
+                dtSlot,
+                uvXSlot,
+                uvYSlot,
+                lifeSlot,
+            )
+        } catch (e: Exception) {
+            null
+        }
+
+        private fun computeStackSize(ops: Array<ScalarOp>, args: IntArray): Int {
+            var depth = 0
+            var max = 0
+            for (op in ops) {
+                when (op) {
+                    ScalarOp.PUSH_CONST, ScalarOp.PUSH_REG -> depth++
+                    ScalarOp.POP_REG -> depth--
+                    ScalarOp.F_RANDOM -> depth++
+                    else -> {
+                        val pops = op.pops
+                        if (pops > 0) depth = depth - pops + 1
+                    }
+                }
+                if (depth < 0) depth = 0
+                if (depth > max) max = depth
+            }
+            return maxOf(1, max)
+        }
+    }
+}

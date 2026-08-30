@@ -72,6 +72,13 @@ object ScriptRuntime {
     }
 
     fun evalProcess(program: ScriptProgram, obj: ObjectState, statics: MutableMap<String, Any?>, ctx: ProcessCtx): ScriptOut {
+        if (!ctx.fastMath) {
+            val fast = scalarFast(program, ctx.vars.keys.toList())
+            if (fast != null) {
+                fast.eval(ctx, ctx.out, fast.allocRegs(), fast.allocStack())
+                return ctx.out
+            }
+        }
         val rt = Runtime("process", program, obj, statics, null, ctx)
         rt.pushScope(HashMap())
         try {
@@ -82,15 +89,42 @@ object ScriptRuntime {
         return ctx.out
     }
 
+    // 标量快路径缓存：按 program + varNames 签名复用编译产物（与 JS getCompiledProgram 一致）。
+    private val scalarFastCache = HashMap<ScriptProgram, HashMap<String, ScriptScalarProgram?>>()
+
+    private fun scalarFast(program: ScriptProgram, varNames: List<String>): ScriptScalarProgram? {
+        val key = varNames.joinToString("\u0000")
+        return scalarFastCache.getOrPut(program) { HashMap() }.getOrPut(key) {
+            ScriptScalarProgram.compile(program, varNames)
+        }
+    }
+
     /**
      * 可复用的 process 执行器：同一函数对象在同一 tick 内逐粒子复用，避免每个粒子都
      * 新建 Runtime / ArrayList / HashMap（20w 粒子场景下这是主要分配来源）。
+     * 标量直线脚本优先走 [ScriptScalarProgram]，寄存器/栈也随执行器复用。
      */
     class ProcessExecutor(program: ScriptProgram, obj: ObjectState) {
         private val rt = Runtime("process", program, obj, null, null, null)
         private val topScope = HashMap<String, Any?>()
+        private var fast: ScriptScalarProgram? = null
+        private var fastRegs: DoubleArray? = null
+        private var fastStack: DoubleArray? = null
+        private var fastVarKey: String? = null
 
         fun eval(statics: MutableMap<String, Any?>, ctx: ProcessCtx): ScriptOut {
+            val varKey = ctx.vars.keys.joinToString("\u0000")
+            if (fastVarKey != varKey) {
+                fast = scalarFast(rt.program, ctx.vars.keys.toList())
+                fastRegs = fast?.allocRegs()
+                fastStack = fast?.allocStack()
+                fastVarKey = varKey
+            }
+            val f = fast
+            if (f != null && !ctx.fastMath) {
+                f.eval(ctx, ctx.out, fastRegs!!, fastStack!!)
+                return ctx.out
+            }
             rt.resetProcess(statics, ctx, topScope)
             try {
                 for (st in rt.program.process) rt.execStmt(st)
