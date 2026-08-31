@@ -56,15 +56,13 @@ class ClientAnimationPlayer(
             if (p.life >= 0 && p.st + p.life > max) max = (p.st + p.life).toDouble()
         }
         for (fx in animation.functions) {
-            // 函数对象跨度 = st + 自身 extent（变量关键帧 或 依赖 t 时的 duration）
-            var extent = 0.0
-            var hasVarAnim = false
+            // 函数对象跨度 = st + extent；extent = max(时长 duration, 变量关键帧最大 tick)
+            // （与编辑器 maxTick / rowSpan 一致：duration 恒为基准，变量关键帧只可能把它拉长）
+            var extent = fx.duration.toDouble()
             for (v in fx.vars.values) {
                 val kfMax = v.kf.maxOfOrNull { it.tick } ?: continue
-                hasVarAnim = true
                 if (kfMax > extent) extent = kfMax
             }
-            if (!hasVarAnim && usesTimeVar(fx)) extent = maxOf(extent, fx.duration.toDouble())
             if (fx.st + extent > max) max = fx.st + extent
         }
         max.toInt()
@@ -243,7 +241,6 @@ class ClientAnimationPlayer(
     fun consumeJustLooped(): Boolean { val v = justLooped; justLooped = false; return v }
     fun isStatic(): Boolean = isStaticAnimation
 
-    private fun usesTimeVar(fx: FunctionObject): Boolean = Regex("\\bt\\b").containsMatchIn(fx.process) || Regex("\\bt\\b").containsMatchIn(fx.setup) || Regex("\\bt\\b").containsMatchIn(fx.funcs)
     private fun usesRandom(fx: FunctionObject): Boolean = Regex("\\brandom\\s*\\(").containsMatchIn(fx.process) || Regex("\\brand\\s*\\(").containsMatchIn(fx.process) || Regex("\\brandom\\s*\\(").containsMatchIn(fx.funcs) || Regex("\\brand\\s*\\(").containsMatchIn(fx.funcs)
     fun currentStates(): Collection<ParticleState> = states.values
     fun stop() { finished = true }
