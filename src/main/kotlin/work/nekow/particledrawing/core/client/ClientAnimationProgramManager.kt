@@ -8,10 +8,11 @@ import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
 import work.nekow.particledrawing.ParticleDrawing
-import work.nekow.particledrawing.animation.expr.CompiledFunction
-import work.nekow.particledrawing.animation.expr.GetterRewriter
-import work.nekow.particledrawing.animation.expr.InputKey
-import work.nekow.particledrawing.animation.expr.compileFunctionObject
+import work.nekow.particledrawing.animation.script.CompiledFunction
+import work.nekow.particledrawing.animation.script.GetterRewriter
+import work.nekow.particledrawing.animation.script.InputKey
+import work.nekow.particledrawing.animation.script.compileFunctionObject
+import work.nekow.particledrawing.animation.script.evaluate
 import work.nekow.particledrawing.api.EntityProp
 import work.nekow.particledrawing.api.WorldProp
 import work.nekow.particledrawing.animation.program.AnimInstruction
@@ -212,7 +213,7 @@ internal object ClientAnimationProgramManager {
         val scope = HashMap<String, Any>(p.vars)
         scope.putAll(p.latestInputs)
         val v = try {
-            work.nekow.particledrawing.animation.expr.ExpressionEvaluator.evaluate(rw.code, scope) as? Double
+            evaluate(rw.code, scope)
         } catch (_: Exception) { null } ?: return
         val hadCode = p.expressionCode != null
         p.vars[name] = v

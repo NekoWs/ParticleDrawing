@@ -1,10 +1,10 @@
 package work.nekow.particledrawing
 
-import work.nekow.particledrawing.animation.expr.ExpressionEvaluator
-import work.nekow.particledrawing.animation.expr.GetterRewriter
-import work.nekow.particledrawing.animation.expr.InputKey
-import work.nekow.particledrawing.animation.expr.Reg
-import work.nekow.particledrawing.animation.expr.compileFunctionObject
+import work.nekow.particledrawing.animation.script.GetterRewriter
+import work.nekow.particledrawing.animation.script.InputKey
+import work.nekow.particledrawing.animation.script.Reg
+import work.nekow.particledrawing.animation.script.compileFunctionObject
+import work.nekow.particledrawing.animation.script.evaluate
 import work.nekow.particledrawing.api.EntityProp
 import work.nekow.particledrawing.api.WorldProp
 import kotlin.test.Test
@@ -130,7 +130,7 @@ class GetterRewriterTest {
         val rw = GetterRewriter.rewrite("get_world_day_time() / 24000 + get_entity_exists(e)", mapOf("e" to 0), 1)
         val scope = HashMap<String, Any>()
         rw.extNames.forEachIndexed { idx, name -> scope[name] = if (idx == 0) 12000.0 else 1.0 }
-        val result = ExpressionEvaluator.evaluate(rw.code, scope)
-        assertEquals(1.5, result as Double)
+        val result = evaluate(rw.code, scope)
+        assertEquals(1.5, result)
     }
 }

@@ -1,8 +1,5 @@
 package work.nekow.particledrawing.animation.script
 
-import work.nekow.particledrawing.animation.expr.Reg
-import work.nekow.particledrawing.animation.expr.ScalarOp
-import work.nekow.particledrawing.animation.expr.ScalarProgram
 import kotlin.math.PI
 import kotlin.math.E
 import kotlin.math.roundToInt

@@ -1,4 +1,4 @@
-package work.nekow.particledrawing.animation.expr
+package work.nekow.particledrawing.animation.script
 
 import work.nekow.particledrawing.api.EntityProp
 import work.nekow.particledrawing.api.WorldProp

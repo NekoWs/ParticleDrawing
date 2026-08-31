@@ -2,7 +2,7 @@ package work.nekow.particledrawing.api
 
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.program.AnimInstruction
-import work.nekow.particledrawing.animation.expr.GetterRewriter
+import work.nekow.particledrawing.animation.script.GetterRewriter
 import work.nekow.particledrawing.animation.program.EntityBinding
 import work.nekow.particledrawing.animation.program.PivotRef
 import work.nekow.particledrawing.core.easing.EasingType

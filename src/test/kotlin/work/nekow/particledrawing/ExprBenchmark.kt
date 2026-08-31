@@ -1,11 +1,8 @@
 package work.nekow.particledrawing
 
-import work.nekow.particledrawing.animation.expr.EvalResult
-import work.nekow.particledrawing.animation.expr.ExpressionEvaluator
-import work.nekow.particledrawing.animation.expr.Reg
-import work.nekow.particledrawing.animation.expr.VarDef
-import work.nekow.particledrawing.animation.expr.compileFunctionObject
-import kotlin.math.abs
+import work.nekow.particledrawing.animation.script.Reg
+import work.nekow.particledrawing.animation.script.VarDef
+import work.nekow.particledrawing.animation.script.compileFunctionObject
 import kotlin.system.measureNanoTime
 
 /**
@@ -64,34 +61,6 @@ fun main() {
     }
     println("快路径合计: %.2f ms".format(total))
 
-    // ---- 正确性：快/慢路径一致（小规模） ----
-    println()
-    var ok = true
-    for (p in presets) {
-        val varDefs = p.vars.map { (name, expr) -> VarDef(name, expr.toDouble(), emptyList()) }
-        val cf = compileFunctionObject(p.code, varDefs) ?: run { println("${p.name}: 回退，跳过"); continue }
-        val regs = cf.allocRegs()
-        val stack = cf.allocStack()
-        val vars = p.vars.toMap()
-        for (i in 0 until 100) {
-            cf.eval(i.toDouble(), 100.0, t, regs, stack)
-            val slow = evalSlow(p.code, vars, i, 100, t)
-            val mismatch = abs(regs[Reg.X] - slow.pos.x) > 1e-9 ||
-                    abs(regs[Reg.Y] - slow.pos.y) > 1e-9 ||
-                    abs(regs[Reg.Z] - slow.pos.z) > 1e-9 ||
-                    abs(regs[Reg.R] - slow.color[0]) > 1e-9 ||
-                    abs(regs[Reg.SC] - slow.scale) > 1e-9 ||
-                    abs(regs[Reg.LIGHT] - slow.light) > 1e-9 ||
-                    (regs[Reg.GLOW] > 0.5) != slow.glow
-            if (mismatch) {
-                ok = false
-                println("${p.name} 不一致 i=$i  fast=(${regs[Reg.X]},${regs[Reg.Y]},${regs[Reg.Z]}) slow=(${slow.pos.x},${slow.pos.y},${slow.pos.z})")
-                break
-            }
-        }
-    }
-    println(if (ok) "一致性: PASS" else "一致性: FAIL")
-
     // ---- 回退验证：含向量/矩阵的代码块应返回 null ----
     println()
     println("=== 非纯标量代码块回退验证 ===")
@@ -105,47 +74,4 @@ fun main() {
         val cf = compileFunctionObject(code, emptyList())
         println("%-12s -> %s".format(label, if (cf == null) "回退（正确）" else "误判为快路径（错误）"))
     }
-
-    // ---- 慢路径（优化前）1w 对比 ----
-    println()
-    println("=== 通用解释器（优化前，sphere/cube 各 1w 做对比） ===")
-    for (p in presets.take(2)) {
-        val vars = p.vars.toMap()
-        var sink = 0.0
-        for (i in 0 until 10_000) sink += evalSlow(p.code, vars, i, 10_000, t).pos.x
-        val ms = measureNanoTime {
-            for (i in 0 until 10_000) sink += evalSlow(p.code, vars, i, 10_000, t).pos.x
-        } / 1e6
-        println("%-8s %.2f ms (1w 粒子, sink=%.1f)".format(p.name, ms, sink))
-    }
-}
-
-/** 与 ClientAnimationPlayer 原逻辑等价的慢路径：buildEnv + evalFunctionCode。 */
-private fun evalSlow(code: String, vars: Map<String, String>, i: Int, n: Int, t: Double): EvalResult {
-    val env = HashMap<String, Any>()
-    env["i"] = i.toDouble(); env["n"] = n.toDouble(); env["t"] = t
-    val memo = HashMap<String, Any>()
-    val inStack = HashSet<String>()
-    fun resolve(name: String): Any {
-        memo[name]?.let { return it }
-        env[name]?.let { return it }
-        val expr = vars[name] ?: throw IllegalArgumentException("未知变量: $name")
-        if (name in inStack) throw IllegalArgumentException("循环引用: $name")
-        inStack.add(name)
-        val resolver = object : java.util.AbstractMap<String, Any>() {
-            override val entries: MutableSet<MutableMap.MutableEntry<String, Any>> get() = mutableSetOf()
-            override fun get(key: String): Any {
-                memo[key]?.let { return it }
-                env[key]?.let { return it }
-                return resolve(key)
-            }
-        }
-        val v = ExpressionEvaluator.evaluate(expr, resolver)
-        inStack.remove(name)
-        memo[name] = v
-        return v
-    }
-    for (name in vars.keys) resolve(name)
-    for ((k, v) in memo) env[k] = v
-    return ExpressionEvaluator.evalFunctionCode(code, env)
 }

@@ -2,7 +2,7 @@ package work.nekow.particledrawing.animation
 
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.Color
-import work.nekow.particledrawing.animation.expr.Keyframe
+import work.nekow.particledrawing.animation.script.Keyframe
 import work.nekow.particledrawing.core.easing.EasingType
 
 /**

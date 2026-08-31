@@ -1,4 +1,4 @@
-package work.nekow.particledrawing.animation.expr
+package work.nekow.particledrawing.animation.script
 
 import kotlin.math.*
 
@@ -8,7 +8,7 @@ import kotlin.math.*
  * 网页编辑器端通过 `new Function` 把纯标量代码块编译成原生 JS 达到个位数毫秒；
  * Kotlin/JVM 端无法动态生成原生代码，这里把代码块编译成「栈式 double 指令序列」，
  * 执行期只用 [DoubleArray] 寄存器 + [DoubleArray] 栈，消除 HashMap / 字符串查表 / Any 装箱。
- * 含向量/矩阵/分量访问/拆包的代码块不在快路径内，由 [ExpressionEvaluator] 通用解释器回退处理。
+ * 含向量/矩阵/分量访问/拆包的代码块不在快路径内，由 script-lang [ScriptRuntime] 解释器回退处理。
  */
 
 /** 寄存器槽布局：0..2 内建 i/n/t，3..16 属性（含 maxAge），17.. 变量，之后临时变量。 */
@@ -159,7 +159,7 @@ internal class ScalarProgram(
                 }
                 ScalarOp.VAR_KF -> {
                     val kf = kfTable!![args[idx]]
-                    stack[sp++] = ExpressionEvaluator.varKfValue(kf, regs[Reg.T])
+                    stack[sp++] = varKfValue(kf, regs[Reg.T])
                 }
             }
         }
@@ -323,7 +323,7 @@ private fun compileScalarCode(code: String, nameToSlot: Map<String, Int>, varCou
 
         for (k in names.indices) {
             val target = lhsSlot(names[k]) ?: return null
-            val rpn = ExpressionEvaluator.compile(exprs[k])
+            val rpn = compile(exprs[k])
             val maxDepth = intArrayOf(0)
             val slotOf: (String) -> Int? = { name ->
                 when (name) {
@@ -357,11 +357,11 @@ private fun emitRpn(
     for (o in rpn) {
         when (o) {
             is Double -> { ops.add(ScalarOp.PUSH_CONST); args.add(consts.size); consts.add(o); depth++ }
-            is ExpressionEvaluator.Token.Var -> {
+            is ExprToken.Var -> {
                 val slot = slotOf(o.name) ?: return false
                 ops.add(ScalarOp.PUSH_REG); args.add(slot); depth++
             }
-            is ExpressionEvaluator.Token.Comp -> return false
+            is ExprToken.Comp -> return false
             "neg" -> { ops.add(ScalarOp.NEG); args.add(0) } // 一元取负：弹出 1 压回 1，深度不变
             is String -> {
                 val op = SCALAR_FUNC_OPS[o] ?: return false
