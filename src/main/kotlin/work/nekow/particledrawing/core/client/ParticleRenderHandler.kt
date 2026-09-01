@@ -69,7 +69,8 @@ object ParticleRenderHandler {
     @JvmStatic
     @Suppress("UNUSED_PARAMETER")
     fun onComputeFov(event: ViewportEvent.ComputeFov) {
-        val fov = CameraController.currentFov() ?: return
+        // 与 CameraMixin 的姿态插值同规则：按渲染 partialTick 在相邻 tick 间插值，FOV 不逐 tick 跳变
+        val fov = CameraController.currentFov(event.partialTick) ?: return
         event.setFOV(fov)
     }
 }

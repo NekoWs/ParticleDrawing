@@ -19,6 +19,9 @@ import work.nekow.particledrawing.core.client.CameraController;
  * {@code setupPerspective}。故在 {@code alignWithEntity} 返回处覆盖 position/rotation，
  * 之后视锥与投影都使用覆盖后的姿态，时序正确。
  * <p>
+ * {@link CameraController#currentPose(double)} 返回的姿态为世界坐标（已加播放原点偏移）且
+ * 按渲染 partialTicks 在相邻 game tick 姿态间插值，消除 20Hz 逐 tick 跳变。
+ * <p>
  * {@code setRotation(float,float,float)} 为 protected，用 {@link Invoker} 调用；
  * {@code position} 字段为 private，用 {@link Accessor} 写入。
  * <p>
@@ -45,7 +48,9 @@ public abstract class CameraMixin {
 
     @Inject(method = "alignWithEntity", at = @At("RETURN"))
     private void particleDrawing$overrideCamera(float partialTicks, CallbackInfo ci) {
-        ClientAnimationPlayer.CameraPose pose = CameraController.currentPose();
+        // 渲染帧姿态：CameraController 在上一/当前 game tick 姿态间按 partialTicks 插值，
+        // 并已加上播放原点偏移（粒子以 origin + 局部坐标生成，摄像机也必须同处一个世界）。
+        ClientAnimationPlayer.CameraPose pose = CameraController.currentPose((double) partialTicks);
         if (pose == null) {
             return;
         }

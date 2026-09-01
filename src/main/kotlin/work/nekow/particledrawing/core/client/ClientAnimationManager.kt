@@ -16,6 +16,8 @@ object ClientAnimationManager {
         val player: ClientAnimationPlayer,
         val particleUuids: MutableMap<String, UUID>,
         val animation: ParticleAnimation,
+        // 播放原点（世界坐标）：摄像机预览姿态需加此偏移才与粒子同处一个世界
+        val origin: Vec3,
         // 当前已生成（在场）的状态 id 集合——st 门控的生成/回收以它为基准做差分
         val liveIds: HashSet<String> = HashSet(),
     )
@@ -57,10 +59,11 @@ object ClientAnimationManager {
         val cameraId: String,
         val cameraName: String,
         val pose: ClientAnimationPlayer.CameraPose,
+        val origin: Vec3,
     )
 
     /**
-     * 在所有播放中的动画里按 id 或 name 匹配一个摄像机，并返回其在当前 tick 的姿态。
+     * 在所有播放中的动画里按 id 或 name 匹配一个摄像机，并返回其在当前 tick 的姿态与播放原点。
      * 无匹配或姿态求值失败时返回 null。
      */
     @JvmStatic
@@ -68,7 +71,7 @@ object ClientAnimationManager {
         for ((animId, e) in entries) {
             val cam = e.animation.cameras.firstOrNull { it.id == camIdOrName || it.name == camIdOrName } ?: continue
             val pose = e.player.cameraPoseAt(cam.id, e.player.currentTickValue.toDouble()) ?: continue
-            return CameraTarget(animId, cam.id, cam.name, pose)
+            return CameraTarget(animId, cam.id, cam.name, pose, e.origin)
         }
         return null
     }
@@ -108,7 +111,7 @@ object ClientAnimationManager {
             liveIds.add(state.id)
             ClientParticleEngine.instance()?.let { spawnState(it, uuid, state) }
         }
-        entries[animationId] = Entry(player, uuids, animation, liveIds)
+        entries[animationId] = Entry(player, uuids, animation, origin, liveIds)
     }
 
     /** 重载所有正在播放动画的内嵌贴图（/pdraw reload 使用）。 */

@@ -185,7 +185,7 @@ object ParticleDrawCommands {
             ctx.source.sendFailure(Component.literal("未找到摄像机: $name（无播放中的动画包含该摄像机）"))
             return 0
         }
-        CameraController.attach(target.animationId, target.cameraId)
+        CameraController.attach(target.animationId, target.cameraId, target.origin)
         CameraController.updatePose(target.pose)
         ctx.source.sendSuccess({ Component.literal("已切换到摄像机: ${target.cameraId}") }, false)
         return 1
