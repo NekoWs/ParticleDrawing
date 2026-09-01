@@ -99,7 +99,7 @@ public abstract class CameraMixin {
 
         // 反解 rotationYXZ(π − yRot, −xRot, −roll)
         double a = Math.atan2(zx, zz);
-        double b = Math.asin(Math.max(-1.0, Math.min(1.0, -zy)));
+        double b = Math.asin(Math.clamp(-zy, -1.0, 1.0));
         double cc = Math.atan2(xpy, ypy);
         float yRot = (float) Math.toDegrees(Math.PI - a);
         float xRot = (float) Math.toDegrees(-b);
