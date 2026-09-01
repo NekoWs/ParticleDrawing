@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.core.client
 
+import net.minecraft.client.Minecraft
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.AnimationLoader
 import work.nekow.particledrawing.animation.ClientAnimationPlayer
@@ -126,6 +127,14 @@ object ClientAnimationManager {
     /** 每客户端 tick 推进所有动画并同步渲染。 */
     @JvmStatic
     fun tick() {
+        // 玩家死亡/重生阶段退出摄像机预览：预览会把相机固定到动画姿态，若远离重生点，
+        // 「正在加载地形」会一直等待相机所在区块编译（LevelLoadTracker 以相机位置为准），
+        // 直到 30s 超时才放行。死亡时立刻解除，让相机随玩家回到重生点。
+        if (CameraController.isActive()) {
+            val mc = Minecraft.getInstance()
+            val player = mc.player
+            if (player == null || player.isDeadOrDying) CameraController.detach()
+        }
         val toStop = mutableListOf<UUID>()
         for ((animId, entry) in entries) {
             if (entry.player.tick()) {
