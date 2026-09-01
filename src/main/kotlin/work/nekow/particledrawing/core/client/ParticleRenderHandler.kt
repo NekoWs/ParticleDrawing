@@ -4,6 +4,7 @@ import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.client.event.ClientTickEvent
+import net.neoforged.neoforge.client.event.ViewportEvent
 import net.neoforged.neoforge.event.tick.PlayerTickEvent
 import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.lighting.DynamicLightManager
@@ -57,5 +58,18 @@ object ParticleRenderHandler {
         if (event.entity !== mc.player) return
         ClientAnimationManager.tick()
         ClientAnimationProgramManager.tick()
+    }
+
+    /**
+     * FOV 覆盖：摄像机预览模式下把玩家相机的视场角设为摄像机关键帧值。
+     * `ComputeFov` 在 `Camera.update` 的 `calculateFov` 内触发，其结果写入 `camera.fov`，
+     * 早于 `prepareCullFrustum` / `setupPerspective`，故覆盖能正确作用于投影矩阵。
+     */
+    @SubscribeEvent
+    @JvmStatic
+    @Suppress("UNUSED_PARAMETER")
+    fun onComputeFov(event: ViewportEvent.ComputeFov) {
+        val fov = CameraController.currentFov() ?: return
+        event.setFOV(fov)
     }
 }

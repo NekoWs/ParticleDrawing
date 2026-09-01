@@ -51,6 +51,41 @@ object ClientAnimationManager {
     @JvmStatic
     fun activeAnimationCount(): Int = entries.size
 
+    /** 一次摄像机匹配结果（/pdraw camera 使用）。 */
+    data class CameraTarget(
+        val animationId: UUID,
+        val cameraId: String,
+        val cameraName: String,
+        val pose: ClientAnimationPlayer.CameraPose,
+    )
+
+    /**
+     * 在所有播放中的动画里按 id 或 name 匹配一个摄像机，并返回其在当前 tick 的姿态。
+     * 无匹配或姿态求值失败时返回 null。
+     */
+    @JvmStatic
+    fun findCamera(camIdOrName: String): CameraTarget? {
+        for ((animId, e) in entries) {
+            val cam = e.animation.cameras.firstOrNull { it.id == camIdOrName || it.name == camIdOrName } ?: continue
+            val pose = e.player.cameraPoseAt(cam.id, e.player.currentTickValue.toDouble()) ?: continue
+            return CameraTarget(animId, cam.id, cam.name, pose)
+        }
+        return null
+    }
+
+    /** 列出所有播放中动画的摄像机 id 与 name（供 /pdraw camera 参数补全）。 */
+    @JvmStatic
+    fun listCameras(): List<String> {
+        val out = LinkedHashSet<String>()
+        for ((_, e) in entries) {
+            for (cam in e.animation.cameras) {
+                out.add(cam.id)
+                out.add(cam.name)
+            }
+        }
+        return out.toList()
+    }
+
     /** 开始本地播放一个动画（解析 .pdrawc 字节并验签，失败则拒绝播放）。 */
     @JvmStatic
     fun play(animationId: UUID, data: ByteArray, origin: Vec3) {
@@ -98,6 +133,16 @@ object ClientAnimationManager {
             }
         }
         for (id in toStop) stopInternal(id)
+        updateCameraPreview()
+    }
+
+    /** 刷新「切换到摄像机」预览姿态；绑定的播放已不存在时自动退出预览。 */
+    private fun updateCameraPreview() {
+        val animId = CameraController.activeAnimationId() ?: run { CameraController.updatePose(null); return }
+        val entry = entries[animId] ?: run { CameraController.detach(); return }
+        val camId = CameraController.activeCameraId() ?: return
+        val pose = entry.player.cameraPoseAt(camId, entry.player.currentTickValue.toDouble())
+        CameraController.updatePose(pose)
     }
 
     /** 更新某次播放的变量。 */
@@ -143,6 +188,7 @@ object ClientAnimationManager {
 
     private fun stopInternal(animationId: UUID) {
         val entry = entries.remove(animationId) ?: return
+        if (CameraController.activeAnimationId() == animationId) CameraController.detach()
         ClientParticleEngine.instance()?.destroyParticles(entry.particleUuids.values.toTypedArray())
     }
 

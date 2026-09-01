@@ -20,6 +20,7 @@ import work.nekow.particledrawing.animation.AnimationLoader
 import work.nekow.particledrawing.animation.ServerAnimationManager
 import work.nekow.particledrawing.api.Draw
 import work.nekow.particledrawing.api.ParticleManager
+import work.nekow.particledrawing.core.client.CameraController
 import work.nekow.particledrawing.core.client.ClientAnimationManager
 import work.nekow.particledrawing.core.client.ClientParticleEngine
 import work.nekow.particledrawing.util.ParticleUtils
@@ -53,6 +54,12 @@ object ParticleDrawCommands {
                         .then(Commands.argument("pos", Vec3Argument.vec3()).executes(::playAnimation))))
                 .then(Commands.literal("stop").executes(::stopAnimations))
                 .then(Commands.literal("reload").executes(::reloadTextures))
+                .then(Commands.literal("camera")
+                    .executes(::cameraUsage)
+                    .then(Commands.literal("stop").executes(::stopCamera))
+                    .then(Commands.argument("name", StringArgumentType.string())
+                        .suggests(::suggestCameras)
+                        .executes(::switchCamera)))
                 .then(Commands.literal("debug").executes(::debugAnimations))
                 .then(Commands.literal("var")
                     .then(Commands.argument("name", StringArgumentType.string())
@@ -150,6 +157,59 @@ object ParticleDrawCommands {
         )
         return 1
     }
+
+    /**
+     * /pdraw camera —— 显示摄像机子命令用法。
+     */
+    private fun cameraUsage(ctx: CommandContext<CommandSourceStack>): Int {
+        ctx.source.sendSuccess(
+            { Component.literal("用法: /pdraw camera <名称|id> 切换到指定摄像机；/pdraw camera stop 退出预览") },
+            false
+        )
+        return 1
+    }
+
+    /**
+     * /pdraw camera <name> —— 把玩家视角切换到当前播放中动画的某个摄像机（客户端本地预览）。
+     * 摄像机预览仅改客户端相机（位置/旋转/FOV），不改玩家实体；退出用 `/pdraw camera stop`。
+     * 动画播完或停止时自动退出预览。
+     */
+    private fun switchCamera(ctx: CommandContext<CommandSourceStack>): Int {
+        if (FMLEnvironment.getDist() != Dist.CLIENT) {
+            ctx.source.sendFailure(Component.literal("/pdraw camera 仅客户端可用"))
+            return 0
+        }
+        val name = StringArgumentType.getString(ctx, "name")
+        val target = ClientAnimationManager.findCamera(name)
+        if (target == null) {
+            ctx.source.sendFailure(Component.literal("未找到摄像机: $name（无播放中的动画包含该摄像机）"))
+            return 0
+        }
+        CameraController.attach(target.animationId, target.cameraId)
+        CameraController.updatePose(target.pose)
+        ctx.source.sendSuccess({ Component.literal("已切换到摄像机: ${target.cameraId}") }, false)
+        return 1
+    }
+
+    /**
+     * /pdraw camera stop —— 退出摄像机预览，恢复正常视角。
+     */
+    private fun stopCamera(ctx: CommandContext<CommandSourceStack>): Int {
+        if (FMLEnvironment.getDist() != Dist.CLIENT) {
+            ctx.source.sendFailure(Component.literal("/pdraw camera 仅客户端可用"))
+            return 0
+        }
+        CameraController.detach()
+        ctx.source.sendSuccess({ Component.literal("已退出摄像机预览") }, false)
+        return 1
+    }
+
+    /** /pdraw camera <name> 的参数补全：列出所有播放中动画的摄像机 id/name。 */
+    private fun suggestCameras(
+        ctx: CommandContext<CommandSourceStack>,
+        builder: SuggestionsBuilder,
+    ): CompletableFuture<Suggestions> =
+        SharedSuggestionProvider.suggest(ClientAnimationManager.listCameras(), builder)
 
     /**
      * /pdraw debug —— 显示所有播放中动画的调试信息（每刻求值用时 / 帧数 / 粒子数 / 时间轴）。
