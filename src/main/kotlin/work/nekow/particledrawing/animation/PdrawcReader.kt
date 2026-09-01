@@ -25,7 +25,7 @@ import java.util.zip.InflaterInputStream
 object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
-    private const val VERSION = 7     // v7：摄像机朝向改为 target 目标点 + roll（pos/target/fov 关键帧）
+    private const val VERSION = 8     // v8：摄像机旋转空间 flags（bit0=rotLocal）；组空间缺省 local（flags 显式写入）
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 
@@ -171,7 +171,8 @@ object PdrawcReader {
             functions.add(FunctionObject("fx$fi", "fx$fi", center, count, setup, process, funcs, seed, vars, duration, 0, uv, st, ent, fastMath, spinLocal, rotLocal))
         }
 
-        // 摄像机对象（v6 新增；v7 起朝向 = target 目标点 + roll 翻滚角；关键帧走轨道 id "c:<id>"）
+        // 摄像机对象（v6 新增；v7 起朝向 = target 目标点 + roll 翻滚角；v8 起旋转空间 flags：
+        // 关键帧走轨道 id "c:<id>"，rot 轨道 = 摄像机位置绕 target 公转）
         val camCount = br.varint()
         val cameras = ArrayList<AnimCamera>(camCount)
         for (i in 0 until camCount) {
@@ -181,7 +182,8 @@ object PdrawcReader {
             val target = doubleArrayOf(br.f32().toDouble(), br.f32().toDouble(), br.f32().toDouble())
             val roll = br.f32().toDouble()
             val fov = br.f32().toDouble()
-            cameras.add(AnimCamera(id, name, pos, target, roll, fov))
+            val flags = br.u8()
+            cameras.add(AnimCamera(id, name, pos, target, roll, fov, (flags and 1) != 0))
         }
 
         // 轨道

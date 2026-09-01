@@ -88,6 +88,7 @@ class ClientAnimationPlayer(
     private val particleGroupIndex: Map<String, Set<String>> = buildParticleGroupIndex()
     private val groupCentroidCache: Map<String, Vec3> = buildGroupCentroids()
     private val particleFxCache: Map<String, FunctionObject?> = buildParticleFxCache()
+    private val camUp = Vec3(0.0, 1.0, 0.0)
 
     // ---- 函数对象脚本程序缓存（setup 执行一次；process 每粒子每 tick） ----
     private data class FxScriptState(
@@ -262,12 +263,15 @@ class ClientAnimationPlayer(
     fun stop() { finished = true }
 
     /**
-     * 查询某摄像机对象在 t 时刻的姿态（v6 新增；v7 起朝向为 target 目标点 + roll）。
+     * 查询某摄像机对象在 t 时刻的姿态（v6 新增；v7 起朝向为 target 目标点 + roll；v8 起支持旋转公转）。
      *
-     * 与编辑器 `cameraValueAt` 语义一致：
+     * 与编辑器 `cameraPoseAt` 语义一致：
      * - pos/target 分量：set 轨道 `trackValueAt(t, base)`；op 轨道 `base + trackValueAt(t, 0)`；
+     * - rot 分量：set/op 均 `trackValueAt(t, 0)`（基值 0）；
      * - roll：静态基础值，不走关键帧；
      * - fov：直接 `trackValueAt(t, fov)`（不区分 set/op，与编辑器一致）。
+     * - 旋转 = 位置绕 target 公转：world 空间绕世界 X/Y/Z 轴依次旋转；
+     *   local 空间以 lookAt+roll 自身朝向做 intrinsic XYZ 旋转（M = M_look·M_local·M_lookᵀ）。
      *
      * 摄像机不存在时返回 null。
      */
@@ -281,9 +285,72 @@ class ClientAnimationPlayer(
             pos[i] = cameraComponentAt(id, "pos", comp, cam.pos[i], t)
             target[i] = cameraComponentAt(id, "target", comp, cam.target[i], t)
         }
+        val rot = rotVectorAt(id, t)
+        if (rot[0] != 0.0 || rot[1] != 0.0 || rot[2] != 0.0) {
+            applyCameraOrbit(pos, target, rot, cam.rotLocal, cam.roll)
+        }
         val roll = cam.roll
         val fov = scalarAt("fov", id, t, cam.fov)
         return CameraPose(pos, target, roll, fov)
+    }
+
+    /** 摄像机公转（v8）：把位置绕「看向目标点」旋转。 */
+    private fun applyCameraOrbit(pos: DoubleArray, target: DoubleArray, rot: DoubleArray, rotLocal: Boolean, roll: Double) {
+        val d = Vec3(pos[0] - target[0], pos[1] - target[1], pos[2] - target[2])
+        if (d.lengthSqr() < 1e-18) return // 与目标重合：无法公转
+        val r = if (rotLocal) {
+            val frame = cameraLookFrame(Vec3(pos[0], pos[1], pos[2]), Vec3(target[0], target[1], target[2]), roll)
+                ?: return worldCameraOrbitInto(pos, target, rot)
+            rotateAroundFrame(d, rot, frame.first, frame.second, frame.third)
+        } else {
+            rotateAround(d, Vec3.ZERO, rot)
+        }
+        pos[0] = target[0] + r.x
+        pos[1] = target[1] + r.y
+        pos[2] = target[2] + r.z
+    }
+
+    /** 世界空间回退（lookAt 退化时）：绕世界 X/Y/Z 轴依次旋转并写回 pos。 */
+    private fun worldCameraOrbitInto(pos: DoubleArray, target: DoubleArray, rot: DoubleArray) {
+        val d = Vec3(pos[0] - target[0], pos[1] - target[1], pos[2] - target[2])
+        val r = rotateAround(d, Vec3.ZERO, rot)
+        pos[0] = target[0] + r.x
+        pos[1] = target[1] + r.y
+        pos[2] = target[2] + r.z
+    }
+
+    /**
+     * 摄像机 lookAt+roll 朝向基（列 = 世界坐标）：(right, camUp, back)。
+     * 与编辑器一致：局部 +Z = normalize(pos − target)（即局部 −Z 指向目标），
+     * right = normalize(cross(up, back))，camUp = cross(back, right)，再绕 back 翻滚 roll。
+     * 视线与世界 up 平行（lookAt 退化）时返回 null。
+     */
+    private fun cameraLookFrame(pos: Vec3, target: Vec3, roll: Double): Triple<Vec3, Vec3, Vec3>? {
+        val back = pos.subtract(target).normalize()
+        var right = camUp.cross(back)
+        if (right.lengthSqr() < 1e-12) return null
+        right = right.normalize()
+        val up = back.cross(right)
+        if (roll == 0.0) return Triple(right, up, back)
+        val rz = Math.toRadians(roll)
+        return Triple(right.rotateAround(back, rz), up.rotateAround(back, rz), back)
+    }
+
+    /** 在给定正交基（列 = 世界坐标）下做 intrinsic XYZ 旋转（绕原点；与编辑器 M_look·M_local·M_lookᵀ 等价）。 */
+    private fun rotateAroundFrame(p: Vec3, rot: DoubleArray, xAxis: Vec3, yAxis: Vec3, zAxis: Vec3): Vec3 {
+        var r = p
+        val rx = Math.toRadians(rot[0])
+        val ry = Math.toRadians(rot[1])
+        val rz = Math.toRadians(rot[2])
+        if (rot[0] != 0.0) r = r.rotateAround(xAxis, rx)
+        var y = yAxis
+        if (rot[0] != 0.0) y = y.rotateAround(xAxis, rx)
+        if (rot[1] != 0.0) r = r.rotateAround(y, ry)
+        var z = zAxis
+        if (rot[0] != 0.0) z = z.rotateAround(xAxis, rx)
+        if (rot[1] != 0.0) z = z.rotateAround(y, ry)
+        if (rot[2] != 0.0) r = r.rotateAround(z, rz)
+        return r
     }
 
     /** 摄像机单分量求值（pos/target；set=绝对值，op=增量叠加到基础值）。 */

@@ -128,8 +128,9 @@ class AnimKeyframe(
  * @param target 看向目标点 [x,y,z]（世界坐标）；pitch/yaw 由 lookAt(pos, target) 自动计算
  * @param roll 翻滚角（度，绕视线方向，静态基础值，不走关键帧）
  * @param fov 基础视场角（度）
+ * @param rotLocal 旋转（公转）空间：true=局部（摄像机 lookAt+roll 自身朝向），false=世界轴（v8 起，缺省 local）
  *
- * 摄像机的位置/目标/FOV 关键帧走 [AnimTrack]（轨道 id 为 "c:<id>"，pr 为 pos.x/target.y/fov 等），
+ * 摄像机的位置/目标/旋转/FOV 关键帧走 [AnimTrack]（轨道 id 为 "c:<id>"，pr 为 pos.x/target.y/rot.z/fov 等），
  * 播放端不自动改变玩家相机；仅提供数据供脚本/模组按需查询。
  */
 class AnimCamera(
@@ -138,7 +139,8 @@ class AnimCamera(
     val pos: DoubleArray,
     val target: DoubleArray,
     val roll: Double,
-    val fov: Double
+    val fov: Double,
+    val rotLocal: Boolean = true
 )
 
 /**
