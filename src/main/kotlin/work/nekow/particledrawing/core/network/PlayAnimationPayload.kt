@@ -7,16 +7,19 @@ import net.minecraft.resources.Identifier
 import java.util.UUID
 
 /**
- * 服务端下发「播放动画」：携带 .pdrawc 二进制播放文件全文与播放原点。
+ * 服务端下发「播放动画」：携带 .pdrawc 二进制播放文件全文、播放原点与服务端权威进度起点。
  *
  * @param animationId 本次播放的唯一 ID（用于后续变量更新/停止）
  * @param originX/Y/Z 播放原点（世界坐标）
+ * @param startGameTick 播放开始时刻的服务端维度 gameTime（服务端权威进度时钟起点；
+ *                      客户端按 gameTime - startGameTick 计算当前帧，所有玩家一致）
  * @param data .pdrawc 二进制字节（客户端解析时验签）
  */
 @Suppress("unused")
 data class PlayAnimationPayload(
     val animationId: UUID,
     val originX: Double, val originY: Double, val originZ: Double,
+    val startGameTick: Long,
     val data: ByteArray,
 ) : CustomPacketPayload {
 
@@ -34,8 +37,9 @@ data class PlayAnimationPayload(
                     val ox = buf.readDouble()
                     val oy = buf.readDouble()
                     val oz = buf.readDouble()
+                    val startGameTick = buf.readVarLong()
                     val data = buf.readByteArray()
-                    return PlayAnimationPayload(id, ox, oy, oz, data)
+                    return PlayAnimationPayload(id, ox, oy, oz, startGameTick, data)
                 }
 
                 override fun encode(buf: FriendlyByteBuf, p: PlayAnimationPayload) {
@@ -43,6 +47,7 @@ data class PlayAnimationPayload(
                     buf.writeDouble(p.originX)
                     buf.writeDouble(p.originY)
                     buf.writeDouble(p.originZ)
+                    buf.writeVarLong(p.startGameTick)
                     buf.writeByteArray(p.data)
                 }
             }

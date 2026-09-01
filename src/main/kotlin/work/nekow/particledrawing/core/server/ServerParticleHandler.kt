@@ -26,6 +26,8 @@ object ServerParticleHandler {
         AnimationScheduler.tick()
         for (level in server.allLevels) {
             val dim = ParticleUtils.dimensionUUID(level)
+            // 清理该维度已播完（非循环）的动画播放记录，避免迟到玩家收到已结束的播放
+            ServerAnimationManager.removeFinished(dim, level.gameTime)
             val engine = ServerParticleEngine.getOrCreate(dim)
             engine.tick(level.players())
         }

@@ -32,40 +32,59 @@ object ServerAnimationManager {
         // 重发所需：播放原点与 .pdrawc 原始字节（维度切换/重生/重连后把播放重新下发给玩家）
         val origin: Vec3,
         val data: ByteArray,
+        // 服务端权威进度：起始 gameTime 与时间轴参数（进度 = wrap/clamp(gameTime - startGameTick)）
+        val startGameTick: Long,
+        val maxTick: Int,
+        val loop: Boolean,
     )
 
     private val playbacks = ConcurrentHashMap<UUID, Playback>()
 
-    /** 启动播放：向玩家下发 .pdrawc 字节与原点，返回动画 ID。 */
+    /** 启动播放：向玩家下发 .pdrawc 字节、原点与服务端进度起点，返回动画 ID。 */
     @JvmStatic
     fun play(dimensionId: UUID, players: Collection<ServerPlayer>, data: ByteArray, origin: Vec3): UUID {
         val id = UUID.randomUUID()
-        val payload = PlayAnimationPayload(id, origin.x, origin.y, origin.z, data)
+        // 服务端解析时间轴参数（loop/长度）用于计算进度；解析失败仍照旧下发（客户端各自拒绝播放）
+        val anim = try { AnimationLoader.parse(data) } catch (_: Exception) { null }
+        val startGameTick = players.firstOrNull()?.level()?.gameTime ?: 0L
+        val payload = PlayAnimationPayload(id, origin.x, origin.y, origin.z, startGameTick, data)
         val ids = HashSet<UUID>()
         for (player in players) {
             PacketDistributor.sendToPlayer(player, payload)
             ids.add(player.uuid)
         }
-        playbacks[id] = Playback(id, dimensionId, ids, origin, data)
+        playbacks[id] = Playback(id, dimensionId, ids, origin, data, startGameTick, anim?.timelineLength() ?: 0, anim?.loop ?: false)
         return id
     }
 
     /**
      * 把玩家所在维度内、且覆盖到该玩家的全部活跃播放重新下发。
      * 客户端在切换维度/重生/重连时会重建 ClientLevel 与原版 ParticleEngine，
-     * 本地播放的桥接粒子随之销毁；此方法让玩家回来时重新收到播放包、重建粒子。
+     * 本地播放的桥接粒子随之销毁；此方法让玩家回来时重新收到播放包、重建粒子，
+     * 并按服务端权威进度（同一 startGameTick + gameTime 时钟）从当前帧继续，
+     * 与仍在观看的其他玩家画面一致。已播完的非循环播放不再下发。
      * 三个触发点（维度切换 / 重生 / 登录）各只触发一次，不会重复下发。
      */
     @JvmStatic
     fun syncPlaybacksToPlayer(player: ServerPlayer) {
-        val dim = ParticleUtils.dimensionUUID(player.level())
+        val level = player.level()
+        val dim = ParticleUtils.dimensionUUID(level)
+        val gameTime = level.gameTime
         for (pb in playbacks.values) {
-            if (pb.dimensionId == dim && player.uuid in pb.playerIds) {
-                PacketDistributor.sendToPlayer(
-                    player,
-                    PlayAnimationPayload(pb.animationId, pb.origin.x, pb.origin.y, pb.origin.z, pb.data)
-                )
-            }
+            if (pb.dimensionId != dim || player.uuid !in pb.playerIds) continue
+            if (AnimationProgress.isFinished(gameTime - pb.startGameTick, pb.maxTick, pb.loop)) continue
+            PacketDistributor.sendToPlayer(
+                player,
+                PlayAnimationPayload(pb.animationId, pb.origin.x, pb.origin.y, pb.origin.z, pb.startGameTick, pb.data)
+            )
+        }
+    }
+
+    /** 清理指定维度已播完（非循环）的播放记录（服务端每 tick 调用）。 */
+    @JvmStatic
+    fun removeFinished(dimensionId: UUID, gameTime: Long) {
+        playbacks.entries.removeIf { (_, pb) ->
+            pb.dimensionId == dimensionId && AnimationProgress.isFinished(gameTime - pb.startGameTick, pb.maxTick, pb.loop)
         }
     }
 

@@ -16,6 +16,9 @@ import kotlin.math.sqrt
 class ClientAnimationPlayer(
     private val animation: ParticleAnimation,
     private val origin: Vec3,
+    // 服务端权威进度起点（维度 gameTime）；进度 = wrap/clamp(currentGameTick - startGameTick)
+    private val startGameTick: Long = 0L,
+    currentGameTick: Long = 0L,
 ) {
 
     data class ParticleState(
@@ -63,25 +66,7 @@ class ClientAnimationPlayer(
     val currentTickValue: Int get() = currentTick
     val maxTickValue: Int get() = maxTick
 
-    private val maxTick: Int = run {
-        var max = animation.tracks.flatMap { it.keyframes }.maxOfOrNull { it.tick }?.toDouble() ?: 0.0
-        // 粒子起始时间与有限寿命计入时长：晚出场/晚回收的粒子不能被截断
-        for (p in animation.particles) {
-            if (p.st > max) max = p.st.toDouble()
-            if (p.life >= 0 && p.st + p.life > max) max = (p.st + p.life).toDouble()
-        }
-        for (fx in animation.functions) {
-            // 函数对象跨度 = st + extent；extent = max(时长 duration, 变量关键帧最大 tick)
-            // （与编辑器 maxTick / rowSpan 一致：duration 恒为基准，变量关键帧只可能把它拉长）
-            var extent = fx.duration.toDouble()
-            for (v in fx.vars.values) {
-                val kfMax = v.kf.maxOfOrNull { it.tick } ?: continue
-                if (kfMax > extent) extent = kfMax
-            }
-            if (fx.st + extent > max) max = fx.st + extent
-        }
-        max.toInt()
-    }
+    private val maxTick: Int = animation.timelineLength()
 
     // 静态动画（无轨道/时间轴，且公式与变量均不含 random()）：init 已算好 t=0 状态，每 tick 无需重算。
     // 5w 粒子的静态粒子云若每刻重算会白费约 70ms/tick。
@@ -230,24 +215,40 @@ class ClientAnimationPlayer(
                 states[id] = ParticleState(id, origin.add(base.first), base.second, base.third, base.fourth, base.fifth, resolveUV(id, fx.uv))
             }
         }
-        advanceTo(0.0)
+        // 按服务端权威进度定位到当前帧（elapsed = currentGameTick - startGameTick）：
+        // 新播放等价于从 0 开始；重发/迟到加入则直接跳到其他玩家正在看的同一帧。
+        val initialTick = AnimationProgress.tickAt(
+            (currentGameTick - startGameTick).coerceAtLeast(0L), maxTick, animation.loop
+        )
+        currentTick = initialTick
+        advanceTo(initialTick.toDouble())
     }
 
-    fun tick(): Boolean {
+    /**
+     * 以维度 gameTime 为权威时钟推进一 tick。
+     * 所有客户端使用同一 startGameTick 与同一 gameTime，因此帧号完全一致；
+     * 本地不再各自递增，杜绝客户端间漂移与重发后从头重播的问题。
+     */
+    fun tick(gameTick: Long): Boolean {
         if (finished) return false
         frameCount++
-        currentTick++
-        if (currentTick >= maxTick) {
-            if (animation.loop) { currentTick = 0; justLooped = true }
-            else { finished = true; return false }
+        val elapsed = (gameTick - startGameTick).coerceAtLeast(0L)
+        if (AnimationProgress.isFinished(elapsed, maxTick, animation.loop)) {
+            finished = true
+            return false
         }
-        if (!isStaticAnimation) {
-            val t0 = System.nanoTime()
-            advanceTo(currentTick.toDouble())
-            val elapsed = System.nanoTime() - t0
-            lastAdvanceNanos = elapsed
-            advanceNanosTotal += elapsed
-            advanceCount++
+        val target = AnimationProgress.tickAt(elapsed, maxTick, animation.loop)
+        if (target != currentTick) {
+            if (target < currentTick) justLooped = true // 循环回卷（st 门控粒子在 sync 中重新生成）
+            currentTick = target
+            if (!isStaticAnimation) {
+                val t0 = System.nanoTime()
+                advanceTo(target.toDouble())
+                val elapsedNs = System.nanoTime() - t0
+                lastAdvanceNanos = elapsedNs
+                advanceNanosTotal += elapsedNs
+                advanceCount++
+            }
         }
         return true
     }

@@ -133,7 +133,8 @@ internal object ClientPayloadHandler {
             ClientAnimationManager.play(
                 payload.animationId,
                 payload.data,
-                Vec3(payload.originX, payload.originY, payload.originZ)
+                Vec3(payload.originX, payload.originY, payload.originZ),
+                payload.startGameTick
             )
         }
     }

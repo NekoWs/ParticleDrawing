@@ -92,7 +92,7 @@ object ClientAnimationManager {
 
     /** 开始本地播放一个动画（解析 .pdrawc 字节并验签，失败则拒绝播放）。 */
     @JvmStatic
-    fun play(animationId: UUID, data: ByteArray, origin: Vec3) {
+    fun play(animationId: UUID, data: ByteArray, origin: Vec3, startGameTick: Long) {
         // 服务端在维度切换/重生/重连后会重发同一播放：先清理旧条目与其粒子，再重建，
         // 避免旧条目残留（旧桥接粒子已随上一世界的 ParticleEngine 销毁，不可复用）。
         if (entries.containsKey(animationId)) stopInternal(animationId)
@@ -105,7 +105,9 @@ object ClientAnimationManager {
         // 播放前预加载内嵌贴图
         preloadTextures(animation)
 
-        val player = ClientAnimationPlayer(animation, origin)
+        // 服务端权威进度：以当前维度 gameTime 计算起始帧（重发/迟到加入时直接对齐其他玩家）
+        val currentGameTick = Minecraft.getInstance().level?.gameTime ?: startGameTick
+        val player = ClientAnimationPlayer(animation, origin, startGameTick, currentGameTick)
         val uuids = HashMap<String, UUID>()
         val liveIds = HashSet<String>()
         for (state in player.currentStates()) {
@@ -155,9 +157,11 @@ object ClientAnimationManager {
             val player = mc.player
             if (player == null || player.isDeadOrDying) CameraController.detach()
         }
+        // 服务端权威进度时钟：维度 gameTime（与所有客户端、服务器一致）
+        val gameTick = Minecraft.getInstance().level?.gameTime ?: return
         val toStop = mutableListOf<UUID>()
         for ((animId, entry) in entries) {
-            if (entry.player.tick()) {
+            if (entry.player.tick(gameTick)) {
                 // 静态动画（粒子状态恒定）跳过每刻的渲染同步，避免 5w 粒子无谓的逐粒子写入
                 if (!entry.player.isStatic()) sync(entry)
             } else {

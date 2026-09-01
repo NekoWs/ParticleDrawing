@@ -140,3 +140,25 @@ class AnimCamera(
     val roll: Double,
     val fov: Double
 )
+
+/**
+ * 动画时间轴长度（tick，与编辑器 maxTick / 客户端播放器语义一致）：
+ * 轨道最大关键帧 tick、粒子 st/life 上界、函数对象 st+extent（extent = max(duration, 变量关键帧最大 tick)）。
+ * 服务端与客户端共用，保证进度计算口径一致。
+ */
+fun ParticleAnimation.timelineLength(): Int {
+    var max = tracks.flatMap { it.keyframes }.maxOfOrNull { it.tick }?.toDouble() ?: 0.0
+    for (p in particles) {
+        if (p.st > max) max = p.st.toDouble()
+        if (p.life >= 0 && p.st + p.life > max) max = (p.st + p.life).toDouble()
+    }
+    for (fx in functions) {
+        var extent = fx.duration.toDouble()
+        for (v in fx.vars.values) {
+            val kfMax = v.kf.maxOfOrNull { it.tick } ?: continue
+            if (kfMax > extent) extent = kfMax
+        }
+        if (fx.st + extent > max) max = fx.st + extent
+    }
+    return max.toInt()
+}
