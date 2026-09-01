@@ -7,6 +7,7 @@ import net.neoforged.neoforge.network.PacketDistributor
 import work.nekow.particledrawing.core.network.PlayAnimationPayload
 import work.nekow.particledrawing.core.network.StopAnimationPayload
 import work.nekow.particledrawing.core.network.VariableUpdatePayload
+import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -28,6 +29,9 @@ object ServerAnimationManager {
         val animationId: UUID,
         val dimensionId: UUID,
         val playerIds: Set<UUID>,
+        // 重发所需：播放原点与 .pdrawc 原始字节（维度切换/重生/重连后把播放重新下发给玩家）
+        val origin: Vec3,
+        val data: ByteArray,
     )
 
     private val playbacks = ConcurrentHashMap<UUID, Playback>()
@@ -42,8 +46,27 @@ object ServerAnimationManager {
             PacketDistributor.sendToPlayer(player, payload)
             ids.add(player.uuid)
         }
-        playbacks[id] = Playback(id, dimensionId, ids)
+        playbacks[id] = Playback(id, dimensionId, ids, origin, data)
         return id
+    }
+
+    /**
+     * 把玩家所在维度内、且覆盖到该玩家的全部活跃播放重新下发。
+     * 客户端在切换维度/重生/重连时会重建 ClientLevel 与原版 ParticleEngine，
+     * 本地播放的桥接粒子随之销毁；此方法让玩家回来时重新收到播放包、重建粒子。
+     * 三个触发点（维度切换 / 重生 / 登录）各只触发一次，不会重复下发。
+     */
+    @JvmStatic
+    fun syncPlaybacksToPlayer(player: ServerPlayer) {
+        val dim = ParticleUtils.dimensionUUID(player.level())
+        for (pb in playbacks.values) {
+            if (pb.dimensionId == dim && player.uuid in pb.playerIds) {
+                PacketDistributor.sendToPlayer(
+                    player,
+                    PlayAnimationPayload(pb.animationId, pb.origin.x, pb.origin.y, pb.origin.z, pb.data)
+                )
+            }
+        }
     }
 
     /**

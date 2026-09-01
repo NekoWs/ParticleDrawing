@@ -1,8 +1,10 @@
 package work.nekow.particledrawing.core.server
 
 import net.minecraft.server.level.ServerLevel
+import net.minecraft.server.level.ServerPlayer
 import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
+import net.neoforged.neoforge.event.entity.player.PlayerEvent
 import net.neoforged.neoforge.event.level.LevelEvent
 import net.neoforged.neoforge.event.tick.ServerTickEvent
 import work.nekow.particledrawing.ParticleDrawing
@@ -38,5 +40,25 @@ object ServerParticleHandler {
             ServerParticleEngine.clearDimension(dim)
             AnimationScheduler.clear()
         }
+    }
+
+    // 维度切换 / 重生 / 登录后，客户端会重建 ClientLevel 与原版 ParticleEngine，
+    // 本地动画播放的粒子桥接随之销毁——重新下发该玩家所在维度的活跃播放，粒子回来后恢复显示。
+    @SubscribeEvent
+    @JvmStatic
+    fun onPlayerChangedDimension(event: PlayerEvent.PlayerChangedDimensionEvent) {
+        (event.entity as? ServerPlayer)?.let { ServerAnimationManager.syncPlaybacksToPlayer(it) }
+    }
+
+    @SubscribeEvent
+    @JvmStatic
+    fun onPlayerRespawn(event: PlayerEvent.PlayerRespawnEvent) {
+        (event.entity as? ServerPlayer)?.let { ServerAnimationManager.syncPlaybacksToPlayer(it) }
+    }
+
+    @SubscribeEvent
+    @JvmStatic
+    fun onPlayerLoggedIn(event: PlayerEvent.PlayerLoggedInEvent) {
+        (event.entity as? ServerPlayer)?.let { ServerAnimationManager.syncPlaybacksToPlayer(it) }
     }
 }

@@ -1,10 +1,12 @@
 package work.nekow.particledrawing.core.client
 
+import net.minecraft.client.multiplayer.ClientLevel
 import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.client.event.ClientTickEvent
 import net.neoforged.neoforge.client.event.ViewportEvent
+import net.neoforged.neoforge.event.level.LevelEvent
 import net.neoforged.neoforge.event.tick.PlayerTickEvent
 import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.lighting.DynamicLightManager
@@ -58,6 +60,20 @@ object ParticleRenderHandler {
         if (event.entity !== mc.player) return
         ClientAnimationManager.tick()
         ClientAnimationProgramManager.tick()
+    }
+
+    /**
+     * 客户端世界卸载（切换维度/重生/退出）：旧 ClientLevel 的 ParticleEngine 随之销毁，
+     * 本地动画播放的桥接粒子不可恢复——清空播放条目，等服务端在玩家到达新世界后
+     * 重发 PlayAnimationPayload 再重建（见 ServerAnimationManager.syncPlaybacksToPlayer）。
+     */
+    @SubscribeEvent
+    @JvmStatic
+    @Suppress("UNUSED_PARAMETER")
+    fun onClientLevelUnload(event: LevelEvent.Unload) {
+        if (event.level is ClientLevel) {
+            ClientAnimationManager.onClientLevelUnload()
+        }
     }
 
     /**

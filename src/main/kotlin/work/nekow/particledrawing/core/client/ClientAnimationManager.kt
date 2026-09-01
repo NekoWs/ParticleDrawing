@@ -93,6 +93,10 @@ object ClientAnimationManager {
     /** 开始本地播放一个动画（解析 .pdrawc 字节并验签，失败则拒绝播放）。 */
     @JvmStatic
     fun play(animationId: UUID, data: ByteArray, origin: Vec3) {
+        // 服务端在维度切换/重生/重连后会重发同一播放：先清理旧条目与其粒子，再重建，
+        // 避免旧条目残留（旧桥接粒子已随上一世界的 ParticleEngine 销毁，不可复用）。
+        if (entries.containsKey(animationId)) stopInternal(animationId)
+
         val animation = try {
             AnimationLoader.parse(data)
         } catch (_: Exception) {
@@ -113,6 +117,22 @@ object ClientAnimationManager {
             ClientParticleEngine.instance()?.let { spawnState(it, uuid, state) }
         }
         entries[animationId] = Entry(player, uuids, animation, origin, liveIds)
+    }
+
+    /**
+     * 客户端世界卸载（切换维度/重生/退出世界）时清理全部本地播放。
+     * ClientLevel 重建会换掉原版 ParticleEngine，桥接粒子随之销毁；条目继续存在只会
+     * 对着不存在的桥接空转。清理后等待服务端重发 PlayAnimationPayload 重建播放。
+     */
+    @JvmStatic
+    fun onClientLevelUnload() {
+        if (entries.isEmpty()) {
+            // 即使没有播放条目，也解除可能残留的摄像机预览（姿态属于旧世界）
+            CameraController.detach()
+            return
+        }
+        for (id in entries.keys) stopInternal(id)
+        CameraController.detach()
     }
 
     /** 重载所有正在播放动画的内嵌贴图（/pdraw reload 使用）。 */
