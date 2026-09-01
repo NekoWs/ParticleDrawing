@@ -34,12 +34,14 @@ class ClientAnimationPlayer(
      * 摄像机在某时刻的姿态（供脚本/模组按 id 查询；播放端不自动改变玩家相机）。
      *
      * @param pos 世界坐标 [x,y,z]
-     * @param rot 欧拉角 [pitch,yaw,roll]（度，XYZ 顺序）
+     * @param target 看向目标点 [x,y,z]（世界坐标）；pitch/yaw 由 lookAt(pos, target) 计算
+     * @param roll 翻滚角（度，绕视线方向，静态基础值）
      * @param fov 视场角（度）
      */
     data class CameraPose(
         val pos: DoubleArray,
-        val rot: DoubleArray,
+        val target: DoubleArray,
+        val roll: Double,
         val fov: Double,
     )
 
@@ -259,10 +261,11 @@ class ClientAnimationPlayer(
     fun stop() { finished = true }
 
     /**
-     * 查询某摄像机对象在 t 时刻的姿态（v6 新增）。
+     * 查询某摄像机对象在 t 时刻的姿态（v6 新增；v7 起朝向为 target 目标点 + roll）。
      *
      * 与编辑器 `cameraValueAt` 语义一致：
-     * - pos/rot 分量：set 轨道 `trackValueAt(t, base)`；op 轨道 `base + trackValueAt(t, 0)`；
+     * - pos/target 分量：set 轨道 `trackValueAt(t, base)`；op 轨道 `base + trackValueAt(t, 0)`；
+     * - roll：静态基础值，不走关键帧；
      * - fov：直接 `trackValueAt(t, fov)`（不区分 set/op，与编辑器一致）。
      *
      * 摄像机不存在时返回 null。
@@ -271,17 +274,18 @@ class ClientAnimationPlayer(
         val cam = animation.cameras.firstOrNull { it.id == camId } ?: return null
         val id = "c:" + camId
         val pos = DoubleArray(3)
-        val rot = DoubleArray(3)
+        val target = DoubleArray(3)
         for (i in 0 until 3) {
             val comp = when (i) { 0 -> "x"; 1 -> "y"; else -> "z" }
             pos[i] = cameraComponentAt(id, "pos", comp, cam.pos[i], t)
-            rot[i] = cameraComponentAt(id, "rot", comp, cam.rot[i], t)
+            target[i] = cameraComponentAt(id, "target", comp, cam.target[i], t)
         }
+        val roll = cam.roll
         val fov = scalarAt("fov", id, t, cam.fov)
-        return CameraPose(pos, rot, fov)
+        return CameraPose(pos, target, roll, fov)
     }
 
-    /** 摄像机单分量求值（pos/rot；set=绝对值，op=增量叠加到基础值）。 */
+    /** 摄像机单分量求值（pos/target；set=绝对值，op=增量叠加到基础值）。 */
     private fun cameraComponentAt(id: String, prop: String, comp: String, base: Double, t: Double): Double {
         val tr = findTrackByPr(compPr(prop, comp), id) ?: return base
         if (tr.keyframes.isEmpty()) return base

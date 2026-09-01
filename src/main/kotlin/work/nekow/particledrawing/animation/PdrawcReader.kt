@@ -25,7 +25,7 @@ import java.util.zip.InflaterInputStream
 object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
-    private const val VERSION = 6     // v6：新增摄像机对象（cameras section + 摄像机轨道引用 kind=3 + fov pr）
+    private const val VERSION = 7     // v7：摄像机朝向改为 target 目标点 + roll（pos/target/fov 关键帧）
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 
@@ -38,6 +38,7 @@ object PdrawcReader {
         "spin.x", "spin.y", "spin.z",
         "center.x", "center.y", "center.z",
         "fov",
+        "target.x", "target.y", "target.z",
     )
 
     private val UV_MODES = arrayOf(UvData.Mode.STATIC, UvData.Mode.FILL, UvData.Mode.ANIMATED)
@@ -170,16 +171,17 @@ object PdrawcReader {
             functions.add(FunctionObject("fx$fi", "fx$fi", center, count, setup, process, funcs, seed, vars, duration, 0, uv, st, ent, fastMath, spinLocal, rotLocal))
         }
 
-        // 摄像机对象（v6；id/name/基值；关键帧走轨道 id "c:<id>"）
+        // 摄像机对象（v6 新增；v7 起朝向 = target 目标点 + roll 翻滚角；关键帧走轨道 id "c:<id>"）
         val camCount = br.varint()
         val cameras = ArrayList<AnimCamera>(camCount)
         for (i in 0 until camCount) {
             val id = br.str()
             val name = br.str()
             val pos = doubleArrayOf(br.f32().toDouble(), br.f32().toDouble(), br.f32().toDouble())
-            val rot = doubleArrayOf(br.f32().toDouble(), br.f32().toDouble(), br.f32().toDouble())
+            val target = doubleArrayOf(br.f32().toDouble(), br.f32().toDouble(), br.f32().toDouble())
+            val roll = br.f32().toDouble()
             val fov = br.f32().toDouble()
-            cameras.add(AnimCamera(id, name, pos, rot, fov))
+            cameras.add(AnimCamera(id, name, pos, target, roll, fov))
         }
 
         // 轨道
