@@ -22,7 +22,8 @@ class ParticleAnimation(
     val groupUV: Map<String, UvData> = emptyMap(),
     val texData: Map<String, ByteArray> = emptyMap(),
     val groupSpinSpace: Map<String, Boolean> = emptyMap(),
-    val groupRotSpace: Map<String, Boolean> = emptyMap()
+    val groupRotSpace: Map<String, Boolean> = emptyMap(),
+    val cameras: List<AnimCamera> = emptyList()
 )
 
 /**
@@ -118,4 +119,22 @@ class AnimKeyframe(
     val tick: Int,
     val value: Double,
     val easing: EasingType
+)
+
+/**
+ * 摄像机对象（v6 新增，.pdrawc 内嵌，供播放端按 id 查询位置/旋转/FOV 关键帧）。
+ *
+ * @param pos 基础位置 [x,y,z]（世界坐标）
+ * @param rot 基础旋转 [pitch,yaw,roll]（欧拉角，度，XYZ 顺序）
+ * @param fov 基础视场角（度）
+ *
+ * 摄像机的位置/旋转/FOV 关键帧走 [AnimTrack]（轨道 id 为 "c:<id>"，pr 为 pos.x/rot.y/fov 等），
+ * 播放端不自动改变玩家相机；仅提供数据供脚本/模组按需查询。
+ */
+class AnimCamera(
+    val id: String,
+    val name: String,
+    val pos: DoubleArray,
+    val rot: DoubleArray,
+    val fov: Double
 )

@@ -25,7 +25,7 @@ import java.util.zip.InflaterInputStream
 object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
-    private const val VERSION = 5     // v5：新增组级/函数对象级自转空间（world/local）
+    private const val VERSION = 6     // v6：新增摄像机对象（cameras section + 摄像机轨道引用 kind=3 + fov pr）
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 
@@ -37,6 +37,7 @@ object PdrawcReader {
         "rot.x", "rot.y", "rot.z",
         "spin.x", "spin.y", "spin.z",
         "center.x", "center.y", "center.z",
+        "fov",
     )
 
     private val UV_MODES = arrayOf(UvData.Mode.STATIC, UvData.Mode.FILL, UvData.Mode.ANIMATED)
@@ -169,6 +170,18 @@ object PdrawcReader {
             functions.add(FunctionObject("fx$fi", "fx$fi", center, count, setup, process, funcs, seed, vars, duration, 0, uv, st, ent, fastMath, spinLocal, rotLocal))
         }
 
+        // 摄像机对象（v6；id/name/基值；关键帧走轨道 id "c:<id>"）
+        val camCount = br.varint()
+        val cameras = ArrayList<AnimCamera>(camCount)
+        for (i in 0 until camCount) {
+            val id = br.str()
+            val name = br.str()
+            val pos = doubleArrayOf(br.f32().toDouble(), br.f32().toDouble(), br.f32().toDouble())
+            val rot = doubleArrayOf(br.f32().toDouble(), br.f32().toDouble(), br.f32().toDouble())
+            val fov = br.f32().toDouble()
+            cameras.add(AnimCamera(id, name, pos, rot, fov))
+        }
+
         // 轨道
         val trackCount = br.varint()
         val tracks = ArrayList<AnimTrack>(trackCount)
@@ -187,6 +200,7 @@ object PdrawcReader {
                         0 -> "p$idx"
                         1 -> "g:g$idx"
                         2 -> "f:fx$idx"
+                        3 -> if (idx in cameras.indices) "c:${cameras[idx].id}" else throw IllegalArgumentException("pdrawc 摄像机索引越界: $idx")
                         else -> throw IllegalArgumentException("pdrawc 未知轨道引用类型: $kind")
                     }
                 )
@@ -197,7 +211,7 @@ object PdrawcReader {
 
         if (br.remaining() != 0) throw IllegalArgumentException("pdrawc 存在未解析的尾随字节")
 
-        return ParticleAnimation(loop, particles, tracks, groups, functions, texNames, groupUV, texData, groupSpinSpace, groupRotSpace)
+        return ParticleAnimation(loop, particles, tracks, groups, functions, texNames, groupUV, texData, groupSpinSpace, groupRotSpace, cameras)
     }
 
     /** RFC 8032 Ed25519 公钥（32 字节压缩点）→ JDK [EdECPoint]。 */
