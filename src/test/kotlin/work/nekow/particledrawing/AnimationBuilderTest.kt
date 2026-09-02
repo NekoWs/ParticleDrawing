@@ -69,31 +69,6 @@ class AnimationBuilderTest {
     }
 
     @Test
-    fun scriptDslInFunctionGeneratesProcessText() {
-        val anim = Animation.create {
-            function {
-                id = "fx0"
-                count = 8
-                variable("rad", 4.0)
-                process {
-                    var th by numVar()
-                    th = index / count * 2 * pi
-                    position = vec3(cos(th) * v("rad"), 0, sin(th) * v("rad"))
-                }
-            }
-        }
-
-        val fx = anim.animationModel.functions[0]
-        assertEquals(
-            listOf(
-                "th = this.index / this.count * 2 * pi;",
-                "this.position = vec3(cos(th) * rad, 0, sin(th) * rad);",
-            ).joinToString("\n"),
-            fx.process,
-        )
-    }
-
-    @Test
     fun javaStyleBuilderBuildsExpectedModel() {
         val anim = Animation.builder()
             .loop(false)

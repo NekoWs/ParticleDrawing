@@ -14,9 +14,6 @@ import work.nekow.particledrawing.animation.ParticleAnimation
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.animation.ServerAnimationManager
 import work.nekow.particledrawing.animation.script.Keyframe
-import work.nekow.particledrawing.api.script.FuncsScope
-import work.nekow.particledrawing.api.script.ProcessScope
-import work.nekow.particledrawing.api.script.SetupScope
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
@@ -424,39 +421,18 @@ class FunctionBuilder internal constructor() {
      * @param code setup 脚本文本
      */
     fun setup(code: String): FunctionBuilder = apply { fsetup = code }
-    /**
-     * 通过 DSL 生成 setup 脚本。
-     * @param block setup 脚本 DSL
-     */
-    fun setup(block: Consumer<SetupScope>): FunctionBuilder = apply {
-        fsetup = SetupScope().also(block::accept).build()
-    }
 
     /**
      * 设置 process 脚本文本。
      * @param code process 脚本文本
      */
     fun process(code: String): FunctionBuilder = apply { fprocess = code }
-    /**
-     * 通过 DSL 生成 process 脚本。
-     * @param block process 脚本 DSL
-     */
-    fun process(block: Consumer<ProcessScope>): FunctionBuilder = apply {
-        fprocess = ProcessScope().also(block::accept).build()
-    }
 
     /**
      * 设置顶层函数定义脚本文本。
      * @param code 顶层函数定义脚本文本
      */
     fun funcs(code: String): FunctionBuilder = apply { ffuncs = code }
-    /**
-     * 通过 DSL 生成顶层函数定义。
-     * @param block 顶层函数定义 DSL
-     */
-    fun funcs(block: Consumer<FuncsScope>): FunctionBuilder = apply {
-        ffuncs = FuncsScope().also(block::accept).build()
-    }
     /**
      * 设置随机种子。
      * @param seed 随机种子
@@ -770,39 +746,18 @@ class FunctionDsl internal constructor(private val b: FunctionBuilder) {
      * @param code setup 脚本文本
      */
     fun setup(code: String) { b.setup(code) }
-    /**
-     * 通过 DSL 生成 setup 脚本。
-     * @param block setup 脚本 DSL
-     */
-    fun setup(block: SetupScope.() -> Unit) {
-        b.setup { it.apply(block) }
-    }
 
     /**
      * 设置 process 脚本文本。
      * @param code process 脚本文本
      */
     fun process(code: String) { b.process(code) }
-    /**
-     * 通过 DSL 生成 process 脚本。
-     * @param block process 脚本 DSL
-     */
-    fun process(block: ProcessScope.() -> Unit) {
-        b.process { it.apply(block) }
-    }
 
     /**
      * 设置顶层函数定义脚本文本。
      * @param code 顶层函数定义脚本文本
      */
     fun funcs(code: String) { b.funcs(code) }
-    /**
-     * 通过 DSL 生成顶层函数定义。
-     * @param block 顶层函数定义 DSL
-     */
-    fun funcs(block: FuncsScope.() -> Unit) {
-        b.funcs { it.apply(block) }
-    }
     var seed: Int
         get() = b.fseed
         set(value) { b.fseed = value }
