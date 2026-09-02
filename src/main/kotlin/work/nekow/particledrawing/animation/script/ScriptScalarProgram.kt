@@ -64,13 +64,6 @@ class ScriptScalarProgram internal constructor(
             0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
         )
 
-        private val ATTR_SLOTS: Map<String, Int> = mapOf(
-            "x" to Reg.X, "y" to Reg.Y, "z" to Reg.Z,
-            "r" to Reg.R, "g" to Reg.G, "b" to Reg.B, "a" to Reg.A,
-            "vx" to Reg.VX, "vy" to Reg.VY, "vz" to Reg.VZ,
-            "sc" to Reg.SC, "glow" to Reg.GLOW, "light" to Reg.LIGHT,
-        )
-
         private val CONSTANTS: Map<String, Double> = mapOf(
             "TAU" to 2 * PI,
             "HALF_PI" to PI / 2,
@@ -80,6 +73,11 @@ class ScriptScalarProgram internal constructor(
             "pi" to PI,
             "e" to E,
         )
+
+        private const val CTX_NAME = "Context"
+
+        // 分量别名：r/g/b → x/y/z，a → w。
+        private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w")
 
         private val FUNC_OPS: Map<String, ScalarOp> = mapOf(
             "sin" to ScalarOp.F_SIN, "cos" to ScalarOp.F_COS, "tan" to ScalarOp.F_TAN,
@@ -142,28 +140,14 @@ class ScriptScalarProgram internal constructor(
             }
 
             fun readSlot(name: String): Int? {
-                ATTR_SLOTS[name]?.let { return it }
-                when (name) {
-                    "i", "idx" -> return Reg.I
-                    "n" -> return Reg.N
-                    "t" -> return Reg.T
-                    "dt" -> return dtSlot
-                    "uv_x" -> return uvXSlot
-                    "uv_y" -> return uvYSlot
-                    "life" -> return lifeSlot
-                }
                 varSlots[name]?.let { return it }
                 tempSlots[name]?.let { return it }
                 return null
             }
 
             fun writeSlot(name: String): Int? {
-                ATTR_SLOTS[name]?.let { return it }
                 tempSlots[name]?.let { return it }
-                if (name == "i" || name == "idx" || name == "n" || name == "t" || name == "dt" ||
-                    name == "uv_x" || name == "uv_y" || name == "life" ||
-                    varSlots.containsKey(name) || CONSTANTS.containsKey(name)
-                ) return null
+                if (name == CTX_NAME || varSlots.containsKey(name) || CONSTANTS.containsKey(name)) return null
                 return ensureTemp(name)
             }
 
@@ -185,12 +169,57 @@ class ScriptScalarProgram internal constructor(
                 args.add(0)
             }
 
+            // Context 标量字段 → 寄存器槽。
+            fun ctxFieldReadSlot(field: String): Int? = when (field) {
+                "index" -> Reg.I
+                "count" -> Reg.N
+                "time" -> Reg.T
+                "delta" -> dtSlot
+                "life" -> lifeSlot
+                "scale" -> Reg.SC
+                "glow" -> Reg.GLOW
+                "light" -> Reg.LIGHT
+                else -> null // uv / position / color / velocity 为向量
+            }
+
+            fun ctxFieldWriteSlot(field: String): Int? = when (field) {
+                "scale" -> Reg.SC
+                "glow" -> Reg.GLOW
+                "light" -> Reg.LIGHT
+                else -> null
+            }
+
+            fun ctxCompSlot(field: String, comp: String): Int? {
+                val c = COMP_ALIAS[comp] ?: return null
+                return when (field) {
+                    "uv" -> when (c) { "x" -> uvXSlot; "y" -> uvYSlot; else -> null }
+                    "position" -> when (c) { "x" -> Reg.X; "y" -> Reg.Y; "z" -> Reg.Z; else -> null }
+                    "velocity" -> when (c) { "x" -> Reg.VX; "y" -> Reg.VY; "z" -> Reg.VZ; else -> null }
+                    "color" -> when (c) { "x" -> Reg.R; "y" -> Reg.G; "z" -> Reg.B; "w" -> Reg.A; else -> null }
+                    else -> null
+                }
+            }
+
             fun compileExpr(node: Node): Boolean {
                 when (node) {
                     is NumNode -> { emitPush(ScalarOp.PUSH_CONST, constIdx(node.value)); return true }
                     is VarNode -> {
                         CONSTANTS[node.name]?.let { emitPush(ScalarOp.PUSH_CONST, constIdx(it)); return true }
                         val slot = readSlot(node.name) ?: return false
+                        emitPush(ScalarOp.PUSH_REG, slot)
+                        return true
+                    }
+                    is MemberNode -> {
+                        if (node.obj !is VarNode || node.obj.name != CTX_NAME) return false
+                        val slot = ctxFieldReadSlot(node.field) ?: return false
+                        emitPush(ScalarOp.PUSH_REG, slot)
+                        return true
+                    }
+                    is CompNode -> {
+                        // 仅支持 Context.<向量字段>.<分量> 的标量读取。
+                        val m = node.target as? MemberNode ?: return false
+                        if (m.obj !is VarNode || m.obj.name != CTX_NAME) return false
+                        val slot = ctxCompSlot(m.field, node.comp) ?: return false
                         emitPush(ScalarOp.PUSH_REG, slot)
                         return true
                     }
@@ -215,7 +244,7 @@ class ScriptScalarProgram internal constructor(
                         return true
                     }
                     is IndexNode -> {
-                        // 仅支持「全局数组名 + 标量下标」读取（preset 常见 _gx[i]）。
+                        // 仅支持「全局数组名 + 标量下标」读取（preset 常见 _gx[Context.index]）。
                         val target = node.target
                         if (target !is VarNode || target.name !in globalNamesSet) return false
                         if (!compileExpr(node.index)) return false
@@ -233,6 +262,38 @@ class ScriptScalarProgram internal constructor(
                     is VarTarget -> {
                         if (!compileExpr(value)) return null
                         val slot = writeSlot(target.name) ?: return null
+                        emitPush(ScalarOp.POP_REG, slot)
+                    }
+                    is MemberTarget -> {
+                        if (target.obj !is VarNode || target.obj.name != CTX_NAME) return null
+                        val field = target.field
+                        if (field == "position" || field == "velocity") {
+                            if (value !is ArrayNode || value.items.size != 3) return null
+                            val outSlots = if (field == "position") intArrayOf(Reg.X, Reg.Y, Reg.Z) else intArrayOf(Reg.VX, Reg.VY, Reg.VZ)
+                            for (k in 0..2) {
+                                if (!compileExpr(value.items[k])) return null
+                                emitPush(ScalarOp.POP_REG, outSlots[k])
+                            }
+                        } else if (field == "color") {
+                            if (value !is ArrayNode || (value.items.size != 3 && value.items.size != 4)) return null
+                            val outSlots = intArrayOf(Reg.R, Reg.G, Reg.B, Reg.A)
+                            for (k in value.items.indices) {
+                                if (!compileExpr(value.items[k])) return null
+                                emitPush(ScalarOp.POP_REG, outSlots[k])
+                            }
+                        } else if (field == "scale" || field == "glow" || field == "light") {
+                            if (!compileExpr(value)) return null
+                            val slot = ctxFieldWriteSlot(field) ?: return null
+                            emitPush(ScalarOp.POP_REG, slot)
+                        } else {
+                            return null // index/count/time/delta/uv/life 只读
+                        }
+                    }
+                    is CompTarget -> {
+                        val m = target.target as? MemberNode ?: return null
+                        if (m.obj !is VarNode || m.obj.name != CTX_NAME) return null
+                        val slot = ctxCompSlot(m.field, target.comp) ?: return null
+                        if (!compileExpr(value)) return null
                         emitPush(ScalarOp.POP_REG, slot)
                     }
                     is UnpackTarget -> {

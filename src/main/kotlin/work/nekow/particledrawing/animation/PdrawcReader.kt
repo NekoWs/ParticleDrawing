@@ -25,7 +25,7 @@ import java.util.zip.InflaterInputStream
 object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
-    private const val VERSION = 8     // v8：摄像机旋转空间 flags（bit0=rotLocal）；组空间缺省 local（flags 显式写入）
+    private const val VERSION = 9     // v9：脚本语言改为 Context 对象模型（旧 i/n/[x,y,z]=... 语法移除）
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 

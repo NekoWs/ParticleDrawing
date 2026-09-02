@@ -35,7 +35,7 @@ class ScriptRuntimeConformanceTest {
 
     @Test
     fun attrsArith() {
-        val out = eval("", "[x,y,z] = [i*2, i+1, n]; r = i/n; sc = 0.5; vx = i; glow = 1; light = 12;", "", 0, 3, 0)
+        val out = eval("", "Context.position = [Context.index*2, Context.index+1, Context.count]; Context.color.r = Context.index/Context.count; Context.scale = 0.5; Context.velocity.x = Context.index; Context.glow = 1; Context.light = 12;", "", 0, 3, 0)
         assertEquals(listOf(0.0, 1.0, 3.0), out.pos.toList())
         assertEquals(listOf(0.0, 1.0, 1.0, 1.0), out.color.toList())
         assertEquals(0.5, out.scale, 1e-12)
@@ -47,7 +47,7 @@ class ScriptRuntimeConformanceTest {
     fun arrays() {
         val out = eval(
             "global arr = []; arr.push(3); arr.push(1); arr.push(2); global brr = arr.slice(0, 3);",
-            "x = arr[0]; y = arr.find(2); z = arr.includes(9) ? 1 : 0; sc = brr.size();",
+            "Context.position.x = arr[0]; Context.position.y = arr.find(2); Context.position.z = arr.includes(9) ? 1 : 0; Context.scale = brr.size();",
             "", 0, 1, 0,
         )
         assertEquals(listOf(3.0, 2.0, 0.0), out.pos.toList())
@@ -58,7 +58,7 @@ class ScriptRuntimeConformanceTest {
     fun controlFlow() {
         val out = eval(
             "",
-            "s = 0; for (k = 0; k < 5; k = k + 1) { s = s + k; } while (s < 11) { s = s + 1; } if (s > 10) { x = s; } else { x = -1; } y = (s == 12) ? 2 : 0;",
+            "s = 0; for (k = 0; k < 5; k = k + 1) { s = s + k; } while (s < 11) { s = s + 1; } if (s > 10) { Context.position.x = s; } else { Context.position.x = -1; } Context.position.y = (s == 12) ? 2 : 0;",
             "", 0, 1, 0,
         )
         assertEquals(listOf(11.0, 0.0, 0.0), out.pos.toList())
@@ -68,7 +68,7 @@ class ScriptRuntimeConformanceTest {
     fun funcRecursion() {
         val out = eval(
             "",
-            "x = fib(6); y = fac(4);",
+            "Context.position.x = fib(6); Context.position.y = fac(4);",
             "func fib(nn) { if (nn < 2) { return nn; } return fib(nn-1) + fib(nn-2); }\nfunc fac(nn) { if (nn <= 1) { return 1; } return nn * fac(nn-1); }",
             0, 1, 0,
         )
@@ -79,7 +79,7 @@ class ScriptRuntimeConformanceTest {
     fun vecMat() {
         val out = eval(
             "",
-            "v = vec(1,2,3); m = rotZ(pi/2); w = m * v; [x,y,z] = w; [r,g,b,a] = [len(w)/4, dot(v,w)/12, cross(v,w).y/10, 1];",
+            "v = vec(1,2,3); m = rotZ(pi/2); w = m * v; Context.position = w; Context.color = [len(w)/4, dot(v,w)/12, cross(v,w).y/10, 1];",
             "", 0, 1, 0,
         )
         assertEquals(-2.0, out.pos[0], 1e-12)
@@ -92,12 +92,12 @@ class ScriptRuntimeConformanceTest {
 
     @Test
     fun noiseRandSeeded() {
-        val out0 = eval("", "x = noise(i, 0.5, 1.5) * 10; y = rand() * 10; z = rand(7) * 10;", "", 42, 2, 0)
+        val out0 = eval("", "Context.position.x = noise(Context.index, 0.5, 1.5) * 10; Context.position.y = rand() * 10; Context.position.z = rand(7) * 10;", "", 42, 2, 0)
         assertEquals(6.146115226337443, out0.pos[0], 1e-12)
         assertEquals(6.011037519201636, out0.pos[1], 1e-12)
         assertEquals(0.11704753153026104, out0.pos[2], 1e-12)
 
-        val out1 = eval("", "x = noise(i, 0.5, 1.5) * 10; y = rand() * 10; z = rand(7) * 10;", "", 42, 2, 1)
+        val out1 = eval("", "Context.position.x = noise(Context.index, 0.5, 1.5) * 10; Context.position.y = rand() * 10; Context.position.z = rand(7) * 10;", "", 42, 2, 1)
         assertEquals(4.786, out1.pos[0], 1e-12)
         assertEquals(6.011037519201636, out1.pos[1], 1e-12)
         assertEquals(0.11704753153026104, out1.pos[2], 1e-12)
@@ -115,7 +115,7 @@ class ScriptRuntimeConformanceTest {
 
     @Test
     fun processAttrAndBuiltinNotShadowedBySetupGlobals() {
-        val program = parseProgram("setup { global x = 99; global i = 88; } process { x = 5; y = x; z = i; }")
+        val program = parseProgram("setup { global position = 99; global index = 88; } process { Context.position = [5, 5, 5]; Context.position.x = 5; Context.position.y = Context.position.x; Context.position.z = Context.index; }")
         val obj = ScriptRuntime.createObjectState(0)
         ScriptRuntime.runSetup(program, obj, ScriptRuntime.SetupEnv(10.0, 0.0, emptyMap()))
         val statics = ScriptRuntime.createStatics()
@@ -128,7 +128,7 @@ class ScriptRuntimeConformanceTest {
 
     @Test
     fun functionNamesCanBeVariables() {
-        val program = parseProgram("process { sin = 3; x = sin; y = sin(1); }")
+        val program = parseProgram("process { sin = 3; Context.position.x = sin; Context.position.y = sin(1); }")
         val obj = ScriptRuntime.createObjectState(0)
         ScriptRuntime.runSetup(program, obj, ScriptRuntime.SetupEnv(10.0, 0.0, emptyMap()))
         val ctx = ScriptRuntime.ProcessCtx(0.0, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, emptyMap())
@@ -139,7 +139,7 @@ class ScriptRuntimeConformanceTest {
 
     @Test
     fun fastMathUsesFastBuiltinsInProcess() {
-        val program = parseProgram("process { x = sin(0.5); y = exp(1); z = atan(1); }")
+        val program = parseProgram("process { Context.position.x = sin(0.5); Context.position.y = exp(1); Context.position.z = atan(1); }")
         val obj = ScriptRuntime.createObjectState(0)
         ScriptRuntime.runSetup(program, obj, ScriptRuntime.SetupEnv(10.0, 0.0, emptyMap()))
         val ctx = ScriptRuntime.ProcessCtx(0.0, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, emptyMap(), fastMath = true)
@@ -148,5 +148,19 @@ class ScriptRuntimeConformanceTest {
         assertEquals(0.479425538604203, out.pos[0], 0.0)
         assertEquals(2.71828182442294, out.pos[1], 0.0)
         assertEquals(0.7854079449038646, out.pos[2], 0.0)
+    }
+
+    @Test
+    fun contextColorAndVec4() {
+        val program = parseProgram(
+            "process { v = vec4(1,2,3,4); Context.position.x = v.x; Context.position.y = v.y; Context.position.z = v.z; Context.color = vec3(0.5, 0.25, 0.125); Context.scale = v.w; }",
+        )
+        val obj = ScriptRuntime.createObjectState(0)
+        ScriptRuntime.runSetup(program, obj, ScriptRuntime.SetupEnv(10.0, 0.0, emptyMap()))
+        val ctx = ScriptRuntime.ProcessCtx(0.0, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, emptyMap())
+        val out = ScriptRuntime.evalProcess(program, obj, ScriptRuntime.createStatics(), ctx)
+        assertEquals(listOf(1.0, 2.0, 3.0), out.pos.toList())
+        assertEquals(listOf(0.5, 0.25, 0.125, 1.0), out.color.toList())
+        assertEquals(4.0, out.scale, 1e-12)
     }
 }

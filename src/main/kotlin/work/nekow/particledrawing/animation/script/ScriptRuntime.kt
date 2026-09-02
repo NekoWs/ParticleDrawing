@@ -2,6 +2,31 @@ package work.nekow.particledrawing.animation.script
 
 import kotlin.math.*
 
+// Context 对象名（与 ScriptParser 一致）。
+private const val CTX_NAME = "Context"
+
+// Context 输出字段（process 内可读可写）。
+private val CTX_OUT_FIELDS = setOf("position", "color", "velocity", "scale", "glow", "light")
+
+// 向量分量别名：r/g/b → x/y/z，a → w。
+private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w")
+
+/** 该向量是否含某规范化分量（x/y/z/w）。 */
+private fun hasComp(v: Any?, comp: String): Boolean = when (v) {
+    is Vec2 -> comp == "x" || comp == "y"
+    is Vec3 -> comp == "x" || comp == "y" || comp == "z"
+    is Vec4 -> comp == "x" || comp == "y" || comp == "z" || comp == "w"
+    else -> false
+}
+
+/** 写回单分量，返回新向量（对应 JS setVecComp）。 */
+private fun setVecComp(v: Any?, comp: String, value: Double): Any = when (v) {
+    is Vec2 -> Vec2(if (comp == "x") value else v.x, if (comp == "y") value else v.y)
+    is Vec3 -> Vec3(if (comp == "x") value else v.x, if (comp == "y") value else v.y, if (comp == "z") value else v.z)
+    is Vec4 -> Vec4(if (comp == "x") value else v.x, if (comp == "y") value else v.y, if (comp == "z") value else v.z, if (comp == "w") value else v.w)
+    else -> throw ScriptException("not a vector")
+}
+
 /**
  * setup/process 脚本解释器（对应编辑器 script-lang.js）。
  *
@@ -54,11 +79,9 @@ object ScriptRuntime {
 
     private class Flow(val kind: String, val value: Any? = null) : Throwable()
 
-    private val ATTR_SET = setOf("x", "y", "z", "r", "g", "b", "a", "vx", "vy", "vz", "sc", "glow", "light")
-    private val BUILTIN_NAMES = setOf("i", "idx", "n", "t", "dt", "uv_x", "uv_y", "life")
     private val BUILTINS = setOf(
         "print", "assert",
-        "vec2", "vec3", "vec", "mat3", "translate", "scale", "rotate", "lookAt", "rotX", "rotY", "rotZ", "rotAxis",
+        "vec2", "vec3", "vec4", "vec", "mat3", "translate", "scale", "rotate", "lookAt", "rotX", "rotY", "rotZ", "rotAxis",
         "dot", "cross", "len", "len2", "norm", "lerp", "mix", "distance", "angle_between", "project", "reflect",
         "clamp", "map_range", "remap", "int", "float", "bool",
         "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sqrt", "abs", "sign", "exp", "log", "ln",
@@ -280,6 +303,7 @@ object ScriptRuntime {
         private fun execAssign(target: AssignTarget, value: Any?, n: Node) {
             when (target) {
                 is VarTarget -> assignName(target.name, value, n)
+                is MemberTarget -> assignCtxField(target, value, n)
                 is IndexTarget -> {
                     val arr = evalExpr(target.target)
                     if (arr !is MutableList<*>) err("indexed assignment target is not an array", n)
@@ -289,24 +313,18 @@ object ScriptRuntime {
                 }
                 is CompTarget -> {
                     val obj = evalExpr(target.target)
-                    val comp = target.comp
-                    val v = when (obj) {
-                        is Vec2 -> when (comp) { "x" -> obj.x; "y" -> obj.y; else -> err("vec2 has no component '$comp'", n) }
-                        is Vec3 -> when (comp) { "x" -> obj.x; "y" -> obj.y; "z" -> obj.z; else -> err("vec3 has no component '$comp'", n) }
-                        else -> err("component assignment target is not a vector", n)
-                    }
-                    val d = num(value, "component", n)
-                    // 分量赋值语义：写入变量（需能定位变量名）
-                    assignName(targetVarName(target.target), when (obj) {
-                        is Vec2 -> if (comp == "x") Vec2(d, obj.y) else Vec2(obj.x, d)
-                        is Vec3 -> Vec3(if (comp == "x") d else obj.x, if (comp == "y") d else obj.y, if (comp == "z") d else obj.z)
-                        else -> err("component assignment target is not a vector", n)
-                    }, n)
+                    if (!isVec(obj)) err("component assignment target is not a vector", n)
+                    val comp = COMP_ALIAS[target.comp] ?: err("unknown component '${target.comp}'", n)
+                    if (!hasComp(obj, comp)) err("${typeName(obj)} has no component '${target.comp}'", n)
+                    val d = num(value, "component value", n)
+                    val updated = setVecComp(obj, comp, d)
+                    assignCompTarget(target.target, updated, n)
                 }
                 is UnpackTarget -> {
                     val comps = when (value) {
                         is Vec2 -> listOf(value.x, value.y)
                         is Vec3 -> listOf(value.x, value.y, value.z)
+                        is Vec4 -> listOf(value.x, value.y, value.z, value.w)
                         is MutableList<*> -> value.toList()
                         else -> err("unpack requires a vector or array, got ${typeName(value)}", n)
                     }
@@ -316,21 +334,32 @@ object ScriptRuntime {
             }
         }
 
-        private fun targetVarName(n: Node): String = when (n) {
-            is VarNode -> n.name
-            else -> err("component assignment requires a variable target", n)
+        /** 分量赋值：把更新后的向量写回其目标（变量 / Context 字段 / 数组下标）。 */
+        private fun assignCompTarget(target: Node, updated: Any, n: Node) {
+            when (target) {
+                is VarNode -> assignName(target.name, updated, n)
+                is MemberNode -> assignCtxField(MemberTarget(target.obj, target.field, target.line, target.col), updated, n)
+                is IndexNode -> {
+                    val arr = evalExpr(target.target)
+                    if (arr !is MutableList<*>) err("indexed assignment target is not an array", n)
+                    val idx = int(evalExpr(target.index), "array index", n)
+                    if (idx < 0 || idx >= arr.size) err("array index $idx out of bounds (size ${arr.size})", n)
+                    (arr as MutableList<Any?>)[idx] = updated
+                }
+                else -> err("component assignment requires a variable, Context field or array index target", n)
+            }
+        }
+
+        private fun assignCtxField(target: MemberTarget, value: Any?, n: Node) {
+            if (target.obj !is VarNode || target.obj.name != CTX_NAME) {
+                err("only Context has fields '.${target.field}'", n)
+            }
+            ctxWrite(target.field, value, n)
         }
 
         private fun assignName(name: String, value: Any?, n: Node) {
-            if (phase == "process" && name in ATTR_SET) {
-                attrWrite(name, num(value, "particle property '$name'", n), n)
-                return
-            }
-            if (phase == "process" && name in BUILTIN_NAMES) {
-                err("cannot assign to read-only name '$name'", n)
-            }
-            if (phase == "setup" && (name == "n" || name == "t")) {
-                err("cannot assign to read-only name '$name'", n)
+            if (name == CTX_NAME) {
+                err("cannot assign to 'Context'; use Context.<field> = ...", n)
             }
             for (i in scopes.indices.reversed()) {
                 val s = scopes[i]
@@ -349,22 +378,97 @@ object ScriptRuntime {
             currentScope()[name] = value
         }
 
-        private fun attrWrite(name: String, value: Double, n: Node) {
+        // ---- Context 字段读写（§8/§9）----
+
+        private fun ctxRead(field: String, n: Node): Any? {
+            if (phase == "setup") {
+                if (field == "count") return setupEnv?.n ?: 0.0
+                if (field == "time") return setupEnv?.t ?: 0.0
+                err("Context.$field is not available in setup", n)
+            }
+            // process
+            val c = ctx
+            when (field) {
+                "index" -> return c?.i ?: 0.0
+                "count" -> return c?.n ?: 0.0
+                "time" -> return c?.t ?: 0.0
+                "delta" -> return c?.dt ?: 0.0
+                "uv" -> return Vec2(c?.uv_x ?: 0.0, c?.uv_y ?: 0.0)
+                "life" -> return c?.life ?: 0.0
+            }
+            val out = c?.out ?: err("output unavailable", n)
+            return when (field) {
+                "position" -> Vec3(out.pos[0], out.pos[1], out.pos[2])
+                "color" -> Vec4(out.color[0], out.color[1], out.color[2], out.color[3])
+                "velocity" -> Vec3(out.vel[0], out.vel[1], out.vel[2])
+                "scale" -> out.scale
+                "glow" -> out.glow
+                "light" -> out.light
+                else -> err("unknown Context field '.$field'", n)
+            }
+        }
+
+        private fun ctxVecValues(value: Any?, len: Int, field: String, n: Node): List<Double> {
+            if (isVec(value)) {
+                val v = value ?: err("Context.$field requires a vec$len, got null", n)
+                if (vecDim(v) != len) {
+                    err("Context.$field requires a vec$len, got ${typeName(v)}", n)
+                }
+                return vecComps(v)
+            }
+            if (value is MutableList<*>) {
+                if (value.size != len) {
+                    err("Context.$field requires an array of $len numbers, got length ${value.size}", n)
+                }
+                return value.map { num(it, "Context.$field[$it]", n) }
+            }
+            err("Context.$field requires a vec$len or array of $len numbers, got ${typeName(value)}", n)
+        }
+
+        private fun ctxWrite(field: String, value: Any?, n: Node) {
+            if (phase != "process") err("Context.$field is read-only here", n)
+            if (field !in CTX_OUT_FIELDS) err("Context.$field is read-only", n)
             val out = ctx?.out ?: err("output unavailable", n)
-            when (name) {
-                "x" -> out.pos[0] = value
-                "y" -> out.pos[1] = value
-                "z" -> out.pos[2] = value
-                "r" -> out.color[0] = clamp01(value)
-                "g" -> out.color[1] = clamp01(value)
-                "b" -> out.color[2] = clamp01(value)
-                "a" -> out.color[3] = clamp01(value)
-                "vx" -> out.vel[0] = value
-                "vy" -> out.vel[1] = value
-                "vz" -> out.vel[2] = value
-                "sc" -> out.scale = value
-                "glow" -> out.glow = value > 0.5
-                "light" -> out.light = value.coerceIn(0.0, 15.0).roundToInt().toDouble()
+            when (field) {
+                "position" -> {
+                    val c = ctxVecValues(value, 3, "position", n)
+                    out.pos[0] = c[0]; out.pos[1] = c[1]; out.pos[2] = c[2]
+                }
+                "velocity" -> {
+                    val c = ctxVecValues(value, 3, "velocity", n)
+                    out.vel[0] = c[0]; out.vel[1] = c[1]; out.vel[2] = c[2]
+                }
+                "color" -> {
+                    when {
+                        value is Vec3 -> {
+                            out.color[0] = clamp01(value.x); out.color[1] = clamp01(value.y); out.color[2] = clamp01(value.z)
+                        }
+                        value is Vec4 -> {
+                            out.color[0] = clamp01(value.x); out.color[1] = clamp01(value.y); out.color[2] = clamp01(value.z); out.color[3] = clamp01(value.w)
+                        }
+                        value is MutableList<*> && value.size == 3 -> {
+                            out.color[0] = clamp01(num(value[0], "Context.color[0]", n))
+                            out.color[1] = clamp01(num(value[1], "Context.color[1]", n))
+                            out.color[2] = clamp01(num(value[2], "Context.color[2]", n))
+                        }
+                        value is MutableList<*> && value.size == 4 -> {
+                            out.color[0] = clamp01(num(value[0], "Context.color[0]", n))
+                            out.color[1] = clamp01(num(value[1], "Context.color[1]", n))
+                            out.color[2] = clamp01(num(value[2], "Context.color[2]", n))
+                            out.color[3] = clamp01(num(value[3], "Context.color[3]", n))
+                        }
+                        else -> err("Context.color requires a vec3, vec4, [r,g,b] or [r,g,b,a], got ${typeName(value)}", n)
+                    }
+                }
+                "scale" -> out.scale = num(value, "Context.scale", n)
+                "glow" -> {
+                    if (!isNum(value) && !isBool(value)) {
+                        err("Context.glow requires a num/bool, got ${typeName(value)}", n)
+                    }
+                    val nv = if (value is Boolean) (if (value) 1.0 else 0.0) else value as Double
+                    out.glow = nv > 0.5
+                }
+                "light" -> out.light = clampNum(jsRound(num(value, "Context.light", n)), 0.0, 15.0)
             }
         }
 
@@ -393,11 +497,21 @@ object ScriptRuntime {
             }
             is CompNode -> {
                 val v = evalExpr(n.target)
+                if (!isVec(v)) err("component access requires a vector, got ${typeName(v)}", n)
+                val comp = COMP_ALIAS[n.comp] ?: err("unknown component '${n.comp}'", n)
+                if (!hasComp(v, comp)) err("${typeName(v)} has no component '${n.comp}'", n)
                 when (v) {
-                    is Vec2 -> when (n.comp) { "x" -> v.x; "y" -> v.y; else -> err("vec2 has no component '${n.comp}'", n) }
-                    is Vec3 -> when (n.comp) { "x" -> v.x; "y" -> v.y; "z" -> v.z; else -> err("vec3 has no component '${n.comp}'", n) }
+                    is Vec2 -> when (comp) { "x" -> v.x; else -> v.y }
+                    is Vec3 -> when (comp) { "x" -> v.x; "y" -> v.y; else -> v.z }
+                    is Vec4 -> when (comp) { "x" -> v.x; "y" -> v.y; "z" -> v.z; else -> v.w }
                     else -> err("component access requires a vector, got ${typeName(v)}", n)
                 }
+            }
+            is MemberNode -> {
+                if (n.obj !is VarNode || n.obj.name != CTX_NAME) {
+                    err("only Context has fields '.${n.field}'", n)
+                }
+                ctxRead(n.field, n)
             }
             is CallNode -> {
                 val name = (n.callee as? VarNode)?.name ?: err("callee must be a name", n)
@@ -412,29 +526,17 @@ object ScriptRuntime {
         }
 
         private fun lookupName(name: String, n: Node): Any? {
+            if (name == CTX_NAME) {
+                err("'Context' is not a value; use Context.<field>", n)
+            }
             for (i in scopes.indices.reversed()) {
                 val s = scopes[i]
                 if (s.containsKey(name)) return s[name]
-            }
-            // process 的内置量 / 粒子属性先于 global，避免 setup 同名 global 遮蔽它们。
-            if (phase == "process") {
-                when (name) {
-                    "i", "idx" -> return ctx?.i ?: 0.0
-                    "n" -> return ctx?.n ?: 0.0
-                    "t" -> return ctx?.t ?: 0.0
-                    "dt" -> return ctx?.dt ?: 0.0
-                    "uv_x" -> return ctx?.uv_x ?: 0.0
-                    "uv_y" -> return ctx?.uv_y ?: 0.0
-                    "life" -> return ctx?.life ?: 0.0
-                }
-                if (name in ATTR_SET) return attrRead(name, n)
             }
             if (objState.globals.containsKey(name)) return objState.globals[name]
             val st = statics
             if (phase == "process" && st != null && st.containsKey(name)) return st[name]
             if (phase == "setup") {
-                if (name == "n") return setupEnv?.n ?: 0.0
-                if (name == "t") return setupEnv?.t ?: 0.0
                 if (setupEnv?.vars?.containsKey(name) == true) return setupEnv.vars[name]
             } else {
                 val c = ctx
@@ -445,21 +547,11 @@ object ScriptRuntime {
             err("unknown variable '$name'", n)
         }
 
-        private fun attrRead(name: String, n: Node): Double {
-            val out = ctx?.out ?: err("output unavailable", n)
-            return when (name) {
-                "x" -> out.pos[0]; "y" -> out.pos[1]; "z" -> out.pos[2]
-                "r" -> out.color[0]; "g" -> out.color[1]; "b" -> out.color[2]; "a" -> out.color[3]
-                "vx" -> out.vel[0]; "vy" -> out.vel[1]; "vz" -> out.vel[2]
-                "sc" -> out.scale; "glow" -> if (out.glow) 1.0 else 0.0; "light" -> out.light
-                else -> 0.0
-            }
-        }
-
         private fun negate(v: Any?, n: Node): Any? = when (v) {
             is Double -> -v
             is Vec2 -> Vec2(-v.x, -v.y)
             is Vec3 -> Vec3(-v.x, -v.y, -v.z)
+            is Vec4 -> Vec4(-v.x, -v.y, -v.z, -v.w)
             is Mat3 -> Mat3(v.m.map { r -> r.map { -it } })
             is Mat4 -> Mat4(v.m.map { r -> r.map { -it } })
             else -> err("cannot negate ${typeName(v)}", n)
@@ -490,7 +582,7 @@ object ScriptRuntime {
                 }
             }
             if (a is Mat3 || a is Mat4 || b is Mat3 || b is Mat4) return matArith(op, a, b, n)
-            if (a is Vec2 || a is Vec3 || b is Vec2 || b is Vec3) return vecArith(op, a, b, n)
+            if (isVec(a) || isVec(b)) return vecArith(op, a, b, n)
             err("cannot apply '$op' to ${typeName(a)} and ${typeName(b)}", n)
         }
 
@@ -532,6 +624,15 @@ object ScriptRuntime {
                     val z = m[2][0] * b.x + m[2][1] * b.y + m[2][2] * b.z + m[2][3]
                     return Vec3(x, y, z)
                 }
+                if (a is Mat4 && b is Vec4) {
+                    val m = a.m
+                    return Vec4(
+                        m[0][0] * b.x + m[0][1] * b.y + m[0][2] * b.z + m[0][3] * b.w,
+                        m[1][0] * b.x + m[1][1] * b.y + m[1][2] * b.z + m[1][3] * b.w,
+                        m[2][0] * b.x + m[2][1] * b.y + m[2][2] * b.z + m[2][3] * b.w,
+                        m[3][0] * b.x + m[3][1] * b.y + m[3][2] * b.z + m[3][3] * b.w,
+                    )
+                }
                 if (a is Mat3 && b is Mat3) return Mat3(matMul(a.m, b.m))
                 if (a is Mat4 && b is Mat4) return Mat4(matMul(a.m, b.m))
                 if (a is Mat3 && b is Double) return Mat3(a.m.map { r -> r.map { it * b } })
@@ -552,6 +653,7 @@ object ScriptRuntime {
             a is Boolean && b is Boolean -> a == b
             a is Vec2 && b is Vec2 -> a == b
             a is Vec3 && b is Vec3 -> a == b
+            a is Vec4 && b is Vec4 -> a == b
             a is Mat3 && b is Mat3 -> a.m == b.m
             a is Mat4 && b is Mat4 -> a.m == b.m
             a is MutableList<*> && b is MutableList<*> -> a.size == b.size && a.withIndex().all { (i, v) -> eqExact(v, b[i]) }
@@ -598,6 +700,7 @@ object ScriptRuntime {
             a is Boolean && b is Boolean -> a == b
             a is Vec2 && b is Vec2 -> abs(a.x - b.x) <= 1e-6 && abs(a.y - b.y) <= 1e-6
             a is Vec3 && b is Vec3 -> abs(a.x - b.x) <= 1e-6 && abs(a.y - b.y) <= 1e-6 && abs(a.z - b.z) <= 1e-6
+            a is Vec4 && b is Vec4 -> abs(a.x - b.x) <= 1e-6 && abs(a.y - b.y) <= 1e-6 && abs(a.z - b.z) <= 1e-6 && abs(a.w - b.w) <= 1e-6
             a is MutableList<*> && b is MutableList<*> -> a.size == b.size && a.withIndex().all { (i, v) -> eqTol(v, b[i]) }
             else -> false
         }
@@ -610,6 +713,7 @@ object ScriptRuntime {
                 is Boolean -> a.compareTo(b as Boolean)
                 is Vec2 -> compareValuesBy(a, b as Vec2, { it.x }, { it.y })
                 is Vec3 -> compareValuesBy(a, b as Vec3, { it.x }, { it.y }, { it.z })
+                is Vec4 -> compareValuesBy(a, b as Vec4, { it.x }, { it.y }, { it.z }, { it.w })
                 else -> err("values of type $ta are not sortable", n)
             }
         }
@@ -658,6 +762,7 @@ object ScriptRuntime {
                 "assert" -> { if (phase != "setup") err("'assert' is only allowed in setup", n); if (!truthy(args[0], n)) throw ScriptException(args[1].toString()); 0.0 }
                 "vec2" -> Vec2(num(args[0], "vec2", n), num(args[1], "vec2", n))
                 "vec3", "vec" -> Vec3(num(args[0], "vec3", n), num(args[1], "vec3", n), num(args[2], "vec3", n))
+                "vec4" -> Vec4(num(args[0], "vec4", n), num(args[1], "vec4", n), num(args[2], "vec4", n), num(args[3], "vec4", n))
                 "mat3" -> {
                     val r0 = args[0] as? Vec3 ?: err("mat3 rows must be vec3", n)
                     val r1 = args[1] as? Vec3 ?: err("mat3 rows must be vec3", n)
@@ -786,24 +891,28 @@ object ScriptRuntime {
         private fun dot(a: Any?, b: Any?, n: Node): Double = when {
             a is Vec2 && b is Vec2 -> a.x * b.x + a.y * b.y
             a is Vec3 && b is Vec3 -> a.x * b.x + a.y * b.y + a.z * b.z
+            a is Vec4 && b is Vec4 -> a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w
             else -> err("dot requires same-dimension vectors", n)
         }
 
         private fun lenVec(v: Any?, n: Node): Double = when (v) {
             is Vec2 -> sqrt(v.x * v.x + v.y * v.y)
             is Vec3 -> sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
+            is Vec4 -> sqrt(v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w)
             else -> err("len requires a vector", n)
         }
 
         private fun scaleVec(v: Any?, s: Double, n: Node): Any? = when (v) {
             is Vec2 -> Vec2(v.x * s, v.y * s)
             is Vec3 -> Vec3(v.x * s, v.y * s, v.z * s)
+            is Vec4 -> Vec4(v.x * s, v.y * s, v.z * s, v.w * s)
             else -> err("scaleVec requires a vector", n)
         }
 
         private fun subVec(a: Any?, b: Any?, n: Node): Any? = when {
             a is Vec2 && b is Vec2 -> Vec2(a.x - b.x, a.y - b.y)
             a is Vec3 && b is Vec3 -> Vec3(a.x - b.x, a.y - b.y, a.z - b.z)
+            a is Vec4 && b is Vec4 -> Vec4(a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w)
             else -> err("subtraction requires vectors", n)
         }
 
@@ -811,6 +920,7 @@ object ScriptRuntime {
             a is Double && b is Double -> a + (b - a) * t
             a is Vec2 && b is Vec2 -> Vec2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
             a is Vec3 && b is Vec3 -> Vec3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t)
+            a is Vec4 && b is Vec4 -> Vec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t)
             else -> err("lerp requires two nums or two vectors", n)
         }
 
@@ -818,6 +928,7 @@ object ScriptRuntime {
             is Double -> clampNum(v, num(lo, "clamp lo", n), num(hi, "clamp hi", n))
             is Vec2 -> Vec2(clampNum(v.x, num(lo, "clamp lo", n), num(hi, "clamp hi", n)), clampNum(v.y, num(lo, "clamp lo", n), num(hi, "clamp hi", n)))
             is Vec3 -> Vec3(clampNum(v.x, num(lo, "clamp lo", n), num(hi, "clamp hi", n)), clampNum(v.y, num(lo, "clamp lo", n), num(hi, "clamp hi", n)), clampNum(v.z, num(lo, "clamp lo", n), num(hi, "clamp hi", n)))
+            is Vec4 -> Vec4(clampNum(v.x, num(lo, "clamp lo", n), num(hi, "clamp hi", n)), clampNum(v.y, num(lo, "clamp lo", n), num(hi, "clamp hi", n)), clampNum(v.z, num(lo, "clamp lo", n), num(hi, "clamp hi", n)), clampNum(v.w, num(lo, "clamp lo", n), num(hi, "clamp hi", n)))
             else -> err("clamp requires a scalar or vector", n)
         }
 
@@ -832,6 +943,7 @@ object ScriptRuntime {
             is Double -> jsTrunc(v)
             is Vec2 -> Vec2(jsTrunc(v.x), jsTrunc(v.y))
             is Vec3 -> Vec3(jsTrunc(v.x), jsTrunc(v.y), jsTrunc(v.z))
+            is Vec4 -> Vec4(jsTrunc(v.x), jsTrunc(v.y), jsTrunc(v.z), jsTrunc(v.w))
             else -> err("int requires scalar or vector", n)
         }
 
@@ -839,6 +951,7 @@ object ScriptRuntime {
             is Double -> v
             is Vec2 -> Vec2(v.x, v.y)
             is Vec3 -> Vec3(v.x, v.y, v.z)
+            is Vec4 -> Vec4(v.x, v.y, v.z, v.w)
             else -> err("float requires scalar or vector", n)
         }
     }
@@ -858,7 +971,7 @@ object ScriptRuntime {
 object BuiltinRegistry {
     val names: Set<String> = setOf(
         "print", "assert",
-        "vec2", "vec3", "vec", "mat3", "translate", "scale", "rotate", "lookAt", "rotX", "rotY", "rotZ", "rotAxis",
+        "vec2", "vec3", "vec4", "vec", "mat3", "translate", "scale", "rotate", "lookAt", "rotX", "rotY", "rotZ", "rotAxis",
         "dot", "cross", "len", "len2", "norm", "lerp", "mix", "distance", "angle_between", "project", "reflect",
         "clamp", "map_range", "remap", "int", "float", "bool",
         "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sqrt", "abs", "sign", "exp", "log", "ln",

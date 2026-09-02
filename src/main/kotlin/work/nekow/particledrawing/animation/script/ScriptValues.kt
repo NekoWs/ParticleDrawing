@@ -1,4 +1,4 @@
-﻿package work.nekow.particledrawing.animation.script
+package work.nekow.particledrawing.animation.script
 
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -11,6 +11,8 @@ class ScriptException(message: String, val line: Int? = null, val col: Int? = nu
 data class Vec2(val x: Double, val y: Double)
 
 data class Vec3(val x: Double, val y: Double, val z: Double)
+
+data class Vec4(val x: Double, val y: Double, val z: Double, val w: Double)
 
 /** 3x3 行主序矩阵，元素为 3 个长度为 3 的行。 */
 data class Mat3(val m: List<List<Double>>)
@@ -26,7 +28,7 @@ data class FuncVal(val name: String)
 fun isNum(v: Any?): Boolean = v is Double
 fun isBool(v: Any?): Boolean = v is Boolean
 fun isString(v: Any?): Boolean = v is String
-fun isVec(v: Any?): Boolean = v is Vec2 || v is Vec3
+fun isVec(v: Any?): Boolean = v is Vec2 || v is Vec3 || v is Vec4
 fun isMat(v: Any?): Boolean = v is Mat3 || v is Mat4
 fun isArray(v: Any?): Boolean = v is MutableList<*>
 fun isFunc(v: Any?): Boolean = v is FuncVal
@@ -34,18 +36,21 @@ fun isFunc(v: Any?): Boolean = v is FuncVal
 fun vecDim(v: Any): Int = when (v) {
     is Vec2 -> 2
     is Vec3 -> 3
+    is Vec4 -> 4
     else -> throw ScriptException("not a vector")
 }
 
 fun vecComps(v: Any): List<Double> = when (v) {
     is Vec2 -> listOf(v.x, v.y)
     is Vec3 -> listOf(v.x, v.y, v.z)
+    is Vec4 -> listOf(v.x, v.y, v.z, v.w)
     else -> throw ScriptException("not a vector")
 }
 
 fun mkVec(dim: Int, comps: List<Double>): Any = when (dim) {
     2 -> Vec2(comps[0], comps[1])
     3 -> Vec3(comps[0], comps[1], comps[2])
+    4 -> Vec4(comps[0], comps[1], comps[2], comps[3])
     else -> throw ScriptException("invalid vector dimension $dim")
 }
 
@@ -57,6 +62,7 @@ fun typeName(v: Any?): String = when {
     isArray(v) -> "array"
     v is Vec2 -> "vec2"
     v is Vec3 -> "vec3"
+    v is Vec4 -> "vec4"
     v is Mat3 -> "mat3"
     v is Mat4 -> "mat4"
     v is FuncVal -> "func"

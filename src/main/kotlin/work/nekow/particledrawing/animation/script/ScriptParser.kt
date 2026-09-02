@@ -39,6 +39,7 @@ class BinaryNode(val op: String, val left: Node, val right: Node, override val l
 class TernaryNode(val cond: Node, val thenExpr: Node, val elseExpr: Node, override val line: Int, override val col: Int) : Node()
 class IndexNode(val target: Node, val index: Node, override val line: Int, override val col: Int) : Node()
 class CompNode(val target: Node, val comp: String, override val line: Int, override val col: Int) : Node()
+class MemberNode(val obj: Node, val field: String, override val line: Int, override val col: Int) : Node()
 class CallNode(val callee: Node, val args: List<Node>, override val line: Int, override val col: Int) : Node()
 class MethodNode(val obj: Node, val method: String, val args: List<Node>, override val line: Int, override val col: Int) : Node()
 
@@ -51,6 +52,7 @@ sealed class AssignTarget {
 class VarTarget(val name: String, override val line: Int, override val col: Int) : AssignTarget()
 class IndexTarget(val target: Node, val index: Node, override val line: Int, override val col: Int) : AssignTarget()
 class CompTarget(val target: Node, val comp: String, override val line: Int, override val col: Int) : AssignTarget()
+class MemberTarget(val obj: Node, val field: String, override val line: Int, override val col: Int) : AssignTarget()
 class UnpackTarget(val names: List<String>, override val line: Int, override val col: Int) : AssignTarget()
 
 class FunctionNode(
@@ -228,12 +230,19 @@ private val KEYWORDS = setOf(
     "break", "continue", "global", "static", "true", "false",
 )
 
-private val ATTR_NAMES = listOf("x", "y", "z", "r", "g", "b", "a", "vx", "vy", "vz", "sc", "glow", "light")
-private val ATTR_SET = ATTR_NAMES.toSet()
-private val BUILTIN_NAMES = setOf("i", "idx", "n", "t", "dt", "uv_x", "uv_y", "life")
 private val CONSTANT_NAMES = setOf("TAU", "HALF_PI", "QUARTER_PI", "DEG2RAD", "RAD2DEG", "pi", "e")
-private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "r" to "x", "g" to "y", "b" to "z")
-private val COMP_NAMES = setOf("x", "y", "z", "r", "g", "b")
+private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w")
+private val COMP_NAMES = setOf("x", "y", "z", "w", "r", "g", "b", "a")
+
+// Context 对象：唯一保留的上下文访问名。
+private const val CTX_NAME = "Context"
+
+// Context 只读字段：setup 仅 count/time；process 全部可见。
+private val CTX_SETUP_READ = setOf("count", "time")
+private val CTX_PROCESS_READ = setOf("index", "count", "time", "delta", "uv", "life")
+
+// Context 输出字段（process 内可读可写）。
+private val CTX_OUT_FIELDS = setOf("position", "color", "velocity", "scale", "glow", "light")
 
 class ScriptParser(private val source: String) {
     private val tokens = tokenize(source)
@@ -333,9 +342,7 @@ class ScriptParser(private val source: String) {
 
     private fun validateFuncName(tok: Token) {
         val name = tok.text
-        if (name in KEYWORDS || name in ATTR_SET || name in BUILTIN_NAMES ||
-            name in CONSTANT_NAMES || BuiltinRegistry.names.contains(name)
-        ) {
+        if (name in KEYWORDS || name == CTX_NAME || name in CONSTANT_NAMES || BuiltinRegistry.names.contains(name)) {
             errorAt(tok, "reserved name cannot be used as function name: '$name'")
         }
     }
@@ -357,7 +364,7 @@ class ScriptParser(private val source: String) {
 
     private fun validateParamName(tok: Token) {
         val name = tok.text
-        if (name in KEYWORDS || name in ATTR_SET || name in BUILTIN_NAMES) {
+        if (name in KEYWORDS || name == CTX_NAME || name in CONSTANT_NAMES) {
             errorAt(tok, "reserved name cannot be used as parameter: '$name'")
         }
     }
@@ -492,19 +499,8 @@ class ScriptParser(private val source: String) {
 
     private fun validateGlobalStaticName(tok: Token) {
         val name = tok.text
-        if (name in KEYWORDS || name in CONSTANT_NAMES) {
+        if (name in KEYWORDS || name == CTX_NAME || name in CONSTANT_NAMES) {
             errorAt(tok, "reserved name cannot be declared: '$name'")
-            return
-        }
-        if (phase == "setup") {
-            // setup 只保留 n/t 只读内置量；粒子属性与其余内置名都允许作为变量。
-            if (name == "n" || name == "t") {
-                errorAt(tok, "reserved name cannot be declared: '$name'")
-            }
-        } else if (phase == "process") {
-            if (name in ATTR_SET || name in BUILTIN_NAMES) {
-                errorAt(tok, "reserved name cannot be declared: '$name'")
-            }
         }
     }
 
@@ -537,6 +533,7 @@ class ScriptParser(private val source: String) {
         is VarNode -> VarTarget(expr.name, expr.line, expr.col)
         is IndexNode -> IndexTarget(expr.target, expr.index, expr.line, expr.col)
         is CompNode -> CompTarget(expr.target, expr.comp, expr.line, expr.col)
+        is MemberNode -> MemberTarget(expr.obj, expr.field, expr.line, expr.col)
         is ArrayNode -> {
             val names = ArrayList<String>()
             for (item in expr.items) {
@@ -659,11 +656,13 @@ class ScriptParser(private val source: String) {
                     if (match("(")) {
                         val args = parseArgs()
                         expr = MethodNode(expr, nameTok.text, args, expr.line, expr.col)
-                    } else {
-                        if (nameTok.text !in COMP_NAMES) {
-                            errorAt(nameTok, "invalid component or method name '.${nameTok.text}'")
-                        }
+                    } else if (nameTok.text in COMP_NAMES) {
                         expr = CompNode(expr, nameTok.text, expr.line, expr.col)
+                    } else {
+                        if (expr !is VarNode || expr.name != CTX_NAME) {
+                            errorAt(nameTok, "only Context has fields '.${nameTok.text}'")
+                        }
+                        expr = MemberNode(expr, nameTok.text, expr.line, expr.col)
                     }
                 }
                 else -> break
