@@ -239,10 +239,10 @@ private const val CTX_NAME = "Context"
 
 // Context 只读字段：setup 仅 count/time；process 全部可见。
 private val CTX_SETUP_READ = setOf("count", "time")
-private val CTX_PROCESS_READ = setOf("index", "count", "time", "delta", "uv", "life")
+private val CTX_PROCESS_READ = setOf("index", "count", "time", "delta", "uv")
 
 // Context 输出字段（process 内可读可写）。
-private val CTX_OUT_FIELDS = setOf("position", "color", "velocity", "scale", "glow", "light")
+private val CTX_OUT_FIELDS = setOf("position", "color", "velocity", "scale", "glow", "light", "life")
 
 class ScriptParser(private val source: String) {
     private val tokens = tokenize(source)

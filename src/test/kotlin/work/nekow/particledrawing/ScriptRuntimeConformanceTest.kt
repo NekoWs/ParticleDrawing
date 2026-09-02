@@ -20,7 +20,7 @@ class ScriptRuntimeConformanceTest {
         return uvX to uvY
     }
 
-    private fun eval(setup: String, process: String, funcs: String, seed: Int, count: Int, i: Int): ScriptRuntime.ScriptOut {
+    private fun eval(setup: String, process: String, funcs: String, seed: Int, count: Int, i: Int, fastMath: Boolean = false): ScriptRuntime.ScriptOut {
         val program = parseProgram("$funcs\nsetup {\n$setup\n}\nprocess {\n$process\n}\n")
         val obj = ScriptRuntime.createObjectState(seed)
         ScriptRuntime.runSetup(program, obj, ScriptRuntime.SetupEnv(count.toDouble(), 0.0, emptyMap()))
@@ -28,7 +28,7 @@ class ScriptRuntimeConformanceTest {
         val uv = uvFor(count, i, null)
         val ctx = ScriptRuntime.ProcessCtx(
             i = i.toDouble(), n = count.toDouble(), t = 0.0, dt = 0.0,
-            life = 0.0, uv_x = uv.first, uv_y = uv.second, vars = emptyMap(),
+            life = 0.0, uv_x = uv.first, uv_y = uv.second, vars = emptyMap(), fastMath = fastMath,
         )
         return ScriptRuntime.evalProcess(program, obj, statics, ctx)
     }
@@ -148,6 +148,23 @@ class ScriptRuntimeConformanceTest {
         assertEquals(0.479425538604203, out.pos[0], 0.0)
         assertEquals(2.71828182442294, out.pos[1], 0.0)
         assertEquals(0.7854079449038646, out.pos[2], 0.0)
+    }
+
+    @Test
+    fun contextLifeWritable() {
+        val src = "Context.position.x = Context.life; Context.life = 40.6; Context.position.y = Context.life; Context.life = -3; Context.position.z = Context.life;"
+        // 标量快路径
+        val fast = eval("", src, "", 0, 1, 0)
+        assertEquals(-1.0, fast.pos[0], 1e-12)
+        assertEquals(41.0, fast.pos[1], 1e-12)
+        assertEquals(-1.0, fast.pos[2], 1e-12)
+        assertEquals(-1.0, fast.life, 1e-12)
+        // AST 解释器（fastMath 关闭标量快路径）
+        val ast = eval("", src, "", 0, 1, 0, fastMath = true)
+        assertEquals(-1.0, ast.pos[0], 1e-12)
+        assertEquals(41.0, ast.pos[1], 1e-12)
+        assertEquals(-1.0, ast.pos[2], 1e-12)
+        assertEquals(-1.0, ast.life, 1e-12)
     }
 
     @Test

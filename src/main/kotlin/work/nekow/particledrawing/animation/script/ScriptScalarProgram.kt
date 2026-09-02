@@ -22,7 +22,6 @@ class ScriptScalarProgram internal constructor(
     private val dtSlot: Int,
     private val uvXSlot: Int,
     private val uvYSlot: Int,
-    private val lifeSlot: Int,
 ) {
     private val objects = arrayOfNulls<Any?>(objectNames.size)
 
@@ -36,7 +35,6 @@ class ScriptScalarProgram internal constructor(
         regs[dtSlot] = ctx.dt
         regs[uvXSlot] = ctx.uv_x
         regs[uvYSlot] = ctx.uv_y
-        regs[lifeSlot] = ctx.life
         val vars = ctx.vars
         for (k in varNames.indices) regs[varSlots[k]] = vars[varNames[k]] ?: 0.0
         val globals = objState.globals
@@ -57,11 +55,12 @@ class ScriptScalarProgram internal constructor(
         out.scale = regs[Reg.SC]
         out.glow = regs[Reg.GLOW] > 0.5
         out.light = regs[Reg.LIGHT].coerceIn(0.0, 15.0).roundToInt().toDouble()
+        out.life = clampLife(regs[Reg.MAXAGE])
     }
 
     companion object {
         private val ATTR_INIT = doubleArrayOf(
-            0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0,
         )
 
         private val CONSTANTS: Map<String, Double> = mapOf(
@@ -116,13 +115,12 @@ class ScriptScalarProgram internal constructor(
                 return idx
             }
 
-            // 槽位布局：Reg.I/N/T 固定；dt/uv/life 放在 Reg.VAR_START 之后，变量与临时量紧随。
+            // 槽位布局：Reg.I/N/T 固定；dt/uv 放在 Reg.VAR_START 之后，变量与临时量紧随。
             val base = Reg.VAR_START
             val dtSlot = base
             val uvXSlot = base + 1
             val uvYSlot = base + 2
-            val lifeSlot = base + 3
-            var nextSlot = base + 4
+            var nextSlot = base + 3
 
             // 先登记 fx.vars 槽位（readSlot 需要它们）。
             val orderedVarNames = ArrayList<String>()
@@ -175,7 +173,7 @@ class ScriptScalarProgram internal constructor(
                 "count" -> Reg.N
                 "time" -> Reg.T
                 "delta" -> dtSlot
-                "life" -> lifeSlot
+                "life" -> Reg.MAXAGE
                 "scale" -> Reg.SC
                 "glow" -> Reg.GLOW
                 "light" -> Reg.LIGHT
@@ -186,6 +184,7 @@ class ScriptScalarProgram internal constructor(
                 "scale" -> Reg.SC
                 "glow" -> Reg.GLOW
                 "light" -> Reg.LIGHT
+                "life" -> Reg.MAXAGE
                 else -> null
             }
 
@@ -281,12 +280,21 @@ class ScriptScalarProgram internal constructor(
                                 if (!compileExpr(value.items[k])) return null
                                 emitPush(ScalarOp.POP_REG, outSlots[k])
                             }
-                        } else if (field == "scale" || field == "glow" || field == "light") {
+                        } else if (field == "scale" || field == "glow" || field == "light" || field == "life") {
                             if (!compileExpr(value)) return null
+                            if (field == "life") {
+                                // 与 JS __clampLife 一致：round(raw)（= floor(raw+0.5)）后负值钳为 -1；
+                                // 非有限输入在最终写出 out.life 时由 clampLife 兜底为 -1。
+                                emitPush(ScalarOp.PUSH_CONST, constIdx(0.5))
+                                emit(ScalarOp.ADD)
+                                emit(ScalarOp.F_FLOOR)
+                                emitPush(ScalarOp.PUSH_CONST, constIdx(-1.0))
+                                emit(ScalarOp.F_MAX)
+                            }
                             val slot = ctxFieldWriteSlot(field) ?: return null
                             emitPush(ScalarOp.POP_REG, slot)
                         } else {
-                            return null // index/count/time/delta/uv/life 只读
+                            return null // index/count/time/delta/uv 只读
                         }
                     }
                     is CompTarget -> {
@@ -330,7 +338,6 @@ class ScriptScalarProgram internal constructor(
                 dtSlot,
                 uvXSlot,
                 uvYSlot,
-                lifeSlot,
             )
         } catch (e: Exception) {
             null
@@ -356,3 +363,7 @@ class ScriptScalarProgram internal constructor(
         }
     }
 }
+
+/** 与 JS 端 Context.life 写出语义一致：round 后负值/非有限 → -1（无限）。 */
+private fun clampLife(v: Double): Double =
+    if (v.isFinite()) { val r = jsRound(v); if (r < 0.0) -1.0 else r } else -1.0

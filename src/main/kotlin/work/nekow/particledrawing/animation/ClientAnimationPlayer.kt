@@ -429,7 +429,8 @@ class ClientAnimationPlayer(
                 s.scale = fxScale(fx.id, base.third[0].toDouble(), t)
                 s.glowing = base.fourth
                 s.lightLevel = base.fifth
-                s.visible = fxLocalT >= 0
+                val life = base.sixth
+                s.visible = fxLocalT >= 0 && (life < 0 || fxLocalT < life)
             }
         }
         prevAdvanceT = t
@@ -500,7 +501,7 @@ class ClientAnimationPlayer(
         vars: Map<String, Double>,
         grid: Pair<Double, Double>,
         ctx: ScriptRuntime.ProcessCtx,
-    ): Five<Vec3, Color, FloatArray, Boolean, Int> {
+    ): Six<Vec3, Color, FloatArray, Boolean, Int, Double> {
         val C = grid.first
         val R = grid.second
         val ii = i.toDouble()
@@ -519,7 +520,8 @@ class ClientAnimationPlayer(
         val s = if (out.scale.isFinite()) out.scale.toFloat().coerceAtLeast(0.01f) else 1f
         val scale = floatArrayOf(s, s, s)
         val light = out.light.toInt().coerceIn(0, 15)
-        return Five(pos, color, scale, out.glow, light)
+        val life = if (out.life.isFinite()) out.life else -1.0
+        return Six(pos, color, scale, out.glow, light, life)
     }
 
     private fun compPr(prop: String, comp: String): String = if (comp.isEmpty()) prop else prop + "." + comp
@@ -848,4 +850,5 @@ class ClientAnimationPlayer(
     }
 
     private data class Five<A, B, C, D, E>(val first: A, val second: B, val third: C, val fourth: D, val fifth: E)
+    private data class Six<A, B, C, D, E, F>(val first: A, val second: B, val third: C, val fourth: D, val fifth: E, val sixth: F)
 }

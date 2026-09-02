@@ -6,7 +6,7 @@ import kotlin.math.*
 private const val CTX_NAME = "Context"
 
 // Context 输出字段（process 内可读可写）。
-private val CTX_OUT_FIELDS = setOf("position", "color", "velocity", "scale", "glow", "light")
+private val CTX_OUT_FIELDS = setOf("position", "color", "velocity", "scale", "glow", "light", "life")
 
 // 向量分量别名：r/g/b → x/y/z，a → w。
 private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w")
@@ -49,6 +49,7 @@ object ScriptRuntime {
         var scale: Double = 1.0,
         var glow: Boolean = false,
         var light: Double = 0.0,
+        var life: Double = -1.0,
     )
 
     class ProcessCtx(
@@ -72,6 +73,7 @@ object ScriptRuntime {
             o.scale = 1.0
             o.glow = false
             o.light = 0.0
+            o.life = -1.0
         }
     }
 
@@ -394,7 +396,6 @@ object ScriptRuntime {
                 "time" -> return c?.t ?: 0.0
                 "delta" -> return c?.dt ?: 0.0
                 "uv" -> return Vec2(c?.uv_x ?: 0.0, c?.uv_y ?: 0.0)
-                "life" -> return c?.life ?: 0.0
             }
             val out = c?.out ?: err("output unavailable", n)
             return when (field) {
@@ -404,6 +405,7 @@ object ScriptRuntime {
                 "scale" -> out.scale
                 "glow" -> out.glow
                 "light" -> out.light
+                "life" -> out.life
                 else -> err("unknown Context field '.$field'", n)
             }
         }
@@ -469,6 +471,10 @@ object ScriptRuntime {
                     out.glow = nv > 0.5
                 }
                 "light" -> out.light = clampNum(jsRound(num(value, "Context.light", n)), 0.0, 15.0)
+                "life" -> {
+                    val v = jsRound(num(value, "Context.life", n))
+                    out.life = if (v.isFinite()) (if (v < 0.0) -1.0 else v) else -1.0
+                }
             }
         }
 
