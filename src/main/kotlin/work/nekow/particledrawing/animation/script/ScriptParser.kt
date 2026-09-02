@@ -234,14 +234,14 @@ private val CONSTANT_NAMES = setOf("TAU", "HALF_PI", "QUARTER_PI", "DEG2RAD", "R
 private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w")
 private val COMP_NAMES = setOf("x", "y", "z", "w", "r", "g", "b", "a")
 
-// Context 对象：唯一保留的上下文访问名。
-private const val CTX_NAME = "Context"
+// this 对象：唯一保留的上下文访问名。
+private const val CTX_NAME = "this"
 
-// Context 只读字段：setup 仅 count/time；process 全部可见。
-private val CTX_SETUP_READ = setOf("count", "time")
-private val CTX_PROCESS_READ = setOf("index", "count", "time", "delta", "uv")
+// this 只读字段：setup 可见 count/time/duration；process 全部可见。
+private val CTX_SETUP_READ = setOf("count", "time", "duration")
+private val CTX_PROCESS_READ = setOf("index", "count", "time", "delta", "duration", "uv")
 
-// Context 输出字段（process 内可读可写）。
+// this 输出字段（process 内可读可写）。
 private val CTX_OUT_FIELDS = setOf("position", "color", "velocity", "scale", "glow", "light", "life")
 
 class ScriptParser(private val source: String) {
@@ -660,7 +660,7 @@ class ScriptParser(private val source: String) {
                         expr = CompNode(expr, nameTok.text, expr.line, expr.col)
                     } else {
                         if (expr !is VarNode || expr.name != CTX_NAME) {
-                            errorAt(nameTok, "only Context has fields '.${nameTok.text}'")
+                            errorAt(nameTok, "only this has fields '.${nameTok.text}'")
                         }
                         expr = MemberNode(expr, nameTok.text, expr.line, expr.col)
                     }

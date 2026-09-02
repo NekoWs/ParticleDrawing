@@ -22,6 +22,7 @@ class ScriptScalarProgram internal constructor(
     private val dtSlot: Int,
     private val uvXSlot: Int,
     private val uvYSlot: Int,
+    private val durationSlot: Int,
 ) {
     private val objects = arrayOfNulls<Any?>(objectNames.size)
 
@@ -35,6 +36,7 @@ class ScriptScalarProgram internal constructor(
         regs[dtSlot] = ctx.dt
         regs[uvXSlot] = ctx.uv_x
         regs[uvYSlot] = ctx.uv_y
+        regs[durationSlot] = ctx.duration
         val vars = ctx.vars
         for (k in varNames.indices) regs[varSlots[k]] = vars[varNames[k]] ?: 0.0
         val globals = objState.globals
@@ -73,7 +75,7 @@ class ScriptScalarProgram internal constructor(
             "e" to E,
         )
 
-        private const val CTX_NAME = "Context"
+        private const val CTX_NAME = "this"
 
         // 分量别名：r/g/b → x/y/z，a → w。
         private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w")
@@ -115,12 +117,13 @@ class ScriptScalarProgram internal constructor(
                 return idx
             }
 
-            // 槽位布局：Reg.I/N/T 固定；dt/uv 放在 Reg.VAR_START 之后，变量与临时量紧随。
+            // 槽位布局：Reg.I/N/T 固定；dt/uv/duration 放在 Reg.VAR_START 之后，变量与临时量紧随。
             val base = Reg.VAR_START
             val dtSlot = base
             val uvXSlot = base + 1
             val uvYSlot = base + 2
-            var nextSlot = base + 3
+            val durationSlot = base + 3
+            var nextSlot = base + 4
 
             // 先登记 fx.vars 槽位（readSlot 需要它们）。
             val orderedVarNames = ArrayList<String>()
@@ -167,12 +170,13 @@ class ScriptScalarProgram internal constructor(
                 args.add(0)
             }
 
-            // Context 标量字段 → 寄存器槽。
+            // this 标量字段 → 寄存器槽。
             fun ctxFieldReadSlot(field: String): Int? = when (field) {
                 "index" -> Reg.I
                 "count" -> Reg.N
                 "time" -> Reg.T
                 "delta" -> dtSlot
+                "duration" -> durationSlot
                 "life" -> Reg.MAXAGE
                 "scale" -> Reg.SC
                 "glow" -> Reg.GLOW
@@ -215,7 +219,7 @@ class ScriptScalarProgram internal constructor(
                         return true
                     }
                     is CompNode -> {
-                        // 仅支持 Context.<向量字段>.<分量> 的标量读取。
+                        // 仅支持 this.<向量字段>.<分量> 的标量读取。
                         val m = node.target as? MemberNode ?: return false
                         if (m.obj !is VarNode || m.obj.name != CTX_NAME) return false
                         val slot = ctxCompSlot(m.field, node.comp) ?: return false
@@ -243,7 +247,7 @@ class ScriptScalarProgram internal constructor(
                         return true
                     }
                     is IndexNode -> {
-                        // 仅支持「全局数组名 + 标量下标」读取（preset 常见 _gx[Context.index]）。
+                        // 仅支持「全局数组名 + 标量下标」读取（preset 常见 _gx[this.index]）。
                         val target = node.target
                         if (target !is VarNode || target.name !in globalNamesSet) return false
                         if (!compileExpr(node.index)) return false
@@ -338,6 +342,7 @@ class ScriptScalarProgram internal constructor(
                 dtSlot,
                 uvXSlot,
                 uvYSlot,
+                durationSlot,
             )
         } catch (e: Exception) {
             null
@@ -364,6 +369,6 @@ class ScriptScalarProgram internal constructor(
     }
 }
 
-/** 与 JS 端 Context.life 写出语义一致：round 后负值/非有限 → -1（无限）。 */
+/** 与 JS 端 this.life 写出语义一致：round 后负值/非有限 → -1（无限）。 */
 private fun clampLife(v: Double): Double =
     if (v.isFinite()) { val r = jsRound(v); if (r < 0.0) -1.0 else r } else -1.0

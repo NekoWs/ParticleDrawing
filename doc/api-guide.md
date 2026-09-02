@@ -231,7 +231,7 @@ group.defineEntity(handle = "e", uuid = entity.uuid)
      .followEntity(entity.uuid, offset = Vec3(0.0, 1.0, 0.0))   // 或者仅轴心跟随
 
 // 2. 表达式指令：每粒子每 tick 求值一段专用标量公式（i/n/t、[x,y,z]=... 等旧式语法，
-//    与 .pdraw 函数对象的 Context 脚本语言不同）；
+//    与 .pdraw 函数对象的 this 脚本语言不同）；
 //    用到什么取什么——get_entity_*/get_world_* 在需要处调用，无需预先声明属性
 group.expression("""
     th = i / n * 2 * pi;
@@ -409,7 +409,7 @@ ServerAnimationManager.playbackPlayers(animId)      // 该次播放覆盖的玩�
 有限寿命同样计入 `maxTick`。时间轴上表现为条形长度——无限寿命向右无限延伸（∞ 标记），
 拖拽右端手柄调整、双击右端在 无限⇄有限 间切换；也可在属性面板「寿命(tick)」中直接编辑（-1=无限）。
 
-函数对象派生粒子可在 `process` 中通过 `Context.life = <tick>` 设定逐粒子寿命（缺省 -1 = 无限）；
+函数对象派生粒子可在 `process` 中通过 `this.life = <tick>` 设定逐粒子寿命（缺省 -1 = 无限）；
 其可见期由「对象级 `st` 入场 → 对象整体时长 `duration`（≤0 视为无时长上限）→ 逐粒子寿命」三重门控决定，
 整体提前退场请通过缩短时长或对象级 `st` 编排实现。
 

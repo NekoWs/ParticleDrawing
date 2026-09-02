@@ -112,7 +112,7 @@ class ClientAnimationPlayer(
         val funcsPrefix = if (fx.funcs.isNotBlank()) fx.funcs.trim() + "\n" else ""
         val program = parseProgram(funcsPrefix + "setup {\n${fx.setup}\n}\nprocess {\n${fx.process}\n}\n")
         val obj = ScriptRuntime.createObjectState(fx.seed)
-        ScriptRuntime.runSetup(program, obj, ScriptRuntime.SetupEnv(fx.count.toDouble(), fx.st.toDouble(), varsAt(fx, fx.st.toDouble())))
+        ScriptRuntime.runSetup(program, obj, ScriptRuntime.SetupEnv(fx.count.toDouble(), fx.st.toDouble(), varsAt(fx, fx.st.toDouble()), maxTick.toDouble()))
         FxScriptState(program, obj, ScriptRuntime.createProcessExecutor(program, obj))
     } catch (e: Exception) {
         println("[pdrawc] 函数对象 ${fx.id} 编译失败：${e.message}")
@@ -203,7 +203,7 @@ class ClientAnimationPlayer(
             val st = fxScripts[fx.id] ?: continue
             val vars = varsAt(fx, 0.0)
             val grid = uvGrid(fx, fx.count.toDouble())
-            val ctx = ScriptRuntime.ProcessCtx(0.0, fx.count.toDouble(), 0.0, 0.0, lifeAt(fx, 0.0), 0.0, 0.0, vars, fastMath = fx.fastMath)
+            val ctx = ScriptRuntime.ProcessCtx(0.0, fx.count.toDouble(), 0.0, 0.0, lifeAt(fx, 0.0), 0.0, 0.0, vars, fastMath = fx.fastMath, duration = maxTick.toDouble())
             for (i in 0 until fx.count) {
                 val id = fx.id + ":p" + i
                 val statics = st.statics.getOrPut(id) { HashMap() }
@@ -407,7 +407,7 @@ class ClientAnimationPlayer(
             val dt = if (advanceInitialized && t == prevAdvanceT + 1.0) 1.0 / 20.0 else 0.0
             val vars = varsAt(fx, t)
             val grid = uvGrid(fx, n)
-            val ctx = ScriptRuntime.ProcessCtx(0.0, n, t, dt, lifeAt(fx, t), 0.0, 0.0, vars, fastMath = fx.fastMath)
+            val ctx = ScriptRuntime.ProcessCtx(0.0, n, t, dt, lifeAt(fx, t), 0.0, 0.0, vars, fastMath = fx.fastMath, duration = maxTick.toDouble())
             for (i in 0 until fx.count) {
                 val id = fx.id + ":p" + i
                 val s = states[id] ?: continue

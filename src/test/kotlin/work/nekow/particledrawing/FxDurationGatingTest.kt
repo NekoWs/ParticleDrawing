@@ -24,7 +24,7 @@ class FxDurationGatingTest {
             center = doubleArrayOf(0.0, 0.0, 0.0),
             count = 1,
             setup = "",
-            process = "Context.position = [Context.index, 0, 0];",
+            process = "this.position = [this.index, 0, 0];",
             funcs = "",
             seed = 0,
             // 变量关键帧把 maxTick 撑到 100，避免动画在 duration 处提前结束，便于观测时长门控。

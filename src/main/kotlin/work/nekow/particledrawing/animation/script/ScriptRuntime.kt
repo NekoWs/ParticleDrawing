@@ -2,10 +2,10 @@ package work.nekow.particledrawing.animation.script
 
 import kotlin.math.*
 
-// Context 对象名（与 ScriptParser 一致）。
-private const val CTX_NAME = "Context"
+// this 对象名（与 ScriptParser 一致）。
+private const val CTX_NAME = "this"
 
-// Context 输出字段（process 内可读可写）。
+// this 输出字段（process 内可读可写）。
 private val CTX_OUT_FIELDS = setOf("position", "color", "velocity", "scale", "glow", "light", "life")
 
 // 向量分量别名：r/g/b → x/y/z，a → w。
@@ -63,6 +63,7 @@ object ScriptRuntime {
         val vars: Map<String, Double>,
         val out: ScriptOut = ScriptOut(),
         var fastMath: Boolean = false,
+        var duration: Double = 0.0,
     ) {
         /** 复用同一个 ProcessCtx 执行多个粒子时，重置输出为进程默认值。 */
         fun resetOut() {
@@ -77,7 +78,7 @@ object ScriptRuntime {
         }
     }
 
-    class SetupEnv(val n: Double, val t: Double, val vars: Map<String, Double>)
+    class SetupEnv(val n: Double, val t: Double, val vars: Map<String, Double>, val duration: Double = 0.0)
 
     private class Flow(val kind: String, val value: Any? = null) : Throwable()
 
@@ -336,7 +337,7 @@ object ScriptRuntime {
             }
         }
 
-        /** 分量赋值：把更新后的向量写回其目标（变量 / Context 字段 / 数组下标）。 */
+        /** 分量赋值：把更新后的向量写回其目标（变量 / this 字段 / 数组下标）。 */
         private fun assignCompTarget(target: Node, updated: Any, n: Node) {
             when (target) {
                 is VarNode -> assignName(target.name, updated, n)
@@ -348,20 +349,20 @@ object ScriptRuntime {
                     if (idx < 0 || idx >= arr.size) err("array index $idx out of bounds (size ${arr.size})", n)
                     (arr as MutableList<Any?>)[idx] = updated
                 }
-                else -> err("component assignment requires a variable, Context field or array index target", n)
+                else -> err("component assignment requires a variable, this field or array index target", n)
             }
         }
 
         private fun assignCtxField(target: MemberTarget, value: Any?, n: Node) {
             if (target.obj !is VarNode || target.obj.name != CTX_NAME) {
-                err("only Context has fields '.${target.field}'", n)
+                err("only this has fields '.${target.field}'", n)
             }
             ctxWrite(target.field, value, n)
         }
 
         private fun assignName(name: String, value: Any?, n: Node) {
             if (name == CTX_NAME) {
-                err("cannot assign to 'Context'; use Context.<field> = ...", n)
+                err("cannot assign to 'this'; use this.<field> = ...", n)
             }
             for (i in scopes.indices.reversed()) {
                 val s = scopes[i]
@@ -380,13 +381,14 @@ object ScriptRuntime {
             currentScope()[name] = value
         }
 
-        // ---- Context 字段读写（§8/§9）----
+        // ---- this 字段读写（§8/§9）----
 
         private fun ctxRead(field: String, n: Node): Any? {
             if (phase == "setup") {
                 if (field == "count") return setupEnv?.n ?: 0.0
                 if (field == "time") return setupEnv?.t ?: 0.0
-                err("Context.$field is not available in setup", n)
+                if (field == "duration") return setupEnv?.duration ?: 0.0
+                err("this.$field is not available in setup", n)
             }
             // process
             val c = ctx
@@ -395,6 +397,7 @@ object ScriptRuntime {
                 "count" -> return c?.n ?: 0.0
                 "time" -> return c?.t ?: 0.0
                 "delta" -> return c?.dt ?: 0.0
+                "duration" -> return c?.duration ?: 0.0
                 "uv" -> return Vec2(c?.uv_x ?: 0.0, c?.uv_y ?: 0.0)
             }
             val out = c?.out ?: err("output unavailable", n)
@@ -406,30 +409,30 @@ object ScriptRuntime {
                 "glow" -> out.glow
                 "light" -> out.light
                 "life" -> out.life
-                else -> err("unknown Context field '.$field'", n)
+                else -> err("unknown this field '.$field'", n)
             }
         }
 
         private fun ctxVecValues(value: Any?, len: Int, field: String, n: Node): List<Double> {
             if (isVec(value)) {
-                val v = value ?: err("Context.$field requires a vec$len, got null", n)
+                val v = value ?: err("this.$field requires a vec$len, got null", n)
                 if (vecDim(v) != len) {
-                    err("Context.$field requires a vec$len, got ${typeName(v)}", n)
+                    err("this.$field requires a vec$len, got ${typeName(v)}", n)
                 }
                 return vecComps(v)
             }
             if (value is MutableList<*>) {
                 if (value.size != len) {
-                    err("Context.$field requires an array of $len numbers, got length ${value.size}", n)
+                    err("this.$field requires an array of $len numbers, got length ${value.size}", n)
                 }
-                return value.map { num(it, "Context.$field[$it]", n) }
+                return value.map { num(it, "this.$field[$it]", n) }
             }
-            err("Context.$field requires a vec$len or array of $len numbers, got ${typeName(value)}", n)
+            err("this.$field requires a vec$len or array of $len numbers, got ${typeName(value)}", n)
         }
 
         private fun ctxWrite(field: String, value: Any?, n: Node) {
-            if (phase != "process") err("Context.$field is read-only here", n)
-            if (field !in CTX_OUT_FIELDS) err("Context.$field is read-only", n)
+            if (phase != "process") err("this.$field is read-only here", n)
+            if (field !in CTX_OUT_FIELDS) err("this.$field is read-only", n)
             val out = ctx?.out ?: err("output unavailable", n)
             when (field) {
                 "position" -> {
@@ -449,30 +452,30 @@ object ScriptRuntime {
                             out.color[0] = clamp01(value.x); out.color[1] = clamp01(value.y); out.color[2] = clamp01(value.z); out.color[3] = clamp01(value.w)
                         }
                         value is MutableList<*> && value.size == 3 -> {
-                            out.color[0] = clamp01(num(value[0], "Context.color[0]", n))
-                            out.color[1] = clamp01(num(value[1], "Context.color[1]", n))
-                            out.color[2] = clamp01(num(value[2], "Context.color[2]", n))
+                            out.color[0] = clamp01(num(value[0], "this.color[0]", n))
+                            out.color[1] = clamp01(num(value[1], "this.color[1]", n))
+                            out.color[2] = clamp01(num(value[2], "this.color[2]", n))
                         }
                         value is MutableList<*> && value.size == 4 -> {
-                            out.color[0] = clamp01(num(value[0], "Context.color[0]", n))
-                            out.color[1] = clamp01(num(value[1], "Context.color[1]", n))
-                            out.color[2] = clamp01(num(value[2], "Context.color[2]", n))
-                            out.color[3] = clamp01(num(value[3], "Context.color[3]", n))
+                            out.color[0] = clamp01(num(value[0], "this.color[0]", n))
+                            out.color[1] = clamp01(num(value[1], "this.color[1]", n))
+                            out.color[2] = clamp01(num(value[2], "this.color[2]", n))
+                            out.color[3] = clamp01(num(value[3], "this.color[3]", n))
                         }
-                        else -> err("Context.color requires a vec3, vec4, [r,g,b] or [r,g,b,a], got ${typeName(value)}", n)
+                        else -> err("this.color requires a vec3, vec4, [r,g,b] or [r,g,b,a], got ${typeName(value)}", n)
                     }
                 }
-                "scale" -> out.scale = num(value, "Context.scale", n)
+                "scale" -> out.scale = num(value, "this.scale", n)
                 "glow" -> {
                     if (!isNum(value) && !isBool(value)) {
-                        err("Context.glow requires a num/bool, got ${typeName(value)}", n)
+                        err("this.glow requires a num/bool, got ${typeName(value)}", n)
                     }
                     val nv = if (value is Boolean) (if (value) 1.0 else 0.0) else value as Double
                     out.glow = nv > 0.5
                 }
-                "light" -> out.light = clampNum(jsRound(num(value, "Context.light", n)), 0.0, 15.0)
+                "light" -> out.light = clampNum(jsRound(num(value, "this.light", n)), 0.0, 15.0)
                 "life" -> {
-                    val v = jsRound(num(value, "Context.life", n))
+                    val v = jsRound(num(value, "this.life", n))
                     out.life = if (v.isFinite()) (if (v < 0.0) -1.0 else v) else -1.0
                 }
             }
@@ -515,7 +518,7 @@ object ScriptRuntime {
             }
             is MemberNode -> {
                 if (n.obj !is VarNode || n.obj.name != CTX_NAME) {
-                    err("only Context has fields '.${n.field}'", n)
+                    err("only this has fields '.${n.field}'", n)
                 }
                 ctxRead(n.field, n)
             }
@@ -533,7 +536,7 @@ object ScriptRuntime {
 
         private fun lookupName(name: String, n: Node): Any? {
             if (name == CTX_NAME) {
-                err("'Context' is not a value; use Context.<field>", n)
+                err("'this' is not a value; use this.<field>", n)
             }
             for (i in scopes.indices.reversed()) {
                 val s = scopes[i]
