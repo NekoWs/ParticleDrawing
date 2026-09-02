@@ -125,7 +125,7 @@ class AnimationBuilderTest {
         assertEquals(mapOf("g0" to listOf("p0")), model.groups)
         assertEquals(mapOf("g0" to true), model.groupSpinSpace)
         assertEquals(listOf("tex"), model.textures)
-        assertTrue(model.texData["tex"]?.contentEquals(byteArrayOf(1, 2, 3)) == true)
+        assertEquals(true, model.texData["tex"]?.contentEquals(byteArrayOf(1, 2, 3)))
         assertEquals("tex", model.groupUV["g0"]?.texture)
     }
 }
