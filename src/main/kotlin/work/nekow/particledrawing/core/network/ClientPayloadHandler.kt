@@ -139,6 +139,17 @@ internal object ClientPayloadHandler {
         }
     }
 
+    fun handlePlayAnimationData(payload: PlayAnimationDataPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientAnimationManager.play(
+                payload.animationId,
+                payload.animation,
+                Vec3(payload.originX, payload.originY, payload.originZ),
+                payload.startGameTick
+            )
+        }
+    }
+
     fun handleVariableUpdate(payload: VariableUpdatePayload, context: IPayloadContext) {
         context.enqueueWork {
             ClientAnimationManager.updateVariable(payload.animationId, payload.variable, payload.value)

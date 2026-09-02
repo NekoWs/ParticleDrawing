@@ -17,8 +17,9 @@
 7. [单粒子控制（ParticleHandle）](#七单粒子控制particlehandle)
 8. [缓动（EasingType）](#八缓动easingtype)
 9. [播放 .pdraw 动画引擎（ServerAnimationManager）](#九播放-pdraw-动画引擎serveranimationmanager)
-10. [完整示例集](#十完整示例集)
-11. [注意事项](#十一注意事项)
+10. [代码生成动画（Animation.create）](#十代码生成动画animationcreate)
+11. [完整示例集](#十一完整示例集)
+12. [注意事项](#十二注意事项)
 
 ---
 
@@ -447,7 +448,145 @@ level.server.tell(object : TickTask(level.server.tickCount + 60) {
 
 ---
 
-## 十、完整示例集
+## 十、代码生成动画（Animation.create）
+
+除了用 `Draw` 实时画形状、或播放网页编辑器导出的 `.pdrawc`，还可以**用代码直接构建一个动画**，
+然后一行下发播放或继续链式操作。动画模型与 `.pdrawc` 播放完全同构：粒子、轨道、组、函数对象、
+摄像机、贴图都可声明，播放走同一套服务端权威进度与客户端渲染链路。
+
+### Kotlin DSL（推荐）
+
+```kotlin
+import work.nekow.particledrawing.api.*
+import work.nekow.particledrawing.core.easing.EasingType
+import net.minecraft.world.phys.Vec3
+
+val anim = Animation.create {
+    loop = true
+
+    particle {
+        id = "p0"
+        pos = Vec3(0.0, 10.0, 0.0)
+        color = Color.CYAN
+        scale = 1f
+        life = -1
+    }
+
+    track {
+        pr = "pos.x"
+        ids = listOf("p0")
+        keyframe(0, 0.0, EasingType.LINEAR)
+        keyframe(20, 5.0, EasingType.EASE_OUT)
+    }
+
+    function {
+        id = "fx0"
+        count = 100
+        center = Vec3(0.0, 10.0, 0.0)
+        duration = 200
+        seed = 1
+        variable("rad", 3.0)
+
+        process {
+            var th by numVar()
+            th = index / count * 2 * pi
+            position = vec3(cos(th) * v("rad"), 0, sin(th) * v("rad"))
+            raw("if (this.index % 2 == 0) { this.color = vec4(1,0,0,1); }")
+        }
+    }
+}
+
+// 播放并链式操作
+anim.play(level.players(), origin)
+    .updateVariable("rad", "4")
+    .isActive()
+```
+
+### 脚本 DSL（Kotlin 代码块生成 setup/process/funcs）
+
+`setup { }` / `process { }` / `funcs { }` 用 Kotlin 代码块生成脚本文本，IDE 对 Kotlin 代码有完整高亮与补全，
+避免手写脚本字符串：
+
+```kotlin
+function {
+    id = "fx0"
+    count = 100
+    seed = 1
+    variable("rad", 3.0)
+
+    setup {
+        global("arr", array())
+        raw("for (k = 0; k < this.count; k = k + 1) { arr.push(vec3(k, 0, 0)); }")
+    }
+
+    process {
+        var th by numVar()                          // 脚本局部变量
+        th = index / count * 2 * pi                 // 运算符/属性糖
+        position = vec3(cos(th) * v("rad"), 0, sin(th) * v("rad"))
+        assign(color.r, 1)                          // 分量写入
+        raw("if (this.index % 2 == 0) { this.color = vec4(1,0,0,1); }")
+    }
+
+    funcs {
+        func("f", listOf("n")) { return_(v("n") + 1) }
+    }
+}
+```
+
+- `process` 可读写 `position / color / velocity / scale / glow / light / life`；只读 `index / count / time / delta / duration / uv`。
+- `setup` 只读 `count / time / duration`，可 `global(name, expr)` 声明全局变量。
+- 表达式：`num()` / `v()` / `vec2..4` / `mat3..4` / `array()` / 全套数学与噪声函数（`sin/cos/noise/fbm/rand/random/ease_*` 等），
+  以及 `+ - * / % < <= > >= == != && || !` 运算符（Kotlin 侧同样可用，比较/逻辑在 Kotlin 里用方法 `lt/gt/eq/and/or` 或运算符）。
+- 控制流：Kotlin 用 `if_/while_/doWhile_/for_`（接收者 lambda），Java 用 `ifBlock/whileBlock/doWhileBlock/forBlock`：
+  ```kotlin
+  process {
+      if_(index.mod(2).eq(0)) {
+          position = vec3(1, 0, 0)
+      }
+      for_("k = 0", v("k").lt(count), "k = k + 1") {
+          continueStmt()
+      }
+  }
+  ```
+- `raw("...")` 逃生舱：内嵌任意手写脚本，覆盖 DSL 未表达的边缘结构。
+- Java 同样可用（方法调用式）：`s.assign("th", s.mul(s.div(s.getIndex(), s.getCount()), ...))`、
+  `s.ifBlock(cond, b -> b.assign(b.getPosition(), b.vec3(1, 0, 0)))`；脚本 DSL 类为
+  `SetupScope` / `ProcessScope` / `FuncsScope`。
+
+### Java Builder
+
+```java
+Animation anim = Animation.builder()
+    .loop(true)
+    .particle(p -> p.id("p0").pos(0, 10, 0).color(Color.CYAN).scale(1f).life(-1))
+    .track(t -> t.pr("pos.x").ids("p0")
+        .keyframe(0, 0.0, EasingType.LINEAR)
+        .keyframe(20, 5.0, EasingType.EASE_OUT))
+    .function(f -> f.id("fx0").count(100).center(0, 10, 0).duration(200).seed(1)
+        .variable("rad", 3.0)
+        .setup("global arr = [];")
+        .process("th = this.index / this.count * 2 * pi; this.position = vec3(cos(th) * rad, 0, sin(th) * rad);"))
+    .build();
+
+anim.play(level.players(), origin).updateVariable("rad", "4");
+```
+
+### Animation 链式操作
+
+| 方法 | 说明 |
+| --- | --- |
+| `play(level, players, origin)` | 向指定玩家下发并开始播放；返回自身 |
+| `play(players, origin)` | 从首个玩家维度推导 `ServerLevel` 的便捷重载 |
+| `stop()` | 停止本次播放 |
+| `updateVariable(name, value)` | 运行时更新函数对象变量（下一 tick 生效） |
+| `isActive()` | 本次播放是否仍在进行 |
+
+> 代码生成动画走独立的结构化网络载荷（不验签、不生成 `.pdrawc` 文件）；播放记录同样支持
+> 维度切换/重生/重连后的自动重发，与其他玩家帧号保持一致。
+
+---
+
+## 十一、完整示例集
 
 ### 例 1：上升的螺旋烟雾环
 
@@ -494,7 +633,7 @@ fun ripples(m: ParticleManager, c: Vec3, waves: Int) {
 
 ---
 
-## 十一、注意事项
+## 十二、注意事项
 
 1. **主线程调用**：所有 API 必须在服务端主线程调用（命令、事件回调天然满足）；内部调度任务也在主线程执行。
 2. **数量限制**：受服务端配置 `maxParticlesPerDimension`（维度总量）与 `maxParticlesPerPlayer`（单人追踪量）约束；达到上限时 `spawn()` 返回 null。

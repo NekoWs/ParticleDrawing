@@ -93,15 +93,21 @@ object ClientAnimationManager {
     /** 开始本地播放一个动画（解析 .pdrawc 字节并验签，失败则拒绝播放）。 */
     @JvmStatic
     fun play(animationId: UUID, data: ByteArray, origin: Vec3, startGameTick: Long) {
-        // 服务端在维度切换/重生/重连后会重发同一播放：先清理旧条目与其粒子，再重建，
-        // 避免旧条目残留（旧桥接粒子已随上一世界的 ParticleEngine 销毁，不可复用）。
-        if (entries.containsKey(animationId)) stopInternal(animationId)
-
         val animation = try {
             AnimationLoader.parse(data)
         } catch (_: Exception) {
             return
         }
+        play(animationId, animation, origin, startGameTick)
+    }
+
+    /** 开始本地播放一个代码生成的 [ParticleAnimation]（结构化载荷，不验签）。 */
+    @JvmStatic
+    fun play(animationId: UUID, animation: ParticleAnimation, origin: Vec3, startGameTick: Long) {
+        // 服务端在维度切换/重生/重连后会重发同一播放：先清理旧条目与其粒子，再重建，
+        // 避免旧条目残留（旧桥接粒子已随上一世界的 ParticleEngine 销毁，不可复用）。
+        if (entries.containsKey(animationId)) stopInternal(animationId)
+
         // 播放前预加载内嵌贴图
         preloadTextures(animation)
 

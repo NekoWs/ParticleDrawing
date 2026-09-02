@@ -31,6 +31,7 @@ object NetworkHandler {
         registrar.playToClient(ParticleSetPositionPayload.TYPE, ParticleSetPositionPayload.STREAM_CODEC, ClientPayloadHandler::handleSetPosition)
         registrar.playToClient(ParticleLightLevelPayload.TYPE, ParticleLightLevelPayload.STREAM_CODEC, ClientPayloadHandler::handleLightLevel)
         registrar.playToClient(PlayAnimationPayload.TYPE, PlayAnimationPayload.STREAM_CODEC, ClientPayloadHandler::handlePlayAnimation)
+        registrar.playToClient(PlayAnimationDataPayload.TYPE, PlayAnimationDataPayload.STREAM_CODEC, ClientPayloadHandler::handlePlayAnimationData)
         registrar.playToClient(VariableUpdatePayload.TYPE, VariableUpdatePayload.STREAM_CODEC, ClientPayloadHandler::handleVariableUpdate)
         registrar.playToClient(StopAnimationPayload.TYPE, StopAnimationPayload.STREAM_CODEC, ClientPayloadHandler::handleStopAnimation)
 

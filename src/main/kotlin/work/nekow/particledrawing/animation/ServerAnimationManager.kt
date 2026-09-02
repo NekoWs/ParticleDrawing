@@ -1,9 +1,11 @@
 package work.nekow.particledrawing.animation
 
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
+import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.phys.Vec3
 import net.neoforged.neoforge.network.PacketDistributor
+import work.nekow.particledrawing.core.network.PlayAnimationDataPayload
 import work.nekow.particledrawing.core.network.PlayAnimationPayload
 import work.nekow.particledrawing.core.network.StopAnimationPayload
 import work.nekow.particledrawing.core.network.VariableUpdatePayload
@@ -29,9 +31,11 @@ object ServerAnimationManager {
         val animationId: UUID,
         val dimensionId: UUID,
         val playerIds: Set<UUID>,
-        // 重发所需：播放原点与 .pdrawc 原始字节（维度切换/重生/重连后把播放重新下发给玩家）
+        // 重发所需：播放原点与动画定义（维度切换/重生/重连后把播放重新下发给玩家）。
+        // 文件播放路径持有 .pdrawc 原始字节；代码生成路径直接持有 ParticleAnimation。
         val origin: Vec3,
-        val data: ByteArray,
+        val data: ByteArray?,
+        val animation: ParticleAnimation?,
         // 服务端权威进度：起始 gameTime 与时间轴参数（进度 = wrap/clamp(gameTime - startGameTick)）
         val startGameTick: Long,
         val maxTick: Int,
@@ -53,8 +57,34 @@ object ServerAnimationManager {
             PacketDistributor.sendToPlayer(player, payload)
             ids.add(player.uuid)
         }
-        playbacks[id] = Playback(id, dimensionId, ids, origin, data, startGameTick, anim?.timelineLength() ?: 0, anim?.loop ?: false)
+        playbacks[id] = Playback(id, dimensionId, ids, origin, data, null, startGameTick, anim?.timelineLength() ?: 0, anim?.loop ?: false)
         return id
+    }
+
+    /**
+     * 播放一个代码生成的 [ParticleAnimation]（结构化载荷直发，不验签）。
+     * @return 动画 ID；可随后用 [stop] / [updateVariable] 操作
+     */
+    @JvmStatic
+    fun play(animation: ParticleAnimation, dimensionId: UUID, players: Collection<ServerPlayer>, origin: Vec3): UUID {
+        val id = UUID.randomUUID()
+        val startGameTick = players.firstOrNull()?.level()?.gameTime ?: 0L
+        val payload = PlayAnimationDataPayload(id, origin.x, origin.y, origin.z, startGameTick, animation)
+        val ids = HashSet<UUID>()
+        for (player in players) {
+            PacketDistributor.sendToPlayer(player, payload)
+            ids.add(player.uuid)
+        }
+        playbacks[id] = Playback(id, dimensionId, ids, origin, null, animation, startGameTick, animation.timelineLength(), animation.loop)
+        return id
+    }
+
+    /** [play] 的便捷重载：从首个玩家所在的维度推导 dimensionId。 */
+    @JvmStatic
+    fun play(animation: ParticleAnimation, players: Collection<ServerPlayer>, origin: Vec3): UUID {
+        require(players.isNotEmpty()) { "play 需要至少一个玩家" }
+        val level: ServerLevel = players.first().level()
+        return play(animation, ParticleUtils.dimensionUUID(level), players, origin)
     }
 
     /**
@@ -73,10 +103,18 @@ object ServerAnimationManager {
         for (pb in playbacks.values) {
             if (pb.dimensionId != dim || player.uuid !in pb.playerIds) continue
             if (AnimationProgress.isFinished(gameTime - pb.startGameTick, pb.maxTick, pb.loop)) continue
-            PacketDistributor.sendToPlayer(
-                player,
-                PlayAnimationPayload(pb.animationId, pb.origin.x, pb.origin.y, pb.origin.z, pb.startGameTick, pb.data)
-            )
+            val anim = pb.animation
+            if (anim != null) {
+                PacketDistributor.sendToPlayer(
+                    player,
+                    PlayAnimationDataPayload(pb.animationId, pb.origin.x, pb.origin.y, pb.origin.z, pb.startGameTick, anim)
+                )
+            } else if (pb.data != null) {
+                PacketDistributor.sendToPlayer(
+                    player,
+                    PlayAnimationPayload(pb.animationId, pb.origin.x, pb.origin.y, pb.origin.z, pb.startGameTick, pb.data)
+                )
+            }
         }
     }
 

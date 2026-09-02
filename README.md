@@ -7,6 +7,7 @@ A high-performance particle animation player, and supports custom textures and o
 ## Features
 - API calls
 - Play .pdraw particle animations
+- Build & play animations entirely from code (`Animation.create`)
 
 ## Why Choose ParticleDrawing
 This mod can play 50,000+ animated particle animations with a stable frame rate.
