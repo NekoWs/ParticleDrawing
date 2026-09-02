@@ -324,8 +324,9 @@ class ParticleGroup(
     }
 
     /**
-     * 表达式指令：每粒子每 tick 求值 [code]（编辑器函数对象同款语法），
-     * 输出 [x,y,z] 为世界绝对坐标；可用 i/n/t、全套数学函数、get_* 被动输入、程序变量。
+     * 表达式指令：每粒子每 tick 求值 [code]（专用标量公式：i/n/t、[x,y,z]=... 等旧式语法，
+     * 与 .pdraw 函数对象的 Context 脚本语言不同）。
+     * 输出 [x,y,z] 为世界绝对坐标；可用 i/n/t、全套标量数学函数、get_* 被动输入、程序变量。
      * 一旦出现即接管位置/颜色/缩放的最终解释权；FADE 因子仍叠加其上。
      */
     fun expression(code: String): ParticleGroup {
@@ -335,8 +336,9 @@ class ParticleGroup(
     }
 
     /**
-     * 运行时热更程序变量（对已激活程序生效）：value 为公式字符串。
-     * 例：`group.setVariableLive("rad", "3 + sin(t * 0.2)")`
+     * 运行时热更程序变量（对已激活程序生效）：value 为标量公式字符串，
+     * 可引用其它程序变量（如 `group.setVariableLive("rad", "speed * 2")`）或直接给常量。
+     * 注：该路径不注入 t/i/n，公式不能引用它们。
      */
     fun setVariableLive(name: String, value: String) {
         lintGetters(value)

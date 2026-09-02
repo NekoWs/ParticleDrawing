@@ -276,9 +276,10 @@ sealed class AnimInstruction {
     }
 
     /**
-     * 表达式指令：整段函数对象代码（编辑器同款语法）每粒子每 tick 求值。
+     * 表达式指令：整段标量公式代码（专用旧式语法：i/n/t、[x,y,z]=...；
+     * 与 .pdraw 函数对象的 Context 脚本语言不同）每粒子每 tick 求值。
      * 输出 [x,y,z] 为世界绝对坐标，可用被动输入 getter（get_entity_* /get_world_*）、
-     * 内建 i/n/t、全套数学函数与程序变量；一旦出现即接管位置/颜色/缩放的最终解释权，
+     * 内建 i/n/t、全套标量数学函数与程序变量；一旦出现即接管位置/颜色/缩放的最终解释权，
      * FADE 因子仍叠加在输出的 alpha 之上。
      */
     data class Expression(

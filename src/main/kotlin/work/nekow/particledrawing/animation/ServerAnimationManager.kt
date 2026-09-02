@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
  * 外部模组典型用法：
  * ```kotlin
  * val animId = ServerAnimationManager.playByName(dim, players, "magic_circle", origin) ?: return
- * ServerAnimationManager.updateVariable(animId, "rad", "3 + sin(t)", players)
+ * ServerAnimationManager.updateVariable(animId, "rad", "4", players)
  * ServerAnimationManager.stop(animId, players)
  * ```
  */

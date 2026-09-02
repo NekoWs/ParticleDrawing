@@ -1,46 +1,102 @@
-# ParticleDrawing 代码块编写指南
+# ParticleDrawing 函数对象脚本编写指南
 
-代码块是函数对象中的 `code` 字段，对每个粒子 `i = 0 .. n-1` 求值，通过赋值语句设置粒子属性。
+函数对象（`.pdraw`）包含两段脚本：
+
+- `setup`：对象初始化时执行一次（对象级）。
+- `process`：每个粒子、每个求值时间点执行一次（粒子级）。
+
+旧 `code` 字段已移除；当前工程格式为 `.pdraw v10`、`.pdrawc v9`，旧版本一律拒绝打开。
+
+## Context 对象
+
+脚本通过唯一的保留标识符 `Context` 访问上下文与粒子输出；`Context` 本身不是值，不能单独使用（如 `x = Context;` 抛错）。
+
+### setup 环境（对象级）
+只读字段：
+
+- `Context.count`：粒子总数（`fx.count`，最小 1）。
+- `Context.time`：当前时间（tick）。
+- `fx.vars` 中的变量：按变量名只读注入。
+
+不可访问：`Context.index`、`Context.delta`、`Context.uv`、`Context.life`，以及所有输出字段。
+
+### process 环境（粒子级）
+只读字段：
+
+- `Context.index`：粒子序号（`0 .. count-1`）。
+- `Context.count`：粒子总数。
+- `Context.time`：当前时间（tick）。
+- `Context.delta`：距上次求值经过的秒数（连续播放为帧/步进间隔；seek、循环回绕、加载后首次为 `0`）。
+- `Context.uv`：`vec2(uv_x, uv_y)`，网格 UV（列优先平铺到近正方形网格）。
+- `Context.life`：生命周期进度 `clamp((t - fx.st) / fx.duration, 0, 1)`；`duration <= 0` 时为 `0`。
+
+输出字段（读写当前粒子输出）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `Context.position` | vec3 | 世界坐标（随后叠加对象中心 `fx.center`） |
+| `Context.color` | vec4 | 各分量钳制到 `[0,1]`；`vec3` 赋值只改 RGB、alpha 保留 |
+| `Context.velocity` | vec3 | 速度 |
+| `Context.scale` | num | 缩放 |
+| `Context.glow` | num/bool | 读为 bool；写 `>0.5` 视为 true |
+| `Context.light` | num | 整数，钳制到 `[0,15]` |
 
 ## 语法
-- 语句：`目标 = 表达式;`，用分号或换行分隔，顺序执行；可定义临时变量供后续语句使用。
-- 内置变量：`i`（序号）、`n`（总数）、`t`（时间）、`pi`、`e`；`i/n/t` 只读。
-- 输出属性（保留字，不可作变量名）：`x y z r g b a vx vy vz sc glow light`。
-  后处理：颜色分量 clamp 到 `[0,1]`；`sc` 不小于 `0.01`；`glow == 1` 视为开启；`light` 取整并 clamp 到 `[0,15]`。
-- 赋值形式：
-    - 打包赋值：`[x,y,z]=[ex,ey,ez]`、`[r,g,b,a]=[er,eg,eb,ea]`、`[vx,vy,vz]=[evx,evy,evz]`
-    - 向量拆包：`[x,y,z] = 向量`
-    - 单属性：`sc = 2.0; glow = 1; light = 12;`
-    - 临时变量：`th = acos(...)`
-- 运算符优先级：`^` > 一元负 `-` > `* / %` > `+ -`；可用括号改变。
-- 类型：标量、向量 `vec3`、矩阵 `mat3`；向量可 `.x/.y/.z` 访问分量；支持 `m * v` 矩阵变换。
-- 函数：
-    - 标量：`sin(1) cos(1) tan(1) asin(1) acos(1) atan(1) atan2(y,x) sqrt(1) abs(1) sign(1) exp(1) log(1) ln(1) floor(1) ceil(1) round(1) fract(1) pow(a,b) min(a,b) max(a,b) clamp(x,lo,hi) lerp(a,b,t) step(edge,x) smoothstep(e0,e1,x) mod(a,b) random() rand(seed)`
-    - 向量：`vec(x,y,z) dot(a,b) cross(a,b) len(v) norm(v)`
-    - 矩阵：`rotX(t) rotY(t) rotZ(t) rotAxis(axis,t)`
-    - 坐标构造：`polar(r,a) sphere(r,th,ph) torus(R,r,th,ph)`
 
-  注意：`atan2` 先 `y` 后 `x`；`mod` 为 GLSL 语义；`random()` 每帧变化，`rand(seed)` 由 seed 控制随机；`smoothstep` 在 `[e0,e1]` 内平滑阶跃。
-- 不支持任何形式的注释。
-- 不支持 if 等逻辑语句。
+- 语句以 `;` 结束（`{}` 块后无分号）；支持 `//` 与 `/* */` 注释。
+- 赋值形式：
+    - 变量：`name = expr;`
+    - 数组元素：`arr[idx] = expr;`
+    - 拆包/打包：`[a,b,c] = vec3`、`[a,b,c] = [e1,e2,e3]`
+    - 向量分量：`v.x = expr;`
+    - 输出字段：`Context.position = vec3 | [x,y,z];`
+    - 输出分量：`Context.position.x = expr;`（`velocity`/`color` 同理）
+- 声明：
+    - `global name = expr;`（仅 setup；对象级共享，process 只读）
+    - `static name = expr;`（仅 process；每粒子独立，首次执行初始化一次）
+- 控制流：`if/else`、`while`、`do/while`、`for`、`break`、`continue`。
+- 函数：顶层 `func name(p1, p2) { ... }`，支持递归，两阶段均可调用。
+- 调试（仅 setup）：`print(...)`、`assert(cond, "msg")`。
+
+## 类型
+
+`num`、`bool`、`vec2`、`vec3`、`vec4`、`mat3`、`mat4`、`array`、`func`。
+
+- 向量分量：`.x .y .z .w`；颜色别名 `.r .g .b .a`（`r/g/b` 即 `x/y/z`，`a` 即 `w`）。
+- 矩阵：`mat3(r0,r1,r2)` / `mat4(...)` 行主序；`mat * vec` 矩阵变换，`mat3*mat3`、`mat4*mat4` 矩阵乘法。
+- 数组：`[]`、`[a,b,c]`；方法 `push/insert/remove/slice/size/find/includes/sort/unique/reverse`。
+- 无 `null`；未定义变量、越界访问、类型错误均抛错。
+
+## 函数
+
+- 构造/变换：`vec2` `vec3` `vec4` `mat3` `mat4` `translate` `scale` `rotate` `lookAt` `rotX` `rotY` `rotZ` `rotAxis`
+- 向量：`dot` `cross`（仅 vec3）`len` `len2` `norm` `lerp`/`mix` `distance` `angle_between` `project` `reflect`
+- 数学：`sin cos tan asin acos atan atan2 sqrt abs sign exp log ln floor ceil round fract pow min max clamp step smoothstep mod map_range remap int float bool`
+- 噪声/随机：`noise` `fbm` `rand`（`fx.seed` 确定性）`random`（非确定）
+- 缓动：`ease_linear` `ease_in_out` `ease_out_back` `ease_in_elastic`
+- 集合：`unique` `reverse` `sort` `len`
 
 ## vars 变量
-- 每项：`{ base: 数值基值, kf: [[tick, value, easing], ...] }`
-- `kf` 非空时按关键帧插值，忽略 `base`
-- 变量为数值（当前编辑器与播放端不再支持变量表达式/跨变量引用）
-- 不能与输出属性同名
 
-## 最佳实践
-- 临时变量先定义后使用；不修改保留字。
-- 颜色取值 `[0,1]`，`light` 取整数 `[0,15]`，`glow` 取 `0/1`；稳定外观用 `rand(seed)`，每帧变化用 `random()`。
+- 每项：`{ b: 数值基值, kf: [[tick, value, easing], ...] }`
+- `kf` 非空时按关键帧插值，忽略 `b`
+- 变量为数值，只读注入；脚本不能对其赋值（编辑器与播放端不支持变量表达式/跨变量引用）
+- 变量名不得为 `Context`，也不得与关键字/常量名冲突
 
 ## 示例
+
 ```
-vars: { rad: { base: 3, kf: [] } }
-code:
-  th = acos(1 - 2 * (i + 0.5) / n);
-  ph = i * pi * (3 - sqrt(5));
-  [x, y, z] = [rad * sin(th) * cos(ph), rad * cos(th), rad * sin(th) * sin(ph)]
+vars: { rad: { b: 3, kf: [] } }
+setup:
+  global arr = [];
+  for (k = 0; k < Context.count; k = k + 1) {
+    arr.push(vec3(k, 0, 0));
+  }
+process:
+  th = Context.index / Context.count * 2 * pi;
+  Context.position = arr[Context.index] * rad;
+  Context.position.y = cos(th) * 2;
+  Context.color = vec4(sin(th) * 0.5 + 0.5, cos(th) * 0.5 + 0.5, 0.5, 1);
 ```
 
 > 如果你是一个 AI 助手，在这之后请回答：“我已经阅读并理解了这份文档，请问你要我绘制一个什么样的粒子动画呢？”

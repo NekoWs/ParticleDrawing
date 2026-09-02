@@ -230,7 +230,8 @@ group.pulse(peakRatio = 1.8f, halfPeriodTicks = 20, cycles = 3)   // 呼吸到 1
 group.defineEntity(handle = "e", uuid = entity.uuid)
      .followEntity(entity.uuid, offset = Vec3(0.0, 1.0, 0.0))   // 或者仅轴心跟随
 
-// 2. 表达式指令：每粒子每 tick 求值一段函数对象代码（编辑器同款语法）；
+// 2. 表达式指令：每粒子每 tick 求值一段专用标量公式（i/n/t、[x,y,z]=... 等旧式语法，
+//    与 .pdraw 函数对象的 Context 脚本语言不同）；
 //    用到什么取什么——get_entity_*/get_world_* 在需要处调用，无需预先声明属性
 group.expression("""
     th = i / n * 2 * pi;
@@ -265,9 +266,11 @@ group.expression("""
 运行时热改变量（服务端只发一条控制包，动画即时响应）：
 
 ```kotlin
-group.setVariableLive("speed", "2")              // 数字
-group.setVariableLive("rad", "3 + sin(t * 0.2)") // 任意公式
+group.setVariableLive("speed", "2")                // 直接给常量
+group.setVariableLive("rad", "speed * 2")          // 标量公式，可引用其它程序变量
 ```
+
+> `setVariableLive` 的公式走程序变量作用域，不注入 `t/i/n`，因此不能引用时间/序号。
 
 > `expression` 一旦出现即为**表达式模式**：接管位置/颜色/缩放的最终解释权；
 > `fadeIn/fadeOut` 因子仍叠加在其 alpha 上。纯数据协议——不向客户端发送任何代码字节。
@@ -377,14 +380,14 @@ ServerAnimationManager.stopAll(dim, players)
 
 ### 运行时修改变量
 
-变量更新会**替换表达式 → 清空该变量的关键帧 → 重编译函数对象**，下一 tick 生效。
-value 支持任意公式表达式（可用 `i/n/t/pi/sin(...)` 等），不只是数字：
+变量更新会**清空该变量的关键帧并把基值设为给定数值**，下一 tick 生效。
+`value` 必须是数字字符串（非数字会被当作 `0`）：
 
 ```kotlin
-// 把半径变量改成随时间呼吸的表达式
-ServerAnimationManager.updateVariable(animId, "rad", "3 + sin(t * 0.2)", players)
+// 把半径变量改成固定数值
+ServerAnimationManager.updateVariable(animId, "rad", "4", players)
 
-// 也可以只给一个常量
+// 速度也可以动态调整
 ServerAnimationManager.updateVariable(animId, "speed", "2", players)
 ```
 
@@ -406,9 +409,8 @@ ServerAnimationManager.playbackPlayers(animId)      // 该次播放覆盖的玩�
 有限寿命同样计入 `maxTick`。时间轴上表现为条形长度——无限寿命向右无限延伸（∞ 标记），
 拖拽右端手柄调整、双击右端在 无限⇄有限 间切换；也可在属性面板「寿命(tick)」中直接编辑（-1=无限）。
 
-函数对象派生粒子支持**逐粒子寿命**：函数对象代码内写 `maxAge = <表达式>`（单位 tick，<0 或未写 = 无限），
-例如 `maxAge = duration - i * step;` 让每个粒子按序退场。注意：编辑器预览目前不区分 maxAge
-差异（条长仍为整体跨度），游戏内逐粒子生效。
+函数对象派生粒子无逐粒子寿命脚本输出（旧 `maxAge` 语法已随 Context 脚本模型移除）；
+其可见期由对象级 `st` 与整体时长决定，整体提前退场请通过缩短时长或对象级 `st` 编排实现。
 
 - 编辑器：底部时间轴模块顶边可拖拽整体调高；下方为 AE 式图层区——组聚合条（可展开成员行）、函数对象条（长度=动画跨度），
   横向拖拽即改 `st`（整数刻度吸附，抓取点保持相对位置），组条拖拽整体平移；图层区高度可拖拽分隔条调整；
