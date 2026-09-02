@@ -416,7 +416,7 @@ class ClientAnimationPlayer(
                     evalScriptParticle(fx, st, statics, i, n, t, dt, vars, grid, ctx)
                 } catch (e: Exception) {
                     println("[pdrawc] 函数对象 ${fx.id} 粒子 $i 求值失败：${e.message}")
-                    s.visible = fxLocalT >= 0
+                    s.visible = fxLocalT >= 0 && (fx.duration <= 0 || fxLocalT < fx.duration)
                     continue
                 }
                 var pos = base.first
@@ -430,7 +430,8 @@ class ClientAnimationPlayer(
                 s.glowing = base.fourth
                 s.lightLevel = base.fifth
                 val life = base.sixth
-                s.visible = fxLocalT >= 0 && (life < 0 || fxLocalT < life)
+                // 派生粒子三重门控：st 入场、对象整体时长、逐粒子寿命（life<0=无限；duration<=0=无时长上限）
+                s.visible = fxLocalT >= 0 && (fx.duration <= 0 || fxLocalT < fx.duration) && (life < 0 || fxLocalT < life)
             }
         }
         prevAdvanceT = t

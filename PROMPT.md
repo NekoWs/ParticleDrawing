@@ -28,7 +28,6 @@
 - `Context.time`：当前时间（tick）。
 - `Context.delta`：距上次求值经过的秒数（连续播放为帧/步进间隔；seek、循环回绕、加载后首次为 `0`）。
 - `Context.uv`：`vec2(uv_x, uv_y)`，网格 UV（列优先平铺到近正方形网格）。
-- `Context.life`：生命周期进度 `clamp((t - fx.st) / fx.duration, 0, 1)`；`duration <= 0` 时为 `0`。
 
 输出字段（读写当前粒子输出）：
 
@@ -40,6 +39,7 @@
 | `Context.scale` | num | 缩放 |
 | `Context.glow` | num/bool | 读为 bool；写 `>0.5` 视为 true |
 | `Context.light` | num | 整数，钳制到 `[0,15]` |
+| `Context.life` | num | 寿命（tick；写入 `Math.round` 取整，负值/非有限视为 -1=无限，读为当前值） |
 
 ## 语法
 
