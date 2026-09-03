@@ -3,6 +3,8 @@ package work.nekow.particledrawing
 import work.nekow.particledrawing.animation.UvData
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * UV 帧数推算逻辑的纯 JVM 回归测试（与编辑器 autoFramesFor/effMaxFrame 语义对齐）。
@@ -68,5 +70,17 @@ class UvDataTest {
         // 即使自动=0 兜底 ≥1
         val u = uv(maxFrame = 1)
         assertEquals(1, u.effectiveMaxFrame(0))
+    }
+
+    @Test
+    fun hasExpressionsDefaultsFalse() {
+        assertFalse(uv().hasExpressions())
+    }
+
+    @Test
+    fun hasExpressionsDetectsAnyField() {
+        assertTrue(UvData("t", UvData.Mode.ANIMATED, intArrayOf(16, 16), intArrayOf(0, 0), intArrayOf(16, 16), intArrayOf(0, 0), 1f, 1, true, fpsExpr = "this.index % 4").hasExpressions())
+        assertTrue(UvData("t", UvData.Mode.ANIMATED, intArrayOf(16, 16), intArrayOf(0, 0), intArrayOf(16, 16), intArrayOf(0, 0), 1f, 1, true, maxFrameExpr = "this.count").hasExpressions())
+        assertTrue(UvData("t", UvData.Mode.ANIMATED, intArrayOf(16, 16), intArrayOf(0, 0), intArrayOf(16, 16), intArrayOf(0, 0), 1f, 1, true, uvStartExpr = arrayOf("this.index", null)).hasExpressions())
     }
 }

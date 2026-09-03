@@ -24,7 +24,7 @@ import work.nekow.particledrawing.core.easing.EasingType
  */
 internal object ParticleAnimationCodec {
 
-    const val VERSION = 1
+    const val VERSION = 2
 
     fun write(buf: FriendlyByteBuf, anim: ParticleAnimation) {
         buf.writeVarInt(VERSION)
@@ -296,6 +296,25 @@ internal object ParticleAnimationCodec {
         buf.writeFloat(uv.fps)
         buf.writeVarInt(uv.maxFrame)
         buf.writeBoolean(uv.loop)
+        // v2：loop 后 1 字节 exprFlags，按位序写存在的表达式字符串（null=用数值字段）
+        var exprFlags = 0
+        if (uv.uvStartExpr[0] != null) exprFlags = exprFlags or (1 shl 0)
+        if (uv.uvStartExpr[1] != null) exprFlags = exprFlags or (1 shl 1)
+        if (uv.uvSizeExpr[0] != null) exprFlags = exprFlags or (1 shl 2)
+        if (uv.uvSizeExpr[1] != null) exprFlags = exprFlags or (1 shl 3)
+        if (uv.uvStepExpr[0] != null) exprFlags = exprFlags or (1 shl 4)
+        if (uv.uvStepExpr[1] != null) exprFlags = exprFlags or (1 shl 5)
+        if (uv.fpsExpr != null) exprFlags = exprFlags or (1 shl 6)
+        if (uv.maxFrameExpr != null) exprFlags = exprFlags or (1 shl 7)
+        buf.writeByte(exprFlags)
+        uv.uvStartExpr[0]?.let { buf.writeUtf(it) }
+        uv.uvStartExpr[1]?.let { buf.writeUtf(it) }
+        uv.uvSizeExpr[0]?.let { buf.writeUtf(it) }
+        uv.uvSizeExpr[1]?.let { buf.writeUtf(it) }
+        uv.uvStepExpr[0]?.let { buf.writeUtf(it) }
+        uv.uvStepExpr[1]?.let { buf.writeUtf(it) }
+        uv.fpsExpr?.let { buf.writeUtf(it) }
+        uv.maxFrameExpr?.let { buf.writeUtf(it) }
     }
 
     private fun readUV(buf: FriendlyByteBuf): UvData {
@@ -308,7 +327,22 @@ internal object ParticleAnimationCodec {
         val fps = buf.readFloat()
         val maxFrame = buf.readVarInt()
         val loop = buf.readBoolean()
-        return UvData(texture, mode, texSize, uvStart, uvSize, uvStep, fps, maxFrame, loop)
+        val exprFlags = buf.readByte().toInt()
+        val uvStartExpr = arrayOfNulls<String>(2)
+        val uvSizeExpr = arrayOfNulls<String>(2)
+        val uvStepExpr = arrayOfNulls<String>(2)
+        if (exprFlags and (1 shl 0) != 0) uvStartExpr[0] = buf.readUtf()
+        if (exprFlags and (1 shl 1) != 0) uvStartExpr[1] = buf.readUtf()
+        if (exprFlags and (1 shl 2) != 0) uvSizeExpr[0] = buf.readUtf()
+        if (exprFlags and (1 shl 3) != 0) uvSizeExpr[1] = buf.readUtf()
+        if (exprFlags and (1 shl 4) != 0) uvStepExpr[0] = buf.readUtf()
+        if (exprFlags and (1 shl 5) != 0) uvStepExpr[1] = buf.readUtf()
+        val fpsExpr = if (exprFlags and (1 shl 6) != 0) buf.readUtf() else null
+        val maxFrameExpr = if (exprFlags and (1 shl 7) != 0) buf.readUtf() else null
+        return UvData(
+            texture, mode, texSize, uvStart, uvSize, uvStep, fps, maxFrame, loop,
+            uvStartExpr, uvSizeExpr, uvStepExpr, fpsExpr, maxFrameExpr,
+        )
     }
 
     private fun writeNullableUV(buf: FriendlyByteBuf, uv: UvData?) {

@@ -178,6 +178,29 @@ object ScriptRuntime {
     fun createProcessExecutor(program: ScriptProgram, obj: ObjectState): ProcessExecutor =
         ProcessExecutor(program, obj)
 
+    /**
+     * 可复用的裸表达式执行器（UV 字段表达式等）：同一表达式跨粒子复用 Runtime / 作用域，
+     * 与 [ProcessExecutor] 风格一致。表达式必须求值为标量（Double）。
+     */
+    class ExpressionRunner(expr: String) {
+        private val node: Node = parseExpression(expr)
+        private val program = ScriptProgram(emptyList(), emptyList(), emptyMap())
+        private val obj = createObjectState(0)
+        private val rt = Runtime("process", program, obj, null, null, null)
+        private val topScope = HashMap<String, Any?>()
+
+        fun eval(ctx: ProcessCtx): Double {
+            rt.resetProcess(null, ctx, topScope)
+            val v = rt.evalExpr(node)
+            if (v !is Double) {
+                throw ScriptException("expression must evaluate to a number, got ${typeName(v)}", node.line, node.col)
+            }
+            return v
+        }
+    }
+
+    fun evalExpression(expr: String, ctx: ProcessCtx): Double = ExpressionRunner(expr).eval(ctx)
+
     /* ---------------------------------------------------------------- */
 
     private class Runtime(

@@ -16,8 +16,18 @@ class UvData(
     val fps: Float,
     val maxFrame: Int,
     val loop: Boolean,
+    val uvStartExpr: Array<String?> = arrayOfNulls(2),
+    val uvSizeExpr: Array<String?> = arrayOfNulls(2),
+    val uvStepExpr: Array<String?> = arrayOfNulls(2),
+    val fpsExpr: String? = null,
+    val maxFrameExpr: String? = null,
 ) {
     enum class Mode { STATIC, FILL, ANIMATED }
+
+    /** 是否含 script-lang 裸表达式字段（任一 UV 字段被配置为表达式即 true）。 */
+    fun hasExpressions(): Boolean =
+        uvStartExpr.any { it != null } || uvSizeExpr.any { it != null } ||
+        uvStepExpr.any { it != null } || fpsExpr != null || maxFrameExpr != null
 
     /** 有效帧数上限（动画模式）。maxFrame 语义与编辑器一致：<=1 视为「自动」（不限制）。 */
     fun effectiveMaxFrame(autoFrames: Int): Int {

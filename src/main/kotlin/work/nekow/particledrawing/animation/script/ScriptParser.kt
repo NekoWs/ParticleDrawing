@@ -295,6 +295,16 @@ class ScriptParser(private val source: String) {
         return next()
     }
 
+    /** 解析裸表达式并校验无剩余 token（供 UV 字段表达式使用）。 */
+    fun parseBareExpression(): Node {
+        val node = parseTernary()
+        val extra = peek()
+        if (extra.type != TokenType.EOF) {
+            throw ScriptException("unexpected '${extra.text}' after expression", extra.line, extra.col)
+        }
+        return node
+    }
+
     fun parseProgram(): ScriptProgram {
         val setup = ArrayList<Node>()
         val process = ArrayList<Node>()
@@ -719,3 +729,6 @@ class ScriptParser(private val source: String) {
 
 /** 解析脚本源码（等价 JS parseProgram）。 */
 fun parseProgram(source: String): ScriptProgram = ScriptParser(source).parseProgram()
+
+/** 解析裸表达式（UV 字段表达式等，无 setup/process 包装）。 */
+fun parseExpression(source: String): Node = ScriptParser(source).parseBareExpression()

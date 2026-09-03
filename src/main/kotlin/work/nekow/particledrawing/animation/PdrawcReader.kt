@@ -25,7 +25,7 @@ import java.util.zip.InflaterInputStream
 object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
-    private const val VERSION = 9     // v9：脚本语言改为 this 对象模型（旧 i/n/[x,y,z]=... 语法移除）
+    private const val VERSION = 10    // v10：UV 字段支持 script-lang 单行表达式
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 
@@ -248,16 +248,41 @@ object PdrawcReader {
         if (texIdx !in texNames.indices) throw IllegalArgumentException("pdrawc 贴图索引越界: $texIdx")
         val modeIdx = r.u8()
         if (modeIdx !in UV_MODES.indices) throw IllegalArgumentException("pdrawc 未知 UV 模式: $modeIdx")
+        val texSize = intArrayOf(r.varint(), r.varint())
+        val uvStart = intArrayOf(r.varint(), r.varint())
+        val uvSize = intArrayOf(r.varint(), r.varint())
+        val uvStep = intArrayOf(r.varint(), r.varint())
+        val fps = r.f32()
+        val maxFrame = r.varint()
+        val loop = r.u8() != 0
+        // v10：loop 后 1 字节 exprFlags，按位序读存在的表达式字符串（null=用数值字段）
+        val exprFlags = r.u8()
+        val uvStartExpr = arrayOfNulls<String>(2)
+        val uvSizeExpr = arrayOfNulls<String>(2)
+        val uvStepExpr = arrayOfNulls<String>(2)
+        if (exprFlags and (1 shl 0) != 0) uvStartExpr[0] = r.str()
+        if (exprFlags and (1 shl 1) != 0) uvStartExpr[1] = r.str()
+        if (exprFlags and (1 shl 2) != 0) uvSizeExpr[0] = r.str()
+        if (exprFlags and (1 shl 3) != 0) uvSizeExpr[1] = r.str()
+        if (exprFlags and (1 shl 4) != 0) uvStepExpr[0] = r.str()
+        if (exprFlags and (1 shl 5) != 0) uvStepExpr[1] = r.str()
+        val fpsExpr = if (exprFlags and (1 shl 6) != 0) r.str() else null
+        val maxFrameExpr = if (exprFlags and (1 shl 7) != 0) r.str() else null
         return UvData(
             texture = texNames[texIdx],
             mode = UV_MODES[modeIdx],
-            texSize = intArrayOf(r.varint(), r.varint()),
-            uvStart = intArrayOf(r.varint(), r.varint()),
-            uvSize = intArrayOf(r.varint(), r.varint()),
-            uvStep = intArrayOf(r.varint(), r.varint()),
-            fps = r.f32(),
-            maxFrame = r.varint(),
-            loop = r.u8() != 0,
+            texSize = texSize,
+            uvStart = uvStart,
+            uvSize = uvSize,
+            uvStep = uvStep,
+            fps = fps,
+            maxFrame = maxFrame,
+            loop = loop,
+            uvStartExpr = uvStartExpr,
+            uvSizeExpr = uvSizeExpr,
+            uvStepExpr = uvStepExpr,
+            fpsExpr = fpsExpr,
+            maxFrameExpr = maxFrameExpr,
         )
     }
 

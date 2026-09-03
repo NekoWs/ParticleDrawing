@@ -90,6 +90,63 @@ class ClientAnimationPlayer(
     private val particleFxCache: Map<String, FunctionObject?> = buildParticleFxCache()
     private val camUp = Vec3(0.0, 1.0, 0.0)
 
+    // ---- UV 字段表达式（v10/v2 新增）----
+    // 普通粒子全局序号：index=全局序号、count=粒子总数；uv=(0,0)（普通粒子无脚本 uv 网格）。
+    private val particleGlobalIndex: Map<String, Int> = animation.particles.mapIndexed { i, p -> p.id to i }.toMap()
+    private val particleGlobalCount: Double = animation.particles.size.toDouble()
+
+    // UV 表达式 runner 缓存：同一表达式字符串跨粒子复用编译产物。
+    private val uvExprCache = HashMap<String, ScriptRuntime.ExpressionRunner?>()
+
+    // 普通粒子 UV 表达式复用的 ProcessCtx（每次求值前改字段；vars 恒为 emptyMap）。
+    private val uvCtx = ScriptRuntime.ProcessCtx(
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, emptyMap(),
+        fastMath = false, duration = 0.0,
+    )
+
+    private fun uvExprRunner(expr: String): ScriptRuntime.ExpressionRunner? =
+        uvExprCache.getOrPut(expr) {
+            try {
+                ScriptRuntime.ExpressionRunner(expr)
+            } catch (e: Exception) {
+                println("[pdrawc] UV 表达式编译失败：${e.message}")
+                null
+            }
+        }
+
+    /** 求值单个 UV 字段表达式；出错/非有限回退到数值字段 [fallback]。 */
+    private fun evalUvField(expr: String?, ctx: ScriptRuntime.ProcessCtx, fallback: Double): Double {
+        if (expr == null) return fallback
+        val runner = uvExprRunner(expr) ?: return fallback
+        return try {
+            val v = runner.eval(ctx)
+            if (v.isFinite()) v else fallback
+        } catch (e: Exception) {
+            println("[pdrawc] UV 表达式求值失败：${e.message}")
+            fallback
+        }
+    }
+
+    /** 把 UV 表达式逐字段求值并生成「数值化」的新 UvData（表达式置 null）。 */
+    private fun evalUv(uv: UvData, ctx: ScriptRuntime.ProcessCtx): UvData {
+        if (!uv.hasExpressions()) return uv
+        val start = intArrayOf(
+            evalUvField(uv.uvStartExpr[0], ctx, uv.uvStart[0].toDouble()).roundToInt(),
+            evalUvField(uv.uvStartExpr[1], ctx, uv.uvStart[1].toDouble()).roundToInt(),
+        )
+        val size = intArrayOf(
+            evalUvField(uv.uvSizeExpr[0], ctx, uv.uvSize[0].toDouble()).roundToInt(),
+            evalUvField(uv.uvSizeExpr[1], ctx, uv.uvSize[1].toDouble()).roundToInt(),
+        )
+        val step = intArrayOf(
+            evalUvField(uv.uvStepExpr[0], ctx, uv.uvStep[0].toDouble()).roundToInt(),
+            evalUvField(uv.uvStepExpr[1], ctx, uv.uvStep[1].toDouble()).roundToInt(),
+        )
+        val fps = evalUvField(uv.fpsExpr, ctx, uv.fps.toDouble()).toFloat()
+        val maxFrame = evalUvField(uv.maxFrameExpr, ctx, uv.maxFrame.toDouble()).roundToInt()
+        return UvData(uv.texture, uv.mode, uv.texSize, start, size, step, fps, maxFrame, uv.loop)
+    }
+
     // ---- 函数对象脚本程序缓存（setup 执行一次；process 每粒子每 tick） ----
     private data class FxScriptState(
         val program: ScriptProgram,
@@ -371,6 +428,7 @@ class ClientAnimationPlayer(
     }
 
     private fun advanceTo(t: Double) {
+        val uvDt = if (advanceInitialized && t == prevAdvanceT + 1.0) 1.0 / 20.0 else 0.0
         for (p in animation.particles) {
             val s = states[p.id] ?: continue
             val localT = t - p.st
@@ -381,6 +439,32 @@ class ClientAnimationPlayer(
                 s.pos = origin.add(particlePosition(p, t))
                 s.color = applyEntrance(particleColor(p, t), p.ent, localT)
                 s.scale = particleScale(p, t)
+            }
+            // 普通粒子 UV 字段表达式：逐 tick 逐粒子求值，覆盖为数值化 UvData。
+            // 每 tick 从原始 UV（p.uv / 组 UV）重新解析，保证表达式随时间变化仍逐刻重算。
+            val resolvedUv = resolveUV(p.id, p.uv)
+            if (resolvedUv != null && resolvedUv.hasExpressions()) {
+                uvCtx.i = particleGlobalIndex[p.id]!!.toDouble()
+                uvCtx.n = particleGlobalCount
+                uvCtx.t = t
+                uvCtx.dt = uvDt
+                uvCtx.duration = maxTick.toDouble()
+                uvCtx.life = p.life.toDouble()
+                uvCtx.uv_x = 0.0
+                uvCtx.uv_y = 0.0
+                uvCtx.out.pos[0] = s.pos.x; uvCtx.out.pos[1] = s.pos.y; uvCtx.out.pos[2] = s.pos.z
+                uvCtx.out.color[0] = s.color.r.toDouble(); uvCtx.out.color[1] = s.color.g.toDouble()
+                uvCtx.out.color[2] = s.color.b.toDouble(); uvCtx.out.color[3] = s.color.a.toDouble()
+                uvCtx.out.vel[0] = componentValueAt(p, "vel", "x", t)
+                uvCtx.out.vel[1] = componentValueAt(p, "vel", "y", t)
+                uvCtx.out.vel[2] = componentValueAt(p, "vel", "z", t)
+                uvCtx.out.scale = s.scale[0].toDouble()
+                uvCtx.out.glow = s.glowing
+                uvCtx.out.light = s.lightLevel.toDouble()
+                uvCtx.out.life = p.life.toDouble()
+                s.uv = evalUv(resolvedUv, uvCtx)
+            } else {
+                s.uv = resolvedUv
             }
         }
         for (fx in animation.functions) {
@@ -430,6 +514,21 @@ class ClientAnimationPlayer(
                 s.glowing = base.fourth
                 s.lightLevel = base.fifth
                 val life = base.sixth
+                // 派生粒子 UV 字段表达式：复用该循环 ctx（i/n/t/dt/uv_x/uv_y/vars 已正确），
+                // 把 out 改为最终世界坐标/颜色/缩放/glow/light/life，vel 保持脚本输出。
+                val resolvedUv = resolveUV(id, fx.uv)
+                if (resolvedUv != null && resolvedUv.hasExpressions()) {
+                    ctx.out.pos[0] = s.pos.x; ctx.out.pos[1] = s.pos.y; ctx.out.pos[2] = s.pos.z
+                    ctx.out.color[0] = s.color.r.toDouble(); ctx.out.color[1] = s.color.g.toDouble()
+                    ctx.out.color[2] = s.color.b.toDouble(); ctx.out.color[3] = s.color.a.toDouble()
+                    ctx.out.scale = s.scale[0].toDouble()
+                    ctx.out.glow = s.glowing
+                    ctx.out.light = s.lightLevel.toDouble()
+                    ctx.out.life = life
+                    s.uv = evalUv(resolvedUv, ctx)
+                } else {
+                    s.uv = resolvedUv
+                }
                 // 派生粒子三重门控：st 入场、对象整体时长、逐粒子寿命（life<0=无限；duration<=0=无时长上限）
                 s.visible = fxLocalT >= 0 && (fx.duration <= 0 || fxLocalT < fx.duration) && (life < 0 || fxLocalT < life)
             }

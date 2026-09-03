@@ -210,4 +210,54 @@ class ParticleAnimationCodecTest {
             ParticleAnimationCodec.read(buf)
         }
     }
+
+    @Test
+    fun uvExpressionsRoundTrip() {
+        val exprUv = UvData(
+            "tex", UvData.Mode.ANIMATED,
+            intArrayOf(16, 16), intArrayOf(0, 0), intArrayOf(8, 8), intArrayOf(8, 8),
+            4f, 2, true,
+            uvStartExpr = arrayOf("this.index % 4", null),
+            uvSizeExpr = arrayOfNulls(2),
+            uvStepExpr = arrayOf("this.index % 2", "this.count % 3"),
+            fpsExpr = "this.time / 2",
+            maxFrameExpr = null,
+        )
+        val particle = AnimParticle(
+            id = "p0", color = Color.WHITE, scale = floatArrayOf(1f, 1f, 1f),
+            glowing = false, lightLevel = 0, pos = Vec3.ZERO, vel = Vec3.ZERO,
+            uv = exprUv, st = 0, ent = null, life = -1,
+        )
+        val original = ParticleAnimation(
+            loop = false,
+            particles = listOf(particle),
+            tracks = emptyList(),
+            groups = emptyMap(),
+            functions = emptyList(),
+            textures = listOf("tex"),
+            groupUV = emptyMap(),
+            texData = emptyMap(),
+            groupSpinSpace = emptyMap(),
+            groupRotSpace = emptyMap(),
+            cameras = emptyList(),
+        )
+        val buf = FriendlyByteBuf(Unpooled.buffer())
+        ParticleAnimationCodec.write(buf, original)
+        val decoded = ParticleAnimationCodec.read(buf)
+        val u = decoded.particles[0].uv ?: error("uv null")
+
+        assertEquals("this.index % 4", u.uvStartExpr[0])
+        assertNull(u.uvStartExpr[1])
+        assertEquals("this.index % 2", u.uvStepExpr[0])
+        assertEquals("this.count % 3", u.uvStepExpr[1])
+        assertNull(u.uvSizeExpr[0])
+        assertNull(u.uvSizeExpr[1])
+        assertEquals("this.time / 2", u.fpsExpr)
+        assertNull(u.maxFrameExpr)
+        // 数值字段仍应保留
+        assertEquals(0, u.uvStart[0])
+        assertEquals(4f, u.fps)
+        assertEquals(2, u.maxFrame)
+        assertTrue(u.loop)
+    }
 }
