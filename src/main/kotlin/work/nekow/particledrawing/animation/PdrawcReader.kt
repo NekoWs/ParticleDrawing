@@ -25,7 +25,7 @@ import java.util.zip.InflaterInputStream
 object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
-    private const val VERSION = 10    // v10：UV 字段支持 script-lang 单行表达式
+    private const val VERSION = 11    // v11：函数对象 spawn 模型（tick / processParam，移除 count 编码）
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 
@@ -146,9 +146,10 @@ object PdrawcReader {
         val functions = ArrayList<FunctionObject>(fxCount)
         for (fi in 0 until fxCount) {
             val center = doubleArrayOf(br.f32().toDouble(), br.f32().toDouble(), br.f32().toDouble())
-            val count = br.varint()
             val setup = br.str()
             val process = br.str()
+            val tick = br.str()
+            val processParam = br.str().ifEmpty { "delta" }
             val seed = br.varint()
             val duration = br.varint()
             val st = br.varint()
@@ -167,8 +168,8 @@ object PdrawcReader {
                 val kf = readVarKeyframes(br)
                 vars[name] = FunctionVar(base, kf)
             }
-            // step 为编辑器参数，播放端不使用，固定 0
-            functions.add(FunctionObject("fx$fi", "fx$fi", center, count, setup, process, funcs, seed, vars, duration, 0, uv, st, ent, fastMath, spinLocal, rotLocal))
+            // v11：count/step 为编辑器旧字段，播放端不再使用；tick/processParam 由命名参数传入。
+            functions.add(FunctionObject("fx$fi", "fx$fi", center, 0, setup, process, funcs, seed, vars, duration, 0, uv, st, ent, fastMath, spinLocal, rotLocal, tick, processParam))
         }
 
         // 摄像机对象（v6 新增；v7 起朝向 = target 目标点 + roll 翻滚角；v8 起旋转空间 flags：

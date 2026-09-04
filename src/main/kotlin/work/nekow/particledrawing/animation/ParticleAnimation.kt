@@ -49,7 +49,9 @@ class FunctionObject(
     val ent: Entrance? = null,
     val fastMath: Boolean = false,
     val spinLocal: Boolean = false,
-    val rotLocal: Boolean = false
+    val rotLocal: Boolean = false,
+    val tick: String = "",
+    val processParam: String = "delta"
 )
 
 /**
