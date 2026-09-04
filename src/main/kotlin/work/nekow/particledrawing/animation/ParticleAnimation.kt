@@ -51,7 +51,8 @@ class FunctionObject(
     val spinLocal: Boolean = false,
     val rotLocal: Boolean = false,
     val tick: String = "",
-    val processParam: String = "delta"
+    val processParam: String = "delta",
+    val source: String = ""
 )
 
 /**

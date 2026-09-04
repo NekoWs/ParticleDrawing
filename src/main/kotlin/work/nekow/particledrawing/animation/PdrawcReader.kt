@@ -146,10 +146,7 @@ object PdrawcReader {
         val functions = ArrayList<FunctionObject>(fxCount)
         for (fi in 0 until fxCount) {
             val center = doubleArrayOf(br.f32().toDouble(), br.f32().toDouble(), br.f32().toDouble())
-            val setup = br.str()
-            val process = br.str()
-            val tick = br.str()
-            val processParam = br.str().ifEmpty { "delta" }
+            val source = br.str()
             val seed = br.varint()
             val duration = br.varint()
             val st = br.varint()
@@ -168,8 +165,8 @@ object PdrawcReader {
                 val kf = readVarKeyframes(br)
                 vars[name] = FunctionVar(base, kf)
             }
-            // v11：count/step 为编辑器旧字段，播放端不再使用；tick/processParam 由命名参数传入。
-            functions.add(FunctionObject("fx$fi", "fx$fi", center, 0, setup, process, funcs, seed, vars, duration, 0, uv, st, ent, fastMath, spinLocal, rotLocal, tick, processParam))
+            // v11：source 为完整脚本源码；播放端 spawn 运行时尚未实现（见编辑器 AGENT.md 待跟进），此处保留旧字段为空。
+            functions.add(FunctionObject("fx$fi", "fx$fi", center, 0, "", "", funcs, seed, vars, duration, 0, uv, st, ent, fastMath, spinLocal, rotLocal, "", "delta", source))
         }
 
         // 摄像机对象（v6 新增；v7 起朝向 = target 目标点 + roll 翻滚角；v8 起旋转空间 flags：
