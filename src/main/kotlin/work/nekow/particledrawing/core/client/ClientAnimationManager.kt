@@ -1,12 +1,21 @@
 package work.nekow.particledrawing.core.client
 
 import net.minecraft.client.Minecraft
+import net.minecraft.resources.Identifier
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.AnimationLoader
+import work.nekow.particledrawing.animation.AnimationProgress
 import work.nekow.particledrawing.animation.ClientAnimationPlayer
 import work.nekow.particledrawing.animation.ParticleAnimation
+import work.nekow.particledrawing.animation.PlaybackClock
+import work.nekow.particledrawing.animation.timelineLength
+import work.nekow.particledrawing.animation.PdrawcReader
+import work.nekow.particledrawing.api.Anchor
+import work.nekow.particledrawing.api.EffectOptions
+import work.nekow.particledrawing.core.network.PlayEffectPayload
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.floor
 
 /**
  * 客户端动画管理器：本地播放服务端下发的 .pdrawc 动画，每客户端 tick 推进并同步渲染。
@@ -21,9 +30,21 @@ object ClientAnimationManager {
         val origin: Vec3,
         // 当前已生成（在场）的状态 id 集合——st 门控的生成/回收以它为基准做差分
         val liveIds: HashSet<String> = HashSet(),
+        // 特效锚点解析器（null = 旧固定 origin 路径）
+        val anchor: EffectAnchorResolver? = null,
+        // 特效播放时钟（null = 旧 gameTime 时钟路径）
+        val clock: PlaybackClock? = null,
+        // 生效的 loop（特效可覆盖动画自身 loop）
+        val loop: Boolean = true,
     )
 
     private val entries = ConcurrentHashMap<UUID, Entry>()
+
+    // 特效资源缓存：key → .pdrawc 字节（服务端下发后驻留，重复播放不再请求）
+    private val effectCache = ConcurrentHashMap<Identifier, ByteArray>()
+
+    // 缓存缺失的待播特效：收到 EffectDataPayload 后再真正开播
+    private val pendingEffectPlays = ConcurrentHashMap<UUID, PlayEffectPayload>()
 
     /** 一次播放的调试信息快照。 */
     data class DebugInfo(
@@ -127,6 +148,133 @@ object ClientAnimationManager {
         entries[animationId] = Entry(player, uuids, animation, origin, liveIds)
     }
 
+    // ---- 特效 API（按 key 播放 + 锚点 + 时钟） ----
+
+    /** 收到 PlayEffectPayload：缓存命中直接开播，否则请求服务端下发字节并挂起。 */
+    @JvmStatic
+    fun playEffect(payload: PlayEffectPayload) {
+        val cached = effectCache[payload.key]
+        if (cached == null) {
+            pendingEffectPlays[payload.playbackId] = payload
+            Minecraft.getInstance().connection?.send(
+                work.nekow.particledrawing.core.network.EffectRequestPayload(payload.key)
+            )
+            return
+        }
+        startEffect(payload.playbackId, cached, payload.key, payload.anchor, payload.options, payload.startGameTick)
+    }
+
+    /** 收到服务端下发的特效字节：验签缓存，并开播所有等待该 key 的挂起播放。 */
+    @JvmStatic
+    fun onEffectData(key: Identifier, data: ByteArray) {
+        if (!PdrawcReader.verify(data)) return
+        effectCache[key] = data
+        val it = pendingEffectPlays.entries.iterator()
+        while (it.hasNext()) {
+            val (id, payload) = it.next()
+            if (payload.key == key) {
+                it.remove()
+                startEffect(id, data, key, payload.anchor, payload.options, payload.startGameTick)
+            }
+        }
+    }
+
+    /** 纯客户端本地播放入口（ClientEffects 使用）。 */
+    @JvmStatic
+    fun playLocal(playbackId: UUID, animation: ParticleAnimation, anchor: Anchor, options: EffectOptions) {
+        val startGameTick = Minecraft.getInstance().level?.gameTime ?: 0L
+        playAnchored(playbackId, animation, anchor, options, startGameTick)
+    }
+
+    /** 更新可移动锚点（锚点更新包逐条调用）。 */
+    @JvmStatic
+    fun updateAnchor(playbackId: UUID, pos: Vec3, velocity: Vec3) {
+        entries[playbackId]?.anchor?.updateMovable(pos, velocity)
+    }
+
+    /** 应用服务端权威时钟同步（seek/暂停/变速）。 */
+    @JvmStatic
+    fun applyClockSync(playbackId: UUID, position: Double, playing: Boolean, speed: Double) {
+        entries[playbackId]?.clock?.let {
+            it.position = position
+            it.playing = playing
+            it.speed = speed
+        }
+    }
+
+    @JvmStatic
+    fun seekLocal(playbackId: UUID, tick: Double) {
+        entries[playbackId]?.clock?.position = tick
+    }
+
+    @JvmStatic
+    fun pauseLocal(playbackId: UUID) {
+        entries[playbackId]?.clock?.playing = false
+    }
+
+    @JvmStatic
+    fun resumeLocal(playbackId: UUID) {
+        entries[playbackId]?.clock?.playing = true
+    }
+
+    @JvmStatic
+    fun setSpeedLocal(playbackId: UUID, speed: Double) {
+        entries[playbackId]?.clock?.speed = speed
+    }
+
+    @JvmStatic
+    fun isActive(playbackId: UUID): Boolean = entries.containsKey(playbackId)
+
+    private fun startEffect(
+        playbackId: UUID,
+        data: ByteArray,
+        key: Identifier,
+        anchor: Anchor,
+        options: EffectOptions,
+        startGameTick: Long,
+    ) {
+        val animation = try {
+            AnimationLoader.parse(data)
+        } catch (_: Exception) {
+            return
+        }
+        playAnchored(playbackId, animation, anchor, options, startGameTick)
+    }
+
+    /**
+     * 锚定播放：播放器输出本地坐标（origin=ZERO），渲染层每 tick 用锚点解析器映射到世界坐标。
+     * 播放器时间轴由 [PlaybackClock] 驱动，支持从指定 tick 开始、暂停、变速与任意 seek。
+     */
+    private fun playAnchored(
+        playbackId: UUID,
+        animation: ParticleAnimation,
+        anchor: Anchor,
+        options: EffectOptions,
+        startGameTick: Long,
+    ) {
+        if (entries.containsKey(playbackId)) stopInternal(playbackId)
+        preloadTextures(animation)
+
+        val loop = options.loop() ?: animation.loop
+        val maxTick = animation.timelineLength()
+        val initialTick = AnimationProgress.tickAt(options.startTick().toLong(), maxTick, loop)
+        val currentGameTick = Minecraft.getInstance().level?.gameTime ?: startGameTick
+        val player = ClientAnimationPlayer(animation, Vec3.ZERO, startGameTick, currentGameTick, initialTick)
+        val resolver = EffectAnchorResolver(anchor, options.scale())
+        val clock = PlaybackClock(options.startTick(), playing = true, speed = options.speed())
+
+        val uuids = HashMap<String, UUID>()
+        val liveIds = HashSet<String>()
+        for (state in player.currentStates()) {
+            if (!state.visible) continue
+            val uuid = UUID.randomUUID()
+            uuids[state.id] = uuid
+            liveIds.add(state.id)
+            ClientParticleEngine.instance()?.let { spawnState(it, uuid, state, resolver) }
+        }
+        entries[playbackId] = Entry(player, uuids, animation, Vec3.ZERO, liveIds, resolver, clock, loop)
+    }
+
     /**
      * 客户端世界卸载（切换维度/重生/退出世界）时清理全部本地播放。
      * ClientLevel 重建会换掉原版 ParticleEngine，桥接粒子随之销毁；条目继续存在只会
@@ -164,12 +312,20 @@ object ClientAnimationManager {
             if (player == null || player.isDeadOrDying) CameraController.detach()
         }
         // 服务端权威进度时钟：维度 gameTime（与所有客户端、服务器一致）
-        val gameTick = Minecraft.getInstance().level?.gameTime ?: return
+        val level = Minecraft.getInstance().level ?: return
+        val gameTick = level.gameTime
         val toStop = mutableListOf<UUID>()
         for ((animId, entry) in entries) {
-            if (entry.player.tick(gameTick)) {
-                // 静态动画（粒子状态恒定）跳过每刻的渲染同步，避免 5w 粒子无谓的逐粒子写入
-                if (!entry.player.isStatic()) sync(entry)
+            val alive = if (entry.clock != null) {
+                entry.clock.advance()
+                entry.player.tickExternal(floor(entry.clock.position).toInt())
+            } else {
+                entry.player.tick(gameTick)
+            }
+            if (alive) {
+                entry.anchor?.resolveEntity(level)
+                // 静态动画（粒子状态恒定）跳过每刻的渲染同步；锚定播放即使静态也必须同步（锚点会动）
+                if (!entry.player.isStatic() || entry.anchor != null) sync(entry)
             } else {
                 toStop.add(animId)
             }
@@ -217,7 +373,7 @@ object ClientAnimationManager {
                     if (state.visible) {
                         uuid = UUID.randomUUID()
                         entry.particleUuids[state.id] = uuid
-                        spawnState(engine, uuid, state)
+                        spawnState(engine, uuid, state, entry.anchor)
                         entry.liveIds.add(state.id)
                     }
                 }
@@ -228,13 +384,15 @@ object ClientAnimationManager {
                 }
                 // 刚到达 st → 生成
                 state.visible && !live -> {
-                    spawnState(engine, uuid, state)
+                    spawnState(engine, uuid, state, entry.anchor)
                     entry.liveIds.add(state.id)
                 }
-                state.visible && live ->
+                state.visible && live -> {
+                    val pos = entry.anchor?.apply(state.pos) ?: state.pos
                     ClientParticleEngine.instance()?.updateParticleDirectArray(
-                        uuid, state.pos, state.color, state.scale, state.glowing, state.lightLevel, snap
+                        uuid, pos, state.color, state.scale, state.glowing, state.lightLevel, snap
                     )
+                }
             }
         }
         // 已不在当前状态中的粒子（被 kill / 运行时重建移除）：销毁桥接粒子并清理索引
@@ -254,9 +412,15 @@ object ClientAnimationManager {
         ClientParticleEngine.instance()?.destroyParticles(entry.particleUuids.values.toTypedArray())
     }
 
-    private fun spawnState(engine: ClientParticleEngine, uuid: UUID, state: ClientAnimationPlayer.ParticleState) {
+    private fun spawnState(
+        engine: ClientParticleEngine,
+        uuid: UUID,
+        state: ClientAnimationPlayer.ParticleState,
+        resolver: EffectAnchorResolver? = null,
+    ) {
+        val pos = resolver?.apply(state.pos) ?: state.pos
         engine.spawnParticle(
-            uuid, state.pos.x, state.pos.y, state.pos.z,
+            uuid, pos.x, pos.y, pos.z,
             state.color.r, state.color.g, state.color.b, state.color.a,
             state.scale[0], -1, null, state.glowing, state.lightLevel, state.uv
         )

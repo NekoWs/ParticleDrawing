@@ -162,6 +162,38 @@ internal object ClientPayloadHandler {
         }
     }
 
+    // ---- 特效 API（按 key 播放 + 锚点 + 时钟 + 资源下发） ----
+
+    fun handlePlayEffect(payload: PlayEffectPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientAnimationManager.playEffect(payload)
+        }
+    }
+
+    fun handleAnchorUpdates(payload: AnchorUpdateBatchPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            for (u in payload.updates) {
+                ClientAnimationManager.updateAnchor(
+                    u.playbackId,
+                    Vec3(u.x, u.y, u.z),
+                    Vec3(u.vx, u.vy, u.vz),
+                )
+            }
+        }
+    }
+
+    fun handleClockSync(payload: ClockSyncPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientAnimationManager.applyClockSync(payload.playbackId, payload.position, payload.playing, payload.speed)
+        }
+    }
+
+    fun handleEffectData(payload: EffectDataPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientAnimationManager.onEffectData(payload.key, payload.data)
+        }
+    }
+
     // ---- 动画文件同步（配置阶段） ----
 
     fun handleSyncBegin(payload: AnimationSyncBeginPayload, context: IPayloadContext) {

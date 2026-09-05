@@ -35,6 +35,13 @@ object NetworkHandler {
         registrar.playToClient(VariableUpdatePayload.TYPE, VariableUpdatePayload.STREAM_CODEC, ClientPayloadHandler::handleVariableUpdate)
         registrar.playToClient(StopAnimationPayload.TYPE, StopAnimationPayload.STREAM_CODEC, ClientPayloadHandler::handleStopAnimation)
 
+        // 特效 API：按 key 播放 + 可移动锚点 + 播放时钟 + 资源按需下发
+        registrar.playToClient(PlayEffectPayload.TYPE, PlayEffectPayload.STREAM_CODEC, ClientPayloadHandler::handlePlayEffect)
+        registrar.playToClient(AnchorUpdateBatchPayload.TYPE, AnchorUpdateBatchPayload.STREAM_CODEC, ClientPayloadHandler::handleAnchorUpdates)
+        registrar.playToClient(ClockSyncPayload.TYPE, ClockSyncPayload.STREAM_CODEC, ClientPayloadHandler::handleClockSync)
+        registrar.playToClient(EffectDataPayload.TYPE, EffectDataPayload.STREAM_CODEC, ClientPayloadHandler::handleEffectData)
+        registrar.playToServer(EffectRequestPayload.TYPE, EffectRequestPayload.STREAM_CODEC, ServerPayloadHandler::handleEffectRequest)
+
         // 动画文件同步（配置阶段）：客户端请求 → 服务器下发文件块 → 完成信号
         registrar.configurationToServer(AnimationSyncRequestPayload.TYPE, AnimationSyncRequestPayload.STREAM_CODEC, ServerPayloadHandler::handleSyncRequest)
         registrar.configurationToClient(AnimationSyncBeginPayload.TYPE, AnimationSyncBeginPayload.STREAM_CODEC, ClientPayloadHandler::handleSyncBegin)

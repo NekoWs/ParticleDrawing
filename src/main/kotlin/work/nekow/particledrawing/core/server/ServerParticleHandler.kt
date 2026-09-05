@@ -9,6 +9,7 @@ import net.neoforged.neoforge.event.level.LevelEvent
 import net.neoforged.neoforge.event.tick.ServerTickEvent
 import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.animation.ServerAnimationManager
+import work.nekow.particledrawing.animation.ServerEffectManager
 import work.nekow.particledrawing.util.ParticleUtils
 
 /**
@@ -24,6 +25,9 @@ object ServerParticleHandler {
         val server = event.server
         // 先推进编排式动画调度（spin/movePath/stagger 等任务可能生成粒子）
         AnimationScheduler.tick()
+        // 特效 API：推进参考时钟（清理已播完）并批量下发本 tick 累积的可移动锚点更新
+        ServerEffectManager.tickClocks()
+        ServerEffectManager.flushAnchorUpdates(server)
         for (level in server.allLevels) {
             val dim = ParticleUtils.dimensionUUID(level)
             // 清理该维度已播完（非循环）的动画播放记录，避免迟到玩家收到已结束的播放
@@ -39,6 +43,7 @@ object ServerParticleHandler {
         if (event.level is ServerLevel) {
             val dim = ParticleUtils.dimensionUUID(event.level as ServerLevel)
             ServerAnimationManager.stopAll(dim, (event.level as ServerLevel).players())
+            ServerEffectManager.stopAll(dim, (event.level as ServerLevel).players())
             ServerParticleEngine.clearDimension(dim)
             AnimationScheduler.clear()
         }
@@ -49,18 +54,27 @@ object ServerParticleHandler {
     @SubscribeEvent
     @JvmStatic
     fun onPlayerChangedDimension(event: PlayerEvent.PlayerChangedDimensionEvent) {
-        (event.entity as? ServerPlayer)?.let { ServerAnimationManager.syncPlaybacksToPlayer(it) }
+        (event.entity as? ServerPlayer)?.let {
+            ServerAnimationManager.syncPlaybacksToPlayer(it)
+            ServerEffectManager.syncPlaybacksToPlayer(it)
+        }
     }
 
     @SubscribeEvent
     @JvmStatic
     fun onPlayerRespawn(event: PlayerEvent.PlayerRespawnEvent) {
-        (event.entity as? ServerPlayer)?.let { ServerAnimationManager.syncPlaybacksToPlayer(it) }
+        (event.entity as? ServerPlayer)?.let {
+            ServerAnimationManager.syncPlaybacksToPlayer(it)
+            ServerEffectManager.syncPlaybacksToPlayer(it)
+        }
     }
 
     @SubscribeEvent
     @JvmStatic
     fun onPlayerLoggedIn(event: PlayerEvent.PlayerLoggedInEvent) {
-        (event.entity as? ServerPlayer)?.let { ServerAnimationManager.syncPlaybacksToPlayer(it) }
+        (event.entity as? ServerPlayer)?.let {
+            ServerAnimationManager.syncPlaybacksToPlayer(it)
+            ServerEffectManager.syncPlaybacksToPlayer(it)
+        }
     }
 }

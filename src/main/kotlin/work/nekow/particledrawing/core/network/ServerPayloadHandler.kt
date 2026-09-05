@@ -1,7 +1,10 @@
 package work.nekow.particledrawing.core.network
 
 import net.minecraft.network.Connection
+import net.minecraft.server.level.ServerPlayer
+import net.neoforged.neoforge.network.PacketDistributor
 import net.neoforged.neoforge.network.handling.IPayloadContext
+import work.nekow.particledrawing.api.EffectRegistry
 import work.nekow.particledrawing.core.server.AnimationSyncConfigTask
 import work.nekow.particledrawing.core.server.AnimationSyncService
 import java.util.Collections
@@ -39,6 +42,17 @@ internal object ServerPayloadHandler {
             context.reply(AnimationSyncDonePayload(diff.size))
             // 服务端配置任务收尾：让连接进入下一阶段，避免「正在加载地形」卡死
             context.finishCurrentTask(AnimationSyncConfigTask.TYPE)
+        }
+    }
+
+    /**
+     * 处理客户端「特效字节请求」：客户端缓存缺失时按 key 下发注册表里的 .pdrawc 字节。
+     */
+    fun handleEffectRequest(payload: EffectRequestPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            val player = context.player() as? ServerPlayer ?: return@enqueueWork
+            val data = EffectRegistry.dataFor(payload.key) ?: return@enqueueWork
+            PacketDistributor.sendToPlayer(player, EffectDataPayload(payload.key, data))
         }
     }
 

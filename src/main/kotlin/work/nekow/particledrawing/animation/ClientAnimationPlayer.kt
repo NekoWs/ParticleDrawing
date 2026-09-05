@@ -18,6 +18,8 @@ class ClientAnimationPlayer(
     // 服务端权威进度起点（维度 gameTime）；进度 = wrap/clamp(currentGameTick - startGameTick)
     private val startGameTick: Long = 0L,
     currentGameTick: Long = 0L,
+    // 显式起始 tick（特效 API 使用；<0 时按 gameTime 时钟定位）
+    initialTick: Int = -1,
 ) {
 
     data class ParticleState(
@@ -321,11 +323,11 @@ class ClientAnimationPlayer(
         // reconcile 按当前存活粒子动态创建/更新/删除。
         // 按服务端权威进度定位到当前帧（elapsed = currentGameTick - startGameTick）：
         // 新播放等价于从 0 开始；重发/迟到加入则直接跳到其他玩家正在看的同一帧。
-        val initialTick = AnimationProgress.tickAt(
+        val initial = if (initialTick >= 0) initialTick else AnimationProgress.tickAt(
             (currentGameTick - startGameTick).coerceAtLeast(0L), maxTick, animation.loop
         )
-        currentTick = initialTick
-        advanceTo(initialTick.toDouble())
+        currentTick = initial
+        advanceTo(initial.toDouble())
     }
 
     /**
@@ -353,6 +355,30 @@ class ClientAnimationPlayer(
                 advanceNanosTotal += elapsedNs
                 advanceCount++
             }
+        }
+        return true
+    }
+
+    /**
+     * 由外部播放时钟驱动推进（特效 API 使用）：直接给定目标时间轴 tick，
+     * 而非由 `gameTime - startGameTick` 推导。支持任意 seek（含向后回退）、暂停与变速。
+     * @return 是否仍在播放（非循环动画越过 maxTick 时返回 false 并置 finished）
+     */
+    fun tickExternal(targetTick: Int): Boolean {
+        if (finished) return false
+        frameCount++
+        val max = maxTick
+        if (!animation.loop && max > 0 && targetTick >= max) {
+            finished = true
+            return false
+        }
+        val target = if (max <= 0) 0
+        else if (animation.loop) ((targetTick % max) + max) % max
+        else minOf(targetTick, max - 1)
+        if (target != currentTick) {
+            if (target < currentTick && animation.loop) justLooped = true
+            currentTick = target
+            if (!isStaticAnimation) advanceTo(target.toDouble())
         }
         return true
     }
