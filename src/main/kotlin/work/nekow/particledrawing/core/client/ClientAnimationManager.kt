@@ -206,10 +206,21 @@ object ClientAnimationManager {
     private fun sync(entry: Entry) {
         val snap = entry.player.consumeJustLooped()
         val engine = ClientParticleEngine.instance() ?: return
+        val currentIds = HashSet<String>()
         for (state in entry.player.currentStates()) {
-            val uuid = entry.particleUuids[state.id] ?: continue
+            currentIds.add(state.id)
+            var uuid = entry.particleUuids[state.id]
             val live = state.id in entry.liveIds
             when {
+                // 新出现的状态（spawn 运行时动态生成的派生粒子）：首次可见时创建 uuid 并生成桥接粒子
+                uuid == null -> {
+                    if (state.visible) {
+                        uuid = UUID.randomUUID()
+                        entry.particleUuids[state.id] = uuid
+                        spawnState(engine, uuid, state)
+                        entry.liveIds.add(state.id)
+                    }
+                }
                 // 出场窗口结束 → 回收（循环回卷后再次满足 st 时重新生成）
                 !state.visible && live -> {
                     engine.destroyParticles(arrayOf(uuid))
@@ -224,6 +235,15 @@ object ClientAnimationManager {
                     ClientParticleEngine.instance()?.updateParticleDirectArray(
                         uuid, state.pos, state.color, state.scale, state.glowing, state.lightLevel, snap
                     )
+            }
+        }
+        // 已不在当前状态中的粒子（被 kill / 运行时重建移除）：销毁桥接粒子并清理索引
+        val deadIds = entry.particleUuids.keys.filter { it !in currentIds }
+        if (deadIds.isNotEmpty()) {
+            engine.destroyParticles(deadIds.map { entry.particleUuids[it]!! }.toTypedArray())
+            for (id in deadIds) {
+                entry.particleUuids.remove(id)
+                entry.liveIds.remove(id)
             }
         }
     }

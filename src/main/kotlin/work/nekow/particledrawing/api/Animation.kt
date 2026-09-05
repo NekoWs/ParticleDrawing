@@ -374,14 +374,10 @@ class FunctionBuilder internal constructor() {
     internal var fid: String? = null
     internal var fname: String? = null
     internal var fcenter: Vec3 = Vec3.ZERO
-    internal var fcount: Int = 1
-    internal var fsetup: String = ""
-    internal var fprocess: String = ""
-    internal var ffuncs: String = ""
+    internal var fsource: String = ""
     internal var fseed: Int = 0
     internal val fvars = LinkedHashMap<String, FunctionVar>()
     internal var fduration: Int = 0
-    internal var fstep: Int = 0
     internal var fuv: UvData? = null
     internal var fst: Int = 0
     internal var fent: Entrance? = null
@@ -412,27 +408,10 @@ class FunctionBuilder internal constructor() {
      */
     fun center(x: Number, y: Number, z: Number): FunctionBuilder = apply { fcenter = Vec3(x.toDouble(), y.toDouble(), z.toDouble()) }
     /**
-     * 设置派生粒子数量。
-     * @param count 派生粒子数量
+     * 设置完整脚本源码（func setup/tick/process + 自定义函数）。
+     * @param code 完整脚本源码
      */
-    fun count(count: Int): FunctionBuilder = apply { fcount = count.coerceAtLeast(1) }
-    /**
-     * 设置 setup 脚本文本。
-     * @param code setup 脚本文本
-     */
-    fun setup(code: String): FunctionBuilder = apply { fsetup = code }
-
-    /**
-     * 设置 process 脚本文本。
-     * @param code process 脚本文本
-     */
-    fun process(code: String): FunctionBuilder = apply { fprocess = code }
-
-    /**
-     * 设置顶层函数定义脚本文本。
-     * @param code 顶层函数定义脚本文本
-     */
-    fun funcs(code: String): FunctionBuilder = apply { ffuncs = code }
+    fun source(code: String): FunctionBuilder = apply { fsource = code }
     /**
      * 设置随机种子。
      * @param seed 随机种子
@@ -443,11 +422,6 @@ class FunctionBuilder internal constructor() {
      * @param duration 整体时长（tick，0 无上限）
      */
     fun duration(duration: Int): FunctionBuilder = apply { fduration = duration.coerceAtLeast(0) }
-    /**
-     * 设置编辑器参数。
-     * @param step 编辑器参数（播放端不使用）
-     */
-    fun step(step: Int): FunctionBuilder = apply { fstep = step.coerceAtLeast(0) }
     /**
      * 设置函数对象级 UV。
      * @param uv 函数对象级 UV
@@ -509,7 +483,7 @@ class FunctionBuilder internal constructor() {
         return FunctionObject(
             resolvedId, fname ?: resolvedId,
             doubleArrayOf(fcenter.x, fcenter.y, fcenter.z),
-            fcount, fsetup, fprocess, ffuncs, fseed, fvars, fduration, fstep,
+            fsource, fseed, fvars, fduration,
             fuv, fst, fent, ffastMath, fspinLocal, frotLocal,
         )
     }
@@ -738,35 +712,15 @@ class FunctionDsl internal constructor(private val b: FunctionBuilder) {
     var center: Vec3
         get() = b.fcenter
         set(value) { b.fcenter = value }
-    var count: Int
-        get() = b.fcount
-        set(value) { b.fcount = value.coerceAtLeast(1) }
-    /**
-     * 设置 setup 脚本文本。
-     * @param code setup 脚本文本
-     */
-    fun setup(code: String) { b.setup(code) }
-
-    /**
-     * 设置 process 脚本文本。
-     * @param code process 脚本文本
-     */
-    fun process(code: String) { b.process(code) }
-
-    /**
-     * 设置顶层函数定义脚本文本。
-     * @param code 顶层函数定义脚本文本
-     */
-    fun funcs(code: String) { b.funcs(code) }
+    var source: String
+        get() = b.fsource
+        set(value) { b.fsource = value }
     var seed: Int
         get() = b.fseed
         set(value) { b.fseed = value }
     var duration: Int
         get() = b.fduration
         set(value) { b.fduration = value.coerceAtLeast(0) }
-    var step: Int
-        get() = b.fstep
-        set(value) { b.fstep = value.coerceAtLeast(0) }
     var uv: UvData?
         get() = b.fuv
         set(value) { b.fuv = value }

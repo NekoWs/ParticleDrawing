@@ -19,11 +19,11 @@ class IfNode(val cond: Node, val then: Node, val els: Node?, override val line: 
 class WhileNode(val cond: Node, val body: Node, override val line: Int, override val col: Int) : Node()
 class DoNode(val body: Node, val cond: Node, override val line: Int, override val col: Int) : Node()
 class ForNode(val init: Node?, val cond: Node?, val inc: Node?, val body: Node, override val line: Int, override val col: Int) : Node()
+class ForOfNode(val name: String, val iter: Node, val body: Node, override val line: Int, override val col: Int) : Node()
 class BreakNode(override val line: Int, override val col: Int) : Node()
 class ContinueNode(override val line: Int, override val col: Int) : Node()
 class ReturnNode(val expr: Node?, override val line: Int, override val col: Int) : Node()
 class GlobalNode(val name: String, val init: Node?, override val line: Int, override val col: Int) : Node()
-class StaticNode(val name: String, val init: Node?, override val line: Int, override val col: Int) : Node()
 class ExprStmtNode(val expr: Node, override val line: Int, override val col: Int) : Node()
 class AssignNode(val target: AssignTarget, val value: Node, override val line: Int, override val col: Int) : Node()
 
@@ -42,6 +42,8 @@ class CompNode(val target: Node, val comp: String, override val line: Int, overr
 class MemberNode(val obj: Node, val field: String, override val line: Int, override val col: Int) : Node()
 class CallNode(val callee: Node, val args: List<Node>, override val line: Int, override val col: Int) : Node()
 class MethodNode(val obj: Node, val method: String, val args: List<Node>, override val line: Int, override val col: Int) : Node()
+class PreIncNode(val op: String, val target: AssignTarget, override val line: Int, override val col: Int) : Node()
+class PostIncNode(val op: String, val target: AssignTarget, override val line: Int, override val col: Int) : Node()
 
 // ---- 赋值目标 ----
 
@@ -65,7 +67,9 @@ class FunctionNode(
 
 class ScriptProgram(
     val setup: List<Node>,
+    val tick: List<Node>,
     val process: List<Node>,
+    val processParam: String,
     val functions: Map<String, FunctionNode>,
 )
 
@@ -206,6 +210,15 @@ fun tokenize(sourceIn: String?): List<Token> {
             continue
         }
 
+        if ((c == '+' || c == '-') && i + 1 < len && src[i + 1] == c) {
+            val startLine = line
+            val startCol = col
+            val op = if (c == '+') "++" else "--"
+            advance(); advance()
+            tokens.add(Token(TokenType.PUNCT, op, line = startLine, col = startCol))
+            continue
+        }
+
         if ("+-*/%^!?:=<>()[]{},;.".contains(c)) {
             val startLine = line
             val startCol = col
@@ -226,23 +239,16 @@ fun tokenize(sourceIn: String?): List<Token> {
 /* ------------------------------------------------------------------ */
 
 private val KEYWORDS = setOf(
-    "setup", "process", "func", "return", "if", "else", "while", "do", "for",
-    "break", "continue", "global", "static", "true", "false",
+    "setup", "process", "tick", "func", "return", "if", "else", "while", "do", "for",
+    "of", "const", "break", "continue", "global", "true", "false",
 )
 
+private val LIFECYCLE_FUNCS = setOf("setup", "tick", "process")
 private val CONSTANT_NAMES = setOf("TAU", "HALF_PI", "QUARTER_PI", "DEG2RAD", "RAD2DEG", "pi", "e")
 private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w")
 private val COMP_NAMES = setOf("x", "y", "z", "w", "r", "g", "b", "a")
 
-// this 对象：唯一保留的上下文访问名。
 private const val CTX_NAME = "this"
-
-// this 只读字段：setup 可见 count/time/duration；process 全部可见。
-private val CTX_SETUP_READ = setOf("count", "time", "duration")
-private val CTX_PROCESS_READ = setOf("index", "count", "time", "delta", "duration", "uv")
-
-// this 输出字段（process 内可读可写）。
-private val CTX_OUT_FIELDS = setOf("position", "color", "velocity", "scale", "glow", "light", "life")
 
 class ScriptParser(private val source: String) {
     private val tokens = tokenize(source)
@@ -295,7 +301,6 @@ class ScriptParser(private val source: String) {
         return next()
     }
 
-    /** 解析裸表达式并校验无剩余 token（供 UV 字段表达式使用）。 */
     fun parseBareExpression(): Node {
         val node = parseTernary()
         val extra = peek()
@@ -307,52 +312,57 @@ class ScriptParser(private val source: String) {
 
     fun parseProgram(): ScriptProgram {
         val setup = ArrayList<Node>()
+        val tick = ArrayList<Node>()
         val process = ArrayList<Node>()
+        var processParam = "delta"
         val functions = LinkedHashMap<String, FunctionNode>()
 
         while (!atEnd()) {
-            when {
-                matchKw("setup") -> {
-                    expect("{")
-                    phase = "setup"
-                    while (!check("}") && !atEnd()) setup.add(parseStatement())
-                    expect("}")
-                    phase = null
-                }
-                matchKw("process") -> {
-                    expect("{")
-                    phase = "process"
-                    while (!check("}") && !atEnd()) process.add(parseStatement())
-                    expect("}")
-                    phase = null
-                }
-                matchKw("func") -> {
-                    val nameTok = expectIdent()
-                    validateFuncName(nameTok)
-                    expect("(")
-                    val params = parseParamList()
-                    expect(")")
-                    phase = "func"
-                    val body = parseBlock()
-                    phase = null
-                    if (functions.containsKey(nameTok.text)) {
-                        errorAt(nameTok, "duplicate function name '${nameTok.text}'")
+            expectKw("func")
+            val nameTok = expectIdent()
+            expect("(")
+            val params = parseParamList()
+            expect(")")
+            phase = if (nameTok.text in LIFECYCLE_FUNCS) nameTok.text else "func"
+            val body = parseBlock()
+            phase = null
+
+            if (nameTok.text in LIFECYCLE_FUNCS) {
+                validateLifecycleSignature(nameTok, params)
+                when (nameTok.text) {
+                    "setup" -> setup.addAll(body.body)
+                    "tick" -> tick.addAll(body.body)
+                    "process" -> {
+                        process.addAll(body.body)
+                        processParam = params[0]
                     }
-                    functions[nameTok.text] = FunctionNode(nameTok.text, params, body, nameTok.line, nameTok.col)
                 }
-                else -> {
-                    val tok = peek()
-                    errorAt(tok, "expected 'setup', 'process' or 'func', got '${tok.text}'")
+            } else {
+                validateFuncName(nameTok)
+                if (functions.containsKey(nameTok.text)) {
+                    errorAt(nameTok, "duplicate function name '${nameTok.text}'")
                 }
+                functions[nameTok.text] = FunctionNode(nameTok.text, params, body, nameTok.line, nameTok.col)
             }
         }
 
-        return ScriptProgram(setup, process, functions)
+        return ScriptProgram(setup, tick, process, processParam, functions)
+    }
+
+    private fun validateLifecycleSignature(tok: Token, params: List<String>) {
+        when (tok.text) {
+            "setup", "tick" -> if (params.isNotEmpty()) {
+                errorAt(tok, "'${tok.text}' must not take parameters")
+            }
+            "process" -> if (params.size != 1) {
+                errorAt(tok, "'process' must take exactly one parameter (delta milliseconds)")
+            }
+        }
     }
 
     private fun validateFuncName(tok: Token) {
         val name = tok.text
-        if (name in KEYWORDS || name == CTX_NAME || name in CONSTANT_NAMES || BuiltinRegistry.names.contains(name)) {
+        if (name in KEYWORDS || name in LIFECYCLE_FUNCS || name == CTX_NAME || name in CONSTANT_NAMES || BuiltinRegistry.names.contains(name)) {
             errorAt(tok, "reserved name cannot be used as function name: '$name'")
         }
     }
@@ -402,7 +412,6 @@ class ScriptParser(private val source: String) {
                 "continue" -> return parseContinue(tok)
                 "return" -> return parseReturn(tok)
                 "global" -> return parseGlobal(tok)
-                "static" -> return parseStatic(tok)
             }
         }
 
@@ -447,6 +456,33 @@ class ScriptParser(private val source: String) {
     private fun parseFor(): Node {
         val start = next()
         expect("(")
+
+        // for-of：for (const name of expr) 或 for (name of expr)
+        val saved = pos
+        if (matchKw("const")) {
+            val nameTok = expectIdent()
+            validateForVarName(nameTok)
+            expectKw("of")
+            val iter = parseTernary()
+            expect(")")
+            loopDepth++
+            val body = parseStatement()
+            loopDepth--
+            return ForOfNode(nameTok.text, iter, body, start.line, start.col)
+        }
+        if (peek().type == TokenType.IDENT && peek(1).type == TokenType.IDENT && peek(1).text == "of") {
+            val nameTok = expectIdent()
+            validateForVarName(nameTok)
+            expectKw("of")
+            val iter = parseTernary()
+            expect(")")
+            loopDepth++
+            val body = parseStatement()
+            loopDepth--
+            return ForOfNode(nameTok.text, iter, body, start.line, start.col)
+        }
+        pos = saved
+
         var init: Node? = null
         if (!check(";")) init = parseAssignExpr()
         expect(";")
@@ -460,6 +496,12 @@ class ScriptParser(private val source: String) {
         val body = parseStatement()
         loopDepth--
         return ForNode(init, cond, inc, body, start.line, start.col)
+    }
+
+    private fun validateForVarName(tok: Token) {
+        if (tok.text in KEYWORDS || tok.text == CTX_NAME || tok.text in CONSTANT_NAMES) {
+            errorAt(tok, "reserved name cannot be used as loop variable: '${tok.text}'")
+        }
     }
 
     private fun parseBreak(tok: Token): Node {
@@ -477,7 +519,7 @@ class ScriptParser(private val source: String) {
     }
 
     private fun parseReturn(tok: Token): Node {
-        if (phase != "func") errorAt(tok, "'return' only allowed inside a function")
+        if (phase == null) errorAt(tok, "'return' only allowed inside a function")
         next()
         var expr: Node? = null
         if (!check(";")) expr = parseTernary()
@@ -489,25 +531,14 @@ class ScriptParser(private val source: String) {
         if (phase != "setup") errorAt(tok, "'global' only allowed inside setup")
         next()
         val nameTok = expectIdent()
-        validateGlobalStaticName(nameTok)
+        validateGlobalName(nameTok)
         var init: Node? = null
         if (match("=")) init = parseTernary()
         expect(";")
         return GlobalNode(nameTok.text, init, tok.line, tok.col)
     }
 
-    private fun parseStatic(tok: Token): Node {
-        if (phase != "process") errorAt(tok, "'static' only allowed inside process")
-        next()
-        val nameTok = expectIdent()
-        validateGlobalStaticName(nameTok)
-        var init: Node? = null
-        if (match("=")) init = parseTernary()
-        expect(";")
-        return StaticNode(nameTok.text, init, tok.line, tok.col)
-    }
-
-    private fun validateGlobalStaticName(tok: Token) {
+    private fun validateGlobalName(tok: Token) {
         val name = tok.text
         if (name in KEYWORDS || name == CTX_NAME || name in CONSTANT_NAMES) {
             errorAt(tok, "reserved name cannot be declared: '$name'")
@@ -522,7 +553,7 @@ class ScriptParser(private val source: String) {
             return expr
         }
         expect(";")
-        if (expr !is CallNode && expr !is MethodNode) {
+        if (expr !is CallNode && expr !is MethodNode && expr !is PreIncNode && expr !is PostIncNode) {
             errorAt(start, "expression statement must be a function call")
         }
         return ExprStmtNode(expr, start.line, start.col)
@@ -645,6 +676,11 @@ class ScriptParser(private val source: String) {
             val operand = parseUnary()
             return UnaryNode(opTok.text, operand, opTok.line, opTok.col)
         }
+        if (check("++") || check("--")) {
+            val opTok = next()
+            val target = toLValue(parseUnary(), opTok)
+            return PreIncNode(opTok.text, target, opTok.line, opTok.col)
+        }
         return parsePostfix()
     }
 
@@ -669,11 +705,13 @@ class ScriptParser(private val source: String) {
                     } else if (nameTok.text in COMP_NAMES) {
                         expr = CompNode(expr, nameTok.text, expr.line, expr.col)
                     } else {
-                        if (expr !is VarNode || expr.name != CTX_NAME) {
-                            errorAt(nameTok, "only this has fields '.${nameTok.text}'")
-                        }
                         expr = MemberNode(expr, nameTok.text, expr.line, expr.col)
                     }
+                }
+                check("++") || check("--") -> {
+                    val opTok = next()
+                    val target = toLValue(expr, opTok)
+                    expr = PostIncNode(opTok.text, target, opTok.line, opTok.col)
                 }
                 else -> break
             }

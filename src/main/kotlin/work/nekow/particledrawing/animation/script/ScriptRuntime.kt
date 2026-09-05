@@ -5,9 +5,6 @@ import kotlin.math.*
 // this 对象名（与 ScriptParser 一致）。
 private const val CTX_NAME = "this"
 
-// this 输出字段（process 内可读可写）。
-private val CTX_OUT_FIELDS = setOf("position", "color", "velocity", "scale", "glow", "light", "life")
-
 // 向量分量别名：r/g/b → x/y/z，a → w。
 private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w")
 
@@ -28,9 +25,14 @@ private fun setVecComp(v: Any?, comp: String, value: Double): Any = when (v) {
 }
 
 /**
- * setup/process 脚本解释器（对应编辑器 script-lang.js）。
+ * v12 spawn 模型脚本运行时（对应编辑器 script-lang.js）。
  *
+ * 生命周期入口：setup（对象级一次）/ tick（每动画 tick 一次）/ process（每渲染帧一次）。
+ * `this` 上下文仅提供 time / duration / particles / spawn；粒子通过句柄字段读写与 kill()。
  * 值类型见 ScriptValues；PRNG/Simplex 见 ScriptNoise。
+ *
+ * 同时保留旧 `ProcessCtx` + `ExpressionRunner`，供 UV 字段裸表达式求值
+ * （expr 阶段仍使用旧字段 index/count/time/delta/duration/uv + out）。
  */
 object ScriptRuntime {
 
@@ -42,6 +44,7 @@ object ScriptRuntime {
         val seed: Int,
     )
 
+    /** 表达式阶段输出（UV 字段表达式把 out 字段镜像为最终渲染值）。 */
     class ScriptOut(
         val pos: DoubleArray = DoubleArray(3),
         val color: DoubleArray = doubleArrayOf(1.0, 1.0, 1.0, 1.0),
@@ -52,6 +55,7 @@ object ScriptRuntime {
         var life: Double = -1.0,
     )
 
+    /** 表达式阶段上下文（UV 字段裸表达式；旧 index/count/time/delta/duration/uv 字段 + out）。 */
     class ProcessCtx(
         var i: Double,
         var n: Double,
@@ -78,7 +82,83 @@ object ScriptRuntime {
         }
     }
 
-    class SetupEnv(val n: Double, val t: Double, val vars: Map<String, Double>, val duration: Double = 0.0)
+    /**
+     * spawn 模型上下文（setup/tick/process 三阶段共用；setup 用 env 形态但字段同构）。
+     *
+     * @param particles 运行时粒子列表（this.particles）
+     * @param spawn 创建并返回一个粒子句柄（this.spawn()）
+     * @param deltaMs process 参数的毫秒增量（tick/setup 阶段忽略）
+     */
+    class ScriptCtx(
+        var t: Double,
+        var duration: Double,
+        val vars: Map<String, Double>,
+        val particles: MutableList<ParticleHost>,
+        val spawn: () -> ParticleHost,
+        var deltaMs: Double = 0.0,
+        var fastMath: Boolean = false,
+        var print: (String) -> Unit = {},
+    )
+
+    fun createObjectState(seed: Int): ObjectState = ObjectState(HashMap(), mulberry32(seed), seed)
+
+    fun runSpawnSetup(program: ScriptProgram, obj: ObjectState, ctx: ScriptCtx) {
+        val rt = Runtime("setup", program, obj, ctx, null)
+        rt.pushScope(HashMap())
+        try {
+            for (st in program.setup) rt.execStmt(st)
+        } finally {
+            rt.popScope()
+        }
+    }
+
+    fun runTickFrame(program: ScriptProgram, obj: ObjectState, ctx: ScriptCtx) {
+        if (program.tick.isEmpty()) return
+        val rt = Runtime("tick", program, obj, ctx, null)
+        rt.pushScope(HashMap())
+        try {
+            for (st in program.tick) rt.execStmt(st)
+        } finally {
+            rt.popScope()
+        }
+    }
+
+    fun runProcessFrame(program: ScriptProgram, obj: ObjectState, ctx: ScriptCtx) {
+        if (program.process.isEmpty()) return
+        val rt = Runtime("process", program, obj, ctx, null)
+        rt.pushScope(HashMap())
+        try {
+            rt.currentScope()[program.processParam] = ctx.deltaMs
+            for (st in program.process) rt.execStmt(st)
+        } finally {
+            rt.popScope()
+        }
+    }
+
+    /**
+     * 可复用的裸表达式执行器（UV 字段表达式等）：同一表达式跨粒子复用 Runtime / 作用域。
+     * 表达式必须求值为标量（Double）。
+     */
+    class ExpressionRunner(expr: String) {
+        private val node: Node = parseExpression(expr)
+        private val program = ScriptProgram(emptyList(), emptyList(), emptyList(), "delta", emptyMap())
+        private val obj = createObjectState(0)
+        private val rt = Runtime("expr", program, obj, null, null)
+        private val topScope = HashMap<String, Any?>()
+
+        fun eval(ctx: ProcessCtx): Double {
+            rt.resetExpr(ctx, topScope)
+            val v = rt.evalExpr(node)
+            if (v !is Double) {
+                throw ScriptException("expression must evaluate to a number, got ${typeName(v)}", node.line, node.col)
+            }
+            return v
+        }
+    }
+
+    fun evalExpression(expr: String, ctx: ProcessCtx): Double = ExpressionRunner(expr).eval(ctx)
+
+    /* ---------------------------------------------------------------- */
 
     private class Flow(val kind: String, val value: Any? = null) : Throwable()
 
@@ -94,142 +174,42 @@ object ScriptRuntime {
         "unique", "reverse", "sort", "len",
     )
 
-    fun createObjectState(seed: Int): ObjectState = ObjectState(HashMap(), mulberry32(seed), seed)
-
-    fun createStatics(): MutableMap<String, Any?> = HashMap()
-
-    fun runSetup(program: ScriptProgram, obj: ObjectState, env: SetupEnv) {
-        val rt = Runtime("setup", program, obj, null, env, null)
-        rt.pushScope(HashMap())
-        try {
-            for (st in program.setup) rt.execStmt(st)
-        } finally {
-            rt.popScope()
-        }
-    }
-
-    fun evalProcess(program: ScriptProgram, obj: ObjectState, statics: MutableMap<String, Any?>, ctx: ProcessCtx): ScriptOut {
-        if (!ctx.fastMath) {
-            val fast = scalarFast(program, obj, ctx.vars.keys.toList())
-            if (fast != null) {
-                fast.eval(obj, ctx, ctx.out, fast.allocRegs(), fast.allocStack())
-                return ctx.out
-            }
-        }
-        ctx.resetOut()
-        val rt = Runtime("process", program, obj, statics, null, ctx)
-        rt.pushScope(HashMap())
-        try {
-            for (st in program.process) rt.execStmt(st)
-        } finally {
-            rt.popScope()
-        }
-        return ctx.out
-    }
-
-    // 标量快路径缓存：按 program + varNames + globalNames 签名复用编译产物。
-    private val scalarFastCache = HashMap<ScriptProgram, HashMap<String, ScriptScalarProgram?>>()
-
-    private fun scalarFast(program: ScriptProgram, obj: ObjectState, varNames: List<String>): ScriptScalarProgram? {
-        val globalNames = obj.globals.keys.sorted()
-        val key = varNames.joinToString("\u0000") + "|" + globalNames.joinToString("\u0000")
-        return scalarFastCache.getOrPut(program) { HashMap() }.getOrPut(key) {
-            ScriptScalarProgram.compile(program, varNames, globalNames)
-        }
-    }
-
-    /**
-     * 可复用的 process 执行器：同一函数对象在同一 tick 内逐粒子复用，避免每个粒子都
-     * 新建 Runtime / ArrayList / HashMap（20w 粒子场景下这是主要分配来源）。
-     * 标量直线脚本优先走 [ScriptScalarProgram]，寄存器/栈也随执行器复用。
-     */
-    class ProcessExecutor(program: ScriptProgram, obj: ObjectState) {
-        private val rt = Runtime("process", program, obj, null, null, null)
-        private val topScope = HashMap<String, Any?>()
-        private var fast: ScriptScalarProgram? = null
-        private var fastRegs: DoubleArray? = null
-        private var fastStack: DoubleArray? = null
-        private var fastVarKey: String? = null
-
-        fun eval(statics: MutableMap<String, Any?>, ctx: ProcessCtx): ScriptOut {
-            val varKey = ctx.vars.keys.joinToString("\u0000")
-            if (fastVarKey != varKey) {
-                fast = scalarFast(rt.program, rt.objState, ctx.vars.keys.toList())
-                fastRegs = fast?.allocRegs()
-                fastStack = fast?.allocStack()
-                fastVarKey = varKey
-            }
-            val f = fast
-            if (f != null && !ctx.fastMath) {
-                f.eval(rt.objState, ctx, ctx.out, fastRegs!!, fastStack!!)
-                return ctx.out
-            }
-            ctx.resetOut()
-            rt.resetProcess(statics, ctx, topScope)
-            try {
-                for (st in rt.program.process) rt.execStmt(st)
-            } finally {
-                rt.popScope()
-            }
-            return ctx.out
-        }
-    }
-
-    fun createProcessExecutor(program: ScriptProgram, obj: ObjectState): ProcessExecutor =
-        ProcessExecutor(program, obj)
-
-    /**
-     * 可复用的裸表达式执行器（UV 字段表达式等）：同一表达式跨粒子复用 Runtime / 作用域，
-     * 与 [ProcessExecutor] 风格一致。表达式必须求值为标量（Double）。
-     */
-    class ExpressionRunner(expr: String) {
-        private val node: Node = parseExpression(expr)
-        private val program = ScriptProgram(emptyList(), emptyList(), emptyMap())
-        private val obj = createObjectState(0)
-        private val rt = Runtime("process", program, obj, null, null, null)
-        private val topScope = HashMap<String, Any?>()
-
-        fun eval(ctx: ProcessCtx): Double {
-            rt.resetProcess(null, ctx, topScope)
-            val v = rt.evalExpr(node)
-            if (v !is Double) {
-                throw ScriptException("expression must evaluate to a number, got ${typeName(v)}", node.line, node.col)
-            }
-            return v
-        }
-    }
-
-    fun evalExpression(expr: String, ctx: ProcessCtx): Double = ExpressionRunner(expr).eval(ctx)
-
-    /* ---------------------------------------------------------------- */
-
     private class Runtime(
         val phase: String,
         val program: ScriptProgram,
         val objState: ObjectState,
-        private var statics: MutableMap<String, Any?>?,
-        private val setupEnv: SetupEnv?,
-        private var ctx: ProcessCtx?,
+        private var ctx: ScriptCtx?,
+        private var pctx: ProcessCtx?,
     ) {
         private val scopes = ArrayList<MutableMap<String, Any?>>()
-        private var loopDepth = 0
+        private val varsMap = HashMap<String, Double>()
         private var funcDepth = 0
         private var inFunction = false
+
+        init {
+            rebuildVarsMap()
+        }
 
         fun pushScope(s: MutableMap<String, Any?>) { scopes.add(s) }
         fun popScope() { scopes.removeAt(scopes.size - 1) }
         fun currentScope(): MutableMap<String, Any?> = scopes[scopes.size - 1]
 
-        /** 复用执行器：清空作用域/调用深度，并切换到下一个粒子的 statics/ctx。 */
-        fun resetProcess(statics: MutableMap<String, Any?>?, ctx: ProcessCtx?, topScope: MutableMap<String, Any?>) {
-            this.statics = statics
-            this.ctx = ctx
+        private fun rebuildVarsMap() {
+            varsMap.clear()
+            val src = if (phase == "expr") pctx?.vars else ctx?.vars
+            if (src != null) for ((k, v) in src) varsMap[k] = v
+        }
+
+        /** 复用表达式执行器：切换到下一次求值的 ProcessCtx 并重建变量表。 */
+        fun resetExpr(ctx: ProcessCtx?, topScope: MutableMap<String, Any?>) {
+            this.pctx = ctx
+            this.ctx = null
             scopes.clear()
-            loopDepth = 0
             funcDepth = 0
             inFunction = false
             topScope.clear()
             scopes.add(topScope)
+            rebuildVarsMap()
         }
 
         private fun err(msg: String, n: Node): Nothing {
@@ -290,7 +270,7 @@ object ScriptRuntime {
                 is ForNode -> {
                     pushScope(HashMap())
                     try {
-                        if (n.init != null) execStmt(n.init)
+                        if (n.init != null) execForPart(n.init)
                         var iter = 0
                         while (n.cond == null || truthy(evalExpr(n.cond), n.cond)) {
                             if (++iter > 100000) err("maximum loop iterations (100000) exceeded", n)
@@ -300,10 +280,11 @@ object ScriptRuntime {
                                 if (f.kind == "continue") { /* 落到 inc */ }
                                 else throw f
                             }
-                            if (n.inc != null) execStmt(n.inc)
+                            if (n.inc != null) execForPart(n.inc)
                         }
                     } finally { popScope() }
                 }
+                is ForOfNode -> execForOf(n)
                 is BreakNode -> throw Flow("break")
                 is ContinueNode -> throw Flow("continue")
                 is ReturnNode -> {
@@ -315,21 +296,61 @@ object ScriptRuntime {
                     val v = if (n.init != null) evalExpr(n.init) else 0.0
                     objState.globals[n.name] = v
                 }
-                is StaticNode -> {
-                    if (phase != "process" || inFunction) err("'static' is only allowed in process", n)
-                    val m = statics ?: err("static state unavailable", n)
-                    if (!m.containsKey(n.name)) m[n.name] = if (n.init != null) evalExpr(n.init) else 0.0
-                }
-                is AssignNode -> execAssign(n.target, evalExpr(n.value), n)
+                is AssignNode -> execAssign(n)
                 is ExprStmtNode -> evalExpr(n.expr)
                 else -> err("unknown statement ${n::class.simpleName}", n)
             }
         }
 
-        private fun execAssign(target: AssignTarget, value: Any?, n: Node) {
+        private fun execForPart(part: Node) {
+            if (part is AssignNode) execAssign(part) else evalExpr(part)
+        }
+
+        private fun execForOf(n: ForOfNode) {
+            val iter = evalExpr(n.iter)
+            val snapshot: List<Any?> = when (iter) {
+                is ParticleListValue -> iter.hosts.toList().map { ParticleValue(it) }
+                is MutableList<*> -> iter.toList()
+                else -> err("for-of requires a particle list or array, got ${typeName(iter)}", n.iter)
+            }
+            pushScope(HashMap())
+            try {
+                var idx = 0
+                for (item in snapshot) {
+                    if (++idx > 100000) err("maximum loop iterations (100000) exceeded", n)
+                    currentScope()[n.name] = item
+                    try { execStmt(n.body) }
+                    catch (f: Flow) {
+                        if (f.kind == "break") break
+                        if (f.kind == "continue") continue
+                        throw f
+                    }
+                }
+            } finally { popScope() }
+        }
+
+        private fun execAssign(n: AssignNode) {
+            val target = n.target
+            if (target is UnpackTarget) {
+                val v = evalExpr(n.value)
+                val comps = when (v) {
+                    is Vec2 -> listOf(v.x, v.y)
+                    is Vec3 -> listOf(v.x, v.y, v.z)
+                    is Vec4 -> listOf(v.x, v.y, v.z, v.w)
+                    is MutableList<*> -> v.toList()
+                    else -> err("unpack requires a vector or array, got ${typeName(v)}", n)
+                }
+                if (comps.size != target.names.size) err("unpack count mismatch", n)
+                for ((i, name) in target.names.withIndex()) assignName(name, comps[i], n)
+            } else {
+                assignTarget(target, evalExpr(n.value), n)
+            }
+        }
+
+        private fun assignTarget(target: AssignTarget, value: Any?, n: Node) {
             when (target) {
                 is VarTarget -> assignName(target.name, value, n)
-                is MemberTarget -> assignCtxField(target, value, n)
+                is MemberTarget -> assignMemberField(target, value, n)
                 is IndexTarget -> {
                     val arr = evalExpr(target.target)
                     if (arr !is MutableList<*>) err("indexed assignment target is not an array", n)
@@ -347,24 +368,16 @@ object ScriptRuntime {
                     assignCompTarget(target.target, updated, n)
                 }
                 is UnpackTarget -> {
-                    val comps = when (value) {
-                        is Vec2 -> listOf(value.x, value.y)
-                        is Vec3 -> listOf(value.x, value.y, value.z)
-                        is Vec4 -> listOf(value.x, value.y, value.z, value.w)
-                        is MutableList<*> -> value.toList()
-                        else -> err("unpack requires a vector or array, got ${typeName(value)}", n)
-                    }
-                    if (comps.size != target.names.size) err("unpack count mismatch", n)
-                    for ((i, name) in target.names.withIndex()) assignName(name, comps[i], n)
+                    err("unpack assignment requires execAssign", n)
                 }
             }
         }
 
-        /** 分量赋值：把更新后的向量写回其目标（变量 / this 字段 / 数组下标）。 */
+        /** 分量赋值：把更新后的向量写回其目标（变量 / 粒子字段 / 数组下标）。 */
         private fun assignCompTarget(target: Node, updated: Any, n: Node) {
             when (target) {
                 is VarNode -> assignName(target.name, updated, n)
-                is MemberNode -> assignCtxField(MemberTarget(target.obj, target.field, target.line, target.col), updated, n)
+                is MemberNode -> assignMemberField(MemberTarget(target.obj, target.field, target.line, target.col), updated, n)
                 is IndexNode -> {
                     val arr = evalExpr(target.target)
                     if (arr !is MutableList<*>) err("indexed assignment target is not an array", n)
@@ -372,15 +385,20 @@ object ScriptRuntime {
                     if (idx < 0 || idx >= arr.size) err("array index $idx out of bounds (size ${arr.size})", n)
                     (arr as MutableList<Any?>)[idx] = updated
                 }
-                else -> err("component assignment requires a variable, this field or array index target", n)
+                else -> err("component assignment requires a variable, particle field or array index target", n)
             }
         }
 
-        private fun assignCtxField(target: MemberTarget, value: Any?, n: Node) {
-            if (target.obj !is VarNode || target.obj.name != CTX_NAME) {
-                err("only this has fields '.${target.field}'", n)
+        private fun assignMemberField(target: MemberTarget, value: Any?, n: Node) {
+            if (target.obj is VarNode && target.obj.name == CTX_NAME) {
+                err("this.${target.field} is read-only", n)
             }
-            ctxWrite(target.field, value, n)
+            val obj = evalExpr(target.obj)
+            if (obj is ParticleValue) {
+                particleSetField(obj, target.field, value, n)
+                return
+            }
+            err("only this / particle have fields '.${target.field}'", n)
         }
 
         private fun assignName(name: String, value: Any?, n: Node) {
@@ -395,112 +413,129 @@ object ScriptRuntime {
                 if (phase == "setup" && !inFunction) { objState.globals[name] = value; return }
                 err("global '$name' is read-only here", n)
             }
-            val st = statics
-            if (phase == "process" && st != null && st.containsKey(name)) { st[name] = value; return }
-            val c = ctx
-            if (name in CONSTANTS || (c != null && c.vars.containsKey(name))) {
+            if (name in CONSTANTS || varsMap.containsKey(name)) {
                 err("cannot assign to read-only name '$name'", n)
             }
             currentScope()[name] = value
         }
 
-        // ---- this 字段读写（§8/§9）----
+        // ---- this 字段读取（§8/§9）----
 
         private fun ctxRead(field: String, n: Node): Any? {
-            if (phase == "setup") {
-                if (field == "count") return setupEnv?.n ?: 0.0
-                if (field == "time") return setupEnv?.t ?: 0.0
-                if (field == "duration") return setupEnv?.duration ?: 0.0
-                err("this.$field is not available in setup", n)
+            if (phase == "expr") {
+                val c = pctx
+                when (field) {
+                    "index" -> return c?.i ?: 0.0
+                    "count" -> return c?.n ?: 0.0
+                    "time" -> return c?.t ?: 0.0
+                    "delta" -> return c?.dt ?: 0.0
+                    "duration" -> return c?.duration ?: 0.0
+                    "uv" -> return Vec2(c?.uv_x ?: 0.0, c?.uv_y ?: 0.0)
+                }
+                val out = c?.out ?: err("output unavailable", n)
+                return when (field) {
+                    "position" -> Vec3(out.pos[0], out.pos[1], out.pos[2])
+                    "color" -> Vec4(out.color[0], out.color[1], out.color[2], out.color[3])
+                    "velocity" -> Vec3(out.vel[0], out.vel[1], out.vel[2])
+                    "scale" -> out.scale
+                    "glow" -> out.glow
+                    "light" -> out.light
+                    "life" -> out.life
+                    else -> err("unknown this field '.$field'", n)
+                }
             }
-            // process
-            val c = ctx
-            when (field) {
-                "index" -> return c?.i ?: 0.0
-                "count" -> return c?.n ?: 0.0
-                "time" -> return c?.t ?: 0.0
-                "delta" -> return c?.dt ?: 0.0
-                "duration" -> return c?.duration ?: 0.0
-                "uv" -> return Vec2(c?.uv_x ?: 0.0, c?.uv_y ?: 0.0)
-            }
-            val out = c?.out ?: err("output unavailable", n)
+            // spawn 模型（setup/tick/process）
+            val c = ctx ?: err("context unavailable", n)
             return when (field) {
-                "position" -> Vec3(out.pos[0], out.pos[1], out.pos[2])
-                "color" -> Vec4(out.color[0], out.color[1], out.color[2], out.color[3])
-                "velocity" -> Vec3(out.vel[0], out.vel[1], out.vel[2])
-                "scale" -> out.scale
-                "glow" -> out.glow
-                "light" -> out.light
-                "life" -> out.life
-                else -> err("unknown this field '.$field'", n)
+                "time" -> c.t
+                "duration" -> c.duration
+                "particles" -> ParticleListValue(c.particles)
+                else -> err("this.$field is not available here", n)
             }
         }
 
-        private fun ctxVecValues(value: Any?, len: Int, field: String, n: Node): List<Double> {
-            if (isVec(value)) {
-                val v = value ?: err("this.$field requires a vec$len, got null", n)
-                if (vecDim(v) != len) {
-                    err("this.$field requires a vec$len, got ${typeName(v)}", n)
+        // ---- 粒子句柄字段读取/写入（v12 spawn 模型）----
+
+        private fun particleGetField(pv: ParticleValue, field: String, n: Node): Any? {
+            val w = pv.host
+            return when (field) {
+                "position" -> Vec3(w.pos[0], w.pos[1], w.pos[2])
+                "color" -> Vec4(w.color[0], w.color[1], w.color[2], w.color[3])
+                "velocity" -> Vec3(w.vel[0], w.vel[1], w.vel[2])
+                "scale" -> w.scale
+                "glow" -> w.glow
+                "light" -> w.light
+                "life" -> w.life
+                "index" -> w.index.toDouble()
+                else -> w.fields[field] ?: 0.0
+            }
+        }
+
+        private fun vecFieldValues(value: Any?, len: Int, what: String, n: Node): List<Double> {
+            if (value != null && isVec(value)) {
+                if (vecDim(value) != len) {
+                    err("$what requires a vec$len, got ${typeName(value)}", n)
                 }
-                return vecComps(v)
+                return vecComps(value)
             }
             if (value is MutableList<*>) {
                 if (value.size != len) {
-                    err("this.$field requires an array of $len numbers, got length ${value.size}", n)
+                    err("$what requires an array of $len numbers, got length ${value.size}", n)
                 }
-                return value.map { num(it, "this.$field[$it]", n) }
+                return value.map { num(it, "$what[$it]", n) }
             }
-            err("this.$field requires a vec$len or array of $len numbers, got ${typeName(value)}", n)
+            err("$what requires a vec$len or array of $len numbers, got ${typeName(value)}", n)
         }
 
-        private fun ctxWrite(field: String, value: Any?, n: Node) {
-            if (phase != "process") err("this.$field is read-only here", n)
-            if (field !in CTX_OUT_FIELDS) err("this.$field is read-only", n)
-            val out = ctx?.out ?: err("output unavailable", n)
+        private fun writeParticleColor(w: ParticleHost, value: Any?, n: Node) {
+            when {
+                value is Vec3 -> {
+                    w.color[0] = clamp01(value.x); w.color[1] = clamp01(value.y); w.color[2] = clamp01(value.z)
+                }
+                value is Vec4 -> {
+                    w.color[0] = clamp01(value.x); w.color[1] = clamp01(value.y); w.color[2] = clamp01(value.z); w.color[3] = clamp01(value.w)
+                }
+                value is MutableList<*> && value.size == 3 -> {
+                    w.color[0] = clamp01(num(value[0], "particle.color[0]", n))
+                    w.color[1] = clamp01(num(value[1], "particle.color[1]", n))
+                    w.color[2] = clamp01(num(value[2], "particle.color[2]", n))
+                }
+                value is MutableList<*> && value.size == 4 -> {
+                    w.color[0] = clamp01(num(value[0], "particle.color[0]", n))
+                    w.color[1] = clamp01(num(value[1], "particle.color[1]", n))
+                    w.color[2] = clamp01(num(value[2], "particle.color[2]", n))
+                    w.color[3] = clamp01(num(value[3], "particle.color[3]", n))
+                }
+                else -> err("particle.color requires a vec3, vec4, [r,g,b] or [r,g,b,a], got ${typeName(value)}", n)
+            }
+        }
+
+        private fun particleSetField(pv: ParticleValue, field: String, value: Any?, n: Node) {
+            val w = pv.host
             when (field) {
                 "position" -> {
-                    val c = ctxVecValues(value, 3, "position", n)
-                    out.pos[0] = c[0]; out.pos[1] = c[1]; out.pos[2] = c[2]
+                    val c = vecFieldValues(value, 3, "particle.position", n)
+                    w.pos[0] = c[0]; w.pos[1] = c[1]; w.pos[2] = c[2]
                 }
                 "velocity" -> {
-                    val c = ctxVecValues(value, 3, "velocity", n)
-                    out.vel[0] = c[0]; out.vel[1] = c[1]; out.vel[2] = c[2]
+                    val c = vecFieldValues(value, 3, "particle.velocity", n)
+                    w.vel[0] = c[0]; w.vel[1] = c[1]; w.vel[2] = c[2]
                 }
-                "color" -> {
-                    when {
-                        value is Vec3 -> {
-                            out.color[0] = clamp01(value.x); out.color[1] = clamp01(value.y); out.color[2] = clamp01(value.z)
-                        }
-                        value is Vec4 -> {
-                            out.color[0] = clamp01(value.x); out.color[1] = clamp01(value.y); out.color[2] = clamp01(value.z); out.color[3] = clamp01(value.w)
-                        }
-                        value is MutableList<*> && value.size == 3 -> {
-                            out.color[0] = clamp01(num(value[0], "this.color[0]", n))
-                            out.color[1] = clamp01(num(value[1], "this.color[1]", n))
-                            out.color[2] = clamp01(num(value[2], "this.color[2]", n))
-                        }
-                        value is MutableList<*> && value.size == 4 -> {
-                            out.color[0] = clamp01(num(value[0], "this.color[0]", n))
-                            out.color[1] = clamp01(num(value[1], "this.color[1]", n))
-                            out.color[2] = clamp01(num(value[2], "this.color[2]", n))
-                            out.color[3] = clamp01(num(value[3], "this.color[3]", n))
-                        }
-                        else -> err("this.color requires a vec3, vec4, [r,g,b] or [r,g,b,a], got ${typeName(value)}", n)
-                    }
-                }
-                "scale" -> out.scale = num(value, "this.scale", n)
+                "color" -> writeParticleColor(w, value, n)
+                "scale" -> w.scale = num(value, "particle.scale", n)
                 "glow" -> {
                     if (!isNum(value) && !isBool(value)) {
-                        err("this.glow requires a num/bool, got ${typeName(value)}", n)
+                        err("particle.glow requires a num/bool, got ${typeName(value)}", n)
                     }
-                    val nv = if (value is Boolean) (if (value) 1.0 else 0.0) else value as Double
-                    out.glow = nv > 0.5
+                    w.glow = if (value is Boolean) value else (value as Double) > 0.5
                 }
-                "light" -> out.light = clampNum(jsRound(num(value, "this.light", n)), 0.0, 15.0)
+                "light" -> w.light = clampNum(jsRound(num(value, "particle.light", n)), 0.0, 15.0)
                 "life" -> {
-                    val v = jsRound(num(value, "this.life", n))
-                    out.life = if (v.isFinite()) (if (v < 0.0) -1.0 else v) else -1.0
+                    val v = jsRound(num(value, "particle.life", n))
+                    w.life = if (v.isFinite()) (if (v < 0.0) -1.0 else v) else -1.0
                 }
+                "index" -> err("particle.index is read-only", n)
+                else -> w.fields[field] = value
             }
         }
 
@@ -520,13 +555,7 @@ object ScriptRuntime {
             }
             is BinaryNode -> evalBinary(n.op, evalExpr(n.left), evalExpr(n.right), n)
             is TernaryNode -> if (truthy(evalExpr(n.cond), n.cond)) evalExpr(n.thenExpr) else evalExpr(n.elseExpr)
-            is IndexNode -> {
-                val arr = evalExpr(n.target)
-                if (arr !is MutableList<*>) err("indexing requires an array, got ${typeName(arr)}", n)
-                val idx = int(evalExpr(n.index), "array index", n)
-                if (idx < 0 || idx >= arr.size) err("array index $idx out of bounds (size ${arr.size})", n)
-                arr[idx]
-            }
+            is IndexNode -> evalIndex(n)
             is CompNode -> {
                 val v = evalExpr(n.target)
                 if (!isVec(v)) err("component access requires a vector, got ${typeName(v)}", n)
@@ -539,22 +568,93 @@ object ScriptRuntime {
                     else -> err("component access requires a vector, got ${typeName(v)}", n)
                 }
             }
-            is MemberNode -> {
-                if (n.obj !is VarNode || n.obj.name != CTX_NAME) {
-                    err("only this has fields '.${n.field}'", n)
-                }
-                ctxRead(n.field, n)
+            is MemberNode -> evalMember(n)
+            is CallNode -> evalCall(n)
+            is MethodNode -> evalMethod(n)
+            is PreIncNode -> {
+                val old = evalLValue(n.target)
+                val nv = incDecValue(old, n.op, n)
+                assignTarget(n.target, nv, n)
+                nv
             }
-            is CallNode -> {
-                val name = (n.callee as? VarNode)?.name ?: err("callee must be a name", n)
-                callBuiltin(name, n.args.map { evalExpr(it) }, n)
-            }
-            is MethodNode -> {
-                val obj = evalExpr(n.obj)
-                if (obj !is MutableList<*>) err("method '.${n.method}()' requires an array, got ${typeName(obj)}", n)
-                arrayMethod(obj as MutableList<Any?>, n.method, n.args.map { evalExpr(it) }, n)
+            is PostIncNode -> {
+                val old = evalLValue(n.target)
+                val nv = incDecValue(old, n.op, n)
+                assignTarget(n.target, nv, n)
+                old
             }
             else -> err("unknown expression ${n::class.simpleName}", n)
+        }
+
+        private fun evalIndex(n: IndexNode): Any? {
+            val target = evalExpr(n.target)
+            val idx = int(evalExpr(n.index), "index", n)
+            if (target is ParticleListValue) {
+                if (idx < 0 || idx >= target.size) err("particle list index $idx out of bounds (size ${target.size})", n)
+                return target.get(idx)
+            }
+            if (target !is MutableList<*>) err("index access requires an array or particle list, got ${typeName(target)}", n)
+            if (idx < 0 || idx >= target.size) err("array index $idx out of bounds (size ${target.size})", n)
+            return target[idx]
+        }
+
+        private fun evalMember(n: MemberNode): Any? {
+            if (n.obj is VarNode && n.obj.name == CTX_NAME) {
+                return ctxRead(n.field, n)
+            }
+            val obj = evalExpr(n.obj)
+            if (obj is ParticleValue) return particleGetField(obj, n.field, n)
+            err("only this / particle have fields '.${n.field}'", n)
+        }
+
+        private fun evalLValue(target: AssignTarget): Any? = when (target) {
+            is VarTarget -> lookupName(target.name, VarNode(target.name, target.line, target.col))
+            is MemberTarget -> evalMember(MemberNode(target.obj, target.field, target.line, target.col))
+            is IndexTarget -> evalIndex(IndexNode(target.target, target.index, target.line, target.col))
+            is CompTarget -> evalExpr(CompNode(target.target, target.comp, target.line, target.col))
+            is UnpackTarget -> err("invalid increment target", VarNode("<unpack>", target.line, target.col))
+        }
+
+        private fun incDecValue(v: Any?, op: String, n: Node): Any? {
+            if (v !is Double) err("'$op' requires a num, got ${typeName(v)}", n)
+            return if (op == "++") v + 1.0 else v - 1.0
+        }
+
+        private fun evalCall(n: CallNode): Any? {
+            val args = n.args.map { evalExpr(it) }
+            val callee = n.callee
+            if (callee is VarNode) {
+                if (callee.name in BUILTINS) return callBuiltin(callee.name, args, n)
+                if (program.functions.containsKey(callee.name)) return callUserFunc(program.functions[callee.name]!!, args, n)
+            }
+            val fn = evalExpr(callee)
+            if (fn is FuncVal) return callUserFunc(program.functions[fn.name] ?: err("function '${fn.name}' not found", n), args, n)
+            err("value of type ${typeName(fn)} is not callable", n)
+        }
+
+        private fun evalMethod(n: MethodNode): Any? {
+            // this.spawn()
+            if (n.obj is VarNode && n.obj.name == CTX_NAME && n.method == "spawn") {
+                val c = ctx ?: err("this.spawn is not available here", n)
+                val w = try { c.spawn() } catch (e: Exception) { err("spawn failed: ${e.message}", n) }
+                return ParticleValue(w)
+            }
+            val obj = evalExpr(n.obj)
+            val args = n.args.map { evalExpr(it) }
+            if (obj is ParticleValue) {
+                if (n.method == "kill") {
+                    if (args.isNotEmpty()) err("'kill' takes no arguments", n)
+                    obj.host.kill()
+                    return 0.0
+                }
+                err("particle has no method '.${n.method}()'", n)
+            }
+            if (obj is ParticleListValue) {
+                if (n.method == "size") return obj.size.toDouble()
+                err("particle list has no method '.${n.method}()'", n)
+            }
+            if (obj !is MutableList<*>) err("method '.${n.method}()' requires an array, particle or particle list, got ${typeName(obj)}", n)
+            return arrayMethod(obj as MutableList<Any?>, n.method, args, n)
         }
 
         private fun lookupName(name: String, n: Node): Any? {
@@ -566,14 +666,7 @@ object ScriptRuntime {
                 if (s.containsKey(name)) return s[name]
             }
             if (objState.globals.containsKey(name)) return objState.globals[name]
-            val st = statics
-            if (phase == "process" && st != null && st.containsKey(name)) return st[name]
-            if (phase == "setup") {
-                if (setupEnv?.vars?.containsKey(name) == true) return setupEnv.vars[name]
-            } else {
-                val c = ctx
-                if (c?.vars?.containsKey(name) == true) return c.vars[name]
-            }
+            if (varsMap.containsKey(name)) return varsMap[name]
             if (name in CONSTANTS) return CONSTANTS[name]
             if (program.functions.containsKey(name)) return FuncVal(name)
             err("unknown variable '$name'", n)
@@ -790,8 +883,12 @@ object ScriptRuntime {
             }
             val seed = objState.seed
             return when (name) {
-                "print" -> { if (phase != "setup") err("'print' is only allowed in setup", n); 0.0 }
-                "assert" -> { if (phase != "setup") err("'assert' is only allowed in setup", n); if (!truthy(args[0], n)) throw ScriptException(args[1].toString()); 0.0 }
+                "print" -> {
+                    val line = args.joinToString(" ") { formatValue(it) }
+                    ctx?.print?.invoke(line)
+                    0.0
+                }
+                "assert" -> { if (!truthy(args[0], n)) throw ScriptException(args.getOrElse(1) { "" }.toString()); 0.0 }
                 "vec2" -> Vec2(num(args[0], "vec2", n), num(args[1], "vec2", n))
                 "vec3", "vec" -> Vec3(num(args[0], "vec3", n), num(args[1], "vec3", n), num(args[2], "vec3", n))
                 "vec4" -> Vec4(num(args[0], "vec4", n), num(args[1], "vec4", n), num(args[2], "vec4", n), num(args[3], "vec4", n))
@@ -817,7 +914,7 @@ object ScriptRuntime {
                 "rotAxis" -> rotAxisMat3(args[0], num(args[1], "rotAxis", n), n)
                 "dot" -> dot(args[0], args[1], n)
                 "cross" -> { val a = args[0] as? Vec3 ?: err("cross requires vec3", n); val b = args[1] as? Vec3 ?: err("cross requires vec3", n); Vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x) }
-                "len" -> { val v = args[0]; if (v is Double) abs(v) else lenVec(v, n) }
+                "len" -> { val v = args[0]; if (v is Double) abs(v) else if (v is MutableList<*>) v.size.toDouble() else lenVec(v, n) }
                 "len2" -> { val v = args[0]; if (v is Double) v * v else lenVec(v, n).let { it * it } }
                 "norm" -> { val v = args[0]; val l = lenVec(v, n); if (l == 0.0) v else scaleVec(v, 1.0 / l, n) }
                 "lerp", "mix" -> lerp(args[0], args[1], num(args[2], "$name t", n), n)
@@ -854,7 +951,6 @@ object ScriptRuntime {
                 "unique" -> arrayMethod(args[0] as? MutableList<Any?> ?: err("unique requires array", n), "unique", emptyList(), n)
                 "reverse" -> arrayMethod(args[0] as? MutableList<Any?> ?: err("reverse requires array", n), "reverse", emptyList(), n)
                 "sort" -> arrayMethod(args[0] as? MutableList<Any?> ?: err("sort requires array", n), "sort", args.drop(1), n)
-                "len" -> { val v = args[0]; if (v is MutableList<*>) v.size.toDouble() else lenVec(v, n) }
                 else -> err("unknown builtin '$name'", n)
             }
         }
@@ -986,6 +1082,20 @@ object ScriptRuntime {
             is Vec4 -> Vec4(v.x, v.y, v.z, v.w)
             else -> err("float requires scalar or vector", n)
         }
+    }
+
+    /** JS String(value) 的近似：脚本值格式化（print 用）。 */
+    private fun formatValue(v: Any?): String = when (v) {
+        null -> "null"
+        is Double -> if (v % 1.0 == 0.0 && v.isFinite()) v.toLong().toString() else v.toString()
+        is Boolean -> v.toString()
+        is Vec2 -> "vec2(${v.x}, ${v.y})"
+        is Vec3 -> "vec3(${v.x}, ${v.y}, ${v.z})"
+        is Vec4 -> "vec4(${v.x}, ${v.y}, ${v.z}, ${v.w})"
+        is MutableList<*> -> "[" + v.joinToString(", ") { formatValue(it) } + "]"
+        is ParticleValue -> "particle#${v.host.index}"
+        is ParticleListValue -> "particleList(${v.size})"
+        else -> v.toString()
     }
 
     private val CONSTANTS = mapOf(

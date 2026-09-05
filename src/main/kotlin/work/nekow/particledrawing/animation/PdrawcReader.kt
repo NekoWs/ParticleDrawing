@@ -154,7 +154,7 @@ object PdrawcReader {
             val ent = if (flags and 1 != 0) readEnt(br) else null
             val uv = if (flags and 2 != 0) readUV(br, texNames) else null
             val fastMath = (flags and 4) != 0
-            val funcs = if (flags and 8 != 0) br.str() else ""
+            // v12 起 funcs 已并入 source；flags bit3 为旧 funcs 标志，按编辑器读取端一致地忽略（不再消费字节）。
             val spinLocal = (flags and 16) != 0
             val rotLocal = (flags and 32) != 0
             val varCount = br.varint()
@@ -165,8 +165,7 @@ object PdrawcReader {
                 val kf = readVarKeyframes(br)
                 vars[name] = FunctionVar(base, kf)
             }
-            // v11：source 为完整脚本源码；播放端 spawn 运行时尚未实现（见编辑器 AGENT.md 待跟进），此处保留旧字段为空。
-            functions.add(FunctionObject("fx$fi", "fx$fi", center, 0, "", "", funcs, seed, vars, duration, 0, uv, st, ent, fastMath, spinLocal, rotLocal, "", "delta", source))
+            functions.add(FunctionObject("fx$fi", "fx$fi", center, source, seed, vars, duration, uv, st, ent, fastMath, spinLocal, rotLocal))
         }
 
         // 摄像机对象（v6 新增；v7 起朝向 = target 目标点 + roll 翻滚角；v8 起旋转空间 flags：

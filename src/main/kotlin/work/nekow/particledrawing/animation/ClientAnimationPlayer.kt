@@ -1,16 +1,15 @@
 package work.nekow.particledrawing.animation
 
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.animation.script.ParticleHost
 import work.nekow.particledrawing.animation.script.ScriptProgram
 import work.nekow.particledrawing.animation.script.ScriptRuntime
 import work.nekow.particledrawing.animation.script.parseProgram
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.util.rotateAround
-import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.roundToInt
-import kotlin.math.sqrt
 
 @Suppress("unused")
 class ClientAnimationPlayer(
@@ -87,13 +86,13 @@ class ClientAnimationPlayer(
     private val groupRotLocal: Set<String> = animation.groupRotSpace.filterValues { it }.keys
     private val particleGroupIndex: Map<String, Set<String>> = buildParticleGroupIndex()
     private val groupCentroidCache: Map<String, Vec3> = buildGroupCentroids()
-    private val particleFxCache: Map<String, FunctionObject?> = buildParticleFxCache()
     private val camUp = Vec3(0.0, 1.0, 0.0)
 
     // ---- UV 字段表达式（v10/v2 新增）----
-    // 普通粒子全局序号：index=全局序号、count=粒子总数；uv=(0,0)（普通粒子无脚本 uv 网格）。
+    // 普通粒子全局序号：index=全局序号、count=粒子总数（普通 + 派生，与编辑器 state.particles.length 一致）；
+    // 派生粒子 index=spawn 序号、uv=(0,0)。
     private val particleGlobalIndex: Map<String, Int> = animation.particles.mapIndexed { i, p -> p.id to i }.toMap()
-    private val particleGlobalCount: Double = animation.particles.size.toDouble()
+    private val animationParticleById: Map<String, AnimParticle> = animation.particles.associateBy { it.id }
 
     // UV 表达式 runner 缓存：同一表达式字符串跨粒子复用编译产物。
     private val uvExprCache = HashMap<String, ScriptRuntime.ExpressionRunner?>()
@@ -147,34 +146,98 @@ class ClientAnimationPlayer(
         return UvData(uv.texture, uv.mode, uv.texSize, start, size, step, fps, maxFrame, uv.loop)
     }
 
-    // ---- 函数对象脚本程序缓存（setup 执行一次；process 每粒子每 tick） ----
-    private data class FxScriptState(
+    // ---- 函数对象脚本运行时（v12 spawn 模型：setup 一次、tick 补跑、process 每帧一次）----
+    private val fxById: Map<String, FunctionObject> = animation.functions.associateBy { it.id }
+
+    private class FxRuntime(
+        val fx: FunctionObject,
         val program: ScriptProgram,
         val objState: ScriptRuntime.ObjectState,
-        val executor: ScriptRuntime.ProcessExecutor,
-        val statics: MutableMap<String, MutableMap<String, Any?>> = HashMap(),
-    )
-    private val fxScripts: MutableMap<String, FxScriptState?> = buildFxScripts()
+    ) {
+        val particles = ArrayList<ParticleHost>()
+        var spawnSerial = 0
+        var tickCursor = 0.0
+        var curTick = 0.0
+
+        /** 粒子句柄桥接（脚本 this.spawn() / 粒子字段读写 / kill()）。 */
+        inner class FxParticleHost(
+            override val index: Int,
+            var spawnTick: Double,
+        ) : ParticleHost {
+            override val pos = DoubleArray(3)
+            override val color = doubleArrayOf(1.0, 1.0, 1.0, 1.0)
+            override val vel = DoubleArray(3)
+            override var scale = 1.0
+            override var glow = false
+            override var light = 0.0
+            override var life = -1.0
+            override val fields = HashMap<String, Any?>()
+            var alive = true
+
+            override fun kill() {
+                if (!alive) return
+                alive = false
+                particles.remove(this)
+            }
+        }
+
+        fun spawn(): ParticleHost {
+            val serial = spawnSerial++
+            val host = FxParticleHost(serial, curTick)
+            particles.add(host)
+            return host
+        }
+    }
+
+    private val fxRuntimes: MutableMap<String, FxRuntime?> = buildFxRuntimes()
+    private val derivedByFx: HashMap<String, HashSet<String>> = HashMap()
+    private val derivedHosts: HashMap<String, FxRuntime.FxParticleHost> = HashMap()
 
     // 视觉会随时间变化的普通粒子（有轨道/速度/入场过渡）；其余静态粒子每 tick 只更新可见性。
     private val dynamicParticleIds: Set<String> = buildDynamicParticleIds()
 
-    private fun buildFxScripts(): MutableMap<String, FxScriptState?> {
-        val map = HashMap<String, FxScriptState?>()
-        for (fx in animation.functions) map[fx.id] = buildFxScript(fx)
+    private fun buildFxRuntimes(): MutableMap<String, FxRuntime?> {
+        val map = HashMap<String, FxRuntime?>()
+        for (fx in animation.functions) map[fx.id] = buildFxRuntime(fx)
         return map
     }
 
-    private fun buildFxScript(fx: FunctionObject): FxScriptState? = try {
-        val funcsPrefix = if (fx.funcs.isNotBlank()) fx.funcs.trim() + "\n" else ""
-        val program = parseProgram(funcsPrefix + "setup {\n${fx.setup}\n}\nprocess {\n${fx.process}\n}\n")
+    private fun buildFxRuntime(fx: FunctionObject): FxRuntime? = try {
+        val program = parseProgram(fx.source)
         val obj = ScriptRuntime.createObjectState(fx.seed)
-        ScriptRuntime.runSetup(program, obj, ScriptRuntime.SetupEnv(fx.count.toDouble(), fx.st.toDouble(), varsAt(fx, fx.st.toDouble()), maxTick.toDouble()))
-        FxScriptState(program, obj, ScriptRuntime.createProcessExecutor(program, obj))
+        val rt = FxRuntime(fx, program, obj)
+        rt.tickCursor = floor(fx.st.toDouble()) - 1
+        rt.curTick = fx.st.toDouble()
+        ScriptRuntime.runSpawnSetup(program, obj, makeCtx(fx, rt, fx.st.toDouble(), 0.0))
+        rt
     } catch (e: Exception) {
         println("[pdrawc] 函数对象 ${fx.id} 编译失败：${e.message}")
         null
     }
+
+    private fun resetFxRuntime(fx: FunctionObject, rt: FxRuntime) {
+        rt.particles.clear()
+        rt.spawnSerial = 0
+        rt.tickCursor = floor(fx.st.toDouble()) - 1
+        rt.curTick = fx.st.toDouble()
+        try {
+            ScriptRuntime.runSpawnSetup(rt.program, rt.objState, makeCtx(fx, rt, fx.st.toDouble(), 0.0))
+        } catch (e: Exception) {
+            println("[pdrawc] 函数对象 ${fx.id} setup 求值失败：${e.message}")
+        }
+    }
+
+    private fun makeCtx(fx: FunctionObject, rt: FxRuntime, t: Double, deltaMs: Double): ScriptRuntime.ScriptCtx =
+        ScriptRuntime.ScriptCtx(
+            t = t,
+            duration = maxTick.toDouble(),
+            vars = varsAt(fx, t),
+            particles = rt.particles,
+            spawn = rt::spawn,
+            deltaMs = deltaMs,
+            fastMath = fx.fastMath,
+            print = { line -> println("[pdrawc:${fx.id}] $line") },
+        )
 
     private fun buildTrackIndex(): Map<String, Map<String, AnimTrack>> {
         val map = HashMap<String, HashMap<String, AnimTrack>>()
@@ -217,13 +280,11 @@ class ClientAnimationPlayer(
         return Vec3(sx / n, sy / n, sz / n)
     }
 
-    private fun buildParticleFxCache(): Map<String, FunctionObject?> {
-        val map = HashMap<String, FunctionObject?>()
-        for (p in animation.particles) map[p.id] = null
-        for (fx in animation.functions) {
-            for (i in 0 until fx.count) map[fx.id + ":p" + i] = fx
-        }
-        return map
+    /** 派生粒子 id（fxId:p<serial>）反查函数对象；普通粒子返回 null。 */
+    private fun particleFunction(id: String): FunctionObject? {
+        val marker = id.indexOf(":p")
+        if (marker <= 0) return null
+        return fxById[id.substring(0, marker)]
     }
 
     /**
@@ -256,23 +317,8 @@ class ClientAnimationPlayer(
         for (p in animation.particles) {
             states[p.id] = ParticleState(p.id, origin.add(p.pos), p.color, p.scale.copyOf(), p.glowing, p.lightLevel, resolveUV(p.id, p.uv))
         }
-        for (fx in animation.functions) {
-            val st = fxScripts[fx.id] ?: continue
-            val vars = varsAt(fx, 0.0)
-            val grid = uvGrid(fx, fx.count.toDouble())
-            val ctx = ScriptRuntime.ProcessCtx(0.0, fx.count.toDouble(), 0.0, 0.0, lifeAt(fx, 0.0), 0.0, 0.0, vars, fastMath = fx.fastMath, duration = maxTick.toDouble())
-            for (i in 0 until fx.count) {
-                val id = fx.id + ":p" + i
-                val statics = st.statics.getOrPut(id) { HashMap() }
-                val base = try {
-                    evalScriptParticle(fx, st, statics, i, fx.count.toDouble(), 0.0, 0.0, vars, grid, ctx)
-                } catch (e: Exception) {
-                    println("[pdrawc] 函数对象 ${fx.id} 粒子 $i 求值失败：${e.message}")
-                    continue
-                }
-                states[id] = ParticleState(id, origin.add(base.first), base.second, base.third, base.fourth, base.fifth, resolveUV(id, fx.uv))
-            }
-        }
+        // 函数对象运行时已在字段初始化阶段构建（setup 各执行一次）；派生粒子状态由 advanceTo 的
+        // reconcile 按当前存活粒子动态创建/更新/删除。
         // 按服务端权威进度定位到当前帧（elapsed = currentGameTick - startGameTick）：
         // 新播放等价于从 0 开始；重发/迟到加入则直接跳到其他玩家正在看的同一帧。
         val initialTick = AnimationProgress.tickAt(
@@ -315,7 +361,8 @@ class ClientAnimationPlayer(
     fun consumeJustLooped(): Boolean { val v = justLooped; justLooped = false; return v }
     fun isStatic(): Boolean = isStaticAnimation
 
-    private fun usesRandom(fx: FunctionObject): Boolean = Regex("\\brandom\\s*\\(").containsMatchIn(fx.process) || Regex("\\brand\\s*\\(").containsMatchIn(fx.process) || Regex("\\brandom\\s*\\(").containsMatchIn(fx.funcs) || Regex("\\brand\\s*\\(").containsMatchIn(fx.funcs)
+    private fun usesRandom(fx: FunctionObject): Boolean =
+        Regex("\\brandom\\s*\\(").containsMatchIn(fx.source) || Regex("\\brand\\s*\\(").containsMatchIn(fx.source)
     fun currentStates(): Collection<ParticleState> = states.values
     fun stop() { finished = true }
 
@@ -422,13 +469,15 @@ class ClientAnimationPlayer(
             val v = fx.vars[name] ?: continue
             v.base = value.toDoubleOrNull() ?: 0.0
             v.kf = emptyList()
-            fxScripts[fx.id] = buildFxScript(fx)
+            fxRuntimes[fx.id] = buildFxRuntime(fx)
             return
         }
     }
 
     private fun advanceTo(t: Double) {
-        val uvDt = if (advanceInitialized && t == prevAdvanceT + 1.0) 1.0 / 20.0 else 0.0
+        val deltaMs = if (advanceInitialized && t == prevAdvanceT + 1.0) 50.0 else 0.0
+
+        // 1) 普通粒子：st/life 门控 + 视觉更新（UV 在阶段 3 统一求值）
         for (p in animation.particles) {
             val s = states[p.id] ?: continue
             val localT = t - p.st
@@ -440,101 +489,174 @@ class ClientAnimationPlayer(
                 s.color = applyEntrance(particleColor(p, t), p.ent, localT)
                 s.scale = particleScale(p, t)
             }
-            // 普通粒子 UV 字段表达式：逐 tick 逐粒子求值，覆盖为数值化 UvData。
-            // 每 tick 从原始 UV（p.uv / 组 UV）重新解析，保证表达式随时间变化仍逐刻重算。
-            val resolvedUv = resolveUV(p.id, p.uv)
+        }
+
+        // 2) 函数对象：按编辑器 evaluateFxFrame 语义推进（setup 一次 / tick 补跑 / process 每帧一次），
+        //    并按当前存活粒子动态 reconcile 状态（新建/更新/删除）。
+        for (fx in animation.functions) {
+            val rt = fxRuntimes[fx.id] ?: continue
+            advanceFx(fx, rt, t, deltaMs)
+        }
+
+        // 3) UV 字段表达式（普通 + 派生粒子统一；n=总粒子数，与编辑器 state.particles.length 一致）
+        val n = states.size.toDouble()
+        for ((id, s) in states) {
+            val host = derivedHosts[id]
+            val fx = particleFunction(id)
+            val ownUv = if (fx != null) fx.uv else animationParticleById[id]?.uv
+            val resolvedUv = resolveUV(id, ownUv)
             if (resolvedUv != null && resolvedUv.hasExpressions()) {
-                uvCtx.i = particleGlobalIndex[p.id]!!.toDouble()
-                uvCtx.n = particleGlobalCount
+                uvCtx.i = if (host != null) host.index.toDouble() else (particleGlobalIndex[id] ?: 0).toDouble()
+                uvCtx.n = n
                 uvCtx.t = t
-                uvCtx.dt = uvDt
+                uvCtx.dt = 0.0
                 uvCtx.duration = maxTick.toDouble()
-                uvCtx.life = p.life.toDouble()
+                uvCtx.life = if (host != null) host.life else (animationParticleById[id]?.life?.toDouble() ?: -1.0)
                 uvCtx.uv_x = 0.0
                 uvCtx.uv_y = 0.0
                 uvCtx.out.pos[0] = s.pos.x; uvCtx.out.pos[1] = s.pos.y; uvCtx.out.pos[2] = s.pos.z
                 uvCtx.out.color[0] = s.color.r.toDouble(); uvCtx.out.color[1] = s.color.g.toDouble()
                 uvCtx.out.color[2] = s.color.b.toDouble(); uvCtx.out.color[3] = s.color.a.toDouble()
-                uvCtx.out.vel[0] = componentValueAt(p, "vel", "x", t)
-                uvCtx.out.vel[1] = componentValueAt(p, "vel", "y", t)
-                uvCtx.out.vel[2] = componentValueAt(p, "vel", "z", t)
+                if (host != null) {
+                    uvCtx.out.vel[0] = host.vel[0]; uvCtx.out.vel[1] = host.vel[1]; uvCtx.out.vel[2] = host.vel[2]
+                } else {
+                    val p = animationParticleById[id]
+                    if (p != null) {
+                        uvCtx.out.vel[0] = componentValueAt(p, "vel", "x", t)
+                        uvCtx.out.vel[1] = componentValueAt(p, "vel", "y", t)
+                        uvCtx.out.vel[2] = componentValueAt(p, "vel", "z", t)
+                    }
+                }
                 uvCtx.out.scale = s.scale[0].toDouble()
                 uvCtx.out.glow = s.glowing
                 uvCtx.out.light = s.lightLevel.toDouble()
-                uvCtx.out.life = p.life.toDouble()
+                uvCtx.out.life = uvCtx.life
                 s.uv = evalUv(resolvedUv, uvCtx)
             } else {
                 s.uv = resolvedUv
             }
         }
-        for (fx in animation.functions) {
-            val st = fxScripts[fx.id] ?: continue
-            val fxLocalT = t - fx.st
-            val cx = fx.center[0]; val cy = fx.center[1]; val cz = fx.center[2]
-            // 整体变换 / 自转 / 公转 / op 增量 / 整体缩放 每 tick 只算一次（与粒子序号无关）
-            val sx = scalarAt("spin.x", "f:" + fx.id, t, 0.0)
-            val sy = scalarAt("spin.y", "f:" + fx.id, t, 0.0)
-            val sz = scalarAt("spin.z", "f:" + fx.id, t, 0.0)
-            val hasSpin = sx != 0.0 || sy != 0.0 || sz != 0.0
-            val spinPivot = Vec3(cx, cy, cz)
-            val spin = doubleArrayOf(sx, sy, sz)
-            val rx = scalarAt("rot.x", "f:" + fx.id, t, 0.0)
-            val ry = scalarAt("rot.y", "f:" + fx.id, t, 0.0)
-            val rz = scalarAt("rot.z", "f:" + fx.id, t, 0.0)
-            val hasRot = rx != 0.0 || ry != 0.0 || rz != 0.0
-            val orbitPivot = orbitCenterAt("f:" + fx.id, t)
-            val rot = doubleArrayOf(rx, ry, rz)
-            val dx = opDeltaAt("pos.x", "f:" + fx.id, t)
-            val dy = opDeltaAt("pos.y", "f:" + fx.id, t)
-            val dz = opDeltaAt("pos.z", "f:" + fx.id, t)
-            val n = fx.count.toDouble()
-            val dt = if (advanceInitialized && t == prevAdvanceT + 1.0) 1.0 / 20.0 else 0.0
-            val vars = varsAt(fx, t)
-            val grid = uvGrid(fx, n)
-            val ctx = ScriptRuntime.ProcessCtx(0.0, n, t, dt, lifeAt(fx, t), 0.0, 0.0, vars, fastMath = fx.fastMath, duration = maxTick.toDouble())
-            for (i in 0 until fx.count) {
-                val id = fx.id + ":p" + i
-                val s = states[id] ?: continue
-                val statics = st.statics.getOrPut(id) { HashMap() }
-                val base = try {
-                    evalScriptParticle(fx, st, statics, i, n, t, dt, vars, grid, ctx)
-                } catch (e: Exception) {
-                    println("[pdrawc] 函数对象 ${fx.id} 粒子 $i 求值失败：${e.message}")
-                    s.visible = fxLocalT >= 0 && (fx.duration <= 0 || fxLocalT < fx.duration)
-                    continue
-                }
-                var pos = base.first
-                if (hasSpin) pos = if (fx.spinLocal) rotateAroundLocal(pos, spinPivot, spin) else rotateAround(pos, spinPivot, spin)
-                // pos op 位移必须先于公转：函数对象的实际世界位置应绕公转中心旋转。
-                pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
-                if (hasRot) pos = if (fx.rotLocal) rotateAroundLocalOrbit(pos, orbitPivot, rot, spin, fx.spinLocal) else rotateAround(pos, orbitPivot, rot)
-                s.pos = origin.add(pos)
-                s.color = applyEntrance(base.second, fx.ent, fxLocalT)
-                s.scale = fxScale(fx.id, base.third[0].toDouble(), t)
-                s.glowing = base.fourth
-                s.lightLevel = base.fifth
-                val life = base.sixth
-                // 派生粒子 UV 字段表达式：复用该循环 ctx（i/n/t/dt/uv_x/uv_y/vars 已正确），
-                // 把 out 改为最终世界坐标/颜色/缩放/glow/light/life，vel 保持脚本输出。
-                val resolvedUv = resolveUV(id, fx.uv)
-                if (resolvedUv != null && resolvedUv.hasExpressions()) {
-                    ctx.out.pos[0] = s.pos.x; ctx.out.pos[1] = s.pos.y; ctx.out.pos[2] = s.pos.z
-                    ctx.out.color[0] = s.color.r.toDouble(); ctx.out.color[1] = s.color.g.toDouble()
-                    ctx.out.color[2] = s.color.b.toDouble(); ctx.out.color[3] = s.color.a.toDouble()
-                    ctx.out.scale = s.scale[0].toDouble()
-                    ctx.out.glow = s.glowing
-                    ctx.out.light = s.lightLevel.toDouble()
-                    ctx.out.life = life
-                    s.uv = evalUv(resolvedUv, ctx)
-                } else {
-                    s.uv = resolvedUv
-                }
-                // 派生粒子三重门控：st 入场、对象整体时长、逐粒子寿命（life<0=无限；duration<=0=无时长上限）
-                s.visible = fxLocalT >= 0 && (fx.duration <= 0 || fxLocalT < fx.duration) && (life < 0 || fxLocalT < life)
-            }
-        }
+
         prevAdvanceT = t
         advanceInitialized = true
+    }
+
+    /**
+     * 把函数对象推进到时间 t（与编辑器 evaluateFxFrame 同语义）：
+     * - t < st 或超过对象时长：仅保持 setup 已执行（粒子保留，渲染层按门控隐藏）；
+     * - 向后 seek（t < tickCursor）：重建运行时（清空粒子、重跑 setup、重置 tick 游标）；
+     * - 正常：补跑 (tickCursor, floor(t)] 的 tick()，再跑一次 process(deltaMs)。
+     */
+    private fun advanceFx(fx: FunctionObject, rt: FxRuntime, t: Double, deltaMs: Double) {
+        val st = fx.st.toDouble()
+        val dur = fx.duration.toDouble()
+        if (t >= st && (dur <= 0 || t < st + dur)) {
+            // 向后 seek：确定性重算
+            if (t < rt.tickCursor) resetFxRuntime(fx, rt)
+
+            val floorT = floor(t)
+            while (rt.tickCursor < floorT) {
+                rt.tickCursor += 1.0
+                rt.curTick = rt.tickCursor
+                decrementLife(fx, rt, rt.tickCursor)
+                if (rt.program.tick.isNotEmpty()) {
+                    try {
+                        ScriptRuntime.runTickFrame(rt.program, rt.objState, makeCtx(fx, rt, rt.tickCursor, deltaMs))
+                    } catch (e: Exception) {
+                        println("[pdrawc] 函数对象 ${fx.id} tick 求值失败：${e.message}")
+                        break
+                    }
+                }
+            }
+
+            rt.curTick = t
+            if (rt.program.process.isNotEmpty()) {
+                try {
+                    ScriptRuntime.runProcessFrame(rt.program, rt.objState, makeCtx(fx, rt, t, deltaMs))
+                } catch (e: Exception) {
+                    println("[pdrawc] 函数对象 ${fx.id} process 求值失败：${e.message}")
+                }
+            }
+        }
+        reconcileFxStates(fx, rt, t, t - fx.st)
+    }
+
+    /** 每个 tick 开始前递减剩余寿命；到期（或 life 已为 0）立即移除。 */
+    private fun decrementLife(fx: FunctionObject, rt: FxRuntime, tick: Double) {
+        val st = fx.st.toDouble()
+        for (i in rt.particles.indices.reversed()) {
+            val host = rt.particles[i] as FxRuntime.FxParticleHost
+            val entry = max(host.spawnTick, st)
+            if (host.life >= 0.0 && tick > entry) {
+                if (host.life <= 1.0) {
+                    host.kill()
+                } else {
+                    host.life -= 1.0
+                }
+            }
+        }
+    }
+
+    /** 把函数对象当前存活粒子同步进渲染状态（新建/更新/删除 + 整体变换 + 可见性门控）。 */
+    private fun reconcileFxStates(fx: FunctionObject, rt: FxRuntime, t: Double, fxLocalT: Double) {
+        val visible = fxLocalT >= 0 && (fx.duration <= 0 || fxLocalT < fx.duration)
+        val cx = fx.center[0]; val cy = fx.center[1]; val cz = fx.center[2]
+        // 整体变换 / 自转 / 公转 / op 增量 每 tick 只算一次（与粒子序号无关）
+        val sx = scalarAt("spin.x", "f:" + fx.id, t, 0.0)
+        val sy = scalarAt("spin.y", "f:" + fx.id, t, 0.0)
+        val sz = scalarAt("spin.z", "f:" + fx.id, t, 0.0)
+        val hasSpin = sx != 0.0 || sy != 0.0 || sz != 0.0
+        val spinPivot = Vec3(cx, cy, cz)
+        val spin = doubleArrayOf(sx, sy, sz)
+        val rx = scalarAt("rot.x", "f:" + fx.id, t, 0.0)
+        val ry = scalarAt("rot.y", "f:" + fx.id, t, 0.0)
+        val rz = scalarAt("rot.z", "f:" + fx.id, t, 0.0)
+        val hasRot = rx != 0.0 || ry != 0.0 || rz != 0.0
+        val orbitPivot = orbitCenterAt("f:" + fx.id, t)
+        val rot = doubleArrayOf(rx, ry, rz)
+        val dx = opDeltaAt("pos.x", "f:" + fx.id, t)
+        val dy = opDeltaAt("pos.y", "f:" + fx.id, t)
+        val dz = opDeltaAt("pos.z", "f:" + fx.id, t)
+
+        val newIds = HashSet<String>()
+        for (particle in rt.particles) {
+            val host = particle as FxRuntime.FxParticleHost
+            val id = fx.id + ":p" + host.index
+            newIds.add(id)
+            derivedHosts[id] = host
+            val s = states.getOrPut(id) {
+                ParticleState(id, Vec3.ZERO, Color.WHITE, floatArrayOf(1f, 1f, 1f), false, 0, null, visible = true)
+            }
+            var pos = Vec3(host.pos[0] + cx, host.pos[1] + cy, host.pos[2] + cz)
+            if (hasSpin) pos = if (fx.spinLocal) rotateAroundLocal(pos, spinPivot, spin) else rotateAround(pos, spinPivot, spin)
+            // pos op 位移必须先于公转：函数对象的实际世界位置应绕公转中心旋转。
+            pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
+            if (hasRot) pos = if (fx.rotLocal) rotateAroundLocalOrbit(pos, orbitPivot, rot, spin, fx.spinLocal) else rotateAround(pos, orbitPivot, rot)
+            s.pos = origin.add(pos)
+            s.color = applyEntrance(
+                Color.of(
+                    host.color[0].coerceIn(0.0, 1.0).toFloat(),
+                    host.color[1].coerceIn(0.0, 1.0).toFloat(),
+                    host.color[2].coerceIn(0.0, 1.0).toFloat(),
+                    host.color[3].coerceIn(0.0, 1.0).toFloat(),
+                ),
+                fx.ent, fxLocalT,
+            )
+            val base = if (host.scale.isFinite()) host.scale else 1.0
+            s.scale = fxScale(fx.id, base, t)
+            s.glowing = host.glow
+            s.lightLevel = host.light.toInt().coerceIn(0, 15)
+            s.visible = visible
+        }
+        // 删除已消失（被 kill / 重建后未再 spawn）的派生粒子状态
+        val oldIds = derivedByFx[fx.id] ?: emptySet()
+        for (id in oldIds) {
+            if (id !in newIds) {
+                states.remove(id)
+                derivedHosts.remove(id)
+            }
+        }
+        derivedByFx[fx.id] = newIds
     }
 
     /** 入场预设的 alpha 系数（仅 fade：localT ∈ [0,dur) 线性 0→1）；其余/超窗恒 1。 */
@@ -574,56 +696,6 @@ class ClientAnimationPlayer(
         return a.value + (b.value - a.value) * e
     }
 
-    /** 每个函数对象每 tick 只算一次：uv 网格列数/行数（避免逐粒子 sqrt/ceil）。 */
-    private fun uvGrid(fx: FunctionObject, n: Double): Pair<Double, Double> {
-        val grid = fx.vars["grid_cols"]
-        val base = grid?.base
-        val C = if (base != null && base.isFinite()) max(1.0, base.roundToInt().toDouble()) else ceil(sqrt(n))
-        val R = max(1.0, ceil(n / C))
-        return C to R
-    }
-
-    private fun lifeAt(fx: FunctionObject, t: Double): Double {
-        val dur = fx.duration
-        if (dur <= 0) return 0.0
-        val st = fx.st
-        return ((t - st) / dur).coerceIn(0.0, 1.0)
-    }
-
-    private fun evalScriptParticle(
-        fx: FunctionObject,
-        st: FxScriptState,
-        statics: MutableMap<String, Any?>,
-        i: Int,
-        n: Double,
-        t: Double,
-        dt: Double,
-        vars: Map<String, Double>,
-        grid: Pair<Double, Double>,
-        ctx: ScriptRuntime.ProcessCtx,
-    ): Six<Vec3, Color, FloatArray, Boolean, Int, Double> {
-        val C = grid.first
-        val R = grid.second
-        val ii = i.toDouble()
-        ctx.i = ii
-        ctx.n = n
-        ctx.t = t
-        ctx.dt = dt
-        ctx.life = lifeAt(fx, t)
-        ctx.uv_x = if (C == 1.0) 0.0 else (ii % C) / (C - 1.0)
-        ctx.uv_y = if (R == 1.0) 0.0 else floor(ii / C) / (R - 1.0)
-        val out = st.executor.eval(statics, ctx)
-        val center = fx.center
-        val clamp01 = { v: Double -> v.coerceIn(0.0, 1.0) }
-        val pos = Vec3(out.pos[0] + center[0], out.pos[1] + center[1], out.pos[2] + center[2])
-        val color = Color.of(clamp01(out.color[0]).toFloat(), clamp01(out.color[1]).toFloat(), clamp01(out.color[2]).toFloat(), clamp01(out.color[3]).toFloat())
-        val s = if (out.scale.isFinite()) out.scale.toFloat().coerceAtLeast(0.01f) else 1f
-        val scale = floatArrayOf(s, s, s)
-        val light = out.light.toInt().coerceIn(0, 15)
-        val life = if (out.life.isFinite()) out.life else -1.0
-        return Six(pos, color, scale, out.glow, light, life)
-    }
-
     private fun compPr(prop: String, comp: String): String = if (comp.isEmpty()) prop else prop + "." + comp
 
     private fun findTrackByPr(pr: String, id: String): AnimTrack? = trackIndex[pr]?.get(id)
@@ -656,8 +728,6 @@ class ClientAnimationPlayer(
         if (tr.mode != AnimTrack.Mode.OP || tr.keyframes.isEmpty()) return 0.0
         return trackValueAt(tr, t, 0.0)
     }
-
-    private fun particleFunction(id: String): FunctionObject? = particleFxCache[id]
 
     private fun findSetTrackFor(id: String, prop: String, comp: String): AnimTrack? {
         val pr = compPr(prop, comp)
@@ -949,6 +1019,4 @@ class ClientAnimationPlayer(
         return pivot.add(forwardSpin(rotated, spin, spinLocal))
     }
 
-    private data class Five<A, B, C, D, E>(val first: A, val second: B, val third: C, val fourth: D, val fifth: E)
-    private data class Six<A, B, C, D, E, F>(val first: A, val second: B, val third: C, val fourth: D, val fifth: E, val sixth: F)
-}
+    }

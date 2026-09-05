@@ -36,23 +36,16 @@ class FunctionObject(
     val id: String,
     val name: String,
     val center: DoubleArray,
-    val count: Int,
-    val setup: String,
-    val process: String,
-    val funcs: String = "",
+    val source: String,
     val seed: Int,
     val vars: Map<String, FunctionVar>,
     val duration: Int,
-    val step: Int,
     val uv: UvData? = null,
     val st: Int = 0,
     val ent: Entrance? = null,
     val fastMath: Boolean = false,
     val spinLocal: Boolean = false,
     val rotLocal: Boolean = false,
-    val tick: String = "",
-    val processParam: String = "delta",
-    val source: String = ""
 )
 
 /**

@@ -33,13 +33,11 @@ class AnimationBuilderTest {
             }
             function {
                 id = "fx0"
-                count = 8
                 center = Vec3(0.0, 10.0, 0.0)
                 duration = 100
                 seed = 3
                 variable("rad", 4.0)
-                setup("global a = [];")
-                process("this.position = vec3(0,0,0);")
+                source = "func setup() { global a = []; }\nfunc process(delta) { p = this.spawn(); p.position = vec3(0,0,0); }"
             }
         }
 
@@ -62,10 +60,10 @@ class AnimationBuilderTest {
         assertEquals(1, model.functions.size)
         val fx = model.functions[0]
         assertEquals("fx0", fx.id)
-        assertEquals(8, fx.count)
         assertEquals(100, fx.duration)
         assertEquals(3, fx.seed)
         assertEquals(4.0, fx.vars["rad"]?.base ?: -1.0)
+        assertTrue(fx.source.contains("func process(delta)"))
     }
 
     @Test
@@ -79,10 +77,9 @@ class AnimationBuilderTest {
                 t.pr("pos.x").mode(AnimTrack.Mode.SET).ids("p0").keyframe(0, 0.0, EasingType.LINEAR)
             }
             .function { f ->
-                f.id("fx0").count(8).center(0, 10, 0).duration(100).seed(3)
+                f.id("fx0").center(0, 10, 0).duration(100).seed(3)
                     .variable("rad", 4.0)
-                    .setup("global a = [];")
-                    .process("this.position = vec3(0,0,0);")
+                    .source("func setup() { global a = []; }\nfunc process(delta) { p = this.spawn(); p.position = vec3(0,0,0); }")
             }
             .group("g0", "p0")
             .groupSpinSpace("g0", true)

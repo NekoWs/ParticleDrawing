@@ -23,6 +23,29 @@ data class Mat4(val m: List<List<Double>>)
 /** 用户函数值（闭包按顶层函数名查找）。 */
 data class FuncVal(val name: String)
 
+/** 宿主侧粒子存储接口：spawn 运行时把粒子句柄桥接到此接口（编辑器 w 对象）。 */
+interface ParticleHost {
+    val index: Int
+    val pos: DoubleArray
+    val color: DoubleArray
+    val vel: DoubleArray
+    var scale: Double
+    var glow: Boolean
+    var light: Double
+    var life: Double
+    val fields: MutableMap<String, Any?>
+    fun kill()
+}
+
+/** 粒子句柄（v12 spawn 模型）。 */
+class ParticleValue(val host: ParticleHost)
+
+/** 粒子列表（this.particles）。 */
+class ParticleListValue(val hosts: MutableList<ParticleHost>) {
+    val size: Int get() = hosts.size
+    fun get(i: Int): ParticleValue = ParticleValue(hosts[i])
+}
+
 // ---- 值类型判定 ----
 
 fun isNum(v: Any?): Boolean = v is Double
@@ -32,6 +55,8 @@ fun isVec(v: Any?): Boolean = v is Vec2 || v is Vec3 || v is Vec4
 fun isMat(v: Any?): Boolean = v is Mat3 || v is Mat4
 fun isArray(v: Any?): Boolean = v is MutableList<*>
 fun isFunc(v: Any?): Boolean = v is FuncVal
+fun isParticle(v: Any?): Boolean = v is ParticleValue
+fun isParticleList(v: Any?): Boolean = v is ParticleListValue
 
 fun vecDim(v: Any): Int = when (v) {
     is Vec2 -> 2
@@ -66,6 +91,8 @@ fun typeName(v: Any?): String = when {
     v is Mat3 -> "mat3"
     v is Mat4 -> "mat4"
     v is FuncVal -> "func"
+    v is ParticleValue -> "particle"
+    v is ParticleListValue -> "particleList"
     else -> "unknown"
 }
 

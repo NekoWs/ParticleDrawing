@@ -22,15 +22,11 @@ class FxDurationGatingTest {
             id = "fx0",
             name = "fx0",
             center = doubleArrayOf(0.0, 0.0, 0.0),
-            count = 1,
-            setup = "",
-            process = "this.position = [this.index, 0, 0];",
-            funcs = "",
+            source = "func setup() { this.spawn(); }\nfunc process(delta) { for (const p of this.particles) { p.position = [p.index, 0, 0]; } }",
             seed = 0,
             // 变量关键帧把 maxTick 撑到 100，避免动画在 duration 处提前结束，便于观测时长门控。
             vars = mapOf("k" to FunctionVar(0.0, listOf(Keyframe(100.0, 0.0, EasingType.LINEAR)))),
             duration = duration,
-            step = 5,
         )
         return ParticleAnimation(
             loop = true,

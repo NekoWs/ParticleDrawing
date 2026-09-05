@@ -59,14 +59,10 @@ class ParticleAnimationCodecTest {
         val fx = FunctionObject(
             id = "fx0", name = "fx0",
             center = doubleArrayOf(0.0, 1.0, 2.0),
-            count = 4,
-            setup = "global a = [];",
-            process = "this.position = vec3(0,0,0);",
-            funcs = "func f(n) { return n; }",
+            source = "func setup() { global a = []; }\nfunc process(delta) { p = this.spawn(); p.position = vec3(0,0,0); }\nfunc f(n) { return n; }",
             seed = 7,
             vars = linkedMapOf("rad" to FunctionVar(3.0, listOf(Keyframe(0.0, 1.0, EasingType.LINEAR)))),
             duration = 100,
-            step = 1,
             uv = UvData(
                 "tex", UvData.Mode.FILL,
                 intArrayOf(4, 4), intArrayOf(0, 0), intArrayOf(4, 4), intArrayOf(0, 0),
@@ -144,15 +140,13 @@ class ParticleAnimationCodecTest {
         val fx = decoded.functions[0]
         assertEquals("fx0", fx.id)
         assertEquals(listOf(0.0, 1.0, 2.0), fx.center.toList())
-        assertEquals(4, fx.count)
-        assertEquals("global a = [];", fx.setup)
-        assertEquals("this.position = vec3(0,0,0);", fx.process)
-        assertEquals("func f(n) { return n; }", fx.funcs)
+        assertTrue(fx.source.contains("func setup()"))
+        assertTrue(fx.source.contains("func process(delta)"))
+        assertTrue(fx.source.contains("func f(n)"))
         assertEquals(7, fx.seed)
         assertEquals(3.0, fx.vars["rad"]?.base ?: -1.0)
         assertEquals(1, fx.vars["rad"]?.kf?.size)
         assertEquals(100, fx.duration)
-        assertEquals(1, fx.step)
         assertEquals("tex", fx.uv?.texture)
         assertEquals(5, fx.st)
         assertEquals(Entrance("fade", 2), fx.ent)

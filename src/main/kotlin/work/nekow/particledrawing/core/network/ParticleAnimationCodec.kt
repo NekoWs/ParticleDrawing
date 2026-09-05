@@ -24,7 +24,7 @@ import work.nekow.particledrawing.core.easing.EasingType
  */
 internal object ParticleAnimationCodec {
 
-    const val VERSION = 2
+    const val VERSION = 3
 
     fun write(buf: FriendlyByteBuf, anim: ParticleAnimation) {
         buf.writeVarInt(VERSION)
@@ -199,10 +199,7 @@ internal object ParticleAnimationCodec {
         buf.writeDouble(fx.center[0])
         buf.writeDouble(fx.center[1])
         buf.writeDouble(fx.center[2])
-        buf.writeVarInt(fx.count)
-        buf.writeUtf(fx.setup)
-        buf.writeUtf(fx.process)
-        buf.writeUtf(fx.funcs)
+        buf.writeUtf(fx.source)
         buf.writeVarInt(fx.seed)
         buf.writeVarInt(fx.vars.size)
         for ((name, v) in fx.vars) {
@@ -216,7 +213,6 @@ internal object ParticleAnimationCodec {
             }
         }
         buf.writeVarInt(fx.duration)
-        buf.writeVarInt(fx.step)
         writeNullableUV(buf, fx.uv)
         buf.writeVarInt(fx.st)
         writeNullableEnt(buf, fx.ent)
@@ -229,10 +225,7 @@ internal object ParticleAnimationCodec {
         val id = buf.readUtf()
         val name = buf.readUtf()
         val center = doubleArrayOf(buf.readDouble(), buf.readDouble(), buf.readDouble())
-        val count = buf.readVarInt()
-        val setup = buf.readUtf()
-        val process = buf.readUtf()
-        val funcs = buf.readUtf()
+        val source = buf.readUtf()
         val seed = buf.readVarInt()
         val varCount = buf.readVarInt()
         val vars = LinkedHashMap<String, FunctionVar>(varCount)
@@ -247,14 +240,13 @@ internal object ParticleAnimationCodec {
             vars[varName] = FunctionVar(base, kf)
         }
         val duration = buf.readVarInt()
-        val step = buf.readVarInt()
         val uv = readNullableUV(buf)
         val st = buf.readVarInt()
         val ent = readNullableEnt(buf)
         val fastMath = buf.readBoolean()
         val spinLocal = buf.readBoolean()
         val rotLocal = buf.readBoolean()
-        return FunctionObject(id, name, center, count, setup, process, funcs, seed, vars, duration, step, uv, st, ent, fastMath, spinLocal, rotLocal)
+        return FunctionObject(id, name, center, source, seed, vars, duration, uv, st, ent, fastMath, spinLocal, rotLocal)
     }
 
     private fun writeCamera(buf: FriendlyByteBuf, cam: AnimCamera) {
