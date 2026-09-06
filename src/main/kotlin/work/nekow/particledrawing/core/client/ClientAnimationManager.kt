@@ -44,6 +44,10 @@ object ClientAnimationManager {
     @JvmStatic
     var lastLoopGameTick: Long = -1L
 
+    // TEMP 计时探针：累计 GC 耗时（毫秒）
+    private val gcBeans = java.lang.management.ManagementFactory.getGarbageCollectorMXBeans()
+    private fun gcMs(): Long = gcBeans.sumOf { it.collectionTime }
+
     // 特效资源缓存：key → .pdrawc 字节（服务端下发后驻留，重复播放不再请求）
     private val effectCache = ConcurrentHashMap<Identifier, ByteArray>()
 
@@ -320,6 +324,7 @@ object ClientAnimationManager {
         val gameTick = level.gameTime
         val toStop = mutableListOf<UUID>()
         for ((animId, entry) in entries) {
+            val gcBefore = gcMs()
             val alive = if (entry.clock != null) {
                 entry.clock.advance()
                 entry.player.tickExternal(floor(entry.clock.position).toInt())
@@ -330,14 +335,15 @@ object ClientAnimationManager {
                 entry.anchor?.resolveEntity(level)
                 // 静态动画（粒子状态恒定）跳过每刻的渲染同步；锚定播放即使静态也必须同步（锚点会动）
                 if (!entry.player.isStatic() || entry.anchor != null) {
-                    // TEMP 计时探针：回卷 tick 打印 restore/advance/sync 耗时
+                    // TEMP 计时探针：回卷 tick 打印 restore/advance/sync + GC 耗时
                     val looped = entry.player.isJustLooped()
                     val s0 = System.nanoTime()
                     sync(entry)
                     val syncNs = System.nanoTime() - s0
                     if (looped) {
                         lastLoopGameTick = gameTick
-                        println("[PD-TIMING] gameTick=$gameTick restoreNs=${entry.player.lastRestoreNanos} advanceNs=${entry.player.lastAdvanceNanos} syncNs=$syncNs states=${entry.player.currentStates().size}")
+                        val gcDelta = gcMs() - gcBefore
+                        println("[PD-TIMING] gameTick=$gameTick restoreNs=${entry.player.lastRestoreNanos} advanceNs=${entry.player.lastAdvanceNanos} syncNs=$syncNs gcMs=$gcDelta states=${entry.player.currentStates().size}")
                     }
                 }
             } else {

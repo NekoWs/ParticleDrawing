@@ -55,8 +55,9 @@ object ParticleRenderHandler {
         }
     }
 
-    // ---- TEMP 计时探针：整帧渲染耗时 + 慢帧告警 ----
+    // ---- TEMP 计时探针：整帧渲染耗时 + 帧间隔（真实掉帧）+ 慢帧告警 ----
     private var frameStartNs = 0L
+    private var lastFramePostNs = 0L
 
     @SubscribeEvent
     @JvmStatic
@@ -67,11 +68,23 @@ object ParticleRenderHandler {
     @SubscribeEvent
     @JvmStatic
     fun onRenderFramePost(event: RenderFrameEvent.Post) {
-        val ns = System.nanoTime() - frameStartNs
-        ClientParticleEngine.instance()?.lastFrameRenderNanos = ns
-        if (ns > 30_000_000L) {
+        val now = System.nanoTime()
+        val renderNs = now - frameStartNs
+        val engine = ClientParticleEngine.instance()
+        engine?.lastFrameRenderNanos = renderNs
+        if (lastFramePostNs != 0L) {
+            val gapNs = now - lastFramePostNs
+            engine?.lastFrameGapNanos = gapNs
+            // 真实帧间隔（含 tick 阻塞与 vsync 等待）：>25ms 即用户可感的掉帧
+            if (gapNs > 25_000_000L) {
+                val level = net.minecraft.client.Minecraft.getInstance().level
+                println("[PD-TIMING] frameGap gameTick=${level?.gameTime} gapNs=$gapNs renderNs=$renderNs")
+            }
+        }
+        lastFramePostNs = now
+        if (renderNs > 30_000_000L) {
             val level = net.minecraft.client.Minecraft.getInstance().level
-            println("[PD-TIMING] slowFrame gameTick=${level?.gameTime} renderNs=$ns")
+            println("[PD-TIMING] slowFrame gameTick=${level?.gameTime} renderNs=$renderNs")
         }
     }
 

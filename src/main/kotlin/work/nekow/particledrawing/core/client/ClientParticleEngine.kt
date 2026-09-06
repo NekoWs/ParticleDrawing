@@ -40,6 +40,7 @@ class ClientParticleEngine {
     // TEMP 计时探针
     var lastFrameUpdateNanos: Long = 0; private set
     var lastFrameRenderNanos: Long = 0
+    var lastFrameGapNanos: Long = 0
 
     /**
      * 生成一个新粒子并注册到原版粒子系统中。
