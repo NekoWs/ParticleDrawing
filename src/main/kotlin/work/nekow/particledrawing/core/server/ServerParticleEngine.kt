@@ -12,6 +12,7 @@ import work.nekow.particledrawing.core.network.ParticleLightLevelPayload
 import work.nekow.particledrawing.core.network.ParticleRotationPayload
 import work.nekow.particledrawing.core.network.ParticleSetPositionPayload
 import work.nekow.particledrawing.core.network.ParticleSpawnPayload
+import work.nekow.particledrawing.core.network.ParticleTrackPayload
 import work.nekow.particledrawing.core.network.ParticleTranslatePayload
 import work.nekow.particledrawing.core.network.ParticleUpdatePayload
 import work.nekow.particledrawing.core.network.ParticleVelocityPayload
@@ -136,6 +137,18 @@ class ServerParticleEngine(
         data.setVelocity(velocity)
 
         val payload = ParticleVelocityPayload(id, velocity.x, velocity.y, velocity.z)
+        sendToVisible(playersInDimension, data.position(), payload)
+    }
+
+    /**
+     * 直设粒子位置并广播（无缓动）：客户端用 partialTick 在上一位置与本位置之间插值。
+     * 供「每 tick 跟随一个非实体点」的粒子（如投射物本体）使用。
+     */
+    fun trackParticle(id: UUID, position: Vec3, playersInDimension: Collection<ServerPlayer>) {
+        val data = particles[id] ?: return
+        data.setPosition(position)
+
+        val payload = ParticleTrackPayload(id, position.x, position.y, position.z)
         sendToVisible(playersInDimension, data.position(), payload)
     }
 

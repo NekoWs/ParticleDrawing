@@ -2,8 +2,6 @@ package work.nekow.particledrawing.api
 
 import net.minecraft.resources.Identifier
 import net.minecraft.world.phys.Vec3
-import net.neoforged.api.distmarker.Dist
-import net.neoforged.api.distmarker.OnlyIn
 import work.nekow.particledrawing.animation.AnimationLoader
 import work.nekow.particledrawing.core.client.ClientAnimationManager
 import java.util.UUID
@@ -11,8 +9,9 @@ import java.util.UUID
 /**
  * 纯客户端本地特效播放入口（不经服务端、不占同步）。
  * 用于手柄/UI 等本地装饰；字节从客户端本地的 [EffectRegistry] 读取。
+ *
+ * 仅从客户端代码调用：本对象引用客户端渲染类，服务端不应加载它
  */
-@OnlyIn(Dist.CLIENT)
 object ClientEffects {
 
     /** 播放一个客户端本地注册的特效；未注册/解析失败返回 null。 */
@@ -30,8 +29,7 @@ object ClientEffects {
     }
 }
 
-/** 客户端本地播放句柄：时钟控制始终本地生效。 */
-@OnlyIn(Dist.CLIENT)
+/** 客户端本地播放句柄：时钟控制始终本地生效；仅从客户端代码调用。 */
 class ClientEffectHandle internal constructor(private val playbackId: UUID) {
 
     fun updateAnchor(pos: Vec3, velocity: Vec3): ClientEffectHandle {

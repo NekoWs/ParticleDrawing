@@ -50,6 +50,14 @@ internal object ClientPayloadHandler {
         }
     }
 
+    fun handleTrack(payload: ParticleTrackPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientParticleEngine.instance()?.trackParticle(
+                payload.particleId, payload.x, payload.y, payload.z
+            )
+        }
+    }
+
     fun handleRotation(payload: ParticleRotationPayload, context: IPayloadContext) {
         context.enqueueWork {
             ClientParticleEngine.instance()?.rotateParticle(

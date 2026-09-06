@@ -68,6 +68,23 @@ class ParticleHandle(
     }
 
     /**
+     * 直设粒子位置（无缓动、无跳变）：客户端用 partialTick 在上一位置与本位置之间插值。
+     * 供「每 tick 跟随一个非实体点」的粒子（如投射物本体）使用——位置精确且渲染丝滑，
+     * 不会像 [move] 缓动那样永远比真实位置慢一拍。
+     * @param target 目标位置
+     * @return 自身，支持链式调用
+     */
+    fun track(target: Vec3): ParticleHandle {
+        manager.getEngine().trackParticle(id, target, manager.getPlayers())
+        return this
+    }
+
+    /** [track] 的分量重载。 */
+    fun track(x: Number, y: Number, z: Number): ParticleHandle {
+        return track(Vec3(x.toDouble(), y.toDouble(), z.toDouble()))
+    }
+
+    /**
      * 获取粒子当前在服务端的速度向量。
      * @return 速度向量，不存在则返回 null
      */

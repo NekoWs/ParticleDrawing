@@ -7,8 +7,7 @@ import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.easing.EasingType
-import work.nekow.particledrawing.util.rotateAround
-import java.util.UUID
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -26,6 +25,13 @@ class ClientParticleEngine {
 
     // 发光粒子索引：增量维护，避免 getGlowingParticles 每帧遍历全部粒子
     private val glowingIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
+
+    // 带速度的运动粒子索引：每 client tick 确定性积分一次（不参与缓动轮转），
+    // 避免被缓动分批饿死导致速度粒子「时走时停」。
+    private val motionIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
+
+    // 待应用的直设位置（track 先缓冲，tick 末统一应用，避免在 tick 中间跳变产生“幻影”）
+    private val pendingTracks: MutableMap<UUID, Vec3> = ConcurrentHashMap()
 
     private var syncCursor = 0
     private var cachedIds: Array<UUID> = emptyArray()
@@ -95,6 +101,7 @@ class ClientParticleEngine {
                        durationTicks: Int, easing: EasingType) {
         val rp = particles[id] ?: return
         directIds.remove(id)
+        if (hasPos) motionIds.remove(id) // 位置更新会把速度清零
 
         if (hasPos) {
             if (durationTicks == 0) {
@@ -191,6 +198,16 @@ class ClientParticleEngine {
     fun setVelocity(id: UUID, vx: Double, vy: Double, vz: Double) {
         directIds.remove(id)
         particles[id]?.setVelocity(Vec3(vx, vy, vz))
+        if (vx != 0.0 || vy != 0.0 || vz != 0.0) motionIds.add(id) else motionIds.remove(id)
+    }
+
+    /**
+     * 直设粒子位置（无缓动、无跳变）：先缓冲，tick 末统一把桥接粒子的 xo 设为上一位置、
+     * x 设为目标，由原版渲染按 partialTick 在两者间插值。供「每 tick 跟随一个非实体点」的
+     * 粒子使用——位置精确且渲染丝滑，且不会因中途写入 xo/x 造成跳变/幻影。
+     */
+    fun trackParticle(id: UUID, x: Double, y: Double, z: Double) {
+        pendingTracks[id] = Vec3(x, y, z)
     }
 
     /**
@@ -201,6 +218,7 @@ class ClientParticleEngine {
                        rx: Double, ry: Double, rz: Double,
                        durationTicks: Int, easing: EasingType) {
         directIds.remove(id)
+        motionIds.remove(id) // 旋转指令会把速度清零
         particles[id]?.setRotation(
             Vec3(px, py, pz), Vec3(ox, oy, oz),
             doubleArrayOf(rx, ry, rz), easing, durationTicks * 50L
@@ -215,6 +233,7 @@ class ClientParticleEngine {
                           tx: Double, ty: Double, tz: Double,
                           durationTicks: Int, easing: EasingType) {
         directIds.remove(id)
+        motionIds.remove(id) // 平移指令会把速度清零
         particles[id]?.setTranslation(
             Vec3(px, py, pz), Vec3(ox, oy, oz),
             Vec3(tx, ty, tz), easing, durationTicks * 50L
@@ -228,6 +247,7 @@ class ClientParticleEngine {
                     ox: Double, oy: Double, oz: Double,
                     durationTicks: Int, easing: EasingType) {
         directIds.remove(id)
+        motionIds.remove(id) // 组 set 位置轨道会把速度清零
         particles[id]?.setPositionSet(
             Vec3(px, py, pz), Vec3(ox, oy, oz), easing, durationTicks * 50L
         )
@@ -252,6 +272,8 @@ class ClientParticleEngine {
             bridges.remove(id)?.remove()
             directIds.remove(id)
             glowingIds.remove(id)
+            motionIds.remove(id)
+            pendingTracks.remove(id)
         }
         for (gms in groups.values) {
             for (id in ids) gms.remove(id)
@@ -262,7 +284,12 @@ class ClientParticleEngine {
      * 每帧更新：驱动粒子缓动并同步到桥接粒子。
      */
     fun frameUpdate() {
-        syncParticlesInBatches(emptySet())
+        // 先统一应用本 tick 缓冲的直设位置（track）
+        flushTracks()
+        // 再确定性推进带速度的运动粒子（每 tick 一次，不参与缓动轮转）
+        syncMotionParticles()
+        // 其余粒子走公平轮转的缓动同步
+        syncParticlesInBatches(motionIds)
 
         val deadIds = ArrayList<UUID>()
         val it = particles.entries.iterator()
@@ -271,6 +298,8 @@ class ClientParticleEngine {
             if (entry.value.isDead()) {
                 val id = entry.key
                 bridges.remove(id)?.remove()
+                motionIds.remove(id)
+                pendingTracks.remove(id)
                 deadIds.add(id)
                 it.remove()
             }
@@ -282,6 +311,59 @@ class ClientParticleEngine {
         }
 
         groups.values.removeIf { it.isEmpty() }
+    }
+
+    /**
+     * 把本 tick 缓冲的 track 位置统一应用到桥接粒子：xo = 上一位置、x = 目标，
+     * 之后原版渲染按 partialTick 平滑插值。统一在 tick 末应用，避免在 tick 中间
+     * 写入 xo/x 造成位置跳变（表现为前方闪出的幻影粒子）。
+     */
+    private fun flushTracks() {
+        if (pendingTracks.isEmpty()) return
+        val entries = ArrayList(pendingTracks.entries)
+        pendingTracks.clear()
+        for ((id, pos) in entries) {
+            val rp = particles[id] ?: continue
+            directIds.add(id) // 直接定位，跳过缓动轮转与运动积分
+            motionIds.remove(id)
+            rp.setPositionDirect(pos)
+            bridges[id]?.syncPosition(pos.x, pos.y, pos.z, snap = false)
+        }
+    }
+
+    /**
+     * 每 tick 确定性推进所有带速度的粒子：速度积分对时间敏感，不能走
+     * 缓动轮转（轮转在粒子数超过批大小时会随机饿死部分粒子，表现为时走时停）。
+     */
+    private fun syncMotionParticles() {
+        if (motionIds.isEmpty()) return
+        val it = motionIds.iterator()
+        while (it.hasNext()) {
+            val id = it.next()
+            val rp = particles[id]
+            if (rp == null) {
+                it.remove()
+                continue
+            }
+            if (id in directIds) continue // 已被动画直接接管
+            if (rp.velocity().lengthSqr() == 0.0) {
+                it.remove()
+                continue
+            }
+            val wasSnap = rp.consumeSnap()
+            rp.tick()
+            val bp = bridges[id]
+            if (bp != null) {
+                bp.syncPosition(rp.x(), rp.y(), rp.z(), wasSnap)
+                bp.syncColor(rp.r(), rp.g(), rp.b(), rp.a())
+                val sa = rp.scaleArray()
+                if (sa[0] != sa[1] || sa[0] != sa[2]) {
+                    bp.syncScaleArray(sa)
+                } else {
+                    bp.syncScale(rp.scale())
+                }
+            }
+        }
     }
 
     /**

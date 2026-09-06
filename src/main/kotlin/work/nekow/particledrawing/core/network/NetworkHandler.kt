@@ -26,6 +26,7 @@ object NetworkHandler {
         registrar.playToClient(SetProgramVarPayload.TYPE, SetProgramVarPayload.STREAM_CODEC, ClientPayloadHandler::handleSetProgramVar)
         registrar.playToClient(StopAnimationProgramPayload.TYPE, StopAnimationProgramPayload.STREAM_CODEC, ClientPayloadHandler::handleStopProgram)
         registrar.playToClient(ParticleVelocityPayload.TYPE, ParticleVelocityPayload.STREAM_CODEC, ClientPayloadHandler::handleVelocity)
+        registrar.playToClient(ParticleTrackPayload.TYPE, ParticleTrackPayload.STREAM_CODEC, ClientPayloadHandler::handleTrack)
         registrar.playToClient(ParticleRotationPayload.TYPE, ParticleRotationPayload.STREAM_CODEC, ClientPayloadHandler::handleRotation)
         registrar.playToClient(ParticleTranslatePayload.TYPE, ParticleTranslatePayload.STREAM_CODEC, ClientPayloadHandler::handleTranslate)
         registrar.playToClient(ParticleSetPositionPayload.TYPE, ParticleSetPositionPayload.STREAM_CODEC, ClientPayloadHandler::handleSetPosition)
