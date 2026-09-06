@@ -189,6 +189,84 @@ class ClientAnimationPlayer(
             particles.add(host)
             return host
         }
+
+        // ---- 循环回卷快照：首圈进入活动窗口首个 tick（cursor == st）、process 执行前捕获；
+        //      回卷时恢复，避免重新 setup / 重建粒子造成的顿挫，并保证 rand/global 确定性。 ----
+        var loopSnapshot: LoopSnapshot? = null
+
+        class LoopSnapshot(
+            val particles: List<HostSnapshot>,
+            val spawnSerial: Int,
+            val tickCursor: Double,
+            val curTick: Double,
+            val globals: Map<String, Any?>,
+            val randState: Int,
+        )
+
+        class HostSnapshot(
+            val index: Int,
+            val spawnTick: Double,
+            val pos: DoubleArray,
+            val color: DoubleArray,
+            val vel: DoubleArray,
+            val scale: Double,
+            val glow: Boolean,
+            val light: Double,
+            val life: Double,
+            val fields: Map<String, Any?>,
+        )
+
+        fun captureLoopSnapshot() {
+            loopSnapshot = LoopSnapshot(
+                particles = particles.map { h ->
+                    val p = h as FxParticleHost
+                    HostSnapshot(
+                        index = p.index,
+                        spawnTick = p.spawnTick,
+                        pos = p.pos.copyOf(),
+                        color = p.color.copyOf(),
+                        vel = p.vel.copyOf(),
+                        scale = p.scale,
+                        glow = p.glow,
+                        light = p.light,
+                        life = p.life,
+                        fields = HashMap<String, Any?>().also { out ->
+                            for ((k, v) in p.fields) out[k] = deepCopyScriptValue(v)
+                        },
+                    )
+                },
+                spawnSerial = spawnSerial,
+                tickCursor = tickCursor,
+                curTick = curTick,
+                globals = HashMap<String, Any?>().also { out ->
+                    for ((k, v) in objState.globals) out[k] = deepCopyScriptValue(v)
+                },
+                randState = objState.rand.a,
+            )
+        }
+
+        fun restoreLoopSnapshot() {
+            val s = loopSnapshot ?: return
+            particles.clear()
+            for (hs in s.particles) {
+                val host = FxParticleHost(hs.index, hs.spawnTick)
+                hs.pos.copyInto(host.pos)
+                hs.color.copyInto(host.color)
+                hs.vel.copyInto(host.vel)
+                host.scale = hs.scale
+                host.glow = hs.glow
+                host.light = hs.light
+                host.life = hs.life
+                for ((k, v) in hs.fields) host.fields[k] = deepCopyScriptValue(v)
+                particles.add(host)
+            }
+            spawnSerial = s.spawnSerial
+            tickCursor = s.tickCursor
+            curTick = s.curTick
+            objState.globals.clear()
+            for ((k, v) in s.globals) objState.globals[k] = deepCopyScriptValue(v)
+            objState.rand.a = s.randState
+        }
     }
 
     private val fxRuntimes: MutableMap<String, FxRuntime?> = buildFxRuntimes()
@@ -222,6 +300,10 @@ class ClientAnimationPlayer(
         rt.spawnSerial = 0
         rt.tickCursor = floor(fx.st.toDouble()) - 1
         rt.curTick = fx.st.toDouble()
+        // 与编辑器一致：向后 seek 重建 objState（fresh globals + fresh PRNG），
+        // 避免 setup 反复在脏 global / 已推进的 rand 状态上叠加导致漂移。
+        rt.objState.globals.clear()
+        rt.objState.rand.a = fx.seed
         try {
             ScriptRuntime.runSpawnSetup(rt.program, rt.objState, makeCtx(fx, rt, fx.st.toDouble(), 0.0))
         } catch (e: Exception) {
@@ -345,7 +427,10 @@ class ClientAnimationPlayer(
         }
         val target = AnimationProgress.tickAt(elapsed, maxTick, animation.loop)
         if (target != currentTick) {
-            if (target < currentTick) justLooped = true // 循环回卷（st 门控粒子在 sync 中重新生成）
+            if (target < currentTick) {
+                justLooped = true // 循环回卷（st 门控粒子在 sync 中重新生成）
+                if (!isStaticAnimation) restoreLoopStart()
+            }
             currentTick = target
             if (!isStaticAnimation) {
                 val t0 = System.nanoTime()
@@ -376,7 +461,10 @@ class ClientAnimationPlayer(
         else if (animation.loop) ((targetTick % max) + max) % max
         else minOf(targetTick, max - 1)
         if (target != currentTick) {
-            if (target < currentTick && animation.loop) justLooped = true
+            if (target < currentTick && animation.loop) {
+                justLooped = true
+                if (!isStaticAnimation) restoreLoopStart()
+            }
             currentTick = target
             if (!isStaticAnimation) advanceTo(target.toDouble())
         }
@@ -386,6 +474,11 @@ class ClientAnimationPlayer(
     fun isFinished(): Boolean = finished
     fun consumeJustLooped(): Boolean { val v = justLooped; justLooped = false; return v }
     fun isStatic(): Boolean = isStaticAnimation
+
+    /** 循环回卷：把函数对象运行时恢复到循环起点快照，避免重新 setup / 重建粒子。 */
+    private fun restoreLoopStart() {
+        for (rt in fxRuntimes.values) rt?.restoreLoopSnapshot()
+    }
 
     private fun usesRandom(fx: FunctionObject): Boolean =
         Regex("\\brandom\\s*\\(").containsMatchIn(fx.source) || Regex("\\brand\\s*\\(").containsMatchIn(fx.source)
@@ -592,6 +685,11 @@ class ClientAnimationPlayer(
                         println("[pdrawc] 函数对象 ${fx.id} tick 求值失败：${e.message}")
                         break
                     }
+                }
+                // 捕获循环起点快照：loop 动画首圈、恰在活动窗口首个 tick（cursor == st）、process 执行前。
+                // 回卷时用 restoreLoopSnapshot 恢复，避免重新 setup / 重建粒子造成的顿挫。
+                if (animation.loop && rt.loopSnapshot == null && rt.tickCursor == st) {
+                    rt.captureLoopSnapshot()
                 }
             }
 
@@ -1046,3 +1144,18 @@ class ClientAnimationPlayer(
     }
 
     }
+
+/** 深拷贝脚本值（global / 粒子自定义字段）：数组递归拷贝；其余值类型（标量/向量/矩阵/函数）视为不可变。 */
+private fun deepCopyScriptValue(v: Any?): Any? = when (v) {
+    is MutableList<*> -> {
+        val out = ArrayList<Any?>(v.size)
+        for (x in v) out.add(deepCopyScriptValue(x))
+        out
+    }
+    is Map<*, *> -> {
+        val out = HashMap<String, Any?>()
+        for ((k, x) in v) out[k as String] = deepCopyScriptValue(x)
+        out
+    }
+    else -> v
+}

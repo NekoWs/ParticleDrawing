@@ -40,7 +40,7 @@ object ScriptRuntime {
 
     class ObjectState(
         val globals: MutableMap<String, Any?>,
-        val rand: () -> Double,
+        val rand: RandState,
         val seed: Int,
     )
 
@@ -100,7 +100,7 @@ object ScriptRuntime {
         var print: (String) -> Unit = {},
     )
 
-    fun createObjectState(seed: Int): ObjectState = ObjectState(HashMap(), mulberry32(seed), seed)
+    fun createObjectState(seed: Int): ObjectState = ObjectState(HashMap(), RandState(seed), seed)
 
     fun runSpawnSetup(program: ScriptProgram, obj: ObjectState, ctx: ScriptCtx) {
         val rt = Runtime("setup", program, obj, ctx, null)
@@ -942,7 +942,7 @@ object ScriptRuntime {
                 "mod" -> { val x = num(args[0], "mod", n); val y = num(args[1], "mod", n); x - y * floor(x / y) }
                 "noise" -> noise3D(num(args[0], "noise", n), num(args[1], "noise", n), num(args[2], "noise", n), if (args.size > 3) int(args[3], "noise seed", n) else seed)
                 "fbm" -> fbm(num(args[0], "fbm", n), num(args[1], "fbm", n), num(args[2], "fbm", n), int(args[3], "fbm octaves", n), if (args.size > 4) int(args[4], "fbm seed", n) else seed)
-                "rand" -> if (args.isEmpty()) objState.rand() else mulberry32(int(args[0], "rand seed", n))()
+                "rand" -> if (args.isEmpty()) objState.rand.next() else RandState(int(args[0], "rand seed", n)).next()
                 "random" -> kotlin.random.Random.nextDouble()
                 "ease_linear" -> { val a = num(args[0], "ease", n); val b = num(args[1], "ease", n); val t = num(args[2], "ease", n); a + (b - a) * t }
                 "ease_in_out" -> { val a = num(args[0], "ease", n); val b = num(args[1], "ease", n); val t = num(args[2], "ease", n).coerceIn(0.0, 1.0); a + (b - a) * t * t * (3 - 2 * t) }

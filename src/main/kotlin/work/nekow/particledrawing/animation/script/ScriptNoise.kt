@@ -10,16 +10,25 @@ import kotlin.math.floor
  * 打乱的 [0..255] 排列表，最后 clamp 到 [-1,1]。
  */
 
-/** 标准 mulberry32：返回无参函数，每次推进并返回 [0,1)。state 为 32 位有符号 Int。 */
-fun mulberry32(seed: Int): () -> Double {
-    var a = seed
-    return {
+/**
+ * mulberry32 随机数生成器状态（32 位有符号 Int）。
+ * 暴露内部状态 [a] 以便快照/恢复：循环回卷时把函数对象运行时恢复到循环起点，
+ * 与编辑器「向后 seek 重建 objState」的确定性保持一致。
+ */
+class RandState(var a: Int) {
+    fun next(): Double {
         a += 0x6D2B79F5
         var t = (a xor (a ushr 15)) * (1 or a)
         t = (t + (t xor (t ushr 7)) * (61 or t)) xor t
         val r = t xor (t ushr 14)
-        ((r.toLong() and 0xffffffffL).toDouble() / 4294967296.0)
+        return (r.toLong() and 0xffffffffL).toDouble() / 4294967296.0
     }
+}
+
+/** 标准 mulberry32：返回无参函数，每次推进并返回 [0,1)。state 为 32 位有符号 Int。 */
+fun mulberry32(seed: Int): () -> Double {
+    val r = RandState(seed)
+    return { r.next() }
 }
 
 private val GRAD3 = arrayOf(
