@@ -190,9 +190,12 @@ class ClientAnimationPlayer(
             return host
         }
 
-        // ---- 循环回卷快照：首圈进入活动窗口首个 tick（cursor == st）、process 执行前捕获；
-        //      回卷时恢复，避免重新 setup / 重建粒子造成的顿挫，并保证 rand/global 确定性。 ----
+        // ---- 循环回卷快照：避免回卷时重新 setup / 重建粒子造成顿挫，并保证 rand/global 确定性。 ----
+        // loopSnapshot：process 前（首圈活动窗口首个 tick、cursor == st）捕获，供一般向后 seek 正向补跑。
+        // loopDoneSnapshot：process 后（t == st）捕获，供回卷恰好落在 st 时直接恢复并跳过 process。
         var loopSnapshot: LoopSnapshot? = null
+        var loopDoneSnapshot: LoopSnapshot? = null
+        var skipProcessOnce = false
 
         class LoopSnapshot(
             val particles: List<HostSnapshot>,
@@ -216,40 +219,65 @@ class ClientAnimationPlayer(
             val fields: Map<String, Any?>,
         )
 
+        private fun buildSnapshot(): LoopSnapshot = LoopSnapshot(
+            particles = particles.map { h ->
+                val p = h as FxParticleHost
+                HostSnapshot(
+                    index = p.index,
+                    spawnTick = p.spawnTick,
+                    pos = p.pos.copyOf(),
+                    color = p.color.copyOf(),
+                    vel = p.vel.copyOf(),
+                    scale = p.scale,
+                    glow = p.glow,
+                    light = p.light,
+                    life = p.life,
+                    fields = HashMap<String, Any?>().also { out ->
+                        for ((k, v) in p.fields) out[k] = deepCopyScriptValue(v)
+                    },
+                )
+            },
+            spawnSerial = spawnSerial,
+            tickCursor = tickCursor,
+            curTick = curTick,
+            globals = HashMap<String, Any?>().also { out ->
+                for ((k, v) in objState.globals) out[k] = deepCopyScriptValue(v)
+            },
+            randState = objState.rand.a,
+        )
+
         fun captureLoopSnapshot() {
-            loopSnapshot = LoopSnapshot(
-                particles = particles.map { h ->
-                    val p = h as FxParticleHost
-                    HostSnapshot(
-                        index = p.index,
-                        spawnTick = p.spawnTick,
-                        pos = p.pos.copyOf(),
-                        color = p.color.copyOf(),
-                        vel = p.vel.copyOf(),
-                        scale = p.scale,
-                        glow = p.glow,
-                        light = p.light,
-                        life = p.life,
-                        fields = HashMap<String, Any?>().also { out ->
-                            for ((k, v) in p.fields) out[k] = deepCopyScriptValue(v)
-                        },
-                    )
-                },
-                spawnSerial = spawnSerial,
-                tickCursor = tickCursor,
-                curTick = curTick,
-                globals = HashMap<String, Any?>().also { out ->
-                    for ((k, v) in objState.globals) out[k] = deepCopyScriptValue(v)
-                },
-                randState = objState.rand.a,
-            )
+            loopSnapshot = buildSnapshot()
         }
 
-        fun restoreLoopSnapshot() {
-            val s = loopSnapshot ?: return
+        fun captureLoopDoneSnapshot() {
+            loopDoneSnapshot = buildSnapshot()
+        }
+
+        /** 按目标 tick 恢复循环起点：目标恰为 st 时用 process 后快照并跳过 process；否则用 process 前快照正向补跑。 */
+        fun restoreForLoopStart(targetT: Double) {
+            val st = fx.st.toDouble()
+            val done = loopDoneSnapshot
+            if (done != null && targetT == st) {
+                applySnapshot(done)
+                skipProcessOnce = true
+            } else {
+                loopSnapshot?.let { applySnapshot(it) }
+            }
+        }
+
+        private fun applySnapshot(s: LoopSnapshot) {
+            // 原地恢复：按 index 复用本圈仍存活的句柄，只回写字段；
+            // 避免每圈全量重新分配粒子句柄（每个句柄还带 3 个 DoubleArray + fields Map）造成 GC 顿挫。
+            val aliveByIndex = HashMap<Int, FxParticleHost>(particles.size)
+            for (h in particles) {
+                val host = h as FxParticleHost
+                aliveByIndex[host.index] = host
+            }
             particles.clear()
             for (hs in s.particles) {
-                val host = FxParticleHost(hs.index, hs.spawnTick)
+                val host = aliveByIndex.remove(hs.index) ?: FxParticleHost(hs.index, hs.spawnTick)
+                host.spawnTick = hs.spawnTick
                 hs.pos.copyInto(host.pos)
                 hs.color.copyInto(host.color)
                 hs.vel.copyInto(host.vel)
@@ -257,9 +285,12 @@ class ClientAnimationPlayer(
                 host.glow = hs.glow
                 host.light = hs.light
                 host.life = hs.life
+                host.alive = true
+                host.fields.clear()
                 for ((k, v) in hs.fields) host.fields[k] = deepCopyScriptValue(v)
                 particles.add(host)
             }
+            // aliveByIndex 剩余的是本圈额外 spawn / 已被 kill 的句柄，不再入列，自然丢弃。
             spawnSerial = s.spawnSerial
             tickCursor = s.tickCursor
             curTick = s.curTick
@@ -429,7 +460,7 @@ class ClientAnimationPlayer(
         if (target != currentTick) {
             if (target < currentTick) {
                 justLooped = true // 循环回卷（st 门控粒子在 sync 中重新生成）
-                if (!isStaticAnimation) restoreLoopStart()
+                if (!isStaticAnimation) restoreLoopStart(target)
             }
             currentTick = target
             if (!isStaticAnimation) {
@@ -463,7 +494,7 @@ class ClientAnimationPlayer(
         if (target != currentTick) {
             if (target < currentTick && animation.loop) {
                 justLooped = true
-                if (!isStaticAnimation) restoreLoopStart()
+                if (!isStaticAnimation) restoreLoopStart(target)
             }
             currentTick = target
             if (!isStaticAnimation) advanceTo(target.toDouble())
@@ -476,8 +507,8 @@ class ClientAnimationPlayer(
     fun isStatic(): Boolean = isStaticAnimation
 
     /** 循环回卷：把函数对象运行时恢复到循环起点快照，避免重新 setup / 重建粒子。 */
-    private fun restoreLoopStart() {
-        for (rt in fxRuntimes.values) rt?.restoreLoopSnapshot()
+    private fun restoreLoopStart(target: Int) {
+        for (rt in fxRuntimes.values) rt?.restoreForLoopStart(target.toDouble())
     }
 
     private fun usesRandom(fx: FunctionObject): Boolean =
@@ -694,12 +725,19 @@ class ClientAnimationPlayer(
             }
 
             rt.curTick = t
-            if (rt.program.process.isNotEmpty()) {
+            if (rt.skipProcessOnce) {
+                rt.skipProcessOnce = false
+            } else if (rt.program.process.isNotEmpty()) {
                 try {
                     ScriptRuntime.runProcessFrame(rt.program, rt.objState, makeCtx(fx, rt, t, deltaMs))
                 } catch (e: Exception) {
                     println("[pdrawc] 函数对象 ${fx.id} process 求值失败：${e.message}")
                 }
+            }
+            // 捕获 process 后快照：loop 动画首圈、恰在活动窗口首个 tick（t == st）、process 执行后。
+            // 回卷恰好落在 st 时直接恢复该快照并跳过 process，进一步消除回卷帧的脚本求值开销。
+            if (animation.loop && rt.loopDoneSnapshot == null && t == st) {
+                rt.captureLoopDoneSnapshot()
             }
         }
         reconcileFxStates(fx, rt, t, t - fx.st)
