@@ -58,6 +58,7 @@ class ClientAnimationPlayer(
 
     // ---- 调试统计 ----
     var lastAdvanceNanos: Long = 0; private set
+    var lastRestoreNanos: Long = 0; private set   // TEMP 计时探针
     var frameCount: Long = 0; private set
     private var advanceNanosTotal = 0L
     private var advanceCount = 0L
@@ -504,11 +505,14 @@ class ClientAnimationPlayer(
 
     fun isFinished(): Boolean = finished
     fun consumeJustLooped(): Boolean { val v = justLooped; justLooped = false; return v }
+    fun isJustLooped(): Boolean = justLooped   // TEMP 计时探针
     fun isStatic(): Boolean = isStaticAnimation
 
     /** 循环回卷：把函数对象运行时恢复到循环起点快照，避免重新 setup / 重建粒子。 */
     private fun restoreLoopStart(target: Int) {
+        val t0 = System.nanoTime()
         for (rt in fxRuntimes.values) rt?.restoreForLoopStart(target.toDouble())
+        lastRestoreNanos = System.nanoTime() - t0
     }
 
     private fun usesRandom(fx: FunctionObject): Boolean =

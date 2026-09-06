@@ -37,6 +37,9 @@ class ClientParticleEngine {
     private var cachedIds: Array<UUID> = emptyArray()
     private var cachedSize = -1
 
+    // TEMP 计时探针
+    var lastFrameUpdateNanos: Long = 0; private set
+
     /**
      * 生成一个新粒子并注册到原版粒子系统中。
      * @param id 粒子唯一标识符
@@ -284,6 +287,7 @@ class ClientParticleEngine {
      * 每帧更新：驱动粒子缓动并同步到桥接粒子。
      */
     fun frameUpdate() {
+        val t0 = System.nanoTime()
         // 先统一应用本 tick 缓冲的直设位置（track）
         flushTracks()
         // 再确定性推进带速度的运动粒子（每 tick 一次，不参与缓动轮转）
@@ -311,6 +315,7 @@ class ClientParticleEngine {
         }
 
         groups.values.removeIf { it.isEmpty() }
+        lastFrameUpdateNanos = System.nanoTime() - t0
     }
 
     /**

@@ -40,6 +40,10 @@ object ClientAnimationManager {
 
     private val entries = ConcurrentHashMap<UUID, Entry>()
 
+    // TEMP 计时探针：最近一次回卷发生的 gameTick（供 frameUpdate 同 tick 打印）
+    @JvmStatic
+    var lastLoopGameTick: Long = -1L
+
     // 特效资源缓存：key → .pdrawc 字节（服务端下发后驻留，重复播放不再请求）
     private val effectCache = ConcurrentHashMap<Identifier, ByteArray>()
 
@@ -325,7 +329,17 @@ object ClientAnimationManager {
             if (alive) {
                 entry.anchor?.resolveEntity(level)
                 // 静态动画（粒子状态恒定）跳过每刻的渲染同步；锚定播放即使静态也必须同步（锚点会动）
-                if (!entry.player.isStatic() || entry.anchor != null) sync(entry)
+                if (!entry.player.isStatic() || entry.anchor != null) {
+                    // TEMP 计时探针：回卷 tick 打印 restore/advance/sync 耗时
+                    val looped = entry.player.isJustLooped()
+                    val s0 = System.nanoTime()
+                    sync(entry)
+                    val syncNs = System.nanoTime() - s0
+                    if (looped) {
+                        lastLoopGameTick = gameTick
+                        println("[PD-TIMING] gameTick=$gameTick restoreNs=${entry.player.lastRestoreNanos} advanceNs=${entry.player.lastAdvanceNanos} syncNs=$syncNs states=${entry.player.currentStates().size}")
+                    }
+                }
             } else {
                 toStop.add(animId)
             }

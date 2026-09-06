@@ -41,6 +41,12 @@ object ParticleRenderHandler {
         if (engine != null) {
             engine.frameUpdate()
             DynamicLightManager.renderDynamicLights(engine)
+            // TEMP 计时探针：回卷 tick 打印 frameUpdate 耗时（与 ClientAnimationManager 同 tick 对齐）
+            val level = net.minecraft.client.Minecraft.getInstance().level
+            if (level != null && level.gameTime == ClientAnimationManager.lastLoopGameTick) {
+                println("[PD-TIMING] gameTick=${level.gameTime} frameUpdateNs=${engine.lastFrameUpdateNanos}")
+                ClientAnimationManager.lastLoopGameTick = -1L
+            }
         }
     }
 
