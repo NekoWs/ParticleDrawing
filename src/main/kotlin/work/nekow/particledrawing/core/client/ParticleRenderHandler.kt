@@ -5,6 +5,7 @@ import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.client.event.ClientTickEvent
+import net.neoforged.neoforge.client.event.RenderFrameEvent
 import net.neoforged.neoforge.client.event.ViewportEvent
 import net.neoforged.neoforge.event.level.LevelEvent
 import net.neoforged.neoforge.event.tick.PlayerTickEvent
@@ -41,12 +42,36 @@ object ParticleRenderHandler {
         if (engine != null) {
             engine.frameUpdate()
             DynamicLightManager.renderDynamicLights(engine)
-            // TEMP 计时探针：回卷 tick 打印 frameUpdate 耗时（与 ClientAnimationManager 同 tick 对齐）
+            // TEMP 计时探针：回卷 tick 附近打印 frameUpdate 耗时（容忍同 tick / 下一 tick 两种事件顺序）
             val level = net.minecraft.client.Minecraft.getInstance().level
-            if (level != null && level.gameTime == ClientAnimationManager.lastLoopGameTick) {
-                println("[PD-TIMING] gameTick=${level.gameTime} frameUpdateNs=${engine.lastFrameUpdateNanos}")
-                ClientAnimationManager.lastLoopGameTick = -1L
+            val lgt = ClientAnimationManager.lastLoopGameTick
+            if (level != null && lgt >= 0) {
+                val diff = level.gameTime - lgt
+                if (diff == 0L || diff == 1L) {
+                    println("[PD-TIMING] gameTick=${level.gameTime} frameUpdateNs=${engine.lastFrameUpdateNanos}")
+                    ClientAnimationManager.lastLoopGameTick = -1L
+                }
             }
+        }
+    }
+
+    // ---- TEMP 计时探针：整帧渲染耗时 + 慢帧告警 ----
+    private var frameStartNs = 0L
+
+    @SubscribeEvent
+    @JvmStatic
+    fun onRenderFramePre(event: RenderFrameEvent.Pre) {
+        frameStartNs = System.nanoTime()
+    }
+
+    @SubscribeEvent
+    @JvmStatic
+    fun onRenderFramePost(event: RenderFrameEvent.Post) {
+        val ns = System.nanoTime() - frameStartNs
+        ClientParticleEngine.instance()?.lastFrameRenderNanos = ns
+        if (ns > 30_000_000L) {
+            val level = net.minecraft.client.Minecraft.getInstance().level
+            println("[PD-TIMING] slowFrame gameTick=${level?.gameTime} renderNs=$ns")
         }
     }
 
