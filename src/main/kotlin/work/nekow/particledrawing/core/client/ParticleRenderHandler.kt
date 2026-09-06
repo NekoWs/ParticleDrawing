@@ -58,6 +58,7 @@ object ParticleRenderHandler {
     // ---- TEMP 计时探针：整帧渲染耗时 + 帧间隔（真实掉帧）+ 慢帧告警 ----
     private var frameStartNs = 0L
     private var lastFramePostNs = 0L
+    private var gapAvg = 0.0
 
     @SubscribeEvent
     @JvmStatic
@@ -75,10 +76,11 @@ object ParticleRenderHandler {
         if (lastFramePostNs != 0L) {
             val gapNs = now - lastFramePostNs
             engine?.lastFrameGapNanos = gapNs
-            // 真实帧间隔（含 tick 阻塞与 vsync 等待）：>25ms 即用户可感的掉帧
-            if (gapNs > 25_000_000L) {
+            gapAvg = if (gapAvg == 0.0) gapNs.toDouble() else gapAvg * 0.9 + gapNs * 0.1
+            // 帧间隔显著偏离滑动平均（且绝对 >8ms）：刷新率无关地捕获用户可感的掉帧
+            if (gapNs > gapAvg * 2.0 && gapNs > 8_000_000L) {
                 val level = net.minecraft.client.Minecraft.getInstance().level
-                println("[PD-TIMING] frameGap gameTick=${level?.gameTime} gapNs=$gapNs renderNs=$renderNs")
+                println("[PD-TIMING] frameGap gameTick=${level?.gameTime} gapNs=$gapNs avgNs=${gapAvg.toLong()} renderNs=$renderNs")
             }
         }
         lastFramePostNs = now
