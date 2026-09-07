@@ -4,12 +4,7 @@ import net.minecraft.resources.Identifier
 import work.nekow.particledrawing.animation.PdrawcReader
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * 特效注册表：按 [Identifier] key 注册 .pdrawc 字节（注册时验签）。
- *
- * - 服务端：注册后可由 [Effects.play] 按 key 播放；客户端缺失时按需向服务端请求字节。
- * - 客户端：注册后可由 [ClientEffects.play] 纯本地播放（不经服务端）。
- */
+// 特效注册表：按 key 注册 .pdrawc 字节（注册时验签）。服务端注册后可按 key 播放；客户端注册后可直接本地播放。
 object EffectRegistry {
 
     private val effects = ConcurrentHashMap<Identifier, ByteArray>()

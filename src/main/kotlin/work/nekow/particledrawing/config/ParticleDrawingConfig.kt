@@ -2,11 +2,7 @@ package work.nekow.particledrawing.config
 
 import net.neoforged.neoforge.common.ModConfigSpec
 
-/**
- * 服务端与客户端配置定义。
- * - [ServerConfig]：粒子上限（`particle_limits`）与可见性（`visibility`）
- * - [ClientConfig]：动态光照（`dynamic_lights`）与渲染（`rendering`）
- */
+// 服务端与客户端配置定义。ServerConfig：粒子上限与可见性；ClientConfig：动态光照与渲染。
 object ParticleDrawingConfig {
 
     val SERVER: ServerConfig

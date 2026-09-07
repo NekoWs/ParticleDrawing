@@ -11,11 +11,7 @@ import net.neoforged.neoforge.event.tick.PlayerTickEvent
 import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.lighting.DynamicLightManager
 
-/**
- * 客户端粒子渲染处理器。
- * - 每渲染帧：更新粒子引擎缓动状态并刷新动态光照；
- * - 每 game tick：推进本地动画播放（20Hz，避免按渲染帧推进导致的 3 倍计算量与速度漂移）。
- */
+// 客户端粒子渲染处理器：每渲染帧更新粒子引擎缓动并刷新动态光照；每 game tick 推进本地动画播放（20Hz，避免按渲染帧推进的 3 倍计算量与速度漂移）。
 @EventBusSubscriber(modid = ParticleDrawing.MODID, value = [Dist.CLIENT])
 @Suppress("unused")
 object ParticleRenderHandler {
@@ -44,13 +40,8 @@ object ParticleRenderHandler {
         }
     }
 
-    /**
-     * 玩家 game tick 事件处理（每 game tick，约 20Hz）。
-     * 仅在本地玩家的 tick 里推进一次（PlayerTickEvent 对每个在场玩家各触发一次）：
-     * - 编排动画程序求值：实体本 tick 移动完成后取值，每 tick 写一对干净的
-     *   桥接插值端点，由渲染端 partialTick 平滑扫掠；
-     * - 本地动画播放时间轴。
-     */
+    // 玩家 game tick 事件（约 20Hz）。只在本地玩家的 tick 里推进一次（PlayerTickEvent 对每个在场玩家各触发一次）。
+    // 编排动画程序在实体本 tick 移动完成后取值，写一对干净的桥接插值端点，交给渲染端 partialTick 平滑扫掠；同时推进本地动画时间轴。
     @SubscribeEvent
     @JvmStatic
     @Suppress("UNUSED_PARAMETER")

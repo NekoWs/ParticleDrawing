@@ -3,16 +3,14 @@ package work.nekow.particledrawing.animation.script
 import kotlin.math.PI
 import kotlin.math.E
 
-/* ------------------------------------------------------------------ */
-/* AST                                                                */
-/* ------------------------------------------------------------------ */
+// —— AST ——
 
 sealed class Node {
     abstract val line: Int
     abstract val col: Int
 }
 
-// ---- 语句 ----
+// —— 语句 ——
 
 class BlockNode(val body: List<Node>, override val line: Int, override val col: Int) : Node()
 class IfNode(val cond: Node, val then: Node, val els: Node?, override val line: Int, override val col: Int) : Node()
@@ -27,7 +25,7 @@ class GlobalNode(val name: String, val init: Node?, override val line: Int, over
 class ExprStmtNode(val expr: Node, override val line: Int, override val col: Int) : Node()
 class AssignNode(val target: AssignTarget, val value: Node, override val line: Int, override val col: Int) : Node()
 
-// ---- 表达式 ----
+// —— 表达式 ——
 
 class NumNode(val value: Double, override val line: Int, override val col: Int) : Node()
 class StrNode(val value: String, override val line: Int, override val col: Int) : Node()
@@ -45,7 +43,7 @@ class MethodNode(val obj: Node, val method: String, val args: List<Node>, overri
 class PreIncNode(val op: String, val target: AssignTarget, override val line: Int, override val col: Int) : Node()
 class PostIncNode(val op: String, val target: AssignTarget, override val line: Int, override val col: Int) : Node()
 
-// ---- 赋值目标 ----
+// —— 赋值目标 ——
 
 sealed class AssignTarget {
     abstract val line: Int
@@ -73,9 +71,7 @@ class ScriptProgram(
     val functions: Map<String, FunctionNode>,
 )
 
-/* ------------------------------------------------------------------ */
-/* Tokenizer                                                          */
-/* ------------------------------------------------------------------ */
+// —— Tokenizer ——
 
 enum class TokenType { NUM, STR, IDENT, PUNCT, EOF }
 
@@ -234,9 +230,7 @@ fun tokenize(sourceIn: String?): List<Token> {
     return tokens
 }
 
-/* ------------------------------------------------------------------ */
-/* Parser                                                             */
-/* ------------------------------------------------------------------ */
+// —— Parser ——
 
 private val KEYWORDS = setOf(
     "setup", "process", "tick", "func", "return", "if", "else", "while", "do", "for",

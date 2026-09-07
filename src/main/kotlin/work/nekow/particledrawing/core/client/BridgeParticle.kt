@@ -15,25 +15,8 @@ import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
 import java.util.UUID
 
-/**
- * 连接渲染粒子与 Minecraft 粒子系统的桥接粒子。
- * 将自定义粒子的位置、颜色和缩放属性同步到原版渲染管线中。
- *
- * 支持两类渲染：
- * - **无贴图**：默认精灵染色为纯色方块；
- * - **有贴图**（[uv] 非 null 且贴图已注册）：`getLayer` 返回指向 [TextureCache] 中
- *   DynamicTexture 的自定义 Layer，并按 UV 像素坐标（静态/填充/flipbook）采样。
- *
- * @param particleId 粒子唯一标识符
- * @param level 客户端世界实例
- * @param x 初始 X 坐标
- * @param y 初始 Y 坐标
- * @param z 初始 Z 坐标
- * @param color 初始颜色
- * @param scale 初始缩放（编辑器数据模型值，已含缩放因子）
- * @param isGlowing 是否发光
- * @param uv 编辑器的 UV 参数（已解析的最终作用域值）；null 或无贴图时退化为纯色方块渲染
- */
+// 连接渲染粒子与 Minecraft 粒子系统的桥接粒子，把自定义粒子的位置/颜色/缩放同步进原版渲染管线。
+// 无贴图时染成纯色方块；有贴图（uv 非 null 且已注册）时按 UV 像素坐标（静态/填充/flipbook）采样 TextureCache 的 DynamicTexture。
 @Suppress("unused")
 class BridgeParticle(
     val particleId: UUID,
@@ -209,7 +192,7 @@ class BridgeParticle(
     // 使用自定义分组（无 16384 上限），绕过原版 SINGLE_QUADS 的粒子数限制
     override fun getGroup(): ParticleRenderType = BATCHED_QUADS
 
-    // ---- UV 采样（贴图像素坐标 → 归一化 [0,1]） ----
+    // —— UV 采样（贴图像素坐标 → 归一化 [0,1]） ——
     // 约定（与编辑器 scene.js flipY 一致）：GPU 纹理第 0 行 = PNG 顶部（NativeImage 自然顺序），
     // v = 1 - y/height。quad 顶点 v0=底部、v1=顶部（SingleQuadParticle 顶点布局）。
 

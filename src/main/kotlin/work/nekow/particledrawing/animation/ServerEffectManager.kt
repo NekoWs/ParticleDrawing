@@ -20,15 +20,8 @@ import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * 服务端特效播放管理器（按 key 播放 .pdrawc + 可移动锚点 + 播放时钟）。
- *
- * 与 [ServerAnimationManager]（旧固定 origin / 按名称播放）并存：旧 API 保持不动，
- * 本管理器服务于 [work.nekow.particledrawing.api.Effects] 门面，提供：
- * - 资源注册表按 key 播放；
- * - 可移动锚点：每 tick 批量下发一次位置/速度，客户端渲染帧 partialTick 插值；
- * - 播放时钟：seek / 暂停 / 变速（服务端权威时广播 ClockSync）。
- */
+// 服务端特效播放管理器（按 key 播放 .pdrawc + 可移动锚点 + 播放时钟）。
+// 与 ServerAnimationManager 并存：资源注册表按 key 播放；可移动锚点每 tick 批量下发一次；时钟支持 seek/暂停/变速。
 object ServerEffectManager {
 
     private class Playback(
@@ -145,7 +138,7 @@ object ServerEffectManager {
         }
     }
 
-    // ---- 播放控制（服务端权威时才广播） ----
+    // —— 播放控制（服务端权威时才广播） ——
 
     @JvmStatic
     fun seek(playbackId: UUID, players: Collection<ServerPlayer>, tick: Double): Boolean {
@@ -190,7 +183,7 @@ object ServerEffectManager {
         }
     }
 
-    // ---- 停止 / 变量 / 查询 ----
+    // —— 停止 / 变量 / 查询 ——
 
     @JvmStatic
     fun stop(playbackId: UUID, players: Collection<ServerPlayer>): Boolean {

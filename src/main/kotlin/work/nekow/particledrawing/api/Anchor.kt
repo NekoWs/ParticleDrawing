@@ -2,19 +2,9 @@ package work.nekow.particledrawing.api
 
 import net.minecraft.world.phys.Vec3
 
-/**
- * 特效播放锚点：决定 .pdrawc 动画播放期间「原点 + 朝向」如何随时间变化。
- *
- * 与旧 [work.nekow.particledrawing.animation.ServerAnimationManager] 的固定 `origin` 不同，
- * 锚点把「时间轴求值（本地坐标）」与「锚点变换（世界坐标）」解耦：客户端播放器输出
- * 相对锚点的本地坐标，渲染层每个 game tick 用当前锚点变换映射到世界坐标，
- * 再交给原版粒子渲染按 partialTick 平滑插值。
- *
- * 三种形态：
- * - [Fixed]：固定世界坐标，朝向恒为单位（世界朝向）。
- * - [Entity]：跟随一个真正的 Minecraft 实体（客户端本地解析，朝向 = 实体 yaw/pitch）。
- * - [Movable]：服务端每 tick 更新的可移动锚点，朝向由速度方向推导（追踪投射物用）。
- */
+// 特效播放锚点：决定 .pdrawc 动画播放期间「原点 + 朝向」如何随时间变化。
+// 客户端播放器输出相对锚点的本地坐标，渲染层每 game tick 用当前锚点变换映射到世界坐标，再按 partialTick 插值。
+// Fixed=固定坐标；Entity=跟随实体（朝向 = yaw/pitch）；Movable=服务端每 tick 更新，朝向由速度推导。
 sealed class Anchor {
     /** 固定世界坐标锚点（一次性命中/施法特效）。 */
     class Fixed(val pos: Vec3) : Anchor()

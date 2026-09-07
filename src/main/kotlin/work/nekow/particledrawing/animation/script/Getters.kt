@@ -3,24 +3,9 @@ package work.nekow.particledrawing.animation.script
 import work.nekow.particledrawing.api.EntityProp
 import work.nekow.particledrawing.api.WorldProp
 
-/**
- * 被动输入获取（get_* 函数）共享层。
- *
- * 公式通过 `get_entity_<prop>(<句柄>)` / `get_world_<prop>()` 在需要处取值；
- * 编译前由 [GetterRewriter] 把调用点重写为合成外部变量（`__in0…`），
- * 同时产出「本段代码实际需要的输入清单」——客户端每 tick 只采样被引用的值，
- * 服务端协议无需携带任何属性声明。属性词表见 [EntityProp] / [WorldProp] 枚举。
- *
- * 双路径共用：
- * - 纯标量快路径（表达式指令）：重写产物交给 [compileFunctionObject] 的 extNames 机制注入；
- * - 通用解释器路径（setVariableLive）：合成变量值并入求值作用域。
- *
- * 语义约束（编译期强制）：
- * - 实体 getter 参数必须是「编译期常量」：数字句柄或已登记实体名（见 ParticleGroup.defineEntity）；
- * - `get_entity_pos(h)` 仅允许独占 `[x,y,z] = get_entity_pos(h)` 赋值右侧，
- *   重写为三分量注入；其余上下文请用 get_entity_x/_y/_z；
- * - 未知名/未登记句柄一律抛 [IllegalArgumentException]（fail-fast）。
- */
+// 被动输入 getter（get_*）共享层：编译前把调用点重写为合成外部变量，并产出实际需要的输入清单。
+// 纯标量快路径交给 compileFunctionObject 的 extNames 注入；解释器路径把合成变量值并入作用域。
+// 约束：实体 getter 参数必须是编译期常量；get_entity_pos 仅允许独占赋值形态；未知名/未登记句柄 fail-fast。
 
 /** 一条被发现的输入需求（与重写产出的合成变量一一对应）。 */
 internal sealed class InputKey {

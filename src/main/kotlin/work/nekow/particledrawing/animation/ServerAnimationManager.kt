@@ -13,17 +13,7 @@ import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * 服务端动画管理器（权威播放/停止/变量）。
- * 只负责向客户端下发 .pdrawc 动画定义、停止命令与变量更新，粒子播放与渲染全部在客户端本地进行。
- *
- * 外部模组典型用法：
- * ```kotlin
- * val animId = ServerAnimationManager.playByName(dim, players, "magic_circle", origin) ?: return
- * ServerAnimationManager.updateVariable(animId, "rad", "4", players)
- * ServerAnimationManager.stop(animId, players)
- * ```
- */
+// 服务端动画管理器（权威播放/停止/变量）。只下发 .pdrawc 动画定义、停止命令与变量更新，播放与渲染全在客户端本地进行。
 @Suppress("unused")
 object ServerAnimationManager {
 

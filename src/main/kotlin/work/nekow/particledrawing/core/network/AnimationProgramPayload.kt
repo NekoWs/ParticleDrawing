@@ -10,15 +10,8 @@ import work.nekow.particledrawing.animation.program.EntityBinding
 import work.nekow.particledrawing.animation.program.PivotRef
 import java.util.UUID
 
-/**
- * 客户端动画程序协议族：
- * - [AnimationProgramPayload] 首次下发完整程序（粒子清单 + 时钟锚点 + 轴心 + 通道 + 变量 + 指令流）；
- * - [AnimationProgramAppendPayload] 向已激活程序追加指令（delay 游标推进后的新步骤）；
- * - [SetProgramVarPayload] 热更程序变量（公式字符串）；
- * - [StopAnimationProgramPayload] 停止程序，可选同时销毁粒子。
- *
- * 指令全部为纯数据；客户端按服务端 gameTime 锚点对齐时钟后本地求值。
- */
+// 客户端动画程序协议族：AnimationProgramPayload 首次下发完整程序，Append 追加指令，SetProgramVar 热更变量，Stop 停止程序（可选销毁粒子）。
+// 指令全部为纯数据；客户端按服务端 gameTime 锚点对齐时钟后本地求值。
 
 /** 编排动画程序编解码工具。 */
 internal object AnimationProgramCodecs {

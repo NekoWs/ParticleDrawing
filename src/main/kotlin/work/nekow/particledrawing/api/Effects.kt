@@ -8,23 +8,7 @@ import work.nekow.particledrawing.animation.ServerEffectManager
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
 
-/**
- * 特效播放门面（服务端）。外部模组（魔法模组）的主要入口：
- *
- * ```kotlin
- * Effects.register(key, bytes)
- * val h = Effects.play(key, level, Anchor.Movable(pos, vel), EffectOptions().loop(true))
- * h.updateAnchor(pos, vel)   // 每 tick
- * h.stop()
- * ```
- *
- * Java:
- * ```java
- * EffectHandle h = Effects.play(key, level,
- *     new Anchor.Movable(pos, vel, Orient.VELOCITY),
- *     new EffectOptions().loop(true).scale(0.8f));
- * ```
- */
+// 特效播放门面（服务端），外部模组的主要入口：Effects.register 注册字节，Effects.play 播放并返回 EffectHandle 句柄。
 object Effects {
 
     /** 注册 .pdrawc 特效字节（见 [EffectRegistry.register]）。 */

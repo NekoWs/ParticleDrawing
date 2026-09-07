@@ -24,25 +24,15 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.floor
 
-/**
- * 客户端动画程序运行时：解释 [AnimInstruction] 指令流并直写渲染。
- *
- * 状态模型：
- * - **组级**：pivot（固定坐标或实体绑定）、pathOffset（平移累积）、pulseMul、
- *   fadeIn/fadeOut 因子参数、continuousFrozenTick（停转时刻）、表达式模式；
- * - **粒子级**：baseColor/baseScale（arm 快照）+ rel（相对 pivot 偏移，旋转的作用对象）；
- * - 旋转类指令首次应用时快照各粒子 rel，此后每 tick 由快照 + 总角度**重算** rel——
- *   幂等、支持中途追加、无累积误差。
- *
- * [AnimInstruction.Expression] 为表达式模式：整段函数对象代码每 tick×每粒子求值，
- * 输出世界绝对坐标；环境含 i/n/t、全套数学函数、实体句柄（defineEntity）、程序变量。
- */
+// 客户端动画程序运行时：解释 AnimInstruction 指令流并直写渲染。
+// 组级状态（pivot/pathOffset/pulseMul/fade 因子）+ 粒子级 rel 快照；旋转类指令按「快照 + 总角度」重算，无累积误差。
+// 表达式模式每 tick×每粒子求值，输出世界绝对坐标。
 @EventBusSubscriber(modid = ParticleDrawing.MODID, value = [Dist.CLIENT])
 internal object ClientAnimationProgramManager {
 
     private val LOGGER = com.mojang.logging.LogUtils.getLogger()
 
-    /* ---------------- 实体索引 ---------------- */
+    // —— 实体索引 ——
 
     private val entityByUuid = ConcurrentHashMap<UUID, Entity>()
 
@@ -58,13 +48,7 @@ internal object ClientAnimationProgramManager {
         if (ev.level.isClientSide) entityByUuid.remove(ev.entity.uuid, ev.entity)
     }
 
-    /**
-     * 解析注册表里的实体：
-     * 1. 本地玩家快路径（跟随自己最常见，实例全程稳定）；
-     * 2. 缓存命中——但已死亡/换维度的缓存实例会持冻结坐标，必须校验后使用；
-     * 3. 实体全局注册表 O(1) 直查（覆盖尚未进入渲染列表的实体，消除跟踪间隙）；
-     * 4. 渲染列表兜底扫描。
-     */
+    // 找实体：本地玩家 → 缓存（校验存活与维度，防冻结坐标）→ 全局注册表直查 → 渲染列表兜底。
     private fun findEntity(uuid: UUID): Entity? {
         val mc = Minecraft.getInstance()
         mc.player?.let { if (it.uuid == uuid) return it }
@@ -82,7 +66,7 @@ internal object ClientAnimationProgramManager {
         return null
     }
 
-    /* ---------------- 数据模型 ---------------- */
+    // —— 数据模型 ——
 
     /** 粒子静态基态。 */
     private class PState(
@@ -152,7 +136,7 @@ internal object ClientAnimationProgramManager {
 
     private val programs = ConcurrentHashMap<UUID, Program>()
 
-    /* ---------------- 协议入口 ---------------- */
+    // —— 协议入口 ——
 
     fun arm(
         programId: UUID,
@@ -242,7 +226,7 @@ internal object ClientAnimationProgramManager {
         prepareExpressionBuffers(p)
     }
 
-    /* ---------------- 输入采样与编译缓冲 ---------------- */
+    // —— 输入采样与编译缓冲 ——
 
     /**
      * 编译表达式：先把 get_* 调用重写为合成外部变量（同时发现输入需求），再走纯标量快路径。
@@ -380,7 +364,7 @@ internal object ClientAnimationProgramManager {
         }
     }
 
-    /* ---------------- 每 tick 主循环 ---------------- */
+    // —— 每 tick 主循环 ——
 
     /** 由本地玩家 game tick 事件调用（真 20Hz、实体移动后）。 */
     @JvmStatic
@@ -404,7 +388,7 @@ internal object ClientAnimationProgramManager {
         }
     }
 
-    /* ---------------- 表达式模式 ---------------- */
+    // —— 表达式模式 ——
 
     private fun expressionFrame(p: Program, engine: ClientParticleEngine, now: Long) {
         val cf = p.compiled ?: return
@@ -438,7 +422,7 @@ internal object ClientAnimationProgramManager {
         out[5] = regs[6]; out[6] = regs[7]; out[7] = regs[8]   // r g b
     }
 
-    /* ---------------- 结构化糖指令模式 ---------------- */
+    // —— 结构化糖指令模式 ——
 
     private fun sugarFrame(p: Program, engine: ClientParticleEngine, now: Long) {
         val pivot = resolvePivot(p) ?: return

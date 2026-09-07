@@ -2,19 +2,9 @@ package work.nekow.particledrawing.animation.script
 
 import kotlin.math.floor
 
-/**
- * mulberry32 PRNG 与 3D Simplex 噪声。
- *
- * 算法逐行复刻编辑器 script-lang.js：PRNG 用 Int 模拟 32 位回绕；
- * Simplex 使用标准 Gustavson Grad3 表 + 由种子经 mulberry32 Fisher-Yates
- * 打乱的 [0..255] 排列表，最后 clamp 到 [-1,1]。
- */
+// mulberry32 PRNG 与 3D Simplex 噪声，逐行复刻编辑器 script-lang.js。
 
-/**
- * mulberry32 随机数生成器状态（32 位有符号 Int）。
- * 暴露内部状态 [a] 以便快照/恢复：循环回卷时把函数对象运行时恢复到循环起点，
- * 与编辑器「向后 seek 重建 objState」的确定性保持一致。
- */
+/** mulberry32 随机数生成器状态（32 位有符号 Int）。暴露 a 以便循环回卷时快照/恢复，与编辑器确定性一致。 */
 class RandState(var a: Int) {
     fun next(): Double {
         a += 0x6D2B79F5

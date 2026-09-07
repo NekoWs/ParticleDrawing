@@ -11,19 +11,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 
-/**
- * 客户端动画文件同步管理器（配置阶段，按服务器区分目录）。
- *
- * 状态机：
- * 1. 服务器配置任务发来「开始」信号 → 识别连接：
- *    - 内存连接（单机 / LAN 主机）→ 回空清单，跳过文件同步；
- *    - 远程连接 → 推导 `animations/servers/<serverKey>` 缓存根目录，
- *      上报该目录内已有文件哈希。
- * 2. 逐块接收 [AnimationSyncFilePayload]，按文件名累积；
- * 3. 收到 eof 块 → 验签后写入当前服务器缓存根目录；
- * 4. 收到 [AnimationSyncDonePayload] → 清理会话缓存，服务端结束配置任务
- *    （客户端不再调用 finishCurrentTask）。
- */
+// 客户端动画文件同步管理器（配置阶段，按服务器区分目录）。
+// 开始信号 → 内存连接跳过、远程连接上报已有哈希；逐块接收并按名累积；eof 块验签落盘；done 后清理会话。
 object ClientAnimationSyncManager {
 
     /** 正在累积的文件内容（相对名 → 字节流）。 */

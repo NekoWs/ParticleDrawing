@@ -2,19 +2,11 @@ package work.nekow.particledrawing.lighting
 
 import work.nekow.particledrawing.core.easing.EasingCurve
 
-/**
- * 光照衰减函数接口。
- * 定义动态光源随距离衰减的强度计算方式。
- */
+// 光照衰减函数接口：定义动态光源随距离衰减的强度计算方式。
 @Suppress("unused")
 fun interface LightAttenuation {
 
-    /**
-     * 计算指定距离下的衰减因子。
-     * @param distance 到光源的距离
-     * @param maxDistance 光源最大有效范围
-     * @return 衰减因子 (0=无光照, 1=满光照)
-     */
+    /** 计算指定距离下的衰减因子（0=无光照，1=满光照）。 */
     fun evaluate(distance: Float, maxDistance: Float): Float
 
     companion object {

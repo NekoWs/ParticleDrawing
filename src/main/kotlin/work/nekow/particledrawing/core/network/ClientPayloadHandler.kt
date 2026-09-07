@@ -101,7 +101,7 @@ internal object ClientPayloadHandler {
         }
     }
 
-    // ---- 编排动画程序（客户端自驱） ----
+    // —— 编排动画程序（客户端自驱） ——
 
     fun handleProgram(payload: AnimationProgramPayload, context: IPayloadContext) {
         context.enqueueWork {
@@ -170,7 +170,7 @@ internal object ClientPayloadHandler {
         }
     }
 
-    // ---- 特效 API（按 key 播放 + 锚点 + 时钟 + 资源下发） ----
+    // —— 特效 API（按 key 播放 + 锚点 + 时钟 + 资源下发） ——
 
     fun handlePlayEffect(payload: PlayEffectPayload, context: IPayloadContext) {
         context.enqueueWork {
@@ -202,7 +202,7 @@ internal object ClientPayloadHandler {
         }
     }
 
-    // ---- 动画文件同步（配置阶段） ----
+    // —— 动画文件同步（配置阶段） ——
 
     fun handleSyncBegin(payload: AnimationSyncBeginPayload, context: IPayloadContext) {
         context.enqueueWork {

@@ -20,12 +20,8 @@ internal object ServerPayloadHandler {
         Collections.synchronizedMap(WeakHashMap<Connection, Boolean>())
     )
 
-    /**
-     * 处理客户端「动画同步请求」：对比差异，将缺失/变化文件分块下发，最后发完成信号
-     * 并通知服务端完成当前配置任务（客户端禁止调用 finishCurrentTask）。
-     * 内存连接（单机 / LAN 主机）与客户端共享同一目录，直接完成配置任务、不下发文件。
-     * 重复请求直接忽略，避免对已完成任务重复 finishCurrentTask 抛异常。
-     */
+    // 处理客户端「动画同步请求」：对比差异，分块下发缺失/变化文件，最后发完成信号并结束服务端配置任务。
+    // 内存连接（单机/LAN）与客户端共享目录，直接完成不下发；重复请求忽略。
     fun handleSyncRequest(payload: AnimationSyncRequestPayload, context: IPayloadContext) {
         context.enqueueWork {
             val connection = context.connection()

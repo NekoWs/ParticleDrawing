@@ -37,21 +37,7 @@ class ClientParticleEngine {
     private var cachedIds: Array<UUID> = emptyArray()
     private var cachedSize = -1
 
-    /**
-     * 生成一个新粒子并注册到原版粒子系统中。
-     * @param id 粒子唯一标识符
-     * @param x 初始 X 坐标
-     * @param y 初始 Y 坐标
-     * @param z 初始 Z 坐标
-     * @param r 红色分量
-     * @param g 绿色分量
-     * @param b 蓝色分量
-     * @param a 透明度分量
-     * @param scale 初始缩放
-     * @param lifetimeTicks 存活时间（刻）
-     * @param groupId 所属分组 ID，可为 null
-     * @param glowing 是否发光
-     */
+    /** 生成一个新粒子并注册到原版粒子系统。 */
     fun spawnParticle(id: UUID, x: Double, y: Double, z: Double,
                       r: Float, g: Float, b: Float, a: Float, scale: Float,
                       lifetimeTicks: Int, groupId: UUID?, glowing: Boolean, lightLevel: Int,
@@ -157,7 +143,7 @@ class ClientParticleEngine {
     }
 
     /**
-     * 直接同步粒子状态（非均匀缩放三分量版本，供动画播放使用）。
+     * 直接同步粒子状态（非均匀缩放三分量版本，给动画播放用）。
      * scaleArray [sx, sy, sz] 中 sx → quad 宽度，sy → quad 高度，sz 存储但不参与 billboard。
      */
     fun updateParticleDirectArray(id: UUID, pos: Vec3, color: Color, scaleArray: FloatArray,

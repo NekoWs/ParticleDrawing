@@ -8,7 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * v12 spawn 模型运行时回归测试：setup/tick/process 入口 + ScriptCtx + 简单 ParticleHost。
+ * spawn 模型运行时回归测试：setup/tick/process 入口 + ScriptCtx + 简单 ParticleHost。
  * 语义与编辑器 src/core/script-lang.js + generators.js 对齐。
  */
 class ScriptRuntimeConformanceTest {

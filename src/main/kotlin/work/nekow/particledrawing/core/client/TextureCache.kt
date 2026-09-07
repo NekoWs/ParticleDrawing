@@ -8,14 +8,8 @@ import work.nekow.particledrawing.util.HashUtils
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * 自定义贴图缓存：把 pdraw 内嵌的 PNG 字节解码为 DynamicTexture 并注册进 TextureManager。
- *
- * 每个贴图名映射到一个 Identifier（`particledrawing:custom/<md5-hex>`），
- * 渲染时由 BridgeParticle 的自定义 Layer.textureAtlasLocation 引用。
- *
- * 贴图数据内嵌于 .pdraw v4 的 `texData` 字段（base64 PNG），不再依赖外部文件。
- */
+// 自定义贴图缓存：把 pdraw 内嵌的 PNG 解码为 DynamicTexture 并注册进 TextureManager。
+// 贴图名映射到 particledrawing:custom/<md5-hex>；texData（base64 PNG）内嵌于 .pdraw，不再依赖外部文件。
 object TextureCache {
 
     private const val NAMESPACE = "particledrawing"

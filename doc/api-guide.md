@@ -2,7 +2,7 @@
 
 面向模组开发者：把 ParticleDrawing 作为依赖，用简单的 Kotlin / Java 代码在 Minecraft 世界中绘制粒子动画。
 
-> 类与职责的完整清单见 [README.md](./README.md)。所有 API 位于 `work.nekow.particledrawing.api` 包。
+> 类索引见 [README.md](./README.md)。所有 API 位于 `work.nekow.particledrawing.api` 包。
 
 ---
 

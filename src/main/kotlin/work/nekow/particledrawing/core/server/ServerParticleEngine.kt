@@ -23,12 +23,7 @@ import org.apache.logging.log4j.Logger
 
 private val LOGGER: Logger = LogManager.getLogger("ParticleDrawing")
 
-/**
- * 服务端权威粒子引擎，每个维度一个实例（通过 [getOrCreate] 获取），
- * 负责粒子与粒子组的生命周期与网络同步。
- *
- * @param dimensionId 所属维度的唯一标识符
- */
+// 服务端权威粒子引擎，每个维度一个实例（经 getOrCreate 获取），负责粒子与粒子组的生命周期与网络同步。
 @Suppress("unused")
 class ServerParticleEngine(
     val dimensionId: UUID
@@ -43,20 +38,7 @@ class ServerParticleEngine(
     private var visibilityTickCounter = 0
     private var lastCapacityWarnNanos = 0L
 
-    /**
-     * 生成粒子并广播到视野内可见的玩家。
-     *
-     * @param position 世界坐标
-     * @param color RGBA 颜色
-     * @param scale 粒子缩放
-     * @param lifetime 存活 tick 数，-1 为永生
-     * @param groupId 所属组 ID，可为 null
-     * @param glowing 是否发光
-     * @param lightLevel 发光粒子向外发出的光照等级 (0-15)
-     * @param offsetFromPivot 相对轴心的偏移，可为 null
-     * @param playersInDimension 维度内的玩家列表
-     * @return 创建的粒子数据；达到维度上限时为 null
-     */
+    /** 生成粒子并广播到视野内可见的玩家；达到维度上限时返回 null。 */
     @Suppress("DataFlowIssue")
     fun spawnParticle(position: Vec3, color: Color,
                       scale: Float, lifetime: Int, groupId: UUID?,

@@ -37,7 +37,7 @@ interface ParticleHost {
     fun kill()
 }
 
-/** 粒子句柄（v12 spawn 模型）。 */
+/** 粒子句柄（spawn 模型）。 */
 class ParticleValue(val host: ParticleHost)
 
 /** 粒子列表（this.particles）。 */
@@ -46,7 +46,7 @@ class ParticleListValue(val hosts: MutableList<ParticleHost>) {
     fun get(i: Int): ParticleValue = ParticleValue(hosts[i])
 }
 
-// ---- 值类型判定 ----
+// —— 值类型判定 ——
 
 fun isNum(v: Any?): Boolean = v is Double
 fun isBool(v: Any?): Boolean = v is Boolean
@@ -96,7 +96,7 @@ fun typeName(v: Any?): String = when {
     else -> "unknown"
 }
 
-// ---- JS 数值语义辅助 ----
+// —— JS 数值语义辅助 ——
 
 /** JS Math.trunc：向零取整。 */
 fun jsTrunc(x: Double): Double = if (x < 0.0) ceil(x) else floor(x)

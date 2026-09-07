@@ -148,7 +148,7 @@ object ClientAnimationManager {
         entries[animationId] = Entry(player, uuids, animation, origin, liveIds)
     }
 
-    // ---- 特效 API（按 key 播放 + 锚点 + 时钟） ----
+    // —— 特效 API（按 key 播放 + 锚点 + 时钟） ——
 
     /** 收到 PlayEffectPayload：缓存命中直接开播，否则请求服务端下发字节并挂起。 */
     @JvmStatic

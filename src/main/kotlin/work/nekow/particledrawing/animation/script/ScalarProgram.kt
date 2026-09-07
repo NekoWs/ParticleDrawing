@@ -2,14 +2,9 @@ package work.nekow.particledrawing.animation.script
 
 import kotlin.math.*
 
-/**
- * 纯标量代码块的扁平字节码编译与执行。
- *
- * 网页编辑器端通过 `new Function` 把纯标量代码块编译成原生 JS 达到个位数毫秒；
- * Kotlin/JVM 端无法动态生成原生代码，这里把代码块编译成「栈式 double 指令序列」，
- * 执行期只用 [DoubleArray] 寄存器 + [DoubleArray] 栈，消除 HashMap / 字符串查表 / Any 装箱。
- * 含向量/矩阵/分量访问/拆包的代码块不在快路径内，由 script-lang [ScriptRuntime] 解释器回退处理。
- */
+// 纯标量代码块的扁平字节码编译与执行。
+// 编辑器用 new Function 原生编译；JVM 端这里编译成栈式 double 指令序列，执行期只用 DoubleArray 寄存器+栈，避免查表与装箱。
+// 含向量/矩阵/分量/拆包的代码块不在快路径内，回退 ScriptRuntime 解释器。
 
 /** 寄存器槽布局：0..2 内建 i/n/t，3..16 属性（含 maxAge），17.. 变量，之后临时变量。 */
 internal object Reg {
@@ -35,12 +30,7 @@ private val ATTR_SLOTS = mapOf(
     "maxAge" to Reg.MAXAGE,
 )
 
-/**
- * 栈式指令集。
- *
- * @param pops 该表达式指令从求值栈弹出的操作数个数；编译期据此计算栈深。
- *             数据搬运类指令（PUSH_CONST / PUSH_REG / POP_REG / VAR_KF）不参与表达式深度计算，恒为 -1。
- */
+/** 栈式指令集。pops 为该指令从求值栈弹出的操作数个数；数据搬运类恒为 -1。 */
 internal enum class ScalarOp(val pops: Int) {
     // —— 数据搬运 ——
     /** arg = 常量池下标：压入 consts[arg]。 */

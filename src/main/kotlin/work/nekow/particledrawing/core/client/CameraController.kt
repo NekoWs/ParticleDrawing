@@ -4,19 +4,9 @@ import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.ClientAnimationPlayer
 import java.util.UUID
 
-/**
- * 客户端「切换到指定摄像机」预览状态（/pdraw camera 命令使用）。
- *
- * 命令执行时调用 [attach] 绑定到某次播放中的某个摄像机；之后由 [ClientAnimationManager.tick]
- * 每 game tick 用 `cameraPoseAt` 写入最新姿态，渲染层（CameraMixin + ComputeFov 事件）按渲染
- * partialTick 在「上一 tick 姿态 / 当前 tick 姿态」之间插值，再覆盖玩家相机的位置/旋转/FOV。
- * 动画播完或停止时由管理器调用 [detach] 恢复正常视角。
- *
- * 坐标空间：编辑器姿态是动画局部坐标，而粒子以 `origin + 局部坐标` 生成，
- * 因此这里在输出前统一把播放原点 [origin] 加到 pos/target 上，保证相机与粒子同处一个世界。
- *
- * 注意：播放端**不自动改变玩家相机**——仅当用户显式执行 `/pdraw camera` 时才进入预览模式。
- */
+// 客户端「切换到指定摄像机」预览状态（/pdraw camera 命令用）。
+// attach 绑定后，每 game tick 用 cameraPoseAt 写入最新姿态，渲染层按 partialTick 插值并覆盖玩家相机位置/旋转/FOV；动画停止时 detach 恢复。
+// 姿态是动画局部坐标，输出前统一加播放原点 origin 保证相机与粒子同处一个世界；播放端不自动改玩家相机。
 object CameraController {
 
     /** 当前预览绑定的播放 id（null = 未激活）。 */

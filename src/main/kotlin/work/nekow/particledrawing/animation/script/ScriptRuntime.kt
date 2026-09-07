@@ -24,16 +24,9 @@ private fun setVecComp(v: Any?, comp: String, value: Double): Any = when (v) {
     else -> throw ScriptException("not a vector")
 }
 
-/**
- * v12 spawn 模型脚本运行时（对应编辑器 script-lang.js）。
- *
- * 生命周期入口：setup（对象级一次）/ tick（每动画 tick 一次）/ process（每渲染帧一次）。
- * `this` 上下文仅提供 time / duration / particles / spawn；粒子通过句柄字段读写与 kill()。
- * 值类型见 ScriptValues；PRNG/Simplex 见 ScriptNoise。
- *
- * 同时保留旧 `ProcessCtx` + `ExpressionRunner`，供 UV 字段裸表达式求值
- * （expr 阶段仍使用旧字段 index/count/time/delta/duration/uv + out）。
- */
+// spawn 模型脚本运行时（对应编辑器 script-lang.js）。
+// 生命周期：setup（对象级一次）/ tick（每动画 tick）/ process（每渲染帧）；this 只给 time/duration/particles/spawn，粒子经句柄字段读写与 kill()。
+// 旧 ProcessCtx + ExpressionRunner 保留给 UV 字段裸表达式。
 object ScriptRuntime {
 
     const val TICKS_PER_SEC = 20
@@ -157,8 +150,6 @@ object ScriptRuntime {
     }
 
     fun evalExpression(expr: String, ctx: ProcessCtx): Double = ExpressionRunner(expr).eval(ctx)
-
-    /* ---------------------------------------------------------------- */
 
     private class Flow(val kind: String, val value: Any? = null) : Throwable()
 
@@ -419,7 +410,7 @@ object ScriptRuntime {
             currentScope()[name] = value
         }
 
-        // ---- this 字段读取（§8/§9）----
+        // —— this 字段读取 ——
 
         private fun ctxRead(field: String, n: Node): Any? {
             if (phase == "expr") {
@@ -454,7 +445,7 @@ object ScriptRuntime {
             }
         }
 
-        // ---- 粒子句柄字段读取/写入（v12 spawn 模型）----
+        // —— 粒子句柄字段读取/写入 ——
 
         private fun particleGetField(pv: ParticleValue, field: String, n: Node): Any? {
             val w = pv.host

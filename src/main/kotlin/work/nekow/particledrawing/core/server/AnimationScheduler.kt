@@ -3,14 +3,8 @@ package work.nekow.particledrawing.core.server
 import org.apache.logging.log4j.LogManager
 import org.apache.logging.log4j.Logger
 
-/**
- * 服务端动画调度器：按 game tick 执行延迟与循环任务，
- * 是编排式动画 API（[work.nekow.particledrawing.api.ParticleGroup] 的 delay /
- * fadeIn / spin / pulse 等）的驱动核心。
- *
- * 所有方法只能在服务端主线程调用（tick 事件 / 命令执行均满足）；
- * 队列无并发保护依赖这一前提。
- */
+// 服务端动画调度器：按 game tick 执行延迟与循环任务，是编排式动画 API（ParticleGroup 的 delay/fadeIn/spin/pulse 等）的驱动核心。
+// 所有方法只能在服务端主线程调用；队列无并发保护依赖这一前提。
 object AnimationScheduler {
 
     private val LOGGER: Logger = LogManager.getLogger("ParticleDrawing")
@@ -25,11 +19,7 @@ object AnimationScheduler {
     @JvmStatic
     fun currentTick(): Long = serverTick
 
-    /**
-     * 安排一个延迟任务。
-     * @param delayTicks 从现在起多少 tick 后执行，小于等于 0 表示下一 tick
-     * @param action 到期执行的动作
-     */
+    /** 安排一个延迟任务；delayTicks<=0 表示下一 tick 执行。 */
     @JvmStatic
     fun schedule(delayTicks: Int, action: () -> Unit) {
         queue.add(Task(serverTick + delayTicks.coerceAtLeast(1), action))

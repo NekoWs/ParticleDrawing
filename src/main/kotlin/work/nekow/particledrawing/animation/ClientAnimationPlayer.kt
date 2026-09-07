@@ -34,14 +34,7 @@ class ClientAnimationPlayer(
         var visible: Boolean = true,
     )
 
-    /**
-     * 摄像机在某时刻的姿态（供脚本/模组按 id 查询；播放端不自动改变玩家相机）。
-     *
-     * @param pos 世界坐标 [x,y,z]
-     * @param target 看向目标点 [x,y,z]（世界坐标）；pitch/yaw 由 lookAt(pos, target) 计算
-     * @param roll 翻滚角（度，绕视线方向，静态基础值）
-     * @param fov 视场角（度）
-     */
+    /** 摄像机某时刻姿态；播放端不自动改玩家相机。pos/target 为世界坐标，roll 绕视线翻滚角（度），fov 视场角（度）。 */
     data class CameraPose(
         val pos: DoubleArray,
         val target: DoubleArray,
@@ -56,7 +49,7 @@ class ClientAnimationPlayer(
     private var prevAdvanceT = 0.0
     private var advanceInitialized = false
 
-    // ---- 调试统计 ----
+    // —— 调试统计 ——
     var lastAdvanceNanos: Long = 0; private set
     var frameCount: Long = 0; private set
     private var advanceNanosTotal = 0L
@@ -79,7 +72,7 @@ class ClientAnimationPlayer(
         animation.functions.none { fx -> usesRandom(fx) }
     }
 
-    // ---- 预构建求值索引（避免每 tick 线性扫描轨道 / 组 / 粒子） ----
+    // —— 预构建求值索引（避免每 tick 线性扫描轨道 / 组 / 粒子） ——
     private val trackIndex: Map<TrackPr, Map<String, AnimTrack>> = buildTrackIndex()
     private val opTracks: List<AnimTrack> = animation.tracks.filter { it.mode == AnimTrack.Mode.OP }
     private val opTracksByPr: Map<TrackPr, List<AnimTrack>> = opTracks.filter { it.keyframes.isNotEmpty() }.groupBy { it.pr }
@@ -90,7 +83,7 @@ class ClientAnimationPlayer(
     private val groupCentroidCache: Map<String, Vec3> = buildGroupCentroids()
     private val camUp = Vec3(0.0, 1.0, 0.0)
 
-    // ---- UV 字段表达式（v10/v2 新增）----
+    // —— UV 字段表达式 ——
     // 普通粒子全局序号：index=全局序号、count=粒子总数（普通 + 派生，与编辑器 state.particles.length 一致）；
     // 派生粒子 index=spawn 序号、uv=(0,0)。
     private val particleGlobalIndex: Map<String, Int> = animation.particles.mapIndexed { i, p -> p.id to i }.toMap()
@@ -148,7 +141,7 @@ class ClientAnimationPlayer(
         return UvData(uv.texture, uv.mode, uv.texSize, start, size, step, fps, maxFrame, uv.loop)
     }
 
-    // ---- 函数对象脚本运行时（v12 spawn 模型：setup 一次、tick 补跑、process 每帧一次）----
+    // —— 函数对象脚本运行时（setup 一次、tick 补跑、process 每帧一次） ——
     private val fxById: Map<String, FunctionObject> = animation.functions.associateBy { it.id }
 
     private class FxRuntime(
@@ -190,7 +183,7 @@ class ClientAnimationPlayer(
             return host
         }
 
-        // ---- 循环回卷快照：避免回卷时重新 setup / 重建粒子造成顿挫，并保证 rand/global 确定性。 ----
+        // —— 循环回卷快照：避免回卷时重新 setup / 重建粒子造成顿挫，并保证 rand/global 确定性。 ——
         // loopSnapshot：process 前（首圈活动窗口首个 tick、cursor == st）捕获，供一般向后 seek 正向补跑。
         // loopDoneSnapshot：process 后（t == st）捕获，供回卷恰好落在 st 时直接恢复并跳过 process。
         var loopSnapshot: LoopSnapshot? = null
@@ -402,12 +395,8 @@ class ClientAnimationPlayer(
         return fxById[id.substring(0, marker)]
     }
 
-    /**
-     * 标记「视觉会随时间变化」的普通粒子：自身或所属组存在 set/op 轨道、速度非零、带入场过渡。
-     * 其余粒子（如 64×64 图片导入的 4096 个静态像素粒子）位置/颜色/缩放恒定，
-     * advanceTo 只更新其 st/life 可见性，避免每 tick 重算与大量 Vec3/Color/FloatArray 分配。
-     * 派生粒子（fx）由函数对象循环求值，不在本集合内。
-     */
+    // 标记「视觉会随时间变化」的普通粒子（有轨道/速度/入场过渡）；其余静态粒子只更新 st/life 可见性，省去每 tick 重算与分配。
+    // 派生粒子由函数对象循环求值，不在本集合内。
     private fun buildDynamicParticleIds(): Set<String> {
         val ids = HashSet<String>()
         for (p in animation.particles) {
@@ -516,19 +505,9 @@ class ClientAnimationPlayer(
     fun currentStates(): Collection<ParticleState> = states.values
     fun stop() { finished = true }
 
-    /**
-     * 查询某摄像机对象在 t 时刻的姿态（v6 新增；v7 起朝向为 target 目标点 + roll；v8 起支持旋转公转）。
-     *
-     * 与编辑器 `cameraPoseAt` 语义一致：
-     * - pos/target 分量：set 轨道 `trackValueAt(t, base)`；op 轨道 `base + trackValueAt(t, 0)`；
-     * - rot 分量：set/op 均 `trackValueAt(t, 0)`（基值 0）；
-     * - roll：静态基础值，不走关键帧；
-     * - fov：直接 `trackValueAt(t, fov)`（不区分 set/op，与编辑器一致）。
-     * - 旋转 = 位置绕 target 公转：world 空间绕世界 X/Y/Z 轴依次旋转；
-     *   local 空间以 lookAt+roll 自身朝向做 intrinsic XYZ 旋转（M = M_look·M_local·M_lookᵀ）。
-     *
-     * 摄像机不存在时返回 null。
-     */
+    // 查询摄像机在 t 时刻的姿态；与编辑器 cameraPoseAt 语义一致。
+    // pos/target：set=绝对值、op=增量；roll 静态不走关键帧；fov 不分 set/op。
+    // 旋转 = 位置绕 target 公转：world 绕世界轴，local 按 lookAt+roll 朝向做 intrinsic XYZ。摄像机不存在时返回 null。
     fun cameraPoseAt(camId: String, t: Double): CameraPose? {
         val cam = animation.cameras.firstOrNull { it.id == camId } ?: return null
         val id = "c:" + camId
@@ -549,7 +528,7 @@ class ClientAnimationPlayer(
         return CameraPose(pos, target, roll, fov)
     }
 
-    /** 摄像机公转（v8）：把位置绕「看向目标点」旋转。 */
+    /** 摄像机公转：把位置绕「看向目标点」旋转。 */
     private fun applyCameraOrbit(pos: DoubleArray, target: DoubleArray, rot: DoubleArray, rotLocal: Boolean, roll: Double) {
         val d = Vec3(pos[0] - target[0], pos[1] - target[1], pos[2] - target[2])
         if (d.lengthSqr() < 1e-18) return // 与目标重合：无法公转
@@ -692,12 +671,8 @@ class ClientAnimationPlayer(
         advanceInitialized = true
     }
 
-    /**
-     * 把函数对象推进到时间 t（与编辑器 evaluateFxFrame 同语义）：
-     * - t < st 或超过对象时长：仅保持 setup 已执行（粒子保留，渲染层按门控隐藏）；
-     * - 向后 seek（t < tickCursor）：重建运行时（清空粒子、重跑 setup、重置 tick 游标）；
-     * - 正常：补跑 (tickCursor, floor(t)] 的 tick()，再跑一次 process(deltaMs)。
-     */
+    // 把函数对象推进到时间 t（与编辑器 evaluateFxFrame 同语义）。
+    // t < st 或超时长只保持 setup；向后 seek 重建运行时；正常则补跑 tick() 再跑一次 process(deltaMs)。
     private fun advanceFx(fx: FunctionObject, rt: FxRuntime, t: Double, deltaMs: Double) {
         val st = fx.st.toDouble()
         val dur = fx.duration.toDouble()

@@ -1,13 +1,7 @@
 package work.nekow.particledrawing.api
 
-/**
- * 实体属性枚举：`get_entity_<wire>(<句柄>)` 的封闭词表。
- *
- * - [wire] 是线上/公式里的实际名字（重写器按它识别，客户端按它采样）；
- * - [X]/[Y]/[Z]/[POS]/[EXISTS] 为基础项；[POS] 仅支持
- *   `[x,y,z] = get_entity_pos(h)` 独占赋值形态（编译期展开为三分量）；
- * - 实体缺失时所有属性读 0（[EXISTS] 同样为 0）。
- */
+// 实体属性枚举：get_entity_<wire>(<句柄>) 的封闭词表。
+// wire 是线上/公式里的实际名字；POS 仅支持 [x,y,z] = get_entity_pos(h) 独占赋值形态；实体缺失时所有属性读 0。
 enum class EntityProp(val wire: String) {
     X("x"), Y("y"), Z("z"),
     POS("pos"),

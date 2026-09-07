@@ -3,15 +3,7 @@ package work.nekow.particledrawing.core.easing
 import java.util.Objects
 import kotlin.math.abs
 
-/**
- * 三次贝塞尔缓动曲线，由四个控制点参数定义。
- * 用于在粒子动画中计算平滑的过渡效果。
- *
- * @param x1 第一控制点的 X 坐标
- * @param y1 第一控制点的 Y 坐标
- * @param x2 第二控制点的 X 坐标
- * @param y2 第二控制点的 Y 坐标
- */
+// 三次贝塞尔缓动曲线，由四个控制点参数定义，用于粒子动画的平滑过渡。
 @Suppress("unused")
 class EasingCurve(
     val x1: Double,

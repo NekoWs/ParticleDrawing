@@ -39,7 +39,7 @@ fun main() {
     val n = count.toDouble()
     val t = 0.0
 
-    // ---- 性能：快路径 5w ----
+    // —— 性能：快路径 5w ——
     var total = 0.0
     for (p in presets) {
         val varDefs = p.vars.map { (name, expr) -> VarDef(name, expr.toDouble(), emptyList()) }
@@ -61,7 +61,7 @@ fun main() {
     }
     println("快路径合计: %.2f ms".format(total))
 
-    // ---- 回退验证：含向量/矩阵的代码块应返回 null ----
+    // —— 回退验证：含向量/矩阵的代码块应返回 null ——
     println()
     println("=== 非纯标量代码块回退验证 ===")
     val nonScalar = listOf(

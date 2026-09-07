@@ -1,9 +1,6 @@
 package work.nekow.particledrawing.api
 
-/**
- * 不可变 RGBA 颜色，四个分量均为 `[0, 1]` 范围内的 [Float]。
- * 提供预设常量与工厂方法（[of]、[ofInt]、[ofPacked]、[ofHsb]）。
- */
+// 不可变 RGBA 颜色，四分量均在 [0,1]；提供预设常量与工厂方法（of/ofInt/ofPacked/ofHsb）。
 @Suppress("unused")
 class Color private constructor(
     val r: Float,

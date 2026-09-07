@@ -11,30 +11,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import work.nekow.particledrawing.animation.ClientAnimationPlayer;
 import work.nekow.particledrawing.core.client.CameraController;
 
-/**
- * 摄像机预览：覆盖玩家相机的位置与旋转（/pdraw camera 命令）。
- * <p>
- * 原版 {@link Camera#update} 时序：{@code alignWithEntity}（设 position/rotation）→
- * {@code fov = calculateFov} → {@code prepareCullFrustum}（用 position/rotation 备视锥）→
- * {@code setupPerspective}。故在 {@code alignWithEntity} 返回处覆盖 position/rotation，
- * 之后视锥与投影都使用覆盖后的姿态，时序正确。
- * <p>
- * {@link CameraController#currentPose(double)} 返回的姿态为世界坐标（已加播放原点偏移）且
- * 按渲染 partialTicks 在相邻 game tick 姿态间插值，消除 20Hz 逐 tick 跳变。
- * <p>
- * {@code setRotation(float,float,float)} 为 protected，用 {@link Invoker} 调用；
- * {@code position} 字段为 private，用 {@link Accessor} 写入。
- * <p>
- * 朝向转换（v7 起）：编辑器存「位置 + 看向目标点 + roll」，即 THREE 相机
- * {@code lookAt(target)}（up=(0,1,0)）+ {@code rotateZ(roll)} 的姿态。
- * 本类把该姿态反解为 {@code setRotation(yRot, xRot, roll)} 参数：
- * {@code rotation = rotationYXZ(π − yRot, −xRot, −roll)}（原版实现）。
- * 反解公式经 JOML 1.10.8 十万组随机朝向端到端验证（重建误差 &lt; 1e-4），
- * 且对视向竖直（±90° 俯仰）退化作回退处理。
- * <p>
- * FOV 由 {@link work.nekow.particledrawing.core.client.ParticleRenderHandler#onComputeFov}
- * 走 {@code ViewportEvent.ComputeFov} 覆盖，不在本 mixin 处理。
- */
+// 摄像机预览（/pdraw camera）：在 alignWithEntity 返回处覆盖玩家相机的位置与旋转，
+// 之后 prepareCullFrustum / setupPerspective 都会用这个姿态。
+// FOV 由 ParticleRenderHandler#onComputeFov 走 ViewportEvent.ComputeFov 覆盖，不在这里处理。
 @Mixin(Camera.class)
 public abstract class CameraMixin {
 
@@ -97,7 +76,8 @@ public abstract class CameraMixin {
         double ypx = -xx * s + yx * c;
         double ypy = -xy * s + yy * c;
 
-        // 反解 rotationYXZ(π − yRot, −xRot, −roll)
+        // 反解 rotationYXZ(π − yRot, −xRot, −roll)。
+        // 公式经 JOML 1.10.8 十万组随机朝向端到端验证（重建误差 < 1e-4），视向竖直时上面已退化处理。
         double a = Math.atan2(zx, zz);
         double b = Math.asin(Math.clamp(-zy, -1.0, 1.0));
         double cc = Math.atan2(xpy, ypy);

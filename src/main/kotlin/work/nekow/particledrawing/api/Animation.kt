@@ -20,31 +20,7 @@ import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
 import java.util.function.Consumer
 
-/**
- * 代码直接生成的粒子动画，构建后可直接播放或链式操作。
- *
- * Kotlin（DSL）：
- * ```kotlin
- * val anim = Animation.create {
- *     loop = true
- *     particle { id = "p0"; pos = Vec3(0.0, 10.0, 0.0); color = Color.CYAN; scale = 1f; life = -1 }
- *     track { pr = TrackPr.POS_X; ids = listOf("p0"); keyframe(0, 0, 10.0, EasingType.LINEAR) }
- * }
- * anim.play(level.players(), origin)
- *     .updateVariable("rad", "4")
- *     .isActive()
- * ```
- *
- * Java（Builder）：
- * ```java
- * Animation anim = Animation.builder()
- *     .loop(true)
- *     .particle(p -> p.id("p0").pos(0, 10, 0).color(Color.CYAN).scale(1f).life(-1))
- *     .track(t -> t.pr(TrackPr.POS_X).ids("p0").keyframe(0, 0, EasingType.LINEAR))
- *     .build();
- * anim.play(level.players(), origin).updateVariable("rad", "4");
- * ```
- */
+// 代码直接生成的粒子动画，构建后可播放或链式操作（Kotlin DSL 与 Java Builder 双入口）。
 @Suppress("unused")
 class Animation internal constructor(
     private val model: ParticleAnimation,
@@ -99,7 +75,7 @@ class Animation internal constructor(
     /** 本次播放是否仍在进行。 */
     fun isActive(): Boolean = playbackId?.let { ServerAnimationManager.isActive(it) } ?: false
 
-    /** 仅供测试/内部使用：底层动画模型。 */
+    /** 给测试/内部用：底层动画模型。 */
     internal val animationModel: ParticleAnimation get() = model
 
     companion object {
@@ -562,9 +538,7 @@ class CameraBuilder internal constructor() {
     }
 }
 
-/* =====================================================================
- * Kotlin DSL 糖：把 Java Builder 包装成属性赋值风格
- * ===================================================================== */
+// —— Kotlin DSL 糖：把 Java Builder 包装成属性赋值风格 ——
 
 @Suppress("unused")
 class AnimationDsl internal constructor() {

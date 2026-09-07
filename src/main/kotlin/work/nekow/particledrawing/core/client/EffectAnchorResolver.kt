@@ -9,16 +9,9 @@ import work.nekow.particledrawing.api.Orient
 import kotlin.math.atan2
 import kotlin.math.sqrt
 
-/**
- * 客户端锚点解析器：维护「位置 + 旋转四元数 + 整体缩放」，把播放器输出的
- * 本地坐标映射为世界坐标。
- *
- * - [Anchor.Fixed]：恒定位置，单位旋转。
- * - [Anchor.Entity]：每个 game tick 调用 [resolveEntity] 从实体取位置与 yaw/pitch。
- * - [Anchor.Movable]：[updateMovable] 由锚点更新包驱动，朝向由速度方向推导（或世界朝向）。
- *
- * 旋转约定与 MC 视角一致：look 向量 = RotY(-yaw) · RotX(pitch) · (0,0,1)。
- */
+// 客户端锚点解析器：维护「位置 + 旋转四元数 + 整体缩放」，把播放器输出的本地坐标映射为世界坐标。
+// Fixed=恒定位置；Entity=每 tick 从实体取位置与 yaw/pitch；Movable=由更新包驱动，朝向由速度推导。
+// 旋转约定与 MC 视角一致：look = RotY(-yaw)·RotX(pitch)·(0,0,1)。
 internal class EffectAnchorResolver(
     private val anchorKind: Anchor,
     private val scale: Float,

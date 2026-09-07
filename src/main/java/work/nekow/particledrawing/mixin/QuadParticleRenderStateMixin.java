@@ -12,14 +12,10 @@ import work.nekow.particledrawing.core.client.BridgeParticle;
 
 import com.mojang.blaze3d.vertex.VertexConsumer;
 
-/**
- * 拦截 QuadParticleRenderState 的顶点生成，为 BridgeParticle 非均匀缩放粒子注入
- * 独立的宽度/高度缩放（原版只支持单一 scale → 正方形 quad）。
- *
- * 原理：BridgeParticle.extractRotatedQuad 在调用父类前设置静态字段 nonUniformScaleW，
- * 此 mixin 的 renderVertex 检测到该字段有效时将 nx 分量替换为 (nx / scale * scaleW)，
- * 实现宽度和高度独立缩放。
- */
+// 拦截 QuadParticleRenderState 的顶点生成，让 BridgeParticle 的非均匀缩放粒子
+// 有独立的宽/高缩放（原版只有一个 scale，quad 永远是正方形）。
+// 原理：BridgeParticle.extractRotatedQuad 在调父类前写好静态字段 nonUniformScaleW，
+// renderVertex 检测到有效值后把 nx 分量换成 (nx / scale * scaleW)。
 @Mixin(QuadParticleRenderState.class)
 public class QuadParticleRenderStateMixin {
 

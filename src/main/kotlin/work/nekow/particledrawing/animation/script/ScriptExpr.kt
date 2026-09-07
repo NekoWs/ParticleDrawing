@@ -4,16 +4,10 @@ import work.nekow.particledrawing.core.easing.EasingType
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.*
 
-/**
- * 标量表达式求值（旧 `animation.expr.ExpressionEvaluator` 存活子集）。
- *
- * 旧的通用解释器（向量/矩阵运算、`evalFunctionCode` 代码块执行）已由 script-lang
- * 的 [ScriptRuntime] / [ScriptScalarProgram] 取代，故移除；本文件仅保留仍被
- * [ScalarProgram]（纯标量快路径的 RPN 编译）与 `ClientAnimationProgramManager.setVariable`
- * （变量热更公式求值）使用的标量表达式求值能力。
- */
+// 标量表达式求值（旧 ExpressionEvaluator 的存活子集）。
+// 通用解释器已由 script-lang 的 ScriptRuntime / ScalarProgram 取代；这里只剩标量 RPN 编译与变量热更公式求值。
 
-/** 变量关键帧（tick / 值 / 缓动；`Double` tick，供变量插值使用）。 */
+/** 变量关键帧（tick / 值 / 缓动；`Double` tick，给变量插值用）。 */
 data class Keyframe(val tick: Double, val value: Double, val easing: EasingType)
 
 /** 标量函数签名：名称 -> 参数个数（与编辑器 easing.js 的标量子集对齐）。 */

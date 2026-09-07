@@ -12,9 +12,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
-/**
- * 摄像机「旋转」（绕看向目标点公转，v8）与编辑器同语义的回归测试。
- */
+// 摄像机「旋转」（绕看向目标点公转）与编辑器同语义的回归测试。
 class CameraOrbitPlayerTest {
 
     private fun player(cam: AnimCamera, tracks: List<AnimTrack>): ClientAnimationPlayer =

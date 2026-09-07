@@ -8,13 +8,8 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import work.nekow.particledrawing.lighting.DynamicLightManager;
 
-/**
- * 将动态光照注入原版默认亮度获取器。
- * <p>
- * 原版渲染器在烘焙区块 section 网格时通过 {@link LightCoordsUtil.BrightnessGetter#DEFAULT}
- * 查询每个方块的光图坐标，注入此 lambda 即可在方块光照分量上叠加平滑的动态光照值，
- * 实现不放置光源方块的世界方块光照效果。
- */
+// 给原版默认亮度获取器注入动态光照：烘焙区块 section 网格时用
+// {@link LightCoordsUtil.BrightnessGetter#DEFAULT} 查方块光图坐标，在返回前叠加动态光照值。
 @Mixin(value = LightCoordsUtil.BrightnessGetter.class, priority = 900)
 public interface BrightnessGetterMixin {
 

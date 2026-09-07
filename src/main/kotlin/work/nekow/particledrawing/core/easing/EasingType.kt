@@ -2,10 +2,7 @@ package work.nekow.particledrawing.core.easing
 
 import kotlin.math.abs
 
-/**
- * 缓动类型，可为预设或自定义三次贝塞尔曲线。
- * 支持序列化与反序列化以便网络传输。
- */
+// 缓动类型：预设或自定义三次贝塞尔曲线，支持序列化以便网络传输。
 @Suppress("unused")
 class EasingType private constructor(
     val name: String?,

@@ -12,33 +12,9 @@ import work.nekow.particledrawing.core.server.AnimationScheduler
 import net.neoforged.neoforge.network.PacketDistributor
 import java.util.UUID
 
-/**
- * 一组可同时变换的粒子集合，也是编排式动画的基本单位。
- * 通过 [Draw] 工具或 [ParticleManager.createGroup] 创建。
- *
- * 动画执行模型：**客户端自驱程序**。所有动画方法把意图录制为 [AnimInstruction]
- * 指令流，随首个方法调用一次性下发到客户端；此后每 client tick 由客户端本地求值
- * 并直写渲染——持续动画（spin/pulse）运行期零带宽、帧率级平滑。
- * [delay] 推进时间线游标（累积、不清零），之后的每个动画方法都在各自游标时刻触发。
- *
- * ```kotlin
- * Draw.circle(manager, center, 3.0, 60)
- *     .fadeIn(10)                          // t=0    渐显
- *     .spin(Vec3(0, 1, 0), Math.PI / 40)   // t=0    开始持续旋转
- *     .delay(100)                          // 游标 → 100
- *     .stopContinuous()                    // t=100  停转
- *     .fadeOut(20)                         // t=100  渐隐销毁
- * ```
- *
- * 高级能力：实体句柄 + 被动输入 getter + 表达式指令——
- * ```kotlin
- * group.defineEntity("e", entityUUID)
- *      .expression("""
- *          th = i / n * 2 * pi;
- *          [x,y,z] = [get_entity_x(e) + cos(th) * 2, get_entity_y(e) + 1 + sin(t * 0.1), get_entity_z(e) + sin(th) * 2]
- *      """)
- * ```
- */
+// 一组可同时变换的粒子集合，编排式动画的基本单位（经 Draw 工具或 ParticleManager.createGroup 创建）。
+// 动画方法是客户端自驱程序：录制 AnimInstruction 指令流一次下发，客户端本地求值直写渲染，持续动画（spin/pulse）零带宽。
+// delay 推进时间线游标（累积、不清零）；defineEntity/expression 提供实体句柄与表达式能力。
 @Suppress("unused")
 class ParticleGroup(
     val id: UUID,
@@ -76,9 +52,7 @@ class ParticleGroup(
         }
     }
 
-    /* =====================================================================
-     * 基础
-     * ===================================================================== */
+    // —— 基础 ——
 
     /**
      * 设置变换基准点（固定坐标）。影响后续旋转/缩放类指令。
@@ -117,9 +91,7 @@ class ParticleGroup(
      */
     fun size(): Int = manager.getEngine().getGroup(id)?.size() ?: 0
 
-    /* =====================================================================
-     * 时间线编排
-     * ===================================================================== */
+    // —— 时间线编排 ——
 
     /**
      * 把时间线游标向前推进 [ticks]：之后链式调用的动画方法都在新游标时刻触发。
@@ -132,7 +104,7 @@ class ParticleGroup(
 
     private fun cursorNow(): Int = cursorTicks
 
-    /** 录制一条指令并确保程序已下发。 */
+    /** 录制一条指令并触发下发。 */
     private fun emit(ins: AnimInstruction) {
         instructions.add(ins)
         flush()
@@ -168,9 +140,7 @@ class ParticleGroup(
         }
     }
 
-    /* =====================================================================
-     * 生命周期
-     * ===================================================================== */
+    // —— 生命周期 ——
 
     /**
      * 淡入：整组透明度从 0 缓动到各自当前值。
@@ -229,9 +199,7 @@ class ParticleGroup(
         }
     }
 
-    /* =====================================================================
-     * 一次性变换（有限时长指令）
-     * ===================================================================== */
+    // —— 一次性变换（有限时长指令） ——
 
     /** 组平移。 */
     fun move(delta: Vec3, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
@@ -271,9 +239,7 @@ class ParticleGroup(
         return this
     }
 
-    /* =====================================================================
-     * 持续运动
-     * ===================================================================== */
+    // —— 持续运动 ——
 
     /** 无限匀速旋转；用 [stopContinuous] 停止。 */
     fun spin(axis: Vec3, radiansPerTick: Double): ParticleGroup {
@@ -295,9 +261,7 @@ class ParticleGroup(
         return this
     }
 
-    /* =====================================================================
-     * 实体句柄 + 表达式指令（上限能力）
-     * ===================================================================== */
+    // —— 实体句柄 + 表达式指令（上限能力） ——
 
     /**
      * 定义实体句柄：把 [uuid] 以 [handle] 名写进程序的实体注册表（下发顺序 = 句柄序号）。

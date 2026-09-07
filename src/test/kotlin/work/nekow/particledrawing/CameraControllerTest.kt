@@ -8,11 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-/**
- * /pdraw camera 预览姿态的回归测试：
- * - 姿态必须加上播放原点（粒子以 origin + 局部坐标生成，摄像机同处一个世界）；
- * - 渲染帧按 partialTick 在相邻 game tick 姿态间插值（20Hz → 每帧平滑）。
- */
+// /pdraw camera 预览姿态的回归测试：姿态要加播放原点，渲染帧按 partialTick 插值。
 class CameraControllerTest {
 
     private fun pose(x: Double, y: Double, z: Double, tx: Double, ty: Double, tz: Double) =
