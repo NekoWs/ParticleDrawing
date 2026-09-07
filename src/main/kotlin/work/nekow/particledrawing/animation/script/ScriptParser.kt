@@ -81,7 +81,9 @@ class Token(
     val numValue: Double = 0.0,
     val line: Int,
     val col: Int,
-)
+) {
+    var nl: Boolean = false
+}
 
 private fun isDigit(c: Char) = c in '0'..'9'
 private fun isIdentStart(c: Char) = c in 'a'..'z' || c in 'A'..'Z' || c == '_'
@@ -95,13 +97,21 @@ fun tokenize(sourceIn: String?): List<Token> {
     var i = 0
     var line = 1
     var col = 1
+    var nlSeen = false
     val len = src.length
 
     fun advance(): Char {
         val c = src[i]
         i++
-        if (c == '\n') { line++; col = 1 } else { col++ }
+        if (c == '\n') { line++; col = 1; nlSeen = true } else { col++ }
         return c
+    }
+
+    // 每个 token 记录「前一个 token 之后是否出现过换行」，供解析器做换行断句判定。
+    fun emit(t: Token) {
+        t.nl = nlSeen
+        nlSeen = false
+        tokens.add(t)
     }
 
     while (i < len) {
@@ -134,7 +144,7 @@ fun tokenize(sourceIn: String?): List<Token> {
                 ?: throw ScriptException("invalid number", startLine, startCol)
             val text = m.value
             repeat(text.length) { advance() }
-            tokens.add(Token(TokenType.NUM, text, text.toDouble(), startLine, startCol))
+            emit(Token(TokenType.NUM, text, text.toDouble(), startLine, startCol))
             continue
         }
 
@@ -165,7 +175,7 @@ fun tokenize(sourceIn: String?): List<Token> {
                 advance()
             }
             if (!closed) throw ScriptException("unterminated string literal", startLine, startCol)
-            tokens.add(Token(TokenType.STR, out.toString(), line = startLine, col = startCol))
+            emit(Token(TokenType.STR, out.toString(), line = startLine, col = startCol))
             continue
         }
 
@@ -176,9 +186,9 @@ fun tokenize(sourceIn: String?): List<Token> {
             while (i < len && isIdentPart(src[i])) name.append(advance())
             val n = name.toString()
             when (n) {
-                "pi" -> tokens.add(Token(TokenType.NUM, n, PI, startLine, startCol))
-                "e" -> tokens.add(Token(TokenType.NUM, n, E, startLine, startCol))
-                else -> tokens.add(Token(TokenType.IDENT, n, line = startLine, col = startCol))
+                "pi" -> emit(Token(TokenType.NUM, n, PI, startLine, startCol))
+                "e" -> emit(Token(TokenType.NUM, n, E, startLine, startCol))
+                else -> emit(Token(TokenType.IDENT, n, line = startLine, col = startCol))
             }
             continue
         }
@@ -193,7 +203,7 @@ fun tokenize(sourceIn: String?): List<Token> {
                 else -> ">="
             }
             advance(); advance()
-            tokens.add(Token(TokenType.PUNCT, op, line = startLine, col = startCol))
+            emit(Token(TokenType.PUNCT, op, line = startLine, col = startCol))
             continue
         }
 
@@ -202,7 +212,7 @@ fun tokenize(sourceIn: String?): List<Token> {
             val startCol = col
             val op = if (c == '&') "&&" else "||"
             advance(); advance()
-            tokens.add(Token(TokenType.PUNCT, op, line = startLine, col = startCol))
+            emit(Token(TokenType.PUNCT, op, line = startLine, col = startCol))
             continue
         }
 
@@ -211,7 +221,7 @@ fun tokenize(sourceIn: String?): List<Token> {
             val startCol = col
             val op = if (c == '+') "++" else "--"
             advance(); advance()
-            tokens.add(Token(TokenType.PUNCT, op, line = startLine, col = startCol))
+            emit(Token(TokenType.PUNCT, op, line = startLine, col = startCol))
             continue
         }
 
@@ -219,14 +229,14 @@ fun tokenize(sourceIn: String?): List<Token> {
             val startLine = line
             val startCol = col
             advance()
-            tokens.add(Token(TokenType.PUNCT, c.toString(), line = startLine, col = startCol))
+            emit(Token(TokenType.PUNCT, c.toString(), line = startLine, col = startCol))
             continue
         }
 
         throw ScriptException("unexpected character '$c'", line, col)
     }
 
-    tokens.add(Token(TokenType.EOF, "<eof>", line = line, col = col))
+    emit(Token(TokenType.EOF, "<eof>", line = line, col = col))
     return tokens
 }
 
@@ -267,6 +277,19 @@ class ScriptParser(private val source: String) {
         return false
     }
     private fun atEnd(): Boolean = peek().type == TokenType.EOF
+
+    // 当前待消费 token 之前是否有换行：行首运算符不续接上一行，语句在换行处结束。
+    private fun nlBefore(): Boolean = peek().nl
+
+    // 语句结尾：`;`、换行、`}` 或 EOF 均可结束语句；`;` 用于同行写多条语句。
+    private fun statementEnd() {
+        val tok = peek()
+        if (tok.type == TokenType.EOF || tok.text == ";" || tok.text == "}" || tok.nl) {
+            if (tok.text == ";") next()
+            return
+        }
+        throw ScriptException("expected ';' or newline after statement, got '${tok.text}'", tok.line, tok.col)
+    }
 
     private fun errorAt(tok: Token, msg: String): Nothing =
         throw ScriptException(msg, tok.line, tok.col)
@@ -443,7 +466,7 @@ class ScriptParser(private val source: String) {
         expect("(")
         val cond = parseTernary()
         expect(")")
-        expect(";")
+        statementEnd()
         return DoNode(body, cond, start.line, start.col)
     }
 
@@ -453,18 +476,8 @@ class ScriptParser(private val source: String) {
 
         // for-of：for (const name of expr) 或 for (name of expr)
         val saved = pos
-        if (matchKw("const")) {
-            val nameTok = expectIdent()
-            validateForVarName(nameTok)
-            expectKw("of")
-            val iter = parseTernary()
-            expect(")")
-            loopDepth++
-            val body = parseStatement()
-            loopDepth--
-            return ForOfNode(nameTok.text, iter, body, start.line, start.col)
-        }
-        if (peek().type == TokenType.IDENT && peek(1).type == TokenType.IDENT && peek(1).text == "of") {
+        if (matchKw("const") ||
+            (peek().type == TokenType.IDENT && peek(1).type == TokenType.IDENT && peek(1).text == "of")) {
             val nameTok = expectIdent()
             validateForVarName(nameTok)
             expectKw("of")
@@ -501,14 +514,14 @@ class ScriptParser(private val source: String) {
     private fun parseBreak(tok: Token): Node {
         if (loopDepth == 0) errorAt(tok, "'break' outside loop")
         next()
-        expect(";")
+        statementEnd()
         return BreakNode(tok.line, tok.col)
     }
 
     private fun parseContinue(tok: Token): Node {
         if (loopDepth == 0) errorAt(tok, "'continue' outside loop")
         next()
-        expect(";")
+        statementEnd()
         return ContinueNode(tok.line, tok.col)
     }
 
@@ -516,8 +529,8 @@ class ScriptParser(private val source: String) {
         if (phase == null) errorAt(tok, "'return' only allowed inside a function")
         next()
         var expr: Node? = null
-        if (!check(";")) expr = parseTernary()
-        expect(";")
+        if (!check(";") && !atEnd() && !nlBefore()) expr = parseTernary()
+        statementEnd()
         return ReturnNode(expr, tok.line, tok.col)
     }
 
@@ -527,8 +540,8 @@ class ScriptParser(private val source: String) {
         val nameTok = expectIdent()
         validateGlobalName(nameTok)
         var init: Node? = null
-        if (match("=")) init = parseTernary()
-        expect(";")
+        if (!nlBefore() && match("=")) init = parseTernary()
+        statementEnd()
         return GlobalNode(nameTok.text, init, tok.line, tok.col)
     }
 
@@ -543,10 +556,10 @@ class ScriptParser(private val source: String) {
         val start = peek()
         val expr = parseAssignExpr()
         if (expr is AssignNode) {
-            expect(";")
+            statementEnd()
             return expr
         }
-        expect(";")
+        statementEnd()
         if (expr !is CallNode && expr !is MethodNode && expr !is PreIncNode && expr !is PostIncNode) {
             errorAt(start, "expression statement must be a function call")
         }
@@ -556,7 +569,7 @@ class ScriptParser(private val source: String) {
     private fun parseAssignExpr(): Node {
         val start = peek()
         val left = parseTernary()
-        if (match("=")) {
+        if (!nlBefore() && match("=")) {
             val target = toLValue(left, start)
             val value = parseAssignExpr()
             return AssignNode(target, value, start.line, start.col)
@@ -584,7 +597,7 @@ class ScriptParser(private val source: String) {
 
     private fun parseTernary(): Node {
         val cond = parseOr()
-        if (match("?")) {
+        if (!nlBefore() && match("?")) {
             val qTok = tokens[pos - 1]
             val thenExpr = parseTernary()
             expect(":")
@@ -596,7 +609,7 @@ class ScriptParser(private val source: String) {
 
     private fun parseOr(): Node {
         var left = parseAnd()
-        while (match("||")) {
+        while (!nlBefore() && match("||")) {
             val opTok = tokens[pos - 1]
             val right = parseAnd()
             left = BinaryNode("||", left, right, opTok.line, opTok.col)
@@ -606,7 +619,7 @@ class ScriptParser(private val source: String) {
 
     private fun parseAnd(): Node {
         var left = parseEquality()
-        while (match("&&")) {
+        while (!nlBefore() && match("&&")) {
             val opTok = tokens[pos - 1]
             val right = parseEquality()
             left = BinaryNode("&&", left, right, opTok.line, opTok.col)
@@ -616,7 +629,7 @@ class ScriptParser(private val source: String) {
 
     private fun parseEquality(): Node {
         var left = parseComparison()
-        while (check("==") || check("!=")) {
+        while (!nlBefore() && (check("==") || check("!="))) {
             val opTok = next()
             val right = parseComparison()
             left = BinaryNode(opTok.text, left, right, opTok.line, opTok.col)
@@ -626,7 +639,7 @@ class ScriptParser(private val source: String) {
 
     private fun parseComparison(): Node {
         var left = parseAdditive()
-        while (check("<") || check("<=") || check(">") || check(">=")) {
+        while (!nlBefore() && (check("<") || check("<=") || check(">") || check(">="))) {
             val opTok = next()
             val right = parseAdditive()
             left = BinaryNode(opTok.text, left, right, opTok.line, opTok.col)
@@ -636,7 +649,7 @@ class ScriptParser(private val source: String) {
 
     private fun parseAdditive(): Node {
         var left = parseMultiplicative()
-        while (check("+") || check("-")) {
+        while (!nlBefore() && (check("+") || check("-"))) {
             val opTok = next()
             val right = parseMultiplicative()
             left = BinaryNode(opTok.text, left, right, opTok.line, opTok.col)
@@ -646,7 +659,7 @@ class ScriptParser(private val source: String) {
 
     private fun parseMultiplicative(): Node {
         var left = parsePower()
-        while (check("*") || check("/") || check("%")) {
+        while (!nlBefore() && (check("*") || check("/") || check("%"))) {
             val opTok = next()
             val right = parsePower()
             left = BinaryNode(opTok.text, left, right, opTok.line, opTok.col)
@@ -656,7 +669,7 @@ class ScriptParser(private val source: String) {
 
     private fun parsePower(): Node {
         var left = parseUnary()
-        while (match("^")) {
+        while (!nlBefore() && match("^")) {
             val opTok = tokens[pos - 1]
             val right = parsePower()
             left = BinaryNode("^", left, right, opTok.line, opTok.col)
@@ -682,16 +695,16 @@ class ScriptParser(private val source: String) {
         var expr = parsePrimary()
         while (true) {
             when {
-                match("(") -> {
+                !nlBefore() && match("(") -> {
                     val args = parseArgs()
                     expr = CallNode(expr, args, expr.line, expr.col)
                 }
-                match("[") -> {
+                !nlBefore() && match("[") -> {
                     val idx = parseTernary()
                     expect("]")
                     expr = IndexNode(expr, idx, expr.line, expr.col)
                 }
-                match(".") -> {
+                !nlBefore() && match(".") -> {
                     val nameTok = expectIdent()
                     if (match("(")) {
                         val args = parseArgs()
@@ -702,7 +715,7 @@ class ScriptParser(private val source: String) {
                         expr = MemberNode(expr, nameTok.text, expr.line, expr.col)
                     }
                 }
-                check("++") || check("--") -> {
+                !nlBefore() && (check("++") || check("--")) -> {
                     val opTok = next()
                     val target = toLValue(expr, opTok)
                     expr = PostIncNode(opTok.text, target, opTok.line, opTok.col)
