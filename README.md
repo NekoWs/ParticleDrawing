@@ -25,8 +25,8 @@ Add the dependency in your mod's build.gradle:
 ```gradle
 dependencies {
     // ...
-    compileOnly "work.nekow:particledrawing:1.0.3"
-    localRuntime "work.nekow:particledrawing:1.0.3"
+    compileOnly "work.nekow:particledrawing:1.0.6"
+    localRuntime "work.nekow:particledrawing:1.0.6"
 }
 ```
 The API development is still being gradually improved. Welcome to visit [Github](https://github.com/NekoWs/ParticleDrawing) to submit PRs!
