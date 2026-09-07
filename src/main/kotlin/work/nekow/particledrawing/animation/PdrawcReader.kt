@@ -29,18 +29,6 @@ object PdrawcReader {
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 
-    private val PR_BY_ENUM = arrayOf(
-        "pos.x", "pos.y", "pos.z",
-        "vel.x", "vel.y", "vel.z",
-        "col.r", "col.g", "col.b", "col.a",
-        "scl.x", "scl.y", "scl.z",
-        "rot.x", "rot.y", "rot.z",
-        "spin.x", "spin.y", "spin.z",
-        "center.x", "center.y", "center.z",
-        "fov",
-        "target.x", "target.y", "target.z",
-    )
-
     private val UV_MODES = arrayOf(UvData.Mode.STATIC, UvData.Mode.FILL, UvData.Mode.ANIMATED)
 
     /** 验证完整 .pdrawc 文件的 Ed25519 签名（用文件内嵌公钥）。 */
@@ -188,8 +176,8 @@ object PdrawcReader {
         val tracks = ArrayList<AnimTrack>(trackCount)
         for (i in 0 until trackCount) {
             val prIdx = br.u8()
-            if (prIdx !in PR_BY_ENUM.indices) throw IllegalArgumentException("pdrawc 未知 pr 枚举: $prIdx")
-            val pr = PR_BY_ENUM[prIdx]
+            val pr = TrackPr.fromOrdinal(prIdx)
+                ?: throw IllegalArgumentException("pdrawc 未知 pr 枚举: $prIdx")
             val mode = if (br.u8() == 1) AnimTrack.Mode.OP else AnimTrack.Mode.SET
             val idCount = br.varint()
             val ids = ArrayList<String>(idCount)

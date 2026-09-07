@@ -80,9 +80,9 @@ class ClientAnimationPlayer(
     }
 
     // ---- 预构建求值索引（避免每 tick 线性扫描轨道 / 组 / 粒子） ----
-    private val trackIndex: Map<String, Map<String, AnimTrack>> = buildTrackIndex()
+    private val trackIndex: Map<TrackPr, Map<String, AnimTrack>> = buildTrackIndex()
     private val opTracks: List<AnimTrack> = animation.tracks.filter { it.mode == AnimTrack.Mode.OP }
-    private val opTracksByPr: Map<String, List<AnimTrack>> = opTracks.filter { it.keyframes.isNotEmpty() }.groupBy { it.pr }
+    private val opTracksByPr: Map<TrackPr, List<AnimTrack>> = opTracks.filter { it.keyframes.isNotEmpty() }.groupBy { it.pr }
     private val groupSets: Map<String, Set<String>> = animation.groups.mapValues { (_, v) -> v.toSet() }
     private val groupSpinLocal: Set<String> = animation.groupSpinSpace.filterValues { it }.keys
     private val groupRotLocal: Set<String> = animation.groupRotSpace.filterValues { it }.keys
@@ -354,8 +354,8 @@ class ClientAnimationPlayer(
             print = { line -> println("[pdrawc:${fx.id}] $line") },
         )
 
-    private fun buildTrackIndex(): Map<String, Map<String, AnimTrack>> {
-        val map = HashMap<String, HashMap<String, AnimTrack>>()
+    private fun buildTrackIndex(): Map<TrackPr, Map<String, AnimTrack>> {
+        val map = HashMap<TrackPr, HashMap<String, AnimTrack>>()
         for (tr in animation.tracks) {
             if (tr.ids.size == 1) {
                 val byId = map.getOrPut(tr.pr) { HashMap() }
@@ -534,17 +534,18 @@ class ClientAnimationPlayer(
         val id = "c:" + camId
         val pos = DoubleArray(3)
         val target = DoubleArray(3)
+        val posPr = arrayOf(TrackPr.POS_X, TrackPr.POS_Y, TrackPr.POS_Z)
+        val targetPr = arrayOf(TrackPr.TARGET_X, TrackPr.TARGET_Y, TrackPr.TARGET_Z)
         for (i in 0 until 3) {
-            val comp = when (i) { 0 -> "x"; 1 -> "y"; else -> "z" }
-            pos[i] = cameraComponentAt(id, "pos", comp, cam.pos[i], t)
-            target[i] = cameraComponentAt(id, "target", comp, cam.target[i], t)
+            pos[i] = cameraComponentAt(id, posPr[i], cam.pos[i], t)
+            target[i] = cameraComponentAt(id, targetPr[i], cam.target[i], t)
         }
         val rot = rotVectorAt(id, t)
         if (rot[0] != 0.0 || rot[1] != 0.0 || rot[2] != 0.0) {
             applyCameraOrbit(pos, target, rot, cam.rotLocal, cam.roll)
         }
         val roll = cam.roll
-        val fov = scalarAt("fov", id, t, cam.fov)
+        val fov = scalarAt(TrackPr.FOV, id, t, cam.fov)
         return CameraPose(pos, target, roll, fov)
     }
 
@@ -608,8 +609,8 @@ class ClientAnimationPlayer(
     }
 
     /** 摄像机单分量求值（pos/target；set=绝对值，op=增量叠加到基础值）。 */
-    private fun cameraComponentAt(id: String, prop: String, comp: String, base: Double, t: Double): Double {
-        val tr = findTrackByPr(compPr(prop, comp), id) ?: return base
+    private fun cameraComponentAt(id: String, pr: TrackPr, base: Double, t: Double): Double {
+        val tr = findTrackByPr(pr, id) ?: return base
         if (tr.keyframes.isEmpty()) return base
         return if (tr.mode == AnimTrack.Mode.OP) base + trackValueAt(tr, t, 0.0) else trackValueAt(tr, t, base)
     }
@@ -672,9 +673,9 @@ class ClientAnimationPlayer(
                 } else {
                     val p = animationParticleById[id]
                     if (p != null) {
-                        uvCtx.out.vel[0] = componentValueAt(p, "vel", "x", t)
-                        uvCtx.out.vel[1] = componentValueAt(p, "vel", "y", t)
-                        uvCtx.out.vel[2] = componentValueAt(p, "vel", "z", t)
+                        uvCtx.out.vel[0] = componentValueAt(p, TrackPr.VEL_X, t)
+                        uvCtx.out.vel[1] = componentValueAt(p, TrackPr.VEL_Y, t)
+                        uvCtx.out.vel[2] = componentValueAt(p, TrackPr.VEL_Z, t)
                     }
                 }
                 uvCtx.out.scale = s.scale[0].toDouble()
@@ -764,21 +765,21 @@ class ClientAnimationPlayer(
         val visible = fxLocalT >= 0 && (fx.duration <= 0 || fxLocalT < fx.duration)
         val cx = fx.center[0]; val cy = fx.center[1]; val cz = fx.center[2]
         // 整体变换 / 自转 / 公转 / op 增量 每 tick 只算一次（与粒子序号无关）
-        val sx = scalarAt("spin.x", "f:" + fx.id, t, 0.0)
-        val sy = scalarAt("spin.y", "f:" + fx.id, t, 0.0)
-        val sz = scalarAt("spin.z", "f:" + fx.id, t, 0.0)
+        val sx = scalarAt(TrackPr.SPIN_X, "f:" + fx.id, t, 0.0)
+        val sy = scalarAt(TrackPr.SPIN_Y, "f:" + fx.id, t, 0.0)
+        val sz = scalarAt(TrackPr.SPIN_Z, "f:" + fx.id, t, 0.0)
         val hasSpin = sx != 0.0 || sy != 0.0 || sz != 0.0
         val spinPivot = Vec3(cx, cy, cz)
         val spin = doubleArrayOf(sx, sy, sz)
-        val rx = scalarAt("rot.x", "f:" + fx.id, t, 0.0)
-        val ry = scalarAt("rot.y", "f:" + fx.id, t, 0.0)
-        val rz = scalarAt("rot.z", "f:" + fx.id, t, 0.0)
+        val rx = scalarAt(TrackPr.ROT_X, "f:" + fx.id, t, 0.0)
+        val ry = scalarAt(TrackPr.ROT_Y, "f:" + fx.id, t, 0.0)
+        val rz = scalarAt(TrackPr.ROT_Z, "f:" + fx.id, t, 0.0)
         val hasRot = rx != 0.0 || ry != 0.0 || rz != 0.0
         val orbitPivot = orbitCenterAt("f:" + fx.id, t)
         val rot = doubleArrayOf(rx, ry, rz)
-        val dx = opDeltaAt("pos.x", "f:" + fx.id, t)
-        val dy = opDeltaAt("pos.y", "f:" + fx.id, t)
-        val dz = opDeltaAt("pos.z", "f:" + fx.id, t)
+        val dx = opDeltaAt(TrackPr.POS_X, "f:" + fx.id, t)
+        val dy = opDeltaAt(TrackPr.POS_Y, "f:" + fx.id, t)
+        val dz = opDeltaAt(TrackPr.POS_Z, "f:" + fx.id, t)
 
         val newIds = HashSet<String>()
         for (particle in rt.particles) {
@@ -852,15 +853,13 @@ class ClientAnimationPlayer(
             if (kf[mid].tick <= t) lo = mid else hi = mid
         }
         val a = kf[lo]; val b = kf[lo + 1]
-        val dur = (b.tick - a.tick).toDouble()
+        val dur = b.tick - a.tick
         val f = if (dur == 0.0) 1.0 else (t - a.tick) / dur
         val e = b.easing.evaluate(f.toFloat()).toDouble()
         return a.value + (b.value - a.value) * e
     }
 
-    private fun compPr(prop: String, comp: String): String = if (comp.isEmpty()) prop else prop + "." + comp
-
-    private fun findTrackByPr(pr: String, id: String): AnimTrack? = trackIndex[pr]?.get(id)
+    private fun findTrackByPr(pr: TrackPr, id: String): AnimTrack? = trackIndex[pr]?.get(id)
 
     private fun trackValueAt(tr: AnimTrack, t: Double, fallback: Double): Double {
         val kfs = tr.keyframes
@@ -880,19 +879,18 @@ class ClientAnimationPlayer(
         return a.value + (b.value - a.value) * e
     }
 
-    private fun scalarAt(pr: String, id: String, t: Double, fallback: Double): Double {
+    private fun scalarAt(pr: TrackPr, id: String, t: Double, fallback: Double): Double {
         val tr = findTrackByPr(pr, id) ?: return fallback
         return trackValueAt(tr, t, fallback)
     }
 
-    private fun opDeltaAt(pr: String, id: String, t: Double): Double {
+    private fun opDeltaAt(pr: TrackPr, id: String, t: Double): Double {
         val tr = findTrackByPr(pr, id) ?: return 0.0
         if (tr.mode != AnimTrack.Mode.OP || tr.keyframes.isEmpty()) return 0.0
         return trackValueAt(tr, t, 0.0)
     }
 
-    private fun findSetTrackFor(id: String, prop: String, comp: String): AnimTrack? {
-        val pr = compPr(prop, comp)
+    private fun findSetTrackFor(id: String, pr: TrackPr): AnimTrack? {
         findTrackByPr(pr, id)?.let { if (it.mode != AnimTrack.Mode.OP) return it }
         for (gname in particleGroupIndex[id] ?: emptySet()) {
             findTrackByPr(pr, "g:" + gname)?.let { if (it.mode != AnimTrack.Mode.OP) return it }
@@ -904,8 +902,7 @@ class ClientAnimationPlayer(
         return null
     }
 
-    private fun compOpDelta(p: AnimParticle, prop: String, comp: String, t: Double): Double {
-        val pr = compPr(prop, comp)
+    private fun compOpDelta(p: AnimParticle, pr: TrackPr, t: Double): Double {
         var delta = 0.0
         for (tr in opTracksByPr[pr] ?: emptyList()) {
             for (id in tr.ids) {
@@ -922,62 +919,71 @@ class ClientAnimationPlayer(
 
     private fun rotVectorAt(id: String, t: Double): DoubleArray =
         doubleArrayOf(
-            scalarAt("rot.x", id, t, 0.0),
-            scalarAt("rot.y", id, t, 0.0),
-            scalarAt("rot.z", id, t, 0.0),
+            scalarAt(TrackPr.ROT_X, id, t, 0.0),
+            scalarAt(TrackPr.ROT_Y, id, t, 0.0),
+            scalarAt(TrackPr.ROT_Z, id, t, 0.0),
         )
 
     private fun spinVectorAt(id: String, t: Double): DoubleArray =
         doubleArrayOf(
-            scalarAt("spin.x", id, t, 0.0),
-            scalarAt("spin.y", id, t, 0.0),
-            scalarAt("spin.z", id, t, 0.0),
+            scalarAt(TrackPr.SPIN_X, id, t, 0.0),
+            scalarAt(TrackPr.SPIN_Y, id, t, 0.0),
+            scalarAt(TrackPr.SPIN_Z, id, t, 0.0),
         )
 
     private fun orbitCenterAt(id: String, t: Double): Vec3 =
         Vec3(
-            scalarAt("center.x", id, t, 0.0),
-            scalarAt("center.y", id, t, 0.0),
-            scalarAt("center.z", id, t, 0.0),
+            scalarAt(TrackPr.CENTER_X, id, t, 0.0),
+            scalarAt(TrackPr.CENTER_Y, id, t, 0.0),
+            scalarAt(TrackPr.CENTER_Z, id, t, 0.0),
         )
 
-    private fun baseComponent(p: AnimParticle, prop: String, comp: String): Double = when (prop) {
-        "pos" -> when (comp) { "x" -> p.pos.x; "y" -> p.pos.y; else -> p.pos.z }
-        "col" -> when (comp) { "r" -> p.color.r.toDouble(); "g" -> p.color.g.toDouble(); "b" -> p.color.b.toDouble(); else -> p.color.a.toDouble() }
-        "vel" -> when (comp) { "x" -> p.vel.x; "y" -> p.vel.y; else -> p.vel.z }
-        "scl" -> when (comp) { "x" -> p.scale[0].toDouble(); "y" -> p.scale[1].toDouble(); else -> p.scale[2].toDouble() }
+    private fun baseComponent(p: AnimParticle, pr: TrackPr): Double = when (pr) {
+        TrackPr.POS_X -> p.pos.x
+        TrackPr.POS_Y -> p.pos.y
+        TrackPr.POS_Z -> p.pos.z
+        TrackPr.COL_R -> p.color.r.toDouble()
+        TrackPr.COL_G -> p.color.g.toDouble()
+        TrackPr.COL_B -> p.color.b.toDouble()
+        TrackPr.COL_A -> p.color.a.toDouble()
+        TrackPr.VEL_X -> p.vel.x
+        TrackPr.VEL_Y -> p.vel.y
+        TrackPr.VEL_Z -> p.vel.z
+        TrackPr.SCL_X -> p.scale[0].toDouble()
+        TrackPr.SCL_Y -> p.scale[1].toDouble()
+        TrackPr.SCL_Z -> p.scale[2].toDouble()
         else -> 0.0
     }
 
-    private fun componentValueAt(p: AnimParticle, prop: String, comp: String, t: Double): Double {
-        var v = baseComponent(p, prop, comp)
-        val tr = findSetTrackFor(p.id, prop, comp)
+    private fun componentValueAt(p: AnimParticle, pr: TrackPr, t: Double): Double {
+        var v = baseComponent(p, pr)
+        val tr = findSetTrackFor(p.id, pr)
         if (tr != null && tr.keyframes.isNotEmpty()) v = trackValueAt(tr, t, v)
-        v += compOpDelta(p, prop, comp, t)
+        v += compOpDelta(p, pr, t)
         return v
     }
 
     private fun particlePosition(p: AnimParticle, t: Double): Vec3 {
         var pos = Vec3(
-            setComponentValueAt(p, "pos", "x", t),
-            setComponentValueAt(p, "pos", "y", t),
-            setComponentValueAt(p, "pos", "z", t),
+            setComponentValueAt(p, TrackPr.POS_X, t),
+            setComponentValueAt(p, TrackPr.POS_Y, t),
+            setComponentValueAt(p, TrackPr.POS_Z, t),
         )
         pos = applyGroupScale(p, pos, t)
         pos = applyParticleOrbit(p, pos, t)
         pos = applySelfRotation(p, pos, t)
         pos = applyOrbitRotation(p, pos, t)
         pos = pos.add(
-            compOpDelta(p, "pos", "x", t),
-            compOpDelta(p, "pos", "y", t),
-            compOpDelta(p, "pos", "z", t),
+            compOpDelta(p, TrackPr.POS_X, t),
+            compOpDelta(p, TrackPr.POS_Y, t),
+            compOpDelta(p, TrackPr.POS_Z, t),
         )
         return pos
     }
 
-    private fun setComponentValueAt(p: AnimParticle, prop: String, comp: String, t: Double): Double {
-        var v = baseComponent(p, prop, comp)
-        val tr = findSetTrackFor(p.id, prop, comp)
+    private fun setComponentValueAt(p: AnimParticle, pr: TrackPr, t: Double): Double {
+        var v = baseComponent(p, pr)
+        val tr = findSetTrackFor(p.id, pr)
         if (tr != null && tr.keyframes.isNotEmpty()) v = trackValueAt(tr, t, v)
         return v
     }
@@ -1056,13 +1062,13 @@ class ClientAnimationPlayer(
 
     private fun groupScaleAt(gname: String, t: Double): DoubleArray =
         doubleArrayOf(
-            groupScaleComponent(gname, "x", t),
-            groupScaleComponent(gname, "y", t),
-            groupScaleComponent(gname, "z", t),
+            groupScaleComponent(gname, TrackPr.SCL_X, t),
+            groupScaleComponent(gname, TrackPr.SCL_Y, t),
+            groupScaleComponent(gname, TrackPr.SCL_Z, t),
         )
 
-    private fun groupScaleComponent(gname: String, comp: String, t: Double): Double {
-        val tr = findTrackByPr("scl.$comp", "g:$gname") ?: return 1.0
+    private fun groupScaleComponent(gname: String, pr: TrackPr, t: Double): Double {
+        val tr = findTrackByPr(pr, "g:$gname") ?: return 1.0
         if (tr.keyframes.isEmpty()) return 1.0
         return if (tr.mode == AnimTrack.Mode.OP) 1.0 + trackValueAt(tr, t, 0.0)
         else trackValueAt(tr, t, 1.0)
@@ -1076,25 +1082,25 @@ class ClientAnimationPlayer(
 
     private fun particleColor(p: AnimParticle, t: Double): Color {
         return Color.of(
-            componentValueAt(p, "col", "r", t).toFloat(),
-            componentValueAt(p, "col", "g", t).toFloat(),
-            componentValueAt(p, "col", "b", t).toFloat(),
-            componentValueAt(p, "col", "a", t).toFloat(),
+            componentValueAt(p, TrackPr.COL_R, t).toFloat(),
+            componentValueAt(p, TrackPr.COL_G, t).toFloat(),
+            componentValueAt(p, TrackPr.COL_B, t).toFloat(),
+            componentValueAt(p, TrackPr.COL_A, t).toFloat(),
         )
     }
 
     private fun particleScale(p: AnimParticle, t: Double): FloatArray {
         // 粒子缩放只有 X/Y（billboard 尺寸由 sx/sy 决定）；组 scl 不再影响粒子大小，改为位置级整体缩放。
         return floatArrayOf(
-            ownScaleComponent(p, "x", t).toFloat().coerceAtLeast(0.01f),
-            ownScaleComponent(p, "y", t).toFloat().coerceAtLeast(0.01f),
+            ownScaleComponent(p, TrackPr.SCL_X, t).toFloat().coerceAtLeast(0.01f),
+            ownScaleComponent(p, TrackPr.SCL_Y, t).toFloat().coerceAtLeast(0.01f),
             1f,
         )
     }
 
-    private fun ownScaleComponent(p: AnimParticle, comp: String, t: Double): Double {
-        var v = baseComponent(p, "scl", comp)
-        val tr = findTrackByPr("scl.$comp", p.id)
+    private fun ownScaleComponent(p: AnimParticle, pr: TrackPr, t: Double): Double {
+        var v = baseComponent(p, pr)
+        val tr = findTrackByPr(pr, p.id)
         if (tr != null && tr.mode != AnimTrack.Mode.OP && tr.keyframes.isNotEmpty()) v = trackValueAt(tr, t, v)
         return v
     }
@@ -1105,9 +1111,9 @@ class ClientAnimationPlayer(
      */
     private fun fxScale(fxId: String, base: Double, t: Double): FloatArray {
         return floatArrayOf(
-            scalarAt("scl.x", "f:" + fxId, t, base).toFloat().coerceAtLeast(0.01f),
-            scalarAt("scl.y", "f:" + fxId, t, base).toFloat().coerceAtLeast(0.01f),
-            scalarAt("scl.z", "f:" + fxId, t, base).toFloat().coerceAtLeast(0.01f),
+            scalarAt(TrackPr.SCL_X, "f:" + fxId, t, base).toFloat().coerceAtLeast(0.01f),
+            scalarAt(TrackPr.SCL_Y, "f:" + fxId, t, base).toFloat().coerceAtLeast(0.01f),
+            scalarAt(TrackPr.SCL_Z, "f:" + fxId, t, base).toFloat().coerceAtLeast(0.01f),
         )
     }
 

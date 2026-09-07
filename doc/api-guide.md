@@ -458,6 +458,7 @@ level.server.tell(object : TickTask(level.server.tickCount + 60) {
 
 ```kotlin
 import work.nekow.particledrawing.api.*
+import work.nekow.particledrawing.animation.TrackPr
 import work.nekow.particledrawing.core.easing.EasingType
 import net.minecraft.world.phys.Vec3
 
@@ -473,7 +474,7 @@ val anim = Animation.create {
     }
 
     track {
-        pr = "pos.x"
+        pr = TrackPr.POS_X
         ids = listOf("p0")
         keyframe(0, 0.0, EasingType.LINEAR)
         keyframe(20, 5.0, EasingType.EASE_OUT)
@@ -503,7 +504,7 @@ anim.play(level.players(), origin)
 Animation anim = Animation.builder()
     .loop(true)
     .particle(p -> p.id("p0").pos(0, 10, 0).color(Color.CYAN).scale(1f).life(-1))
-    .track(t -> t.pr("pos.x").ids("p0")
+    .track(t -> t.pr(TrackPr.POS_X).ids("p0")
         .keyframe(0, 0.0, EasingType.LINEAR)
         .keyframe(20, 5.0, EasingType.EASE_OUT))
     .function(f -> f.id("fx0").count(100).center(0, 10, 0).duration(200).seed(1)
@@ -514,6 +515,24 @@ Animation anim = Animation.builder()
 
 anim.play(level.players(), origin).updateVariable("rad", "4");
 ```
+
+### TrackPr 分量枚举
+
+轨道的 `pr` 字段是类型安全的 `TrackPr` 枚举（`work.nekow.particledrawing.animation.TrackPr`），
+与 `.pdrawc` 二进制里的分量序号一一对应。合法值：
+
+| 属性 | 枚举常量 |
+| --- | --- |
+| 位置 | `TrackPr.POS_X` `TrackPr.POS_Y` `TrackPr.POS_Z` |
+| 速度 | `TrackPr.VEL_X` `TrackPr.VEL_Y` `TrackPr.VEL_Z` |
+| 颜色 | `TrackPr.COL_R` `TrackPr.COL_G` `TrackPr.COL_B` `TrackPr.COL_A` |
+| 缩放 | `TrackPr.SCL_X` `TrackPr.SCL_Y` `TrackPr.SCL_Z` |
+| 公转 | `TrackPr.ROT_X` `TrackPr.ROT_Y` `TrackPr.ROT_Z` |
+| 自转 | `TrackPr.SPIN_X` `TrackPr.SPIN_Y` `TrackPr.SPIN_Z` |
+| 公转中心 | `TrackPr.CENTER_X` `TrackPr.CENTER_Y` `TrackPr.CENTER_Z` |
+| 摄像机 | `TrackPr.FOV` `TrackPr.TARGET_X` `TrackPr.TARGET_Y` `TrackPr.TARGET_Z` |
+
+`TrackPr.FOV` 为标量分量（无 `.x/.y/.z`）。
 
 ### Animation 链式操作
 

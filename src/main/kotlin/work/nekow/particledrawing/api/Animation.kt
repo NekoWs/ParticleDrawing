@@ -11,6 +11,7 @@ import work.nekow.particledrawing.animation.Entrance
 import work.nekow.particledrawing.animation.FunctionObject
 import work.nekow.particledrawing.animation.FunctionVar
 import work.nekow.particledrawing.animation.ParticleAnimation
+import work.nekow.particledrawing.animation.TrackPr
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.animation.ServerAnimationManager
 import work.nekow.particledrawing.animation.script.Keyframe
@@ -27,7 +28,7 @@ import java.util.function.Consumer
  * val anim = Animation.create {
  *     loop = true
  *     particle { id = "p0"; pos = Vec3(0.0, 10.0, 0.0); color = Color.CYAN; scale = 1f; life = -1 }
- *     track { pr = "pos.x"; ids = listOf("p0"); keyframe(0, 0, 10.0, EasingType.LINEAR) }
+ *     track { pr = TrackPr.POS_X; ids = listOf("p0"); keyframe(0, 0, 10.0, EasingType.LINEAR) }
  * }
  * anim.play(level.players(), origin)
  *     .updateVariable("rad", "4")
@@ -39,7 +40,7 @@ import java.util.function.Consumer
  * Animation anim = Animation.builder()
  *     .loop(true)
  *     .particle(p -> p.id("p0").pos(0, 10, 0).color(Color.CYAN).scale(1f).life(-1))
- *     .track(t -> t.pr("pos.x").ids("p0").keyframe(0, 0, EasingType.LINEAR))
+ *     .track(t -> t.pr(TrackPr.POS_X).ids("p0").keyframe(0, 0, EasingType.LINEAR))
  *     .build();
  * anim.play(level.players(), origin).updateVariable("rad", "4");
  * ```
@@ -324,16 +325,16 @@ class ParticleBuilder internal constructor() {
 
 @Suppress("unused")
 class TrackBuilder internal constructor() {
-    internal var tpr: String = ""
+    internal var tpr: TrackPr? = null
     internal var tmode: AnimTrack.Mode = AnimTrack.Mode.SET
     internal var tids: List<String> = emptyList()
     internal val tkeyframes = ArrayList<AnimKeyframe>()
 
     /**
      * 设置分量轨道标识。
-     * @param pr 分量轨道标识（如 "pos.x"）
+     * @param pr 分量轨道标识（见 [TrackPr]）
      */
-    fun pr(pr: String): TrackBuilder = apply { tpr = pr }
+    fun pr(pr: TrackPr): TrackBuilder = apply { tpr = pr }
     /**
      * 设置轨道模式。
      * @param mode 轨道模式（SET=绝对，OP=增量）
@@ -366,7 +367,8 @@ class TrackBuilder internal constructor() {
      */
     fun keyframe(tick: Int, value: Number, easing: EasingType): TrackBuilder = keyframe(tick, value.toDouble(), easing)
 
-    internal fun build(): AnimTrack = AnimTrack(tpr, tids, tkeyframes.toList(), tmode)
+    internal fun build(): AnimTrack =
+        AnimTrack(tpr ?: throw IllegalStateException("track 未设置 pr"), tids, tkeyframes.toList(), tmode)
 }
 
 @Suppress("unused")
@@ -680,7 +682,7 @@ class ParticleDsl internal constructor(private val b: ParticleBuilder) {
 
 @Suppress("unused")
 class TrackDsl internal constructor(private val b: TrackBuilder) {
-    var pr: String
+    var pr: TrackPr?
         get() = b.tpr
         set(value) { b.tpr = value }
     var mode: AnimTrack.Mode

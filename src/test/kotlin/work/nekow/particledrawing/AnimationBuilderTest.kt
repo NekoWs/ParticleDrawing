@@ -2,6 +2,7 @@ package work.nekow.particledrawing
 
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.AnimTrack
+import work.nekow.particledrawing.animation.TrackPr
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Animation
 import work.nekow.particledrawing.api.Color
@@ -27,7 +28,7 @@ class AnimationBuilderTest {
                 life = -1
             }
             track {
-                pr = "pos.x"
+                pr = TrackPr.POS_X
                 ids = listOf("p0")
                 keyframe(0, 10.0, EasingType.LINEAR)
             }
@@ -51,7 +52,7 @@ class AnimationBuilderTest {
 
         assertEquals(1, model.tracks.size)
         val track = model.tracks[0]
-        assertEquals("pos.x", track.pr)
+        assertEquals(TrackPr.POS_X, track.pr)
         assertEquals(AnimTrack.Mode.SET, track.mode)
         assertEquals(listOf("p0"), track.ids)
         assertEquals(1, track.keyframes.size)
@@ -74,7 +75,7 @@ class AnimationBuilderTest {
                 p.id("p0").pos(0, 10, 0).color(Color.CYAN).scale(1f).life(-1)
             }
             .track { t ->
-                t.pr("pos.x").mode(AnimTrack.Mode.SET).ids("p0").keyframe(0, 0.0, EasingType.LINEAR)
+                t.pr(TrackPr.POS_X).mode(AnimTrack.Mode.SET).ids("p0").keyframe(0, 0.0, EasingType.LINEAR)
             }
             .function { f ->
                 f.id("fx0").center(0, 10, 0).duration(100).seed(3)

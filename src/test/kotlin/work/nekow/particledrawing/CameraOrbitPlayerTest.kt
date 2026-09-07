@@ -6,6 +6,7 @@ import work.nekow.particledrawing.animation.AnimKeyframe
 import work.nekow.particledrawing.animation.AnimTrack
 import work.nekow.particledrawing.animation.ClientAnimationPlayer
 import work.nekow.particledrawing.animation.ParticleAnimation
+import work.nekow.particledrawing.animation.TrackPr
 import work.nekow.particledrawing.core.easing.EasingType
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -23,7 +24,7 @@ class CameraOrbitPlayerTest {
         )
 
     private fun rotTrack(comp: String, deg: Double, mode: AnimTrack.Mode = AnimTrack.Mode.SET): AnimTrack =
-        AnimTrack("rot.$comp", listOf("c:cam1"), listOf(AnimKeyframe(0, deg, EasingType.LINEAR)), mode)
+        AnimTrack(TrackPr.of("rot", comp)!!, listOf("c:cam1"), listOf(AnimKeyframe(0, deg, EasingType.LINEAR)), mode)
 
     @Test
     fun worldOrbitMatchesEditorSemantics() {

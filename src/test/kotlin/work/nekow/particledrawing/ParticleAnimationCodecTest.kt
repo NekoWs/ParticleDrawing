@@ -11,6 +11,7 @@ import work.nekow.particledrawing.animation.Entrance
 import work.nekow.particledrawing.animation.FunctionObject
 import work.nekow.particledrawing.animation.FunctionVar
 import work.nekow.particledrawing.animation.ParticleAnimation
+import work.nekow.particledrawing.animation.TrackPr
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.animation.script.Keyframe
 import work.nekow.particledrawing.api.Color
@@ -48,7 +49,7 @@ class ParticleAnimationCodecTest {
             life = 20,
         )
         val track = AnimTrack(
-            pr = "pos.x", ids = listOf("p0"),
+            pr = TrackPr.POS_X, ids = listOf("p0"),
             keyframes = listOf(
                 AnimKeyframe(0, 0.0, EasingType.LINEAR),
                 AnimKeyframe(10, 5.0, EasingType.custom(0.1, 0.2, 0.3, 0.4)),
@@ -129,7 +130,7 @@ class ParticleAnimationCodecTest {
         assertEquals(20, p.life)
 
         val tr = decoded.tracks[0]
-        assertEquals("pos.x", tr.pr)
+        assertEquals(TrackPr.POS_X, tr.pr)
         assertEquals(AnimTrack.Mode.SET, tr.mode)
         assertEquals(listOf("p0"), tr.ids)
         assertEquals(3, tr.keyframes.size)

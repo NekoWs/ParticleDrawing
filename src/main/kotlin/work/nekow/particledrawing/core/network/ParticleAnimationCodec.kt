@@ -10,6 +10,7 @@ import work.nekow.particledrawing.animation.Entrance
 import work.nekow.particledrawing.animation.FunctionObject
 import work.nekow.particledrawing.animation.FunctionVar
 import work.nekow.particledrawing.animation.ParticleAnimation
+import work.nekow.particledrawing.animation.TrackPr
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.animation.script.Keyframe
 import work.nekow.particledrawing.api.Color
@@ -24,7 +25,7 @@ import work.nekow.particledrawing.core.easing.EasingType
  */
 internal object ParticleAnimationCodec {
 
-    const val VERSION = 3
+    const val VERSION = 4
 
     fun write(buf: FriendlyByteBuf, anim: ParticleAnimation) {
         buf.writeVarInt(VERSION)
@@ -167,7 +168,7 @@ internal object ParticleAnimationCodec {
     }
 
     private fun writeTrack(buf: FriendlyByteBuf, tr: AnimTrack) {
-        buf.writeUtf(tr.pr)
+        buf.writeByte(tr.pr.ordinal)
         buf.writeByte(if (tr.mode == AnimTrack.Mode.OP) 1 else 0)
         buf.writeVarInt(tr.ids.size)
         for (id in tr.ids) buf.writeUtf(id)
@@ -180,7 +181,9 @@ internal object ParticleAnimationCodec {
     }
 
     private fun readTrack(buf: FriendlyByteBuf): AnimTrack {
-        val pr = buf.readUtf()
+        val prOrdinal = buf.readByte().toInt()
+        val pr = TrackPr.fromOrdinal(prOrdinal)
+            ?: throw IllegalArgumentException("未知 pr 枚举序号: $prOrdinal")
         val mode = if (buf.readByte().toInt() == 1) AnimTrack.Mode.OP else AnimTrack.Mode.SET
         val idCount = buf.readVarInt()
         val ids = ArrayList<String>(idCount)

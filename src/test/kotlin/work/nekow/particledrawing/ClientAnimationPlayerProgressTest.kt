@@ -6,6 +6,7 @@ import work.nekow.particledrawing.animation.AnimParticle
 import work.nekow.particledrawing.animation.AnimTrack
 import work.nekow.particledrawing.animation.ClientAnimationPlayer
 import work.nekow.particledrawing.animation.ParticleAnimation
+import work.nekow.particledrawing.animation.TrackPr
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.core.easing.EasingType
 import kotlin.test.Test
@@ -25,7 +26,7 @@ class ClientAnimationPlayerProgressTest {
             glowing = false, lightLevel = 0, pos = Vec3(0.0, 0.0, 0.0), vel = Vec3.ZERO,
         )
         val track = AnimTrack(
-            pr = "pos.x", ids = listOf("p0"),
+            pr = TrackPr.POS_X, ids = listOf("p0"),
             keyframes = listOf(
                 AnimKeyframe(0, 0.0, EasingType.LINEAR),
                 AnimKeyframe(20, 10.0, EasingType.LINEAR),

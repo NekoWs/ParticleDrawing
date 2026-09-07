@@ -31,6 +31,7 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | --- | --- |
 | `AnimationLoader` | 解析 .pdraw 工程文件（含内嵌贴图 texData） |
 | `ParticleAnimation` | 动画数据模型（轨道、粒子、贴图、UV） |
+| `TrackPr` | 分量轨道标识枚举（pos/vel/col/scl/rot/spin/center 的 xyz + fov + target.xyz，共 26 个） |
 | `ClientAnimationPlayer` | 客户端逐 tick 求值器（公式/变量/轨道插值） |
 | `ServerAnimationManager` | 服务端动画引擎：playByName / play / stop / stopAll / updateVariable，含活跃播放查询 |
 | `UvData` | UV 参数数据模型（静态 / 填充 / flipbook 动画模式） |

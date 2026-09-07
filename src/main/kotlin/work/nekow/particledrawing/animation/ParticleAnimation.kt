@@ -92,11 +92,11 @@ class AnimParticle(
 /**
  * 一条分量轨道，作用于一组目标（按 id 或 "g:name" 或 "f:fxId"）的某个分量。
  *
- * @param pr 分量轨道标识，如 "pos.x" / "rot.y" / "col.a" / "scl"
+ * @param pr 分量轨道标识（见 [TrackPr]）
  * @param mode SET=关键帧值为绝对值；OP=关键帧值为增量（叠加到每个成员的基础值上）
  */
 class AnimTrack(
-    val pr: String,
+    val pr: TrackPr,
     val ids: List<String>,
     val keyframes: List<AnimKeyframe>,
     val mode: Mode
