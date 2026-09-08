@@ -7,6 +7,7 @@ import work.nekow.particledrawing.animation.script.ScriptRuntime
 import work.nekow.particledrawing.animation.script.parseProgram
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.util.rotateAround
+import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -18,8 +19,8 @@ class ClientAnimationPlayer(
     // 服务端权威进度起点（维度 gameTime）；进度 = wrap/clamp(currentGameTick - startGameTick)
     private val startGameTick: Long = 0L,
     currentGameTick: Long = 0L,
-    // 显式起始 tick（特效 API 使用；<0 时按 gameTime 时钟定位）
-    initialTick: Int = -1,
+    // 显式起始毫秒（特效 API 使用；<0 时按 gameTime 时钟定位）
+    initialMs: Int = -1,
 ) {
 
     data class ParticleState(
@@ -42,7 +43,7 @@ class ClientAnimationPlayer(
         val fov: Double,
     )
 
-    private var currentTick = 0
+    private var currentMs = 0
     private val states = LinkedHashMap<String, ParticleState>()
     private var finished = false
     private var justLooped = false
@@ -57,16 +58,16 @@ class ClientAnimationPlayer(
 
     val avgAdvanceNanos: Long get() = if (advanceCount == 0L) 0L else advanceNanosTotal / advanceCount
     val particleCount: Int get() = states.size
-    val currentTickValue: Int get() = currentTick
-    val maxTickValue: Int get() = maxTick
+    val currentMsValue: Int get() = currentMs
+    val maxMsValue: Int get() = maxMs
 
-    private val maxTick: Int = animation.timelineLength()
+    private val maxMs: Int = animation.timelineLength()
 
     // 静态动画（无轨道/时间轴，且公式与变量均不含 random()）：init 已算好 t=0 状态，每 tick 无需重算。
     // 5w 粒子的静态粒子云若每刻重算会白费约 70ms/tick。
     // 存在 st 门控或入场预设时必然随时间变化，强制按动态处理。
     private val isStaticAnimation: Boolean = run {
-        if (maxTick > 0) return@run false
+        if (maxMs > 0) return@run false
         if (animation.particles.any { it.st > 0 || it.ent != null }) return@run false
         if (animation.functions.any { it.st > 0 || it.ent != null }) return@run false
         animation.functions.none { fx -> usesRandom(fx) }
@@ -151,13 +152,13 @@ class ClientAnimationPlayer(
     ) {
         val particles = ArrayList<ParticleHost>()
         var spawnSerial = 0
-        var tickCursor = 0.0
-        var curTick = 0.0
+        var cursorMs = 0.0
+        var curMs = 0.0
 
         /** 粒子句柄桥接（脚本 this.spawn() / 粒子字段读写 / kill()）。 */
         inner class FxParticleHost(
             override val index: Int,
-            var spawnTick: Double,
+            var spawnMs: Double,
         ) : ParticleHost {
             override val pos = DoubleArray(3)
             override val color = doubleArrayOf(1.0, 1.0, 1.0, 1.0)
@@ -178,7 +179,7 @@ class ClientAnimationPlayer(
 
         fun spawn(): ParticleHost {
             val serial = spawnSerial++
-            val host = FxParticleHost(serial, curTick)
+            val host = FxParticleHost(serial, curMs)
             particles.add(host)
             return host
         }
@@ -193,15 +194,15 @@ class ClientAnimationPlayer(
         class LoopSnapshot(
             val particles: List<HostSnapshot>,
             val spawnSerial: Int,
-            val tickCursor: Double,
-            val curTick: Double,
+            val cursorMs: Double,
+            val curMs: Double,
             val globals: Map<String, Any?>,
             val randState: Int,
         )
 
         class HostSnapshot(
             val index: Int,
-            val spawnTick: Double,
+            val spawnMs: Double,
             val pos: DoubleArray,
             val color: DoubleArray,
             val vel: DoubleArray,
@@ -217,7 +218,7 @@ class ClientAnimationPlayer(
                 val p = h as FxParticleHost
                 HostSnapshot(
                     index = p.index,
-                    spawnTick = p.spawnTick,
+                    spawnMs = p.spawnMs,
                     pos = p.pos.copyOf(),
                     color = p.color.copyOf(),
                     vel = p.vel.copyOf(),
@@ -231,8 +232,8 @@ class ClientAnimationPlayer(
                 )
             },
             spawnSerial = spawnSerial,
-            tickCursor = tickCursor,
-            curTick = curTick,
+            cursorMs = cursorMs,
+            curMs = curMs,
             globals = HashMap<String, Any?>().also { out ->
                 for ((k, v) in objState.globals) out[k] = deepCopyScriptValue(v)
             },
@@ -269,8 +270,8 @@ class ClientAnimationPlayer(
             }
             particles.clear()
             for (hs in s.particles) {
-                val host = aliveByIndex.remove(hs.index) ?: FxParticleHost(hs.index, hs.spawnTick)
-                host.spawnTick = hs.spawnTick
+                val host = aliveByIndex.remove(hs.index) ?: FxParticleHost(hs.index, hs.spawnMs)
+                host.spawnMs = hs.spawnMs
                 hs.pos.copyInto(host.pos)
                 hs.color.copyInto(host.color)
                 hs.vel.copyInto(host.vel)
@@ -285,8 +286,8 @@ class ClientAnimationPlayer(
             }
             // aliveByIndex 剩余的是本圈额外 spawn / 已被 kill 的句柄，不再入列，自然丢弃。
             spawnSerial = s.spawnSerial
-            tickCursor = s.tickCursor
-            curTick = s.curTick
+            cursorMs = s.cursorMs
+            curMs = s.curMs
             objState.globals.clear()
             for ((k, v) in s.globals) objState.globals[k] = deepCopyScriptValue(v)
             objState.rand.a = s.randState
@@ -310,9 +311,9 @@ class ClientAnimationPlayer(
         val program = parseProgram(fx.source)
         val obj = ScriptRuntime.createObjectState(fx.seed)
         val rt = FxRuntime(fx, program, obj)
-        rt.tickCursor = floor(fx.st.toDouble()) - 1
-        rt.curTick = fx.st.toDouble()
-        ScriptRuntime.runSpawnSetup(program, obj, makeCtx(fx, rt, fx.st.toDouble(), 0.0))
+        rt.cursorMs = ceil(fx.st.toDouble() / 50.0) * 50.0 - 50.0
+        rt.curMs = fx.st.toDouble()
+        ScriptRuntime.runSpawnSetup(program, obj, makeCtx(fx, rt, fx.st.toDouble()))
         rt
     } catch (e: Exception) {
         println("[pdrawc] 函数对象 ${fx.id} 编译失败：${e.message}")
@@ -322,29 +323,30 @@ class ClientAnimationPlayer(
     private fun resetFxRuntime(fx: FunctionObject, rt: FxRuntime) {
         rt.particles.clear()
         rt.spawnSerial = 0
-        rt.tickCursor = floor(fx.st.toDouble()) - 1
-        rt.curTick = fx.st.toDouble()
+        rt.cursorMs = ceil(fx.st.toDouble() / 50.0) * 50.0 - 50.0
+        rt.curMs = fx.st.toDouble()
         // 与编辑器一致：向后 seek 重建 objState（fresh globals + fresh PRNG），
         // 避免 setup 反复在脏 global / 已推进的 rand 状态上叠加导致漂移。
         rt.objState.globals.clear()
         rt.objState.rand.a = fx.seed
         try {
-            ScriptRuntime.runSpawnSetup(rt.program, rt.objState, makeCtx(fx, rt, fx.st.toDouble(), 0.0))
+            ScriptRuntime.runSpawnSetup(rt.program, rt.objState, makeCtx(fx, rt, fx.st.toDouble()))
         } catch (e: Exception) {
             println("[pdrawc] 函数对象 ${fx.id} setup 求值失败：${e.message}")
         }
     }
 
-    private fun makeCtx(fx: FunctionObject, rt: FxRuntime, t: Double, deltaMs: Double): ScriptRuntime.ScriptCtx =
+    private fun makeCtx(fx: FunctionObject, rt: FxRuntime, t: Double): ScriptRuntime.ScriptCtx =
         ScriptRuntime.ScriptCtx(
             t = t,
-            duration = maxTick.toDouble(),
+            duration = fx.duration.toDouble(),
             vars = varsAt(fx, t),
             particles = rt.particles,
             spawn = rt::spawn,
-            deltaMs = deltaMs,
             fastMath = fx.fastMath,
             print = { line -> println("[pdrawc:${fx.id}] $line") },
+            st = fx.st.toDouble(),
+            maxMs = maxMs.toDouble(),
         )
 
     private fun buildTrackIndex(): Map<TrackPr, Map<String, AnimTrack>> {
@@ -425,10 +427,10 @@ class ClientAnimationPlayer(
         // reconcile 按当前存活粒子动态创建/更新/删除。
         // 按服务端权威进度定位到当前帧（elapsed = currentGameTick - startGameTick）：
         // 新播放等价于从 0 开始；重发/迟到加入则直接跳到其他玩家正在看的同一帧。
-        val initial = if (initialTick >= 0) initialTick else AnimationProgress.tickAt(
-            (currentGameTick - startGameTick).coerceAtLeast(0L), maxTick, animation.loop
+        val initial = if (initialMs >= 0) initialMs else AnimationProgress.msAt(
+            (currentGameTick - startGameTick).coerceAtLeast(0L), maxMs, animation.loop
         )
-        currentTick = initial
+        currentMs = initial
         advanceTo(initial.toDouble())
     }
 
@@ -440,18 +442,18 @@ class ClientAnimationPlayer(
     fun tick(gameTick: Long): Boolean {
         if (finished) return false
         frameCount++
-        val elapsed = (gameTick - startGameTick).coerceAtLeast(0L)
-        if (AnimationProgress.isFinished(elapsed, maxTick, animation.loop)) {
+        val elapsedTicks = (gameTick - startGameTick).coerceAtLeast(0L)
+        if (AnimationProgress.isFinished(elapsedTicks, maxMs, animation.loop)) {
             finished = true
             return false
         }
-        val target = AnimationProgress.tickAt(elapsed, maxTick, animation.loop)
-        if (target != currentTick) {
-            if (target < currentTick) {
+        val target = AnimationProgress.msAt(elapsedTicks, maxMs, animation.loop)
+        if (target != currentMs) {
+            if (target < currentMs) {
                 justLooped = true // 循环回卷（st 门控粒子在 sync 中重新生成）
                 if (!isStaticAnimation) restoreLoopStart(target)
             }
-            currentTick = target
+            currentMs = target
             if (!isStaticAnimation) {
                 val t0 = System.nanoTime()
                 advanceTo(target.toDouble())
@@ -465,27 +467,27 @@ class ClientAnimationPlayer(
     }
 
     /**
-     * 由外部播放时钟驱动推进（特效 API 使用）：直接给定目标时间轴 tick，
+     * 由外部播放时钟驱动推进（特效 API 使用）：直接给定目标时间轴毫秒，
      * 而非由 `gameTime - startGameTick` 推导。支持任意 seek（含向后回退）、暂停与变速。
-     * @return 是否仍在播放（非循环动画越过 maxTick 时返回 false 并置 finished）
+     * @return 是否仍在播放（非循环动画越过 maxMs 时返回 false 并置 finished）
      */
-    fun tickExternal(targetTick: Int): Boolean {
+    fun tickExternal(targetMs: Int): Boolean {
         if (finished) return false
         frameCount++
-        val max = maxTick
-        if (!animation.loop && max > 0 && targetTick >= max) {
+        val max = maxMs
+        if (!animation.loop && max > 0 && targetMs >= max) {
             finished = true
             return false
         }
         val target = if (max <= 0) 0
-        else if (animation.loop) ((targetTick % max) + max) % max
-        else minOf(targetTick, max - 1)
-        if (target != currentTick) {
-            if (target < currentTick && animation.loop) {
+        else if (animation.loop) ((targetMs % max) + max) % max
+        else minOf(targetMs, max - 1)
+        if (target != currentMs) {
+            if (target < currentMs && animation.loop) {
                 justLooped = true
                 if (!isStaticAnimation) restoreLoopStart(target)
             }
-            currentTick = target
+            currentMs = target
             if (!isStaticAnimation) advanceTo(target.toDouble())
         }
         return true
@@ -605,8 +607,6 @@ class ClientAnimationPlayer(
     }
 
     private fun advanceTo(t: Double) {
-        val deltaMs = if (advanceInitialized && t == prevAdvanceT + 1.0) 50.0 else 0.0
-
         // 1) 普通粒子：st/life 门控 + 视觉更新（UV 在阶段 3 统一求值）
         for (p in animation.particles) {
             val s = states[p.id] ?: continue
@@ -625,7 +625,7 @@ class ClientAnimationPlayer(
         //    并按当前存活粒子动态 reconcile 状态（新建/更新/删除）。
         for (fx in animation.functions) {
             val rt = fxRuntimes[fx.id] ?: continue
-            advanceFx(fx, rt, t, deltaMs)
+            advanceFx(fx, rt, t)
         }
 
         // 3) UV 字段表达式（普通 + 派生粒子统一；n=总粒子数，与编辑器 state.particles.length 一致）
@@ -640,7 +640,7 @@ class ClientAnimationPlayer(
                 uvCtx.n = n
                 uvCtx.t = t
                 uvCtx.dt = 0.0
-                uvCtx.duration = maxTick.toDouble()
+                uvCtx.duration = maxMs.toDouble()
                 uvCtx.life = if (host != null) host.life else (animationParticleById[id]?.life?.toDouble() ?: -1.0)
                 uvCtx.uv_x = 0.0
                 uvCtx.uv_y = 0.0
@@ -671,47 +671,47 @@ class ClientAnimationPlayer(
         advanceInitialized = true
     }
 
-    // 把函数对象推进到时间 t（与编辑器 evaluateFxFrame 同语义）。
-    // t < st 或超时长只保持 setup；向后 seek 重建运行时；正常则补跑 tick() 再跑一次 process(deltaMs)。
-    private fun advanceFx(fx: FunctionObject, rt: FxRuntime, t: Double, deltaMs: Double) {
+    // 把函数对象推进到时间 t（毫秒，与编辑器 evaluateFxFrame 同语义）。
+    // t < st 或超时长只保持 setup；向后 seek 重建运行时；正常则按经过毫秒递减寿命、补跑 50ms 边界 tick()、再跑一次 process()。
+    private fun advanceFx(fx: FunctionObject, rt: FxRuntime, t: Double) {
         val st = fx.st.toDouble()
         val dur = fx.duration.toDouble()
         if (t >= st && (dur <= 0 || t < st + dur)) {
             // 向后 seek：确定性重算
-            if (t < rt.tickCursor) resetFxRuntime(fx, rt)
+            if (t < rt.curMs) resetFxRuntime(fx, rt)
 
-            val floorT = floor(t)
-            while (rt.tickCursor < floorT) {
-                rt.tickCursor += 1.0
-                rt.curTick = rt.tickCursor
-                decrementLife(fx, rt, rt.tickCursor)
+            var b = rt.cursorMs + 50.0
+            while (b <= t) {
+                decrementLifeMs(fx, rt, rt.curMs, b)
+                rt.curMs = b
+                rt.cursorMs = b
                 if (rt.program.tick.isNotEmpty()) {
                     try {
-                        ScriptRuntime.runTickFrame(rt.program, rt.objState, makeCtx(fx, rt, rt.tickCursor, deltaMs))
+                        ScriptRuntime.runTickFrame(rt.program, rt.objState, makeCtx(fx, rt, b))
                     } catch (e: Exception) {
                         println("[pdrawc] 函数对象 ${fx.id} tick 求值失败：${e.message}")
                         break
                     }
                 }
-                // 捕获循环起点快照：loop 动画首圈、恰在活动窗口首个 tick（cursor == st）、process 执行前。
-                // 回卷时用 restoreLoopSnapshot 恢复，避免重新 setup / 重建粒子造成的顿挫。
-                if (animation.loop && rt.loopSnapshot == null && rt.tickCursor == st) {
+                // 捕获循环起点快照：loop 动画首圈、首个 50ms 边界、process 执行前。
+                if (animation.loop && rt.loopSnapshot == null) {
                     rt.captureLoopSnapshot()
                 }
+                b += 50.0
             }
 
-            rt.curTick = t
+            decrementLifeMs(fx, rt, rt.curMs, t)
+            rt.curMs = t
             if (rt.skipProcessOnce) {
                 rt.skipProcessOnce = false
             } else if (rt.program.process.isNotEmpty()) {
                 try {
-                    ScriptRuntime.runProcessFrame(rt.program, rt.objState, makeCtx(fx, rt, t, deltaMs))
+                    ScriptRuntime.runProcessFrame(rt.program, rt.objState, makeCtx(fx, rt, t))
                 } catch (e: Exception) {
                     println("[pdrawc] 函数对象 ${fx.id} process 求值失败：${e.message}")
                 }
             }
-            // 捕获 process 后快照：loop 动画首圈、恰在活动窗口首个 tick（t == st）、process 执行后。
-            // 回卷恰好落在 st 时直接恢复该快照并跳过 process，进一步消除回卷帧的脚本求值开销。
+            // 捕获 process 后快照：loop 动画首圈、恰在 t == st、process 执行后。
             if (animation.loop && rt.loopDoneSnapshot == null && t == st) {
                 rt.captureLoopDoneSnapshot()
             }
@@ -719,17 +719,21 @@ class ClientAnimationPlayer(
         reconcileFxStates(fx, rt, t, t - fx.st)
     }
 
-    /** 每个 tick 开始前递减剩余寿命；到期（或 life 已为 0）立即移除。 */
-    private fun decrementLife(fx: FunctionObject, rt: FxRuntime, tick: Double) {
+    /** 按真实经过毫秒递减剩余寿命；到期（或 life 已为 0）立即移除。 */
+    private fun decrementLifeMs(fx: FunctionObject, rt: FxRuntime, fromMs: Double, toMs: Double) {
         val st = fx.st.toDouble()
+        if (!(toMs > fromMs)) return
         for (i in rt.particles.indices.reversed()) {
             val host = rt.particles[i] as FxRuntime.FxParticleHost
-            val entry = max(host.spawnTick, st)
-            if (host.life >= 0.0 && tick > entry) {
-                if (host.life <= 1.0) {
-                    host.kill()
-                } else {
-                    host.life -= 1.0
+            val entry = max(host.spawnMs, st)
+            if (host.life >= 0.0 && toMs > entry) {
+                val elapsed = toMs - max(entry, fromMs)
+                if (elapsed > 0.0) {
+                    if (host.life <= elapsed) {
+                        host.kill()
+                    } else {
+                        host.life -= elapsed
+                    }
                 }
             }
         }

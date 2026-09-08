@@ -28,7 +28,7 @@ object ServerAnimationManager {
         val animation: ParticleAnimation?,
         // 服务端权威进度：起始 gameTime 与时间轴参数（进度 = wrap/clamp(gameTime - startGameTick)）
         val startGameTick: Long,
-        val maxTick: Int,
+        val maxMs: Int,
         val loop: Boolean,
     )
 
@@ -92,7 +92,7 @@ object ServerAnimationManager {
         val gameTime = level.gameTime
         for (pb in playbacks.values) {
             if (pb.dimensionId != dim || player.uuid !in pb.playerIds) continue
-            if (AnimationProgress.isFinished(gameTime - pb.startGameTick, pb.maxTick, pb.loop)) continue
+            if (AnimationProgress.isFinished(gameTime - pb.startGameTick, pb.maxMs, pb.loop)) continue
             val anim = pb.animation
             if (anim != null) {
                 PacketDistributor.sendToPlayer(
@@ -112,7 +112,7 @@ object ServerAnimationManager {
     @JvmStatic
     fun removeFinished(dimensionId: UUID, gameTime: Long) {
         playbacks.entries.removeIf { (_, pb) ->
-            pb.dimensionId == dimensionId && AnimationProgress.isFinished(gameTime - pb.startGameTick, pb.maxTick, pb.loop)
+            pb.dimensionId == dimensionId && AnimationProgress.isFinished(gameTime - pb.startGameTick, pb.maxMs, pb.loop)
         }
     }
 

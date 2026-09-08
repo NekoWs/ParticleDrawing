@@ -35,6 +35,8 @@ object ScriptRuntime {
         val globals: MutableMap<String, Any?>,
         val rand: RandState,
         val seed: Int,
+        val constGlobals: MutableSet<String> = HashSet(),
+        var topLevelDone: Boolean = false,
     )
 
     /** 表达式阶段输出（UV 字段表达式把 out 字段镜像为最终渲染值）。 */
@@ -77,10 +79,15 @@ object ScriptRuntime {
 
     /**
      * spawn 模型上下文（setup/tick/process 三阶段共用；setup 用 env 形态但字段同构）。
+     * 时间单位均为毫秒。
      *
+     * @param t 绝对播放毫秒（动画全局时间轴位置）
+     * @param st 函数对象起点 fx.st（毫秒）
+     * @param duration 函数对象自身时长 fx.duration（毫秒；≤0 表示无上限，this.duration 回退 maxMs）
+     * @param maxMs 整个动画总长（毫秒）
      * @param particles 运行时粒子列表（this.particles）
      * @param spawn 创建并返回一个粒子句柄（this.spawn()）
-     * @param deltaMs process 参数的毫秒增量（tick/setup 阶段忽略）
+     * @param deltaMs 帧毫秒增量（内部调度保留字段；脚本语言不再将其暴露给 process）
      */
     class ScriptCtx(
         var t: Double,
@@ -91,11 +98,33 @@ object ScriptRuntime {
         var deltaMs: Double = 0.0,
         var fastMath: Boolean = false,
         var print: (String) -> Unit = {},
+        var st: Double = 0.0,
+        var maxMs: Double = 0.0,
     )
 
     fun createObjectState(seed: Int): ObjectState = ObjectState(HashMap(), RandState(seed), seed)
 
+    fun runTopLevel(program: ScriptProgram, obj: ObjectState, ctx: ScriptCtx) {
+        if (obj.topLevelDone) return
+        obj.topLevelDone = true
+        val rt = Runtime("toplevel", program, obj, ctx, null)
+        rt.pushScope(HashMap())
+        try {
+            for (d in program.globals) {
+                if (obj.globals.containsKey(d.name)) {
+                    throw ScriptException("duplicate global '${d.name}'", d.line, d.col)
+                }
+                val v = if (d.init != null) rt.evalExpr(d.init) else Undefined
+                obj.globals[d.name] = v
+                if (d.kind == "const") obj.constGlobals.add(d.name)
+            }
+        } finally {
+            rt.popScope()
+        }
+    }
+
     fun runSpawnSetup(program: ScriptProgram, obj: ObjectState, ctx: ScriptCtx) {
+        runTopLevel(program, obj, ctx)
         val rt = Runtime("setup", program, obj, ctx, null)
         rt.pushScope(HashMap())
         try {
@@ -121,7 +150,6 @@ object ScriptRuntime {
         val rt = Runtime("process", program, obj, ctx, null)
         rt.pushScope(HashMap())
         try {
-            rt.currentScope()[program.processParam] = ctx.deltaMs
             for (st in program.process) rt.execStmt(st)
         } finally {
             rt.popScope()
@@ -134,7 +162,7 @@ object ScriptRuntime {
      */
     class ExpressionRunner(expr: String) {
         private val node: Node = parseExpression(expr)
-        private val program = ScriptProgram(emptyList(), emptyList(), emptyList(), "delta", emptyMap())
+        private val program = ScriptProgram(emptyList(), emptyList(), emptyList(), emptyMap())
         private val obj = createObjectState(0)
         private val rt = Runtime("expr", program, obj, null, null)
         private val topScope = HashMap<String, Any?>()
@@ -173,6 +201,7 @@ object ScriptRuntime {
         private var pctx: ProcessCtx?,
     ) {
         private val scopes = ArrayList<MutableMap<String, Any?>>()
+        private val constSets = ArrayList<MutableSet<String>?>()
         private val varsMap = HashMap<String, Double>()
         private var funcDepth = 0
         private var inFunction = false
@@ -181,9 +210,14 @@ object ScriptRuntime {
             rebuildVarsMap()
         }
 
-        fun pushScope(s: MutableMap<String, Any?>) { scopes.add(s) }
-        fun popScope() { scopes.removeAt(scopes.size - 1) }
+        fun pushScope(s: MutableMap<String, Any?>) { scopes.add(s); constSets.add(null) }
+        fun popScope() { scopes.removeAt(scopes.size - 1); constSets.removeAt(constSets.size - 1) }
         fun currentScope(): MutableMap<String, Any?> = scopes[scopes.size - 1]
+        fun markConst(name: String) {
+            var cs = constSets[constSets.size - 1]
+            if (cs == null) { cs = HashSet(); constSets[constSets.size - 1] = cs }
+            cs.add(name)
+        }
 
         private fun rebuildVarsMap() {
             varsMap.clear()
@@ -196,10 +230,12 @@ object ScriptRuntime {
             this.pctx = ctx
             this.ctx = null
             scopes.clear()
+            constSets.clear()
             funcDepth = 0
             inFunction = false
             topScope.clear()
             scopes.add(topScope)
+            constSets.add(null)
             rebuildVarsMap()
         }
 
@@ -219,6 +255,7 @@ object ScriptRuntime {
         }
 
         private fun truthy(v: Any?, n: Node): Boolean = when (v) {
+            is Undefined -> false
             is Boolean -> v
             is Double -> v != 0.0
             else -> err("condition requires a bool or num, got ${typeName(v)}", n)
@@ -280,21 +317,30 @@ object ScriptRuntime {
                 is ContinueNode -> throw Flow("continue")
                 is ReturnNode -> {
                     if (!inFunction) err("return is only allowed inside a function", n)
-                    throw Flow("return", if (n.expr != null) evalExpr(n.expr) else 0.0)
+                    throw Flow("return", if (n.expr != null) evalExpr(n.expr) else Undefined)
                 }
-                is GlobalNode -> {
-                    if (phase != "setup" || inFunction) err("'global' is only allowed in setup", n)
-                    val v = if (n.init != null) evalExpr(n.init) else 0.0
-                    objState.globals[n.name] = v
-                }
+                is DeclareNode -> execDeclare(n)
                 is AssignNode -> execAssign(n)
                 is ExprStmtNode -> evalExpr(n.expr)
                 else -> err("unknown statement ${n::class.simpleName}", n)
             }
         }
 
+        private fun execDeclare(n: DeclareNode) {
+            if (currentScope().containsKey(n.name)) {
+                err("duplicate declaration '${n.name}'", n)
+            }
+            val v = if (n.init != null) evalExpr(n.init) else Undefined
+            currentScope()[n.name] = v
+            if (n.kind == "const") markConst(n.name)
+        }
+
         private fun execForPart(part: Node) {
-            if (part is AssignNode) execAssign(part) else evalExpr(part)
+            when {
+                part is AssignNode -> execAssign(part)
+                part is DeclareNode -> execDeclare(part)
+                else -> evalExpr(part)
+            }
         }
 
         private fun execForOf(n: ForOfNode) {
@@ -305,6 +351,7 @@ object ScriptRuntime {
                 else -> err("for-of requires a particle list or array, got ${typeName(iter)}", n.iter)
             }
             pushScope(HashMap())
+            if (n.kind == "const") markConst(n.name)
             try {
                 var idx = 0
                 for (item in snapshot) {
@@ -351,6 +398,11 @@ object ScriptRuntime {
                 }
                 is CompTarget -> {
                     val obj = evalExpr(target.target)
+                    // particle 上 .x/.y/.z/.w/.r/.g/.b/.a 不是保留字段，按自定义字段存取（p.color.a 仍是颜色分量）。
+                    if (obj is ParticleValue) {
+                        particleSetField(obj, target.comp, value, n)
+                        return
+                    }
                     if (!isVec(obj)) err("component assignment target is not a vector", n)
                     val comp = COMP_ALIAS[target.comp] ?: err("unknown component '${target.comp}'", n)
                     if (!hasComp(obj, comp)) err("${typeName(obj)} has no component '${target.comp}'", n)
@@ -398,16 +450,22 @@ object ScriptRuntime {
             }
             for (i in scopes.indices.reversed()) {
                 val s = scopes[i]
-                if (s.containsKey(name)) { s[name] = value; return }
+                if (s.containsKey(name)) {
+                    val cs = constSets.getOrNull(i)
+                    if (cs != null && name in cs) err("cannot assign to const '$name'", n)
+                    s[name] = value
+                    return
+                }
             }
             if (objState.globals.containsKey(name)) {
-                if (phase == "setup" && !inFunction) { objState.globals[name] = value; return }
-                err("global '$name' is read-only here", n)
+                if (name in objState.constGlobals) err("cannot assign to const '$name'", n)
+                objState.globals[name] = value
+                return
             }
             if (name in CONSTANTS || varsMap.containsKey(name)) {
                 err("cannot assign to read-only name '$name'", n)
             }
-            currentScope()[name] = value
+            err("undeclared variable '$name'", n)
         }
 
         // —— this 字段读取 ——
@@ -438,8 +496,9 @@ object ScriptRuntime {
             // spawn 模型（setup/tick/process）
             val c = ctx ?: err("context unavailable", n)
             return when (field) {
-                "time" -> c.t
-                "duration" -> c.duration
+                "time" -> c.t - c.st
+                "animTime" -> c.t
+                "duration" -> if (c.duration > 0.0) c.duration else c.maxMs
                 "particles" -> ParticleListValue(c.particles)
                 else -> err("this.$field is not available here", n)
             }
@@ -458,7 +517,7 @@ object ScriptRuntime {
                 "light" -> w.light
                 "life" -> w.life
                 "index" -> w.index.toDouble()
-                else -> w.fields[field] ?: 0.0
+                else -> w.fields[field] ?: Undefined
             }
         }
 
@@ -534,6 +593,7 @@ object ScriptRuntime {
             is NumNode -> n.value
             is StrNode -> n.value
             is BoolNode -> n.value
+            is UndefinedNode -> Undefined
             is VarNode -> lookupName(n.name, n)
             is ArrayNode -> n.items.map { evalExpr(it) }.toMutableList()
             is UnaryNode -> {
@@ -549,6 +609,8 @@ object ScriptRuntime {
             is IndexNode -> evalIndex(n)
             is CompNode -> {
                 val v = evalExpr(n.target)
+                // particle 上 .x/.y/.z/.w/.r/.g/.b/.a 不是保留字段，按自定义字段读取。
+                if (v is ParticleValue) return particleGetField(v, n.comp, n)
                 if (!isVec(v)) err("component access requires a vector, got ${typeName(v)}", n)
                 val comp = COMP_ALIAS[n.comp] ?: err("unknown component '${n.comp}'", n)
                 if (!hasComp(v, comp)) err("${typeName(v)} has no component '${n.comp}'", n)
@@ -765,6 +827,7 @@ object ScriptRuntime {
         }
 
         private fun eqExact(a: Any?, b: Any?): Boolean = when {
+            isUndefined(a) || isUndefined(b) -> isUndefined(a) && isUndefined(b)
             a is Double && b is Double -> a == b
             a is Boolean && b is Boolean -> a == b
             a is Vec2 && b is Vec2 -> a == b
@@ -812,6 +875,7 @@ object ScriptRuntime {
         }
 
         private fun eqTol(a: Any?, b: Any?): Boolean = when {
+            isUndefined(a) || isUndefined(b) -> isUndefined(a) && isUndefined(b)
             a is Double && b is Double -> abs(a - b) <= 1e-6
             a is Boolean && b is Boolean -> a == b
             a is Vec2 && b is Vec2 -> abs(a.x - b.x) <= 1e-6 && abs(a.y - b.y) <= 1e-6
@@ -845,8 +909,8 @@ object ScriptRuntime {
             val prev = inFunction
             inFunction = true
             pushScope(HashMap())
-            for ((i, p) in fn.params.withIndex()) currentScope()[p] = if (i < args.size) args[i] else 0.0
-            var result: Any? = 0.0
+            for ((i, p) in fn.params.withIndex()) currentScope()[p] = if (i < args.size) args[i] else Undefined
+            var result: Any? = Undefined
             try {
                 execStmt(fn.body)
             } catch (f: Flow) {
@@ -917,7 +981,7 @@ object ScriptRuntime {
                 "map_range", "remap" -> mapRange(args[0], args[1], args[2], args[3], args[4], name == "remap", n)
                 "int" -> intConvert(args[0], n)
                 "float" -> floatConvert(args[0], n)
-                "bool" -> { val v = args[0]; if (v !is Double) err("bool requires a scalar", n); v != 0.0 }
+                "bool" -> { val v = args[0]; if (isUndefined(v)) return false; if (v !is Double && v !is Boolean) err("bool requires a scalar", n); if (v is Boolean) v else v != 0.0 }
                 "sin" -> sin(num(args[0], "sin", n)); "cos" -> cos(num(args[0], "cos", n)); "tan" -> tan(num(args[0], "tan", n))
                 "asin" -> asin(num(args[0], "asin", n)); "acos" -> acos(num(args[0], "acos", n)); "atan" -> atan(num(args[0], "atan", n))
                 "atan2" -> atan2(num(args[0], "atan2", n), num(args[1], "atan2", n))

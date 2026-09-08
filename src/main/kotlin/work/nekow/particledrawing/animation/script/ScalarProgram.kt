@@ -13,7 +13,7 @@ internal object Reg {
     const val R = 6; const val G = 7; const val B = 8; const val A = 9
     const val VX = 10; const val VY = 11; const val VZ = 12
     const val SC = 13; const val GLOW = 14; const val LIGHT = 15
-    /** 函数对象寿命输出：代码里 `maxAge = ...`（tick；<0=无限）。仅表达式模式消费。 */
+    /** 函数对象寿命输出：代码里 `maxAge = ...`（毫秒；<0=无限）。仅表达式模式消费。 */
     const val MAXAGE = 16
     const val ATTR_COUNT = 14
     const val VAR_START = 17

@@ -227,12 +227,12 @@ object ParticleDrawCommands {
             return 0
         }
 
-        for ((animId, particleCount, currentTick, maxTick, frameCount, lastAdvanceMillis, avgAdvanceMillis) in infos) {
+        for ((animId, particleCount, currentMs, maxMs, frameCount, lastAdvanceMillis, avgAdvanceMillis) in infos) {
             val shortId = animId.toString().take(8)
             val lastMs = String.format(Locale.ROOT, "%.2f", lastAdvanceMillis)
             val avgMs = String.format(Locale.ROOT, "%.2f", avgAdvanceMillis)
             val msg = "动画 $shortId… | 粒子: $particleCount | " +
-                "时间轴: $currentTick/$maxTick tick | " +
+                "时间轴: ${currentMs}ms/${maxMs}ms | " +
                 "已播放帧: $frameCount | " +
                 "每刻求值: 上次 ${lastMs}ms / 平均 ${avgMs}ms"
             ctx.source.sendSuccess({ Component.literal(msg) }, false)

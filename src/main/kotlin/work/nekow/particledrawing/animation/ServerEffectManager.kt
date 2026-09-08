@@ -31,7 +31,7 @@ object ServerEffectManager {
         val key: Identifier,
         var anchor: Anchor,
         val options: EffectOptions,
-        val maxTick: Int,
+        val maxMs: Int,
         val loop: Boolean,
         val startGameTick: Long,
         val clock: PlaybackClock,
@@ -61,9 +61,9 @@ object ServerEffectManager {
         }
         val id = UUID.randomUUID()
         val loop = options.loop() ?: anim.loop
-        val maxTick = anim.timelineLength()
+        val maxMs = anim.timelineLength()
         val startGameTick = players.firstOrNull()?.level()?.gameTime ?: 0L
-        val clock = PlaybackClock(options.startTick(), playing = true, speed = options.speed())
+        val clock = PlaybackClock(options.startTick().toDouble() * 50, playing = true, speed = options.speed() * 50)
 
         val payload = PlayEffectPayload(id, key, anchor, options, startGameTick)
         val ids = HashSet<UUID>()
@@ -71,7 +71,7 @@ object ServerEffectManager {
             PacketDistributor.sendToPlayer(player, payload)
             ids.add(player.uuid)
         }
-        playbacks[id] = Playback(id, dimensionId, ids, key, anchor, options, maxTick, loop, startGameTick, clock)
+        playbacks[id] = Playback(id, dimensionId, ids, key, anchor, options, maxMs, loop, startGameTick, clock)
         return id
     }
 
@@ -130,7 +130,7 @@ object ServerEffectManager {
         val toRemove = ArrayList<UUID>()
         for (pb in playbacks.values) {
             pb.clock.advance()
-            if (!pb.loop && pb.maxTick > 0 && pb.clock.position >= pb.maxTick) toRemove.add(pb.playbackId)
+            if (!pb.loop && pb.maxMs > 0 && pb.clock.position >= pb.maxMs) toRemove.add(pb.playbackId)
         }
         for (id in toRemove) {
             playbacks.remove(id)
@@ -141,10 +141,10 @@ object ServerEffectManager {
     // —— 播放控制（服务端权威时才广播） ——
 
     @JvmStatic
-    fun seek(playbackId: UUID, players: Collection<ServerPlayer>, tick: Double): Boolean {
+    fun seek(playbackId: UUID, players: Collection<ServerPlayer>, ms: Double): Boolean {
         val pb = playbacks[playbackId] ?: return false
         if (pb.options.authority() != Authority.SERVER) return false
-        pb.clock.position = tick
+        pb.clock.position = ms
         sendClock(pb, players)
         return true
     }
@@ -228,7 +228,7 @@ object ServerEffectManager {
         val dim = ParticleUtils.dimensionUUID(level)
         for (pb in playbacks.values) {
             if (pb.dimensionId != dim || player.uuid !in pb.playerIds) continue
-            if (!pb.loop && pb.maxTick > 0 && pb.clock.position >= pb.maxTick) continue
+            if (!pb.loop && pb.maxMs > 0 && pb.clock.position >= pb.maxMs) continue
             PacketDistributor.sendToPlayer(
                 player,
                 PlayEffectPayload(pb.playbackId, pb.key, pb.anchor, pb.options, pb.startGameTick)

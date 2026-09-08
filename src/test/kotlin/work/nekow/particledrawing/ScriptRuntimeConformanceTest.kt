@@ -6,6 +6,7 @@ import work.nekow.particledrawing.animation.script.parseProgram
 import kotlin.math.sin
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 /**
  * spawn 模型运行时回归测试：setup/tick/process 入口 + ScriptCtx + 简单 ParticleHost。
@@ -70,7 +71,7 @@ class ScriptRuntimeConformanceTest {
     @Test
     fun particleFieldReadWrite() {
         val h = Harness(
-            "func setup() { p = this.spawn(); p.position = [1,2,3]; p.velocity = [4,5,6]; p.color = vec3(0.5, 0.25, 0.125); p.scale = 0.5; p.glow = 1; p.light = 12; p.life = 7; p.foo = 9; }",
+            "func setup() { let p = this.spawn(); p.position = [1,2,3]; p.velocity = [4,5,6]; p.color = vec3(0.5, 0.25, 0.125); p.scale = 0.5; p.glow = 1; p.light = 12; p.life = 7; p.foo = 9; }",
         )
         h.setup()
         assertEquals(1, h.particles.size)
@@ -87,10 +88,55 @@ class ScriptRuntimeConformanceTest {
     }
 
     @Test
+    fun particleComponentAliasesAreCustomFields() {
+        val h = Harness(
+            "func setup() { let p = this.spawn(); p.a = 1; }\n" +
+                "func process() { for (const q of this.particles) { q.b = q.a + 1; q.scale = q.a; } }",
+        )
+        h.setup()
+        h.process()
+        val host = h.particles[0] as TestHost
+        assertEquals(1.0, host.fields["a"])
+        assertEquals(2.0, host.fields["b"])
+        assertEquals(1.0, host.scale, 1e-12)
+
+        // p.color.a / p.position.x 仍是向量分量，不落入自定义字段。
+        val h2 = Harness("func setup() { let p = this.spawn(); p.color.a = 0.25; p.position.x = 3; }")
+        h2.setup()
+        val host2 = h2.particles[0] as TestHost
+        assertEquals(0.25, host2.color[3], 1e-12)
+        assertEquals(3.0, host2.pos[0], 1e-12)
+        assertEquals(0.0, host2.fields["a"] ?: 0.0)
+    }
+
+    @Test
+    fun compoundAssignmentOperators() {
+        val h = Harness(
+            "func setup() { let p = this.spawn(); p.position = [1,2,3]; p.position += vec(4,5,6); p.position.x += 10; p.scale = p.position.x; }",
+        )
+        h.setup()
+        val host = h.particles[0] as TestHost
+        assertEquals(listOf(15.0, 7.0, 9.0), host.pos.toList())
+        assertEquals(15.0, host.scale, 1e-12)
+
+        val h2 = Harness(
+            "func setup() { let p = this.spawn(); p.scale = 2; p.scale += 3; p.a = 5; p.a *= 2; }\n" +
+                "func process() { for (const q of this.particles) { q.scale -= 1; } let p = this.spawn(); let s = 0; for (let i = 0; i < 5; i += 1) { s += i; } p.scale = s; }",
+        )
+        h2.setup()
+        val h0 = h2.particles[0] as TestHost
+        assertEquals(5.0, h0.scale, 1e-12)
+        assertEquals(10.0, h0.fields["a"])
+        h2.process()
+        assertEquals(4.0, h0.scale, 1e-12)
+        assertEquals(10.0, (h2.particles[1] as TestHost).scale, 1e-12)
+    }
+
+    @Test
     fun forOfAndKill() {
         val h = Harness(
             "func setup() { this.spawn(); this.spawn(); this.spawn(); }\n" +
-                "func process(delta) { for (const p of this.particles) { if (p.index == 1) { p.kill(); } } }",
+                "func process() { for (const p of this.particles) { if (p.index == 1) { p.kill(); } } }",
         )
         h.setup()
         assertEquals(3, h.particles.size)
@@ -103,7 +149,7 @@ class ScriptRuntimeConformanceTest {
     fun particleListSizeAndIndexAccess() {
         val h = Harness(
             "func setup() { this.spawn(); this.spawn(); }\n" +
-                "func process(delta) { p = this.spawn(); p.position.x = this.particles.size(); p.position.y = this.particles[0].index; }",
+                "func process() { let p = this.spawn(); p.position.x = this.particles.size(); p.position.y = this.particles[0].index; }",
         )
         h.setup()
         h.process()
@@ -115,7 +161,7 @@ class ScriptRuntimeConformanceTest {
     @Test
     fun controlFlow() {
         val h = Harness(
-            "func process(delta) { s = 0; for (k = 0; k < 5; k = k + 1) { s = s + k; } while (s < 11) { s = s + 1; } p = this.spawn(); if (s > 10) { p.position.x = s; } else { p.position.x = -1; } p.position.y = (s == 12) ? 2 : 0; }",
+            "func process() { let s = 0; for (let k = 0; k < 5; k = k + 1) { s = s + k; } while (s < 11) { s = s + 1; } let p = this.spawn(); if (s > 10) { p.position.x = s; } else { p.position.x = -1; } p.position.y = (s == 12) ? 2 : 0; }",
         )
         h.process()
         val host = h.particles[0] as TestHost
@@ -128,7 +174,7 @@ class ScriptRuntimeConformanceTest {
         val h = Harness(
             "func fib(nn) { if (nn < 2) { return nn; } return fib(nn-1) + fib(nn-2); }\n" +
                 "func fac(nn) { if (nn <= 1) { return 1; } return nn * fac(nn-1); }\n" +
-                "func process(delta) { p = this.spawn(); p.position.x = fib(6); p.position.y = fac(4); }",
+                "func process() { let p = this.spawn(); p.position.x = fib(6); p.position.y = fac(4); }",
         )
         h.process()
         val host = h.particles[0] as TestHost
@@ -139,7 +185,7 @@ class ScriptRuntimeConformanceTest {
     @Test
     fun vecMat() {
         val h = Harness(
-            "func process(delta) { p = this.spawn(); v = vec(1,2,3); m = rotZ(pi/2); w = m * v; p.position = w; p.color = [len(w)/4, dot(v,w)/12, cross(v,w).y/10, 1]; }",
+            "func process() { let p = this.spawn(); let v = vec(1,2,3); let m = rotZ(pi/2); let w = m * v; p.position = w; p.color = [len(w)/4, dot(v,w)/12, cross(v,w).y/10, 1]; }",
         )
         h.process()
         val host = h.particles[0] as TestHost
@@ -154,7 +200,7 @@ class ScriptRuntimeConformanceTest {
     @Test
     fun noiseRandSeeded() {
         val h0 = Harness(
-            "func process(delta) { p = this.spawn(); p.position.x = noise(p.index, 0.5, 1.5) * 10; p.position.y = rand() * 10; p.position.z = rand(7) * 10; }",
+            "func process() { let p = this.spawn(); p.position.x = noise(p.index, 0.5, 1.5) * 10; p.position.y = rand() * 10; p.position.z = rand(7) * 10; }",
             seed = 42,
         )
         h0.process()
@@ -165,7 +211,7 @@ class ScriptRuntimeConformanceTest {
 
         // 同一 seed 下 rand() 序列一致
         val h1 = Harness(
-            "func process(delta) { p = this.spawn(); p.position.x = noise(p.index, 0.5, 1.5) * 10; p.position.y = rand() * 10; p.position.z = rand(7) * 10; }",
+            "func process() { let p = this.spawn(); p.position.x = noise(p.index, 0.5, 1.5) * 10; p.position.y = rand() * 10; p.position.z = rand(7) * 10; }",
             seed = 42,
         )
         h1.process()
@@ -177,7 +223,7 @@ class ScriptRuntimeConformanceTest {
 
     @Test
     fun setupAllowsGlobals() {
-        val h = Harness("func setup() { global x = 3; global i = 7; global dt = 0.5; }")
+        val h = Harness("let x = 3\nlet i = 7\nlet dt = 0.5")
         h.setup()
         assertEquals(3.0, h.obj.globals["x"])
         assertEquals(7.0, h.obj.globals["i"])
@@ -187,8 +233,8 @@ class ScriptRuntimeConformanceTest {
     @Test
     fun particleFieldsNotShadowedBySetupGlobals() {
         val h = Harness(
-            "func setup() { global position = 99; global index = 88; }\n" +
-                "func process(delta) { p = this.spawn(); p.position = [5,5,5]; p.position.y = p.position.x; p.position.z = p.index; }",
+            "let position = 99\nlet index = 88\n" +
+                "func process() { let p = this.spawn(); p.position = [5,5,5]; p.position.y = p.position.x; p.position.z = p.index; }",
         )
         h.setup()
         h.process()
@@ -201,7 +247,7 @@ class ScriptRuntimeConformanceTest {
     @Test
     fun functionNamesCanBeVariables() {
         val h = Harness(
-            "func process(delta) { sin = 3; p = this.spawn(); p.position.x = sin; p.position.y = sin(1); }",
+            "func process() { let sin = 3; let p = this.spawn(); p.position.x = sin; p.position.y = sin(1); }",
         )
         h.process()
         val host = h.particles[0] as TestHost
@@ -212,7 +258,7 @@ class ScriptRuntimeConformanceTest {
     @Test
     fun fastMathUsesFastBuiltinsInProcess() {
         val h = Harness(
-            "func process(delta) { p = this.spawn(); p.position.x = sin(0.5); p.position.y = exp(1); p.position.z = atan(1); }",
+            "func process() { let p = this.spawn(); p.position.x = sin(0.5); p.position.y = exp(1); p.position.z = atan(1); }",
             fastMath = true,
         )
         h.process()
@@ -226,7 +272,7 @@ class ScriptRuntimeConformanceTest {
     @Test
     fun particleLifeWritable() {
         val h = Harness(
-            "func process(delta) { p = this.spawn(); p.position.x = p.life; p.life = 40.6; p.position.y = p.life; p.life = -3; p.position.z = p.life; }",
+            "func process() { let p = this.spawn(); p.position.x = p.life; p.life = 40.6; p.position.y = p.life; p.life = -3; p.position.z = p.life; }",
         )
         h.process()
         val host = h.particles[0] as TestHost
@@ -239,8 +285,8 @@ class ScriptRuntimeConformanceTest {
     @Test
     fun durationFieldReadableInSetupAndProcess() {
         val h = Harness(
-            "func setup() { global d = this.duration; }\n" +
-                "func process(delta) { p = this.spawn(); p.position.x = d; p.position.y = this.duration; }",
+            "let d = 0\nfunc setup() { d = this.duration; }\n" +
+                "func process() { let p = this.spawn(); p.position.x = d; p.position.y = this.duration; }",
             duration = 40.0,
         )
         h.setup()
@@ -252,16 +298,19 @@ class ScriptRuntimeConformanceTest {
     }
 
     @Test
-    fun processParamIsDeltaMs() {
-        val h = Harness("func process(dt) { p = this.spawn(); p.position.x = dt; }")
+    fun processTakesNoParameters() {
+        val h = Harness("func process() { let p = this.spawn(); p.position.x = this.duration; }", duration = 7.0)
         h.process(t = 5.0, deltaMs = 50.0)
         val host = h.particles[0] as TestHost
-        assertEquals(50.0, host.pos[0], 1e-12)
+        assertEquals(7.0, host.pos[0], 1e-12)
+
+        // process 不再接受任何参数
+        assertFailsWith<RuntimeException> { parseProgram("func process(dt) {}") }
     }
 
     @Test
     fun printAvailableInAllPhases() {
-        val program = parseProgram("func setup() { print(1, 2); }\nfunc process(delta) { print(3); }")
+        val program = parseProgram("func setup() { print(1, 2); }\nfunc process() { print(3); }")
         val obj = ScriptRuntime.createObjectState(0)
         val particles = ArrayList<ParticleHost>()
         var serial = 0

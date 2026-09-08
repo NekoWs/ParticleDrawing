@@ -25,7 +25,7 @@ import java.util.zip.InflaterInputStream
 object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
-    private const val VERSION = 11    // v11：函数对象 spawn 模型（tick / processParam，移除 count 编码）
+    private const val VERSION = 13    // v13：时间单位毫秒化（tick→ms），let/const 变量系统
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 

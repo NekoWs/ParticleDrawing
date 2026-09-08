@@ -17,19 +17,21 @@ class IfNode(val cond: Node, val then: Node, val els: Node?, override val line: 
 class WhileNode(val cond: Node, val body: Node, override val line: Int, override val col: Int) : Node()
 class DoNode(val body: Node, val cond: Node, override val line: Int, override val col: Int) : Node()
 class ForNode(val init: Node?, val cond: Node?, val inc: Node?, val body: Node, override val line: Int, override val col: Int) : Node()
-class ForOfNode(val name: String, val iter: Node, val body: Node, override val line: Int, override val col: Int) : Node()
+class ForOfNode(val name: String, val kind: String, val iter: Node, val body: Node, override val line: Int, override val col: Int) : Node()
 class BreakNode(override val line: Int, override val col: Int) : Node()
 class ContinueNode(override val line: Int, override val col: Int) : Node()
 class ReturnNode(val expr: Node?, override val line: Int, override val col: Int) : Node()
 class GlobalNode(val name: String, val init: Node?, override val line: Int, override val col: Int) : Node()
 class ExprStmtNode(val expr: Node, override val line: Int, override val col: Int) : Node()
 class AssignNode(val target: AssignTarget, val value: Node, override val line: Int, override val col: Int) : Node()
+class DeclareNode(val kind: String, val name: String, val init: Node?, override val line: Int, override val col: Int) : Node()
 
 // —— 表达式 ——
 
 class NumNode(val value: Double, override val line: Int, override val col: Int) : Node()
 class StrNode(val value: String, override val line: Int, override val col: Int) : Node()
 class BoolNode(val value: Boolean, override val line: Int, override val col: Int) : Node()
+class UndefinedNode(override val line: Int, override val col: Int) : Node()
 class VarNode(val name: String, override val line: Int, override val col: Int) : Node()
 class ArrayNode(val items: List<Node>, override val line: Int, override val col: Int) : Node()
 class UnaryNode(val op: String, val operand: Node, override val line: Int, override val col: Int) : Node()
@@ -67,8 +69,8 @@ class ScriptProgram(
     val setup: List<Node>,
     val tick: List<Node>,
     val process: List<Node>,
-    val processParam: String,
     val functions: Map<String, FunctionNode>,
+    val globals: List<DeclareNode> = emptyList(),
 )
 
 // —— Tokenizer ——
@@ -225,6 +227,16 @@ fun tokenize(sourceIn: String?): List<Token> {
             continue
         }
 
+        // 复合赋值运算符：+= -= *= /= %= ^=
+        if (c in "+-*/%^" && i + 1 < len && src[i + 1] == '=') {
+            val startLine = line
+            val startCol = col
+            val op = "$c="
+            advance(); advance()
+            emit(Token(TokenType.PUNCT, op, line = startLine, col = startCol))
+            continue
+        }
+
         if ("+-*/%^!?:=<>()[]{},;.".contains(c)) {
             val startLine = line
             val startCol = col
@@ -244,13 +256,16 @@ fun tokenize(sourceIn: String?): List<Token> {
 
 private val KEYWORDS = setOf(
     "setup", "process", "tick", "func", "return", "if", "else", "while", "do", "for",
-    "of", "const", "break", "continue", "global", "true", "false",
+    "of", "const", "let", "undefined", "break", "continue", "true", "false",
 )
 
 private val LIFECYCLE_FUNCS = setOf("setup", "tick", "process")
 private val CONSTANT_NAMES = setOf("TAU", "HALF_PI", "QUARTER_PI", "DEG2RAD", "RAD2DEG", "pi", "e")
 private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w")
 private val COMP_NAMES = setOf("x", "y", "z", "w", "r", "g", "b", "a")
+
+// 复合赋值运算符 → 对应的二元运算符。
+private val COMPOUND_ASSIGN = mapOf("+=" to "+", "-=" to "-", "*=" to "*", "/=" to "/", "%=" to "%", "^=" to "^")
 
 private const val CTX_NAME = "this"
 
@@ -331,10 +346,16 @@ class ScriptParser(private val source: String) {
         val setup = ArrayList<Node>()
         val tick = ArrayList<Node>()
         val process = ArrayList<Node>()
-        var processParam = "delta"
         val functions = LinkedHashMap<String, FunctionNode>()
+        val globals = ArrayList<DeclareNode>()
 
         while (!atEnd()) {
+            val tok = peek()
+            if (tok.type == TokenType.IDENT && (tok.text == "let" || tok.text == "const")) {
+                globals.add(parseDeclare(tok, tok.text))
+                continue
+            }
+
             expectKw("func")
             val nameTok = expectIdent()
             expect("(")
@@ -349,10 +370,7 @@ class ScriptParser(private val source: String) {
                 when (nameTok.text) {
                     "setup" -> setup.addAll(body.body)
                     "tick" -> tick.addAll(body.body)
-                    "process" -> {
-                        process.addAll(body.body)
-                        processParam = params[0]
-                    }
+                    "process" -> process.addAll(body.body)
                 }
             } else {
                 validateFuncName(nameTok)
@@ -363,7 +381,7 @@ class ScriptParser(private val source: String) {
             }
         }
 
-        return ScriptProgram(setup, tick, process, processParam, functions)
+        return ScriptProgram(setup, tick, process, functions, globals)
     }
 
     private fun validateLifecycleSignature(tok: Token, params: List<String>) {
@@ -371,8 +389,8 @@ class ScriptParser(private val source: String) {
             "setup", "tick" -> if (params.isNotEmpty()) {
                 errorAt(tok, "'${tok.text}' must not take parameters")
             }
-            "process" -> if (params.size != 1) {
-                errorAt(tok, "'process' must take exactly one parameter (delta milliseconds)")
+            "process" -> if (params.isNotEmpty()) {
+                errorAt(tok, "'process' must not take parameters")
             }
         }
     }
@@ -428,7 +446,8 @@ class ScriptParser(private val source: String) {
                 "break" -> return parseBreak(tok)
                 "continue" -> return parseContinue(tok)
                 "return" -> return parseReturn(tok)
-                "global" -> return parseGlobal(tok)
+                "let" -> return parseDeclare(tok, "let")
+                "const" -> return parseDeclare(tok, "const")
             }
         }
 
@@ -474,10 +493,20 @@ class ScriptParser(private val source: String) {
         val start = next()
         expect("(")
 
-        // for-of：for (const name of expr) 或 for (name of expr)
+        // for-of：for (const x of expr) / for (let x of expr) / for (x of expr)
         val saved = pos
-        if (matchKw("const") ||
-            (peek().type == TokenType.IDENT && peek(1).type == TokenType.IDENT && peek(1).text == "of")) {
+        var ofKind: String? = null
+        fun looksLikeOf(): Boolean = peek().type == TokenType.IDENT && peek(1).type == TokenType.IDENT && peek(1).text == "of"
+        if (matchKw("const")) {
+            ofKind = if (looksLikeOf()) "const" else null
+            if (ofKind == null) pos = saved
+        } else if (matchKw("let")) {
+            ofKind = if (looksLikeOf()) "let" else null
+            if (ofKind == null) pos = saved
+        } else if (looksLikeOf()) {
+            ofKind = "let"
+        }
+        if (ofKind != null) {
             val nameTok = expectIdent()
             validateForVarName(nameTok)
             expectKw("of")
@@ -486,12 +515,15 @@ class ScriptParser(private val source: String) {
             loopDepth++
             val body = parseStatement()
             loopDepth--
-            return ForOfNode(nameTok.text, iter, body, start.line, start.col)
+            return ForOfNode(nameTok.text, ofKind, iter, body, start.line, start.col)
         }
         pos = saved
 
         var init: Node? = null
-        if (!check(";")) init = parseAssignExpr()
+        if (!check(";")) {
+            if (check("let")) init = parseDeclare(peek(), "let", true)
+            else init = parseAssignExpr()
+        }
         expect(";")
         var cond: Node? = null
         if (!check(";")) cond = parseTernary()
@@ -534,18 +566,18 @@ class ScriptParser(private val source: String) {
         return ReturnNode(expr, tok.line, tok.col)
     }
 
-    private fun parseGlobal(tok: Token): Node {
-        if (phase != "setup") errorAt(tok, "'global' only allowed inside setup")
-        next()
+    private fun parseDeclare(tok: Token, kind: String, noStatementEnd: Boolean = false): DeclareNode {
+        next() // let / const
         val nameTok = expectIdent()
-        validateGlobalName(nameTok)
+        validateDeclName(nameTok)
         var init: Node? = null
         if (!nlBefore() && match("=")) init = parseTernary()
-        statementEnd()
-        return GlobalNode(nameTok.text, init, tok.line, tok.col)
+        else if (kind == "const") errorAt(nameTok, "'const' must have an initializer")
+        if (!noStatementEnd) statementEnd()
+        return DeclareNode(kind, nameTok.text, init, tok.line, tok.col)
     }
 
-    private fun validateGlobalName(tok: Token) {
+    private fun validateDeclName(tok: Token) {
         val name = tok.text
         if (name in KEYWORDS || name == CTX_NAME || name in CONSTANT_NAMES) {
             errorAt(tok, "reserved name cannot be declared: '$name'")
@@ -569,10 +601,26 @@ class ScriptParser(private val source: String) {
     private fun parseAssignExpr(): Node {
         val start = peek()
         val left = parseTernary()
-        if (!nlBefore() && match("=")) {
-            val target = toLValue(left, start)
-            val value = parseAssignExpr()
-            return AssignNode(target, value, start.line, start.col)
+        if (!nlBefore()) {
+            val opTok = peek()
+            val binOp = COMPOUND_ASSIGN[opTok.text]
+            if (binOp != null) {
+                next()
+                val target = toLValue(left, start)
+                val value = parseTernary()
+                return AssignNode(
+                    target,
+                    BinaryNode(binOp, left, value, opTok.line, opTok.col),
+                    start.line,
+                    start.col,
+                )
+            }
+            if (opTok.text == "=") {
+                next()
+                val target = toLValue(left, start)
+                val value = parseAssignExpr()
+                return AssignNode(target, value, start.line, start.col)
+            }
         }
         return left
     }
@@ -746,6 +794,9 @@ class ScriptParser(private val source: String) {
             next()
             if (tok.text == "true" || tok.text == "false") {
                 return BoolNode(tok.text == "true", tok.line, tok.col)
+            }
+            if (tok.text == "undefined") {
+                return UndefinedNode(tok.line, tok.col)
             }
             return VarNode(tok.text, tok.line, tok.col)
         }

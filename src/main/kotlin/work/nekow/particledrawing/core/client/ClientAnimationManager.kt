@@ -50,8 +50,8 @@ object ClientAnimationManager {
     data class DebugInfo(
         val animId: UUID,
         val particleCount: Int,
-        val currentTick: Int,
-        val maxTick: Int,
+        val currentMs: Int,
+        val maxMs: Int,
         val frameCount: Long,
         val lastAdvanceMillis: Double,
         val avgAdvanceMillis: Double,
@@ -63,8 +63,8 @@ object ClientAnimationManager {
         DebugInfo(
             animId = id,
             particleCount = e.player.particleCount,
-            currentTick = e.player.currentTickValue,
-            maxTick = e.player.maxTickValue,
+            currentMs = e.player.currentMsValue,
+            maxMs = e.player.maxMsValue,
             frameCount = e.player.frameCount,
             lastAdvanceMillis = e.player.lastAdvanceNanos / 1_000_000.0,
             avgAdvanceMillis = e.player.avgAdvanceNanos / 1_000_000.0,
@@ -92,7 +92,7 @@ object ClientAnimationManager {
     fun findCamera(camIdOrName: String): CameraTarget? {
         for ((animId, e) in entries) {
             val cam = e.animation.cameras.firstOrNull { it.id == camIdOrName || it.name == camIdOrName } ?: continue
-            val pose = e.player.cameraPoseAt(cam.id, e.player.currentTickValue.toDouble()) ?: continue
+            val pose = e.player.cameraPoseAt(cam.id, e.player.currentMsValue.toDouble()) ?: continue
             return CameraTarget(animId, cam.id, cam.name, pose, e.origin)
         }
         return null
@@ -256,10 +256,10 @@ object ClientAnimationManager {
         preloadTextures(animation)
 
         val loop = options.loop() ?: animation.loop
-        val maxTick = animation.timelineLength()
-        val initialTick = AnimationProgress.tickAt(options.startTick().toLong(), maxTick, loop)
+        val maxMs = animation.timelineLength()
+        val initialMs = AnimationProgress.msAt(options.startTick().toLong(), maxMs, loop)
         val currentGameTick = Minecraft.getInstance().level?.gameTime ?: startGameTick
-        val player = ClientAnimationPlayer(animation, Vec3.ZERO, startGameTick, currentGameTick, initialTick)
+        val player = ClientAnimationPlayer(animation, Vec3.ZERO, startGameTick, currentGameTick, initialMs)
         val resolver = EffectAnchorResolver(anchor, options.scale())
         val clock = PlaybackClock(options.startTick(), playing = true, speed = options.speed())
 
@@ -339,7 +339,7 @@ object ClientAnimationManager {
         val animId = CameraController.activeAnimationId() ?: run { CameraController.updatePose(null); return }
         val entry = entries[animId] ?: run { CameraController.detach(); return }
         val camId = CameraController.activeCameraId() ?: return
-        val pose = entry.player.cameraPoseAt(camId, entry.player.currentTickValue.toDouble())
+        val pose = entry.player.cameraPoseAt(camId, entry.player.currentMsValue.toDouble())
         CameraController.updatePose(pose)
     }
 

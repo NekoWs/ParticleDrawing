@@ -22,8 +22,8 @@ class ParticleGroup(
     internal val manager: ParticleManager
 ) {
 
-    /** 时间线游标（tick）：delay 累积推进。 */
-    private var cursorTicks = 0
+    /** 时间线游标（毫秒）：delay 累积推进（1 game tick = 50ms）。 */
+    private var cursorMs = 0
 
     /** 已录制的指令流（未下发部分）。 */
     private val instructions = ArrayList<AnimInstruction>()
@@ -98,11 +98,11 @@ class ParticleGroup(
      * 游标累积、不清零——连续两个动画共享同一时刻（如停转与淡出同刻）。
      */
     fun delay(ticks: Int): ParticleGroup {
-        cursorTicks += ticks.coerceAtLeast(0)
+        cursorMs += ticks.coerceAtLeast(0) * 50
         return this
     }
 
-    private fun cursorNow(): Int = cursorTicks
+    private fun cursorNow(): Int = cursorMs
 
     /** 录制一条指令并触发下发。 */
     private fun emit(ins: AnimInstruction) {
@@ -146,7 +146,7 @@ class ParticleGroup(
      * 淡入：整组透明度从 0 缓动到各自当前值。
      */
     fun fadeIn(durationTicks: Int, easing: EasingType = EasingType.EASE_OUT): ParticleGroup {
-        emit(AnimInstruction.FadeIn(cursorTicks, durationTicks, easing))
+        emit(AnimInstruction.FadeIn(cursorMs, durationTicks * 50, easing))
         return this
     }
 
@@ -154,9 +154,9 @@ class ParticleGroup(
      * 淡出：整组透明度缓动到 0；结束后由服务端定时销毁整组。
      */
     fun fadeOut(durationTicks: Int, removeAfter: Boolean = true, easing: EasingType = EasingType.EASE_IN): ParticleGroup {
-        emit(AnimInstruction.FadeOut(cursorTicks, durationTicks, easing))
+        emit(AnimInstruction.FadeOut(cursorMs, durationTicks * 50, easing))
         if (removeAfter) {
-            AnimationScheduler.schedule((cursorTicks + durationTicks + 5).coerceAtLeast(1)) {
+            AnimationScheduler.schedule(((cursorMs + durationTicks * 50 + 250) / 50).coerceAtLeast(1)) {
                 manager.getEngine().destroyGroup(id, manager.getPlayers())
                 stopProgramOnClient(destroyParticles = false) // 粒子已随 destroy 包移除，仅清程序
             }
@@ -169,7 +169,7 @@ class ParticleGroup(
      * @param ticks 从当前游标时刻起再等多少 tick 销毁
      */
     fun destroyAfter(ticks: Int): ParticleGroup {
-        AnimationScheduler.schedule((cursorTicks + ticks).coerceAtLeast(1)) {
+        AnimationScheduler.schedule(((cursorMs + ticks * 50) / 50).coerceAtLeast(1)) {
             manager.getEngine().destroyGroup(id, manager.getPlayers())
             stopProgramOnClient(destroyParticles = false)
         }
@@ -181,7 +181,7 @@ class ParticleGroup(
      * 受 delay 游标控制：`.spin(...).delay(100).stopContinuous()` 表示转 100 tick 后停。
      */
     fun stopContinuous(): ParticleGroup {
-        emit(AnimInstruction.StopContinuous(cursorTicks))
+        emit(AnimInstruction.StopContinuous(cursorMs))
         return this
     }
 
@@ -204,7 +204,7 @@ class ParticleGroup(
     /** 组平移。 */
     fun move(delta: Vec3, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
         pivot = pivot.add(delta)
-        emit(AnimInstruction.Translate(cursorTicks, delta, durationTicks, easing))
+        emit(AnimInstruction.Translate(cursorMs, delta, durationTicks * 50, easing))
         return this
     }
 
@@ -215,7 +215,7 @@ class ParticleGroup(
 
     /** 绕基准点一次性旋转。 */
     fun rotate(axis: Vec3, radians: Double, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
-        emit(AnimInstruction.RotateOnce(cursorTicks, PivotRef.Fixed(pivot), axis, radians, durationTicks, easing))
+        emit(AnimInstruction.RotateOnce(cursorMs, PivotRef.Fixed(pivot), axis, radians, durationTicks * 50, easing))
         return this
     }
 
@@ -226,7 +226,7 @@ class ParticleGroup(
 
     /** 重着色到目标颜色。 */
     fun recolor(targetColor: Color, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
-        emit(AnimInstruction.Recolor(cursorTicks, targetColor.r, targetColor.g, targetColor.b, targetColor.a, durationTicks, easing))
+        emit(AnimInstruction.Recolor(cursorMs, targetColor.r, targetColor.g, targetColor.b, targetColor.a, durationTicks * 50, easing))
         return this
     }
 
@@ -235,7 +235,7 @@ class ParticleGroup(
      * durationTicks=0 表示瞬时跳变。
      */
     fun scale(ratio: Float, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
-        emit(AnimInstruction.ScaleBy(cursorTicks, ratio, durationTicks, easing))
+        emit(AnimInstruction.ScaleBy(cursorMs, ratio, durationTicks * 50, easing))
         return this
     }
 
@@ -243,7 +243,7 @@ class ParticleGroup(
 
     /** 无限匀速旋转；用 [stopContinuous] 停止。 */
     fun spin(axis: Vec3, radiansPerTick: Double): ParticleGroup {
-        emit(AnimInstruction.Spin(cursorTicks, PivotRef.Fixed(pivot), axis, radiansPerTick))
+        emit(AnimInstruction.Spin(cursorMs, PivotRef.Fixed(pivot), axis, radiansPerTick / 50))
         return this
     }
 
@@ -251,13 +251,13 @@ class ParticleGroup(
     fun movePath(points: List<Vec3>, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
         require(points.isNotEmpty()) { "movePath 至少需要一个途经点" }
         pivot = points.last()
-        emit(AnimInstruction.MovePath(cursorTicks, points, durationTicks, easing))
+        emit(AnimInstruction.MovePath(cursorMs, points, durationTicks * 50, easing))
         return this
     }
 
     /** 呼吸脉冲：1× ↔ [peakRatio]× 往复；[cycles] 负数无限。 */
     fun pulse(peakRatio: Float, halfPeriodTicks: Int, cycles: Int = -1): ParticleGroup {
-        emit(AnimInstruction.Pulse(cursorTicks, peakRatio, halfPeriodTicks, cycles))
+        emit(AnimInstruction.Pulse(cursorMs, peakRatio, halfPeriodTicks * 50, cycles))
         return this
     }
 
@@ -295,7 +295,7 @@ class ParticleGroup(
      */
     fun expression(code: String): ParticleGroup {
         lintGetters(code)
-        emit(AnimInstruction.Expression(cursorTicks, code))
+        emit(AnimInstruction.Expression(cursorMs, code))
         return this
     }
 

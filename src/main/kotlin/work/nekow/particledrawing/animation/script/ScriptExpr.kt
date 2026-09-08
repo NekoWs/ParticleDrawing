@@ -7,7 +7,7 @@ import kotlin.math.*
 // 标量表达式求值（旧 ExpressionEvaluator 的存活子集）。
 // 通用解释器已由 script-lang 的 ScriptRuntime / ScalarProgram 取代；这里只剩标量 RPN 编译与变量热更公式求值。
 
-/** 变量关键帧（tick / 值 / 缓动；`Double` tick，给变量插值用）。 */
+/** 变量关键帧（毫秒 / 值 / 缓动；`Double` 毫秒，给变量插值用）。 */
 data class Keyframe(val tick: Double, val value: Double, val easing: EasingType)
 
 /** 标量函数签名：名称 -> 参数个数（与编辑器 easing.js 的标量子集对齐）。 */

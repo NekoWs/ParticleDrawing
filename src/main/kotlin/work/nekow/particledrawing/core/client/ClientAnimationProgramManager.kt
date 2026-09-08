@@ -102,13 +102,13 @@ internal object ClientAnimationProgramManager {
         var recolor: Recolor? = null
         var fadeInStart = -1L; var fadeInDur = 0; var fadeInEase = EasingType.EASE_OUT
         var fadeOutStart = -1L; var fadeOutDur = 0; var fadeOutEase = EasingType.EASE_IN
-        var continuousFrozenTick: Long? = null
+        var continuousFrozenMs: Long? = null
 
         // 实体注册表 / 变量 / 表达式
         val entityBindings = ArrayList<EntityBinding>()
         val vars = LinkedHashMap<String, Double>()
         var expressionCode: String? = null
-        var expressionStartTick = 0L
+        var expressionStartMs = 0L
         var compiled: CompiledFunction? = null
 
         /** 名字 -> 注册序号（公式 getter 参数解析用）。 */
@@ -218,7 +218,7 @@ internal object ClientAnimationProgramManager {
         if (ins is AnimInstruction.Expression) {
             // 表达式唯一化：后到覆盖先到
             p.expressionCode = ins.code
-            p.expressionStartTick = ins.startTick.toLong()
+            p.expressionStartMs = ins.startMs.toLong()
             recompileExpression(p)
             return
         }
@@ -374,10 +374,10 @@ internal object ClientAnimationProgramManager {
         val nowClient = level.gameTime
 
         for ((programId, p) in programs.toList()) {
-            // 统一到「程序相对 tick」域：
-            // clientGameTime + anchorOffset ≈ 服务端绝对 gameTime；再减程序起点 = 相对时刻。
-            // 指令 startTick 与公式变量 t 均为该相对域，量纲一致、与存档时长无关。
-            val now = nowClient + p.anchorOffset - p.startAnchor
+            // 统一到「程序相对毫秒」域：
+            // clientGameTime + anchorOffset ≈ 服务端绝对 gameTime；再减程序起点、×50 = 相对毫秒。
+            // 指令 startMs 与公式变量 t 均为该相对域，量纲一致、与存档时长无关。
+            val now = (nowClient + p.anchorOffset - p.startAnchor) * 50
             refreshInputs(p, nowClient)
 
             if (p.expressionCode != null) {
@@ -393,7 +393,7 @@ internal object ClientAnimationProgramManager {
     private fun expressionFrame(p: Program, engine: ClientParticleEngine, now: Long) {
         val cf = p.compiled ?: return
         if (p.regs.size != cf.regCount) prepareExpressionBuffers(p)
-        val local = (now - p.expressionStartTick).coerceAtLeast(0).toDouble()
+        val local = (now - p.expressionStartMs).coerceAtLeast(0).toDouble()
         fillExternal(p)
 
         val n = p.particleIds.size.toDouble()
@@ -432,7 +432,7 @@ internal object ClientAnimationProgramManager {
         val fadeIn = fadeFactor(p.fadeInStart, p.fadeInDur, p.fadeInEase, now, default = 1f)
         val fadeOut = fadeFactor(p.fadeOutStart, p.fadeOutDur, p.fadeOutEase, now, default = 0f)
         val rc = p.recolor
-        val kR = if (rc == null) 1f else eased(rc.ease, progress(now - rc.startTick, rc.durationTicks))
+        val kR = if (rc == null) 1f else eased(rc.ease, progress(now - rc.startMs, rc.durationMs))
 
         for ((uuid, st) in p.states) {
             val r: Float; val g: Float; val b: Float; val aBase: Float
@@ -452,7 +452,7 @@ internal object ClientAnimationProgramManager {
 
     /** 组级重着色的首用快照与目标。 */
     private class Recolor(
-        val startTick: Long, val durationTicks: Int, val ease: EasingType,
+        val startMs: Long, val durationMs: Int, val ease: EasingType,
         val r: Float, val g: Float, val b: Float, val a: Float,
         val from: Map<UUID, FloatArray>,
     )
@@ -465,7 +465,7 @@ internal object ClientAnimationProgramManager {
 
     private fun applySlot(p: Program, slot: Slot, now: Long) {
         val ins = slot.ins
-        val start = ins.startTick.toLong()
+        val start = ins.startMs.toLong()
         if (now < start) return
 
         if (!slot.applied) {
@@ -486,53 +486,53 @@ internal object ClientAnimationProgramManager {
                 is PivotRef.FollowEntity -> { p.pivotEntity = EntityBinding("__pivot__", ref.uuid); p.pivotEntityOffset = ref.offset }
             }
 
-            is AnimInstruction.FadeIn -> { p.fadeInStart = start; p.fadeInDur = ins.durationTicks; p.fadeInEase = ins.easing }
-            is AnimInstruction.FadeOut -> { p.fadeOutStart = start; p.fadeOutDur = ins.durationTicks; p.fadeOutEase = ins.easing }
+            is AnimInstruction.FadeIn -> { p.fadeInStart = start; p.fadeInDur = ins.durationMs; p.fadeInEase = ins.easing }
+            is AnimInstruction.FadeOut -> { p.fadeOutStart = start; p.fadeOutDur = ins.durationMs; p.fadeOutEase = ins.easing }
 
             is AnimInstruction.Recolor -> {
                 if (p.recolor == null) {
-                    p.recolor = Recolor(start, ins.durationTicks, ins.easing,
+                    p.recolor = Recolor(start, ins.durationMs, ins.easing,
                         ins.r, ins.g, ins.b, ins.a,
                         p.states.mapValues { floatArrayOf(it.value.baseR, it.value.baseG, it.value.baseB, it.value.baseA) })
                 }
             }
 
             is AnimInstruction.ScaleBy -> {
-                val k = eased(ins.easing, progress(local, ins.durationTicks))
+                val k = eased(ins.easing, progress(local, ins.durationMs))
                 p.scaleMul = 1f + (ins.ratio - 1f) * k
             }
 
             is AnimInstruction.Translate -> {
-                p.pathOffset = slot.snapPathOffset.add(ins.delta.scale(eased(ins.easing, progress(local, ins.durationTicks)).toDouble()))
+                p.pathOffset = slot.snapPathOffset.add(ins.delta.scale(eased(ins.easing, progress(local, ins.durationMs)).toDouble()))
             }
 
             is AnimInstruction.RotateOnce -> {
-                val angle = ins.radians * eased(ins.easing, progress(local, ins.durationTicks))
+                val angle = ins.radians * eased(ins.easing, progress(local, ins.durationMs))
                 rotateToSnapshot(p, slot, ins.axis, angle)
             }
 
             is AnimInstruction.Spin -> {
-                val effective = if (p.continuousFrozenTick != null)
-                    (p.continuousFrozenTick!! - start).coerceAtLeast(0)
+                val effective = if (p.continuousFrozenMs != null)
+                    (p.continuousFrozenMs!! - start).coerceAtLeast(0)
                 else (now - start).coerceAtLeast(0)
-                rotateToSnapshot(p, slot, ins.axis, ins.radiansPerTick * effective.toDouble())
+                rotateToSnapshot(p, slot, ins.axis, ins.radiansPerMs * effective.toDouble())
             }
 
             is AnimInstruction.Pulse -> {
-                if (p.continuousFrozenTick != null) return
-                val half = ins.halfPeriodTicks.coerceAtLeast(1)
+                if (p.continuousFrozenMs != null) return
+                val half = ins.halfPeriodMs.coerceAtLeast(1)
                 val phase = (local % (half * 2L)).toFloat() / half
                 val tri = if (phase <= 1f) phase else 2f - phase
                 p.pulseMul = 1f + (ins.peakRatio - 1f) * tri
             }
 
             is AnimInstruction.MovePath -> {
-                val k = eased(ins.easing, progress(local, ins.durationTicks))
+                val k = eased(ins.easing, progress(local, ins.durationMs))
                 p.pathOffset = slot.snapPathOffset.add(samplePath(ins.points, k).subtract(ins.points.first()))
             }
 
             is AnimInstruction.StopContinuous ->
-                if (p.continuousFrozenTick == null || p.continuousFrozenTick!! > now) p.continuousFrozenTick = now
+                if (p.continuousFrozenMs == null || p.continuousFrozenMs!! > now) p.continuousFrozenMs = now
 
             is AnimInstruction.Expression -> {} // 表达式由 addInstruction 分流，不进入糖指令槽
         }
@@ -560,9 +560,9 @@ internal object ClientAnimationProgramManager {
     private fun fadeFactor(start: Long, dur: Int, ease: EasingType, now: Long, default: Float): Float =
         if (start < 0) default else eased(ease, progress(now - start, dur))
 
-    private fun progress(local: Long, durationTicks: Int): Float {
-        if (durationTicks <= 0) return 1f
-        return (local.toFloat() / durationTicks).coerceIn(0f, 1f)
+    private fun progress(local: Long, durationMs: Int): Float {
+        if (durationMs <= 0) return 1f
+        return (local.toFloat() / durationMs).coerceIn(0f, 1f)
     }
 
     private fun eased(easing: EasingType, t: Float): Float = easing.evaluate(t.coerceIn(0f, 1f))

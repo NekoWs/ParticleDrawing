@@ -22,10 +22,10 @@ class FxDurationGatingTest {
             id = "fx0",
             name = "fx0",
             center = doubleArrayOf(0.0, 0.0, 0.0),
-            source = "func setup() { this.spawn(); }\nfunc process(delta) { for (const p of this.particles) { p.position = [p.index, 0, 0]; } }",
+            source = "func setup() { this.spawn(); }\nfunc process() { for (const p of this.particles) { p.position = [p.index, 0, 0]; } }",
             seed = 0,
-            // 变量关键帧把 maxTick 撑到 100，避免动画在 duration 处提前结束，便于观测时长门控。
-            vars = mapOf("k" to FunctionVar(0.0, listOf(Keyframe(100.0, 0.0, EasingType.LINEAR)))),
+            // 变量关键帧把 maxMs 撑到 5000，避免动画在 duration 处提前结束，便于观测时长门控。
+            vars = mapOf("k" to FunctionVar(0.0, listOf(Keyframe(5000.0, 0.0, EasingType.LINEAR)))),
             duration = duration,
         )
         return ParticleAnimation(
@@ -39,16 +39,16 @@ class FxDurationGatingTest {
 
     @Test
     fun derivedParticlesHideAfterDuration() {
-        // 初始定位到 t=5（< st+duration=10）：可见
-        val player = ClientAnimationPlayer(animation(10), Vec3.ZERO, startGameTick = 1000L, currentGameTick = 1005L)
+        // 初始定位到 250ms（< st+duration=500）：可见
+        val player = ClientAnimationPlayer(animation(500), Vec3.ZERO, startGameTick = 1000L, currentGameTick = 1005L)
         val state = player.currentStates().first { it.id == "fx0:p0" }
         assertTrue(state.visible)
 
-        // elapsed=15 → t=15，超过对象时长 10：回收
+        // elapsed=15 tick → 750ms，超过对象时长 500：回收
         player.tick(1015L)
         assertFalse(state.visible)
 
-        // elapsed=105 → 循环回卷到 t=5：重新入场
+        // elapsed=105 tick → 5250ms，循环回卷到 250ms：重新入场
         player.tick(1105L)
         assertTrue(state.visible)
     }

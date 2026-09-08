@@ -23,6 +23,11 @@ data class Mat4(val m: List<List<Double>>)
 /** 用户函数值（闭包按顶层函数名查找）。 */
 data class FuncVal(val name: String)
 
+/** 未定义值（let 未初始化、字段未设置、return 无表达式、缺省实参）。 */
+object Undefined
+
+fun isUndefined(v: Any?): Boolean = v === Undefined
+
 /** 宿主侧粒子存储接口：spawn 运行时把粒子句柄桥接到此接口（编辑器 w 对象）。 */
 interface ParticleHost {
     val index: Int
@@ -80,6 +85,7 @@ fun mkVec(dim: Int, comps: List<Double>): Any = when (dim) {
 }
 
 fun typeName(v: Any?): String = when {
+    isUndefined(v) -> "undefined"
     v == null -> "null"
     isNum(v) -> "num"
     isBool(v) -> "bool"

@@ -91,7 +91,7 @@ class AnimCamera(
     val rotLocal: Boolean = true
 )
 
-// 动画时间轴长度（tick，与编辑器 maxTick 一致）：轨道最大关键帧 tick、粒子 st/life 上界、函数对象 st+extent。
+// 动画时间轴长度（毫秒，与编辑器 maxMs 一致）：轨道最大关键帧毫秒、粒子 st/life 上界、函数对象 st+extent。
 // 服务端与客户端共用，保证进度口径一致。
 fun ParticleAnimation.timelineLength(): Int {
     var max = tracks.flatMap { it.keyframes }.maxOfOrNull { it.tick }?.toDouble() ?: 0.0
