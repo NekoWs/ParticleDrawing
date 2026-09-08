@@ -183,9 +183,20 @@ class ScriptRuntimeConformanceTest {
     }
 
     @Test
+    fun ternaryNewline() {
+        val h = Harness(
+            "func process() { let p = this.spawn(); p.position.x = true ?\n 1 :\n 2; p.position.y = false\n ? 3\n : 4; }",
+        )
+        h.process()
+        val host = h.particles[0] as TestHost
+        assertEquals(1.0, host.pos[0], 1e-12)
+        assertEquals(4.0, host.pos[1], 1e-12)
+    }
+
+    @Test
     fun vecMat() {
         val h = Harness(
-            "func process() { let p = this.spawn(); let v = vec(1,2,3); let m = rotZ(pi/2); let w = m * v; p.position = w; p.color = [len(w)/4, dot(v,w)/12, cross(v,w).y/10, 1]; }",
+            "func process() { let p = this.spawn(); let v = vec(1,2,3); let m = rotZ(PI/2); let w = m * v; p.position = w; p.color = [len(w)/4, dot(v,w)/12, cross(v,w).y/10, 1]; }",
         )
         h.process()
         val host = h.particles[0] as TestHost

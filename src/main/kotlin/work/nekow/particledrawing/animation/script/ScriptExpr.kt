@@ -104,8 +104,8 @@ private fun tokenizeExpr(expr: String): List<ExprToken> {
             while (j < expr.length && (expr[j].isLetterOrDigit() || expr[j] == '_')) j++
             val name = expr.substring(i, j)
             when {
-                name == "pi" -> tokens.add(ExprToken.Num(Math.PI))
-                name == "e" -> tokens.add(ExprToken.Num(Math.E))
+                name == "PI" -> tokens.add(ExprToken.Num(Math.PI))
+                name == "E" -> tokens.add(ExprToken.Num(Math.E))
                 FUNCS.containsKey(name) -> tokens.add(ExprToken.Func(name))
                 else -> tokens.add(ExprToken.Var(name))
             }

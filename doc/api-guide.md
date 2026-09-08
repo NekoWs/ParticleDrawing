@@ -235,7 +235,7 @@ group.defineEntity(handle = "e", uuid = entity.uuid)
 //    与 .pdraw 函数对象的 this 脚本语言不同）；
 //    用到什么取什么——get_entity_*/get_world_* 在需要处调用，无需预先声明属性
 group.expression("""
-    th = i / n * 2 * pi;
+    th = i / n * 2 * PI;
     [x,y,z] = [
         get_entity_x(e) + cos(th) * 2,
         get_entity_y(e) + 1 + get_world_rain() * sin(t * 0.1),
@@ -488,7 +488,7 @@ val anim = Animation.create {
         seed = 1
         variable("rad", 3.0)
         setup("global arr = [];")
-        process("th = this.index / this.count * 2 * pi; this.position = vec3(cos(th) * rad, 0, sin(th) * rad);")
+        process("th = this.index / this.count * 2 * PI; this.position = vec3(cos(th) * rad, 0, sin(th) * rad);")
     }
 }
 
@@ -510,7 +510,7 @@ Animation anim = Animation.builder()
     .function(f -> f.id("fx0").count(100).center(0, 10, 0).duration(200).seed(1)
         .variable("rad", 3.0)
         .setup("global arr = [];")
-        .process("th = this.index / this.count * 2 * pi; this.position = vec3(cos(th) * rad, 0, sin(th) * rad);"))
+        .process("th = this.index / this.count * 2 * PI; this.position = vec3(cos(th) * rad, 0, sin(th) * rad);"))
     .build();
 
 anim.play(level.players(), origin).updateVariable("rad", "4");

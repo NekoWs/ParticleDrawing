@@ -16,7 +16,7 @@ fun main() {
         Preset(
             "sphere",
             listOf("rad" to "3"),
-            "th = acos(1-2*(i+0.5)/n);\nph = i*pi*(3-sqrt(5));\n[x,y,z] = [rad*sin(th)*cos(ph), rad*cos(th), rad*sin(th)*sin(ph)];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 12",
+            "th = acos(1-2*(i+0.5)/n);\nph = i*PI*(3-sqrt(5));\n[x,y,z] = [rad*sin(th)*cos(ph), rad*cos(th), rad*sin(th)*sin(ph)];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 12",
         ),
         Preset(
             "cube",
@@ -26,12 +26,12 @@ fun main() {
         Preset(
             "torus",
             listOf("major" to "3", "minor" to "1", "m" to "24", "k" to "12"),
-            "th = i%k/k*2*pi;\nph = floor(i/k)/m*2*pi;\n[x,y,z] = [(major+minor*cos(th))*cos(ph), minor*sin(th), (major+minor*cos(th))*sin(ph)];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 10",
+            "th = i%k/k*2*PI;\nph = floor(i/k)/m*2*PI;\n[x,y,z] = [(major+minor*cos(th))*cos(ph), minor*sin(th), (major+minor*cos(th))*sin(ph)];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 10",
         ),
         Preset(
             "star",
             listOf("rad" to "20"),
-            "m = floor(pow(n, 0.5));\nu = floor(i / m) * 2 * pi / m;\nv = i % m * pi / m - pi / 2;\nx = rad * pow(cos(u) * cos(v), 3);\ny = rad * pow(sin(u) * cos(v), 3);\nz = rad * pow(sin(v), 3)",
+            "m = floor(pow(n, 0.5));\nu = floor(i / m) * 2 * PI / m;\nv = i % m * PI / m - PI / 2;\nx = rad * pow(cos(u) * cos(v), 3);\ny = rad * pow(sin(u) * cos(v), 3);\nz = rad * pow(sin(v), 3)",
         ),
     )
 

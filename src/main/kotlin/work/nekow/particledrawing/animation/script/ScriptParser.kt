@@ -188,8 +188,8 @@ fun tokenize(sourceIn: String?): List<Token> {
             while (i < len && isIdentPart(src[i])) name.append(advance())
             val n = name.toString()
             when (n) {
-                "pi" -> emit(Token(TokenType.NUM, n, PI, startLine, startCol))
-                "e" -> emit(Token(TokenType.NUM, n, E, startLine, startCol))
+                "PI" -> emit(Token(TokenType.NUM, n, PI, startLine, startCol))
+                "E" -> emit(Token(TokenType.NUM, n, E, startLine, startCol))
                 else -> emit(Token(TokenType.IDENT, n, line = startLine, col = startCol))
             }
             continue
@@ -260,7 +260,7 @@ private val KEYWORDS = setOf(
 )
 
 private val LIFECYCLE_FUNCS = setOf("setup", "tick", "process")
-private val CONSTANT_NAMES = setOf("TAU", "HALF_PI", "QUARTER_PI", "DEG2RAD", "RAD2DEG", "pi", "e")
+private val CONSTANT_NAMES = setOf("TAU", "HALF_PI", "QUARTER_PI", "DEG2RAD", "RAD2DEG", "PI", "E")
 private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w")
 private val COMP_NAMES = setOf("x", "y", "z", "w", "r", "g", "b", "a")
 
@@ -645,7 +645,7 @@ class ScriptParser(private val source: String) {
 
     private fun parseTernary(): Node {
         val cond = parseOr()
-        if (!nlBefore() && match("?")) {
+        if (match("?")) {
             val qTok = tokens[pos - 1]
             val thenExpr = parseTernary()
             expect(":")

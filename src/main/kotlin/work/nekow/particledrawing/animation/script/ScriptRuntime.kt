@@ -1159,8 +1159,8 @@ object ScriptRuntime {
         "QUARTER_PI" to PI / 4,
         "DEG2RAD" to PI / 180,
         "RAD2DEG" to 180 / PI,
-        "pi" to PI,
-        "e" to E,
+        "PI" to PI,
+        "E" to E,
     )
 }
 

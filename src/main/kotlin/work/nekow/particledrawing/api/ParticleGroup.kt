@@ -37,7 +37,7 @@ class ParticleGroup(
 
     /** handle 合法性：公式标识符 + 不得与内建常量/属性寄存器撞名。 */
     private val HANDLE_REGEX = Regex("""^[A-Za-z_][A-Za-z0-9_]*$""")
-    private val RESERVED_NAMES = setOf("i", "n", "t", "pi", "e") +
+    private val RESERVED_NAMES = setOf("i", "n", "t", "PI", "E") +
         setOf("x", "y", "z", "r", "g", "b", "a", "vx", "vy", "vz", "sc", "glow", "light")
 
     /** handle 在实体注册表中必须唯一，且不得与程序变量重名——同名会在公式环境里互相覆盖。 */
@@ -268,7 +268,7 @@ class ParticleGroup(
      * 公式内通过 `get_entity_<prop>(<handle>)` 被动取值——用到什么取什么，
      * 属性表见 `EntityProp` / `WorldProp` 枚举；世界属性无需登记，直接 `get_world_<prop>()`。
      *
-     * handle 必须是合法公式标识符，且不得与内建名（i/n/t/pi/e、x/y/z/r/g/b/a/vx/vy/vz/sc/glow/light）
+     * handle 必须是合法公式标识符，且不得与内建名（i/n/t/PI/E、x/y/z/r/g/b/a/vx/vy/vz/sc/glow/light）
      * 或已有变量重名；违反立即抛异常。
      */
     fun defineEntity(handle: String, uuid: UUID): ParticleGroup {
