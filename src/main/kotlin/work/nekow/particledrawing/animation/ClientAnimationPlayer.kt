@@ -384,6 +384,8 @@ class ClientAnimationPlayer(
         // 与编辑器一致：向后 seek 重建 objState（fresh globals + fresh PRNG），
         // 避免 setup 反复在脏 global / 已推进的 rand 状态上叠加导致漂移。
         rt.objState.globals.clear()
+        rt.objState.constGlobals.clear()
+        rt.objState.topLevelDone = false
         rt.objState.rand.a = fx.seed
         try {
             ScriptRuntime.runSpawnSetup(rt.program, rt.objState, makeCtx(fx, rt, fx.st.toDouble()))
