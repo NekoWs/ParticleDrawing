@@ -6,13 +6,15 @@ import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.client.event.ClientTickEvent
+import net.neoforged.neoforge.client.event.RenderFrameEvent
 import net.neoforged.neoforge.client.event.ViewportEvent
 import net.neoforged.neoforge.event.level.LevelEvent
 import net.neoforged.neoforge.event.tick.PlayerTickEvent
 import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.lighting.DynamicLightManager
 
-// 客户端粒子渲染处理器：每渲染帧更新粒子引擎缓动、按帧推进函数对象 process（派生粒子同步）、刷新动态光照；
+// 客户端粒子渲染处理器：每 game tick 更新粒子引擎缓动（速度积分与缓动轮转对时间敏感，不能按渲染帧推进）；
+// 每渲染帧推进函数对象 process 并同步帧级同步派生粒子、刷新动态光照；
 // 普通粒子与编排动画程序仍按 game tick 推进（20Hz，避免按渲染帧全量重算的 3 倍计算量与速度漂移）。
 @EventBusSubscriber(modid = ParticleDrawing.MODID, value = [Dist.CLIENT])
 @Suppress("unused")
@@ -21,10 +23,10 @@ object ParticleRenderHandler {
     private var engineInitialized = false
 
     /**
-     * 客户端渲染帧 Tick 事件处理。
-     * 负责粒子引擎的延迟初始化及每帧更新（缓动插值 + 动态光照）。
-     * 注意：编排动画程序的求值不在这里——渲染帧与 game tick 不同步，
-     * 每帧重写桥接粒子的 xo/x 会把插值端点折叠成同值对，破坏 partialTick 扫掠。
+     * 客户端 game tick 事件处理（约 20Hz）。
+     * 负责粒子引擎的延迟初始化与缓动同步：速度积分与缓动轮转对时间敏感，
+     * 只能按 game tick 推进，不能按渲染帧重写桥接粒子的 xo/x——渲染帧与
+     * game tick 不同步，每帧改写会把插值端点折叠成同值对、破坏 partialTick 扫掠。
      */
     @SubscribeEvent
     @JvmStatic
@@ -35,17 +37,22 @@ object ParticleRenderHandler {
             engineInitialized = true
         }
 
-        val engine = ClientParticleEngine.instance()
-        engine?.frameUpdate()
+        ClientParticleEngine.instance()?.frameUpdate()
+    }
 
-        // 函数对象 process 每渲染帧执行（渲染帧率毫秒推进，派生粒子按帧同步）；
-        // 置于动态光照刷新之前，使光源位置使用本帧最新粒子位置。
-        val partialTick = Minecraft.getInstance().deltaTracker.getGameTimeDeltaPartialTick(false)
+    /**
+     * 每渲染帧推进函数对象 process 并同步帧级同步派生粒子；再刷新动态光照，
+     * 使光源位置使用本帧最新粒子位置。普通粒子不在此路径推进。
+     */
+    @SubscribeEvent
+    @JvmStatic
+    @Suppress("UNUSED_PARAMETER")
+    fun onRenderFrame(event: RenderFrameEvent.Pre) {
+        val partialTick = event.partialTick.getGameTimeDeltaPartialTick(false)
         ClientAnimationManager.frameTick(partialTick)
 
-        if (engine != null) {
-            DynamicLightManager.renderDynamicLights(engine)
-        }
+        val engine = ClientParticleEngine.instance() ?: return
+        DynamicLightManager.renderDynamicLights(engine)
     }
 
     // 玩家 game tick 事件（约 20Hz）。只在本地玩家的 tick 里推进一次（PlayerTickEvent 对每个在场玩家各触发一次）。
