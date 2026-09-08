@@ -42,6 +42,11 @@ runs {
 
         systemProperty 'forge.logging.console.level', 'debug'
 
+        // Windows 控制台默认 GBK，println 的中文会乱码；统一按 UTF-8 输出。
+        systemProperty 'file.encoding', 'UTF-8'
+        systemProperty 'stdout.encoding', 'UTF-8'
+        systemProperty 'stderr.encoding', 'UTF-8'
+
         workingDirectory project.layout.projectDirectory.dir('run').dir(name)
 
         modSource project.sourceSets.main

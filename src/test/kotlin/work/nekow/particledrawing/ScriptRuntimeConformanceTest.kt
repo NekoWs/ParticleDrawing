@@ -268,6 +268,30 @@ class ScriptRuntimeConformanceTest {
     }
 
     @Test
+    fun logicalOperatorsReturnOperandValues() {
+        val h = Harness(
+            "func process() { let a = 5 || 7; let b = 0 || 9; let c = 3 && 11; let d = 0 && 13; let p = this.spawn(); p.position.x = a; p.position.y = b; p.position.z = c; p.scale = d; }",
+        )
+        h.process()
+        val host = h.particles[0] as TestHost
+        assertEquals(5.0, host.pos[0], 1e-12)
+        assertEquals(9.0, host.pos[1], 1e-12)
+        assertEquals(11.0, host.pos[2], 1e-12)
+        assertEquals(0.0, host.scale, 1e-12)
+    }
+
+    @Test
+    fun divisionGuardWithOrReturnsNumber() {
+        val h = Harness(
+            "let n = 1\nfunc process() { let p = this.spawn(); p.position.x = 4 / (n - 1 || 1); }",
+        )
+        h.setup()
+        h.process()
+        val host = h.particles[0] as TestHost
+        assertEquals(4.0, host.pos[0], 1e-12)
+    }
+
+    @Test
     fun particleFieldsNotShadowedBySetupGlobals() {
         val h = Harness(
             "let position = 99\nlet index = 88\n" +

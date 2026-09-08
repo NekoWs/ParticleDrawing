@@ -608,7 +608,7 @@ object ScriptRuntime {
                     else -> err("unknown unary operator '${n.op}'", n)
                 }
             }
-            is BinaryNode -> evalBinary(n.op, evalExpr(n.left), evalExpr(n.right), n)
+            is BinaryNode -> evalBinary(n)
             is TernaryNode -> if (truthy(evalExpr(n.cond), n.cond)) evalExpr(n.thenExpr) else evalExpr(n.elseExpr)
             is IndexNode -> evalIndex(n)
             is CompNode -> {
@@ -739,14 +739,35 @@ object ScriptRuntime {
             else -> err("cannot negate ${typeName(v)}", n)
         }
 
-        private fun evalBinary(op: String, a: Any?, b: Any?, n: Node): Any? = when (op) {
-            "&&" -> truthy(a, n) && truthy(b, n)
-            "||" -> truthy(a, n) || truthy(b, n)
-            "==" -> eqExact(a, b)
-            "!=" -> !eqExact(a, b)
-            "<", "<=", ">", ">=" -> cmp(a, b, op, n)
-            "+", "-", "*", "/", "%", "^" -> arith(op, a, b, n)
-            else -> err("unknown binary operator '$op'", n)
+        private fun evalBinary(n: BinaryNode): Any? {
+            // && / || 返回操作数值并短路（与编辑器一致：真值返回左操作数，否则右操作数）。
+            if (n.op == "&&") {
+                val l = evalExpr(n.left)
+                if (!truthy(l, n.left)) return l
+                val r = evalExpr(n.right)
+                if (!isNum(r) && !isBool(r) && !isUndefined(r)) {
+                    err("'&&' requires num/bool operands, got ${typeName(r)}", n)
+                }
+                return r
+            }
+            if (n.op == "||") {
+                val l = evalExpr(n.left)
+                if (truthy(l, n.left)) return l
+                val r = evalExpr(n.right)
+                if (!isNum(r) && !isBool(r) && !isUndefined(r)) {
+                    err("'||' requires num/bool operands, got ${typeName(r)}", n)
+                }
+                return r
+            }
+            val a = evalExpr(n.left)
+            val b = evalExpr(n.right)
+            return when (n.op) {
+                "==" -> eqExact(a, b)
+                "!=" -> !eqExact(a, b)
+                "<", "<=", ">", ">=" -> cmp(a, b, n.op, n)
+                "+", "-", "*", "/", "%", "^" -> arith(n.op, a, b, n)
+                else -> err("unknown binary operator '${n.op}'", n)
+            }
         }
 
         private fun cmp(a: Any?, b: Any?, op: String, n: Node): Boolean {
