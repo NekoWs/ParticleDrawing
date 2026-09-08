@@ -1,6 +1,7 @@
 package work.nekow.particledrawing
 
 import work.nekow.particledrawing.animation.script.ParticleHost
+import work.nekow.particledrawing.animation.script.ScriptException
 import work.nekow.particledrawing.animation.script.ScriptRuntime
 import work.nekow.particledrawing.animation.script.parseProgram
 import kotlin.math.sin
@@ -239,6 +240,31 @@ class ScriptRuntimeConformanceTest {
         assertEquals(3.0, h.obj.globals["x"])
         assertEquals(7.0, h.obj.globals["i"])
         assertEquals(0.5, h.obj.globals["dt"])
+    }
+
+    @Test
+    fun multipleDeclaratorsInOneStatement() {
+        val h = Harness("let a = 1, b = a + 1, c = b + a\nconst d = 2, e = d * 3")
+        h.setup()
+        assertEquals(1.0, h.obj.globals["a"])
+        assertEquals(2.0, h.obj.globals["b"])
+        assertEquals(3.0, h.obj.globals["c"])
+        assertEquals(2.0, h.obj.globals["d"])
+        assertEquals(6.0, h.obj.globals["e"])
+    }
+
+    @Test
+    fun multipleDeclaratorsLocalAndConstReadonly() {
+        val h = Harness(
+            "func process() { let a = 2, b = 3, c = a + b; let p = this.spawn(); p.position.x = c; }",
+        )
+        h.process()
+        val host = h.particles[0] as TestHost
+        assertEquals(5.0, host.pos[0], 1e-12)
+
+        assertFailsWith<ScriptException> {
+            Harness("func process() { const a = 1, b = 2; a = 3; }").process()
+        }
     }
 
     @Test

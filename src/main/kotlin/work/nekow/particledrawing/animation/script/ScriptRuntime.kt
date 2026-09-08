@@ -111,12 +111,14 @@ object ScriptRuntime {
         rt.pushScope(HashMap())
         try {
             for (d in program.globals) {
-                if (obj.globals.containsKey(d.name)) {
-                    throw ScriptException("duplicate global '${d.name}'", d.line, d.col)
+                for (dec in d.decls) {
+                    if (obj.globals.containsKey(dec.name)) {
+                        throw ScriptException("duplicate global '${dec.name}'", dec.line, dec.col)
+                    }
+                    val v = if (dec.init != null) rt.evalExpr(dec.init) else Undefined
+                    obj.globals[dec.name] = v
+                    if (d.kind == "const") obj.constGlobals.add(dec.name)
                 }
-                val v = if (d.init != null) rt.evalExpr(d.init) else Undefined
-                obj.globals[d.name] = v
-                if (d.kind == "const") obj.constGlobals.add(d.name)
             }
         } finally {
             rt.popScope()
@@ -327,12 +329,14 @@ object ScriptRuntime {
         }
 
         private fun execDeclare(n: DeclareNode) {
-            if (currentScope().containsKey(n.name)) {
-                err("duplicate declaration '${n.name}'", n)
+            for (d in n.decls) {
+                if (currentScope().containsKey(d.name)) {
+                    err("duplicate declaration '${d.name}'", n)
+                }
+                val v = if (d.init != null) evalExpr(d.init) else Undefined
+                currentScope()[d.name] = v
+                if (n.kind == "const") markConst(d.name)
             }
-            val v = if (n.init != null) evalExpr(n.init) else Undefined
-            currentScope()[n.name] = v
-            if (n.kind == "const") markConst(n.name)
         }
 
         private fun execForPart(part: Node) {

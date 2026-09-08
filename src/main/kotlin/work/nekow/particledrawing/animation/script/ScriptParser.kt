@@ -24,7 +24,8 @@ class ReturnNode(val expr: Node?, override val line: Int, override val col: Int)
 class GlobalNode(val name: String, val init: Node?, override val line: Int, override val col: Int) : Node()
 class ExprStmtNode(val expr: Node, override val line: Int, override val col: Int) : Node()
 class AssignNode(val target: AssignTarget, val value: Node, override val line: Int, override val col: Int) : Node()
-class DeclareNode(val kind: String, val name: String, val init: Node?, override val line: Int, override val col: Int) : Node()
+class Declarator(val name: String, val init: Node?, val line: Int, val col: Int)
+class DeclareNode(val kind: String, val decls: List<Declarator>, override val line: Int, override val col: Int) : Node()
 
 // —— 表达式 ——
 
@@ -568,13 +569,19 @@ class ScriptParser(private val source: String) {
 
     private fun parseDeclare(tok: Token, kind: String, noStatementEnd: Boolean = false): DeclareNode {
         next() // let / const
-        val nameTok = expectIdent()
-        validateDeclName(nameTok)
-        var init: Node? = null
-        if (!nlBefore() && match("=")) init = parseTernary()
-        else if (kind == "const") errorAt(nameTok, "'const' must have an initializer")
+        val decls = ArrayList<Declarator>()
+        while (true) {
+            val nameTok = expectIdent()
+            validateDeclName(nameTok)
+            var init: Node? = null
+            if (!nlBefore() && match("=")) init = parseTernary()
+            else if (kind == "const") errorAt(nameTok, "'const' must have an initializer")
+            decls.add(Declarator(nameTok.text, init, nameTok.line, nameTok.col))
+            if (check(",") && !nlBefore()) { next(); continue }
+            break
+        }
         if (!noStatementEnd) statementEnd()
-        return DeclareNode(kind, nameTok.text, init, tok.line, tok.col)
+        return DeclareNode(kind, decls, tok.line, tok.col)
     }
 
     private fun validateDeclName(tok: Token) {
