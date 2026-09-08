@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.core.client
 
+import net.minecraft.client.Minecraft
 import net.minecraft.client.multiplayer.ClientLevel
 import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.SubscribeEvent
@@ -11,7 +12,8 @@ import net.neoforged.neoforge.event.tick.PlayerTickEvent
 import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.lighting.DynamicLightManager
 
-// 客户端粒子渲染处理器：每渲染帧更新粒子引擎缓动并刷新动态光照；每 game tick 推进本地动画播放（20Hz，避免按渲染帧推进的 3 倍计算量与速度漂移）。
+// 客户端粒子渲染处理器：每渲染帧更新粒子引擎缓动、按帧推进函数对象 process（派生粒子同步）、刷新动态光照；
+// 普通粒子与编排动画程序仍按 game tick 推进（20Hz，避免按渲染帧全量重算的 3 倍计算量与速度漂移）。
 @EventBusSubscriber(modid = ParticleDrawing.MODID, value = [Dist.CLIENT])
 @Suppress("unused")
 object ParticleRenderHandler {
@@ -34,8 +36,14 @@ object ParticleRenderHandler {
         }
 
         val engine = ClientParticleEngine.instance()
+        engine?.frameUpdate()
+
+        // 函数对象 process 每渲染帧执行（渲染帧率毫秒推进，派生粒子按帧同步）；
+        // 置于动态光照刷新之前，使光源位置使用本帧最新粒子位置。
+        val partialTick = Minecraft.getInstance().deltaTracker.getGameTimeDeltaPartialTick(false)
+        ClientAnimationManager.frameTick(partialTick)
+
         if (engine != null) {
-            engine.frameUpdate()
             DynamicLightManager.renderDynamicLights(engine)
         }
     }
@@ -47,7 +55,7 @@ object ParticleRenderHandler {
     @Suppress("UNUSED_PARAMETER")
     fun onPlayerTick(event: PlayerTickEvent.Post) {
         if (!event.entity.level().isClientSide) return
-        val mc = net.minecraft.client.Minecraft.getInstance()
+        val mc = Minecraft.getInstance()
         if (event.entity !== mc.player) return
         ClientAnimationManager.tick()
         ClientAnimationProgramManager.tick()
@@ -78,6 +86,6 @@ object ParticleRenderHandler {
     fun onComputeFov(event: ViewportEvent.ComputeFov) {
         // 与 CameraMixin 的姿态插值同规则：按渲染 partialTick 在相邻 tick 间插值，FOV 不逐 tick 跳变
         val fov = CameraController.currentFov(event.partialTick) ?: return
-        event.setFOV(fov)
+        event.fov = fov
     }
 }

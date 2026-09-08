@@ -25,7 +25,7 @@ import work.nekow.particledrawing.core.easing.EasingType
  */
 internal object ParticleAnimationCodec {
 
-    const val VERSION = 4
+    const val VERSION = 5
 
     fun write(buf: FriendlyByteBuf, anim: ParticleAnimation) {
         buf.writeVarInt(VERSION)
@@ -222,6 +222,7 @@ internal object ParticleAnimationCodec {
         buf.writeBoolean(fx.fastMath)
         buf.writeBoolean(fx.spinLocal)
         buf.writeBoolean(fx.rotLocal)
+        buf.writeBoolean(fx.frameSync)
     }
 
     private fun readFunction(buf: FriendlyByteBuf): FunctionObject {
@@ -249,7 +250,8 @@ internal object ParticleAnimationCodec {
         val fastMath = buf.readBoolean()
         val spinLocal = buf.readBoolean()
         val rotLocal = buf.readBoolean()
-        return FunctionObject(id, name, center, source, seed, vars, duration, uv, st, ent, fastMath, spinLocal, rotLocal)
+        val frameSync = buf.readBoolean()
+        return FunctionObject(id, name, center, source, seed, vars, duration, uv, st, ent, fastMath, spinLocal, rotLocal, frameSync)
     }
 
     private fun writeCamera(buf: FriendlyByteBuf, cam: AnimCamera) {

@@ -33,7 +33,41 @@ class ClientAnimationPlayer(
         var uv: UvData?,
         /** t ≥ st 才为 true；隐藏门控在同步层生效（未出场粒子不生成/已回收）。 */
         var visible: Boolean = true,
-    )
+        /** 是否为函数对象派生粒子（id = fxId:p<serial>）。 */
+        val derived: Boolean = false,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+
+            other as ParticleState
+
+            if (glowing != other.glowing) return false
+            if (lightLevel != other.lightLevel) return false
+            if (visible != other.visible) return false
+            if (derived != other.derived) return false
+            if (id != other.id) return false
+            if (pos != other.pos) return false
+            if (color != other.color) return false
+            if (!scale.contentEquals(other.scale)) return false
+            if (uv != other.uv) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = glowing.hashCode()
+            result = 31 * result + lightLevel
+            result = 31 * result + visible.hashCode()
+            result = 31 * result + derived.hashCode()
+            result = 31 * result + id.hashCode()
+            result = 31 * result + pos.hashCode()
+            result = 31 * result + color.hashCode()
+            result = 31 * result + scale.contentHashCode()
+            result = 31 * result + uv.hashCode()
+            return result
+        }
+    }
 
     /** 摄像机某时刻姿态；播放端不自动改玩家相机。pos/target 为世界坐标，roll 绕视线翻滚角（度），fov 视场角（度）。 */
     data class CameraPose(
@@ -41,7 +75,29 @@ class ClientAnimationPlayer(
         val target: DoubleArray,
         val roll: Double,
         val fov: Double,
-    )
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+
+            other as CameraPose
+
+            if (roll != other.roll) return false
+            if (fov != other.fov) return false
+            if (!pos.contentEquals(other.pos)) return false
+            if (!target.contentEquals(other.target)) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = roll.hashCode()
+            result = 31 * result + fov.hashCode()
+            result = 31 * result + pos.contentHashCode()
+            result = 31 * result + target.contentHashCode()
+            return result
+        }
+    }
 
     private var currentMs = 0
     private val states = LinkedHashMap<String, ParticleState>()
@@ -423,7 +479,7 @@ class ClientAnimationPlayer(
         for (p in animation.particles) {
             states[p.id] = ParticleState(p.id, origin.add(p.pos), p.color, p.scale.copyOf(), p.glowing, p.lightLevel, resolveUV(p.id, p.uv))
         }
-        // 函数对象运行时已在字段初始化阶段构建（setup 各执行一次）；派生粒子状态由 advanceTo 的
+        // 函数对象运行时已在字段初始化阶段构建（setup 各执行一次）；派生粒子状态由 advanceFunctions 的
         // reconcile 按当前存活粒子动态创建/更新/删除。
         // 按服务端权威进度定位到当前帧（elapsed = currentGameTick - startGameTick）：
         // 新播放等价于从 0 开始；重发/迟到加入则直接跳到其他玩家正在看的同一帧。
@@ -432,6 +488,7 @@ class ClientAnimationPlayer(
         )
         currentMs = initial
         advanceTo(initial.toDouble())
+        advanceFunctions(initial.toDouble())
     }
 
     /**
@@ -451,7 +508,10 @@ class ClientAnimationPlayer(
         if (target != currentMs) {
             if (target < currentMs) {
                 justLooped = true // 循环回卷（st 门控粒子在 sync 中重新生成）
-                if (!isStaticAnimation) restoreLoopStart(target)
+                if (!isStaticAnimation) {
+                    restoreLoopStart(target)
+                    reconcileFunctions(target.toDouble())
+                }
             }
             currentMs = target
             if (!isStaticAnimation) {
@@ -485,7 +545,10 @@ class ClientAnimationPlayer(
         if (target != currentMs) {
             if (target < currentMs && animation.loop) {
                 justLooped = true
-                if (!isStaticAnimation) restoreLoopStart(target)
+                if (!isStaticAnimation) {
+                    restoreLoopStart(target)
+                    reconcileFunctions(target.toDouble())
+                }
             }
             currentMs = target
             if (!isStaticAnimation) advanceTo(target.toDouble())
@@ -505,6 +568,13 @@ class ClientAnimationPlayer(
     private fun usesRandom(fx: FunctionObject): Boolean =
         Regex("\\brandom\\s*\\(").containsMatchIn(fx.source) || Regex("\\brand\\s*\\(").containsMatchIn(fx.source)
     fun currentStates(): Collection<ParticleState> = states.values
+
+    /** 派生粒子 id（fxId:p<serial>）判断。 */
+    fun isDerivedId(id: String): Boolean = particleFunction(id) != null
+
+    /** 该派生粒子所属函数对象是否开启帧级同步（false=按 game tick 同步，与普通粒子渲染一致）。 */
+    fun isFrameSyncDerived(id: String): Boolean = particleFunction(id)?.frameSync == true
+
     fun stop() { finished = true }
 
     // 查询摄像机在 t 时刻的姿态；与编辑器 cameraPoseAt 语义一致。
@@ -606,8 +676,47 @@ class ClientAnimationPlayer(
         }
     }
 
+    /**
+     * 把时间推进到 t（毫秒）：普通粒子门控/视觉 + UV 表达式。
+     * 函数对象脚本（setup/tick/process）由 [advanceFrame] 按渲染帧单独驱动。
+     */
     private fun advanceTo(t: Double) {
-        // 1) 普通粒子：st/life 门控 + 视觉更新（UV 在阶段 3 统一求值）
+        advanceOrdinary(t)
+        advanceUv(t)
+        prevAdvanceT = t
+        advanceInitialized = true
+    }
+
+    /**
+     * 每渲染帧推进函数对象脚本到渲染帧时刻 t（毫秒，可为小数）。
+     * 与编辑器语义一致：process 每渲染帧执行一次；tick 只在 50ms 边界补跑；寿命按真实经过毫秒递减。
+     * 顺带刷新 UV，使 process 新 spawn 的派生粒子当帧即获得正确贴图。
+     */
+    fun advanceFrame(t: Double) {
+        if (finished || isStaticAnimation) return
+        advanceFunctions(t)
+        advanceUv(t)
+        prevAdvanceT = t
+    }
+
+    /** 函数对象推进（50ms 边界补跑 tick + 按真实经过毫秒递减寿命 + process + reconcile）。 */
+    private fun advanceFunctions(t: Double) {
+        for (fx in animation.functions) {
+            val rt = fxRuntimes[fx.id] ?: continue
+            advanceFx(fx, rt, t)
+        }
+    }
+
+    /** 仅 reconcile 函数对象（宿主状态 → 渲染状态），不跑 process/tick；用于循环回卷后立即刷新派生粒子状态。 */
+    private fun reconcileFunctions(t: Double) {
+        for (fx in animation.functions) {
+            val rt = fxRuntimes[fx.id] ?: continue
+            reconcileFxStates(fx, rt, t, t - fx.st)
+        }
+    }
+
+    /** 普通粒子：st/life 门控 + 视觉更新（轨道/速度/入场过渡）。 */
+    private fun advanceOrdinary(t: Double) {
         for (p in animation.particles) {
             val s = states[p.id] ?: continue
             val localT = t - p.st
@@ -620,15 +729,10 @@ class ClientAnimationPlayer(
                 s.scale = particleScale(p, t)
             }
         }
+    }
 
-        // 2) 函数对象：按编辑器 evaluateFxFrame 语义推进（setup 一次 / tick 补跑 / process 每帧一次），
-        //    并按当前存活粒子动态 reconcile 状态（新建/更新/删除）。
-        for (fx in animation.functions) {
-            val rt = fxRuntimes[fx.id] ?: continue
-            advanceFx(fx, rt, t)
-        }
-
-        // 3) UV 字段表达式（普通 + 派生粒子统一；n=总粒子数，与编辑器 state.particles.length 一致）
+    /** UV 字段表达式求值（普通 + 派生粒子统一；n=总粒子数，与编辑器 state.particles.length 一致）。 */
+    private fun advanceUv(t: Double) {
         val n = states.size.toDouble()
         for ((id, s) in states) {
             val host = derivedHosts[id]
@@ -636,12 +740,12 @@ class ClientAnimationPlayer(
             val ownUv = if (fx != null) fx.uv else animationParticleById[id]?.uv
             val resolvedUv = resolveUV(id, ownUv)
             if (resolvedUv != null && resolvedUv.hasExpressions()) {
-                uvCtx.i = if (host != null) host.index.toDouble() else (particleGlobalIndex[id] ?: 0).toDouble()
+                uvCtx.i = host?.index?.toDouble() ?: (particleGlobalIndex[id] ?: 0).toDouble()
                 uvCtx.n = n
                 uvCtx.t = t
                 uvCtx.dt = 0.0
                 uvCtx.duration = maxMs.toDouble()
-                uvCtx.life = if (host != null) host.life else (animationParticleById[id]?.life?.toDouble() ?: -1.0)
+                uvCtx.life = host?.life ?: (animationParticleById[id]?.life?.toDouble() ?: -1.0)
                 uvCtx.uv_x = 0.0
                 uvCtx.uv_y = 0.0
                 uvCtx.out.pos[0] = s.pos.x; uvCtx.out.pos[1] = s.pos.y; uvCtx.out.pos[2] = s.pos.z
@@ -666,9 +770,6 @@ class ClientAnimationPlayer(
                 s.uv = resolvedUv
             }
         }
-
-        prevAdvanceT = t
-        advanceInitialized = true
     }
 
     // 把函数对象推进到时间 t（毫秒，与编辑器 evaluateFxFrame 同语义）。
@@ -767,7 +868,7 @@ class ClientAnimationPlayer(
             newIds.add(id)
             derivedHosts[id] = host
             val s = states.getOrPut(id) {
-                ParticleState(id, Vec3.ZERO, Color.WHITE, floatArrayOf(1f, 1f, 1f), false, 0, null, visible = true)
+                ParticleState(id, Vec3.ZERO, Color.WHITE, floatArrayOf(1f, 1f, 1f), false, 0, null, visible = true, derived = true)
             }
             var pos = Vec3(host.pos[0] + cx, host.pos[1] + cy, host.pos[2] + cz)
             if (hasSpin) pos = if (fx.spinLocal) rotateAroundLocal(pos, spinPivot, spin) else rotateAround(pos, spinPivot, spin)

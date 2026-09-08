@@ -25,7 +25,7 @@ import java.util.zip.InflaterInputStream
 object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
-    private const val VERSION = 13    // v13：时间单位毫秒化（tick→ms），let/const 变量系统
+    private const val VERSION = 14    // v14：函数对象 frameSync（帧级同步开关）
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 
@@ -145,6 +145,7 @@ object PdrawcReader {
             // v12 起 funcs 已并入 source；flags bit3 为旧 funcs 标志，按编辑器读取端一致地忽略（不再消费字节）。
             val spinLocal = (flags and 16) != 0
             val rotLocal = (flags and 32) != 0
+            val frameSync = (flags and 64) != 0
             val varCount = br.varint()
             val vars = LinkedHashMap<String, FunctionVar>()
             for (j in 0 until varCount) {
@@ -153,7 +154,7 @@ object PdrawcReader {
                 val kf = readVarKeyframes(br)
                 vars[name] = FunctionVar(base, kf)
             }
-            functions.add(FunctionObject("fx$fi", "fx$fi", center, source, seed, vars, duration, uv, st, ent, fastMath, spinLocal, rotLocal))
+            functions.add(FunctionObject("fx$fi", "fx$fi", center, source, seed, vars, duration, uv, st, ent, fastMath, spinLocal, rotLocal, frameSync))
         }
 
         // 摄像机对象（v6 新增；v7 起朝向 = target 目标点 + roll 翻滚角；v8 起旋转空间 flags：

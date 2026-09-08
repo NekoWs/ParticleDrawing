@@ -46,10 +46,12 @@ class FxDurationGatingTest {
 
         // elapsed=15 tick → 750ms，超过对象时长 500：回收
         player.tick(1015L)
+        player.advanceFrame(750.0)
         assertFalse(state.visible)
 
         // elapsed=105 tick → 5250ms，循环回卷到 250ms：重新入场
         player.tick(1105L)
+        player.advanceFrame(250.0)
         assertTrue(state.visible)
     }
 

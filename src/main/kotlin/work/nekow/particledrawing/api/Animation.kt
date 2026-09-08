@@ -362,6 +362,7 @@ class FunctionBuilder internal constructor() {
     internal var ffastMath: Boolean = false
     internal var fspinLocal: Boolean = false
     internal var frotLocal: Boolean = false
+    internal var fframeSync: Boolean = false
 
     /**
      * 设置函数对象 id。
@@ -430,6 +431,11 @@ class FunctionBuilder internal constructor() {
      * @param local 是否局部公转空间
      */
     fun rotLocal(local: Boolean): FunctionBuilder = apply { frotLocal = local }
+    /**
+     * 设置派生粒子帧级同步：true=每渲染帧精确同步（无 50ms 延迟）；false=按 game tick 同步，与普通粒子渲染一致。
+     * @param enabled 是否帧级同步
+     */
+    fun frameSync(enabled: Boolean): FunctionBuilder = apply { fframeSync = enabled }
 
     /**
      * 添加变量及关键帧。
@@ -462,7 +468,7 @@ class FunctionBuilder internal constructor() {
             resolvedId, fname ?: resolvedId,
             doubleArrayOf(fcenter.x, fcenter.y, fcenter.z),
             fsource, fseed, fvars, fduration,
-            fuv, fst, fent, ffastMath, fspinLocal, frotLocal,
+            fuv, fst, fent, ffastMath, fspinLocal, frotLocal, fframeSync,
         )
     }
 }
@@ -715,6 +721,9 @@ class FunctionDsl internal constructor(private val b: FunctionBuilder) {
     var rotLocal: Boolean
         get() = b.frotLocal
         set(value) { b.frotLocal = value }
+    var frameSync: Boolean
+        get() = b.fframeSync
+        set(value) { b.fframeSync = value }
 
     /**
      * 添加变量。

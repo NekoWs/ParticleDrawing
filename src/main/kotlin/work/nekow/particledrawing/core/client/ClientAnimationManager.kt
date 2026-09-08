@@ -18,7 +18,8 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.floor
 
 /**
- * 客户端动画管理器：本地播放服务端下发的 .pdrawc 动画，每客户端 tick 推进并同步渲染。
+ * 客户端动画管理器：本地播放服务端下发的 .pdrawc 动画。
+ * 普通粒子按 game tick 推进（20Hz）；函数对象 process 按渲染帧推进（[frameTick]），派生粒子按帧同步。
  */
 object ClientAnimationManager {
 
@@ -334,6 +335,72 @@ object ClientAnimationManager {
         updateCameraPreview()
     }
 
+    /**
+     * 每渲染帧推进函数对象 process（渲染帧率）：以「当前权威毫秒 + 渲染帧 partialTick 的帧内毫秒」
+     * 作为目标时刻。process 每帧执行；frameSync=true 的派生粒子按帧同步；普通粒子与其余派生粒子由游戏 tick 推进。
+     */
+    @JvmStatic
+    fun frameTick(partialTick: Float) {
+        if (entries.isEmpty()) return
+        val p = partialTick.coerceIn(0f, 1f).toDouble()
+        for ((_, entry) in entries) {
+            val player = entry.player
+            if (player.isStatic() || player.isFinished()) continue
+            val base = player.currentMsValue.toDouble()
+            val step = entry.clock?.speed ?: 50.0
+            val max = player.maxMsValue
+            var t = base + p * step
+            if (max > 0) t = minOf(t, (max - 1).toDouble())
+            player.advanceFrame(t)
+            syncDerivedFrame(entry)
+        }
+    }
+
+    /** 每渲染帧同步「帧级同步（frameSync=true）」派生粒子；其余派生粒子与普通粒子由 [sync] 按游戏 tick 同步。 */
+    private fun syncDerivedFrame(entry: Entry) {
+        val engine = ClientParticleEngine.instance() ?: return
+        val currentIds = HashSet<String>()
+        for (state in entry.player.currentStates()) {
+            if (!state.derived || !entry.player.isFrameSyncDerived(state.id)) continue
+            currentIds.add(state.id)
+            var uuid = entry.particleUuids[state.id]
+            val live = state.id in entry.liveIds
+            when {
+                uuid == null -> {
+                    if (state.visible) {
+                        uuid = UUID.randomUUID()
+                        entry.particleUuids[state.id] = uuid
+                        spawnState(engine, uuid, state, entry.anchor)
+                        entry.liveIds.add(state.id)
+                    }
+                }
+                !state.visible && live -> {
+                    engine.destroyParticles(arrayOf(uuid))
+                    entry.liveIds.remove(state.id)
+                }
+                state.visible && !live -> {
+                    spawnState(engine, uuid, state, entry.anchor)
+                    entry.liveIds.add(state.id)
+                }
+                state.visible && live -> {
+                    val pos = entry.anchor?.apply(state.pos) ?: state.pos
+                    engine.updateParticleDirectArray(
+                        uuid, pos, state.color, state.scale, state.glowing, state.lightLevel, snap = true
+                    )
+                }
+            }
+        }
+        // 已消失的帧级同步派生粒子：销毁桥接粒子并清理索引
+        val deadIds = entry.particleUuids.keys.filter { entry.player.isFrameSyncDerived(it) && it !in currentIds }
+        if (deadIds.isNotEmpty()) {
+            engine.destroyParticles(deadIds.map { entry.particleUuids[it]!! }.toTypedArray())
+            for (id in deadIds) {
+                entry.particleUuids.remove(id)
+                entry.liveIds.remove(id)
+            }
+        }
+    }
+
     /** 刷新「切换到摄像机」预览姿态；绑定的播放已不存在时自动退出预览。 */
     private fun updateCameraPreview() {
         val animId = CameraController.activeAnimationId() ?: run { CameraController.updatePose(null); return }
@@ -362,10 +429,12 @@ object ClientAnimationManager {
     private fun sync(entry: Entry) {
         // 回卷标记仅用于重置；连续可见粒子不再跳变（snap=false），
         // 让原版渲染在 xo→x 间线性插值，自然穿过 360°≡0° 的闭合帧，循环无缝。
+        // 这里处理普通粒子 + 未开启帧级同步（frameSync=false）的派生粒子；帧级同步派生粒子由 syncDerivedFrame 按帧处理。
         entry.player.consumeJustLooped()
         val engine = ClientParticleEngine.instance() ?: return
         val currentIds = HashSet<String>()
         for (state in entry.player.currentStates()) {
+            if (state.derived && entry.player.isFrameSyncDerived(state.id)) continue
             currentIds.add(state.id)
             var uuid = entry.particleUuids[state.id]
             val live = state.id in entry.liveIds
@@ -397,8 +466,8 @@ object ClientAnimationManager {
                 }
             }
         }
-        // 已不在当前状态中的粒子（被 kill / 运行时重建移除）：销毁桥接粒子并清理索引
-        val deadIds = entry.particleUuids.keys.filter { it !in currentIds }
+        // 已不在当前状态中的粒子（被 kill / 运行时重建移除）：销毁桥接粒子并清理索引（帧级同步派生粒子除外）
+        val deadIds = entry.particleUuids.keys.filter { !entry.player.isFrameSyncDerived(it) && it !in currentIds }
         if (deadIds.isNotEmpty()) {
             engine.destroyParticles(deadIds.map { entry.particleUuids[it]!! }.toTypedArray())
             for (id in deadIds) {

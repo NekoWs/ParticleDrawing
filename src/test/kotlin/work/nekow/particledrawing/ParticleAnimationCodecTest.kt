@@ -74,6 +74,7 @@ class ParticleAnimationCodecTest {
             fastMath = true,
             spinLocal = true,
             rotLocal = false,
+            frameSync = true,
         )
         val cam = AnimCamera("cam1", "Cam", doubleArrayOf(0.0, 10.0, 0.0), doubleArrayOf(0.0, 0.0, 0.0), 0.0, 70.0, true)
         return ParticleAnimation(
@@ -154,6 +155,7 @@ class ParticleAnimationCodecTest {
         assertTrue(fx.fastMath)
         assertTrue(fx.spinLocal)
         assertFalse(fx.rotLocal)
+        assertTrue(fx.frameSync)
 
         val cam = decoded.cameras[0]
         assertEquals("cam1", cam.id)

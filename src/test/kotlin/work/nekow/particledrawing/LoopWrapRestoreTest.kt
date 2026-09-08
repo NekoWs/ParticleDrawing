@@ -44,7 +44,9 @@ class LoopWrapRestoreTest {
 
         // 推进到循环末尾前一 tick（maxMs=1000，即 950ms），随后回卷到 t=0。
         player.tick(19L)
+        player.advanceFrame(950.0)
         player.tick(20L)
+        player.advanceFrame(0.0)
 
         assertEquals(0, player.currentMsValue)
         // r 来自 setup 的 rand()；回卷后必须与首圈一致（确定性恢复，而非脏 PRNG 继续推进）。
