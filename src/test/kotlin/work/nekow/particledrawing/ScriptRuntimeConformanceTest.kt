@@ -382,4 +382,40 @@ class ScriptRuntimeConformanceTest {
         ScriptRuntime.runProcessFrame(program, obj, ctx)
         assertEquals(listOf("1 2", "3"), lines)
     }
+
+    @Test
+    fun spawnConfigAppliesKnownFields() {
+        val h = Harness(
+            "func setup() { let p = this.spawn({ position: [1,2,3], velocity: vec3(4,5,6), color: vec3(0.5, 0.25, 0.125), scale: 2, glow: 1, light: 5, life: 3, uv: [0.1, 0.2] }); }",
+        )
+        h.setup()
+        val host = h.particles[0] as TestHost
+        assertEquals(listOf(1.0, 2.0, 3.0), host.pos.toList())
+        assertEquals(listOf(4.0, 5.0, 6.0), host.vel.toList())
+        assertEquals(listOf(0.5, 0.25, 0.125, 1.0), host.color.toList())
+        assertEquals(2.0, host.scale, 1e-12)
+        assertEquals(true, host.glow)
+        assertEquals(5.0, host.light, 1e-12)
+        assertEquals(3.0, host.life, 1e-12)
+        assertEquals(listOf(0.1, 0.2), host.fields["uv"])
+    }
+
+    @Test
+    fun spawnConfigRejectsUnknownField() {
+        assertFailsWith<ScriptException> {
+            Harness("func setup() { this.spawn({ foo: 1 }); }").setup()
+        }
+    }
+
+    @Test
+    fun applyThisBindsToReceiver() {
+        val h = Harness(
+            "func setup() { let p = this.spawn(); let r = p.apply { this.position = [4,5,6]; this.scale = 2 }; r.life = 7 }",
+        )
+        h.setup()
+        val host = h.particles[0] as TestHost
+        assertEquals(listOf(4.0, 5.0, 6.0), host.pos.toList())
+        assertEquals(2.0, host.scale, 1e-12)
+        assertEquals(7.0, host.life, 1e-12)
+    }
 }

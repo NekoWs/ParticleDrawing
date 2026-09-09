@@ -24,6 +24,55 @@ private fun setVecComp(v: Any?, comp: String, value: Double): Any = when (v) {
     else -> throw ScriptException("not a vector")
 }
 
+// this.spawn(config) 可选字段（与编辑器 generators.js 一致）。
+private val SPAWN_CONFIG_FIELDS = setOf("position", "color", "velocity", "scale", "glow", "light", "life", "uv")
+
+private fun cfgVec(v: Any?, field: String, len: Int): List<Double> {
+    if (isVec(v)) {
+        val c = vecComps(v!!)
+        if (c.size != len) throw ScriptException("spawn config '$field' requires a vec$len")
+        return c
+    }
+    if (v is MutableList<*>) {
+        if (v.size != len) throw ScriptException("spawn config '$field' requires an array of $len numbers")
+        return v.mapIndexed { i, x -> (x as? Double) ?: throw ScriptException("spawn config '$field[$i]' requires a num") }
+    }
+    throw ScriptException("spawn config '$field' requires a vec$len or array of $len numbers")
+}
+
+private fun cfgColor(v: Any?): List<Double> = when {
+    v is ColorVal -> listOf(v.r, v.g, v.b, v.a)
+    v is Vec4 -> listOf(v.x, v.y, v.z, v.w)
+    v is Vec3 -> listOf(v.x, v.y, v.z)
+    v is MutableList<*> && (v.size == 3 || v.size == 4) ->
+        v.mapIndexed { i, x -> (x as? Double) ?: throw ScriptException("spawn config 'color[$i]' requires a num") }
+    else -> throw ScriptException("spawn config 'color' requires a color, vec3, vec4 or [r,g,b(,a)]")
+}
+
+private fun applySpawnConfig(host: ParticleHost, config: Any?) {
+    if (config !is ObjVal) throw ScriptException("this.spawn(config) requires an object")
+    for ((key, v) in config.fields) {
+        if (key !in SPAWN_CONFIG_FIELDS) throw ScriptException("unknown spawn config field '$key'")
+        when (key) {
+            "position" -> { val c = cfgVec(v, key, 3); host.pos[0] = c[0]; host.pos[1] = c[1]; host.pos[2] = c[2] }
+            "velocity" -> { val c = cfgVec(v, key, 3); host.vel[0] = c[0]; host.vel[1] = c[1]; host.vel[2] = c[2] }
+            "color" -> {
+                val c = cfgColor(v)
+                host.color[0] = clamp01(c[0]); host.color[1] = clamp01(c[1]); host.color[2] = clamp01(c[2])
+                host.color[3] = if (c.size == 4) clamp01(c[3]) else 1.0
+            }
+            "scale" -> host.scale = (v as? Double) ?: throw ScriptException("spawn config 'scale' requires a num")
+            "glow" -> host.glow = if (v is Boolean) v else ((v as? Double) ?: throw ScriptException("spawn config 'glow' requires a num")) > 0.5
+            "light" -> host.light = clampNum(jsRound((v as? Double) ?: throw ScriptException("spawn config 'light' requires a num")), 0.0, 15.0)
+            "life" -> {
+                val n = jsRound((v as? Double) ?: throw ScriptException("spawn config 'life' requires a num"))
+                host.life = if (n.isFinite()) (if (n < 0.0) -1.0 else n) else -1.0
+            }
+            "uv" -> host.fields["uv"] = cfgVec(v, key, 2)
+        }
+    }
+}
+
 // spawn 模型脚本运行时（对应编辑器 script-lang.js）。
 // 生命周期：setup（对象级一次）/ tick（每动画 tick）/ process（每渲染帧）；this 只给 time/duration/particles/spawn，粒子经句柄字段读写与 kill()。
 // 旧 ProcessCtx + ExpressionRunner 保留给 UV 字段裸表达式。
@@ -100,7 +149,7 @@ object ScriptRuntime {
         var print: (String) -> Unit = {},
         var st: Double = 0.0,
         var maxMs: Double = 0.0,
-        val spawnConfig: (Any?) -> ParticleHost = { spawn() },
+        val spawnConfig: (Any?) -> ParticleHost = { cfg -> spawn().also { if (cfg != null) applySpawnConfig(it, cfg) } },
     )
 
     fun createObjectState(seed: Int): ObjectState = ObjectState(HashMap(), RandState(seed), seed)
@@ -221,6 +270,7 @@ object ScriptRuntime {
         private val scopes = ArrayList<MutableMap<String, Any?>>()
         private val constSets = ArrayList<MutableSet<String>?>()
         private val varsMap = HashMap<String, Double>()
+        private val receiverStack = ArrayList<ParticleValue>()
         private var funcDepth = 0
         private var inFunction = false
 
@@ -485,6 +535,10 @@ object ScriptRuntime {
 
         private fun assignMemberField(target: MemberTarget, value: Any?, n: Node) {
             if (target.obj is VarNode && target.obj.name == CTX_NAME) {
+                if (receiverStack.isNotEmpty()) {
+                    particleSetField(receiverStack.last(), target.field, value, n)
+                    return
+                }
                 err("this.${target.field} is read-only", n)
             }
             val obj = evalExpr(target.obj)
@@ -750,6 +804,7 @@ object ScriptRuntime {
 
         private fun evalMember(n: MemberNode): Any? {
             if (n.obj is VarNode && n.obj.name == CTX_NAME) {
+                if (receiverStack.isNotEmpty()) return particleGetField(receiverStack.last(), n.field, n)
                 return ctxRead(n.field, n)
             }
             val obj = evalExpr(n.obj)
@@ -1115,14 +1170,23 @@ object ScriptRuntime {
                 override fun remove(key: String): Any? = backing.remove(key)
             }
             pushScope(receiverScope)
+            pushScope(HashMap()) // 参数作用域：apply 的 lambda 无参，保持为空
+            receiverStack.add(target)
             val prev = inFunction
             inFunction = true
             try {
-                execStmt(n.body)
+                val bodyStmts = n.body.body.body
+                for (i in bodyStmts.indices) {
+                    val st = bodyStmts[i]
+                    if (i == bodyStmts.size - 1 && st is ExprStmtNode) evalExpr(st.expr)
+                    else execStmt(st)
+                }
             } catch (f: Flow) {
                 if (f.kind != "return") throw f
             } finally {
-                popScope()
+                receiverStack.removeAt(receiverStack.size - 1)
+                popScope() // 参数作用域
+                popScope() // 接收者作用域
                 inFunction = prev
             }
             return target
