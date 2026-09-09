@@ -26,6 +26,9 @@ class ExprStmtNode(val expr: Node, override val line: Int, override val col: Int
 class AssignNode(val target: AssignTarget, val value: Node, override val line: Int, override val col: Int) : Node()
 class Declarator(val name: String, val init: Node?, val line: Int, val col: Int)
 class DeclareNode(val kind: String, val decls: List<Declarator>, override val line: Int, override val col: Int) : Node()
+class DestructureNode(val kind: String, val names: List<String>, val value: Node, override val line: Int, override val col: Int) : Node()
+class WhenStmtNode(val subject: Node, val cases: List<WhenStmtCase>, val els: Node?, override val line: Int, override val col: Int) : Node()
+class WhenStmtCase(val label: Node, val body: Node)
 
 // —— 表达式 ——
 
@@ -45,6 +48,12 @@ class CallNode(val callee: Node, val args: List<Node>, override val line: Int, o
 class MethodNode(val obj: Node, val method: String, val args: List<Node>, override val line: Int, override val col: Int) : Node()
 class PreIncNode(val op: String, val target: AssignTarget, override val line: Int, override val col: Int) : Node()
 class PostIncNode(val op: String, val target: AssignTarget, override val line: Int, override val col: Int) : Node()
+class PipeNode(val left: Node, val right: Node, override val line: Int, override val col: Int) : Node()
+class LambdaNode(val params: List<String>, val body: BlockNode, override val line: Int, override val col: Int) : Node()
+class ObjNode(val fields: Map<String, Node>, override val line: Int, override val col: Int) : Node()
+class ApplyNode(val target: Node, val body: LambdaNode, override val line: Int, override val col: Int) : Node()
+class WhenExprNode(val subject: Node, val cases: List<WhenExprCase>, val els: Node, override val line: Int, override val col: Int) : Node()
+class WhenExprCase(val label: Node, val expr: Node)
 
 // —— 赋值目标 ——
 
@@ -71,7 +80,7 @@ class ScriptProgram(
     val tick: List<Node>,
     val process: List<Node>,
     val functions: Map<String, FunctionNode>,
-    val globals: List<DeclareNode> = emptyList(),
+    val globals: List<Node> = emptyList(),
 )
 
 // —— Tokenizer ——
@@ -196,6 +205,22 @@ fun tokenize(sourceIn: String?): List<Token> {
             continue
         }
 
+        if (c == '|' && i + 1 < len && src[i + 1] == '>') {
+            val startLine = line
+            val startCol = col
+            advance(); advance()
+            emit(Token(TokenType.PUNCT, "|>", line = startLine, col = startCol))
+            continue
+        }
+
+        if (c == '-' && i + 1 < len && src[i + 1] == '>') {
+            val startLine = line
+            val startCol = col
+            advance(); advance()
+            emit(Token(TokenType.PUNCT, "->", line = startLine, col = startCol))
+            continue
+        }
+
         if ((c == '=' || c == '!' || c == '<' || c == '>') && i + 1 < len && src[i + 1] == '=') {
             val startLine = line
             val startCol = col
@@ -257,13 +282,33 @@ fun tokenize(sourceIn: String?): List<Token> {
 
 private val KEYWORDS = setOf(
     "setup", "process", "tick", "func", "return", "if", "else", "while", "do", "for",
-    "of", "const", "let", "undefined", "break", "continue", "true", "false",
+    "of", "const", "let", "undefined", "when", "break", "continue", "true", "false",
 )
 
 private val LIFECYCLE_FUNCS = setOf("setup", "tick", "process")
 private val CONSTANT_NAMES = setOf("TAU", "HALF_PI", "QUARTER_PI", "DEG2RAD", "RAD2DEG", "PI", "E")
 private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w")
 private val COMP_NAMES = setOf("x", "y", "z", "w", "r", "g", "b", "a")
+
+// 内建函数保留名。全局 vec 数学函数已移除（改为 vec 实例方法），norm 为双参内建名。
+private val BUILTIN_NAMES = setOf(
+    "print", "assert",
+    "vec2", "vec3", "vec4", "vec", "mat3", "translate", "scale", "rotate", "lookAt",
+    "rotX", "rotY", "rotZ", "rotAxis",
+    "rotateX", "rotateY", "rotateZ",
+    "norm",
+    "clamp", "map_range", "remap", "int", "float", "bool",
+    "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+    "sqrt", "abs", "sign", "exp", "log", "ln",
+    "floor", "ceil", "round", "fract", "pow", "min", "max",
+    "step", "smoothstep", "mod",
+    "noise", "fbm", "rand", "random",
+    "ease_linear", "ease_in_out", "ease_out_back", "ease_in_elastic",
+    "hash", "phases", "repeat",
+    "color", "red", "green", "blue", "alpha",
+    "hue", "saturation", "value", "rgb2hsv", "hsv2rgb",
+    "unique", "reverse", "sort",
+)
 
 // 复合赋值运算符 → 对应的二元运算符。
 private val COMPOUND_ASSIGN = mapOf("+=" to "+", "-=" to "-", "*=" to "*", "/=" to "/", "%=" to "%", "^=" to "^")
@@ -275,6 +320,8 @@ class ScriptParser(private val source: String) {
     private var pos = 0
     private var phase: String? = null
     private var loopDepth = 0
+    private var allowBareExpr = 0 // >0：lambda 体内允许裸表达式语句
+    private var lambdaDepth = 0 // >0：lambda 体内允许 return
 
     private fun peek(offset: Int = 0): Token = tokens[minOf(pos + offset, tokens.size - 1)]
     private fun next(): Token {
@@ -335,7 +382,7 @@ class ScriptParser(private val source: String) {
     }
 
     fun parseBareExpression(): Node {
-        val node = parseTernary()
+        val node = parsePipe()
         val extra = peek()
         if (extra.type != TokenType.EOF) {
             throw ScriptException("unexpected '${extra.text}' after expression", extra.line, extra.col)
@@ -348,7 +395,7 @@ class ScriptParser(private val source: String) {
         val tick = ArrayList<Node>()
         val process = ArrayList<Node>()
         val functions = LinkedHashMap<String, FunctionNode>()
-        val globals = ArrayList<DeclareNode>()
+        val globals = ArrayList<Node>()
 
         while (!atEnd()) {
             val tok = peek()
@@ -398,7 +445,7 @@ class ScriptParser(private val source: String) {
 
     private fun validateFuncName(tok: Token) {
         val name = tok.text
-        if (name in KEYWORDS || name in LIFECYCLE_FUNCS || name == CTX_NAME || name in CONSTANT_NAMES || BuiltinRegistry.names.contains(name)) {
+        if (name in KEYWORDS || name in LIFECYCLE_FUNCS || name == CTX_NAME || name in CONSTANT_NAMES || name in BUILTIN_NAMES) {
             errorAt(tok, "reserved name cannot be used as function name: '$name'")
         }
     }
@@ -427,9 +474,15 @@ class ScriptParser(private val source: String) {
 
     private fun parseBlock(): BlockNode {
         val open = expect("{")
+        val block = parseBlockBodyAfterOpen(open)
+        expect("}")
+        return block
+    }
+
+    // 解析已消费 `{` 后的语句序列，不消费 `}`（lambda / when 块体复用）。
+    private fun parseBlockBodyAfterOpen(open: Token): BlockNode {
         val body = ArrayList<Node>()
         while (!check("}") && !atEnd()) body.add(parseStatement())
-        expect("}")
         return BlockNode(body, open.line, open.col)
     }
 
@@ -449,6 +502,7 @@ class ScriptParser(private val source: String) {
                 "return" -> return parseReturn(tok)
                 "let" -> return parseDeclare(tok, "let")
                 "const" -> return parseDeclare(tok, "const")
+                "when" -> return parseWhenStmt()
             }
         }
 
@@ -559,7 +613,7 @@ class ScriptParser(private val source: String) {
     }
 
     private fun parseReturn(tok: Token): Node {
-        if (phase == null) errorAt(tok, "'return' only allowed inside a function")
+        if (phase == null && lambdaDepth == 0) errorAt(tok, "'return' only allowed inside a function")
         next()
         var expr: Node? = null
         if (!check(";") && !atEnd() && !nlBefore()) expr = parseTernary()
@@ -567,14 +621,19 @@ class ScriptParser(private val source: String) {
         return ReturnNode(expr, tok.line, tok.col)
     }
 
-    private fun parseDeclare(tok: Token, kind: String, noStatementEnd: Boolean = false): DeclareNode {
+    private fun parseDeclare(tok: Token, kind: String, noStatementEnd: Boolean = false): Node {
         next() // let / const
+        if (check("{")) {
+            val node = parseDestructure(tok, kind)
+            if (!noStatementEnd) statementEnd()
+            return node
+        }
         val decls = ArrayList<Declarator>()
         while (true) {
             val nameTok = expectIdent()
             validateDeclName(nameTok)
             var init: Node? = null
-            if (!nlBefore() && match("=")) init = parseTernary()
+            if (!nlBefore() && match("=")) init = parsePipe()
             else if (kind == "const") errorAt(nameTok, "'const' must have an initializer")
             decls.add(Declarator(nameTok.text, init, nameTok.line, nameTok.col))
             if (check(",") && !nlBefore()) { next(); continue }
@@ -582,6 +641,30 @@ class ScriptParser(private val source: String) {
         }
         if (!noStatementEnd) statementEnd()
         return DeclareNode(kind, decls, tok.line, tok.col)
+    }
+
+    // let { a, b } = expr（同名取键，不支持重命名/默认值/嵌套）。
+    private fun parseDestructure(tok: Token, kind: String): DestructureNode {
+        expect("{")
+        val names = ArrayList<String>()
+        if (!check("}")) {
+            val n0 = expectIdent()
+            validateDeclName(n0)
+            names.add(n0.text)
+            while (match(",")) {
+                if (check("}")) break
+                val nt = expectIdent()
+                validateDeclName(nt)
+                names.add(nt.text)
+            }
+        }
+        expect("}")
+        if (!match("=")) {
+            val t = peek()
+            throw ScriptException("object destructuring requires an initializer", t.line, t.col)
+        }
+        val value = parsePipe()
+        return DestructureNode(kind, names, value, tok.line, tok.col)
     }
 
     private fun validateDeclName(tok: Token) {
@@ -599,7 +682,9 @@ class ScriptParser(private val source: String) {
             return expr
         }
         statementEnd()
-        if (expr !is CallNode && expr !is MethodNode && expr !is PreIncNode && expr !is PostIncNode) {
+        val allowed = expr is CallNode || expr is MethodNode || expr is PreIncNode || expr is PostIncNode ||
+            expr is PipeNode || expr is ApplyNode
+        if (!allowed && allowBareExpr == 0) {
             errorAt(start, "expression statement must be a function call")
         }
         return ExprStmtNode(expr, start.line, start.col)
@@ -607,14 +692,14 @@ class ScriptParser(private val source: String) {
 
     private fun parseAssignExpr(): Node {
         val start = peek()
-        val left = parseTernary()
+        val left = parsePipe()
         if (!nlBefore()) {
             val opTok = peek()
             val binOp = COMPOUND_ASSIGN[opTok.text]
             if (binOp != null) {
                 next()
                 val target = toLValue(left, start)
-                val value = parseTernary()
+                val value = parsePipe()
                 return AssignNode(
                     target,
                     BinaryNode(binOp, left, value, opTok.line, opTok.col),
@@ -648,6 +733,20 @@ class ScriptParser(private val source: String) {
             UnpackTarget(names, expr.line, expr.col)
         }
         else -> throw ScriptException("invalid assignment target", tok.line, tok.col)
+    }
+
+    // 管道：x |> f(a) ≡ f(x, a)。左结合，优先级最低（低于赋值、高于三元）。
+    private fun parsePipe(): Node {
+        var left = parseTernary()
+        while (!nlBefore() && match("|>")) {
+            val opTok = tokens[pos - 1]
+            val right = parseTernary()
+            if (right !is CallNode && right !is MethodNode) {
+                throw ScriptException("right side of '|>' must be a function call", right.line, right.col)
+            }
+            left = PipeNode(left, right, opTok.line, opTok.col)
+        }
+        return left
     }
 
     private fun parseTernary(): Node {
@@ -753,6 +852,11 @@ class ScriptParser(private val source: String) {
                 !nlBefore() && match("(") -> {
                     val args = parseArgs()
                     expr = CallNode(expr, args, expr.line, expr.col)
+                    // 尾随 lambda：f(args) { λ } ≡ f(args, λ)
+                    if (!nlBefore() && check("{")) {
+                        val open = next()
+                        args.add(parseLambdaAfterOpen(open))
+                    }
                 }
                 !nlBefore() && match("[") -> {
                     val idx = parseTernary()
@@ -764,6 +868,14 @@ class ScriptParser(private val source: String) {
                     if (match("(")) {
                         val args = parseArgs()
                         expr = MethodNode(expr, nameTok.text, args, expr.line, expr.col)
+                        if (!nlBefore() && check("{")) {
+                            val open = next()
+                            args.add(parseLambdaAfterOpen(open))
+                        }
+                    } else if (nameTok.text == "apply" && !nlBefore() && check("{")) {
+                        val open = next()
+                        val body = parseLambdaAfterOpen(open)
+                        expr = ApplyNode(expr, body, nameTok.line, nameTok.col)
                     } else if (nameTok.text in COMP_NAMES) {
                         expr = CompNode(expr, nameTok.text, expr.line, expr.col)
                     } else {
@@ -781,7 +893,7 @@ class ScriptParser(private val source: String) {
         return expr
     }
 
-    private fun parseArgs(): List<Node> {
+    private fun parseArgs(): ArrayList<Node> {
         val args = ArrayList<Node>()
         if (!check(")")) {
             args.add(parseTernary())
@@ -805,6 +917,9 @@ class ScriptParser(private val source: String) {
             if (tok.text == "undefined") {
                 return UndefinedNode(tok.line, tok.col)
             }
+            if (tok.text == "when") {
+                return parseWhenExpr(tok)
+            }
             return VarNode(tok.text, tok.line, tok.col)
         }
 
@@ -826,7 +941,135 @@ class ScriptParser(private val source: String) {
             return ArrayNode(items, tok.line, tok.col)
         }
 
+        if (tok.type == TokenType.PUNCT && tok.text == "{") {
+            next()
+            return parseBraceExpr(tok)
+        }
+
         errorAt(tok, "unexpected token '${tok.text}'")
+    }
+
+    // 表达式位置的 `{`：按首 token 消歧为 lambda 或对象字面量。
+    private fun parseBraceExpr(openTok: Token): Node {
+        val tok = peek()
+        if (tok.type == TokenType.PUNCT && tok.text == "}") return parseLambdaAfterOpen(openTok)
+        if (tok.type == TokenType.IDENT) {
+            if (peek(1).text == ":") return parseObjAfterOpen(openTok)
+            return parseLambdaAfterOpen(openTok)
+        }
+        if (tok.type == TokenType.STR && peek(1).text == ":") return parseObjAfterOpen(openTok)
+        return parseLambdaAfterOpen(openTok)
+    }
+
+    // lambda 字面量：{ [ident (, ident)* ->] body }。`{` 已消费。
+    private fun parseLambdaAfterOpen(openTok: Token): LambdaNode {
+        val params = ArrayList<String>()
+        val t0 = peek()
+        if (t0.type == TokenType.IDENT && (peek(1).text == "->" || peek(1).text == ",")) {
+            while (true) {
+                val pt = expectIdent()
+                validateParamName(pt)
+                params.add(pt.text)
+                if (match(",")) continue
+                break
+            }
+            expect("->")
+        }
+        allowBareExpr++
+        lambdaDepth++
+        val body: BlockNode
+        try {
+            body = parseBlockBodyAfterOpen(openTok)
+        } finally {
+            lambdaDepth--
+            allowBareExpr--
+        }
+        expect("}")
+        return LambdaNode(params, body, openTok.line, openTok.col)
+    }
+
+    // 对象字面量：{ key: value, ... }。`{` 已消费。
+    private fun parseObjAfterOpen(openTok: Token): ObjNode {
+        val fields = LinkedHashMap<String, Node>()
+        if (check("}")) {
+            next()
+            return ObjNode(fields, openTok.line, openTok.col)
+        }
+        while (true) {
+            val keyTok = peek()
+            val key: String
+            if (keyTok.type == TokenType.IDENT) { next(); key = keyTok.text }
+            else if (keyTok.type == TokenType.STR) { next(); key = keyTok.text }
+            else errorAt(keyTok, "object key must be an identifier or string")
+            expect(":")
+            fields[key] = parseTernary()
+            if (match(",")) {
+                if (check("}")) { next(); break }
+                continue
+            }
+            break
+        }
+        expect("}")
+        return ObjNode(fields, openTok.line, openTok.col)
+    }
+
+    private fun parseWhenStmt(): Node {
+        val start = next() // 'when'
+        return parseWhenBody(start, true)
+    }
+
+    private fun parseWhenExpr(whenTok: Token): Node {
+        return parseWhenBody(whenTok, false)
+    }
+
+    private fun parseWhenBody(start: Token, isStmt: Boolean): Node {
+        expect("(")
+        val subject = parseTernary()
+        expect(")")
+        expect("{")
+        if (isStmt) {
+            val cases = ArrayList<WhenStmtCase>()
+            var els: Node? = null
+            while (true) {
+                if (check("}")) break
+                if (matchKw("else")) {
+                    expect("->")
+                    els = parseStatement()
+                    break
+                }
+                val label = parseTernary()
+                expect("->")
+                val body = parseStatement()
+                cases.add(WhenStmtCase(label, body))
+                // 简单语句体已由 statementEnd 消费 ';'；块体后可能还有 ';'，这里兜底跳过。
+                match(";")
+            }
+            expect("}")
+            return WhenStmtNode(subject, cases, els, start.line, start.col)
+        }
+        val cases = ArrayList<WhenExprCase>()
+        var els: Node? = null
+        while (true) {
+            if (check("}")) break
+            if (matchKw("else")) {
+                expect("->")
+                els = parseTernary()
+                break
+            }
+            val label = parseTernary()
+            expect("->")
+            val expr = parseTernary()
+            cases.add(WhenExprCase(label, expr))
+            if (match(";")) continue
+            if (check("}")) continue
+            if (peek().type == TokenType.IDENT && peek().text == "else") continue
+            if (!nlBefore()) {
+                errorAt(peek(), "expected ';', newline or '}' in when")
+            }
+        }
+        expect("}")
+        val elseExpr: Node = els ?: throw ScriptException("when expression requires an else branch", start.line, start.col)
+        return WhenExprNode(subject, cases, elseExpr, start.line, start.col)
     }
 }
 

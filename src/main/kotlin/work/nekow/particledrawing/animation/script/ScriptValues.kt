@@ -23,6 +23,27 @@ data class Mat4(val m: List<List<Double>>)
 /** 用户函数值（闭包按顶层函数名查找）。 */
 data class FuncVal(val name: String)
 
+/**
+ * lambda 字面量值。closure 捕获创建 lambda 时的作用域链（按 ScriptRuntime 的局部作用域机制形态），
+ * 具体安装方式由下一单元接线时确定。
+ */
+class LambdaVal(
+    val params: List<String>,
+    val body: BlockNode,
+    val closure: List<MutableMap<String, Any?>> = emptyList(),
+)
+
+/** 对象字面量值。 */
+class ObjVal(val fields: MutableMap<String, Any?>)
+
+/** RGBA 颜色值，分量范围 0..1；x/y/z/w 是 r/g/b/a 的别名。 */
+data class ColorVal(val r: Double, val g: Double, val b: Double, val a: Double) {
+    val x: Double get() = r
+    val y: Double get() = g
+    val z: Double get() = b
+    val w: Double get() = a
+}
+
 /** 未定义值（let 未初始化、字段未设置、return 无表达式、缺省实参）。 */
 object Undefined
 
@@ -62,6 +83,10 @@ fun isArray(v: Any?): Boolean = v is MutableList<*>
 fun isFunc(v: Any?): Boolean = v is FuncVal
 fun isParticle(v: Any?): Boolean = v is ParticleValue
 fun isParticleList(v: Any?): Boolean = v is ParticleListValue
+fun isObj(v: Any?): Boolean = v is ObjVal
+fun isLambda(v: Any?): Boolean = v is LambdaVal
+fun isColor(v: Any?): Boolean = v is ColorVal
+fun isCallable(v: Any?): Boolean = isFunc(v) || isLambda(v)
 
 fun vecDim(v: Any): Int = when (v) {
     is Vec2 -> 2
@@ -97,6 +122,9 @@ fun typeName(v: Any?): String = when {
     v is Mat3 -> "mat3"
     v is Mat4 -> "mat4"
     v is FuncVal -> "func"
+    v is LambdaVal -> "lambda"
+    v is ObjVal -> "obj"
+    v is ColorVal -> "color"
     v is ParticleValue -> "particle"
     v is ParticleListValue -> "particleList"
     else -> "unknown"

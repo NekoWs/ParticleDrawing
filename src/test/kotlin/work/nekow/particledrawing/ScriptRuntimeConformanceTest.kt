@@ -197,7 +197,7 @@ class ScriptRuntimeConformanceTest {
     @Test
     fun vecMat() {
         val h = Harness(
-            "func process() { let p = this.spawn(); let v = vec(1,2,3); let m = rotZ(PI/2); let w = m * v; p.position = w; p.color = [len(w)/4, dot(v,w)/12, cross(v,w).y/10, 1]; }",
+            "func process() { let p = this.spawn(); let v = vec(1,2,3); let m = rotZ(PI/2); let w = m * v; p.position = w; p.color = [w.len()/4, v.dot(w)/12, v.cross(w).y/10, 1]; }",
         )
         h.process()
         val host = h.particles[0] as TestHost

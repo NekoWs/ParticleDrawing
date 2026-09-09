@@ -100,6 +100,7 @@ object ScriptRuntime {
         var print: (String) -> Unit = {},
         var st: Double = 0.0,
         var maxMs: Double = 0.0,
+        val spawnConfig: (Any?) -> ParticleHost = { spawn() },
     )
 
     fun createObjectState(seed: Int): ObjectState = ObjectState(HashMap(), RandState(seed), seed)
@@ -111,13 +112,26 @@ object ScriptRuntime {
         rt.pushScope(HashMap())
         try {
             for (d in program.globals) {
-                for (dec in d.decls) {
-                    if (obj.globals.containsKey(dec.name)) {
-                        throw ScriptException("duplicate global '${dec.name}'", dec.line, dec.col)
+                if (d is DeclareNode) {
+                    for (dec in d.decls) {
+                        if (obj.globals.containsKey(dec.name)) {
+                            throw ScriptException("duplicate global '${dec.name}'", dec.line, dec.col)
+                        }
+                        val v = if (dec.init != null) rt.evalExpr(dec.init) else Undefined
+                        obj.globals[dec.name] = v
+                        if (d.kind == "const") obj.constGlobals.add(dec.name)
                     }
-                    val v = if (dec.init != null) rt.evalExpr(dec.init) else Undefined
-                    obj.globals[dec.name] = v
-                    if (d.kind == "const") obj.constGlobals.add(dec.name)
+                } else if (d is DestructureNode) {
+                    val v = rt.evalExpr(d.value)
+                    val fields = (v as? ObjVal)?.fields
+                        ?: throw ScriptException("destructuring requires an object, got ${typeName(v)}", d.line, d.col)
+                    for (name in d.names) {
+                        if (obj.globals.containsKey(name)) {
+                            throw ScriptException("duplicate global '$name'", d.line, d.col)
+                        }
+                        obj.globals[name] = fields[name] ?: Undefined
+                        if (d.kind == "const") obj.constGlobals.add(name)
+                    }
                 }
             }
         } finally {
@@ -182,17 +196,19 @@ object ScriptRuntime {
     fun evalExpression(expr: String, ctx: ProcessCtx): Double = ExpressionRunner(expr).eval(ctx)
 
     private class Flow(val kind: String, val value: Any? = null) : Throwable()
+    private val IT_UNSET = Any()
 
     private val BUILTINS = setOf(
         "print", "assert",
         "vec2", "vec3", "vec4", "vec", "mat3", "translate", "scale", "rotate", "lookAt", "rotX", "rotY", "rotZ", "rotAxis",
-        "dot", "cross", "len", "len2", "norm", "lerp", "mix", "distance", "angle_between", "project", "reflect",
+        "rotateX", "rotateY", "rotateZ", "norm", "hash", "phases", "repeat",
         "clamp", "map_range", "remap", "int", "float", "bool",
         "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sqrt", "abs", "sign", "exp", "log", "ln",
         "floor", "ceil", "round", "fract", "pow", "min", "max", "step", "smoothstep", "mod",
         "noise", "fbm", "rand", "random",
         "ease_linear", "ease_in_out", "ease_out_back", "ease_in_elastic",
-        "unique", "reverse", "sort", "len",
+        "color", "red", "green", "blue", "alpha", "hue", "saturation", "value", "rgb2hsv", "hsv2rgb",
+        "unique", "reverse", "sort",
     )
 
     private class Runtime(
@@ -324,6 +340,23 @@ object ScriptRuntime {
                 is DeclareNode -> execDeclare(n)
                 is AssignNode -> execAssign(n)
                 is ExprStmtNode -> evalExpr(n.expr)
+                is DestructureNode -> {
+                    val v = evalExpr(n.value)
+                    val fields = (v as? ObjVal)?.fields
+                        ?: err("destructuring requires an object, got ${typeName(v)}", n)
+                    for (name in n.names) {
+                        if (currentScope().containsKey(name)) err("duplicate declaration '$name'", n)
+                        currentScope()[name] = fields[name] ?: Undefined
+                        if (n.kind == "const") markConst(name)
+                    }
+                }
+                is WhenStmtNode -> {
+                    val subj = evalExpr(n.subject)
+                    for (c in n.cases) {
+                        if (whenEqual(subj, evalExpr(c.label))) { execStmt(c.body); return }
+                    }
+                    if (n.els != null) execStmt(n.els)
+                }
                 else -> err("unknown statement ${n::class.simpleName}", n)
             }
         }
@@ -395,6 +428,12 @@ object ScriptRuntime {
                 is MemberTarget -> assignMemberField(target, value, n)
                 is IndexTarget -> {
                     val arr = evalExpr(target.target)
+                    if (arr is ObjVal) {
+                        val key = evalExpr(target.index)
+                        if (key !is String) err("object index must be a string", n)
+                        arr.fields[key] = value
+                        return
+                    }
                     if (arr !is MutableList<*>) err("indexed assignment target is not an array", n)
                     val idx = int(evalExpr(target.index), "array index", n)
                     if (idx < 0 || idx >= arr.size) err("array index $idx out of bounds (size ${arr.size})", n)
@@ -405,6 +444,14 @@ object ScriptRuntime {
                     // particle 上 .x/.y/.z/.w/.r/.g/.b/.a 不是保留字段，按自定义字段存取（p.color.a 仍是颜色分量）。
                     if (obj is ParticleValue) {
                         particleSetField(obj, target.comp, value, n)
+                        return
+                    }
+                    if (obj is ColorVal) {
+                        val d = num(value, "component value", n)
+                        val updated = when (COMP_ALIAS[target.comp] ?: target.comp) {
+                            "x" -> obj.copy(r = d); "y" -> obj.copy(g = d); "z" -> obj.copy(b = d); else -> obj.copy(a = d)
+                        }
+                        assignCompTarget(target.target, updated, n)
                         return
                     }
                     if (!isVec(obj)) err("component assignment target is not a vector", n)
@@ -445,7 +492,11 @@ object ScriptRuntime {
                 particleSetField(obj, target.field, value, n)
                 return
             }
-            err("only this / particle have fields '.${target.field}'", n)
+            if (obj is ObjVal) {
+                obj.fields[target.field] = value
+                return
+            }
+            err("only this / particle / object have fields '.${target.field}'", n)
         }
 
         private fun assignName(name: String, value: Any?, n: Node) {
@@ -514,7 +565,7 @@ object ScriptRuntime {
             val w = pv.host
             return when (field) {
                 "position" -> Vec3(w.pos[0], w.pos[1], w.pos[2])
-                "color" -> Vec4(w.color[0], w.color[1], w.color[2], w.color[3])
+                "color" -> ColorVal(w.color[0], w.color[1], w.color[2], w.color[3])
                 "velocity" -> Vec3(w.vel[0], w.vel[1], w.vel[2])
                 "scale" -> w.scale
                 "glow" -> w.glow
@@ -543,6 +594,9 @@ object ScriptRuntime {
 
         private fun writeParticleColor(w: ParticleHost, value: Any?, n: Node) {
             when {
+                value is ColorVal -> {
+                    w.color[0] = clamp01(value.r); w.color[1] = clamp01(value.g); w.color[2] = clamp01(value.b); w.color[3] = clamp01(value.a)
+                }
                 value is Vec3 -> {
                     w.color[0] = clamp01(value.x); w.color[1] = clamp01(value.y); w.color[2] = clamp01(value.z)
                 }
@@ -615,6 +669,11 @@ object ScriptRuntime {
                 val v = evalExpr(n.target)
                 // particle 上 .x/.y/.z/.w/.r/.g/.b/.a 不是保留字段，按自定义字段读取。
                 if (v is ParticleValue) return particleGetField(v, n.comp, n)
+                if (v is ColorVal) {
+                    return when (COMP_ALIAS[n.comp] ?: n.comp) {
+                        "x" -> v.r; "y" -> v.g; "z" -> v.b; else -> v.a
+                    }
+                }
                 if (!isVec(v)) err("component access requires a vector, got ${typeName(v)}", n)
                 val comp = COMP_ALIAS[n.comp] ?: err("unknown component '${n.comp}'", n)
                 if (!hasComp(v, comp)) err("${typeName(v)} has no component '${n.comp}'", n)
@@ -640,11 +699,45 @@ object ScriptRuntime {
                 assignTarget(n.target, nv, n)
                 old
             }
+            is PipeNode -> {
+                val left = evalExpr(n.left)
+                when (val r = n.right) {
+                    is CallNode -> {
+                        val args = listOf(left) + r.args.map { evalExpr(it) }
+                        val callee = r.callee
+                        if (callee is VarNode && callee.name in BUILTINS) callBuiltin(callee.name, args, n)
+                        else if (callee is VarNode && program.functions.containsKey(callee.name)) callUserFunc(program.functions[callee.name]!!, args, n)
+                        else {
+                            val fn = evalExpr(callee)
+                            if (fn is LambdaVal) callLambda(fn, args, n)
+                            else if (fn is FuncVal) callUserFunc(program.functions[fn.name] ?: err("function '${fn.name}' not found", n), args, n)
+                            else err("value of type ${typeName(fn)} is not callable", n)
+                        }
+                    }
+                    is MethodNode -> invokeMethod(r.obj, r.method, listOf(left) + r.args.map { evalExpr(it) }, n)
+                    else -> err("right side of '|>' must be a function call", n)
+                }
+            }
+            is LambdaNode -> LambdaVal(n.params, n.body, ArrayList(scopes))
+            is ObjNode -> ObjVal(LinkedHashMap<String, Any?>().also { m -> for ((k, e) in n.fields) m[k] = evalExpr(e) })
+            is ApplyNode -> applyReceiver(n)
+            is WhenExprNode -> {
+                val subj = evalExpr(n.subject)
+                for (c in n.cases) {
+                    if (whenEqual(subj, evalExpr(c.label))) return evalExpr(c.expr)
+                }
+                evalExpr(n.els)
+            }
             else -> err("unknown expression ${n::class.simpleName}", n)
         }
 
         private fun evalIndex(n: IndexNode): Any? {
             val target = evalExpr(n.target)
+            if (target is ObjVal) {
+                val key = evalExpr(n.index)
+                if (key !is String) err("object index must be a string", n)
+                return target.fields[key] ?: Undefined
+            }
             val idx = int(evalExpr(n.index), "index", n)
             if (target is ParticleListValue) {
                 if (idx < 0 || idx >= target.size) err("particle list index $idx out of bounds (size ${target.size})", n)
@@ -661,7 +754,8 @@ object ScriptRuntime {
             }
             val obj = evalExpr(n.obj)
             if (obj is ParticleValue) return particleGetField(obj, n.field, n)
-            err("only this / particle have fields '.${n.field}'", n)
+            if (obj is ObjVal) return obj.fields[n.field] ?: Undefined
+            err("only this / particle / object have fields '.${n.field}'", n)
         }
 
         private fun evalLValue(target: AssignTarget): Any? = when (target) {
@@ -686,32 +780,38 @@ object ScriptRuntime {
             }
             val fn = evalExpr(callee)
             if (fn is FuncVal) return callUserFunc(program.functions[fn.name] ?: err("function '${fn.name}' not found", n), args, n)
+            if (fn is LambdaVal) return callLambda(fn, args, n)
             err("value of type ${typeName(fn)} is not callable", n)
         }
 
         private fun evalMethod(n: MethodNode): Any? {
-            // this.spawn()
+            // this.spawn(config?)：config 为可选 JSON 对象。
             if (n.obj is VarNode && n.obj.name == CTX_NAME && n.method == "spawn") {
                 val c = ctx ?: err("this.spawn is not available here", n)
-                val w = try { c.spawn() } catch (e: Exception) { err("spawn failed: ${e.message}", n) }
+                val cfg = n.args.firstOrNull()?.let { evalExpr(it) }
+                val w = try { c.spawnConfig(cfg) } catch (e: Exception) { err("spawn failed: ${e.message}", n) }
                 return ParticleValue(w)
             }
-            val obj = evalExpr(n.obj)
-            val args = n.args.map { evalExpr(it) }
+            return invokeMethod(n.obj, n.method, n.args.map { evalExpr(it) }, n)
+        }
+
+        private fun invokeMethod(objNode: Node, method: String, args: List<Any?>, n: Node): Any? {
+            val obj = evalExpr(objNode)
             if (obj is ParticleValue) {
-                if (n.method == "kill") {
+                if (method == "kill") {
                     if (args.isNotEmpty()) err("'kill' takes no arguments", n)
                     obj.host.kill()
                     return 0.0
                 }
-                err("particle has no method '.${n.method}()'", n)
+                err("particle has no method '.$method()'", n)
             }
             if (obj is ParticleListValue) {
-                if (n.method == "size") return obj.size.toDouble()
-                err("particle list has no method '.${n.method}()'", n)
+                if (method == "size") return obj.size.toDouble()
+                err("particle list has no method '.$method()'", n)
             }
-            if (obj !is MutableList<*>) err("method '.${n.method}()' requires an array, particle or particle list, got ${typeName(obj)}", n)
-            return arrayMethod(obj as MutableList<Any?>, n.method, args, n)
+            if (isVec(obj)) return vecMethod(obj, method, args, n)
+            if (obj !is MutableList<*>) err("method '.$method()' requires an array, particle or particle list, got ${typeName(obj)}", n)
+            return arrayMethod(obj as MutableList<Any?>, method, args, n)
         }
 
         private fun lookupName(name: String, n: Node): Any? {
@@ -720,7 +820,11 @@ object ScriptRuntime {
             }
             for (i in scopes.indices.reversed()) {
                 val s = scopes[i]
-                if (s.containsKey(name)) return s[name]
+                if (s.containsKey(name)) {
+                    val v = s[name]
+                    if (v === IT_UNSET) err("it is not defined in a no-argument lambda call", n)
+                    return v
+                }
             }
             if (objState.globals.containsKey(name)) return objState.globals[name]
             if (varsMap.containsKey(name)) return varsMap[name]
@@ -948,6 +1052,234 @@ object ScriptRuntime {
             return result
         }
 
+        private fun callLambda(fn: LambdaVal, args: List<Any?>, n: Node): Any? {
+            if (funcDepth >= 64) err("maximum recursion depth (64) exceeded", n)
+            funcDepth++
+            val prev = inFunction
+            inFunction = true
+            for (s in fn.closure) pushScope(s)
+            pushScope(HashMap())
+            val pscope = currentScope()
+            if (fn.params.isEmpty()) {
+                when {
+                    args.size == 1 -> pscope["it"] = args[0]
+                    args.size > 1 -> err("lambda expects at most 1 argument, got ${args.size}", n)
+                    else -> pscope["it"] = IT_UNSET
+                }
+            } else {
+                if (args.size != fn.params.size) err("lambda expects ${fn.params.size} argument(s), got ${args.size}", n)
+                for ((i, p) in fn.params.withIndex()) pscope[p] = args[i]
+            }
+            var result: Any? = Undefined
+            try {
+                val bodyStmts = fn.body.body
+                for (i in bodyStmts.indices) {
+                    val st = bodyStmts[i]
+                    if (i == bodyStmts.size - 1 && st is ExprStmtNode) result = evalExpr(st.expr)
+                    else execStmt(st)
+                }
+            } catch (f: Flow) {
+                if (f.kind == "return") result = f.value else throw f
+            } finally {
+                popScope()
+                for (s in fn.closure) popScope()
+                inFunction = prev
+                funcDepth--
+            }
+            return result
+        }
+
+        private fun applyReceiver(n: ApplyNode): Any? {
+            val target = evalExpr(n.target)
+            if (target !is ParticleValue) err(".apply requires a particle, got ${typeName(target)}", n)
+            val receiverScope = object : MutableMap<String, Any?> {
+                private val backing = HashMap<String, Any?>()
+                override val size get() = backing.size
+                override val entries get() = backing.entries
+                override val keys get() = backing.keys
+                override val values get() = backing.values
+                override fun containsKey(key: String) = backing.containsKey(key) || particleHasField(target, key)
+                override fun containsValue(value: Any?) = backing.containsValue(value)
+                override fun get(key: String): Any? {
+                    if (backing.containsKey(key)) return backing[key]
+                    if (particleHasField(target, key)) return particleGetField(target, key, n)
+                    return backing[key]
+                }
+                override fun isEmpty() = backing.isEmpty()
+                override fun clear() = backing.clear()
+                override fun put(key: String, value: Any?): Any? {
+                    if (particleHasField(target, key)) { particleSetField(target, key, value, n); return value }
+                    return backing.put(key, value)
+                }
+                override fun putAll(from: Map<out String, Any?>) { for ((k, v) in from) put(k, v) }
+                override fun remove(key: String): Any? = backing.remove(key)
+            }
+            pushScope(receiverScope)
+            val prev = inFunction
+            inFunction = true
+            try {
+                execStmt(n.body)
+            } catch (f: Flow) {
+                if (f.kind != "return") throw f
+            } finally {
+                popScope()
+                inFunction = prev
+            }
+            return target
+        }
+
+        private fun particleHasField(pv: ParticleValue, field: String): Boolean = when (field) {
+            "position", "color", "velocity", "scale", "glow", "light", "life", "index" -> true
+            else -> pv.host.fields.containsKey(field)
+        }
+
+        private fun whenEqual(a: Any?, b: Any?): Boolean = eqTol(a, b)
+
+        private fun vecMethod(v: Any?, method: String, args: List<Any?>, n: Node): Any? {
+            fun argVec(name: String): Any? = args.getOrElse(0) { err("$name expects a vec argument", n) }
+            return when (method) {
+                "normalize" -> { val l = lenVec(v, n); if (l == 0.0) v else scaleVec(v, 1.0 / l, n) }
+                "dot" -> dot(v, argVec("dot"), n)
+                "cross" -> {
+                    val a = v as? Vec3 ?: err("cross requires vec3", n)
+                    val b = args.getOrElse(0) { null } as? Vec3 ?: err("cross requires vec3", n)
+                    Vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x)
+                }
+                "len" -> lenVec(v, n)
+                "len2" -> { val l = lenVec(v, n); l * l }
+                "dist" -> lenVec(subVec(v, argVec("dist"), n), n)
+                "angleTo" -> {
+                    val b = argVec("angleTo")
+                    val la = lenVec(v, n); val lb = lenVec(b, n)
+                    if (la == 0.0 || lb == 0.0) PI / 2 else acos((dot(v, b, n) as Double / (la * lb)).coerceIn(-1.0, 1.0))
+                }
+                "project" -> {
+                    val b = argVec("project")
+                    val bb = dot(b, b, n) as Double
+                    if (bb == 0.0) err("project onto zero-length vector", n)
+                    scaleVec(b, (dot(v, b, n) as Double) / bb, n)
+                }
+                "reflect" -> {
+                    val nn = argVec("reflect")
+                    val d = (dot(v, nn, n) as Double) * 2
+                    subVec(v, scaleVec(nn, d, n), n)
+                }
+                "lerp" -> lerp(v, args.getOrElse(0) { null }, num(args.getOrElse(1) { 0.0 }, "lerp t", n), n)
+                else -> err("vec has no method '.$method()'", n)
+            }
+        }
+
+        private fun rotateVec3X(v: Any?, a: Double, n: Node): Vec3 {
+            val p = v as? Vec3 ?: err("rotateX requires a vec3", n)
+            val c = cos(a); val s = sin(a)
+            return Vec3(p.x, p.y * c - p.z * s, p.y * s + p.z * c)
+        }
+        private fun rotateVec3Y(v: Any?, a: Double, n: Node): Vec3 {
+            val p = v as? Vec3 ?: err("rotateY requires a vec3", n)
+            val c = cos(a); val s = sin(a)
+            return Vec3(p.x * c + p.z * s, p.y, -p.x * s + p.z * c)
+        }
+        private fun rotateVec3Z(v: Any?, a: Double, n: Node): Vec3 {
+            val p = v as? Vec3 ?: err("rotateZ requires a vec3", n)
+            val c = cos(a); val s = sin(a)
+            return Vec3(p.x * c - p.y * s, p.x * s + p.y * c, p.z)
+        }
+
+        private fun hash32(seed: Int, salt: Int): Double {
+            var x = (seed xor salt) + 0x9e3779b9
+            x = (x xor (x ushr 16)) * 0x85ebca6b
+            x = (x xor (x ushr 13)) * 0xc2b2ae35
+            x = x xor (x ushr 16)
+            return (x and 0x7fffffff).toDouble() / 2147483648.0
+        }
+
+        private fun phasesObj(t: Any?, obj: Any?, n: Node): ObjVal {
+            val fields = LinkedHashMap<String, Any?>()
+            val src = obj as? ObjVal ?: err("phases requires an object", n)
+            val tv = num(t, "phases", n)
+            for ((k, v) in src.fields) {
+                val pair = v as? MutableList<*> ?: err("phases value for '$k' must be [a,b]", n)
+                if (pair.size != 2) err("phases value for '$k' must be [a,b]", n)
+                val a = num(pair[0], "phases", n)
+                val b = num(pair[1], "phases", n)
+                val tt = ((tv - a) / (b - a)).coerceIn(0.0, 1.0)
+                fields[k] = tt * tt * (3 - 2 * tt)
+            }
+            return ObjVal(fields)
+        }
+
+        private fun repeatFn(count: Any?, fn: Any?, n: Node): Any? {
+            val c = jsTrunc(num(count, "repeat", n)).toInt()
+            if (c <= 0) return 0.0
+            for (i in 0 until c) {
+                when (fn) {
+                    is LambdaVal -> callLambda(fn, listOf(i.toDouble()), n)
+                    is FuncVal -> callUserFunc(program.functions[fn.name] ?: err("function '${fn.name}' not found", n), listOf(i.toDouble()), n)
+                    else -> err("repeat requires a function, got ${typeName(fn)}", n)
+                }
+            }
+            return 0.0
+        }
+
+        private fun colorWith(c: Any?, n: Node): ColorVal = when (c) {
+            is ColorVal -> c
+            is Vec3 -> ColorVal(clamp01(c.x), clamp01(c.y), clamp01(c.z), 1.0)
+            is Vec4 -> ColorVal(clamp01(c.x), clamp01(c.y), clamp01(c.z), clamp01(c.w))
+            else -> err("expected a color or vec4, got ${typeName(c)}", n)
+        }
+
+        private fun rgbToHsv(c: Any?, n: Node): Vec3 {
+            val col = colorWith(c, n)
+            val mx = max(col.r, max(col.g, col.b))
+            val mn = min(col.r, min(col.g, col.b))
+            val d = mx - mn
+            val h = when {
+                d == 0.0 -> 0.0
+                mx == col.r -> ((col.g - col.b) / d).let { if (it < 0) it + 6.0 else it } / 6.0
+                mx == col.g -> ((col.b - col.r) / d + 2.0) / 6.0
+                else -> ((col.r - col.g) / d + 4.0) / 6.0
+            }
+            val s = if (mx == 0.0) 0.0 else d / mx
+            return Vec3(h, s, mx)
+        }
+
+        private fun hsvToRgb(args: List<Any?>, n: Node): ColorVal {
+            val h: Double; val s: Double; val v: Double
+            when (val a0 = args[0]) {
+                is Vec3 -> { h = a0.x; s = a0.y; v = a0.z }
+                else -> { h = num(a0, "hsv2rgb", n); s = num(args[1], "hsv2rgb", n); v = num(args[2], "hsv2rgb", n) }
+            }
+            val sc = s.coerceIn(0.0, 1.0)
+            val vc = v.coerceIn(0.0, 1.0)
+            val hh = ((h % 1.0) + 1.0) % 1.0 * 6.0
+            val i = floor(hh).toInt()
+            val f = hh - i
+            val p = vc * (1 - sc)
+            val q = vc * (1 - f * sc)
+            val t = vc * (1 - (1 - f) * sc)
+            return when (i % 6) {
+                0 -> ColorVal(vc, t, p, 1.0)
+                1 -> ColorVal(q, vc, p, 1.0)
+                2 -> ColorVal(p, vc, t, 1.0)
+                3 -> ColorVal(p, q, vc, 1.0)
+                4 -> ColorVal(t, p, vc, 1.0)
+                else -> ColorVal(vc, p, q, 1.0)
+            }
+        }
+
+        private fun colorHueSet(c: Any?, h: Double, n: Node): ColorVal {
+            val hsv = rgbToHsv(c, n)
+            return hsvToRgb(listOf(h, hsv.y, hsv.z), n)
+        }
+        private fun colorSatSet(c: Any?, s: Double, n: Node): ColorVal {
+            val hsv = rgbToHsv(c, n)
+            return hsvToRgb(listOf(hsv.x, s.coerceIn(0.0, 1.0), hsv.z), n)
+        }
+        private fun colorValSet(c: Any?, v: Double, n: Node): ColorVal {
+            val hsv = rgbToHsv(c, n)
+            return hsvToRgb(listOf(hsv.x, hsv.y, v.coerceIn(0.0, 1.0)), n)
+        }
+
         private fun callBuiltin(name: String, args: List<Any?>, n: Node): Any? {
             if (name !in BUILTINS) {
                 if (program.functions.containsKey(name)) return callUserFunc(program.functions[name]!!, args, n)
@@ -979,12 +1311,26 @@ object ScriptRuntime {
                     Mat3(listOf(listOf(r0.x, r0.y, r0.z), listOf(r1.x, r1.y, r1.z), listOf(r2.x, r2.y, r2.z)))
                 }
                 "translate" -> {
-                    val v = args[0] as? Vec3 ?: err("translate requires a vec3", n)
-                    Mat4(listOf(listOf(1.0, 0.0, 0.0, v.x), listOf(0.0, 1.0, 0.0, v.y), listOf(0.0, 0.0, 1.0, v.z), listOf(0.0, 0.0, 0.0, 1.0)))
+                    if (args.size == 4) {
+                        val v = args[0] as? Vec3 ?: err("translate requires a vec3", n)
+                        Vec3(v.x + num(args[1], "translate", n), v.y + num(args[2], "translate", n), v.z + num(args[3], "translate", n))
+                    } else {
+                        val v = args[0] as? Vec3 ?: err("translate requires a vec3", n)
+                        Mat4(listOf(listOf(1.0, 0.0, 0.0, v.x), listOf(0.0, 1.0, 0.0, v.y), listOf(0.0, 0.0, 1.0, v.z), listOf(0.0, 0.0, 0.0, 1.0)))
+                    }
                 }
                 "scale" -> {
-                    val (sx, sy, sz) = scaleTriple(args, n)
-                    Mat4(listOf(listOf(sx, 0.0, 0.0, 0.0), listOf(0.0, sy, 0.0, 0.0), listOf(0.0, 0.0, sz, 0.0), listOf(0.0, 0.0, 0.0, 1.0)))
+                    if (args.size == 2) {
+                        val v = args[0] as? Vec3 ?: err("scale requires a vec3", n)
+                        when (val s = args[1]) {
+                            is Double -> Vec3(v.x * s, v.y * s, v.z * s)
+                            is Vec3 -> Vec3(v.x * s.x, v.y * s.y, v.z * s.z)
+                            else -> err("scale requires num or vec3", n)
+                        }
+                    } else {
+                        val (sx, sy, sz) = scaleTriple(args, n)
+                        Mat4(listOf(listOf(sx, 0.0, 0.0, 0.0), listOf(0.0, sy, 0.0, 0.0), listOf(0.0, 0.0, sz, 0.0), listOf(0.0, 0.0, 0.0, 1.0)))
+                    }
                 }
                 "rotate" -> rotAxisMat4(args[0], num(args[1], "rotate angle", n), n)
                 "lookAt" -> lookAt(args[0], args[1], args[2], n)
@@ -992,16 +1338,27 @@ object ScriptRuntime {
                 "rotY" -> rotYMat3(num(args[0], "rotY", n))
                 "rotZ" -> rotZMat3(num(args[0], "rotZ", n))
                 "rotAxis" -> rotAxisMat3(args[0], num(args[1], "rotAxis", n), n)
-                "dot" -> dot(args[0], args[1], n)
-                "cross" -> { val a = args[0] as? Vec3 ?: err("cross requires vec3", n); val b = args[1] as? Vec3 ?: err("cross requires vec3", n); Vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x) }
-                "len" -> { val v = args[0]; if (v is Double) abs(v) else if (v is MutableList<*>) v.size.toDouble() else lenVec(v, n) }
-                "len2" -> { val v = args[0]; if (v is Double) v * v else lenVec(v, n).let { it * it } }
-                "norm" -> { val v = args[0]; val l = lenVec(v, n); if (l == 0.0) v else scaleVec(v, 1.0 / l, n) }
-                "lerp", "mix" -> lerp(args[0], args[1], num(args[2], "$name t", n), n)
-                "distance" -> { val a = args[0]; val b = args[1]; lenVec(subVec(a, b, n), n) }
-                "angle_between" -> { val a = args[0]; val b = args[1]; val la = lenVec(a, n); val lb = lenVec(b, n); if (la == 0.0 || lb == 0.0) PI / 2 else acos((dot(a, b, n) as Double / (la * lb)).coerceIn(-1.0, 1.0)) }
-                "project" -> { val a = args[0]; val b = args[1]; val bb = dot(b, b, n) as Double; if (bb == 0.0) err("project onto zero-length vector", n); scaleVec(b, (dot(a, b, n) as Double) / bb, n) }
-                "reflect" -> { val v = args[0]; val nn = args[1]; val d = (dot(v, nn, n) as Double) * 2; subVec(v, scaleVec(nn, d, n), n) }
+                "rotateX" -> rotateVec3X(args[0], num(args[1], "rotateX", n), n)
+                "rotateY" -> rotateVec3Y(args[0], num(args[1], "rotateY", n), n)
+                "rotateZ" -> rotateVec3Z(args[0], num(args[1], "rotateZ", n), n)
+                "norm" -> {
+                    val a = int(args[0], "norm", n)
+                    val b = int(args[1], "norm", n)
+                    a.toDouble() / max(b - 1, 1).toDouble()
+                }
+                "hash" -> hash32(int(args[0], "hash", n), int(args[1], "hash", n))
+                "phases" -> phasesObj(args[0], args[1], n)
+                "repeat" -> repeatFn(args[0], args[1], n)
+                "color" -> ColorVal(num(args[0], "color", n), num(args[1], "color", n), num(args[2], "color", n), num(args[3], "color", n))
+                "red" -> colorWith(args[0], n).copy(r = num(args[1], "red", n).coerceIn(0.0, 1.0))
+                "green" -> colorWith(args[0], n).copy(g = num(args[1], "green", n).coerceIn(0.0, 1.0))
+                "blue" -> colorWith(args[0], n).copy(b = num(args[1], "blue", n).coerceIn(0.0, 1.0))
+                "alpha" -> colorWith(args[0], n).copy(a = num(args[1], "alpha", n).coerceIn(0.0, 1.0))
+                "hue" -> colorHueSet(args[0], num(args[1], "hue", n), n)
+                "saturation" -> colorSatSet(args[0], num(args[1], "saturation", n), n)
+                "value" -> colorValSet(args[0], num(args[1], "value", n), n)
+                "rgb2hsv" -> rgbToHsv(args[0], n)
+                "hsv2rgb" -> hsvToRgb(args, n)
                 "clamp" -> clamp(args[0], args[1], args[2], n)
                 "map_range", "remap" -> mapRange(args[0], args[1], args[2], args[3], args[4], name == "remap", n)
                 "int" -> intConvert(args[0], n)
