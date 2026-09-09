@@ -249,14 +249,14 @@ object ScriptRuntime {
 
     private val BUILTINS = setOf(
         "print", "assert",
-        "vec2", "vec3", "vec4", "vec", "mat3", "translate", "scale", "rotate", "lookAt", "rotX", "rotY", "rotZ", "rotAxis",
-        "rotateX", "rotateY", "rotateZ", "norm", "hash", "phases", "repeat",
+        "vec2", "vec3", "vec4", "vec", "mat3", "mat4",
+        "norm", "hash", "phases", "repeat",
         "clamp", "map_range", "remap", "int", "float", "bool",
         "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sqrt", "abs", "sign", "exp", "log", "ln",
         "floor", "ceil", "round", "fract", "pow", "min", "max", "step", "smoothstep", "mod",
         "noise", "fbm", "rand", "random",
         "ease_linear", "ease_in_out", "ease_out_back", "ease_in_elastic",
-        "color", "red", "green", "blue", "alpha", "hue", "saturation", "value", "rgb2hsv", "hsv2rgb",
+        "color",
         "unique", "reverse", "sort",
     )
 
@@ -504,6 +504,10 @@ object ScriptRuntime {
                         assignCompTarget(target.target, updated, n)
                         return
                     }
+                    if (obj is ObjVal) {
+                        obj.fields[target.comp] = value
+                        return
+                    }
                     if (!isVec(obj)) err("component assignment target is not a vector", n)
                     val comp = COMP_ALIAS[target.comp] ?: err("unknown component '${target.comp}'", n)
                     if (!hasComp(obj, comp)) err("${typeName(obj)} has no component '${target.comp}'", n)
@@ -728,6 +732,7 @@ object ScriptRuntime {
                         "x" -> v.r; "y" -> v.g; "z" -> v.b; else -> v.a
                     }
                 }
+                if (v is ObjVal) return v.fields[n.comp] ?: Undefined
                 if (!isVec(v)) err("component access requires a vector, got ${typeName(v)}", n)
                 val comp = COMP_ALIAS[n.comp] ?: err("unknown component '${n.comp}'", n)
                 if (!hasComp(v, comp)) err("${typeName(v)} has no component '${n.comp}'", n)
@@ -752,25 +757,6 @@ object ScriptRuntime {
                 val nv = incDecValue(old, n.op, n)
                 assignTarget(n.target, nv, n)
                 old
-            }
-            is PipeNode -> {
-                val left = evalExpr(n.left)
-                when (val r = n.right) {
-                    is CallNode -> {
-                        val args = listOf(left) + r.args.map { evalExpr(it) }
-                        val callee = r.callee
-                        if (callee is VarNode && callee.name in BUILTINS) callBuiltin(callee.name, args, n)
-                        else if (callee is VarNode && program.functions.containsKey(callee.name)) callUserFunc(program.functions[callee.name]!!, args, n)
-                        else {
-                            val fn = evalExpr(callee)
-                            if (fn is LambdaVal) callLambda(fn, args, n)
-                            else if (fn is FuncVal) callUserFunc(program.functions[fn.name] ?: err("function '${fn.name}' not found", n), args, n)
-                            else err("value of type ${typeName(fn)} is not callable", n)
-                        }
-                    }
-                    is MethodNode -> invokeMethod(r.obj, r.method, listOf(left) + r.args.map { evalExpr(it) }, n)
-                    else -> err("right side of '|>' must be a function call", n)
-                }
             }
             is LambdaNode -> LambdaVal(n.params, n.body, ArrayList(scopes))
             is ObjNode -> ObjVal(LinkedHashMap<String, Any?>().also { m -> for ((k, e) in n.fields) m[k] = evalExpr(e) })
@@ -865,7 +851,8 @@ object ScriptRuntime {
                 err("particle list has no method '.$method()'", n)
             }
             if (isVec(obj)) return vecMethod(obj, method, args, n)
-            if (obj !is MutableList<*>) err("method '.$method()' requires an array, particle or particle list, got ${typeName(obj)}", n)
+            if (obj is ColorVal) return colorMethod(obj, method, args, n)
+            if (obj !is MutableList<*>) err("method '.$method()' requires an array, particle, particle list, vector or color, got ${typeName(obj)}", n)
             return arrayMethod(obj as MutableList<Any?>, method, args, n)
         }
 
@@ -1229,7 +1216,65 @@ object ScriptRuntime {
                     subVec(v, scaleVec(nn, d, n), n)
                 }
                 "lerp" -> lerp(v, args.getOrElse(0) { null }, num(args.getOrElse(1) { 0.0 }, "lerp t", n), n)
+                "rotateX" -> rotateVec3X(v, num(args.getOrElse(0) { 0.0 }, "rotateX angle", n), n)
+                "rotateY" -> rotateVec3Y(v, num(args.getOrElse(0) { 0.0 }, "rotateY angle", n), n)
+                "rotateZ" -> rotateVec3Z(v, num(args.getOrElse(0) { 0.0 }, "rotateZ angle", n), n)
+                "translate" -> {
+                    val dim = vecDim(v!!)
+                    if (args.size != dim) err("translate expects $dim argument(s), got ${args.size}", n)
+                    val c = args.mapIndexed { i, x -> num(x, "translate[$i]", n) }
+                    mkVec(dim, vecComps(v).mapIndexed { i, x -> x + c[i] })
+                }
+                "scale" -> {
+                    val dim = vecDim(v!!)
+                    val s = args.getOrElse(0) { err("scale expects 1 argument", n) }
+                    when (s) {
+                        is Double -> mkVec(dim, vecComps(v).map { it * s })
+                        is Vec2, is Vec3, is Vec4 -> {
+                            if (vecDim(s) != dim) err("scale requires a scalar or same-dimension vec", n)
+                            val cs = vecComps(s)
+                            mkVec(dim, vecComps(v).mapIndexed { i, x -> x * cs[i] })
+                        }
+                        else -> err("scale requires a scalar or vec", n)
+                    }
+                }
                 else -> err("vec has no method '.$method()'", n)
+            }
+        }
+
+        private fun colorMethod(c: ColorVal, method: String, args: List<Any?>, n: Node): Any? {
+            fun channel(read: (ColorVal) -> Double, write: (ColorVal, Double) -> ColorVal): Any? {
+                if (args.isEmpty()) return read(c)
+                if (args.size == 1) return write(c, num(args[0], method, n))
+                err("$method expects 0 or 1 argument(s), got ${args.size}", n)
+            }
+            return when (method) {
+                "toRGB" -> {
+                    if (args.isNotEmpty()) err("toRGB takes no arguments", n)
+                    ObjVal(LinkedHashMap<String, Any?>().also { m ->
+                        m["r"] = c.r; m["g"] = c.g; m["b"] = c.b; m["a"] = c.a
+                    })
+                }
+                "toHSV" -> {
+                    if (args.isNotEmpty()) err("toHSV takes no arguments", n)
+                    val h = rgbToHsv(c, n)
+                    ObjVal(LinkedHashMap<String, Any?>().also { m ->
+                        m["h"] = h.x; m["s"] = h.y; m["v"] = h.z
+                    })
+                }
+                "red" -> channel({ it.r }, { x, v -> x.copy(r = v.coerceIn(0.0, 1.0)) })
+                "green" -> channel({ it.g }, { x, v -> x.copy(g = v.coerceIn(0.0, 1.0)) })
+                "blue" -> channel({ it.b }, { x, v -> x.copy(b = v.coerceIn(0.0, 1.0)) })
+                "alpha" -> channel({ it.a }, { x, v -> x.copy(a = v.coerceIn(0.0, 1.0)) })
+                "hue" -> channel({ rgbToHsv(it, n).x }, { x, v -> hsvToRgb(listOf(v, rgbToHsv(x, n).y, rgbToHsv(x, n).z), n) })
+                "saturation" -> channel({ rgbToHsv(it, n).y }, { x, v -> hsvToRgb(listOf(rgbToHsv(x, n).x, v.coerceIn(0.0, 1.0), rgbToHsv(x, n).z), n) })
+                "value" -> channel({ rgbToHsv(it, n).z }, { x, v -> hsvToRgb(listOf(rgbToHsv(x, n).x, rgbToHsv(x, n).y, v.coerceIn(0.0, 1.0)), n) })
+                "shift_hue" -> {
+                    if (args.size != 1) err("shift_hue expects 1 argument", n)
+                    val h = rgbToHsv(c, n)
+                    hsvToRgb(listOf(h.x + num(args[0], "shift_hue", n), h.y, h.z), n)
+                }
+                else -> err("color has no method '.$method()'", n)
             }
         }
 
@@ -1374,37 +1419,14 @@ object ScriptRuntime {
                     val r2 = args[2] as? Vec3 ?: err("mat3 rows must be vec3", n)
                     Mat3(listOf(listOf(r0.x, r0.y, r0.z), listOf(r1.x, r1.y, r1.z), listOf(r2.x, r2.y, r2.z)))
                 }
-                "translate" -> {
-                    if (args.size == 4) {
-                        val v = args[0] as? Vec3 ?: err("translate requires a vec3", n)
-                        Vec3(v.x + num(args[1], "translate", n), v.y + num(args[2], "translate", n), v.z + num(args[3], "translate", n))
-                    } else {
-                        val v = args[0] as? Vec3 ?: err("translate requires a vec3", n)
-                        Mat4(listOf(listOf(1.0, 0.0, 0.0, v.x), listOf(0.0, 1.0, 0.0, v.y), listOf(0.0, 0.0, 1.0, v.z), listOf(0.0, 0.0, 0.0, 1.0)))
+                "mat4" -> {
+                    val rows = ArrayList<List<Double>>(4)
+                    for (i in 0 until 4) {
+                        val r = args[i] as? Vec4 ?: err("mat4 rows must be vec4", n)
+                        rows.add(listOf(r.x, r.y, r.z, r.w))
                     }
+                    Mat4(rows)
                 }
-                "scale" -> {
-                    if (args.size == 2) {
-                        val v = args[0] as? Vec3 ?: err("scale requires a vec3", n)
-                        when (val s = args[1]) {
-                            is Double -> Vec3(v.x * s, v.y * s, v.z * s)
-                            is Vec3 -> Vec3(v.x * s.x, v.y * s.y, v.z * s.z)
-                            else -> err("scale requires num or vec3", n)
-                        }
-                    } else {
-                        val (sx, sy, sz) = scaleTriple(args, n)
-                        Mat4(listOf(listOf(sx, 0.0, 0.0, 0.0), listOf(0.0, sy, 0.0, 0.0), listOf(0.0, 0.0, sz, 0.0), listOf(0.0, 0.0, 0.0, 1.0)))
-                    }
-                }
-                "rotate" -> rotAxisMat4(args[0], num(args[1], "rotate angle", n), n)
-                "lookAt" -> lookAt(args[0], args[1], args[2], n)
-                "rotX" -> rotXMat3(num(args[0], "rotX", n))
-                "rotY" -> rotYMat3(num(args[0], "rotY", n))
-                "rotZ" -> rotZMat3(num(args[0], "rotZ", n))
-                "rotAxis" -> rotAxisMat3(args[0], num(args[1], "rotAxis", n), n)
-                "rotateX" -> rotateVec3X(args[0], num(args[1], "rotateX", n), n)
-                "rotateY" -> rotateVec3Y(args[0], num(args[1], "rotateY", n), n)
-                "rotateZ" -> rotateVec3Z(args[0], num(args[1], "rotateZ", n), n)
                 "norm" -> {
                     val a = int(args[0], "norm", n)
                     val b = int(args[1], "norm", n)
@@ -1414,15 +1436,6 @@ object ScriptRuntime {
                 "phases" -> phasesObj(args[0], args[1], n)
                 "repeat" -> repeatFn(args[0], args[1], n)
                 "color" -> ColorVal(num(args[0], "color", n), num(args[1], "color", n), num(args[2], "color", n), num(args[3], "color", n))
-                "red" -> colorWith(args[0], n).copy(r = num(args[1], "red", n).coerceIn(0.0, 1.0))
-                "green" -> colorWith(args[0], n).copy(g = num(args[1], "green", n).coerceIn(0.0, 1.0))
-                "blue" -> colorWith(args[0], n).copy(b = num(args[1], "blue", n).coerceIn(0.0, 1.0))
-                "alpha" -> colorWith(args[0], n).copy(a = num(args[1], "alpha", n).coerceIn(0.0, 1.0))
-                "hue" -> colorHueSet(args[0], num(args[1], "hue", n), n)
-                "saturation" -> colorSatSet(args[0], num(args[1], "saturation", n), n)
-                "value" -> colorValSet(args[0], num(args[1], "value", n), n)
-                "rgb2hsv" -> rgbToHsv(args[0], n)
-                "hsv2rgb" -> hsvToRgb(args, n)
                 "clamp" -> clamp(args[0], args[1], args[2], n)
                 "map_range", "remap" -> mapRange(args[0], args[1], args[2], args[3], args[4], name == "remap", n)
                 "int" -> intConvert(args[0], n)
@@ -1614,13 +1627,15 @@ object ScriptRuntime {
 object BuiltinRegistry {
     val names: Set<String> = setOf(
         "print", "assert",
-        "vec2", "vec3", "vec4", "vec", "mat3", "translate", "scale", "rotate", "lookAt", "rotX", "rotY", "rotZ", "rotAxis",
-        "dot", "cross", "len", "len2", "norm", "lerp", "mix", "distance", "angle_between", "project", "reflect",
+        "vec2", "vec3", "vec4", "vec", "mat3", "mat4",
+        "norm",
         "clamp", "map_range", "remap", "int", "float", "bool",
         "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sqrt", "abs", "sign", "exp", "log", "ln",
         "floor", "ceil", "round", "fract", "pow", "min", "max", "step", "smoothstep", "mod",
         "noise", "fbm", "rand", "random",
         "ease_linear", "ease_in_out", "ease_out_back", "ease_in_elastic",
+        "hash", "phases", "repeat",
+        "color",
         "unique", "reverse", "sort",
     )
 }

@@ -197,7 +197,7 @@ class ScriptRuntimeConformanceTest {
     @Test
     fun vecMat() {
         val h = Harness(
-            "func process() { let p = this.spawn(); let v = vec(1,2,3); let m = rotZ(PI/2); let w = m * v; p.position = w; p.color = [w.len()/4, v.dot(w)/12, v.cross(w).y/10, 1]; }",
+            "func process() { let p = this.spawn(); let v = vec(1,2,3); let w = v.rotateZ(PI/2); p.position = w; p.color = [w.len()/4, v.dot(w)/12, v.cross(w).y/10, 1]; }",
         )
         h.process()
         val host = h.particles[0] as TestHost
@@ -417,5 +417,30 @@ class ScriptRuntimeConformanceTest {
         assertEquals(listOf(4.0, 5.0, 6.0), host.pos.toList())
         assertEquals(2.0, host.scale, 1e-12)
         assertEquals(7.0, host.life, 1e-12)
+    }
+
+    @Test
+    fun vecMethodChainAndMultiline() {
+        val h = Harness(
+            "func process() { let p = this.spawn(); let w = vec(1,0,0).rotateZ(PI/2)\n  .translate(0, 0, 5); p.position = w; }",
+        )
+        h.process()
+        val host = h.particles[0] as TestHost
+        assertEquals(0.0, host.pos[0], 1e-12)
+        assertEquals(1.0, host.pos[1], 1e-12)
+        assertEquals(5.0, host.pos[2], 1e-12)
+    }
+
+    @Test
+    fun colorMethodsAndConversions() {
+        val h = Harness(
+            "func process() { let p = this.spawn(); let c = color(1,0,0,1).green(0.5); p.position.x = c.red(); p.position.y = c.toRGB().g; p.position.z = c.toHSV().v; p.scale = c.alpha(); }",
+        )
+        h.process()
+        val host = h.particles[0] as TestHost
+        assertEquals(1.0, host.pos[0], 1e-12)
+        assertEquals(0.5, host.pos[1], 1e-12)
+        assertEquals(1.0, host.pos[2], 1e-12)
+        assertEquals(1.0, host.scale, 1e-12)
     }
 }

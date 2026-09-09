@@ -48,7 +48,6 @@ class CallNode(val callee: Node, val args: List<Node>, override val line: Int, o
 class MethodNode(val obj: Node, val method: String, val args: List<Node>, override val line: Int, override val col: Int) : Node()
 class PreIncNode(val op: String, val target: AssignTarget, override val line: Int, override val col: Int) : Node()
 class PostIncNode(val op: String, val target: AssignTarget, override val line: Int, override val col: Int) : Node()
-class PipeNode(val left: Node, val right: Node, override val line: Int, override val col: Int) : Node()
 class LambdaNode(val params: List<String>, val body: BlockNode, override val line: Int, override val col: Int) : Node()
 class ObjNode(val fields: Map<String, Node>, override val line: Int, override val col: Int) : Node()
 class ApplyNode(val target: Node, val body: LambdaNode, override val line: Int, override val col: Int) : Node()
@@ -205,14 +204,6 @@ fun tokenize(sourceIn: String?): List<Token> {
             continue
         }
 
-        if (c == '|' && i + 1 < len && src[i + 1] == '>') {
-            val startLine = line
-            val startCol = col
-            advance(); advance()
-            emit(Token(TokenType.PUNCT, "|>", line = startLine, col = startCol))
-            continue
-        }
-
         if (c == '-' && i + 1 < len && src[i + 1] == '>') {
             val startLine = line
             val startCol = col
@@ -290,12 +281,10 @@ private val CONSTANT_NAMES = setOf("TAU", "HALF_PI", "QUARTER_PI", "DEG2RAD", "R
 private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w")
 private val COMP_NAMES = setOf("x", "y", "z", "w", "r", "g", "b", "a")
 
-// 内建函数保留名。全局 vec 数学函数已移除（改为 vec 实例方法），norm 为双参内建名。
+// 内建函数保留名。全局 vec/color 变换函数已移除（改为实例方法）。
 private val BUILTIN_NAMES = setOf(
     "print", "assert",
-    "vec2", "vec3", "vec4", "vec", "mat3", "translate", "scale", "rotate", "lookAt",
-    "rotX", "rotY", "rotZ", "rotAxis",
-    "rotateX", "rotateY", "rotateZ",
+    "vec2", "vec3", "vec4", "vec", "mat3", "mat4",
     "norm",
     "clamp", "map_range", "remap", "int", "float", "bool",
     "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
@@ -305,8 +294,7 @@ private val BUILTIN_NAMES = setOf(
     "noise", "fbm", "rand", "random",
     "ease_linear", "ease_in_out", "ease_out_back", "ease_in_elastic",
     "hash", "phases", "repeat",
-    "color", "red", "green", "blue", "alpha",
-    "hue", "saturation", "value", "rgb2hsv", "hsv2rgb",
+    "color",
     "unique", "reverse", "sort",
 )
 
@@ -382,7 +370,7 @@ class ScriptParser(private val source: String) {
     }
 
     fun parseBareExpression(): Node {
-        val node = parsePipe()
+        val node = parseTernary()
         val extra = peek()
         if (extra.type != TokenType.EOF) {
             throw ScriptException("unexpected '${extra.text}' after expression", extra.line, extra.col)
@@ -633,7 +621,7 @@ class ScriptParser(private val source: String) {
             val nameTok = expectIdent()
             validateDeclName(nameTok)
             var init: Node? = null
-            if (!nlBefore() && match("=")) init = parsePipe()
+            if (!nlBefore() && match("=")) init = parseTernary()
             else if (kind == "const") errorAt(nameTok, "'const' must have an initializer")
             decls.add(Declarator(nameTok.text, init, nameTok.line, nameTok.col))
             if (check(",") && !nlBefore()) { next(); continue }
@@ -663,7 +651,7 @@ class ScriptParser(private val source: String) {
             val t = peek()
             throw ScriptException("object destructuring requires an initializer", t.line, t.col)
         }
-        val value = parsePipe()
+        val value = parseTernary()
         return DestructureNode(kind, names, value, tok.line, tok.col)
     }
 
@@ -683,7 +671,7 @@ class ScriptParser(private val source: String) {
         }
         statementEnd()
         val allowed = expr is CallNode || expr is MethodNode || expr is PreIncNode || expr is PostIncNode ||
-            expr is PipeNode || expr is ApplyNode
+            expr is ApplyNode
         if (!allowed && allowBareExpr == 0) {
             errorAt(start, "expression statement must be a function call")
         }
@@ -692,14 +680,14 @@ class ScriptParser(private val source: String) {
 
     private fun parseAssignExpr(): Node {
         val start = peek()
-        val left = parsePipe()
+        val left = parseTernary()
         if (!nlBefore()) {
             val opTok = peek()
             val binOp = COMPOUND_ASSIGN[opTok.text]
             if (binOp != null) {
                 next()
                 val target = toLValue(left, start)
-                val value = parsePipe()
+                val value = parseTernary()
                 return AssignNode(
                     target,
                     BinaryNode(binOp, left, value, opTok.line, opTok.col),
@@ -733,20 +721,6 @@ class ScriptParser(private val source: String) {
             UnpackTarget(names, expr.line, expr.col)
         }
         else -> throw ScriptException("invalid assignment target", tok.line, tok.col)
-    }
-
-    // 管道：x |> f(a) ≡ f(x, a)。左结合，优先级最低（低于赋值、高于三元）。
-    private fun parsePipe(): Node {
-        var left = parseTernary()
-        while (!nlBefore() && match("|>")) {
-            val opTok = tokens[pos - 1]
-            val right = parseTernary()
-            if (right !is CallNode && right !is MethodNode) {
-                throw ScriptException("right side of '|>' must be a function call", right.line, right.col)
-            }
-            left = PipeNode(left, right, opTok.line, opTok.col)
-        }
-        return left
     }
 
     private fun parseTernary(): Node {
@@ -863,7 +837,7 @@ class ScriptParser(private val source: String) {
                     expect("]")
                     expr = IndexNode(expr, idx, expr.line, expr.col)
                 }
-                !nlBefore() && match(".") -> {
+                match(".") -> {
                     val nameTok = expectIdent()
                     if (match("(")) {
                         val args = parseArgs()
