@@ -300,11 +300,7 @@ object ScriptRuntime {
 
         private fun rebuildVarsMap() {
             varsMap.clear()
-            val src = when (phase) {
-                "expr" -> pctx?.vars
-                "toplevel" -> null
-                else -> ctx?.vars
-            }
+            val src = if (phase == "expr") pctx?.vars else ctx?.vars
             if (src != null) for ((k, v) in src) varsMap[k] = v
         }
 
@@ -1196,7 +1192,8 @@ object ScriptRuntime {
                     else -> pscope["it"] = IT_UNSET
                 }
             } else {
-                for ((i, p) in fn.params.withIndex()) pscope[p] = if (i < args.size) args[i] else Undefined
+                if (args.size != fn.params.size) err("lambda expects ${fn.params.size} argument(s), got ${args.size}", n)
+                for ((i, p) in fn.params.withIndex()) pscope[p] = args[i]
             }
             var result: Any? = Undefined
             try {
@@ -1699,7 +1696,6 @@ object ScriptRuntime {
         }
 
         private fun intConvert(v: Any?, n: Node): Any? = when (v) {
-            is Boolean -> if (v) 1.0 else 0.0
             is Double -> jsTrunc(v)
             is Vec2 -> Vec2(jsTrunc(v.x), jsTrunc(v.y))
             is Vec3 -> Vec3(jsTrunc(v.x), jsTrunc(v.y), jsTrunc(v.z))
@@ -1710,7 +1706,6 @@ object ScriptRuntime {
         }
 
         private fun floatConvert(v: Any?, n: Node): Any? = when (v) {
-            is Boolean -> if (v) 1.0 else 0.0
             is Double -> v
             is Vec2 -> Vec2(v.x, v.y)
             is Vec3 -> Vec3(v.x, v.y, v.z)
