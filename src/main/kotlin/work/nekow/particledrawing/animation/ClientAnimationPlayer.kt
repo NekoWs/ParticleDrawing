@@ -2,6 +2,7 @@ package work.nekow.particledrawing.animation
 
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.script.ParticleHost
+import work.nekow.particledrawing.animation.script.ScriptException
 import work.nekow.particledrawing.animation.script.ScriptProgram
 import work.nekow.particledrawing.animation.script.ScriptRuntime
 import work.nekow.particledrawing.animation.script.parseProgram
@@ -159,7 +160,7 @@ class ClientAnimationPlayer(
         uvExprCache.getOrPut(expr) {
             try {
                 ScriptRuntime.ExpressionRunner(expr)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 println("[pdrawc] UV 表达式编译失败：${e.message}")
                 null
             }
@@ -172,7 +173,7 @@ class ClientAnimationPlayer(
         return try {
             val v = runner.eval(ctx)
             if (v.isFinite()) v else fallback
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             println("[pdrawc] UV 表达式求值失败：${e.message}")
             fallback
         }
@@ -211,6 +212,11 @@ class ClientAnimationPlayer(
         var cursorMs = 0.0
         var curMs = 0.0
 
+        companion object {
+            // 与编辑器 generators.js 一致：阻止恶意脚本逐帧无限 spawn 造成内存/渲染 DoS。
+            private const val MAX_FX_PARTICLES = 100_000
+        }
+
         /** 粒子句柄桥接（脚本 this.spawn() / 粒子字段读写 / kill()）。 */
         inner class FxParticleHost(
             override val index: Int,
@@ -234,6 +240,9 @@ class ClientAnimationPlayer(
         }
 
         fun spawn(): ParticleHost {
+            if (particles.size >= MAX_FX_PARTICLES) {
+                throw ScriptException("function object particle limit ($MAX_FX_PARTICLES) exceeded")
+            }
             val serial = spawnSerial++
             val host = FxParticleHost(serial, curMs)
             particles.add(host)
@@ -371,7 +380,7 @@ class ClientAnimationPlayer(
         rt.curMs = fx.st.toDouble()
         ScriptRuntime.runSpawnSetup(program, obj, makeCtx(fx, rt, fx.st.toDouble()))
         rt
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
         println("[pdrawc] 函数对象 ${fx.id} 编译失败：${e.message}")
         null
     }
@@ -389,7 +398,7 @@ class ClientAnimationPlayer(
         rt.objState.rand.a = fx.seed
         try {
             ScriptRuntime.runSpawnSetup(rt.program, rt.objState, makeCtx(fx, rt, fx.st.toDouble()))
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             println("[pdrawc] 函数对象 ${fx.id} setup 求值失败：${e.message}")
         }
     }
@@ -564,7 +573,14 @@ class ClientAnimationPlayer(
 
     /** 循环回卷：把函数对象运行时恢复到循环起点快照，避免重新 setup / 重建粒子。 */
     private fun restoreLoopStart(target: Int) {
-        for (rt in fxRuntimes.values) rt?.restoreForLoopStart(target.toDouble())
+        for (rt in fxRuntimes.values) {
+            rt ?: continue
+            try {
+                rt.restoreForLoopStart(target.toDouble())
+            } catch (e: Throwable) {
+                println("[pdrawc] 函数对象 ${rt.fx.id} 循环回卷恢复失败：${e.message}")
+            }
+        }
     }
 
     private fun usesRandom(fx: FunctionObject): Boolean =
@@ -705,7 +721,11 @@ class ClientAnimationPlayer(
     private fun advanceFunctions(t: Double) {
         for (fx in animation.functions) {
             val rt = fxRuntimes[fx.id] ?: continue
-            advanceFx(fx, rt, t)
+            try {
+                advanceFx(fx, rt, t)
+            } catch (e: Throwable) {
+                println("[pdrawc] 函数对象 ${fx.id} 推进失败：${e.message}")
+            }
         }
     }
 
@@ -713,7 +733,11 @@ class ClientAnimationPlayer(
     private fun reconcileFunctions(t: Double) {
         for (fx in animation.functions) {
             val rt = fxRuntimes[fx.id] ?: continue
-            reconcileFxStates(fx, rt, t, t - fx.st)
+            try {
+                reconcileFxStates(fx, rt, t, t - fx.st)
+            } catch (e: Throwable) {
+                println("[pdrawc] 函数对象 ${fx.id} reconcile 失败：${e.message}")
+            }
         }
     }
 
@@ -791,7 +815,7 @@ class ClientAnimationPlayer(
                 if (rt.program.tick.isNotEmpty()) {
                     try {
                         ScriptRuntime.runTickFrame(rt.program, rt.objState, makeCtx(fx, rt, b))
-                    } catch (e: Exception) {
+                    } catch (e: Throwable) {
                         println("[pdrawc] 函数对象 ${fx.id} tick 求值失败：${e.message}")
                         break
                     }
@@ -810,7 +834,7 @@ class ClientAnimationPlayer(
             } else if (rt.program.process.isNotEmpty()) {
                 try {
                     ScriptRuntime.runProcessFrame(rt.program, rt.objState, makeCtx(fx, rt, t))
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     println("[pdrawc] 函数对象 ${fx.id} process 求值失败：${e.message}")
                 }
             }
@@ -1272,16 +1296,19 @@ class ClientAnimationPlayer(
     }
 
 /** 深拷贝脚本值（global / 粒子自定义字段）：数组递归拷贝；其余值类型（标量/向量/矩阵/函数）视为不可变。 */
-private fun deepCopyScriptValue(v: Any?): Any? = when (v) {
-    is MutableList<*> -> {
-        val out = ArrayList<Any?>(v.size)
-        for (x in v) out.add(deepCopyScriptValue(x))
-        out
+private fun deepCopyScriptValue(v: Any?, depth: Int = 0): Any? {
+    if (depth > 128) throw ScriptException("value nesting too deep")
+    return when (v) {
+        is MutableList<*> -> {
+            val out = ArrayList<Any?>(v.size)
+            for (x in v) out.add(deepCopyScriptValue(x, depth + 1))
+            out
+        }
+        is Map<*, *> -> {
+            val out = HashMap<String, Any?>()
+            for ((k, x) in v) out[k as String] = deepCopyScriptValue(x, depth + 1)
+            out
+        }
+        else -> v
     }
-    is Map<*, *> -> {
-        val out = HashMap<String, Any?>()
-        for ((k, x) in v) out[k as String] = deepCopyScriptValue(x)
-        out
-    }
-    else -> v
 }

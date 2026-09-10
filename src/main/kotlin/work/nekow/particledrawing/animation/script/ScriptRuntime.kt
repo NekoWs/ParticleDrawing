@@ -79,6 +79,9 @@ private fun applySpawnConfig(host: ParticleHost, config: Any?) {
 object ScriptRuntime {
 
     const val TICKS_PER_SEC = 20
+    private const val MAX_TOTAL_LOOP_ITERATIONS = 1_000_000
+    private const val MAX_VALUE_DEPTH = 128
+    private const val MAX_REPEAT_ITERATIONS = 100_000
 
     class ObjectState(
         val globals: MutableMap<String, Any?>,
@@ -273,6 +276,7 @@ object ScriptRuntime {
         private val receiverStack = ArrayList<ParticleValue>()
         private var funcDepth = 0
         private var inFunction = false
+        private var usedIterations = 0
 
         init {
             rebuildVarsMap()
@@ -287,9 +291,20 @@ object ScriptRuntime {
             cs.add(name)
         }
 
+        // 全局迭代预算：所有循环/重复共用，防止嵌套循环把每循环上限相乘放大。
+        private fun guardLoop(n: Node) {
+            if (++usedIterations > MAX_TOTAL_LOOP_ITERATIONS) {
+                err("total loop iteration limit ($MAX_TOTAL_LOOP_ITERATIONS) exceeded", n)
+            }
+        }
+
         private fun rebuildVarsMap() {
             varsMap.clear()
-            val src = if (phase == "expr") pctx?.vars else ctx?.vars
+            val src = when (phase) {
+                "expr" -> pctx?.vars
+                "toplevel" -> null
+                else -> ctx?.vars
+            }
             if (src != null) for ((k, v) in src) varsMap[k] = v
         }
 
@@ -301,6 +316,7 @@ object ScriptRuntime {
             constSets.clear()
             funcDepth = 0
             inFunction = false
+            usedIterations = 0
             topScope.clear()
             scopes.add(topScope)
             constSets.add(null)
@@ -320,6 +336,13 @@ object ScriptRuntime {
             val d = num(v, what, n)
             if (d % 1.0 != 0.0) err("$what requires an integer, got $d", n)
             return d.toInt()
+        }
+
+        // JS `x | 0`：先要求整数（与 expectInt 一致），再按 ToInt32 回绕（与 toInt 的饱和截断不同）。
+        private fun int32(v: Any?, what: String, n: Node): Int {
+            val d = num(v, what, n)
+            if (d % 1.0 != 0.0) err("$what requires an integer, got $d", n)
+            return toInt32(d)
         }
 
         private fun truthy(v: Any?, n: Node): Boolean = when (v) {
@@ -343,6 +366,7 @@ object ScriptRuntime {
                     var iter = 0
                     while (truthy(evalExpr(n.cond), n.cond)) {
                         if (++iter > 100000) err("maximum loop iterations (100000) exceeded", n)
+                        guardLoop(n)
                         try { execStmt(n.body) }
                         catch (f: Flow) {
                             if (f.kind == "break") break
@@ -355,6 +379,7 @@ object ScriptRuntime {
                     var iter = 0
                     do {
                         if (++iter > 100000) err("maximum loop iterations (100000) exceeded", n)
+                        guardLoop(n)
                         try { execStmt(n.body) }
                         catch (f: Flow) {
                             if (f.kind == "break") break
@@ -370,6 +395,7 @@ object ScriptRuntime {
                         var iter = 0
                         while (n.cond == null || truthy(evalExpr(n.cond), n.cond)) {
                             if (++iter > 100000) err("maximum loop iterations (100000) exceeded", n)
+                            guardLoop(n)
                             try { execStmt(n.body) }
                             catch (f: Flow) {
                                 if (f.kind == "break") break
@@ -443,6 +469,7 @@ object ScriptRuntime {
                 var idx = 0
                 for (item in snapshot) {
                     if (++idx > 100000) err("maximum loop iterations (100000) exceeded", n)
+                    guardLoop(n)
                     currentScope()[n.name] = item
                     try { execStmt(n.body) }
                     catch (f: Flow) {
@@ -936,58 +963,83 @@ object ScriptRuntime {
         }
 
         private fun vecArith(op: String, a: Any?, b: Any?, n: Node): Any? {
-            val va = a
-            val vb = b
-            val dim = when { isVec(va) -> vecDim(va!!); isVec(vb) -> vecDim(vb!!); else -> 0 }
-            fun coords(v: Any?): List<Double> = when (v) {
-                is Double -> List(dim) { v }
-                else -> vecComps(v!!)
+            if (isVec(a) && isVec(b)) {
+                val dim = vecDim(a!!)
+                if (vecDim(b!!) != dim) err("vector dimension mismatch", n)
+                val ca = vecComps(a); val cb = vecComps(b)
+                val out = when (op) {
+                    "+" -> ca.zip(cb).map { it.first + it.second }
+                    "-" -> ca.zip(cb).map { it.first - it.second }
+                    "*" -> ca.zip(cb).map { it.first * it.second }
+                    else -> err("operator '$op' not supported for ${typeName(a)} and ${typeName(b)}", n)
+                }
+                return mkVec(dim, out)
             }
-            val ca = if (isVec(va)) vecComps(va!!) else coords(va)
-            val cb = if (isVec(vb)) vecComps(vb!!) else coords(vb)
-            val out = when (op) {
-                "+" -> ca.zip(cb).map { it.first + it.second }
-                "-" -> ca.zip(cb).map { it.first - it.second }
-                "*" -> ca.zip(cb).map { it.first * it.second }
-                "/" -> if (isNum(b)) ca.map { it / (b as Double) } else err("vector division only supports scalar", n)
-                else -> err("unknown vector op '$op'", n)
+            if (isVec(a) && isNum(b)) {
+                val dim = vecDim(a!!)
+                val ca = vecComps(a)
+                val s = b as Double
+                return when (op) {
+                    "*" -> mkVec(dim, ca.map { it * s })
+                    "/" -> { if (s == 0.0) err("division by zero", n); mkVec(dim, ca.map { it / s }) }
+                    else -> err("operator '$op' not supported for ${typeName(a)} and ${typeName(b)}", n)
+                }
             }
-            return mkVec(dim, out)
+            if (isNum(a) && isVec(b)) {
+                val dim = vecDim(b!!)
+                val cb = vecComps(b)
+                val s = a as Double
+                return when (op) {
+                    "*" -> mkVec(dim, cb.map { s * it })
+                    else -> err("operator '$op' not supported for ${typeName(a)} and ${typeName(b)}", n)
+                }
+            }
+            return err("operator '$op' not supported for ${typeName(a)} and ${typeName(b)}", n)
         }
 
         private fun matArith(op: String, a: Any?, b: Any?, n: Node): Any? {
-            // 仅支持 mat * vec / mat * mat / mat * scalar / scalar * mat / mat + mat / mat - mat。
-            if (op == "*") {
-                if (a is Mat3 && b is Vec3) {
-                    val m = a.m
-                    return Vec3(
-                        m[0][0] * b.x + m[0][1] * b.y + m[0][2] * b.z,
-                        m[1][0] * b.x + m[1][1] * b.y + m[1][2] * b.z,
-                        m[2][0] * b.x + m[2][1] * b.y + m[2][2] * b.z,
-                    )
+            when (op) {
+                "*" -> {
+                    if (a is Mat3 && b is Vec3) {
+                        val m = a.m
+                        return Vec3(
+                            m[0][0] * b.x + m[0][1] * b.y + m[0][2] * b.z,
+                            m[1][0] * b.x + m[1][1] * b.y + m[1][2] * b.z,
+                            m[2][0] * b.x + m[2][1] * b.y + m[2][2] * b.z,
+                        )
+                    }
+                    if (a is Mat4 && b is Vec3) {
+                        val m = a.m
+                        val x = m[0][0] * b.x + m[0][1] * b.y + m[0][2] * b.z + m[0][3]
+                        val y = m[1][0] * b.x + m[1][1] * b.y + m[1][2] * b.z + m[1][3]
+                        val z = m[2][0] * b.x + m[2][1] * b.y + m[2][2] * b.z + m[2][3]
+                        return Vec3(x, y, z)
+                    }
+                    if (a is Mat4 && b is Vec4) {
+                        val m = a.m
+                        return Vec4(
+                            m[0][0] * b.x + m[0][1] * b.y + m[0][2] * b.z + m[0][3] * b.w,
+                            m[1][0] * b.x + m[1][1] * b.y + m[1][2] * b.z + m[1][3] * b.w,
+                            m[2][0] * b.x + m[2][1] * b.y + m[2][2] * b.z + m[2][3] * b.w,
+                            m[3][0] * b.x + m[3][1] * b.y + m[3][2] * b.z + m[3][3] * b.w,
+                        )
+                    }
+                    if (a is Mat3 && b is Mat3) return Mat3(matMul(a.m, b.m))
+                    if (a is Mat4 && b is Mat4) return Mat4(matMul(a.m, b.m))
+                    if (a is Mat3 && b is Double) return Mat3(a.m.map { r -> r.map { it * b } })
+                    if (a is Mat4 && b is Double) return Mat4(a.m.map { r -> r.map { it * b } })
+                    if (b is Mat3 && a is Double) return Mat3(b.m.map { r -> r.map { it * a } })
+                    if (b is Mat4 && a is Double) return Mat4(b.m.map { r -> r.map { it * a } })
                 }
-                if (a is Mat4 && b is Vec3) {
-                    val m = a.m
-                    val x = m[0][0] * b.x + m[0][1] * b.y + m[0][2] * b.z + m[0][3]
-                    val y = m[1][0] * b.x + m[1][1] * b.y + m[1][2] * b.z + m[1][3]
-                    val z = m[2][0] * b.x + m[2][1] * b.y + m[2][2] * b.z + m[2][3]
-                    return Vec3(x, y, z)
+                "+", "-" -> {
+                    if (a is Mat3 && b is Mat3) return Mat3(a.m.zip(b.m).map { (ra, rb) -> ra.zip(rb).map { if (op == "+") it.first + it.second else it.first - it.second } })
+                    if (a is Mat4 && b is Mat4) return Mat4(a.m.zip(b.m).map { (ra, rb) -> ra.zip(rb).map { if (op == "+") it.first + it.second else it.first - it.second } })
+                    if ((a is Mat3 && b is Mat4) || (a is Mat4 && b is Mat3)) err("matrix dimension mismatch", n)
                 }
-                if (a is Mat4 && b is Vec4) {
-                    val m = a.m
-                    return Vec4(
-                        m[0][0] * b.x + m[0][1] * b.y + m[0][2] * b.z + m[0][3] * b.w,
-                        m[1][0] * b.x + m[1][1] * b.y + m[1][2] * b.z + m[1][3] * b.w,
-                        m[2][0] * b.x + m[2][1] * b.y + m[2][2] * b.z + m[2][3] * b.w,
-                        m[3][0] * b.x + m[3][1] * b.y + m[3][2] * b.z + m[3][3] * b.w,
-                    )
+                "/" -> {
+                    if (a is Mat3 && b is Double) { if (b == 0.0) err("division by zero", n); return Mat3(a.m.map { r -> r.map { it / b } }) }
+                    if (a is Mat4 && b is Double) { if (b == 0.0) err("division by zero", n); return Mat4(a.m.map { r -> r.map { it / b } }) }
                 }
-                if (a is Mat3 && b is Mat3) return Mat3(matMul(a.m, b.m))
-                if (a is Mat4 && b is Mat4) return Mat4(matMul(a.m, b.m))
-                if (a is Mat3 && b is Double) return Mat3(a.m.map { r -> r.map { it * b } })
-                if (a is Mat4 && b is Double) return Mat4(a.m.map { r -> r.map { it * b } })
-                if (b is Mat3 && a is Double) return Mat3(b.m.map { r -> r.map { it * a } })
-                if (b is Mat4 && a is Double) return Mat4(b.m.map { r -> r.map { it * a } })
             }
             err("unsupported matrix operation '$op'", n)
         }
@@ -997,81 +1049,116 @@ object ScriptRuntime {
             return List(n) { i -> List(n) { j -> (0 until n).sumOf { k -> a[i][k] * b[k][j] } } }
         }
 
-        private fun eqExact(a: Any?, b: Any?): Boolean = when {
-            isUndefined(a) || isUndefined(b) -> isUndefined(a) && isUndefined(b)
-            a is Double && b is Double -> a == b
-            a is Boolean && b is Boolean -> a == b
-            a is Vec2 && b is Vec2 -> a == b
-            a is Vec3 && b is Vec3 -> a == b
-            a is Vec4 && b is Vec4 -> a == b
-            a is Mat3 && b is Mat3 -> a.m == b.m
-            a is Mat4 && b is Mat4 -> a.m == b.m
-            a is MutableList<*> && b is MutableList<*> -> a.size == b.size && a.withIndex().all { (i, v) -> eqExact(v, b[i]) }
-            else -> false
+        private fun eqExact(a: Any?, b: Any?, depth: Int = 0): Boolean {
+            if (depth > MAX_VALUE_DEPTH) throw ScriptException("value nesting too deep")
+            return when {
+                isUndefined(a) || isUndefined(b) -> isUndefined(a) && isUndefined(b)
+                a is Double && b is Double -> a == b
+                a is Boolean && b is Boolean -> a == b
+                a is Vec2 && b is Vec2 -> a == b
+                a is Vec3 && b is Vec3 -> a == b
+                a is Vec4 && b is Vec4 -> a == b
+                a is Mat3 && b is Mat3 -> a.m == b.m
+                a is Mat4 && b is Mat4 -> a.m == b.m
+                a is ColorVal && b is ColorVal -> a == b
+                a is MutableList<*> && b is MutableList<*> -> a.size == b.size && a.withIndex().all { (i, v) -> eqExact(v, b[i], depth + 1) }
+                else -> false
+            }
         }
 
         private fun arrayMethod(arr: MutableList<Any?>, method: String, args: List<Any?>, n: Node): Any? = when (method) {
-            "push" -> { arr.add(args[0]); arr }
-            "insert" -> { val idx = int(args[0], "insert index", n); if (idx < 0 || idx > arr.size) err("insert index $idx out of bounds", n); arr.add(idx, args[1]); arr }
-            "remove" -> { val idx = int(args[0], "remove index", n); if (idx < 0 || idx >= arr.size) err("remove index $idx out of bounds", n); arr.removeAt(idx); arr }
-            "slice" -> {
-                val size = arr.size
-                fun normIdx(x: Int): Int = if (x < 0) (size + x).coerceAtLeast(0) else x.coerceAtMost(size)
-                val s = normIdx(int(args[0], "slice start", n))
-                val e = if (args.size > 1) normIdx(int(args[1], "slice end", n)) else size
-                val from = s.coerceAtMost(e)
-                arr.subList(from, e).toMutableList()
+            "push" -> { if (args.size != 1) err("push expects 1 argument", n); arr.add(args[0]); arr }
+            "insert" -> {
+                if (args.size != 2) err("insert expects 2 arguments", n)
+                val idx = int(args[0], "insert index", n)
+                if (idx < 0 || idx > arr.size) err("insert index $idx out of bounds (size ${arr.size})", n)
+                arr.add(idx, args[1]); arr
             }
-            "size" -> arr.size.toDouble()
+            "remove" -> {
+                if (args.size != 1) err("remove expects 1 argument", n)
+                val idx = int(args[0], "remove index", n)
+                if (idx < 0 || idx >= arr.size) err("remove index $idx out of bounds (size ${arr.size})", n)
+                arr.removeAt(idx); arr
+            }
+            "slice" -> {
+                if (args.size > 2) err("slice expects at most 2 arguments", n)
+                val size = arr.size
+                fun normIdx(x: Double): Int { val k = jsTrunc(x).toInt(); return if (k < 0) (size + k).coerceAtLeast(0) else k.coerceAtMost(size) }
+                val s = if (args.isNotEmpty()) normIdx(num(args[0], "slice start", n)) else 0
+                val e = if (args.size > 1) normIdx(num(args[1], "slice end", n)) else size
+                if (s > e) mutableListOf<Any?>() else arr.subList(s, e).toMutableList()
+            }
+            "size" -> { if (args.isNotEmpty()) err("size expects no arguments", n); arr.size.toDouble() }
             "find" -> {
+                if (args.size != 1) err("find expects 1 argument", n)
                 val v = args[0]
                 arr.indexOfFirst { eqTol(it, v) }.toDouble()
             }
-            "includes" -> arr.any { eqTol(it, args[0]) }
+            "includes" -> { if (args.size != 1) err("includes expects 1 argument", n); arr.any { eqTol(it, args[0]) } }
             "sort" -> {
+                if (args.size > 1) err("sort expects at most 1 argument", n)
                 if (args.isEmpty()) arr.sortWith { x, y -> defaultCompare(x, y, n) }
                 else {
-                    val cmpName = (args[0] as? FuncVal)?.name ?: err("sort comparator must be a function name", n)
-                    arr.sortWith { x, y -> comparatorResult(callUserFunc(program.functions[cmpName] ?: err("function '$cmpName' not found", n), listOf(x, y), n)) }
+                    val cmp = args[0]
+                    if (cmp !is FuncVal && cmp !is LambdaVal) err("sort comparator must be a function, got ${typeName(cmp)}", n)
+                    arr.sortWith { x, y ->
+                        val res = when (cmp) {
+                            is FuncVal -> callUserFunc(program.functions[cmp.name] ?: err("function '${cmp.name}' not found", n), listOf(x, y), n)
+                            else -> callLambda(cmp as LambdaVal, listOf(x, y), n)
+                        }
+                        if (res !is Double) err("comparator function must return a num", n)
+                        if (res > 0.0) 1 else if (res < 0.0) -1 else 0
+                    }
                 }
                 arr
             }
             "unique" -> {
+                if (args.isNotEmpty()) err("unique expects no arguments", n)
                 val out = ArrayList<Any?>()
                 for (v in arr) if (out.none { eqTol(it, v) }) out.add(v)
                 out
             }
-            "reverse" -> { arr.reverse(); arr }
+            "reverse" -> { if (args.isNotEmpty()) err("reverse expects no arguments", n); arr.reverse(); arr }
             else -> err("unknown array method '$method'", n)
         }
 
-        private fun eqTol(a: Any?, b: Any?): Boolean = when {
-            isUndefined(a) || isUndefined(b) -> isUndefined(a) && isUndefined(b)
-            a is Double && b is Double -> abs(a - b) <= 1e-6
-            a is Boolean && b is Boolean -> a == b
-            a is Vec2 && b is Vec2 -> abs(a.x - b.x) <= 1e-6 && abs(a.y - b.y) <= 1e-6
-            a is Vec3 && b is Vec3 -> abs(a.x - b.x) <= 1e-6 && abs(a.y - b.y) <= 1e-6 && abs(a.z - b.z) <= 1e-6
-            a is Vec4 && b is Vec4 -> abs(a.x - b.x) <= 1e-6 && abs(a.y - b.y) <= 1e-6 && abs(a.z - b.z) <= 1e-6 && abs(a.w - b.w) <= 1e-6
-            a is MutableList<*> && b is MutableList<*> -> a.size == b.size && a.withIndex().all { (i, v) -> eqTol(v, b[i]) }
-            else -> false
-        }
-
-        private fun defaultCompare(a: Any?, b: Any?, n: Node): Int {
-            val ta = typeName(a); val tb = typeName(b)
-            if (ta != tb) err("cannot sort mixed types ($ta vs $tb)", n)
-            return when (a) {
-                is Double -> (a as Double).compareTo(b as Double)
-                is Boolean -> a.compareTo(b as Boolean)
-                is Vec2 -> compareValuesBy(a, b as Vec2, { it.x }, { it.y })
-                is Vec3 -> compareValuesBy(a, b as Vec3, { it.x }, { it.y }, { it.z })
-                is Vec4 -> compareValuesBy(a, b as Vec4, { it.x }, { it.y }, { it.z }, { it.w })
-                else -> err("values of type $ta are not sortable", n)
+        private fun eqTol(a: Any?, b: Any?, depth: Int = 0): Boolean {
+            if (depth > MAX_VALUE_DEPTH) throw ScriptException("value nesting too deep")
+            return when {
+                isUndefined(a) || isUndefined(b) -> isUndefined(a) && isUndefined(b)
+                a is Double && b is Double -> abs(a - b) <= 1e-6
+                a is Boolean && b is Boolean -> a == b
+                a is Vec2 && b is Vec2 -> abs(a.x - b.x) <= 1e-6 && abs(a.y - b.y) <= 1e-6
+                a is Vec3 && b is Vec3 -> abs(a.x - b.x) <= 1e-6 && abs(a.y - b.y) <= 1e-6 && abs(a.z - b.z) <= 1e-6
+                a is Vec4 && b is Vec4 -> abs(a.x - b.x) <= 1e-6 && abs(a.y - b.y) <= 1e-6 && abs(a.z - b.z) <= 1e-6 && abs(a.w - b.w) <= 1e-6
+                a is Mat3 && b is Mat3 -> a.m.withIndex().all { (i, row) -> row.withIndex().all { (j, v) -> abs(v - b.m[i][j]) <= 1e-6 } }
+                a is Mat4 && b is Mat4 -> a.m.withIndex().all { (i, row) -> row.withIndex().all { (j, v) -> abs(v - b.m[i][j]) <= 1e-6 } }
+                a is ColorVal && b is ColorVal -> abs(a.r - b.r) <= 1e-6 && abs(a.g - b.g) <= 1e-6 && abs(a.b - b.b) <= 1e-6 && abs(a.a - b.a) <= 1e-6
+                a is MutableList<*> && b is MutableList<*> -> a.size == b.size && a.withIndex().all { (i, v) -> eqTol(v, b[i], depth + 1) }
+                else -> false
             }
         }
 
-        private fun comparatorResult(v: Any?): Int = when (v) {
-            is Double -> v.toInt()
-            else -> throw ScriptException("comparator must return a num")
+        private fun defaultCompare(a: Any?, b: Any?, n: Node, depth: Int = 0): Int {
+            if (depth > MAX_VALUE_DEPTH) throw ScriptException("value nesting too deep")
+            val ta = typeName(a); val tb = typeName(b)
+            if (ta != tb) err("cannot sort mixed types ($ta vs $tb)", n)
+            fun numCmp(x: Double, y: Double): Int = if (x < y) -1 else if (x > y) 1 else 0
+            return when (a) {
+                is Double -> numCmp(a, b as Double)
+                is Boolean -> { val x = if (a) 1 else 0; val y = if (b as Boolean) 1 else 0; if (x < y) -1 else if (x > y) 1 else 0 }
+                is Vec2 -> { val y = b as Vec2; val c = numCmp(a.x, y.x); if (c != 0) c else numCmp(a.y, y.y) }
+                is Vec3 -> { val y = b as Vec3; val c = numCmp(a.x, y.x); if (c != 0) c else { val c2 = numCmp(a.y, y.y); if (c2 != 0) c2 else numCmp(a.z, y.z) } }
+                is Mat3 -> { val y = b as Mat3; for (i in 0 until 3) for (j in 0 until 3) { val c = numCmp(a.m[i][j], y.m[i][j]); if (c != 0) return c }; 0 }
+                is Mat4 -> { val y = b as Mat4; for (i in 0 until 4) for (j in 0 until 4) { val c = numCmp(a.m[i][j], y.m[i][j]); if (c != 0) return c }; 0 }
+                is MutableList<*> -> {
+                    val x = a; val y = b as MutableList<*>
+                    val n2 = minOf(x.size, y.size)
+                    for (i in 0 until n2) { val c = defaultCompare(x[i], y[i], n, depth + 1); if (c != 0) return c }
+                    if (x.size < y.size) -1 else if (x.size > y.size) 1 else 0
+                }
+                else -> err("values of type $ta are not sortable", n)
+            }
         }
 
         private fun callUserFunc(fn: FunctionNode, args: List<Any?>, n: Node): Any? {
@@ -1109,8 +1196,7 @@ object ScriptRuntime {
                     else -> pscope["it"] = IT_UNSET
                 }
             } else {
-                if (args.size != fn.params.size) err("lambda expects ${fn.params.size} argument(s), got ${args.size}", n)
-                for ((i, p) in fn.params.withIndex()) pscope[p] = args[i]
+                for ((i, p) in fn.params.withIndex()) pscope[p] = if (i < args.size) args[i] else Undefined
             }
             var result: Any? = Undefined
             try {
@@ -1184,20 +1270,37 @@ object ScriptRuntime {
             else -> pv.host.fields.containsKey(field)
         }
 
-        private fun whenEqual(a: Any?, b: Any?): Boolean = eqTol(a, b)
+        private fun whenEqual(a: Any?, b: Any?, depth: Int = 0): Boolean {
+            if (depth > MAX_VALUE_DEPTH) throw ScriptException("value nesting too deep")
+            return when {
+                isUndefined(a) || isUndefined(b) -> isUndefined(a) && isUndefined(b)
+                a is Double && b is Double -> abs(a - b) <= 1e-6
+                a is Boolean && b is Boolean -> a == b
+                a is String && b is String -> a == b
+                a is MutableList<*> && b is MutableList<*> -> a.size == b.size && a.withIndex().all { (i, v) -> whenEqual(v, b[i], depth + 1) }
+                else -> eqTol(a, b)
+            }
+        }
 
         private fun vecMethod(v: Any?, method: String, args: List<Any?>, n: Node): Any? {
-            fun argVec(name: String): Any? = args.getOrElse(0) { err("$name expects a vec argument", n) }
+            fun argVec(name: String): Any? {
+                if (args.size != 1) err("$name expects 1 argument", n)
+                return args[0]
+            }
             return when (method) {
-                "normalize" -> { val l = lenVec(v, n); if (l == 0.0) v else scaleVec(v, 1.0 / l, n) }
+                "normalize" -> {
+                    if (args.isNotEmpty()) err("normalize expects no arguments", n)
+                    val l = lenVec(v, n); if (l == 0.0) err("cannot normalize a zero-length vector", n); scaleVec(v, 1.0 / l, n)
+                }
                 "dot" -> dot(v, argVec("dot"), n)
                 "cross" -> {
+                    if (args.size != 1) err("cross expects 1 argument", n)
                     val a = v as? Vec3 ?: err("cross requires vec3", n)
-                    val b = args.getOrElse(0) { null } as? Vec3 ?: err("cross requires vec3", n)
+                    val b = args[0] as? Vec3 ?: err("cross requires vec3", n)
                     Vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x)
                 }
-                "len" -> lenVec(v, n)
-                "len2" -> { val l = lenVec(v, n); l * l }
+                "len" -> { if (args.isNotEmpty()) err("len expects no arguments", n); lenVec(v, n) }
+                "len2" -> { if (args.isNotEmpty()) err("len2 expects no arguments", n); val l = lenVec(v, n); l * l }
                 "dist" -> lenVec(subVec(v, argVec("dist"), n), n)
                 "angleTo" -> {
                     val b = argVec("angleTo")
@@ -1215,10 +1318,13 @@ object ScriptRuntime {
                     val d = (dot(v, nn, n) as Double) * 2
                     subVec(v, scaleVec(nn, d, n), n)
                 }
-                "lerp" -> lerp(v, args.getOrElse(0) { null }, num(args.getOrElse(1) { 0.0 }, "lerp t", n), n)
-                "rotateX" -> rotateVec3X(v, num(args.getOrElse(0) { 0.0 }, "rotateX angle", n), n)
-                "rotateY" -> rotateVec3Y(v, num(args.getOrElse(0) { 0.0 }, "rotateY angle", n), n)
-                "rotateZ" -> rotateVec3Z(v, num(args.getOrElse(0) { 0.0 }, "rotateZ angle", n), n)
+                "lerp" -> {
+                    if (args.size != 2) err("lerp expects 2 arguments", n)
+                    lerp(v, args[0], num(args[1], "lerp t", n), n)
+                }
+                "rotateX" -> { if (args.size != 1) err("rotateX expects 1 argument", n); rotateVec3X(v, num(args[0], "rotateX angle", n), n) }
+                "rotateY" -> { if (args.size != 1) err("rotateY expects 1 argument", n); rotateVec3Y(v, num(args[0], "rotateY angle", n), n) }
+                "rotateZ" -> { if (args.size != 1) err("rotateZ expects 1 argument", n); rotateVec3Z(v, num(args[0], "rotateZ angle", n), n) }
                 "translate" -> {
                     val dim = vecDim(v!!)
                     if (args.size != dim) err("translate expects $dim argument(s), got ${args.size}", n)
@@ -1226,8 +1332,9 @@ object ScriptRuntime {
                     mkVec(dim, vecComps(v).mapIndexed { i, x -> x + c[i] })
                 }
                 "scale" -> {
+                    if (args.size != 1) err("scale expects 1 argument", n)
                     val dim = vecDim(v!!)
-                    val s = args.getOrElse(0) { err("scale expects 1 argument", n) }
+                    val s = args[0]
                     when (s) {
                         is Double -> mkVec(dim, vecComps(v).map { it * s })
                         is Vec2, is Vec3, is Vec4 -> {
@@ -1321,6 +1428,8 @@ object ScriptRuntime {
             val c = jsTrunc(num(count, "repeat", n)).toInt()
             if (c <= 0) return 0.0
             for (i in 0 until c) {
+                if (i >= MAX_REPEAT_ITERATIONS) err("loop iteration limit ($MAX_REPEAT_ITERATIONS) exceeded", n)
+                guardLoop(n)
                 when (fn) {
                     is LambdaVal -> callLambda(fn, listOf(i.toDouble()), n)
                     is FuncVal -> callUserFunc(program.functions[fn.name] ?: err("function '${fn.name}' not found", n), listOf(i.toDouble()), n)
@@ -1430,9 +1539,10 @@ object ScriptRuntime {
                 "norm" -> {
                     val a = int(args[0], "norm", n)
                     val b = int(args[1], "norm", n)
+                    if (a < 0 || b < 0) err("norm requires non-negative integers", n)
                     a.toDouble() / max(b - 1, 1).toDouble()
                 }
-                "hash" -> hash32(int(args[0], "hash", n), int(args[1], "hash", n))
+                "hash" -> hash32(int32(args[0], "hash seed", n), int32(args[1], "hash salt", n))
                 "phases" -> phasesObj(args[0], args[1], n)
                 "repeat" -> repeatFn(args[0], args[1], n)
                 "color" -> ColorVal(num(args[0], "color", n), num(args[1], "color", n), num(args[2], "color", n), num(args[3], "color", n))
@@ -1453,10 +1563,10 @@ object ScriptRuntime {
                 "max" -> max(num(args[0], "max", n), num(args[1], "max", n))
                 "step" -> { val e = num(args[0], "step", n); val x = num(args[1], "step", n); if (x >= e) 1.0 else 0.0 }
                 "smoothstep" -> { val e0 = num(args[0], "smoothstep", n); val e1 = num(args[1], "smoothstep", n); val x = num(args[2], "smoothstep", n); val t = ((x - e0) / (e1 - e0)).coerceIn(0.0, 1.0); t * t * (3 - 2 * t) }
-                "mod" -> { val x = num(args[0], "mod", n); val y = num(args[1], "mod", n); x - y * floor(x / y) }
-                "noise" -> noise3D(num(args[0], "noise", n), num(args[1], "noise", n), num(args[2], "noise", n), if (args.size > 3) int(args[3], "noise seed", n) else seed)
-                "fbm" -> fbm(num(args[0], "fbm", n), num(args[1], "fbm", n), num(args[2], "fbm", n), int(args[3], "fbm octaves", n), if (args.size > 4) int(args[4], "fbm seed", n) else seed)
-                "rand" -> if (args.isEmpty()) objState.rand.next() else RandState(int(args[0], "rand seed", n)).next()
+                "mod" -> { val x = num(args[0], "mod", n); val y = num(args[1], "mod", n); if (y == 0.0) err("mod by zero", n); x - y * floor(x / y) }
+                "noise" -> noise3D(num(args[0], "noise", n), num(args[1], "noise", n), num(args[2], "noise", n), if (args.size > 3) toInt32(num(args[3], "noise seed", n)) else seed)
+                "fbm" -> fbm(num(args[0], "fbm", n), num(args[1], "fbm", n), num(args[2], "fbm", n), jsTrunc(num(args[3], "fbm octaves", n)).toInt(), if (args.size > 4) toInt32(num(args[4], "fbm seed", n)) else seed)
+                "rand" -> if (args.isEmpty()) objState.rand.next() else RandState(toInt32(num(args[0], "rand seed", n))).next()
                 "random" -> kotlin.random.Random.nextDouble()
                 "ease_linear" -> { val a = num(args[0], "ease", n); val b = num(args[1], "ease", n); val t = num(args[2], "ease", n); a + (b - a) * t }
                 "ease_in_out" -> { val a = num(args[0], "ease", n); val b = num(args[1], "ease", n); val t = num(args[2], "ease", n).coerceIn(0.0, 1.0); a + (b - a) * t * t * (3 - 2 * t) }
@@ -1566,50 +1676,74 @@ object ScriptRuntime {
             else -> err("lerp requires two nums or two vectors", n)
         }
 
-        private fun clamp(v: Any?, lo: Any?, hi: Any?, n: Node): Any? = when (v) {
-            is Double -> clampNum(v, num(lo, "clamp lo", n), num(hi, "clamp hi", n))
-            is Vec2 -> Vec2(clampNum(v.x, num(lo, "clamp lo", n), num(hi, "clamp hi", n)), clampNum(v.y, num(lo, "clamp lo", n), num(hi, "clamp hi", n)))
-            is Vec3 -> Vec3(clampNum(v.x, num(lo, "clamp lo", n), num(hi, "clamp hi", n)), clampNum(v.y, num(lo, "clamp lo", n), num(hi, "clamp hi", n)), clampNum(v.z, num(lo, "clamp lo", n), num(hi, "clamp hi", n)))
-            is Vec4 -> Vec4(clampNum(v.x, num(lo, "clamp lo", n), num(hi, "clamp hi", n)), clampNum(v.y, num(lo, "clamp lo", n), num(hi, "clamp hi", n)), clampNum(v.z, num(lo, "clamp lo", n), num(hi, "clamp hi", n)), clampNum(v.w, num(lo, "clamp lo", n), num(hi, "clamp hi", n)))
-            else -> err("clamp requires a scalar or vector", n)
+        private fun clamp(v: Any?, lo: Any?, hi: Any?, n: Node): Any? {
+            if (v is Double) return clampNum(v, num(lo, "clamp lo", n), num(hi, "clamp hi", n))
+            if (isVec(v)) {
+                val dim = vecDim(v!!)
+                val comps = vecComps(v)
+                fun bound(x: Any?, i: Int, label: String): Double = if (isVec(x)) {
+                    if (vecDim(x!!) != dim) err("clamp bound dimension mismatch", n)
+                    vecComps(x)[i]
+                } else num(x, label, n)
+                return mkVec(dim, comps.mapIndexed { i, x -> clampNum(x, bound(lo, i, "clamp lo"), bound(hi, i, "clamp hi")) })
+            }
+            return err("clamp not supported for ${typeName(v)}", n)
         }
 
         private fun mapRange(v: Any?, in1: Any?, in2: Any?, out1: Any?, out2: Any?, clampOut: Boolean, n: Node): Any? {
             val x = num(v, "map_range", n); val a = num(in1, "map_range", n); val b = num(in2, "map_range", n); val c = num(out1, "map_range", n); val d = num(out2, "map_range", n)
-            val t = if (b == a) 0.0 else (x - a) / (b - a)
+            if (b == a) err(if (clampOut) "remap input range is empty" else "map_range input range is empty", n)
+            val t = (x - a) / (b - a)
             val r = c + (d - c) * t
             return if (clampOut) r.coerceIn(min(c, d), max(c, d)) else r
         }
 
         private fun intConvert(v: Any?, n: Node): Any? = when (v) {
+            is Boolean -> if (v) 1.0 else 0.0
             is Double -> jsTrunc(v)
             is Vec2 -> Vec2(jsTrunc(v.x), jsTrunc(v.y))
             is Vec3 -> Vec3(jsTrunc(v.x), jsTrunc(v.y), jsTrunc(v.z))
             is Vec4 -> Vec4(jsTrunc(v.x), jsTrunc(v.y), jsTrunc(v.z), jsTrunc(v.w))
-            else -> err("int requires scalar or vector", n)
+            is Mat3 -> Mat3(v.m.map { r -> r.map { jsTrunc(it) } })
+            is Mat4 -> Mat4(v.m.map { r -> r.map { jsTrunc(it) } })
+            else -> err("int requires scalar, vector or matrix", n)
         }
 
         private fun floatConvert(v: Any?, n: Node): Any? = when (v) {
+            is Boolean -> if (v) 1.0 else 0.0
             is Double -> v
             is Vec2 -> Vec2(v.x, v.y)
             is Vec3 -> Vec3(v.x, v.y, v.z)
             is Vec4 -> Vec4(v.x, v.y, v.z, v.w)
-            else -> err("float requires scalar or vector", n)
+            is Mat3 -> Mat3(v.m.map { r -> r.map { it } })
+            is Mat4 -> Mat4(v.m.map { r -> r.map { it } })
+            else -> err("float requires scalar, vector or matrix", n)
         }
     }
 
     /** JS String(value) 的近似：脚本值格式化（print 用）。 */
-    private fun formatValue(v: Any?): String = when (v) {
-        null -> "null"
-        is Double -> if (v % 1.0 == 0.0 && v.isFinite()) v.toLong().toString() else v.toString()
-        is Boolean -> v.toString()
-        is Vec2 -> "vec2(${v.x}, ${v.y})"
-        is Vec3 -> "vec3(${v.x}, ${v.y}, ${v.z})"
-        is Vec4 -> "vec4(${v.x}, ${v.y}, ${v.z}, ${v.w})"
-        is MutableList<*> -> "[" + v.joinToString(", ") { formatValue(it) } + "]"
-        is ParticleValue -> "particle#${v.host.index}"
-        is ParticleListValue -> "particleList(${v.size})"
-        else -> v.toString()
+    private fun formatValue(v: Any?, depth: Int = 0): String {
+        if (depth > MAX_VALUE_DEPTH) throw ScriptException("value nesting too deep")
+        return when (v) {
+            null -> "null"
+            is Undefined -> "undefined"
+            is Double -> if (v % 1.0 == 0.0 && v.isFinite()) v.toLong().toString() else v.toString()
+            is Boolean -> v.toString()
+            is String -> v
+            is Vec2 -> "vec2(${v.x}, ${v.y})"
+            is Vec3 -> "vec3(${v.x}, ${v.y}, ${v.z})"
+            is Vec4 -> "vec4(${v.x}, ${v.y}, ${v.z}, ${v.w})"
+            is Mat3 -> "mat3(${v.m.joinToString(", ") { row -> "[${row.joinToString(", ")}]" }})"
+            is Mat4 -> "mat4(${v.m.joinToString(", ") { row -> "[${row.joinToString(", ")}]" }})"
+            is MutableList<*> -> "[" + v.joinToString(", ") { formatValue(it, depth + 1) } + "]"
+            is FuncVal -> "func ${v.name}"
+            is LambdaVal -> "lambda(${v.params.joinToString(", ")})"
+            is ColorVal -> "color(${v.r}, ${v.g}, ${v.b}, ${v.a})"
+            is ObjVal -> "{${v.fields.entries.joinToString(", ") { (k, x) -> "$k: ${formatValue(x, depth + 1)}" }}}"
+            is ParticleValue -> "particle#${v.host.index}"
+            is ParticleListValue -> "particleList(${v.size})"
+            else -> v.toString()
+        }
     }
 
     private val CONSTANTS = mapOf(

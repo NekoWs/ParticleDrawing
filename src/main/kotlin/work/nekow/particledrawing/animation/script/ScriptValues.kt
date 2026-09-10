@@ -153,8 +153,8 @@ fun toInt32(x: Double): Int {
     return (if (u >= 2147483648L) u - 4294967296L else u).toInt()
 }
 
+// JS Math.max(0, Math.min(1, x))：NaN 原样透传（与编辑器一致）。
 fun clamp01(x: Double): Double = when {
-    x.isNaN() -> 0.0
     x < 0.0 -> 0.0
     x > 1.0 -> 1.0
     else -> x

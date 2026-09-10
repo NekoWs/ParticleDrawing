@@ -303,6 +303,9 @@ private val COMPOUND_ASSIGN = mapOf("+=" to "+", "-=" to "-", "*=" to "*", "/=" 
 
 private const val CTX_NAME = "this"
 
+// 表达式/语句嵌套深度上限：与编辑器 parser.js 一致，超深嵌套在解析期主动报错，避免 StackOverflowError。
+private const val MAX_PARSE_DEPTH = 512
+
 class ScriptParser(private val source: String) {
     private val tokens = tokenize(source)
     private var pos = 0
@@ -310,6 +313,7 @@ class ScriptParser(private val source: String) {
     private var loopDepth = 0
     private var allowBareExpr = 0 // >0：lambda 体内允许裸表达式语句
     private var lambdaDepth = 0 // >0：lambda 体内允许 return
+    private var nestDepth = 0
 
     private fun peek(offset: Int = 0): Token = tokens[minOf(pos + offset, tokens.size - 1)]
     private fun next(): Token {
@@ -475,26 +479,35 @@ class ScriptParser(private val source: String) {
     }
 
     private fun parseStatement(): Node {
-        val tok = peek()
-
-        if (tok.type == TokenType.PUNCT && tok.text == "{") return parseBlock()
-
-        if (tok.type == TokenType.IDENT) {
-            when (tok.text) {
-                "if" -> return parseIf()
-                "while" -> return parseWhile()
-                "do" -> return parseDoWhile()
-                "for" -> return parseFor()
-                "break" -> return parseBreak(tok)
-                "continue" -> return parseContinue(tok)
-                "return" -> return parseReturn(tok)
-                "let" -> return parseDeclare(tok, "let")
-                "const" -> return parseDeclare(tok, "const")
-                "when" -> return parseWhenStmt()
-            }
+        nestDepth++
+        if (nestDepth > MAX_PARSE_DEPTH) {
+            nestDepth--
+            errorAt(peek(), "expression nesting too deep")
         }
+        try {
+            val tok = peek()
 
-        return parseAssignOrExprStatement()
+            if (tok.type == TokenType.PUNCT && tok.text == "{") return parseBlock()
+
+            if (tok.type == TokenType.IDENT) {
+                when (tok.text) {
+                    "if" -> return parseIf()
+                    "while" -> return parseWhile()
+                    "do" -> return parseDoWhile()
+                    "for" -> return parseFor()
+                    "break" -> return parseBreak(tok)
+                    "continue" -> return parseContinue(tok)
+                    "return" -> return parseReturn(tok)
+                    "let" -> return parseDeclare(tok, "let")
+                    "const" -> return parseDeclare(tok, "const")
+                    "when" -> return parseWhenStmt()
+                }
+            }
+
+            return parseAssignOrExprStatement()
+        } finally {
+            nestDepth--
+        }
     }
 
     private fun parseIf(): Node {
@@ -724,15 +737,24 @@ class ScriptParser(private val source: String) {
     }
 
     private fun parseTernary(): Node {
-        val cond = parseOr()
-        if (match("?")) {
-            val qTok = tokens[pos - 1]
-            val thenExpr = parseTernary()
-            expect(":")
-            val elseExpr = parseTernary()
-            return TernaryNode(cond, thenExpr, elseExpr, qTok.line, qTok.col)
+        nestDepth++
+        if (nestDepth > MAX_PARSE_DEPTH) {
+            nestDepth--
+            errorAt(peek(), "expression nesting too deep")
         }
-        return cond
+        try {
+            val cond = parseOr()
+            if (match("?")) {
+                val qTok = tokens[pos - 1]
+                val thenExpr = parseTernary()
+                expect(":")
+                val elseExpr = parseTernary()
+                return TernaryNode(cond, thenExpr, elseExpr, qTok.line, qTok.col)
+            }
+            return cond
+        } finally {
+            nestDepth--
+        }
     }
 
     private fun parseOr(): Node {

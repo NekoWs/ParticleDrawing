@@ -30,6 +30,9 @@ private val GRAD3 = arrayOf(
 private const val SIMPLEX_F3 = 1.0 / 3.0
 private const val SIMPLEX_G3 = 1.0 / 6.0
 
+// 与编辑器 script-lang.js 一致：octaves 上限防止恶意脚本传超大值造成逐 octave 无限循环。
+private const val MAX_FBM_OCTAVES = 64
+
 private class Permutation(val perm: IntArray, val permMod12: IntArray)
 
 private val simplexCache = HashMap<Int, Permutation>()
@@ -133,6 +136,7 @@ private fun doubleToLow8(x: Double): Int = toInt32(x) and 255
 /** 分形布朗运动：lacunarity=2.0、gain=0.5，归一化到 [-1,1]（与 JS fbm 一致）。 */
 fun fbm(x: Double, y: Double, z: Double, octaves: Int, seed: Int): Double {
     if (octaves < 1) throw ScriptException("fbm octaves must be at least 1")
+    if (octaves > MAX_FBM_OCTAVES) throw ScriptException("fbm octaves must be at most $MAX_FBM_OCTAVES")
     var sum = 0.0
     var amp = 1.0
     var ampSum = 0.0
