@@ -17,7 +17,8 @@ class ParticleAnimation(
     val texData: Map<String, ByteArray> = emptyMap(),
     val groupSpinSpace: Map<String, Boolean> = emptyMap(),
     val groupRotSpace: Map<String, Boolean> = emptyMap(),
-    val cameras: List<AnimCamera> = emptyList()
+    val cameras: List<AnimCamera> = emptyList(),
+    val texts: List<TextObject> = emptyList()
 )
 
 // 函数对象：公式代码块 + 变量，客户端实时求值生成派生粒子。
@@ -93,6 +94,37 @@ class AnimCamera(
     val rotLocal: Boolean = true
 )
 
+// 文字对象（.pdrawc texts section，v15）：编辑器像素文字生成器的源记录，粒子本体已按普通粒子烘焙，
+// 播放端不做光栅化；脚本经 this.get(id) 只读访问（chars/每字符粒子列表）。
+class TextObject(
+    val id: String,
+    val name: String,
+    val text: String,
+    val font: String,
+    val fontSize: Int,
+    val weight: String,
+    val italic: Boolean,
+    val color: Color,
+    val strokeColor: Color?,
+    val strokeWidth: Int,
+    val align: String,
+    val lineHeight: Double,
+    val letterSpacing: Double,
+    val st: Int,
+    val life: Int,
+    val chars: List<TextChar>
+)
+
+// 单个字符：index 文本序号（不含换行）、code Unicode 码点、pos 字符盒中心世界坐标、
+// size 字符盒世界尺寸、particles 该字符覆盖的粒子 id（可为空）。
+class TextChar(
+    val index: Int,
+    val code: Int,
+    val pos: Vec3,
+    val size: DoubleArray,
+    val particles: List<String>
+)
+
 // 动画时间轴长度（毫秒，与编辑器 maxMs 一致）：轨道最大关键帧毫秒、粒子 st/life 上界、函数对象 st+extent。
 // 服务端与客户端共用，保证进度口径一致。
 fun ParticleAnimation.timelineLength(): Int {
@@ -108,6 +140,10 @@ fun ParticleAnimation.timelineLength(): Int {
             if (kfMax > extent) extent = kfMax
         }
         if (fx.st + extent > max) max = fx.st + extent
+    }
+    for (tx in texts) {
+        if (tx.st > max) max = tx.st.toDouble()
+        if (tx.life >= 0 && tx.st + tx.life > max) max = (tx.st + tx.life).toDouble()
     }
     return max.toInt()
 }

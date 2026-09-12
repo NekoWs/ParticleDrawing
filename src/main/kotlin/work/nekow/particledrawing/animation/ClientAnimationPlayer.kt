@@ -5,6 +5,7 @@ import work.nekow.particledrawing.animation.script.ParticleHost
 import work.nekow.particledrawing.animation.script.ScriptException
 import work.nekow.particledrawing.animation.script.ScriptProgram
 import work.nekow.particledrawing.animation.script.ScriptRuntime
+import work.nekow.particledrawing.animation.script.TextValue
 import work.nekow.particledrawing.animation.script.parseProgram
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.util.rotateAround
@@ -414,6 +415,10 @@ class ClientAnimationPlayer(
             print = { line -> println("[pdrawc:${fx.id}] $line") },
             st = fx.st.toDouble(),
             maxMs = maxMs.toDouble(),
+            get = { name ->
+                animation.texts.firstOrNull { it.name == name }?.let { TextValue(it) }
+                    ?: throw ScriptException("unknown asset '$name'")
+            },
         )
 
     private fun buildTrackIndex(): Map<TrackPr, Map<String, AnimTrack>> {

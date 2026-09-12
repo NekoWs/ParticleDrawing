@@ -10,6 +10,8 @@ import work.nekow.particledrawing.animation.Entrance
 import work.nekow.particledrawing.animation.FunctionObject
 import work.nekow.particledrawing.animation.FunctionVar
 import work.nekow.particledrawing.animation.ParticleAnimation
+import work.nekow.particledrawing.animation.TextChar
+import work.nekow.particledrawing.animation.TextObject
 import work.nekow.particledrawing.animation.TrackPr
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.animation.script.Keyframe
@@ -20,12 +22,12 @@ import work.nekow.particledrawing.core.easing.EasingType
  * 代码生成 [ParticleAnimation] 的网络编解码（手写二进制，与 .pdrawc 无关，不签名）。
  *
  * 布局：version varint + loop + particles + tracks + groups + functions + textures +
- * groupUV + texData + groupSpinSpace + groupRotSpace + cameras。
+ * groupUV + texData + groupSpinSpace + groupRotSpace + cameras + texts。
  * 客户端按同一版本号解析；版本不符抛异常拒绝播放。
  */
 internal object ParticleAnimationCodec {
 
-    const val VERSION = 5
+    const val VERSION = 6
 
     fun write(buf: FriendlyByteBuf, anim: ParticleAnimation) {
         buf.writeVarInt(VERSION)
@@ -68,6 +70,9 @@ internal object ParticleAnimationCodec {
 
         buf.writeVarInt(anim.cameras.size)
         for (cam in anim.cameras) writeCamera(buf, cam)
+
+        buf.writeVarInt(anim.texts.size)
+        for (tx in anim.texts) writeText(buf, tx)
     }
 
     fun read(buf: FriendlyByteBuf): ParticleAnimation {
@@ -123,9 +128,13 @@ internal object ParticleAnimationCodec {
         val cameras = ArrayList<AnimCamera>(camCount)
         repeat(camCount) { cameras.add(readCamera(buf)) }
 
+        val textCount = buf.readVarInt()
+        val texts = ArrayList<TextObject>(textCount)
+        repeat(textCount) { texts.add(readText(buf)) }
+
         return ParticleAnimation(
             loop, particles, tracks, groups, functions,
-            textures, groupUV, texData, groupSpinSpace, groupRotSpace, cameras,
+            textures, groupUV, texData, groupSpinSpace, groupRotSpace, cameras, texts,
         )
     }
 
@@ -278,6 +287,83 @@ internal object ParticleAnimationCodec {
         val rotLocal = buf.readBoolean()
         return AnimCamera(id, name, pos, target, roll, fov, rotLocal)
     }
+
+    private fun writeText(buf: FriendlyByteBuf, tx: TextObject) {
+        buf.writeUtf(tx.id)
+        buf.writeUtf(tx.name)
+        buf.writeUtf(tx.text)
+        buf.writeUtf(tx.font)
+        buf.writeVarInt(tx.fontSize)
+        buf.writeUtf(tx.weight)
+        buf.writeBoolean(tx.italic)
+        buf.writeFloat(tx.color.r)
+        buf.writeFloat(tx.color.g)
+        buf.writeFloat(tx.color.b)
+        buf.writeFloat(tx.color.a)
+        writeNullableColor(buf, tx.strokeColor)
+        buf.writeVarInt(tx.strokeWidth)
+        buf.writeUtf(tx.align)
+        buf.writeDouble(tx.lineHeight)
+        buf.writeDouble(tx.letterSpacing)
+        buf.writeVarInt(tx.st)
+        buf.writeVarInt(tx.life)
+        buf.writeVarInt(tx.chars.size)
+        for (c in tx.chars) {
+            buf.writeVarInt(c.index)
+            buf.writeVarInt(c.code)
+            buf.writeDouble(c.pos.x)
+            buf.writeDouble(c.pos.y)
+            buf.writeDouble(c.pos.z)
+            buf.writeDouble(c.size[0])
+            buf.writeDouble(c.size[1])
+            buf.writeVarInt(c.particles.size)
+            for (id in c.particles) buf.writeUtf(id)
+        }
+    }
+
+    private fun readText(buf: FriendlyByteBuf): TextObject {
+        val id = buf.readUtf()
+        val name = buf.readUtf()
+        val text = buf.readUtf()
+        val font = buf.readUtf()
+        val fontSize = buf.readVarInt()
+        val weight = buf.readUtf()
+        val italic = buf.readBoolean()
+        val color = Color.of(buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat())
+        val strokeColor = readNullableColor(buf)
+        val strokeWidth = buf.readVarInt()
+        val align = buf.readUtf()
+        val lineHeight = buf.readDouble()
+        val letterSpacing = buf.readDouble()
+        val st = buf.readVarInt()
+        val life = buf.readVarInt()
+        val charCount = buf.readVarInt()
+        val chars = ArrayList<TextChar>(charCount)
+        repeat(charCount) {
+            val index = buf.readVarInt()
+            val code = buf.readVarInt()
+            val pos = Vec3(buf.readDouble(), buf.readDouble(), buf.readDouble())
+            val size = doubleArrayOf(buf.readDouble(), buf.readDouble())
+            val pn = buf.readVarInt()
+            val ids = ArrayList<String>(pn)
+            repeat(pn) { ids.add(buf.readUtf()) }
+            chars.add(TextChar(index, code, pos, size, ids))
+        }
+        return TextObject(id, name, text, font, fontSize, weight, italic, color, strokeColor, strokeWidth, align, lineHeight, letterSpacing, st, life, chars)
+    }
+
+    private fun writeNullableColor(buf: FriendlyByteBuf, c: Color?) {
+        buf.writeBoolean(c != null)
+        if (c != null) {
+            buf.writeFloat(c.r)
+            buf.writeFloat(c.g)
+            buf.writeFloat(c.b)
+            buf.writeFloat(c.a)
+        }
+    }
+
+    private fun readNullableColor(buf: FriendlyByteBuf): Color? =
+        if (buf.readBoolean()) Color.of(buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat()) else null
 
     private fun writeUV(buf: FriendlyByteBuf, uv: UvData) {
         writeNullableString(buf, uv.texture)

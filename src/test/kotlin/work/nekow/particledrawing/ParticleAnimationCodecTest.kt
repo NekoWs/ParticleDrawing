@@ -11,6 +11,8 @@ import work.nekow.particledrawing.animation.Entrance
 import work.nekow.particledrawing.animation.FunctionObject
 import work.nekow.particledrawing.animation.FunctionVar
 import work.nekow.particledrawing.animation.ParticleAnimation
+import work.nekow.particledrawing.animation.TextChar
+import work.nekow.particledrawing.animation.TextObject
 import work.nekow.particledrawing.animation.TrackPr
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.animation.script.Keyframe
@@ -77,6 +79,18 @@ class ParticleAnimationCodecTest {
             frameSync = true,
         )
         val cam = AnimCamera("cam1", "Cam", doubleArrayOf(0.0, 10.0, 0.0), doubleArrayOf(0.0, 0.0, 0.0), 0.0, 70.0, true)
+        val text = TextObject(
+            id = "txt1", name = "标题", text = "AB\n中", font = "\"Press Start 2P\", monospace",
+            fontSize = 24, weight = "bold", italic = true,
+            color = Color.of(1f, 0.5f, 0f, 0.8f),
+            strokeColor = Color.of(0f, 0f, 0f, 1f), strokeWidth = 2,
+            align = "center", lineHeight = 1.2, letterSpacing = 1.0,
+            st = 5, life = 40,
+            chars = listOf(
+                TextChar(0, 65, Vec3(0.1, 0.0, -0.2), doubleArrayOf(0.4, 0.4), listOf("p0")),
+                TextChar(1, 66, Vec3(0.5, 0.0, -0.2), doubleArrayOf(0.4, 0.4), emptyList()),
+            ),
+        )
         return ParticleAnimation(
             loop = true,
             particles = listOf(particle),
@@ -91,6 +105,7 @@ class ParticleAnimationCodecTest {
             groupSpinSpace = linkedMapOf("g0" to true),
             groupRotSpace = linkedMapOf("g0" to false),
             cameras = listOf(cam),
+            texts = listOf(text),
         )
     }
 
@@ -167,6 +182,25 @@ class ParticleAnimationCodecTest {
         assertTrue(cam.rotLocal)
 
         assertContentEquals(byteArrayOf(1, 2, 3, 4), decoded.texData["tex"] ?: ByteArray(0))
+
+        assertEquals(1, decoded.texts.size)
+        val tx = decoded.texts[0]
+        assertEquals("txt1", tx.id)
+        assertEquals("标题", tx.name)
+        assertEquals("AB\n中", tx.text)
+        assertEquals(24, tx.fontSize)
+        assertEquals("bold", tx.weight)
+        assertTrue(tx.italic)
+        assertEquals(1f, tx.color.r, 1e-6f)
+        assertEquals(2, tx.strokeWidth)
+        assertEquals("center", tx.align)
+        assertEquals(5, tx.st)
+        assertEquals(40, tx.life)
+        assertEquals(2, tx.chars.size)
+        assertEquals(65, tx.chars[0].code)
+        assertEquals(Vec3(0.1, 0.0, -0.2), tx.chars[0].pos)
+        assertEquals(listOf("p0"), tx.chars[0].particles)
+        assertTrue(tx.chars[1].particles.isEmpty())
     }
 
     @Test
@@ -197,6 +231,7 @@ class ParticleAnimationCodecTest {
         assertTrue(decoded.tracks.isEmpty())
         assertTrue(decoded.functions.isEmpty())
         assertTrue(decoded.cameras.isEmpty())
+        assertTrue(decoded.texts.isEmpty())
     }
 
     @Test

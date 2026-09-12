@@ -1,9 +1,15 @@
 package work.nekow.particledrawing
 
+import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.animation.TextChar
+import work.nekow.particledrawing.animation.TextObject
 import work.nekow.particledrawing.animation.script.ParticleHost
 import work.nekow.particledrawing.animation.script.ScriptException
 import work.nekow.particledrawing.animation.script.ScriptRuntime
+import work.nekow.particledrawing.animation.script.TextValue
+import work.nekow.particledrawing.animation.script.Vec2
 import work.nekow.particledrawing.animation.script.parseProgram
+import work.nekow.particledrawing.api.Color
 import kotlin.math.sin
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -465,5 +471,52 @@ class ScriptRuntimeConformanceTest {
         assertEquals(0.5, host.pos[1], 1e-12)
         assertEquals(1.0, host.pos[2], 1e-12)
         assertEquals(1.0, host.scale, 1e-12)
+    }
+
+    @Test
+    fun textAssetGetReadOnly() {
+        val program = parseProgram(
+            "let out = 0\nfunc process() { let t = this.get(\"title\"); out = [t.name, t.text, t.st, t.chars.size(), t.chars[0].index, t.chars[0].code, t.chars[0].pos, t.chars[0].size, t.chars[0].particles]; }",
+        )
+        val obj = ScriptRuntime.createObjectState(0)
+        val particles = ArrayList<ParticleHost>()
+        val text = TextObject(
+            id = "txt1", name = "title", text = "Hi", font = "monospace", fontSize = 24, weight = "normal",
+            italic = false, color = Color.WHITE, strokeColor = null, strokeWidth = 0,
+            align = "left", lineHeight = 1.0, letterSpacing = 0.0, st = 3, life = 20,
+            chars = listOf(TextChar(0, 72, Vec3(1.0, 2.0, 3.0), doubleArrayOf(0.4, 0.6), listOf("p0"))),
+        )
+        val ctx = ScriptRuntime.ScriptCtx(
+            t = 0.0, duration = 100.0, vars = emptyMap(), particles = particles,
+            spawn = { error("no spawn") },
+            get = { name -> if (name == "title") TextValue(text) else throw ScriptException("unknown asset '$name'") },
+        )
+        ScriptRuntime.runTopLevel(program, obj, ctx)
+        ScriptRuntime.runProcessFrame(program, obj, ctx)
+        val out = obj.globals["out"] as MutableList<*>
+        assertEquals("title", out[0])
+        assertEquals("Hi", out[1])
+        assertEquals(3.0, out[2])
+        assertEquals(1.0, out[3])
+        assertEquals(0.0, out[4])
+        assertEquals(72.0, out[5])
+        assertEquals(work.nekow.particledrawing.animation.script.Vec3(1.0, 2.0, 3.0), out[6])
+        assertEquals(Vec2(0.4, 0.6), out[7])
+        assertEquals(listOf("p0"), out[8])
+    }
+
+    @Test
+    fun textAssetUnknownThrows() {
+        val program = parseProgram("func process() { let t = this.get(\"nope\"); }")
+        val obj = ScriptRuntime.createObjectState(0)
+        val ctx = ScriptRuntime.ScriptCtx(
+            t = 0.0, duration = 100.0, vars = emptyMap(), particles = ArrayList(),
+            spawn = { error("no spawn") },
+            get = { throw ScriptException("unknown asset") },
+        )
+        ScriptRuntime.runTopLevel(program, obj, ctx)
+        assertFailsWith<ScriptException> {
+            ScriptRuntime.runProcessFrame(program, obj, ctx)
+        }
     }
 }

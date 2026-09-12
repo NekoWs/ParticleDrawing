@@ -153,6 +153,7 @@ object ScriptRuntime {
         var st: Double = 0.0,
         var maxMs: Double = 0.0,
         val spawnConfig: (Any?) -> ParticleHost = { cfg -> spawn().also { if (cfg != null) applySpawnConfig(it, cfg) } },
+        val get: (String) -> Any? = { throw ScriptException("this.get is not available here") },
     )
 
     fun createObjectState(seed: Int): ObjectState = ObjectState(HashMap(), RandState(seed), seed)
@@ -657,6 +658,26 @@ object ScriptRuntime {
             }
         }
 
+        // —— 文字对象句柄读取（只读，与编辑器 script-lang.js 的 textGetField 一致）——
+
+        private fun textGetField(v: TextValue, field: String, n: Node): Any? = when (field) {
+            "name" -> v.obj.name
+            "text" -> v.obj.text
+            "st" -> v.obj.st.toDouble()
+            "life" -> v.obj.life.toDouble()
+            "chars" -> v.obj.chars.mapTo(ArrayList()) { TextCharValue(it) }
+            else -> err("text has no field '.$field'", n)
+        }
+
+        private fun textCharGetField(v: TextCharValue, field: String, n: Node): Any? = when (field) {
+            "index" -> v.ch.index.toDouble()
+            "code" -> v.ch.code.toDouble()
+            "pos" -> Vec3(v.ch.pos.x, v.ch.pos.y, v.ch.pos.z)
+            "size" -> Vec2(v.ch.size[0], v.ch.size[1])
+            "particles" -> v.ch.particles.toMutableList()
+            else -> err("char has no field '.$field'", n)
+        }
+
         private fun vecFieldValues(value: Any?, len: Int, what: String, n: Node): List<Double> {
             if (value != null && isVec(value)) {
                 if (vecDim(value) != len) {
@@ -819,6 +840,8 @@ object ScriptRuntime {
             val obj = evalExpr(n.obj)
             if (obj is ParticleValue) return particleGetField(obj, n.field, n)
             if (obj is ObjVal) return obj.fields[n.field] ?: Undefined
+            if (obj is TextValue) return textGetField(obj, n.field, n)
+            if (obj is TextCharValue) return textCharGetField(obj, n.field, n)
             err("member '.${n.field}' requires a particle or object, got ${typeName(obj)}", n)
         }
 
@@ -849,6 +872,18 @@ object ScriptRuntime {
         }
 
         private fun evalMethod(n: MethodNode): Any? {
+            // this.get(资产名)：取工程级资产句柄（文字对象），只读。
+            if (n.obj is VarNode && n.obj.name == CTX_NAME && n.method == "get") {
+                if (n.args.size != 1) err("this.get expects exactly 1 argument", n)
+                val c = ctx ?: err("this.get is not available here", n)
+                val name = evalExpr(n.args[0])
+                if (name !is String) err("this.get expects an asset name string, got ${typeName(name)}", n)
+                return try {
+                    c.get(name)
+                } catch (e: ScriptException) {
+                    err(e.message ?: "asset lookup failed", n)
+                }
+            }
             // this.spawn(config?)：config 为可选 JSON 对象。
             if (n.obj is VarNode && n.obj.name == CTX_NAME && n.method == "spawn") {
                 val c = ctx ?: err("this.spawn is not available here", n)
@@ -1737,6 +1772,8 @@ object ScriptRuntime {
             is ObjVal -> "{${v.fields.entries.joinToString(", ") { (k, x) -> "$k: ${formatValue(x, depth + 1)}" }}}"
             is ParticleValue -> "particle#${v.host.index}"
             is ParticleListValue -> "particleList(${v.size})"
+            is TextValue -> "text(${v.obj.name})"
+            is TextCharValue -> "char(${v.ch.index})"
             else -> v.toString()
         }
     }

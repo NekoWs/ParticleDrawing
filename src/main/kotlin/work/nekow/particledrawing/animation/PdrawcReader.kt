@@ -25,7 +25,7 @@ import java.util.zip.InflaterInputStream
 object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
-    private const val VERSION = 14    // v14：函数对象 frameSync（帧级同步开关）
+    private const val VERSION = 15    // v15：新增文字对象 texts section（生成器源记录）
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 
@@ -172,6 +172,51 @@ object PdrawcReader {
             cameras.add(AnimCamera(id, name, pos, target, roll, fov, (flags and 1) != 0))
         }
 
+        // 文字对象（v15 新增）：生成器源记录，粒子本体已按普通粒子烘焙；chars 引用粒子索引。
+        val TEXT_ALIGNS = arrayOf("left", "center", "right")
+        val textCount = br.varint()
+        val texts = ArrayList<TextObject>(textCount)
+        for (i in 0 until textCount) {
+            val id = br.str()
+            val name = br.str()
+            val text = br.str()
+            val font = br.str()
+            val fontSize = br.varint()
+            val weight = br.str()
+            val color = Color.of(br.u8() / 255f, br.u8() / 255f, br.u8() / 255f, br.u8() / 255f)
+            val flags = br.u8()
+            val italic = (flags and 1) != 0
+            var strokeColor: Color? = null
+            var strokeWidth = 0
+            if (flags and 2 != 0) {
+                strokeColor = Color.of(br.u8() / 255f, br.u8() / 255f, br.u8() / 255f, br.u8() / 255f)
+                strokeWidth = br.varint()
+            }
+            val alignIdx = br.u8()
+            val align = if (alignIdx in TEXT_ALIGNS.indices) TEXT_ALIGNS[alignIdx] else "left"
+            val lineHeight = br.f32().toDouble()
+            val letterSpacing = br.f32().toDouble()
+            val st = br.varint()
+            val life = if (flags and 4 != 0) br.varint() else -1
+            val charCount = br.varint()
+            val chars = ArrayList<TextChar>(charCount)
+            for (j in 0 until charCount) {
+                val index = br.varint()
+                val code = br.varint()
+                val pos = Vec3(br.f32().toDouble(), br.f32().toDouble(), br.f32().toDouble())
+                val size = doubleArrayOf(br.f32().toDouble(), br.f32().toDouble())
+                val pn = br.varint()
+                val ids = ArrayList<String>(pn)
+                for (k in 0 until pn) {
+                    val pIdx = br.varint()
+                    if (pIdx !in particles.indices) throw IllegalArgumentException("pdrawc 文字粒子索引越界: $pIdx")
+                    ids.add("p$pIdx")
+                }
+                chars.add(TextChar(index, code, pos, size, ids))
+            }
+            texts.add(TextObject(id, name, text, font, fontSize, weight, italic, color, strokeColor, strokeWidth, align, lineHeight, letterSpacing, st, life, chars))
+        }
+
         // 轨道
         val trackCount = br.varint()
         val tracks = ArrayList<AnimTrack>(trackCount)
@@ -201,7 +246,7 @@ object PdrawcReader {
 
         if (br.remaining() != 0) throw IllegalArgumentException("pdrawc 存在未解析的尾随字节")
 
-        return ParticleAnimation(loop, particles, tracks, groups, functions, texNames, groupUV, texData, groupSpinSpace, groupRotSpace, cameras)
+        return ParticleAnimation(loop, particles, tracks, groups, functions, texNames, groupUV, texData, groupSpinSpace, groupRotSpace, cameras, texts)
     }
 
     /** RFC 8032 Ed25519 公钥（32 字节压缩点）→ JDK [EdECPoint]。 */
