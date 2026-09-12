@@ -37,6 +37,8 @@ object ClientAnimationManager {
         val clock: PlaybackClock? = null,
         // 生效的 loop（特效可覆盖动画自身 loop）
         val loop: Boolean = true,
+        // 音频资产 → 播放器（按资产 id 索引；播放头进出区间时出声/暂停）
+        val audioPlayers: MutableMap<String, AudioStreamPlayer> = HashMap(),
     )
 
     private val entries = ConcurrentHashMap<UUID, Entry>()
@@ -147,6 +149,17 @@ object ClientAnimationManager {
             ClientParticleEngine.instance()?.let { spawnState(it, uuid, state) }
         }
         entries[animationId] = Entry(player, uuids, animation, origin, liveIds)
+        initAudioPlayers(animationId, animation)
+    }
+
+    /** 为一次播放的音频资产建立播放器（解码失败/无资产时为空）。 */
+    private fun initAudioPlayers(animId: UUID, animation: ParticleAnimation) {
+        val entry = entries[animId] ?: return
+        for (a in animation.audioAssets) {
+            val ap = AudioStreamPlayer(a)
+            if (ap.available()) entry.audioPlayers[a.id] = ap
+            else ap.close()
+        }
     }
 
     // —— 特效 API（按 key 播放 + 锚点 + 时钟） ——
@@ -274,6 +287,7 @@ object ClientAnimationManager {
             ClientParticleEngine.instance()?.let { spawnState(it, uuid, state, resolver) }
         }
         entries[playbackId] = Entry(player, uuids, animation, Vec3.ZERO, liveIds, resolver, clock, loop)
+        initAudioPlayers(playbackId, animation)
     }
 
     /**
@@ -327,6 +341,7 @@ object ClientAnimationManager {
                 entry.anchor?.resolveEntity(level)
                 // 静态动画（粒子状态恒定）跳过每刻的渲染同步；锚定播放即使静态也必须同步（锚点会动）
                 if (!entry.player.isStatic() || entry.anchor != null) sync(entry)
+                syncAudio(entry)
             } else {
                 toStop.add(animId)
             }
@@ -481,6 +496,24 @@ object ClientAnimationManager {
         val entry = entries.remove(animationId) ?: return
         if (CameraController.activeAnimationId() == animationId) CameraController.detach()
         ClientParticleEngine.instance()?.destroyParticles(entry.particleUuids.values.toTypedArray())
+        for (ap in entry.audioPlayers.values) ap.close()
+    }
+
+    /** 每 tick 同步音频：播放头在资产区间内则出声，漂移超阈值 seek；区间外暂停。 */
+    private fun syncAudio(entry: Entry) {
+        if (entry.audioPlayers.isEmpty()) return
+        val t = entry.player.currentMsValue.toDouble()
+        for (a in entry.animation.audioAssets) {
+            val ap = entry.audioPlayers[a.id] ?: continue
+            val st = a.st.toDouble()
+            val inWindow = t >= st && t < st + a.durMs
+            var seek: Double? = null
+            if (inWindow) {
+                val local = t - st
+                if (Math.abs(ap.positionMs() - local) > 150) seek = local
+            }
+            ap.update(inWindow, seek)
+        }
     }
 
     private fun spawnState(

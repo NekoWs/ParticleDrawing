@@ -2,6 +2,7 @@ package work.nekow.particledrawing.animation.script
 
 import kotlin.math.ceil
 import kotlin.math.floor
+import work.nekow.particledrawing.animation.AudioAsset
 import work.nekow.particledrawing.animation.TextChar
 import work.nekow.particledrawing.animation.TextObject
 
@@ -80,6 +81,9 @@ class TextValue(val obj: TextObject)
 /** 字符句柄（text.chars 元素，只读）。 */
 class TextCharValue(val ch: TextChar)
 
+/** 音频资产句柄（this.get(名称) 返回，只读）。at = 取值基准（动画全局毫秒）。 */
+class AudioValue(val asset: AudioAsset, val at: Double, val playing: Boolean)
+
 // —— 值类型判定 ——
 
 fun isNum(v: Any?): Boolean = v is Double
@@ -96,6 +100,7 @@ fun isLambda(v: Any?): Boolean = v is LambdaVal
 fun isColor(v: Any?): Boolean = v is ColorVal
 fun isText(v: Any?): Boolean = v is TextValue
 fun isTextChar(v: Any?): Boolean = v is TextCharValue
+fun isAudio(v: Any?): Boolean = v is AudioValue
 fun isCallable(v: Any?): Boolean = isFunc(v) || isLambda(v)
 
 fun vecDim(v: Any): Int = when (v) {
@@ -139,6 +144,7 @@ fun typeName(v: Any?): String = when {
     v is ParticleListValue -> "particleList"
     v is TextValue -> "text"
     v is TextCharValue -> "textChar"
+    v is AudioValue -> "audio"
     else -> "unknown"
 }
 

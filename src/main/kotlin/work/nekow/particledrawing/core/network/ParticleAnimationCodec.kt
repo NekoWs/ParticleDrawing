@@ -6,6 +6,7 @@ import work.nekow.particledrawing.animation.AnimCamera
 import work.nekow.particledrawing.animation.AnimKeyframe
 import work.nekow.particledrawing.animation.AnimParticle
 import work.nekow.particledrawing.animation.AnimTrack
+import work.nekow.particledrawing.animation.AudioAsset
 import work.nekow.particledrawing.animation.Entrance
 import work.nekow.particledrawing.animation.FunctionObject
 import work.nekow.particledrawing.animation.FunctionVar
@@ -27,7 +28,7 @@ import work.nekow.particledrawing.core.easing.EasingType
  */
 internal object ParticleAnimationCodec {
 
-    const val VERSION = 6
+    const val VERSION = 7
 
     fun write(buf: FriendlyByteBuf, anim: ParticleAnimation) {
         buf.writeVarInt(VERSION)
@@ -73,6 +74,9 @@ internal object ParticleAnimationCodec {
 
         buf.writeVarInt(anim.texts.size)
         for (tx in anim.texts) writeText(buf, tx)
+
+        buf.writeVarInt(anim.audioAssets.size)
+        for (a in anim.audioAssets) writeAudio(buf, a)
     }
 
     fun read(buf: FriendlyByteBuf): ParticleAnimation {
@@ -132,9 +136,13 @@ internal object ParticleAnimationCodec {
         val texts = ArrayList<TextObject>(textCount)
         repeat(textCount) { texts.add(readText(buf)) }
 
+        val audioCount = buf.readVarInt()
+        val audioAssets = ArrayList<AudioAsset>(audioCount)
+        repeat(audioCount) { audioAssets.add(readAudio(buf)) }
+
         return ParticleAnimation(
             loop, particles, tracks, groups, functions,
-            textures, groupUV, texData, groupSpinSpace, groupRotSpace, cameras, texts,
+            textures, groupUV, texData, groupSpinSpace, groupRotSpace, cameras, texts, audioAssets,
         )
     }
 
@@ -364,6 +372,59 @@ internal object ParticleAnimationCodec {
 
     private fun readNullableColor(buf: FriendlyByteBuf): Color? =
         if (buf.readBoolean()) Color.of(buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat()) else null
+
+    private fun writeAudio(buf: FriendlyByteBuf, a: AudioAsset) {
+        buf.writeUtf(a.id)
+        buf.writeUtf(a.name)
+        buf.writeVarInt(a.fmt)
+        buf.writeVarInt(a.data.size)
+        buf.writeBytes(a.data)
+        buf.writeVarInt(a.st)
+        buf.writeVarInt(a.durMs)
+        buf.writeVarInt(a.hopCount)
+        buf.writeDouble(a.bpm)
+        buf.writeDouble(a.beatOffsetMs)
+        buf.writeDouble(a.onsetMax)
+        buf.writeVarInt(a.beats.size)
+        for (b in a.beats) buf.writeVarInt(b)
+        buf.writeVarInt(a.rms.size)
+        for (v in a.rms) buf.writeShort(v.toInt())
+        buf.writeVarInt(a.peak.size)
+        for (v in a.peak) buf.writeShort(v.toInt())
+        buf.writeVarInt(a.centroid.size)
+        for (v in a.centroid) buf.writeShort(v.toInt())
+        buf.writeVarInt(a.onset.size)
+        buf.writeBytes(a.onset)
+        buf.writeVarInt(a.rolloff.size)
+        buf.writeBytes(a.rolloff)
+        buf.writeVarInt(a.bands.size)
+        buf.writeBytes(a.bands)
+    }
+
+    private fun readAudio(buf: FriendlyByteBuf): AudioAsset {
+        val id = buf.readUtf()
+        val name = buf.readUtf()
+        val fmt = buf.readVarInt()
+        val dataLen = buf.readVarInt()
+        val data = ByteArray(dataLen)
+        buf.readBytes(data)
+        val st = buf.readVarInt()
+        val durMs = buf.readVarInt()
+        val hopCount = buf.readVarInt()
+        val bpm = buf.readDouble()
+        val beatOffsetMs = buf.readDouble()
+        val onsetMax = buf.readDouble()
+        val beatCount = buf.readVarInt()
+        val beats = ArrayList<Int>(beatCount)
+        repeat(beatCount) { beats.add(buf.readVarInt()) }
+        val rms = ShortArray(buf.readVarInt()) { buf.readShort() }
+        val peak = ShortArray(buf.readVarInt()) { buf.readShort() }
+        val centroid = ShortArray(buf.readVarInt()) { buf.readShort() }
+        val onset = ByteArray(buf.readVarInt()); buf.readBytes(onset)
+        val rolloff = ByteArray(buf.readVarInt()); buf.readBytes(rolloff)
+        val bands = ByteArray(buf.readVarInt()); buf.readBytes(bands)
+        return AudioAsset(id, name, fmt, data, st, durMs, hopCount, bpm, beatOffsetMs, onsetMax, beats, rms, peak, centroid, onset, rolloff, bands)
+    }
 
     private fun writeUV(buf: FriendlyByteBuf, uv: UvData) {
         writeNullableString(buf, uv.texture)

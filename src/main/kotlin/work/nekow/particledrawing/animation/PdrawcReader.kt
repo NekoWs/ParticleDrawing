@@ -25,7 +25,7 @@ import java.util.zip.InflaterInputStream
 object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
-    private const val VERSION = 15    // v15：新增文字对象 texts section（生成器源记录）
+    private const val VERSION = 16    // v16：新增音频资产 audio section（原始字节 + 量化特征列）
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 
@@ -217,6 +217,39 @@ object PdrawcReader {
             texts.add(TextObject(id, name, text, font, fontSize, weight, italic, color, strokeColor, strokeWidth, align, lineHeight, letterSpacing, st, life, chars))
         }
 
+        // 音频资产（v16 新增）：元数据 + 量化特征列（u16/u8 原始小端字节）+ 原始音频字节。
+        // 列布局与编辑器 src/core/pdrawc.js 一致；插值语义见 script/ScriptAudio.kt。
+        val audioCount = br.varint()
+        val audioAssets = ArrayList<AudioAsset>(audioCount)
+        for (i in 0 until audioCount) {
+            val id = br.str()
+            val name = br.str()
+            val fmt = br.u8()
+            val st = br.varint()
+            val durMs = br.varint()
+            val hopCount = br.varint()
+            if (hopCount > 2000000) throw IllegalArgumentException("pdrawc 音频 hopCount 过大: $hopCount")
+            val bpm = br.f32().toDouble()
+            val beatOffsetMs = br.f32().toDouble()
+            val onsetMax = br.f32().toDouble()
+            val beatCount = br.varint()
+            val beats = ArrayList<Int>(beatCount)
+            for (b in 0 until beatCount) beats.add(br.varint())
+            val dataLen = br.varint()
+            val data = br.bytes(dataLen)
+            var rms = ShortArray(0); var peak = ShortArray(0); var centroid = ShortArray(0)
+            var onset = ByteArray(0); var rolloff = ByteArray(0); var bands = ByteArray(0)
+            if (hopCount > 0) {
+                rms = br.shorts(hopCount)
+                peak = br.shorts(hopCount)
+                centroid = br.shorts(hopCount)
+                onset = br.bytes(hopCount)
+                rolloff = br.bytes(hopCount)
+                bands = br.bytes(hopCount * 16)
+            }
+            audioAssets.add(AudioAsset(id, name, fmt, data, st, durMs, hopCount, bpm, beatOffsetMs, onsetMax, beats, rms, peak, centroid, onset, rolloff, bands))
+        }
+
         // 轨道
         val trackCount = br.varint()
         val tracks = ArrayList<AnimTrack>(trackCount)
@@ -246,7 +279,7 @@ object PdrawcReader {
 
         if (br.remaining() != 0) throw IllegalArgumentException("pdrawc 存在未解析的尾随字节")
 
-        return ParticleAnimation(loop, particles, tracks, groups, functions, texNames, groupUV, texData, groupSpinSpace, groupRotSpace, cameras, texts)
+        return ParticleAnimation(loop, particles, tracks, groups, functions, texNames, groupUV, texData, groupSpinSpace, groupRotSpace, cameras, texts, audioAssets)
     }
 
     /** RFC 8032 Ed25519 公钥（32 字节压缩点）→ JDK [EdECPoint]。 */
@@ -371,6 +404,13 @@ object PdrawcReader {
         }
 
         fun f32(): Float = buf.float
+
+        /** 读取 n 个 u16（小端）为 ShortArray（值语义无符号，读取侧按 0xFFFF 掩码解释）。 */
+        fun shorts(n: Int): ShortArray {
+            val out = ShortArray(n)
+            for (i in 0 until n) out[i] = buf.short
+            return out
+        }
 
         fun varint(): Int {
             var result = 0L

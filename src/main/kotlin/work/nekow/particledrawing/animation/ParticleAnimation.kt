@@ -18,7 +18,8 @@ class ParticleAnimation(
     val groupSpinSpace: Map<String, Boolean> = emptyMap(),
     val groupRotSpace: Map<String, Boolean> = emptyMap(),
     val cameras: List<AnimCamera> = emptyList(),
-    val texts: List<TextObject> = emptyList()
+    val texts: List<TextObject> = emptyList(),
+    val audioAssets: List<AudioAsset> = emptyList()
 )
 
 // 函数对象：公式代码块 + 变量，客户端实时求值生成派生粒子。
@@ -125,6 +126,29 @@ class TextChar(
     val particles: List<String>
 )
 
+// 音频资产（.pdrawc audio section，v16）：原始音频字节（OGG/WAV）+ 量化特征列 + 拍点表。
+// 列与编辑器 core/audio-assets.js 逐位一致（u16/u8 小端）；帧时查表插值见 script/ScriptAudio.kt。
+// fmt：0=ogg, 1=wav。
+class AudioAsset(
+    val id: String,
+    val name: String,
+    val fmt: Int,
+    val data: ByteArray,
+    val st: Int,
+    val durMs: Int,
+    val hopCount: Int,
+    val bpm: Double,
+    val beatOffsetMs: Double,
+    val onsetMax: Double,
+    val beats: List<Int>,
+    val rms: ShortArray,
+    val peak: ShortArray,
+    val centroid: ShortArray,
+    val onset: ByteArray,
+    val rolloff: ByteArray,
+    val bands: ByteArray,
+)
+
 // 动画时间轴长度（毫秒，与编辑器 maxMs 一致）：轨道最大关键帧毫秒、粒子 st/life 上界、函数对象 st+extent。
 // 服务端与客户端共用，保证进度口径一致。
 fun ParticleAnimation.timelineLength(): Int {
@@ -144,6 +168,10 @@ fun ParticleAnimation.timelineLength(): Int {
     for (tx in texts) {
         if (tx.st > max) max = tx.st.toDouble()
         if (tx.life >= 0 && tx.st + tx.life > max) max = (tx.st + tx.life).toDouble()
+    }
+    for (a in audioAssets) {
+        if (a.st > max) max = a.st.toDouble()
+        if (a.st + a.durMs > max) max = (a.st + a.durMs).toDouble()
     }
     return max.toInt()
 }

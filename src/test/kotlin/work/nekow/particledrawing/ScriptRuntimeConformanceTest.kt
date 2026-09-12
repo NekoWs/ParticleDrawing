@@ -1,9 +1,12 @@
 package work.nekow.particledrawing
 
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.animation.AudioAsset
 import work.nekow.particledrawing.animation.TextChar
 import work.nekow.particledrawing.animation.TextObject
+import work.nekow.particledrawing.animation.script.AudioValue
 import work.nekow.particledrawing.animation.script.ParticleHost
+import work.nekow.particledrawing.animation.script.ScriptAudio
 import work.nekow.particledrawing.animation.script.ScriptException
 import work.nekow.particledrawing.animation.script.ScriptRuntime
 import work.nekow.particledrawing.animation.script.TextValue
@@ -518,5 +521,60 @@ class ScriptRuntimeConformanceTest {
         assertFailsWith<ScriptException> {
             ScriptRuntime.runProcessFrame(program, obj, ctx)
         }
+    }
+
+    private fun makeAudioAsset() = AudioAsset(
+        id = "aud1", name = "bgm", fmt = 0, data = ByteArray(4) { it.toByte() },
+        st = 100, durMs = 4000, hopCount = 4,
+        bpm = 128.0, beatOffsetMs = 0.0, onsetMax = 0.5,
+        beats = listOf(0, 469),
+        rms = shortArrayOf(0, -32768, -1, -32768),   // u16：32768 = 0x8000
+        peak = shortArrayOf(-1, -1, -1, -1),
+        centroid = shortArrayOf(0, 16384, -32768, 16384),
+        onset = byteArrayOf(0, -128, -1, -128),
+        rolloff = byteArrayOf(0, 64, -128, 64),
+        bands = ByteArray(4 * 16) { (it / 16 * 32 + it % 16).toByte() },
+    )
+
+    @Test
+    fun audioAssetGetFieldsAndBand() {
+        val program = parseProgram(
+            "let out = 0\nfunc process() { let a = this.get(\"bgm\"); out = [a.name, a.st, a.length, a.progress, a.playing, a.loud, a.band(3), a.bpm, a.beats, a.onset]; }",
+        )
+        val obj = ScriptRuntime.createObjectState(0)
+        val audio = makeAudioAsset()
+        val ctx = ScriptRuntime.ScriptCtx(
+            t = 150.0, duration = 5000.0, vars = emptyMap(), particles = ArrayList(),
+            spawn = { error("no spawn") },
+            get = { name -> if (name == "bgm") AudioValue(audio, 150.0, false) else throw ScriptException("unknown asset") },
+        )
+        ScriptRuntime.runTopLevel(program, obj, ctx)
+        ScriptRuntime.runProcessFrame(program, obj, ctx)
+        val out = obj.globals["out"] as MutableList<*>
+        assertEquals("bgm", out[0])
+        assertEquals(100.0, out[1])
+        assertEquals(4000.0, out[2])
+        assertEquals(50.0, out[3] as Double, 1e-9)
+        assertEquals(false, out[4])
+        // t=150 → 本地 50ms，hop 宽 1000ms，pos=0.05：rms = 0*0.95 + 32768*0.05（/65535）
+        assertEquals((32768 * 0.05) / 65535.0, out[5] as Double, 1e-9)
+        // band3 = (3*0.95 + 35*0.05)/255
+        assertEquals((3 * 0.95 + 35 * 0.05) / 255.0, out[6] as Double, 1e-9)
+        assertEquals(128.0, out[7])
+        assertEquals(listOf(0.0, 469.0), out[8])
+        assertEquals((128 * 0.05) / 255.0 * 0.5, out[9] as Double, 1e-9)
+    }
+
+    @Test
+    fun scriptAudioInterpMatchesEditor() {
+        // 与编辑器 test/audio-asset.test.js 同一组数据：hop 宽 1000ms，t=500 → f=0.5
+        val v = ScriptAudio.valueAt(makeAudioAsset(), 500.0)
+        assertEquals((0.0 + 32768.0) / 2 / 65535.0, v.rms, 1e-12)
+        assertEquals(1.0, v.peak, 1e-12)
+        assertEquals((0.0 + 16384.0) / 2 / 65535.0 * 22050.0, v.centroid, 1e-6)
+        assertEquals((0.0 + 128.0) / 2 / 255.0 * 0.5, v.onset, 1e-12)
+        assertEquals((2.0 + 34.0) / 2 / 255.0, v.bands[2], 1e-12)
+        // 越界钳制到末 hop
+        assertEquals(32768.0 / 65535.0, ScriptAudio.valueAt(makeAudioAsset(), 5000.0).rms, 1e-12)
     }
 }

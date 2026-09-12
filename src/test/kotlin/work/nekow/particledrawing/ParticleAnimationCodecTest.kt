@@ -7,6 +7,7 @@ import work.nekow.particledrawing.animation.AnimCamera
 import work.nekow.particledrawing.animation.AnimKeyframe
 import work.nekow.particledrawing.animation.AnimParticle
 import work.nekow.particledrawing.animation.AnimTrack
+import work.nekow.particledrawing.animation.AudioAsset
 import work.nekow.particledrawing.animation.Entrance
 import work.nekow.particledrawing.animation.FunctionObject
 import work.nekow.particledrawing.animation.FunctionVar
@@ -91,6 +92,18 @@ class ParticleAnimationCodecTest {
                 TextChar(1, 66, Vec3(0.5, 0.0, -0.2), doubleArrayOf(0.4, 0.4), emptyList()),
             ),
         )
+        val audio = AudioAsset(
+            id = "aud1", name = "bgm", fmt = 0, data = byteArrayOf(1, 2, 3, 4),
+            st = 100, durMs = 4000, hopCount = 4,
+            bpm = 128.0, beatOffsetMs = 0.0, onsetMax = 0.5,
+            beats = listOf(0, 469),
+            rms = shortArrayOf(0, 32767, -1, 32767),   // u16：-1 = 65535
+            peak = shortArrayOf(-1, -1, -1, -1),
+            centroid = shortArrayOf(0, 16384, 32767, 16384),
+            onset = byteArrayOf(0, -128, -1, -128),    // u8：-1 = 255
+            rolloff = byteArrayOf(0, 64, -128, 64),
+            bands = ByteArray(4 * 16) { (it / 16 * 32 + it % 16).toByte() },
+        )
         return ParticleAnimation(
             loop = true,
             particles = listOf(particle),
@@ -106,6 +119,7 @@ class ParticleAnimationCodecTest {
             groupRotSpace = linkedMapOf("g0" to false),
             cameras = listOf(cam),
             texts = listOf(text),
+            audioAssets = listOf(audio),
         )
     }
 
@@ -201,6 +215,22 @@ class ParticleAnimationCodecTest {
         assertEquals(Vec3(0.1, 0.0, -0.2), tx.chars[0].pos)
         assertEquals(listOf("p0"), tx.chars[0].particles)
         assertTrue(tx.chars[1].particles.isEmpty())
+
+        assertEquals(1, decoded.audioAssets.size)
+        val au = decoded.audioAssets[0]
+        assertEquals("aud1", au.id)
+        assertEquals("bgm", au.name)
+        assertEquals(0, au.fmt)
+        assertContentEquals(byteArrayOf(1, 2, 3, 4), au.data)
+        assertEquals(100, au.st)
+        assertEquals(4000, au.durMs)
+        assertEquals(4, au.hopCount)
+        assertEquals(128.0, au.bpm)
+        assertEquals(0.5, au.onsetMax)
+        assertEquals(listOf(0, 469), au.beats)
+        assertContentEquals(shortArrayOf(0, 32767, -1, 32767), au.rms)
+        assertContentEquals(byteArrayOf(0, -128, -1, -128), au.onset)
+        assertContentEquals(ByteArray(4 * 16) { (it / 16 * 32 + it % 16).toByte() }, au.bands)
     }
 
     @Test
@@ -232,6 +262,7 @@ class ParticleAnimationCodecTest {
         assertTrue(decoded.functions.isEmpty())
         assertTrue(decoded.cameras.isEmpty())
         assertTrue(decoded.texts.isEmpty())
+        assertTrue(decoded.audioAssets.isEmpty())
     }
 
     @Test

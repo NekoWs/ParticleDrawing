@@ -678,6 +678,37 @@ object ScriptRuntime {
             else -> err("char has no field '.$field'", n)
         }
 
+        // —— 音频句柄读取（只读；随时间字段按帧时查表插值，与编辑器 script-lang.js 一致）——
+
+        private fun audioLocalMs(v: AudioValue): Double {
+            val st = v.asset.st.toDouble()
+            return (v.at - st).coerceIn(0.0, v.asset.durMs.toDouble())
+        }
+
+        private fun audioGetField(v: AudioValue, field: String, n: Node): Any? = when (field) {
+            "name" -> v.asset.name
+            "st" -> v.asset.st.toDouble()
+            "length" -> v.asset.durMs.toDouble()
+            "progress" -> audioLocalMs(v)
+            "playing" -> v.playing
+            "bpm" -> v.asset.bpm
+            "beats" -> v.asset.beats.mapTo(ArrayList()) { it.toDouble() }
+            "loud" -> ScriptAudio.valueAt(v.asset, audioLocalMs(v)).rms
+            "peak" -> ScriptAudio.valueAt(v.asset, audioLocalMs(v)).peak
+            "onset" -> ScriptAudio.valueAt(v.asset, audioLocalMs(v)).onset
+            "centroid" -> ScriptAudio.valueAt(v.asset, audioLocalMs(v)).centroid
+            "rolloff" -> ScriptAudio.valueAt(v.asset, audioLocalMs(v)).rolloff
+            else -> err("audio has no field '.$field'", n)
+        }
+
+        private fun audioBand(v: AudioValue, idx: Any?, n: Node): Double {
+            val i = if (idx is Double && idx % 1.0 == 0.0) idx.toInt() else -1
+            if (i !in 0 until ScriptAudio.BANDS) {
+                err("band requires an integer 0..${ScriptAudio.BANDS - 1}, got ${typeName(idx)}", n)
+            }
+            return ScriptAudio.valueAt(v.asset, audioLocalMs(v)).bands[i]
+        }
+
         private fun vecFieldValues(value: Any?, len: Int, what: String, n: Node): List<Double> {
             if (value != null && isVec(value)) {
                 if (vecDim(value) != len) {
@@ -842,6 +873,7 @@ object ScriptRuntime {
             if (obj is ObjVal) return obj.fields[n.field] ?: Undefined
             if (obj is TextValue) return textGetField(obj, n.field, n)
             if (obj is TextCharValue) return textCharGetField(obj, n.field, n)
+            if (obj is AudioValue) return audioGetField(obj, n.field, n)
             err("member '.${n.field}' requires a particle or object, got ${typeName(obj)}", n)
         }
 
@@ -910,6 +942,13 @@ object ScriptRuntime {
             }
             if (isVec(obj)) return vecMethod(obj, method, args, n)
             if (obj is ColorVal) return colorMethod(obj, method, args, n)
+            if (obj is AudioValue) {
+                if (method == "band") {
+                    if (args.size != 1) err("'band' expects exactly 1 argument", n)
+                    return audioBand(obj, args[0], n)
+                }
+                err("audio has no method '.$method()'", n)
+            }
             if (obj !is MutableList<*>) err("method '.$method()' requires an array, particle, particle list, vector or color, got ${typeName(obj)}", n)
             return arrayMethod(obj as MutableList<Any?>, method, args, n)
         }
@@ -1774,6 +1813,7 @@ object ScriptRuntime {
             is ParticleListValue -> "particleList(${v.size})"
             is TextValue -> "text(${v.obj.name})"
             is TextCharValue -> "char(${v.ch.index})"
+            is AudioValue -> "audio(${v.asset.name})"
             else -> v.toString()
         }
     }

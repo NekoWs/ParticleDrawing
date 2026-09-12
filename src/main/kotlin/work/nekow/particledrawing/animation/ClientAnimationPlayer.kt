@@ -1,6 +1,7 @@
 package work.nekow.particledrawing.animation
 
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.animation.script.AudioValue
 import work.nekow.particledrawing.animation.script.ParticleHost
 import work.nekow.particledrawing.animation.script.ScriptException
 import work.nekow.particledrawing.animation.script.ScriptProgram
@@ -417,6 +418,7 @@ class ClientAnimationPlayer(
             maxMs = maxMs.toDouble(),
             get = { name ->
                 animation.texts.firstOrNull { it.name == name }?.let { TextValue(it) }
+                    ?: animation.audioAssets.firstOrNull { it.name == name }?.let { AudioValue(it, t, true) }
                     ?: throw ScriptException("unknown asset '$name'")
             },
         )

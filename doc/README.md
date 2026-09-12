@@ -30,8 +30,9 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | 类 | 作用 |
 | --- | --- |
 | `AnimationLoader` | 解析 .pdraw 工程文件（含内嵌贴图 texData） |
-| `ParticleAnimation` | 动画数据模型（轨道、粒子、贴图、UV、摄像机、文字对象） |
+| `ParticleAnimation` | 动画数据模型（轨道、粒子、贴图、UV、摄像机、文字对象、音频资产） |
 | `TextObject` / `TextChar` | 文字对象源记录（v15 texts section）：文本/样式/字符→粒子映射，供脚本 this.get(id) 只读访问 |
+| `AudioAsset` | 音频资产（v16 audio section）：原始音频字节 + 量化特征列 + 拍点表，供游戏内播放与脚本只读访问 |
 | `TrackPr` | 分量轨道标识枚举（pos/vel/col/scl/rot/spin/center 的 xyz + fov + target.xyz，共 26 个） |
 | `ClientAnimationPlayer` | 客户端逐 tick 求值器（公式/变量/轨道插值） |
 | `ServerAnimationManager` | 服务端动画引擎：playByName / play / stop / stopAll / updateVariable，含活跃播放查询 |
@@ -60,6 +61,7 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | `BridgeParticle` | 桥接原版粒子系统的渲染代理（纯色方块 / 自定义贴图 + UV 采样） |
 | `TextureCache` | 内嵌贴图缓存（PNG 字节 → DynamicTexture） |
 | `ClientAnimationManager` | 客户端 .pdraw 动画播放管理 |
+| `AudioStreamPlayer` | 游戏内音频播放（OpenAL 队列流式 + OGG/WAV 解码 + seek 重灌 + 漂移校正，主线程驱动） |
 | `ClientAnimationProgramManager` | 编排动画程序解释器：指令流本地求值、实体通道、公式模式（客户端自驱） |
 | `ClientAnimationSyncManager` | 配置阶段文件接收管理 |
 | `ParticleRenderHandler` | 客户端 tick 事件处理 |
