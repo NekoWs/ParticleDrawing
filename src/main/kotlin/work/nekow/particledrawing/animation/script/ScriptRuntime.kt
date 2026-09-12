@@ -6,7 +6,7 @@ import kotlin.math.*
 private const val CTX_NAME = "this"
 
 // 向量分量别名：r/g/b → x/y/z，a → w。
-private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w")
+private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w", "alpha" to "w")
 
 /** 该向量是否含某规范化分量（x/y/z/w）。 */
 private fun hasComp(v: Any?, comp: String): Boolean = when (v) {
@@ -577,7 +577,7 @@ object ScriptRuntime {
                 obj.fields[target.field] = value
                 return
             }
-            err("only this / particle / object have fields '.${target.field}'", n)
+            err("member '.${target.field}' requires a particle or object, got ${typeName(obj)}", n)
         }
 
         private fun assignName(name: String, value: Any?, n: Node) {
@@ -819,7 +819,7 @@ object ScriptRuntime {
             val obj = evalExpr(n.obj)
             if (obj is ParticleValue) return particleGetField(obj, n.field, n)
             if (obj is ObjVal) return obj.fields[n.field] ?: Undefined
-            err("only this / particle / object have fields '.${n.field}'", n)
+            err("member '.${n.field}' requires a particle or object, got ${typeName(obj)}", n)
         }
 
         private fun evalLValue(target: AssignTarget): Any? = when (target) {

@@ -278,8 +278,8 @@ private val KEYWORDS = setOf(
 
 private val LIFECYCLE_FUNCS = setOf("setup", "tick", "process")
 private val CONSTANT_NAMES = setOf("TAU", "HALF_PI", "QUARTER_PI", "DEG2RAD", "RAD2DEG", "PI", "E")
-private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w")
-private val COMP_NAMES = setOf("x", "y", "z", "w", "r", "g", "b", "a")
+private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w", "alpha" to "w")
+private val COMP_NAMES = setOf("x", "y", "z", "w", "r", "g", "b", "a", "alpha")
 
 // 内建函数保留名。全局 vec/color 变换函数已移除（改为实例方法）。
 private val BUILTIN_NAMES = setOf(

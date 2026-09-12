@@ -111,6 +111,29 @@ class ScriptRuntimeConformanceTest {
     }
 
     @Test
+    fun colorAlphaAliasReadWrite() {
+        // p.color.alpha 是 .a 的别名：读写均落在颜色 alpha，不写入自定义字段。
+        val h = Harness(
+            "func setup() { let p = this.spawn(); p.color.alpha = 0.25; }\n" +
+                "func process() { for (const q of this.particles) { q.scale = q.color.alpha; } }",
+        )
+        h.setup()
+        h.process()
+        val host = h.particles[0] as TestHost
+        assertEquals(0.25, host.color[3], 1e-12)
+        assertEquals(0.25, host.scale, 1e-12)
+        assertEquals(0.0, host.fields["alpha"] ?: 0.0)
+    }
+
+    @Test
+    fun vec4AlphaAliasIsW() {
+        val h = Harness("func setup() { let p = this.spawn(); let v = vec4(1,2,3,4); p.scale = v.alpha; }")
+        h.setup()
+        val host = h.particles[0] as TestHost
+        assertEquals(4.0, host.scale, 1e-12)
+    }
+
+    @Test
     fun compoundAssignmentOperators() {
         val h = Harness(
             "func setup() { let p = this.spawn(); p.position = [1,2,3]; p.position += vec(4,5,6); p.position.x += 10; p.scale = p.position.x; }",
