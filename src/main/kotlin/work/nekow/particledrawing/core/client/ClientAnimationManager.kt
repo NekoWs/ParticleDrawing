@@ -276,7 +276,8 @@ object ClientAnimationManager {
         val currentGameTick = Minecraft.getInstance().level?.gameTime ?: startGameTick
         val player = ClientAnimationPlayer(animation, Vec3.ZERO, startGameTick, currentGameTick, initialMs)
         val resolver = EffectAnchorResolver(anchor, options.scale())
-        val clock = PlaybackClock(options.startTick(), playing = true, speed = options.speed())
+        // startTick 是 game tick、speed 是倍速，时钟内部统一按毫秒（与 ServerEffectManager 同口径）。
+        val clock = PlaybackClock(options.startTick() * 50, playing = true, speed = options.speed() * 50)
 
         val uuids = HashMap<String, UUID>()
         val liveIds = HashSet<String>()
