@@ -280,8 +280,8 @@ class ParticleBuilder internal constructor() {
      */
     fun uv(uv: UvData): ParticleBuilder = apply { puv = uv }
     /**
-     * 设置起始 tick。
-     * @param st 起始 tick
+     * 设置起始毫秒。
+     * @param st 起始毫秒（时间轴）
      */
     fun st(st: Int): ParticleBuilder = apply { pst = st }
     /**
@@ -291,7 +291,7 @@ class ParticleBuilder internal constructor() {
     fun ent(ent: Entrance): ParticleBuilder = apply { pent = ent }
     /**
      * 设置寿命。
-     * @param life 寿命（tick，-1 无限）
+     * @param life 寿命（毫秒，-1 无限）
      */
     fun life(life: Int): ParticleBuilder = apply { plife = life }
 
@@ -328,7 +328,7 @@ class TrackBuilder internal constructor() {
     fun ids(vararg ids: String): TrackBuilder = ids(ids.toList())
     /**
      * 添加一个关键帧。
-     * @param tick 关键帧时刻
+     * @param tick 关键帧时刻（毫秒）
      * @param value 关键帧值
      * @param easing 缓动类型
      */
@@ -337,7 +337,7 @@ class TrackBuilder internal constructor() {
     }
     /**
      * 添加一个关键帧。
-     * @param tick 关键帧时刻
+     * @param tick 关键帧时刻（毫秒）
      * @param value 关键帧值
      * @param easing 缓动类型
      */
@@ -398,7 +398,7 @@ class FunctionBuilder internal constructor() {
     fun seed(seed: Int): FunctionBuilder = apply { fseed = seed }
     /**
      * 设置整体时长。
-     * @param duration 整体时长（tick，0 无上限）
+     * @param duration 整体时长（毫秒，0 无上限）
      */
     fun duration(duration: Int): FunctionBuilder = apply { fduration = duration.coerceAtLeast(0) }
     /**
@@ -407,8 +407,8 @@ class FunctionBuilder internal constructor() {
      */
     fun uv(uv: UvData): FunctionBuilder = apply { fuv = uv }
     /**
-     * 设置起始 tick。
-     * @param st 起始 tick
+     * 设置起始毫秒。
+     * @param st 起始毫秒（时间轴）
      */
     fun st(st: Int): FunctionBuilder = apply { fst = st.coerceAtLeast(0) }
     /**
@@ -674,7 +674,7 @@ class TrackDsl internal constructor(private val b: TrackBuilder) {
 
     /**
      * 添加一个关键帧。
-     * @param tick 关键帧时刻
+     * @param tick 关键帧时刻（毫秒）
      * @param value 关键帧值
      * @param easing 缓动类型
      */

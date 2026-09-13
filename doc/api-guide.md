@@ -403,21 +403,24 @@ ServerAnimationManager.playbackPlayers(animId)      // 该次播放覆盖的玩�
 
 ### 入场编排（粒子起始时间 + 寿命 + 入场预设）
 
-每个粒子/函数对象可带 `st`（起始 tick）：`t < st` 时粒子**完全不在渲染管线中**（不是 alpha=0，而是不生成），
-到点瞬间出现；循环回卷后会重新按各自 `st` 重放入场顺序。时长（`maxTick`）自动计入最晚的 `st`。
+> 本节字段（`st`/`life`/`ent.d`）来自 `.pdrawc` 时间轴，单位是**毫秒**；而代码 API 的
+> `delay()`/`stagger`/`lifetime()`/`destroyAfter()` 走服务端 game tick（1 tick = 50ms），两者不要混用。
 
-静态粒子还可带 `life`（寿命，tick，缺省 -1 = 无限）：`t ≥ st+life` 后粒子回收消失；
-有限寿命同样计入 `maxTick`。时间轴上表现为条形长度——无限寿命向右无限延伸（∞ 标记），
-拖拽右端手柄调整、双击右端在 无限⇄有限 间切换；也可在属性面板「寿命(tick)」中直接编辑（-1=无限）。
+每个粒子/函数对象可带 `st`（起始毫秒）：`t < st` 时粒子**完全不在渲染管线中**（不是 alpha=0，而是不生成），
+到点瞬间出现；循环回卷后会重新按各自 `st` 重放入场顺序。时长（`timelineLength()`）自动计入最晚的 `st`。
 
-函数对象派生粒子可在 `process` 中通过 `this.life = <tick>` 设定逐粒子寿命（缺省 -1 = 无限）；
+静态粒子还可带 `life`（寿命，毫秒，缺省 -1 = 无限）：`t ≥ st+life` 后粒子回收消失；
+有限寿命同样计入 `timelineLength()`。时间轴上表现为条形长度——无限寿命向右无限延伸（∞ 标记），
+拖拽右端手柄调整、双击右端在 无限⇄有限 间切换；也可在属性面板「寿命(ms)」中直接编辑（-1=无限）。
+
+函数对象派生粒子可在 `process` 中遍历 `this.particles`，用粒子句柄 `p.life = <毫秒>` 设定逐粒子寿命（缺省 -1 = 无限）；
 其可见期由「对象级 `st` 入场 → 对象整体时长 `duration`（≤0 视为无时长上限）→ 逐粒子寿命」三重门控决定，
 整体提前退场请通过缩短时长或对象级 `st` 编排实现。
 
 - 编辑器：底部时间轴模块顶边可拖拽整体调高；下方为 AE 式图层区——组聚合条（可展开成员行）、函数对象条（长度=动画跨度），
   横向拖拽即改 `st`（整数刻度吸附，抓取点保持相对位置），组条拖拽整体平移；图层区高度可拖拽分隔条调整；
-- 文件字段：粒子与函数对象均可选 `"st": <tick>`；粒子可选 `"life": <tick>`；
-  `"ent": {"p": "fade", "d": <tick>}` 为出场后淡入预设（`d` 内 alpha 线性 0→1）。预设词表是扩展接口：
+- 文件字段：粒子与函数对象均可选 `"st": <毫秒>`；粒子可选 `"life": <毫秒>`；
+  `"ent": {"p": "fade", "d": <毫秒>}` 为出场后淡入预设（`d` 内 alpha 线性 0→1）。预设词表是扩展接口：
   新增 preset 约定即可接入更复杂的入场动画。
 
 ### 典型场景：技能动画 + 动态参数
@@ -477,18 +480,26 @@ val anim = Animation.create {
         pr = TrackPr.POS_X
         ids = listOf("p0")
         keyframe(0, 0.0, EasingType.LINEAR)
-        keyframe(20, 5.0, EasingType.EASE_OUT)
+        keyframe(1000, 5.0, EasingType.EASE_OUT)   // 关键帧时刻为毫秒
     }
 
     function {
         id = "fx0"
-        count = 100
         center = Vec3(0.0, 10.0, 0.0)
-        duration = 200
+        duration = 10000                           // 时长毫秒（0 = 无上限）
         seed = 1
         variable("rad", 3.0)
-        setup("global arr = [];")
-        process("th = this.index / this.count * 2 * PI; this.position = vec3(cos(th) * rad, 0, sin(th) * rad);")
+        source = """
+            func setup() {
+              repeat(100) { this.spawn() }
+            }
+            func process() {
+              for (const p of this.particles) {
+                let th = p.index / this.particles.size() * 2 * PI
+                p.position = vec(cos(th) * rad, 0, sin(th) * rad)
+              }
+            }
+        """.trimIndent()
     }
 }
 
@@ -506,11 +517,20 @@ Animation anim = Animation.builder()
     .particle(p -> p.id("p0").pos(0, 10, 0).color(Color.CYAN).scale(1f).life(-1))
     .track(t -> t.pr(TrackPr.POS_X).ids("p0")
         .keyframe(0, 0.0, EasingType.LINEAR)
-        .keyframe(20, 5.0, EasingType.EASE_OUT))
-    .function(f -> f.id("fx0").count(100).center(0, 10, 0).duration(200).seed(1)
+        .keyframe(1000, 5.0, EasingType.EASE_OUT))
+    .function(f -> f.id("fx0").center(0, 10, 0).duration(10000).seed(1)
         .variable("rad", 3.0)
-        .setup("global arr = [];")
-        .process("th = this.index / this.count * 2 * PI; this.position = vec3(cos(th) * rad, 0, sin(th) * rad);"))
+        .source("""
+            func setup() {
+              repeat(100) { this.spawn() }
+            }
+            func process() {
+              for (const p of this.particles) {
+                let th = p.index / this.particles.size() * 2 * PI;
+                p.position = vec(cos(th) * rad, 0, sin(th) * rad);
+              }
+            }
+            """))
     .build();
 
 anim.play(level.players(), origin).updateVariable("rad", "4");
