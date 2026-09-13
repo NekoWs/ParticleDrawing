@@ -38,6 +38,12 @@ class ClientAnimationPlayer(
         var visible: Boolean = true,
         /** 是否为函数对象派生粒子（id = fxId:p<serial>）。 */
         val derived: Boolean = false,
+        /** v17：广告牌模式（false=固定朝向，按 spin 旋转）。 */
+        var billboard: Boolean = true,
+        /** v17：自转（XYZ 度）；billboard=true 时渲染端忽略。 */
+        var spin: DoubleArray = DoubleArray(3),
+        /** v17：自转空间（true=local）。 */
+        var spinLocal: Boolean = true,
     ) {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -54,6 +60,9 @@ class ClientAnimationPlayer(
             if (color != other.color) return false
             if (!scale.contentEquals(other.scale)) return false
             if (uv != other.uv) return false
+            if (billboard != other.billboard) return false
+            if (!spin.contentEquals(other.spin)) return false
+            if (spinLocal != other.spinLocal) return false
 
             return true
         }
@@ -68,6 +77,9 @@ class ClientAnimationPlayer(
             result = 31 * result + color.hashCode()
             result = 31 * result + scale.contentHashCode()
             result = 31 * result + uv.hashCode()
+            result = 31 * result + billboard.hashCode()
+            result = 31 * result + spin.contentHashCode()
+            result = 31 * result + spinLocal.hashCode()
             return result
         }
     }
@@ -136,11 +148,19 @@ class ClientAnimationPlayer(
     private val trackIndex: Map<TrackPr, Map<String, AnimTrack>> = buildTrackIndex()
     private val opTracks: List<AnimTrack> = animation.tracks.filter { it.mode == AnimTrack.Mode.OP }
     private val opTracksByPr: Map<TrackPr, List<AnimTrack>> = opTracks.filter { it.keyframes.isNotEmpty() }.groupBy { it.pr }
-    private val groupSets: Map<String, Set<String>> = animation.groups.mapValues { (_, v) -> v.toSet() }
+    private val groupSets: Map<String, Set<String>> = buildOwnerSets()
     private val groupSpinLocal: Set<String> = animation.groupSpinSpace.filterValues { it }.keys
     private val groupRotLocal: Set<String> = animation.groupRotSpace.filterValues { it }.keys
     private val particleGroupIndex: Map<String, Set<String>> = buildParticleGroupIndex()
     private val groupCentroidCache: Map<String, Vec3> = buildGroupCentroids()
+
+    /** owner 键（'g:名' | 't:id'）→ 成员集合。 */
+    private fun buildOwnerSets(): Map<String, Set<String>> {
+        val map = HashMap<String, Set<String>>()
+        for ((name, members) in animation.groups) map["g:$name"] = members.toSet()
+        for (tx in animation.texts) map["t:${tx.id}"] = tx.memberIds().toSet()
+        return map
+    }
     private val camUp = Vec3(0.0, 1.0, 0.0)
 
     // —— UV 字段表达式 ——
@@ -231,6 +251,9 @@ class ClientAnimationPlayer(
             override var glow = false
             override var light = 0.0
             override var life = -1.0
+            override val rotation = DoubleArray(3)   // 自转（度）；billboard=true 时忽略
+            override var billboard = true
+            override var spinLocal = true
             override val fields = HashMap<String, Any?>()
             var alive = true
 
@@ -277,6 +300,9 @@ class ClientAnimationPlayer(
             val glow: Boolean,
             val light: Double,
             val life: Double,
+            val rotation: DoubleArray,
+            val billboard: Boolean,
+            val spinLocal: Boolean,
             val fields: Map<String, Any?>,
         )
 
@@ -293,6 +319,9 @@ class ClientAnimationPlayer(
                     glow = p.glow,
                     light = p.light,
                     life = p.life,
+                    rotation = p.rotation.copyOf(),
+                    billboard = p.billboard,
+                    spinLocal = p.spinLocal,
                     fields = HashMap<String, Any?>().also { out ->
                         for ((k, v) in p.fields) out[k] = deepCopyScriptValue(v)
                     },
@@ -346,6 +375,9 @@ class ClientAnimationPlayer(
                 host.glow = hs.glow
                 host.light = hs.light
                 host.life = hs.life
+                hs.rotation.copyInto(host.rotation)
+                host.billboard = hs.billboard
+                host.spinLocal = hs.spinLocal
                 host.alive = true
                 host.fields.clear()
                 for ((k, v) in hs.fields) host.fields[k] = deepCopyScriptValue(v)
@@ -437,7 +469,10 @@ class ClientAnimationPlayer(
     private fun buildParticleGroupIndex(): Map<String, Set<String>> {
         val map = HashMap<String, HashSet<String>>()
         for ((gname, members) in animation.groups) {
-            for (id in members) map.getOrPut(id) { HashSet() }.add(gname)
+            for (id in members) map.getOrPut(id) { HashSet() }.add("g:$gname")
+        }
+        for (tx in animation.texts) {
+            for (id in tx.memberIds()) map.getOrPut(id) { HashSet() }.add("t:${tx.id}")
         }
         return map
     }
@@ -447,14 +482,17 @@ class ClientAnimationPlayer(
         for (p in animation.particles) byId[p.id] = p
         val map = HashMap<String, Vec3>()
         for (gname in animation.groups.keys) {
-            centroidOf(gname, byId)?.let { map[gname] = it }
+            centroidOf("g:$gname", byId)?.let { map["g:$gname"] = it }
+        }
+        for (tx in animation.texts) {
+            centroidOf("t:${tx.id}", byId)?.let { map["t:${tx.id}"] = it }
         }
         return map
     }
 
-    /** 组质心（成员位置平均）；空组或不存在返回 null。 */
-    private fun centroidOf(gname: String, byId: Map<String, AnimParticle>): Vec3? {
-        val members = animation.groups[gname] ?: return null
+    /** owner（组/文字对象）质心（成员位置平均）；空或不存在返回 null。 */
+    private fun centroidOf(okey: String, byId: Map<String, AnimParticle>): Vec3? {
+        val members = ownerMembers(okey) ?: return null
         var sx = 0.0; var sy = 0.0; var sz = 0.0; var n = 0
         for (id in members) {
             val m = byId[id] ?: continue
@@ -462,6 +500,27 @@ class ClientAnimationPlayer(
         }
         if (n == 0) return null
         return Vec3(sx / n, sy / n, sz / n)
+    }
+
+    /** owner 键（'g:名' | 't:id'）的成员粒子 id 列表。 */
+    private fun ownerMembers(okey: String): List<String>? = when {
+        okey.startsWith("g:") -> animation.groups[okey.removePrefix("g:")]
+        okey.startsWith("t:") -> animation.texts.firstOrNull { it.id == okey.removePrefix("t:") }?.memberIds()
+        else -> null
+    }
+
+    /** owner 键的自转空间（true=local）。 */
+    private fun ownerSpinLocal(okey: String): Boolean = when {
+        okey.startsWith("g:") -> animation.groupSpinSpace[okey.removePrefix("g:")] ?: true
+        okey.startsWith("t:") -> animation.texts.firstOrNull { it.id == okey.removePrefix("t:") }?.spinLocal ?: true
+        else -> true
+    }
+
+    /** owner 键的公转空间（true=local）。 */
+    private fun ownerRotLocal(okey: String): Boolean = when {
+        okey.startsWith("g:") -> animation.groupRotSpace[okey.removePrefix("g:")] ?: true
+        okey.startsWith("t:") -> animation.texts.firstOrNull { it.id == okey.removePrefix("t:") }?.rotLocal ?: true
+        else -> true
     }
 
     /** 派生粒子 id（fxId:p<serial>）反查函数对象；普通粒子返回 null。 */
@@ -482,8 +541,8 @@ class ClientAnimationPlayer(
         for (tr in animation.tracks) {
             if (tr.keyframes.isEmpty()) continue
             for (id in tr.ids) {
-                if (id.startsWith("g:")) {
-                    val members = animation.groups[id.removePrefix("g:")] ?: continue
+                if (id.startsWith("g:") || id.startsWith("t:")) {
+                    val members = ownerMembers(id) ?: continue
                     ids.addAll(members)
                 } else if (!id.startsWith("f:")) {
                     ids.add(id)
@@ -495,7 +554,10 @@ class ClientAnimationPlayer(
 
     init {
         for (p in animation.particles) {
-            states[p.id] = ParticleState(p.id, origin.add(p.pos), p.color, p.scale.copyOf(), p.glowing, p.lightLevel, resolveUV(p.id, p.uv))
+            states[p.id] = ParticleState(
+                p.id, origin.add(p.pos), p.color, p.scale.copyOf(), p.glowing, p.lightLevel, resolveUV(p.id, p.uv),
+                billboard = p.billboard, spinLocal = p.spinLocal,
+            )
         }
         // 函数对象运行时已在字段初始化阶段构建（setup 各执行一次）；派生粒子状态由 advanceFunctions 的
         // reconcile 按当前存活粒子动态创建/更新/删除。
@@ -760,6 +822,11 @@ class ClientAnimationPlayer(
                 s.pos = origin.add(particlePosition(p, t))
                 s.color = applyEntrance(particleColor(p, t), p.ent, localT)
                 s.scale = particleScale(p, t)
+                // v17：粒子级自转（仅非广告牌时渲染端可见）
+                s.billboard = p.billboard
+                s.spinLocal = p.spinLocal
+                val sp = spinVectorAt(p.id, t)
+                s.spin[0] = sp[0]; s.spin[1] = sp[1]; s.spin[2] = sp[2]
             }
         }
     }
@@ -923,6 +990,10 @@ class ClientAnimationPlayer(
             s.glowing = host.glow
             s.lightLevel = host.light.toInt().coerceIn(0, 15)
             s.visible = visible
+            // v17：脚本逐粒子广告牌/自转（billboard=true 时渲染端忽略 spin）
+            s.billboard = host.billboard
+            s.spinLocal = host.spinLocal
+            s.spin[0] = host.rotation[0]; s.spin[1] = host.rotation[1]; s.spin[2] = host.rotation[2]
         }
         // 删除已消失（被 kill / 重建后未再 spawn）的派生粒子状态
         val oldIds = derivedByFx[fx.id] ?: emptySet()
@@ -1005,8 +1076,8 @@ class ClientAnimationPlayer(
 
     private fun findSetTrackFor(id: String, pr: TrackPr): AnimTrack? {
         findTrackByPr(pr, id)?.let { if (it.mode != AnimTrack.Mode.OP) return it }
-        for (gname in particleGroupIndex[id] ?: emptySet()) {
-            findTrackByPr(pr, "g:" + gname)?.let { if (it.mode != AnimTrack.Mode.OP) return it }
+        for (okey in particleGroupIndex[id] ?: emptySet()) {
+            findTrackByPr(pr, okey)?.let { if (it.mode != AnimTrack.Mode.OP) return it }
         }
         val fx = particleFunction(id)
         if (fx != null) {
@@ -1019,8 +1090,8 @@ class ClientAnimationPlayer(
         var delta = 0.0
         for (tr in opTracksByPr[pr] ?: emptyList()) {
             for (id in tr.ids) {
-                if (id.startsWith("g:")) {
-                    val members = groupSets[id.removePrefix("g:")] ?: continue
+                if (id.startsWith("g:") || id.startsWith("t:")) {
+                    val members = groupSets[id] ?: continue
                     if (p.id in members) delta += trackValueAt(tr, t, 0.0)
                 } else if (id.startsWith("f:") && p.id.startsWith(id.removePrefix("f:") + ":p")) {
                     delta += trackValueAt(tr, t, 0.0)
@@ -1112,11 +1183,11 @@ class ClientAnimationPlayer(
     private fun applySelfRotation(p: AnimParticle, value: Vec3, t: Double): Vec3 {
         val gs = particleGroupIndex[p.id]
         if (gs != null) {
-            for (gname in gs) {
-                val spin = spinVectorAt("g:" + gname, t)
+            for (okey in gs) {
+                val spin = spinVectorAt(okey, t)
                 if (spin[0] == 0.0 && spin[1] == 0.0 && spin[2] == 0.0) continue
-                val pivot = groupCentroidCache[gname] ?: groupCentroid(gname)
-                return if (gname in groupSpinLocal) rotateAroundLocal(value, pivot, spin) else rotateAround(value, pivot, spin)
+                val pivot = groupCentroidCache[okey] ?: groupCentroid(okey)
+                return if (ownerSpinLocal(okey)) rotateAroundLocal(value, pivot, spin) else rotateAround(value, pivot, spin)
             }
         }
         val fx = particleFunction(p.id)
@@ -1132,13 +1203,13 @@ class ClientAnimationPlayer(
     private fun applyOrbitRotation(p: AnimParticle, value: Vec3, t: Double): Vec3 {
         val gs = particleGroupIndex[p.id]
         if (gs != null) {
-            for (gname in gs) {
-                val rot = rotVectorAt("g:" + gname, t)
+            for (okey in gs) {
+                val rot = rotVectorAt(okey, t)
                 if (rot[0] == 0.0 && rot[1] == 0.0 && rot[2] == 0.0) continue
-                val pivot = orbitCenterAt("g:" + gname, t)
-                if (gname in groupRotLocal) {
-                    val spin = spinVectorAt("g:" + gname, t)
-                    return rotateAroundLocalOrbit(value, pivot, rot, spin, gname in groupSpinLocal)
+                val pivot = orbitCenterAt(okey, t)
+                if (ownerRotLocal(okey)) {
+                    val spin = spinVectorAt(okey, t)
+                    return rotateAroundLocalOrbit(value, pivot, rot, spin, ownerSpinLocal(okey))
                 }
                 return rotateAround(value, pivot, rot)
             }
@@ -1157,13 +1228,13 @@ class ClientAnimationPlayer(
         return value
     }
 
-    /** 组整体缩放：作用于成员相对组质心的偏移，而非粒子大小。 */
+    /** owner 整体缩放：作用于成员相对 owner 质心的偏移，而非粒子大小。 */
     private fun applyGroupScale(p: AnimParticle, value: Vec3, t: Double): Vec3 {
         val gs = particleGroupIndex[p.id] ?: return value
-        for (gname in gs) {
-            val s = groupScaleAt(gname, t)
+        for (okey in gs) {
+            val s = groupScaleAt(okey, t)
             if (s[0] == 1.0 && s[1] == 1.0 && s[2] == 1.0) continue
-            val pivot = groupCentroidCache[gname] ?: groupCentroid(gname)
+            val pivot = groupCentroidCache[okey] ?: groupCentroid(okey)
             return Vec3(
                 pivot.x + (value.x - pivot.x) * s[0],
                 pivot.y + (value.y - pivot.y) * s[1],
@@ -1173,24 +1244,24 @@ class ClientAnimationPlayer(
         return value
     }
 
-    private fun groupScaleAt(gname: String, t: Double): DoubleArray =
+    private fun groupScaleAt(okey: String, t: Double): DoubleArray =
         doubleArrayOf(
-            groupScaleComponent(gname, TrackPr.SCL_X, t),
-            groupScaleComponent(gname, TrackPr.SCL_Y, t),
-            groupScaleComponent(gname, TrackPr.SCL_Z, t),
+            groupScaleComponent(okey, TrackPr.SCL_X, t),
+            groupScaleComponent(okey, TrackPr.SCL_Y, t),
+            groupScaleComponent(okey, TrackPr.SCL_Z, t),
         )
 
-    private fun groupScaleComponent(gname: String, pr: TrackPr, t: Double): Double {
-        val tr = findTrackByPr(pr, "g:$gname") ?: return 1.0
+    private fun groupScaleComponent(okey: String, pr: TrackPr, t: Double): Double {
+        val tr = findTrackByPr(pr, okey) ?: return 1.0
         if (tr.keyframes.isEmpty()) return 1.0
         return if (tr.mode == AnimTrack.Mode.OP) 1.0 + trackValueAt(tr, t, 0.0)
         else trackValueAt(tr, t, 1.0)
     }
 
-    private fun groupCentroid(gname: String): Vec3 {
+    private fun groupCentroid(okey: String): Vec3 {
         val byId = HashMap<String, AnimParticle>(animation.particles.size)
         for (p in animation.particles) byId[p.id] = p
-        return centroidOf(gname, byId) ?: Vec3.ZERO
+        return centroidOf(okey, byId) ?: Vec3.ZERO
     }
 
     private fun particleColor(p: AnimParticle, t: Double): Color {
@@ -1236,8 +1307,9 @@ class ClientAnimationPlayer(
      */
     private fun resolveUV(stateId: String, ownUv: UvData?): UvData? {
         if (ownUv != null && ownUv.texture != null) return ownUv
-        for (gname in particleGroupIndex[stateId] ?: emptySet()) {
-            animation.groupUV[gname]?.let { if (it.texture != null) return it }
+        for (okey in particleGroupIndex[stateId] ?: emptySet()) {
+            if (!okey.startsWith("g:")) continue // 文字对象无组级 UV
+            animation.groupUV[okey.removePrefix("g:")]?.let { if (it.texture != null) return it }
         }
         // 派生粒子：函数对象级 uv 已在 ownUv 传入；此处兜底再查一次（按 id 反查 fx）
         val fx = particleFunction(stateId)

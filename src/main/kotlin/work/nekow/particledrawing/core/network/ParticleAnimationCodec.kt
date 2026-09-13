@@ -28,7 +28,7 @@ import work.nekow.particledrawing.core.easing.EasingType
  */
 internal object ParticleAnimationCodec {
 
-    const val VERSION = 7
+    const val VERSION = 8   // v8：粒子新增广告牌/自转空间（billboard/spinLocal）
 
     fun write(buf: FriendlyByteBuf, anim: ParticleAnimation) {
         buf.writeVarInt(VERSION)
@@ -167,6 +167,8 @@ internal object ParticleAnimationCodec {
         buf.writeVarInt(p.st)
         writeNullableEnt(buf, p.ent)
         buf.writeVarInt(p.life)
+        buf.writeBoolean(p.billboard)   // v8
+        buf.writeBoolean(p.spinLocal)   // v8
     }
 
     private fun readParticle(buf: FriendlyByteBuf): AnimParticle {
@@ -181,7 +183,9 @@ internal object ParticleAnimationCodec {
         val st = buf.readVarInt()
         val ent = readNullableEnt(buf)
         val life = buf.readVarInt()
-        return AnimParticle(id, color, scale, glowing, lightLevel, pos, vel, uv, st, ent, life)
+        val billboard = buf.readBoolean()   // v8
+        val spinLocal = buf.readBoolean()   // v8
+        return AnimParticle(id, color, scale, glowing, lightLevel, pos, vel, uv, st, ent, life, billboard, spinLocal)
     }
 
     private fun writeTrack(buf: FriendlyByteBuf, tr: AnimTrack) {
@@ -315,6 +319,9 @@ internal object ParticleAnimationCodec {
         buf.writeDouble(tx.letterSpacing)
         buf.writeVarInt(tx.st)
         buf.writeVarInt(tx.life)
+        buf.writeBoolean(tx.spinLocal)   // v8
+        buf.writeBoolean(tx.rotLocal)    // v8
+        buf.writeBoolean(tx.billboard)   // v8
         buf.writeVarInt(tx.chars.size)
         for (c in tx.chars) {
             buf.writeVarInt(c.index)
@@ -345,6 +352,9 @@ internal object ParticleAnimationCodec {
         val letterSpacing = buf.readDouble()
         val st = buf.readVarInt()
         val life = buf.readVarInt()
+        val spinLocal = buf.readBoolean()   // v8
+        val rotLocal = buf.readBoolean()    // v8
+        val billboard = buf.readBoolean()   // v8
         val charCount = buf.readVarInt()
         val chars = ArrayList<TextChar>(charCount)
         repeat(charCount) {
@@ -357,7 +367,7 @@ internal object ParticleAnimationCodec {
             repeat(pn) { ids.add(buf.readUtf()) }
             chars.add(TextChar(index, code, pos, size, ids))
         }
-        return TextObject(id, name, text, font, fontSize, weight, italic, color, strokeColor, strokeWidth, align, lineHeight, letterSpacing, st, life, chars)
+        return TextObject(id, name, text, font, fontSize, weight, italic, color, strokeColor, strokeWidth, align, lineHeight, letterSpacing, st, life, chars, spinLocal, rotLocal, billboard)
     }
 
     private fun writeNullableColor(buf: FriendlyByteBuf, c: Color?) {

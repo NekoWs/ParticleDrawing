@@ -25,7 +25,7 @@ import java.util.zip.InflaterInputStream
 object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
-    private const val VERSION = 16    // v16：新增音频资产 audio section（原始字节 + 量化特征列）
+    private const val VERSION = 17    // v17：文字去组（轨道引用 kind=4）、粒子广告牌/自转空间、文字空间 flags
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 
@@ -97,7 +97,9 @@ object PdrawcReader {
             val life = if (flags and 8 != 0) br.varint() else -1
             val ent = if (flags and 4 != 0) readEnt(br) else null
             val uv = if (flags and 2 != 0) readUV(br, texNames) else null
-            particles.add(AnimParticle("p$i", color, scale, flags and 1 != 0, lightLevel, pos, vel, uv, st, ent, life))
+            val billboard = (flags and 16) == 0   // v17：bit4=非广告牌
+            val spinLocal = (flags and 32) == 0   // v17：bit5=自转空间 world
+            particles.add(AnimParticle("p$i", color, scale, flags and 1 != 0, lightLevel, pos, vel, uv, st, ent, life, billboard, spinLocal))
         }
 
         // 组（合成名 g0..gN，成员用粒子索引；v5 增加组级自转空间）
@@ -214,7 +216,15 @@ object PdrawcReader {
                 }
                 chars.add(TextChar(index, code, pos, size, ids))
             }
-            texts.add(TextObject(id, name, text, font, fontSize, weight, italic, color, strokeColor, strokeWidth, align, lineHeight, letterSpacing, st, life, chars))
+            texts.add(
+                TextObject(
+                    id, name, text, font, fontSize, weight, italic, color, strokeColor, strokeWidth,
+                    align, lineHeight, letterSpacing, st, life, chars,
+                    spinLocal = (flags and 8) == 0,   // v17：bit3=自转空间 world
+                    rotLocal = (flags and 16) == 0,   // v17：bit4=公转空间 world
+                    billboard = (flags and 32) == 0,  // v17：bit5=非广告牌
+                )
+            )
         }
 
         // 音频资产（v16 新增）：元数据 + 量化特征列（u16/u8 原始小端字节）+ 原始音频字节。
@@ -269,6 +279,7 @@ object PdrawcReader {
                         1 -> "g:g$idx"
                         2 -> "f:fx$idx"
                         3 -> if (idx in cameras.indices) "c:${cameras[idx].id}" else throw IllegalArgumentException("pdrawc 摄像机索引越界: $idx")
+                        4 -> if (idx in texts.indices) "t:${texts[idx].id}" else throw IllegalArgumentException("pdrawc 文字对象索引越界: $idx")
                         else -> throw IllegalArgumentException("pdrawc 未知轨道引用类型: $kind")
                     }
                 )

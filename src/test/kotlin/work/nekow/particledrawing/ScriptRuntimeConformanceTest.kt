@@ -35,6 +35,9 @@ class ScriptRuntimeConformanceTest {
         override var glow = false
         override var light = 0.0
         override var life = -1.0
+        override val rotation = DoubleArray(3)
+        override var billboard = true
+        override var spinLocal = true
         override val fields = HashMap<String, Any?>()
         var killed = false
 
@@ -95,6 +98,27 @@ class ScriptRuntimeConformanceTest {
         assertEquals(7.0, host.life, 1e-12)
         assertEquals(9.0, host.fields["foo"])
         assertEquals(0.0, host.fields["bar"] ?: 0.0)
+    }
+
+    @Test
+    fun particleRotationBillboardSpinSpace() {
+        val h = Harness(
+            "func setup() { let p = this.spawn(); p.rotation = [10, 20, 30]; p.billboard = 0; p.spinSpace = \"world\"; }\n" +
+                "func process() { for (const q of this.particles) { q.rotation.y = q.rotation.y + 5; } }",
+        )
+        h.setup()
+        h.process()
+        val host = h.particles[0] as TestHost
+        assertEquals(listOf(10.0, 25.0, 30.0), host.rotation.toList())
+        assertEquals(false, host.billboard)
+        assertEquals(false, host.spinLocal)
+        // billboard 读取与 spinSpace 默认值
+        val h2 = Harness("func setup() { let p = this.spawn(); }")
+        h2.setup()
+        val host2 = h2.particles[0] as TestHost
+        assertEquals(true, host2.billboard)
+        assertEquals(true, host2.spinLocal)
+        assertEquals(listOf(0.0, 0.0, 0.0), host2.rotation.toList())
     }
 
     @Test

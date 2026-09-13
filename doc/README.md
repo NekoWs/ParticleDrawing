@@ -31,7 +31,7 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | --- | --- |
 | `AnimationLoader` | 解析 .pdraw 工程文件（含内嵌贴图 texData） |
 | `ParticleAnimation` | 动画数据模型（轨道、粒子、贴图、UV、摄像机、文字对象、音频资产） |
-| `TextObject` / `TextChar` | 文字对象源记录（v15 texts section）：文本/样式/字符→粒子映射，供脚本 this.get(id) 只读访问 |
+| `TextObject` / `TextChar` | 文字对象源记录（v15 texts section，v17 起无组）：文本/样式/字符→粒子映射，供脚本 this.get(id) 只读访问；含自转/公转空间与广告牌字段 |
 | `AudioAsset` | 音频资产（v16 audio section）：原始音频字节 + 量化特征列 + 拍点表，供游戏内播放与脚本只读访问 |
 | `TrackPr` | 分量轨道标识枚举（pos/vel/col/scl/rot/spin/center 的 xyz + fov + target.xyz，共 26 个） |
 | `ClientAnimationPlayer` | 客户端逐 tick 求值器（公式/变量/轨道插值） |
@@ -58,7 +58,7 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | --- | --- |
 | `ClientParticleEngine` | 客户端粒子引擎（缓动同步、直接同步、非均匀缩放） |
 | `RenderParticle` | 渲染粒子状态（缓动 + 速度积分 + 欧拉旋转） |
-| `BridgeParticle` | 桥接原版粒子系统的渲染代理（纯色方块 / 自定义贴图 + UV 采样） |
+| `BridgeParticle` | 桥接原版粒子系统的渲染代理（纯色方块 / 自定义贴图 + UV 采样；v17 非广告牌粒子按自转四元数固定朝向） |
 | `TextureCache` | 内嵌贴图缓存（PNG 字节 → DynamicTexture） |
 | `ClientAnimationManager` | 客户端 .pdraw 动画播放管理 |
 | `AudioStreamPlayer` | 游戏内音频播放（OpenAL 队列流式 + OGG/WAV 解码 + seek 重灌 + 漂移校正，主线程驱动） |

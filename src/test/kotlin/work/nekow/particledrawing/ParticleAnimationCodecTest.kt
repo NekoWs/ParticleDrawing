@@ -50,6 +50,8 @@ class ParticleAnimationCodecTest {
             st = 3,
             ent = Entrance("fade", 5),
             life = 20,
+            billboard = false,     // v8
+            spinLocal = false,     // v8
         )
         val track = AnimTrack(
             pr = TrackPr.POS_X, ids = listOf("p0"),
@@ -91,6 +93,9 @@ class ParticleAnimationCodecTest {
                 TextChar(0, 65, Vec3(0.1, 0.0, -0.2), doubleArrayOf(0.4, 0.4), listOf("p0")),
                 TextChar(1, 66, Vec3(0.5, 0.0, -0.2), doubleArrayOf(0.4, 0.4), emptyList()),
             ),
+            spinLocal = false,    // v8
+            rotLocal = false,     // v8
+            billboard = false,    // v8
         )
         val audio = AudioAsset(
             id = "aud1", name = "bgm", fmt = 0, data = byteArrayOf(1, 2, 3, 4),
@@ -158,6 +163,8 @@ class ParticleAnimationCodecTest {
         assertEquals(3, p.st)
         assertEquals(Entrance("fade", 5), p.ent)
         assertEquals(20, p.life)
+        assertFalse(p.billboard)   // v8
+        assertFalse(p.spinLocal)   // v8
 
         val tr = decoded.tracks[0]
         assertEquals(TrackPr.POS_X, tr.pr)
@@ -210,6 +217,9 @@ class ParticleAnimationCodecTest {
         assertEquals("center", tx.align)
         assertEquals(5, tx.st)
         assertEquals(40, tx.life)
+        assertFalse(tx.spinLocal)  // v8
+        assertFalse(tx.rotLocal)   // v8
+        assertFalse(tx.billboard)  // v8
         assertEquals(2, tx.chars.size)
         assertEquals(65, tx.chars[0].code)
         assertEquals(Vec3(0.1, 0.0, -0.2), tx.chars[0].pos)

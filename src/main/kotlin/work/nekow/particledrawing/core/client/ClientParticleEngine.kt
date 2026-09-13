@@ -41,7 +41,8 @@ class ClientParticleEngine {
     fun spawnParticle(id: UUID, x: Double, y: Double, z: Double,
                       r: Float, g: Float, b: Float, a: Float, scale: Float,
                       lifetimeTicks: Int, groupId: UUID?, glowing: Boolean, lightLevel: Int,
-                      uv: UvData? = null) {
+                      uv: UvData? = null, billboard: Boolean = true,
+                      spin: DoubleArray = ZERO_SPIN, spinLocal: Boolean = true) {
         if (particles.size >= ParticleDrawingConfig.CLIENT.maxRenderParticles.get()) return
 
         val lifetimeMs = if (lifetimeTicks > 0) lifetimeTicks * 50L else 0L
@@ -55,6 +56,7 @@ class ClientParticleEngine {
         if (level != null) {
             val bp = BridgeParticle(id, level, x, y, z,
                 Color.of(r, g, b, a), scale, glowing, uv)
+            bp.syncOrientation(billboard, spin, spinLocal)
             pe.add(bp)
             bridges[id] = bp
         }
@@ -147,13 +149,17 @@ class ClientParticleEngine {
      * scaleArray [sx, sy, sz] 中 sx → quad 宽度，sy → quad 高度，sz 存储但不参与 billboard。
      */
     fun updateParticleDirectArray(id: UUID, pos: Vec3, color: Color, scaleArray: FloatArray,
-                                  glowing: Boolean, lightLevel: Int, snap: Boolean = false) {
-        applyDirect(id, pos, color, glowing, lightLevel, snap, 0f, scaleArray)
+                                  glowing: Boolean, lightLevel: Int, snap: Boolean = false,
+                                  billboard: Boolean = true, spin: DoubleArray = ZERO_SPIN,
+                                  spinLocal: Boolean = true) {
+        applyDirect(id, pos, color, glowing, lightLevel, snap, 0f, scaleArray, billboard, spin, spinLocal)
     }
 
     private fun applyDirect(id: UUID, pos: Vec3, color: Color,
                             glowing: Boolean, lightLevel: Int, snap: Boolean,
-                            scale: Float, scaleArray: FloatArray?) {
+                            scale: Float, scaleArray: FloatArray?,
+                            billboard: Boolean = true, spin: DoubleArray = ZERO_SPIN,
+                            spinLocal: Boolean = true) {
         val rp = particles[id] ?: return
         directIds.add(id)
         val wasGlowing = rp.glowing() && rp.lightLevel() > 0
@@ -171,6 +177,7 @@ class ClientParticleEngine {
             it.syncColor(color.r, color.g, color.b, color.a)
             if (scaleArray != null) it.syncScaleArray(scaleArray) else it.syncScale(scale)
             it.setGlowing(glowing)
+            it.syncOrientation(billboard, spin, spinLocal)
         }
     }
 
@@ -447,6 +454,9 @@ class ClientParticleEngine {
     companion object {
         @Volatile
         private var INSTANCE: ClientParticleEngine? = null
+
+        /** 零自转向量（缺省参数复用，避免每次分配）。 */
+        val ZERO_SPIN = DoubleArray(3)
 
         fun init() { INSTANCE = ClientParticleEngine() }
         @JvmStatic

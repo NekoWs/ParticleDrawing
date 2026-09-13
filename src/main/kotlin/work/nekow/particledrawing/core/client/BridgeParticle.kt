@@ -42,6 +42,32 @@ class BridgeParticle(
     private var scaleW: Float = 0f
     private var scaleH: Float = 0f
 
+    // v17 非广告牌朝向：billboard=false 时四边形静止朝世界 +Z，再按 spin 旋转（spinLocal=局部轴）
+    private var billboard = true
+    private var spinDeg = DoubleArray(3)
+    private var spinLocal = true
+
+    /** 同步朝向（广告牌/自转；billboard=true 时自转被忽略）。 */
+    fun syncOrientation(billboard: Boolean, spin: DoubleArray, spinLocal: Boolean) {
+        this.billboard = billboard
+        if (spin.size >= 3) {
+            this.spinDeg[0] = spin[0]; this.spinDeg[1] = spin[1]; this.spinDeg[2] = spin[2]
+        }
+        this.spinLocal = spinLocal
+    }
+
+    /** 自转欧拉（度）→ 四元数。local = intrinsic XYZ（Rx·Ry·Rz）；world = extrinsic（Rz·Ry·Rx）。 */
+    private fun orientationQuaternion(): Quaternionf {
+        val rx = Math.toRadians(spinDeg[0]).toFloat()
+        val ry = Math.toRadians(spinDeg[1]).toFloat()
+        val rz = Math.toRadians(spinDeg[2]).toFloat()
+        return if (spinLocal) {
+            Quaternionf().rotationXYZ(rx, ry, rz)
+        } else {
+            Quaternionf().rotationZ(rz).mul(Quaternionf().rotationY(ry)).mul(Quaternionf().rotationX(rx))
+        }
+    }
+
     /** 计算贴图大小缩放因子（使用用户设置的 texSize，基准 16px，越大粒子越大）。 */
     private fun computeTexScale(): Float {
         val u = uv ?: return 1f
@@ -159,12 +185,14 @@ class BridgeParticle(
         rotation: Quaternionf,
         partialTick: Float
     ) {
+        // 非广告牌：用自转四元数替换相机朝向旋转
+        val q = if (billboard) rotation else orientationQuaternion()
         if (scaleW != scaleH) {
             nonUniformScaleW = scaleW
-            super.extractRotatedQuad(state, camera, rotation, partialTick)
+            super.extractRotatedQuad(state, camera, q, partialTick)
             nonUniformScaleW = -1f
         } else {
-            super.extractRotatedQuad(state, camera, rotation, partialTick)
+            super.extractRotatedQuad(state, camera, q, partialTick)
         }
     }
 

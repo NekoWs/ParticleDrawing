@@ -62,6 +62,12 @@ interface ParticleHost {
     var glow: Boolean
     var light: Double
     var life: Double
+    /** 自转（XYZ 度）；billboard=true 时渲染端忽略。 */
+    val rotation: DoubleArray
+    /** 广告牌模式（始终朝向相机）。 */
+    var billboard: Boolean
+    /** 自转空间（true=local）。 */
+    var spinLocal: Boolean
     val fields: MutableMap<String, Any?>
     fun kill()
 }

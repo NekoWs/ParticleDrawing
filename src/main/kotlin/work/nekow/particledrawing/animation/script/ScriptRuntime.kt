@@ -654,6 +654,9 @@ object ScriptRuntime {
                 "light" -> w.light
                 "life" -> w.life
                 "index" -> w.index.toDouble()
+                "rotation" -> Vec3(w.rotation[0], w.rotation[1], w.rotation[2])
+                "billboard" -> w.billboard
+                "spinSpace" -> if (w.spinLocal) "local" else "world"
                 else -> w.fields[field] ?: Undefined
             }
         }
@@ -774,6 +777,22 @@ object ScriptRuntime {
                 "life" -> {
                     val v = jsRound(num(value, "particle.life", n))
                     w.life = if (v.isFinite()) (if (v < 0.0) -1.0 else v) else -1.0
+                }
+                "rotation" -> {
+                    val c = vecFieldValues(value, 3, "particle.rotation", n)
+                    w.rotation[0] = c[0]; w.rotation[1] = c[1]; w.rotation[2] = c[2]
+                }
+                "billboard" -> {
+                    if (!isNum(value) && !isBool(value)) {
+                        err("particle.billboard requires a num/bool, got ${typeName(value)}", n)
+                    }
+                    w.billboard = if (value is Boolean) value else (value as Double) > 0.5
+                }
+                "spinSpace" -> {
+                    if (value !is String || (value != "local" && value != "world")) {
+                        err("particle.spinSpace requires 'local' or 'world', got ${typeName(value)}", n)
+                    }
+                    w.spinLocal = value == "local"
                 }
                 "index" -> err("particle.index is read-only", n)
                 else -> w.fields[field] = value
@@ -1337,7 +1356,7 @@ object ScriptRuntime {
         }
 
         private fun particleHasField(pv: ParticleValue, field: String): Boolean = when (field) {
-            "position", "color", "velocity", "scale", "glow", "light", "life", "index" -> true
+            "position", "color", "velocity", "scale", "glow", "light", "life", "index", "rotation", "billboard", "spinSpace" -> true
             else -> pv.host.fields.containsKey(field)
         }
 

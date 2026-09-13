@@ -400,7 +400,8 @@ object ClientAnimationManager {
                 state.visible && live -> {
                     val pos = entry.anchor?.apply(state.pos) ?: state.pos
                     engine.updateParticleDirectArray(
-                        uuid, pos, state.color, state.scale, state.glowing, state.lightLevel, snap = true
+                        uuid, pos, state.color, state.scale, state.glowing, state.lightLevel, snap = true,
+                        billboard = state.billboard, spin = state.spin, spinLocal = state.spinLocal,
                     )
                 }
             }
@@ -476,7 +477,8 @@ object ClientAnimationManager {
                 state.visible && live -> {
                     val pos = entry.anchor?.apply(state.pos) ?: state.pos
                     ClientParticleEngine.instance()?.updateParticleDirectArray(
-                        uuid, pos, state.color, state.scale, state.glowing, state.lightLevel, snap = false
+                        uuid, pos, state.color, state.scale, state.glowing, state.lightLevel, snap = false,
+                        billboard = state.billboard, spin = state.spin, spinLocal = state.spinLocal,
                     )
                 }
             }
@@ -526,7 +528,8 @@ object ClientAnimationManager {
         engine.spawnParticle(
             uuid, pos.x, pos.y, pos.z,
             state.color.r, state.color.g, state.color.b, state.color.a,
-            state.scale[0], -1, null, state.glowing, state.lightLevel, state.uv
+            state.scale[0], -1, null, state.glowing, state.lightLevel, state.uv,
+            state.billboard, state.spin, state.spinLocal,
         )
     }
 
