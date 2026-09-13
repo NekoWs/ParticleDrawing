@@ -8,7 +8,7 @@ import kotlin.math.*
 // 通用解释器已由 script-lang 的 ScriptRuntime / ScalarProgram 取代；这里只剩标量 RPN 编译与变量热更公式求值。
 
 /** 变量关键帧（毫秒 / 值 / 缓动；`Double` 毫秒，给变量插值用）。 */
-data class Keyframe(val tick: Double, val value: Double, val easing: EasingType)
+data class Keyframe(val ms: Double, val value: Double, val easing: EasingType)
 
 /** 标量函数签名：名称 -> 参数个数（与编辑器 easing.js 的标量子集对齐）。 */
 private val FUNCS = mapOf(
@@ -205,16 +205,16 @@ fun evaluate(expr: String, vars: Map<String, Any>): Double {
     return s.last() as? Double ?: throw IllegalArgumentException("表达式求值结果不是标量")
 }
 
-/** 变量关键帧插值（段 i→i+1 用后一关键帧的缓动）。 */
+/** 变量关键帧插值（段 i→i+1 用后一关键帧的缓动）。关键帧时刻为毫秒。 */
 fun varKfValue(kf: List<Keyframe>, t: Double): Double {
     if (kf.isEmpty()) return 0.0
-    if (t <= kf[0].tick) return kf[0].value
-    if (t >= kf.last().tick) return kf.last().value
+    if (t <= kf[0].ms) return kf[0].value
+    if (t >= kf.last().ms) return kf.last().value
     for (i in 0 until kf.size - 1) {
         val a = kf[i]; val b = kf[i + 1]
-        if (t >= a.tick && t <= b.tick) {
-            val dur = b.tick - a.tick
-            val f = if (dur == 0.0) 1.0 else (t - a.tick) / dur
+        if (t >= a.ms && t <= b.ms) {
+            val dur = b.ms - a.ms
+            val f = if (dur == 0.0) 1.0 else (t - a.ms) / dur
             val e = b.easing.evaluate(f.toFloat()).toDouble()
             return a.value + (b.value - a.value) * e
         }

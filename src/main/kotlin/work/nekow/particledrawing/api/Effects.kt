@@ -55,8 +55,9 @@ class EffectHandle internal constructor(
         return this
     }
 
-    fun seek(tick: Double): EffectHandle {
-        ServerEffectManager.seek(playbackId, level.players(), tick)
+    /** 跳转到时间轴毫秒位置（未设 `authority(SERVER)` 时只影响本地）。 */
+    fun seek(ms: Double): EffectHandle {
+        ServerEffectManager.seek(playbackId, level.players(), ms)
         return this
     }
 

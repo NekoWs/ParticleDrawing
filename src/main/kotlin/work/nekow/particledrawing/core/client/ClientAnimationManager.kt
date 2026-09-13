@@ -216,9 +216,10 @@ object ClientAnimationManager {
         }
     }
 
+    /** 跳转到时间轴毫秒位置（纯本地）。 */
     @JvmStatic
-    fun seekLocal(playbackId: UUID, tick: Double) {
-        entries[playbackId]?.clock?.position = tick
+    fun seekLocal(playbackId: UUID, ms: Double) {
+        entries[playbackId]?.clock?.position = ms
     }
 
     @JvmStatic

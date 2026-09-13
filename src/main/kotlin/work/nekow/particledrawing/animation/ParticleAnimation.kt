@@ -79,9 +79,9 @@ class AnimTrack(
     enum class Mode { SET, OP }
 }
 
-/** 单个关键帧。tick 为触发时刻（毫秒，字段名沿用 tick）；value 目标值（rot 为度，渲染转弧度）；easing 到下一关键帧的缓动。 */
+/** 单个关键帧。ms 为触发时刻（毫秒）；value 目标值（rot 为度，渲染转弧度）；easing 到下一关键帧的缓动。 */
 class AnimKeyframe(
-    val tick: Int,
+    val ms: Int,
     val value: Double,
     val easing: EasingType
 )
@@ -166,7 +166,7 @@ class AudioAsset(
 // 动画时间轴长度（毫秒，与编辑器 maxMs 一致）：轨道最大关键帧毫秒、粒子 st/life 上界、函数对象 st+extent。
 // 服务端与客户端共用，保证进度口径一致。
 fun ParticleAnimation.timelineLength(): Int {
-    var max = tracks.flatMap { it.keyframes }.maxOfOrNull { it.tick }?.toDouble() ?: 0.0
+    var max = tracks.flatMap { it.keyframes }.maxOfOrNull { it.ms }?.toDouble() ?: 0.0
     for (p in particles) {
         if (p.st > max) max = p.st.toDouble()
         if (p.life >= 0 && p.st + p.life > max) max = (p.st + p.life).toDouble()
@@ -174,7 +174,7 @@ fun ParticleAnimation.timelineLength(): Int {
     for (fx in functions) {
         var extent = fx.duration.toDouble()
         for (v in fx.vars.values) {
-            val kfMax = v.kf.maxOfOrNull { it.tick } ?: continue
+            val kfMax = v.kf.maxOfOrNull { it.ms } ?: continue
             if (kfMax > extent) extent = kfMax
         }
         if (fx.st + extent > max) max = fx.st + extent

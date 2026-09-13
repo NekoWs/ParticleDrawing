@@ -1028,17 +1028,17 @@ class ClientAnimationPlayer(
     private fun varValue(v: FunctionVar, t: Double): Double {
         val kf = v.kf
         if (kf.isEmpty()) return v.base
-        if (t <= kf[0].tick) return kf[0].value
-        if (t >= kf.last().tick) return kf.last().value
+        if (t <= kf[0].ms) return kf[0].value
+        if (t >= kf.last().ms) return kf.last().value
         var lo = 0
         var hi = kf.size - 1
         while (lo + 1 < hi) {
             val mid = (lo + hi) ushr 1
-            if (kf[mid].tick <= t) lo = mid else hi = mid
+            if (kf[mid].ms <= t) lo = mid else hi = mid
         }
         val a = kf[lo]; val b = kf[lo + 1]
-        val dur = b.tick - a.tick
-        val f = if (dur == 0.0) 1.0 else (t - a.tick) / dur
+        val dur = b.ms - a.ms
+        val f = if (dur == 0.0) 1.0 else (t - a.ms) / dur
         val e = b.easing.evaluate(f.toFloat()).toDouble()
         return a.value + (b.value - a.value) * e
     }
@@ -1048,17 +1048,17 @@ class ClientAnimationPlayer(
     private fun trackValueAt(tr: AnimTrack, t: Double, fallback: Double): Double {
         val kfs = tr.keyframes
         if (kfs.isEmpty()) return fallback
-        if (t <= kfs[0].tick) return kfs[0].value
-        if (t >= kfs.last().tick) return kfs.last().value
+        if (t <= kfs[0].ms) return kfs[0].value
+        if (t >= kfs.last().ms) return kfs.last().value
         var lo = 0
         var hi = kfs.size - 1
         while (lo + 1 < hi) {
             val mid = (lo + hi) ushr 1
-            if (kfs[mid].tick <= t) lo = mid else hi = mid
+            if (kfs[mid].ms <= t) lo = mid else hi = mid
         }
         val a = kfs[lo]; val b = kfs[lo + 1]
-        val dur = (b.tick - a.tick).toDouble()
-        val f = if (dur == 0.0) 1.0 else (t - a.tick) / dur
+        val dur = (b.ms - a.ms).toDouble()
+        val f = if (dur == 0.0) 1.0 else (t - a.ms) / dur
         val e = b.easing.evaluate(f.toFloat()).toDouble()
         return a.value + (b.value - a.value) * e
     }

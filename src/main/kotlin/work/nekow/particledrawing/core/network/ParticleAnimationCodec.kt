@@ -195,7 +195,7 @@ internal object ParticleAnimationCodec {
         for (id in tr.ids) buf.writeUtf(id)
         buf.writeVarInt(tr.keyframes.size)
         for (kf in tr.keyframes) {
-            buf.writeVarInt(kf.tick)
+            buf.writeVarInt(kf.ms)
             buf.writeDouble(kf.value)
             writeEasing(buf, kf.easing)
         }
@@ -231,7 +231,7 @@ internal object ParticleAnimationCodec {
             buf.writeDouble(v.base)
             buf.writeVarInt(v.kf.size)
             for (kf in v.kf) {
-                buf.writeDouble(kf.tick)
+                buf.writeDouble(kf.ms)
                 buf.writeDouble(kf.value)
                 writeEasing(buf, kf.easing)
             }

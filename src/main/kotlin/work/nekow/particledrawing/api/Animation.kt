@@ -328,20 +328,20 @@ class TrackBuilder internal constructor() {
     fun ids(vararg ids: String): TrackBuilder = ids(ids.toList())
     /**
      * 添加一个关键帧。
-     * @param tick 关键帧时刻（毫秒）
+     * @param ms 关键帧时刻（毫秒）
      * @param value 关键帧值
      * @param easing 缓动类型
      */
-    fun keyframe(tick: Int, value: Double, easing: EasingType): TrackBuilder = apply {
-        tkeyframes += AnimKeyframe(tick, value, easing)
+    fun keyframe(ms: Int, value: Double, easing: EasingType): TrackBuilder = apply {
+        tkeyframes += AnimKeyframe(ms, value, easing)
     }
     /**
      * 添加一个关键帧。
-     * @param tick 关键帧时刻（毫秒）
+     * @param ms 关键帧时刻（毫秒）
      * @param value 关键帧值
      * @param easing 缓动类型
      */
-    fun keyframe(tick: Int, value: Number, easing: EasingType): TrackBuilder = keyframe(tick, value.toDouble(), easing)
+    fun keyframe(ms: Int, value: Number, easing: EasingType): TrackBuilder = keyframe(ms, value.toDouble(), easing)
 
     internal fun build(): AnimTrack =
         AnimTrack(tpr ?: throw IllegalStateException("track 未设置 pr"), tids, tkeyframes.toList(), tmode)
@@ -674,12 +674,12 @@ class TrackDsl internal constructor(private val b: TrackBuilder) {
 
     /**
      * 添加一个关键帧。
-     * @param tick 关键帧时刻（毫秒）
+     * @param ms 关键帧时刻（毫秒）
      * @param value 关键帧值
      * @param easing 缓动类型
      */
-    fun keyframe(tick: Int, value: Number, easing: EasingType) {
-        b.keyframe(tick, value.toDouble(), easing)
+    fun keyframe(ms: Int, value: Number, easing: EasingType) {
+        b.keyframe(ms, value.toDouble(), easing)
     }
 }
 

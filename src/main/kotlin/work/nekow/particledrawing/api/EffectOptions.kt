@@ -19,7 +19,7 @@ class EffectOptions {
     /** 播放倍速（默认 1.0）。 */
     fun speed(value: Double): EffectOptions = apply { speedValue = value }
 
-    /** 起始时间轴 tick（默认 0）。 */
+    /** 起始时间轴位置（game tick，1 tick = 50ms；默认 0）。 */
     fun startTick(value: Double): EffectOptions = apply { startTickValue = value }
 
     /** 播放控制权：默认客户端本地；标记服务端权威时控制命令会广播。 */

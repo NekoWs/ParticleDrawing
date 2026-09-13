@@ -37,8 +37,9 @@ class ClientEffectHandle internal constructor(private val playbackId: UUID) {
         return this
     }
 
-    fun seek(tick: Double): ClientEffectHandle {
-        ClientAnimationManager.seekLocal(playbackId, tick)
+    /** 跳转到时间轴毫秒位置（纯本地视觉）。 */
+    fun seek(ms: Double): ClientEffectHandle {
+        ClientAnimationManager.seekLocal(playbackId, ms)
         return this
     }
 
