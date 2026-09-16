@@ -1,9 +1,13 @@
-# 统一行尾：文本文件一律 LF（修掉每次提交的 CRLF warning）
-* text=auto eol=lf
-
-# 二进制不转换
-*.png binary
-*.jar binary
-*.zip binary
-*.pdrawc binary
-*.bbmodel binary
+# 行尾：只有明确列出的文本类型统一 LF；其余全部按二进制处理（-text），
+# 不碰资源字节，也不和仓库级 core.autocrlf=true 的检出转换打架。
+*.kt text eol=lf
+*.java text eol=lf
+*.gradle text eol=lf
+*.properties text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.txt text eol=lf
+*.xml text eol=lf
+*.kts text eol=lf
+* -text
