@@ -1,2 +1,9 @@
-src/generated/**/.cache/* text eol=lf
-src/generated/**/*.json text eol=lf
+# 统一行尾：文本文件一律 LF（修掉每次提交的 CRLF warning）
+* text=auto eol=lf
+
+# 二进制不转换
+*.png binary
+*.jar binary
+*.zip binary
+*.pdrawc binary
+*.bbmodel binary
