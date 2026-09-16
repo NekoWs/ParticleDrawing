@@ -40,6 +40,8 @@ class FunctionObject(
     val rotLocal: Boolean = false,
     /** true=派生粒子按渲染帧精确同步（无 50ms 延迟）；false=按 game tick 同步，与普通粒子渲染一致。 */
     val frameSync: Boolean = false,
+    /** true=加法混合（编辑器 blend=additive，容器 flags bit7）；渲染端选 ADDITIVE_PARTICLE 管线。 */
+    val additive: Boolean = false,
 )
 
 /** 函数对象变量：数值基值 + 关键帧（关键帧非空时按时间轴插值，忽略基值）。base/kf 可变，支持服务端下发变量更新。 */

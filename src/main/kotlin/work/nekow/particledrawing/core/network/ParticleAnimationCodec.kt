@@ -244,6 +244,7 @@ internal object ParticleAnimationCodec {
         buf.writeBoolean(fx.spinLocal)
         buf.writeBoolean(fx.rotLocal)
         buf.writeBoolean(fx.frameSync)
+        buf.writeBoolean(fx.additive)
     }
 
     private fun readFunction(buf: FriendlyByteBuf): FunctionObject {
@@ -272,7 +273,8 @@ internal object ParticleAnimationCodec {
         val spinLocal = buf.readBoolean()
         val rotLocal = buf.readBoolean()
         val frameSync = buf.readBoolean()
-        return FunctionObject(id, name, center, source, seed, vars, duration, uv, st, ent, fastMath, spinLocal, rotLocal, frameSync)
+        val additive = buf.readBoolean()
+        return FunctionObject(id, name, center, source, seed, vars, duration, uv, st, ent, fastMath, spinLocal, rotLocal, frameSync, additive)
     }
 
     private fun writeCamera(buf: FriendlyByteBuf, cam: AnimCamera) {

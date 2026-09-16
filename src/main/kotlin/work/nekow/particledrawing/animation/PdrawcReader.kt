@@ -148,6 +148,8 @@ object PdrawcReader {
             val spinLocal = (flags and 16) != 0
             val rotLocal = (flags and 32) != 0
             val frameSync = (flags and 64) != 0
+            // v17 空闲位 bit7 现用于加法混合（编辑器不升版本、不加字节；旧播放端忽略该位显示普通混合）
+            val additive = (flags and 128) != 0
             val varCount = br.varint()
             val vars = LinkedHashMap<String, FunctionVar>()
             for (j in 0 until varCount) {
@@ -156,7 +158,7 @@ object PdrawcReader {
                 val kf = readVarKeyframes(br)
                 vars[name] = FunctionVar(base, kf)
             }
-            functions.add(FunctionObject("fx$fi", "fx$fi", center, source, seed, vars, duration, uv, st, ent, fastMath, spinLocal, rotLocal, frameSync))
+            functions.add(FunctionObject("fx$fi", "fx$fi", center, source, seed, vars, duration, uv, st, ent, fastMath, spinLocal, rotLocal, frameSync, additive))
         }
 
         // 摄像机对象（v6 新增；v7 起朝向 = target 目标点 + roll 翻滚角；v8 起旋转空间 flags：

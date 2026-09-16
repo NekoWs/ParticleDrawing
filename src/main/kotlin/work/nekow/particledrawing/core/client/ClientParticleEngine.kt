@@ -42,7 +42,8 @@ class ClientParticleEngine {
                       r: Float, g: Float, b: Float, a: Float, scale: Float,
                       lifetimeTicks: Int, groupId: UUID?, glowing: Boolean, lightLevel: Int,
                       uv: UvData? = null, billboard: Boolean = true,
-                      spin: DoubleArray = ZERO_SPIN, spinLocal: Boolean = true) {
+                      spin: DoubleArray = ZERO_SPIN, spinLocal: Boolean = true,
+                      additive: Boolean = false) {
         if (particles.size >= ParticleDrawingConfig.CLIENT.maxRenderParticles.get()) return
 
         val lifetimeMs = if (lifetimeTicks > 0) lifetimeTicks * 50L else 0L
@@ -55,7 +56,7 @@ class ClientParticleEngine {
         val level = Minecraft.getInstance().level
         if (level != null) {
             val bp = BridgeParticle(id, level, x, y, z,
-                Color.of(r, g, b, a), scale, glowing, uv)
+                Color.of(r, g, b, a), scale, glowing, uv, additive)
             bp.syncOrientation(billboard, spin, spinLocal)
             pe.add(bp)
             bridges[id] = bp

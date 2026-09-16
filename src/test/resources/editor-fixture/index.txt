@@ -1,0 +1,11 @@
+# 播放端逐个跑的夹具清单（classpath 目录不可枚举，所以用清单）
+box-surface.txt
+box-edge.txt
+sphere-vertex.txt
+box-voxel.txt
+emitter-grid.txt
+emitter-jittered.txt
+behavior-drift.txt
+graph-sample.txt
+hash-vectors.txt
+merged-3.txt

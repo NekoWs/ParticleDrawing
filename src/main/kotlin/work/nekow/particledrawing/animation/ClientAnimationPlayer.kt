@@ -44,6 +44,8 @@ class ClientAnimationPlayer(
         var spin: DoubleArray = DoubleArray(3),
         /** v17：自转空间（true=local）。 */
         var spinLocal: Boolean = true,
+        /** true=加法混合（来自所属函数对象的 flags bit7）；渲染端据此换 ADDITIVE_PARTICLE 管线。 */
+        var additive: Boolean = false,
     ) {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -63,6 +65,7 @@ class ClientAnimationPlayer(
             if (billboard != other.billboard) return false
             if (!spin.contentEquals(other.spin)) return false
             if (spinLocal != other.spinLocal) return false
+            if (additive != other.additive) return false
 
             return true
         }
@@ -80,6 +83,7 @@ class ClientAnimationPlayer(
             result = 31 * result + billboard.hashCode()
             result = 31 * result + spin.contentHashCode()
             result = 31 * result + spinLocal.hashCode()
+            result = 31 * result + additive.hashCode()
             return result
         }
     }
@@ -968,8 +972,9 @@ class ClientAnimationPlayer(
             newIds.add(id)
             derivedHosts[id] = host
             val s = states.getOrPut(id) {
-                ParticleState(id, Vec3.ZERO, Color.WHITE, floatArrayOf(1f, 1f, 1f), false, 0, null, visible = true, derived = true)
+                ParticleState(id, Vec3.ZERO, Color.WHITE, floatArrayOf(1f, 1f, 1f), false, 0, null, visible = true, derived = true, additive = fx.additive)
             }
+            s.additive = fx.additive   // 已在状态里时也保持跟随函数对象（导出文件里该字段不变，但保持一致）
             var pos = Vec3(host.pos[0] + cx, host.pos[1] + cy, host.pos[2] + cz)
             if (hasSpin) pos = if (fx.spinLocal) rotateAroundLocal(pos, spinPivot, spin) else rotateAround(pos, spinPivot, spin)
             // pos op 位移必须先于公转：函数对象的实际世界位置应绕公转中心旋转。

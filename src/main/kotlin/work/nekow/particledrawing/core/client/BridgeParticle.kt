@@ -25,7 +25,8 @@ class BridgeParticle(
     color: Color,
     scale: Float,
     private var isGlowing: Boolean,
-    private var uv: UvData? = null
+    private var uv: UvData? = null,
+    private val additive: Boolean = false
 ) : SingleQuadParticle(level, x, y, z, defaultSprite()) {
 
     // 贴图解析结果（贴图已注册时才非 null）：Identifier + 尺寸
@@ -204,6 +205,11 @@ class BridgeParticle(
     }
 
     override fun getLayer(): Layer {
+        if (additive) {
+            // 加法混合：始终走半透明通道 + ADDITIVE_PARTICLE 管线。
+            // texEntry 恒非空（resolveTexture 对无贴图回退 defaultWhite），取它的 atlas id。
+            return Layer(true, texEntry!!.id, ADDITIVE_PARTICLE)
+        }
         val entry = texEntry
         return if (entry != null) {
             val translucent = alpha < 1.0f
