@@ -8,8 +8,10 @@ import net.minecraft.world.phys.Vec3
 import net.neoforged.neoforge.network.PacketDistributor
 import work.nekow.particledrawing.api.Anchor
 import work.nekow.particledrawing.api.Authority
+import work.nekow.particledrawing.api.EffectCallbacks
 import work.nekow.particledrawing.api.EffectOptions
 import work.nekow.particledrawing.api.EffectRegistry
+import work.nekow.particledrawing.api.EffectVarStore
 import work.nekow.particledrawing.api.Orient
 import work.nekow.particledrawing.core.network.AnchorUpdateBatchPayload
 import work.nekow.particledrawing.core.network.ClockSyncPayload
@@ -35,6 +37,8 @@ object ServerEffectManager {
         val loop: Boolean,
         val startGameTick: Long,
         val clock: PlaybackClock,
+        /** 最近一次覆盖的变量值（getParam 的诚实实现：服务器读不到客户端运行时） */
+        val vars: EffectVarStore = EffectVarStore(),
     )
 
     private val playbacks = ConcurrentHashMap<UUID, Playback>()
@@ -135,6 +139,7 @@ object ServerEffectManager {
         for (id in toRemove) {
             playbacks.remove(id)
             pendingAnchors.remove(id)
+            EffectCallbacks.fireFinished(id)   // 自然播完：触发 onFinished（回调随后清空）
         }
     }
 
@@ -192,6 +197,7 @@ object ServerEffectManager {
         for (p in players) {
             if (p.uuid in pb.playerIds) PacketDistributor.sendToPlayer(p, StopAnimationPayload(playbackId))
         }
+        EffectCallbacks.fireFinished(playbackId)   // 手动停止也算「放完」
         return true
     }
 
@@ -203,6 +209,7 @@ object ServerEffectManager {
         for (id in ids) {
             playbacks.remove(id)
             pendingAnchors.remove(id)
+            EffectCallbacks.fireFinished(id)
         }
     }
 
@@ -210,10 +217,19 @@ object ServerEffectManager {
     @JvmStatic
     fun updateVariable(playbackId: UUID, name: String, value: String, players: Collection<ServerPlayer>) {
         val pb = playbacks[playbackId] ?: return
+        pb.vars.set(name, value)
         val payload = VariableUpdatePayload(playbackId, name, value)
         for (p in players) {
             if (p.uuid in pb.playerIds) PacketDistributor.sendToPlayer(p, payload)
         }
+        EffectCallbacks.fireParamChanged(playbackId, name, value)
+    }
+
+    /** 读回最近一次覆盖的变量值（数字）；从未设置过返回 null。 */
+    @JvmStatic
+    fun getParam(playbackId: UUID, name: String): Double? {
+        val pb = playbacks[playbackId] ?: return null
+        return pb.vars.getDouble(name)
     }
 
     @JvmStatic
