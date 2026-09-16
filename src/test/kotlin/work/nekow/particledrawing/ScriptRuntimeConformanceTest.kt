@@ -457,10 +457,17 @@ class ScriptRuntimeConformanceTest {
     }
 
     @Test
-    fun spawnConfigRejectsUnknownField() {
-        assertFailsWith<ScriptException> {
-            Harness("func setup() { this.spawn({ foo: 1 }); }").setup()
-        }
+    fun spawnConfigAcceptsCustomFields() {
+        // 契约变更（§10.5.2 A2「通用参数容器」）：spawn 配置里的**未知键不再是错误**，
+        // 而是作为粒子的命名标量存进 fields，脚本里用 p.键名 读写。
+        // 旧契约是「未知键抛 ScriptException」，但编辑器的发射器正是靠自定义字段传 dx/dy/dz/ix
+        // （跨仓夹具 emitter-* 实测：旧契约下带发射器的动画在游戏里直接抛 unknown spawn config field）。
+        val h = Harness("func setup() { let p = this.spawn({ foo: 1, bar: [2,3,4] }); p.alpha = p.foo + 1 }")
+        h.setup()
+        val host = h.particles[0] as TestHost
+        assertEquals(1.0, host.fields["foo"])
+        assertEquals(listOf(2.0, 3.0, 4.0), host.fields["bar"])
+        assertEquals(2.0, host.fields["alpha"])
     }
 
     @Test

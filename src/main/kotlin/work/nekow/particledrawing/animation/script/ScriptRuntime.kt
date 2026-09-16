@@ -52,7 +52,13 @@ private fun cfgColor(v: Any?): List<Double> = when {
 private fun applySpawnConfig(host: ParticleHost, config: Any?) {
     if (config !is ObjVal) throw ScriptException("this.spawn(config) requires an object")
     for ((key, v) in config.fields) {
-        if (key !in SPAWN_CONFIG_FIELDS) throw ScriptException("unknown spawn config field '$key'")
+        // §10.5.2 A2：spawn 配置是**通用参数容器**——未知键不当错误，作为粒子的命名标量存进 fields，
+        // 脚本里用 p.键名 读写。编辑器发射器就靠这个传 dx/dy/dz/ix（曾经直接抛 unknown spawn config
+        // field 'dx'，整条动画在游戏里播不出来；跨仓夹具 emitter-* 抓到的）。
+        if (key !in SPAWN_CONFIG_FIELDS) {
+            host.fields[key] = v
+            continue
+        }
         when (key) {
             "position" -> { val c = cfgVec(v, key, 3); host.pos[0] = c[0]; host.pos[1] = c[1]; host.pos[2] = c[2] }
             "velocity" -> { val c = cfgVec(v, key, 3); host.vel[0] = c[0]; host.vel[1] = c[1]; host.vel[2] = c[2] }
@@ -1492,9 +1498,17 @@ object ScriptRuntime {
         }
 
         private fun hash32(seed: Int, salt: Int): Double {
-            var x = (seed xor salt) + 0x9e3779b9
-            x = (x xor (x ushr 16)) * 0x85ebca6b
-            x = (x xor (x ushr 13)) * 0xc2b2ae35
+            // 三个常量都超出 Int 范围（0x9e3779b9 = 2654435769 等），Kotlin 会把它们当 **Long** 字面量，
+            // 于是这里的加减乘全变成 64 位运算——而编辑器那边（JS）是 32 位回绕：
+            //   x = ((seed ^ salt) + 0x9e3779b9) | 0
+            //   x = Math.imul(x ^ (x >>> 16), 0x85ebca6b) | 0
+            // 结果就是**两端的 hash 不是同一个函数**。实测（跨仓夹具 hash-vectors）：
+            //   hash(0,56) 编辑器 0.08495863014832139 / 播放端 0.32055495539680123，
+            //   并连带让体素采样的拒绝判定不同：同一物体编辑器 278 点、游戏里 270 点。
+            // 必须显式 .toInt() 把常量与运算都摁回 32 位，才能与 JS 的 |0 / imul 完全一致。
+            var x = (seed xor salt) + 0x9e3779b9.toInt()
+            x = (x xor (x ushr 16)) * 0x85ebca6b.toInt()
+            x = (x xor (x ushr 13)) * 0xc2b2ae35.toInt()
             x = x xor (x ushr 16)
             return (x and 0x7fffffff).toDouble() / 2147483648.0
         }
