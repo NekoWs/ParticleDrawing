@@ -758,12 +758,14 @@ class ClientAnimationPlayer(
     }
 
     fun updateVariable(name: String, value: String) {
+        // 非数字值：忽略（不把用户参数悄悄清零——静默降级禁止）。数字值：整组生效——
+        // §5.4 契约「对整组生效」，所有声明该变量的函数对象都要更新，不是第一个。
+        val numeric = value.toDoubleOrNull() ?: return
         for (fx in animation.functions) {
             val v = fx.vars[name] ?: continue
-            v.base = value.toDoubleOrNull() ?: 0.0
+            v.base = numeric
             v.kf = emptyList()
             fxRuntimes[fx.id] = buildFxRuntime(fx)
-            return
         }
     }
 
