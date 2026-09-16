@@ -67,7 +67,7 @@ object ServerEffectManager {
         val loop = options.loop() ?: anim.loop
         val maxMs = anim.timelineLength()
         val startGameTick = players.firstOrNull()?.level()?.gameTime ?: 0L
-        val clock = PlaybackClock(options.startTick().toDouble() * 50, playing = true, speed = options.speed() * 50)
+        val clock = PlaybackClock(options.startTick() * 50, playing = true, speed = options.speed() * 50)
 
         val payload = PlayEffectPayload(id, key, anchor, options, startGameTick)
         val ids = HashSet<UUID>()

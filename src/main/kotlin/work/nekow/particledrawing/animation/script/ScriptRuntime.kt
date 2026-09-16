@@ -1,3 +1,8 @@
+// UNCHECKED_CAST：这是动态类型解释器——运行时栈/数组按 Any? 存取，6 处转换全部紧跟在
+// `is MutableList<*>` 守卫或 `as?` 判型之后，越界/类型错误在运行时按 err() 显式拒绝；
+// 消除这些警告需要重写成泛型栈，会牺牲运行时语义。按 Kotlin 惯例文件级压制并说明理由。
+@file:Suppress("UNCHECKED_CAST")
+
 package work.nekow.particledrawing.animation.script
 
 import kotlin.math.*
@@ -1401,17 +1406,17 @@ object ScriptRuntime {
                 "angleTo" -> {
                     val b = argVec("angleTo")
                     val la = lenVec(v, n); val lb = lenVec(b, n)
-                    if (la == 0.0 || lb == 0.0) PI / 2 else acos((dot(v, b, n) as Double / (la * lb)).coerceIn(-1.0, 1.0))
+                    if (la == 0.0 || lb == 0.0) PI / 2 else acos((dot(v, b, n) / (la * lb)).coerceIn(-1.0, 1.0))
                 }
                 "project" -> {
                     val b = argVec("project")
-                    val bb = dot(b, b, n) as Double
+                    val bb = dot(b, b, n)
                     if (bb == 0.0) err("project onto zero-length vector", n)
-                    scaleVec(b, (dot(v, b, n) as Double) / bb, n)
+                    scaleVec(b, dot(v, b, n) / bb, n)
                 }
                 "reflect" -> {
                     val nn = argVec("reflect")
-                    val d = (dot(v, nn, n) as Double) * 2
+                    val d = dot(v, nn, n) * 2
                     subVec(v, scaleVec(nn, d, n), n)
                 }
                 "lerp" -> {
