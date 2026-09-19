@@ -25,7 +25,7 @@ import java.util.zip.InflaterInputStream
 object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
-    private const val VERSION = 17    // v17：文字去组（轨道引用 kind=4）、粒子广告牌/自转空间、文字空间 flags
+    private const val VERSION = 18    // v18：音频资产新增 5 个可关键帧的播放属性（vol/speed/pan/fadeIn/fadeOut）与音频对象轨道引用 kind=5
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 
@@ -229,8 +229,9 @@ object PdrawcReader {
             )
         }
 
-        // 音频资产（v16 新增）：元数据 + 量化特征列（u16/u8 原始小端字节）+ 原始音频字节。
-        // 列布局与编辑器 src/core/pdrawc.js 一致；插值语义见 script/ScriptAudio.kt。
+        // 音频资产（v16 新增；v18 起 durMs 后带 5 个可关键帧的播放属性基础值）：
+        // 元数据 + 量化特征列（u16/u8 原始小端字节）+ 原始音频字节。
+        // 列布局与编辑器 src/export/pdrawc.js 一致；插值语义见 script/ScriptAudio.kt。
         val audioCount = br.varint()
         val audioAssets = ArrayList<AudioAsset>(audioCount)
         for (i in 0 until audioCount) {
@@ -239,6 +240,11 @@ object PdrawcReader {
             val fmt = br.u8()
             val st = br.varint()
             val durMs = br.varint()
+            val vol = br.f32().toDouble()
+            val speed = br.f32().toDouble()
+            val pan = br.f32().toDouble()
+            val fadeIn = br.varint()
+            val fadeOut = br.varint()
             val hopCount = br.varint()
             if (hopCount > 2000000) throw IllegalArgumentException("pdrawc 音频 hopCount 过大: $hopCount")
             val bpm = br.f32().toDouble()
@@ -259,7 +265,13 @@ object PdrawcReader {
                 rolloff = br.bytes(hopCount)
                 bands = br.bytes(hopCount * 16)
             }
-            audioAssets.add(AudioAsset(id, name, fmt, data, st, durMs, hopCount, bpm, beatOffsetMs, onsetMax, beats, rms, peak, centroid, onset, rolloff, bands))
+            audioAssets.add(
+                AudioAsset(
+                    id, name, fmt, data, st, durMs, hopCount, bpm, beatOffsetMs, onsetMax, beats,
+                    rms, peak, centroid, onset, rolloff, bands,
+                    vol = vol, speed = speed, pan = pan, fadeIn = fadeIn, fadeOut = fadeOut,
+                )
+            )
         }
 
         // 轨道
@@ -282,6 +294,7 @@ object PdrawcReader {
                         2 -> "f:fx$idx"
                         3 -> if (idx in cameras.indices) "c:${cameras[idx].id}" else throw IllegalArgumentException("pdrawc 摄像机索引越界: $idx")
                         4 -> if (idx in texts.indices) "t:${texts[idx].id}" else throw IllegalArgumentException("pdrawc 文字对象索引越界: $idx")
+                        5 -> if (idx in audioAssets.indices) "a:${audioAssets[idx].id}" else throw IllegalArgumentException("pdrawc 音频资产索引越界: $idx")
                         else -> throw IllegalArgumentException("pdrawc 未知轨道引用类型: $kind")
                     }
                 )

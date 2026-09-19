@@ -15,7 +15,8 @@ import java.nio.ByteOrder
  * 游戏内音频播放（.pdrawc 音频资产）。复用 Minecraft 的 OpenAL context 自建 source：
  * 分块解码 + 4×250ms 队列缓冲，seek 用「停源 → 清队列 → 从目标偏移重灌」（AL_SEC_OFFSET 对
  * 队列 source 跨实现不可靠）；播放位置由「已完成帧数 + AL_SAMPLE_OFFSET」计算，动画 tick 侧
- * 对比期望毫秒做漂移校正。所有 AL 调用在客户端主线程（update）执行——context 线程局部，
+ * 对比期望毫秒做漂移校正；音量走 AL_GAIN、声像走相对坐标 AL_POSITION、倍速走 AL_PITCH。
+ * 所有 AL 调用在客户端主线程（update）执行——context 线程局部，
  * 换线程调用无效；context 不可用（设备切换/音效重载）时静默跳过，下次可用时重建 source 续播。
  */
 class AudioStreamPlayer(private val asset: AudioAsset) : AutoCloseable {
@@ -56,8 +57,11 @@ class AudioStreamPlayer(private val asset: AudioAsset) : AutoCloseable {
 
     private fun ensureContext(): Boolean = ALC10.alcGetCurrentContext() != MemoryUtil.NULL
 
-    /** 客户端主线程每 tick 调用：play = 是否出声；seekMs 非空时跳转到该毫秒。 */
-    fun update(play: Boolean, seekMs: Double?) {
+    /**
+     * 客户端主线程每 tick 调用：play = 是否出声；seekMs 非空时跳转到该毫秒（内容本地毫秒）；
+     * gain = 音量（已含淡入淡出包络，0..1）；pan = 声像（-1 左 / 0 中 / 1 右）；rate = 倍速。
+     */
+    fun update(play: Boolean, seekMs: Double?, gain: Float, pan: Float, rate: Float) {
         if (decoder == null) return
         if (!ensureContext()) {
             closeSource()
@@ -67,6 +71,7 @@ class AudioStreamPlayer(private val asset: AudioAsset) : AutoCloseable {
             if (source == 0) openSource()
             if (seekMs != null) doSeek(seekMs)
             refill()
+            applyMix(gain, pan, rate)
             val state = AL10.alGetSourcei(source, AL10.AL_SOURCE_STATE)
             if (play && state != AL10.AL_PLAYING && !(eof && queuedFrames == 0)) {
                 AL10.alSourcePlay(source)
@@ -79,9 +84,9 @@ class AudioStreamPlayer(private val asset: AudioAsset) : AutoCloseable {
         }
     }
 
-    /** 当前播放位置（毫秒，相对资产起点）。 */
+    /** 当前内容播放位置（毫秒，相对音频内容起点；倍速下已是内容本地时间）。 */
     fun positionMs(): Double {
-        if (source == 0 || decoder == null) return 0.0
+        if (source == 0 || sampleRate <= 0 || decoder == null) return 0.0
         return try {
             val off = AL11.alGetSourcei(source, AL11.AL_SAMPLE_OFFSET)
             (playedFrames + off) * 1000.0 / sampleRate
@@ -98,9 +103,21 @@ class AudioStreamPlayer(private val asset: AudioAsset) : AutoCloseable {
 
     private fun format(): Int = if (channels == 2) AL10.AL_FORMAT_STEREO16 else AL10.AL_FORMAT_MONO16
 
+    /** 每 tick 套用音量/声像/倍速。 */
+    private fun applyMix(gain: Float, pan: Float, rate: Float) {
+        if (source == 0) return
+        AL10.alSourcef(source, AL10.AL_GAIN, gain.coerceIn(0f, 2f))
+        AL10.alSourcef(source, AL10.AL_PITCH, rate.coerceIn(0.25f, 4f))
+        // 声像：源坐标取相对听者（右为 +X、前方为 -Z），并把距离衰减关掉，效果与玩家朝向/位置无关
+        AL10.alSource3f(source, AL10.AL_POSITION, pan.coerceIn(-1f, 1f), 0f, -1f)
+    }
+
     private fun openSource() {
         source = AL10.alGenSources()
         AL10.alSourcef(source, AL10.AL_GAIN, 1f)
+        // 相对坐标 + 无衰减：只借 AL_POSITION 的左/右分量做声像，不听距离与朝向
+        AL10.alSourcei(source, AL10.AL_SOURCE_RELATIVE, AL10.AL_TRUE)
+        AL10.alSourcef(source, AL10.AL_ROLLOFF_FACTOR, 0f)
         for (i in 0 until BUFFER_COUNT) {
             buffers[i] = AL10.alGenBuffers()
             bufferData[i] = MemoryUtil.memAlloc(chunkFrames * channels * 2)

@@ -142,9 +142,10 @@ class TextChar(
     val particles: List<String>
 )
 
-// 音频资产（.pdrawc audio section，v16）：原始音频字节（OGG/WAV）+ 量化特征列 + 拍点表。
-// 列与编辑器 core/audio-assets.js 逐位一致（u16/u8 小端）；帧时查表插值见 script/ScriptAudio.kt。
-// fmt：0=ogg, 1=wav。
+// 音频资产（.pdrawc audio section，v16；v18 起带可关键帧的播放属性）：原始音频字节（OGG/WAV）
+// + 量化特征列 + 拍点表 + 5 个播放属性基础值。列与编辑器 objects/audio-assets.js 逐位一致（u16/u8 小端）；
+// 帧时查表插值见 script/ScriptAudio.kt。fmt：0=ogg, 1=wav。
+// vol/speed/pan/fadeIn/fadeOut 既作基础值（无轨道时用），也被 'a:<id>' 属主的同名分量轨道覆盖。
 class AudioAsset(
     val id: String,
     val name: String,
@@ -163,6 +164,11 @@ class AudioAsset(
     val onset: ByteArray,
     val rolloff: ByteArray,
     val bands: ByteArray,
+    val vol: Double = 1.0,
+    val speed: Double = 1.0,
+    val pan: Double = 0.0,
+    val fadeIn: Int = 0,
+    val fadeOut: Int = 0,
 )
 
 // 动画时间轴长度（毫秒，与编辑器 maxMs 一致）：轨道最大关键帧毫秒、粒子 st/life 上界、函数对象 st+extent。
@@ -187,7 +193,9 @@ fun ParticleAnimation.timelineLength(): Int {
     }
     for (a in audioAssets) {
         if (a.st > max) max = a.st.toDouble()
-        if (a.st + a.durMs > max) max = (a.st + a.durMs).toDouble()
+        // v18：内容按倍速折算到时间轴长度（倍速越快，听完所需时间越短）
+        val dur = a.durMs / maxOf(0.25, a.speed)
+        if (a.st + dur > max) max = a.st + dur
     }
     return max.toInt()
 }

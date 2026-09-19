@@ -696,7 +696,8 @@ object ScriptRuntime {
 
         private fun audioLocalMs(v: AudioValue): Double {
             val st = v.asset.st.toDouble()
-            return (v.at - st).coerceIn(0.0, v.asset.durMs.toDouble())
+            val sp = if (v.speed.isFinite() && v.speed > 0.0) v.speed else 1.0
+            return ((v.at - st) * sp).coerceIn(0.0, v.asset.durMs.toDouble())
         }
 
         private fun audioGetField(v: AudioValue, field: String, n: Node): Any? = when (field) {

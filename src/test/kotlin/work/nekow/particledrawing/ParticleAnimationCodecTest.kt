@@ -108,6 +108,7 @@ class ParticleAnimationCodecTest {
             onset = byteArrayOf(0, -128, -1, -128),    // u8：-1 = 255
             rolloff = byteArrayOf(0, 64, -128, 64),
             bands = ByteArray(4 * 16) { (it / 16 * 32 + it % 16).toByte() },
+            vol = 1.75, speed = 2.5, pan = -0.5, fadeIn = 300, fadeOut = 450,   // v9
         )
         return ParticleAnimation(
             loop = true,
@@ -241,6 +242,12 @@ class ParticleAnimationCodecTest {
         assertContentEquals(shortArrayOf(0, 32767, -1, 32767), au.rms)
         assertContentEquals(byteArrayOf(0, -128, -1, -128), au.onset)
         assertContentEquals(ByteArray(4 * 16) { (it / 16 * 32 + it % 16).toByte() }, au.bands)
+        // v9：音频播放属性（vol/speed/pan/fadeIn/fadeOut）往返保留
+        assertEquals(1.75, au.vol)
+        assertEquals(2.5, au.speed)
+        assertEquals(-0.5, au.pan)
+        assertEquals(300, au.fadeIn)
+        assertEquals(450, au.fadeOut)
     }
 
     @Test
@@ -282,6 +289,21 @@ class ParticleAnimationCodecTest {
         assertFailsWith<IllegalArgumentException> {
             ParticleAnimationCodec.read(buf)
         }
+    }
+
+    @Test
+    fun audioTrackPrOrdinalsMatchEditorEnum() {
+        // 序数即二进制格式：新增的音频播放属性必须正好接在 fov/target 之后（与编辑器 PR_ENUM 一致）
+        assertEquals(26, TrackPr.VOL.ordinal)
+        assertEquals(27, TrackPr.SPEED.ordinal)
+        assertEquals(28, TrackPr.PAN.ordinal)
+        assertEquals(29, TrackPr.FADE_IN.ordinal)
+        assertEquals(30, TrackPr.FADE_OUT.ordinal)
+        assertEquals("vol", TrackPr.VOL.key)
+        assertEquals("speed", TrackPr.SPEED.key)
+        assertEquals("pan", TrackPr.PAN.key)
+        assertEquals("fadeIn", TrackPr.FADE_IN.key)
+        assertEquals("fadeOut", TrackPr.FADE_OUT.key)
     }
 
     @Test

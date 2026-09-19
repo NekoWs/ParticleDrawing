@@ -454,7 +454,13 @@ class ClientAnimationPlayer(
             maxMs = maxMs.toDouble(),
             get = { name ->
                 animation.texts.firstOrNull { it.name == name }?.let { TextValue(it) }
-                    ?: animation.audioAssets.firstOrNull { it.name == name }?.let { AudioValue(it, t, true) }
+                    ?: animation.audioAssets.firstOrNull { it.name == name }?.let { a ->
+                        val owner = "a:" + a.id
+                        // v18：内容位置按倍速折算，倍速/是否在窗口内都走轨道求值（与编辑器同一套公式）
+                        val speed = audioSpeedOf(audioProp(owner, TrackPr.SPEED, a.speed, t)).coerceIn(0.25, 4.0)
+                        val local = (t - a.st) * speed
+                        AudioValue(a, t, local >= 0.0 && local < a.durMs, speed)
+                    }
                     ?: throw ScriptException("unknown asset '$name'")
             },
         )
@@ -1145,6 +1151,19 @@ class ClientAnimationPlayer(
         TrackPr.SCL_Z -> p.scale[2].toDouble()
         else -> 0.0
     }
+
+    /**
+     * 音频对象播放属性求值（v18）：属主 [owner] = "a:<资产id>"，[pr] 为 VOL/SPEED/PAN/FADE_IN/FADE_OUT。
+     * 没有轨道或轨道无关键帧时取资产自带的基础值 [base]（与编辑器 audioPropAt 一致）。
+     */
+    fun audioProp(owner: String, pr: TrackPr, base: Double, t: Double): Double {
+        val tr = findTrackByPr(pr, owner) ?: return base
+        if (tr.keyframes.isEmpty()) return base
+        return trackValueAt(tr, t, base)
+    }
+
+    /** 倍速兜底：非有限值/<=0 一律按 1（与编辑器 audioSpeedOf 一致）。 */
+    private fun audioSpeedOf(speed: Double): Double = if (speed.isFinite() && speed > 0.0) speed else 1.0
 
     private fun componentValueAt(p: AnimParticle, pr: TrackPr, t: Double): Double {
         var v = baseComponent(p, pr)

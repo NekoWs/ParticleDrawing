@@ -597,6 +597,27 @@ class ScriptRuntimeConformanceTest {
     }
 
     @Test
+    fun audioSpeedScalesContentPosition() {
+        // v18：内容位置 = (t - st) × speed；t=150、st=100、speed=2.5 → 本地 125ms（钳到 [0, durMs]）
+        val program = parseProgram(
+            "let out = 0\nfunc process() { let a = this.get(\"bgm\"); out = [a.progress, a.loud]; }",
+        )
+        val obj = ScriptRuntime.createObjectState(0)
+        val audio = makeAudioAsset()
+        val ctx = ScriptRuntime.ScriptCtx(
+            t = 150.0, duration = 5000.0, vars = emptyMap(), particles = ArrayList(),
+            spawn = { error("no spawn") },
+            get = { name -> if (name == "bgm") AudioValue(audio, 150.0, true, 2.5) else throw ScriptException("unknown asset") },
+        )
+        ScriptRuntime.runTopLevel(program, obj, ctx)
+        ScriptRuntime.runProcessFrame(program, obj, ctx)
+        val out = obj.globals["out"] as MutableList<*>
+        assertEquals(125.0, out[0] as Double, 1e-9)
+        // hop 宽 1000ms，pos = 0.125：rms = 0*0.875 + 32768*0.125（/65535）
+        assertEquals((32768 * 0.125) / 65535.0, out[1] as Double, 1e-9)
+    }
+
+    @Test
     fun scriptAudioInterpMatchesEditor() {
         // 与编辑器 test/audio-asset.test.js 同一组数据：hop 宽 1000ms，t=500 → f=0.5
         val v = ScriptAudio.valueAt(makeAudioAsset(), 500.0)

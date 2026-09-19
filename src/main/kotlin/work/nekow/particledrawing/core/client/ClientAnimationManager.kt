@@ -8,6 +8,7 @@ import work.nekow.particledrawing.animation.AnimationProgress
 import work.nekow.particledrawing.animation.ClientAnimationPlayer
 import work.nekow.particledrawing.animation.ParticleAnimation
 import work.nekow.particledrawing.animation.PlaybackClock
+import work.nekow.particledrawing.animation.TrackPr
 import work.nekow.particledrawing.animation.timelineLength
 import work.nekow.particledrawing.animation.PdrawcReader
 import work.nekow.particledrawing.api.Anchor
@@ -503,22 +504,40 @@ object ClientAnimationManager {
         for (ap in entry.audioPlayers.values) ap.close()
     }
 
-    /** 每 tick 同步音频：播放头在资产区间内则出声，漂移超阈值 seek；区间外暂停。 */
+    /**
+     * 每 tick 同步音频（公式与编辑器 objects/audio-props.js 一致）：按内容本地毫秒判断是否出声，
+     * 算出淡入淡出包络后的音量、声像与倍速交给播放器；漂移超阈值按内容位置 seek。
+     */
     private fun syncAudio(entry: Entry) {
         if (entry.audioPlayers.isEmpty()) return
-        val t = entry.player.currentMsValue.toDouble()
+        val player = entry.player
+        val t = player.currentMsValue.toDouble()
         for (a in entry.animation.audioAssets) {
             val ap = entry.audioPlayers[a.id] ?: continue
-            val st = a.st.toDouble()
-            val inWindow = t >= st && t < st + a.durMs
+            val owner = "a:" + a.id
+            val speedProp = player.audioProp(owner, TrackPr.SPEED, a.speed, t)
+            val rate = audioSpeedOf(speedProp).coerceIn(0.25, 4.0)
+            // 未钳制的内容位置决定是否在窗口内，钳制后的用于查表与淡入淡出
+            val localRaw = (t - a.st) * rate
+            val local = localRaw.coerceIn(0.0, a.durMs.toDouble())
+            val inWindow = localRaw >= 0.0 && localRaw < a.durMs
+            var fade = 1.0
+            val fadeIn = player.audioProp(owner, TrackPr.FADE_IN, a.fadeIn.toDouble(), t)
+            val fadeOut = player.audioProp(owner, TrackPr.FADE_OUT, a.fadeOut.toDouble(), t)
+            val dur = a.durMs.toDouble()
+            if (fadeIn > 0) fade = minOf(fade, local / fadeIn)
+            if (fadeOut > 0 && dur > 0) fade = minOf(fade, (dur - local) / fadeOut)
+            fade = fade.coerceIn(0.0, 1.0)
+            val gain = player.audioProp(owner, TrackPr.VOL, a.vol, t).coerceIn(0.0, 2.0) * fade
+            val pan = player.audioProp(owner, TrackPr.PAN, a.pan, t).coerceIn(-1.0, 1.0)
             var seek: Double? = null
-            if (inWindow) {
-                val local = t - st
-                if (Math.abs(ap.positionMs() - local) > 150) seek = local
-            }
-            ap.update(inWindow, seek)
+            if (inWindow && Math.abs(ap.positionMs() - local) > 150) seek = local
+            ap.update(inWindow, seek, gain.toFloat().coerceIn(0f, 2f), pan.toFloat(), rate.toFloat())
         }
     }
+
+    /** 倍速兜底：非有限值/<=0 一律按 1（与编辑器 audioSpeedOf 一致）。 */
+    private fun audioSpeedOf(speed: Double): Double = if (speed.isFinite() && speed > 0.0) speed else 1.0
 
     private fun spawnState(
         engine: ClientParticleEngine,

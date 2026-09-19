@@ -23,12 +23,12 @@ import work.nekow.particledrawing.core.easing.EasingType
  * 代码生成 [ParticleAnimation] 的网络编解码（手写二进制，与 .pdrawc 无关，不签名）。
  *
  * 布局：version varint + loop + particles + tracks + groups + functions + textures +
- * groupUV + texData + groupSpinSpace + groupRotSpace + cameras + texts。
+ * groupUV + texData + groupSpinSpace + groupRotSpace + cameras + texts + audioAssets。
  * 客户端按同一版本号解析；版本不符抛异常拒绝播放。
  */
 internal object ParticleAnimationCodec {
 
-    const val VERSION = 8   // v8：粒子新增广告牌/自转空间（billboard/spinLocal）
+    const val VERSION = 9   // v9：音频资产新增 vol/speed/pan/fadeIn/fadeOut（与 .pdrawc v18 对应）
 
     fun write(buf: FriendlyByteBuf, anim: ParticleAnimation) {
         buf.writeVarInt(VERSION)
@@ -393,6 +393,11 @@ internal object ParticleAnimationCodec {
         buf.writeBytes(a.data)
         buf.writeVarInt(a.st)
         buf.writeVarInt(a.durMs)
+        buf.writeDouble(a.vol)      // v9
+        buf.writeDouble(a.speed)    // v9
+        buf.writeDouble(a.pan)      // v9
+        buf.writeVarInt(a.fadeIn)   // v9
+        buf.writeVarInt(a.fadeOut)  // v9
         buf.writeVarInt(a.hopCount)
         buf.writeDouble(a.bpm)
         buf.writeDouble(a.beatOffsetMs)
@@ -422,6 +427,11 @@ internal object ParticleAnimationCodec {
         buf.readBytes(data)
         val st = buf.readVarInt()
         val durMs = buf.readVarInt()
+        val vol = buf.readDouble()      // v9
+        val speed = buf.readDouble()    // v9
+        val pan = buf.readDouble()      // v9
+        val fadeIn = buf.readVarInt()   // v9
+        val fadeOut = buf.readVarInt()  // v9
         val hopCount = buf.readVarInt()
         val bpm = buf.readDouble()
         val beatOffsetMs = buf.readDouble()
@@ -435,7 +445,11 @@ internal object ParticleAnimationCodec {
         val onset = ByteArray(buf.readVarInt()); buf.readBytes(onset)
         val rolloff = ByteArray(buf.readVarInt()); buf.readBytes(rolloff)
         val bands = ByteArray(buf.readVarInt()); buf.readBytes(bands)
-        return AudioAsset(id, name, fmt, data, st, durMs, hopCount, bpm, beatOffsetMs, onsetMax, beats, rms, peak, centroid, onset, rolloff, bands)
+        return AudioAsset(
+            id, name, fmt, data, st, durMs, hopCount, bpm, beatOffsetMs, onsetMax, beats,
+            rms, peak, centroid, onset, rolloff, bands,
+            vol = vol, speed = speed, pan = pan, fadeIn = fadeIn, fadeOut = fadeOut,
+        )
     }
 
     private fun writeUV(buf: FriendlyByteBuf, uv: UvData) {

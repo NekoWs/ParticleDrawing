@@ -87,8 +87,8 @@ class TextValue(val obj: TextObject)
 /** 字符句柄（text.chars 元素，只读）。 */
 class TextCharValue(val ch: TextChar)
 
-/** 音频资产句柄（this.get(名称) 返回，只读）。at = 取值基准（动画全局毫秒）。 */
-class AudioValue(val asset: AudioAsset, val at: Double, val playing: Boolean)
+/** 音频资产句柄（this.get(名称) 返回，只读）。at = 取值基准（动画全局毫秒）；speed = 当刻倍速（内容位置 = (at - st) × speed）。 */
+class AudioValue(val asset: AudioAsset, val at: Double, val playing: Boolean, val speed: Double = 1.0)
 
 // —— 值类型判定 ——
 
