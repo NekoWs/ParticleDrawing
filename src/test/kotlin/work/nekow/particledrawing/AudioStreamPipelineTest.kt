@@ -39,6 +39,8 @@ class AudioStreamPipelineTest {
         val underruns = ArrayList<Int>()
         /** 每次 refill 之后队列里待播的帧数。 */
         val queuedFramesLog = ArrayList<Int>()
+        /** 建 source 时拿到的素材声道数（决定声像走哪条路）。 */
+        val preparedChannels = ArrayList<Int>()
 
         private val data = HashMap<Int, ShortArray>()
         private val state = HashMap<Int, Int>()
@@ -52,8 +54,9 @@ class AudioStreamPipelineTest {
 
         override fun createSource(): Int = next++
 
-        override fun prepareSource(source: Int, sampleRate: Int) {
+        override fun prepareSource(source: Int, sampleRate: Int, channels: Int) {
             preparedRates.add(sampleRate)
+            preparedChannels.add(channels)
         }
 
         override fun deleteSource(source: Int) {
@@ -204,6 +207,7 @@ class AudioStreamPipelineTest {
                 "rate=$rate 被改成了 ${h.sink.uploadedRates}",
             )
             assertTrue(h.sink.preparedRates.all { it == rate })
+            assertTrue(h.sink.preparedChannels.all { it == 2 }, "建 source 时没报双声道")
             sameSamples(h.source, h.sink.playedSamples(), "rate=$rate 的播放流")
         }
     }
@@ -212,6 +216,7 @@ class AudioStreamPipelineTest {
     fun `mono assets are uploaded as mono and stay sample exact`() {
         val h = Harness(44_100, 1.07, 250, channels = 1).run(30)
         assertTrue(h.sink.uploadedStereo.all { !it }, "单声道被当成双声道上传")
+        assertTrue(h.sink.preparedChannels.all { it == 1 }, "建 source 时没报单声道")
         sameSamples(h.source, h.sink.playedSamples(), "单声道播放流")
     }
 

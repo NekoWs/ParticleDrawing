@@ -18,7 +18,9 @@ import java.nio.ByteOrder
  * 分块解码 + 4×250ms 队列缓冲，seek 用「停源 → 清队列 → 从目标偏移重灌」（AL_SEC_OFFSET 对
  * 队列 source 跨实现不可靠）；播放位置由「队列起始帧 + 已完成帧数 + AL_SAMPLE_OFFSET」计算（实测
  * AL_SAMPLE_OFFSET 相对当前队列计数、alSourceStop 会把它归零），动画 tick 侧对比期望毫秒做漂移校正；
- * 音量走 AL_GAIN、声像走相对坐标 AL_POSITION、倍速走 AL_PITCH。
+ * 音量走 AL_GAIN、倍速走 AL_PITCH。声像：立体声素材走 `AL_PAN_SOFT`（`AL_SOFT_source_panning`，
+ * 真左右平衡；`AL_POSITION` 对立体声源在立体声输出下不参与混音），拿不到扩展或单声道素材才退回
+ * `AL_POSITION`。与编辑器仍有两点差别，见 doc/README.md 的「已知限制」。
  *
  * 素材采样率由 WAV/OGG 头决定（常见 44.1/48kHz，也有 192kHz 整曲），原样交给 `alBufferData`，
  * 由 OpenAL 重采样到设备率。OpenAL 默认重采样器是纯插值、没有抗混叠的，高采样率素材会把
@@ -166,7 +168,7 @@ class AudioStreamPlayer internal constructor(
         val s = sink.createSource()
         if (s == 0) return
         source = s
-        sink.prepareSource(source, sampleRate)
+        sink.prepareSource(source, sampleRate, channels)
         for (i in 0 until BUFFER_COUNT) buffers[i] = sink.createBuffer(chunkFrames, channels)
         // 重建 source（设备切换/音效重载）时解码器已经读到队列末尾了，新队列从那里接上
         queueStartFrame += playedFrames
@@ -268,8 +270,11 @@ internal interface AudioSink {
     /** 建一个 source，失败回 0。 */
     fun createSource(): Int
 
-    /** source 的固定属性：相对坐标（只听位置分量的左右做声像）+ 关掉距离衰减 + 抗混叠重采样器。 */
-    fun prepareSource(source: Int, sampleRate: Int)
+    /**
+     * source 的固定属性：相对坐标 + 关掉距离衰减 + 抗混叠重采样器；
+     * 立体声素材还会开平衡声像（[useSourcePanning]）。
+     */
+    fun prepareSource(source: Int, sampleRate: Int, channels: Int)
 
     fun deleteSource(source: Int)
 
@@ -311,23 +316,32 @@ internal interface AudioSink {
 }
 
 /** [AudioSink] 的真实实现：复用 Minecraft 当前 context 的 OpenAL。 */
-internal class OpenAlSink : AudioSink {
+internal class OpenAlSink(
+    /** 测试用：强制「本机有没有 source panning 扩展」，null = 运行时探测。 */
+    private val panningOverride: Boolean? = null,
+) : AudioSink {
 
     private var resampler = UNPROBED
+    private var panning = UNPROBED
     private val staging = HashMap<Int, ByteBuffer>()
+    /** 用平衡声像（AL_PAN_SOFT）而不是 AL_POSITION 的那些 source。 */
+    private val panningSources = HashSet<Int>()
 
     override fun hasContext(): Boolean = ALC10.alcGetCurrentContext() != MemoryUtil.NULL
 
     override fun createSource(): Int = AL10.alGenSources()
 
-    override fun prepareSource(source: Int, sampleRate: Int) {
-        // 相对坐标 + 无衰减：只借 AL_POSITION 的左/右分量做声像，不听距离与朝向
+    override fun prepareSource(source: Int, sampleRate: Int, channels: Int) {
+        // 相对坐标 + 无衰减：声像与玩家朝向/位置无关
         AL10.alSourcei(source, AL10.AL_SOURCE_RELATIVE, AL10.AL_TRUE)
         AL10.alSourcef(source, AL10.AL_ROLLOFF_FACTOR, 0f)
+        applySourcePanning(source, channels)
         useAntiAliasedResampler(source, sampleRate)
     }
-
-    override fun deleteSource(source: Int) = AL10.alDeleteSources(source)
+    override fun deleteSource(source: Int) {
+        panningSources.remove(source)
+        AL10.alDeleteSources(source)
+    }
 
     override fun createBuffer(maxFrames: Int, channels: Int): Int {
         val b = AL10.alGenBuffers()
@@ -389,7 +403,62 @@ internal class OpenAlSink : AudioSink {
 
     override fun setPitch(source: Int, pitch: Float) = AL10.alSourcef(source, AL10.AL_PITCH, pitch)
 
-    override fun setPan(source: Int, pan: Float) = AL10.alSource3f(source, AL10.AL_POSITION, pan, 0f, -1f)
+    override fun setPan(source: Int, pan: Float) {
+        // 开了平衡声像就走 AL_PAN_SOFT——此时不能再设 AL_POSITION，两套声像会叠起来
+        if (source in panningSources) AL10.alSourcef(source, AL_PAN_SOFT, pan)
+        else AL10.alSource3f(source, AL10.AL_POSITION, pan, 0f, -1f)
+    }
+
+    /**
+     * 立体声素材改用平衡声像（`AL_SOFT_source_panning`，见 [useSourcePanning]）：它给的是
+     * 真正的左右平衡，而 `AL_POSITION` 对立体声源在立体声输出下根本不参与混音（声像完全无效）。
+     * 单声道素材不动（`AL_POSITION` 对单声道有效，行为不变）。
+     *
+     * 开了这模式之后 `AL_POSITION` 就不再参与混音（实测：位置留在右侧、`AL_PAN_SOFT` 给 0 时
+     * 左右仍完全对称），所以两套声像不会叠加；这里仍把位置钉在原点，免得留下一个和实际声像
+     * 对不上的旧值。
+     *
+     * 扩展还是草稿（本机报的是 `AL_SOFTX_source_panning`），所以设完读回确认；位被改过就退回
+     * `AL_POSITION`，顺手清掉可能挂起的 AL 错误，别把无效应答留在共享 context 里给 MC 看到。
+     */
+    private fun applySourcePanning(source: Int, channels: Int) {
+        if (!useSourcePanning(channels == 2, panningSupported())) return
+        val enabled = try {
+            AL10.alSource3f(source, AL10.AL_POSITION, 0f, 0f, 0f)
+            AL10.alSourcei(source, AL_PANNING_ENABLED_SOFT, AL10.AL_TRUE)
+            AL10.alGetSourcei(source, AL_PANNING_ENABLED_SOFT) == AL10.AL_TRUE
+        } catch (_: Exception) {
+            false
+        } catch (_: LinkageError) {
+            false
+        }
+        if (enabled) {
+            panningSources.add(source)
+        } else {
+            try {
+                AL10.alGetError()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** 本机有没有 source panning 扩展（测试用来决定这条用例跑不跑）。 */
+    internal fun panningAvailable(): Boolean = panningSupported()
+
+    /** 本机有没有 source panning 扩展；只探一次。 */
+    private fun panningSupported(): Boolean {
+        panningOverride?.let { return it }
+        if (panning != UNPROBED) return panning == 1
+        val present = try {
+            AL10.alIsExtensionPresent(EXT_PANNING) || AL10.alIsExtensionPresent(EXT_PANNING_DRAFT)
+        } catch (_: Exception) {
+            false
+        } catch (_: LinkageError) {
+            false
+        }
+        panning = if (present) 1 else 0
+        return present
+    }
 
     /**
      * 素材采样率与设备率不一致时 OpenAL 会自己重采样，方法由实现自选。默认那档是纯插值，
@@ -453,9 +522,24 @@ internal class OpenAlSink : AudioSink {
         return resampler
     }
 
-    private companion object {
+    internal companion object {
         /** 尚未查询过。 */
         const val UNPROBED = -2
+
+        /** `AL_SOFT_source_panning`（alc/inprogext.h；草稿期叫 AL_SOFTX_source_panning）。 */
+        const val EXT_PANNING = "AL_SOFT_source_panning"
+        const val EXT_PANNING_DRAFT = "AL_SOFTX_source_panning"
+
+        /** AL_PANNING_ENABLED_SOFT（开平衡声像）/ AL_PAN_SOFT（声像值）。 */
+        const val AL_PANNING_ENABLED_SOFT = 0x19EC
+        const val AL_PAN_SOFT = 0x19ED
+
+        /**
+         * 是否走 AL_PAN_SOFT 这条平衡声像路径：只有立体声素材需要（`AL_POSITION` 对立体声源
+         * 在立体声输出下不参与混音），且扩展得在。单声道继续走 `AL_POSITION`（对它有效，行为不变）。
+         */
+        internal fun useSourcePanning(stereo: Boolean, extensionPresent: Boolean): Boolean =
+            stereo && extensionPresent
     }
 }
 

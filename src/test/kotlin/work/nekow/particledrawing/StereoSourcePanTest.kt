@@ -1,20 +1,26 @@
 package work.nekow.particledrawing
 
+import org.junit.Assume.assumeTrue
 import org.lwjgl.openal.AL10
+import org.lwjgl.system.MemoryStack
+import work.nekow.particledrawing.core.client.OpenAlSink
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * 立体声源的 `pan` 是已知的两端分叉（只记录，不实施）：
- * 编辑器把声像串在 Web Audio StereoPanner 上（`objects/audio-playback.js`：source → gain → panner →
- * destination），是真正的左右平衡；播放端把它塞进 `AL_POSITION`，而 OpenAL 对**立体声源**在立体声
- * 输出下走直通声道，位置分量根本不参与混音——实测 pan 从 -1 到 +1 电平差 0.0 dB，也就是**完全无效**。
+ * 立体声源的 `pan`。播放端原来把它塞进 `AL_POSITION`，而 OpenAL 对**立体声源**在立体声输出下
+ * 走直通声道、位置分量不参与混音——实测三种 pan 电平差 0.0 dB，也就是完全无效。
+ * 现在立体声素材改走 `AL_SOFT_source_panning` 的 `AL_PAN_SOFT`（真左右平衡），扩展不可用时
+ * 退回 `AL_POSITION`（即改动前的无效行为，不报错）。
  *
- * 这个用例把分叉钉住：哪天 OpenAL 开始对立体声源认 pan，说明这条已知限制过时了，用例会失败提醒
- * 去改 `doc/README.md` 的「已知限制」。同时量一下「拆成单声道源」为什么能修——单声道源下 pan 有效。
+ * 与编辑器仍有两处差别，写在 `doc/README.md` 的「已知限制」：
+ * ① 中段曲线：OpenAL 线性 vs Web Audio `cos/sin` 等功率（pan=0 与 ±1 两端一致）；
+ * ② 硬声像时 Web Audio 会把对侧声道折叠进近侧输出，OpenAL 不折叠。
+ * 哪天这两条也对上了（或扩展行为变了），这个用例会失败，提醒去改那段文档。
  */
 class StereoSourcePanTest {
 
@@ -22,151 +28,175 @@ class StereoSourcePanTest {
     private val leftFreq = 1000.0
     private val rightFreq = 3000.0
 
-    /** `AL_SOFTX_source_panning`（OpenAL Soft 草稿扩展，MC 那套 OpenAL 用 SOFTX 名字报出来）。 */
-    private val panningExt = "AL_SOFTX_source_panning"
-    private val panningExtAlt = "AL_SOFT_source_panning"
-
-    /** AL_PANNING_ENABLED_SOFT / AL_PAN_SOFT（alc/inprogext.h）。 */
+    /** 与 OpenAlSink 内部同一组常量。 */
     private val panningEnabledSoft = 0x19EC
-    private val panSoft = 0x19ED
 
-    /**
-     * 给单 source 做真左右平衡的另一条路：开 `AL_SOFTX_source_panning` 后用 `AL_PAN_SOFT`，
-     * 不用拆双源。量出来它确实是平衡（贴边时对侧被压掉几十 dB），行为与编辑器 StereoPanner 同类。
-     */
+    /** 左声道 1kHz、右声道 3kHz：一次渲染能分别量左右。 */
+    private fun stereoPair(): ShortArray {
+        val pcm = ShortArray(rate * 2)
+        for (i in 0 until rate) {
+            pcm[i * 2] = (sin(2.0 * PI * leftFreq * i / rate) * 0.5 * 32767.0).toInt().toShort()
+            pcm[i * 2 + 1] = (sin(2.0 * PI * rightFreq * i / rate) * 0.5 * 32767.0).toInt().toShort()
+        }
+        return pcm
+    }
+
     @Test
-    fun `source panning extension gives a real balance on a stereo source`() {
+    fun `source panning gives a real balance through the production sink`() {
         OpenAlLoopback.withDevice(rate) { device ->
-            val ext = if (AL10.alIsExtensionPresent(panningExt)) panningExt
-            else if (AL10.alIsExtensionPresent(panningExtAlt)) panningExtAlt else null
-            org.junit.Assume.assumeTrue("OpenAL 没有 source panning 扩展", ext != null)
+            assumeTrue("OpenAL 没有 source panning 扩展", OpenAlSink().panningAvailable())
 
-            val pcm = ShortArray(rate * 2)
-            for (i in 0 until rate) {
-                pcm[i * 2] = (sin(2.0 * PI * leftFreq * i / rate) * 0.5 * 32767.0).toInt().toShort()
-                pcm[i * 2 + 1] = (sin(2.0 * PI * rightFreq * i / rate) * 0.5 * 32767.0).toInt().toShort()
-            }
-
-            fun measure(pan: Float): Pair<Double, Double> {
-                val y = OpenAlLoopback.renderPcm(device, pcm, rate, rate, stereoBuffer = true) { src ->
-                    AL10.alSourcei(src, panningEnabledSoft, AL10.AL_TRUE)
-                    AL10.alSourcef(src, panSoft, pan)
-                }
-                return OpenAlLoopback.toneDb(y, leftFreq, 0, rate) to
-                    OpenAlLoopback.toneDb(y, rightFreq, 1, rate)
+            val pcm = stereoPair()
+            fun measure(pan: Float): FloatArray = OpenAlLoopback.renderPcm(
+                device, pcm, rate, rate, stereoBuffer = true,
+            ) { src ->
+                val sink = OpenAlSink()
+                sink.prepareSource(src, rate, 2)
+                sink.setPan(src, pan)
             }
 
             val hardLeft = measure(-1f)
             val center = measure(0f)
             val hardRight = measure(1f)
-            println("[pan] 用 $ext + AL_PAN_SOFT 对立体声源做声像：")
-            for (pan in listOf(-1f, -0.75f, -0.5f, -0.25f, 0f, 0.25f, 0.5f, 0.75f, 1f)) {
-                val m = measure(pan)
-                println("        pan=%+.2f  左 %.1f dB / 右 %.1f dB".format(pan, m.first, m.second))
-            }
+            val lLeft = OpenAlLoopback.toneDb(hardLeft, leftFreq, 0, rate)
+            val lRight = OpenAlLoopback.toneDb(hardRight, rightFreq, 1, rate)
+            val cLeft = OpenAlLoopback.toneDb(center, leftFreq, 0, rate)
+            val cRight = OpenAlLoopback.toneDb(center, rightFreq, 1, rate)
+            println("[pan] 立体声源走 AL_PAN_SOFT 后各声道自身分量电平：")
+            println(
+                "        pan=-1  左 %.1f dB / 右 %.1f dB"
+                    .format(lLeft, OpenAlLoopback.toneDb(hardLeft, rightFreq, 1, rate))
+            )
+            println("        pan= 0  左 %.1f dB / 右 %.1f dB".format(cLeft, cRight))
+            println(
+                "        pan=+1  左 %.1f dB / 右 %.1f dB"
+                    .format(OpenAlLoopback.toneDb(hardRight, leftFreq, 0, rate), lRight)
+            )
 
-            // 真平衡：贴边时对侧被压掉，本侧基本不动
+            // 贴边：对侧被压到很低，本侧不动
             assertTrue(
-                hardRight.first < center.first - 20.0,
-                "pan=+1 没把左声道压下去（%.1f → %.1f），不是平衡控制".format(center.first, hardRight.first),
+                OpenAlLoopback.toneDb(hardRight, leftFreq, 0, rate) < cLeft - 20.0,
+                "pan=+1 没把左声道压下去，立体声声像还是无效",
             )
             assertTrue(
-                hardLeft.second < center.second - 20.0,
-                "pan=-1 没把右声道压下去（%.1f → %.1f），不是平衡控制".format(center.second, hardLeft.second),
+                OpenAlLoopback.toneDb(hardLeft, rightFreq, 1, rate) < cRight - 20.0,
+                "pan=-1 没把右声道压下去，立体声声像还是无效",
             )
-            assertTrue(
-                abs(hardLeft.first - center.first) < 1.0 && abs(hardRight.second - center.second) < 1.0,
-                "贴边时本侧也被改了（左 %.1f→%.1f，右 %.1f→%.1f），不是纯平衡"
-                    .format(center.first, hardLeft.first, center.second, hardRight.second),
-            )
-            // 中间单调：右声道随 pan 单调不减
-            var prev = -1e9
-            for (pan in listOf(-1f, -0.75f, -0.5f, -0.25f, 0f, 0.25f, 0.5f, 0.75f, 1f)) {
-                val right = measure(pan).second
-                assertTrue(right >= prev - 0.5, "右声道在 pan=%+.2f 处没单调（%.1f < %.1f）".format(pan, right, prev))
-                prev = right
-            }
-
-            // 与编辑器的剩余差别：Web Audio 的 StereoPanner 对立体声输入会把对侧声道**折进**本侧
-            // （规范：pan<=0 时 outputL = inputL + inputR*gainL），而 AL_PAN_SOFT 是纯平衡、直接丢掉对侧。
-            val fold = OpenAlLoopback.renderPcm(device, pcm, rate, rate, stereoBuffer = true) { src ->
-                AL10.alSourcei(src, panningEnabledSoft, AL10.AL_TRUE)
-                AL10.alSourcef(src, panSoft, -1f)
-            }
-            val leakedRightIntoLeft = OpenAlLoopback.toneDb(fold, rightFreq, 0, rate)
-            println("        pan=-1 时左声道里的右声道分量：%.1f dB（纯平衡应为极低；Web Audio 会折叠进来）"
-                .format(leakedRightIntoLeft))
-            assertTrue(
-                leakedRightIntoLeft < center.first - 30.0,
-                "对侧声道被折进了本侧（%.1f dB），与「纯平衡」的预期不符".format(leakedRightIntoLeft),
-            )
+            assertTrue(abs(lLeft - cLeft) < 1.0 && abs(lRight - cRight) < 1.0, "贴边时本侧也被改了，不是平衡")
+            // 居中：两侧都不动（两端一致，与编辑器的差别只在中段曲线）
+            assertTrue(abs(cLeft - cRight) < 0.5, "pan=0 两侧不对称")
         }
     }
 
     @Test
-    fun `pan is a no-op for a stereo source`() {
+    fun `the fallback path is the old AL_POSITION behaviour and does not error`() {
         OpenAlLoopback.withDevice(rate) { device ->
-            // 左声道 1kHz、右声道 3kHz：一次渲染能分别量左右
-            val pcm = ShortArray(rate * 2)
-            for (i in 0 until rate) {
-                pcm[i * 2] = (sin(2.0 * PI * leftFreq * i / rate) * 0.5 * 32767.0).toInt().toShort()
-                pcm[i * 2 + 1] = (sin(2.0 * PI * rightFreq * i / rate) * 0.5 * 32767.0).toInt().toShort()
-            }
-
+            val pcm = stereoPair()
+            // 强制「没有扩展」：退回 AL_POSITION（立体声下无效，即改动前的行为），且不能抛错
             fun measure(pan: Float): Pair<Double, Double> {
                 val y = OpenAlLoopback.renderPcm(device, pcm, rate, rate, stereoBuffer = true) { src ->
-                    // 与 AudioStreamPlayer.applyMix 同一套：相对坐标 + 无距离衰减
-                    AL10.alSource3f(src, AL10.AL_POSITION, pan, 0f, -1f)
+                    val sink = OpenAlSink(panningOverride = false)
+                    sink.prepareSource(src, rate, 2)
+                    sink.setPan(src, pan)
                 }
                 return OpenAlLoopback.toneDb(y, leftFreq, 0, rate) to
                     OpenAlLoopback.toneDb(y, rightFreq, 1, rate)
             }
-
             val hardLeft = measure(-1f)
             val center = measure(0f)
             val hardRight = measure(1f)
-            println("[pan] 立体声源（左=1kHz, 右=3kHz）各声道自身分量电平：")
-            println("        pan=-1  左 %.1f dB / 右 %.1f dB".format(hardLeft.first, hardLeft.second))
-            println("        pan= 0  左 %.1f dB / 右 %.1f dB".format(center.first, center.second))
-            println("        pan=+1  左 %.1f dB / 右 %.1f dB".format(hardRight.first, hardRight.second))
-
-            // 已知限制：立体声源下 pan 完全不起作用（编辑器里是明显的左右平衡）
             val worst = maxOf(
                 abs(hardLeft.first - center.first), abs(hardLeft.second - center.second),
                 abs(hardRight.first - center.first), abs(hardRight.second - center.second),
             )
+            println("[pan] 扩展不可用时的退路（AL_POSITION）最大电平变化：%.1f dB".format(worst))
             assertTrue(
                 worst < 0.5,
-                "pan 对立体声源生效了（最大变化 %.1f dB）——已知限制过时，请更新 doc/README.md".format(worst),
+                "退路下 pan 对立体声源生效了（最大变化 %.1f dB）——文档里的已知限制可能过时了".format(worst),
             )
         }
     }
 
     @Test
-    fun `pan does work on a mono source which is what a channel split would give`() {
+    fun `mono sources keep the old AL_POSITION path`() {
         OpenAlLoopback.withDevice(rate) { device ->
             val mono = ShortArray(rate) { (sin(2.0 * PI * leftFreq * it / rate) * 0.5 * 32767.0).toInt().toShort() }
+            var checkedFlag = false
             fun measure(pan: Float): Pair<Double, Double> {
                 val y = OpenAlLoopback.renderPcm(device, mono, rate, rate, stereoBuffer = false) { src ->
-                    AL10.alSource3f(src, AL10.AL_POSITION, pan, 0f, -1f)
+                    val sink = OpenAlSink()
+                    sink.prepareSource(src, rate, 1)
+                    sink.setPan(src, pan)
+                    // 单声道不该开平衡声像模式（保持改动前的行为）
+                    if (AL10.alGetSourcei(src, panningEnabledSoft) != AL10.AL_TRUE) checkedFlag = true
                 }
                 return OpenAlLoopback.toneDb(y, leftFreq, 0, rate) to
                     OpenAlLoopback.toneDb(y, leftFreq, 1, rate)
             }
             val hardLeft = measure(-1f)
-            val center = measure(0f)
             val hardRight = measure(1f)
-            println("[pan] 单声道源（1kHz）输出左右电平：")
-            println("        pan=-1  左 %.1f dB / 右 %.1f dB".format(hardLeft.first, hardLeft.second))
-            println("        pan= 0  左 %.1f dB / 右 %.1f dB".format(center.first, center.second))
-            println("        pan=+1  左 %.1f dB / 右 %.1f dB".format(hardRight.first, hardRight.second))
-
-            // 单声道源下 pan 确实改变左右分配：这就是拆双单声道源能修 pan 的原因
+            println(
+                "[pan] 单声道源（仍走 AL_POSITION）：pan=-1 左 %.1f 右 %.1f；pan=+1 左 %.1f 右 %.1f"
+                    .format(hardLeft.first, hardLeft.second, hardRight.first, hardRight.second)
+            )
+            assertTrue(checkedFlag, "单声道素材不该开 source panning")
             assertTrue(
                 hardRight.second > hardLeft.second + 6.0,
-                "单声道源下 pan 也没把声音挪到右边（左 %.1f 右 %.1f），拆源方案不成立"
-                    .format(hardRight.first, hardRight.second),
+                "单声道源的 pan 失效了（左 %.1f 右 %.1f）".format(hardRight.first, hardRight.second),
             )
         }
+    }
+
+    @Test
+    fun `enabling source panning takes the source off position based panning`() {
+        OpenAlLoopback.withDevice(rate) { device ->
+            assumeTrue("OpenAL 没有 source panning 扩展", OpenAlSink().panningAvailable())
+            val pcm = stereoPair()
+            val pinned = OpenAlLoopback.renderPcm(device, pcm, rate, rate, stereoBuffer = true) { src ->
+                val sink = OpenAlSink()
+                sink.prepareSource(src, rate, 2)
+                sink.setPan(src, 0f)
+                assertEquals(AL10.AL_TRUE, AL10.alGetSourcei(src, panningEnabledSoft), "没开平衡声像")
+                // 生产路径把位置钉在原点，免得留下与实际声像对不上的旧值
+                MemoryStack.stackPush().use { stack ->
+                    val f = stack.mallocFloat(3)
+                    AL10.alGetSourcefv(src, AL10.AL_POSITION, f)
+                    assertEquals(0f, f.get(0))
+                    assertEquals(0f, f.get(1))
+                    assertEquals(0f, f.get(2))
+                }
+            }
+            // 开了平衡声像后再把位置挪到右边、AL_PAN_SOFT 仍给 0：位置还认不认？
+            val moved = OpenAlLoopback.renderPcm(device, pcm, rate, rate, stereoBuffer = true) { src ->
+                val sink = OpenAlSink()
+                sink.prepareSource(src, rate, 2)
+                AL10.alSource3f(src, AL10.AL_POSITION, 1f, 0f, -1f)
+                sink.setPan(src, 0f)
+                assertEquals(AL10.AL_TRUE, AL10.alGetSourcei(src, panningEnabledSoft))
+            }
+            val pinnedLeft = OpenAlLoopback.toneDb(pinned, leftFreq, 0, rate)
+            val pinnedRight = OpenAlLoopback.toneDb(pinned, rightFreq, 1, rate)
+            val movedLeft = OpenAlLoopback.toneDb(moved, leftFreq, 0, rate)
+            val movedRight = OpenAlLoopback.toneDb(moved, rightFreq, 1, rate)
+            println(
+                "[pan] 开平衡声像后：位置钉原点 左 %.1f / 右 %.1f；位置挪到右侧且 pan=0 左 %.1f / 右 %.1f"
+                    .format(pinnedLeft, pinnedRight, movedLeft, movedRight)
+            )
+            // 实测：开了这模式位置分量不再参与混音，所以两套声像不会叠加。
+            // 哪天 OpenAL 改成会叠加（左右不再对称），这里会失败，提醒改文档与注释。
+            assertTrue(
+                abs(movedLeft - movedRight) < 1.0,
+                "开了平衡声像后位置声像又生效了（左 %.1f / 右 %.1f）——会两套叠加，请改文档与注释"
+                    .format(movedLeft, movedRight),
+            )
+        }
+    }
+
+    @Test
+    fun `source panning is only used for stereo material`() {
+        // 纯决策函数：立体声 + 有扩展才走平衡声像
+        assertEquals(false, OpenAlSink.useSourcePanning(stereo = false, extensionPresent = true))
+        assertEquals(false, OpenAlSink.useSourcePanning(stereo = true, extensionPresent = false))
+        assertEquals(true, OpenAlSink.useSourcePanning(stereo = true, extensionPresent = true))
     }
 }

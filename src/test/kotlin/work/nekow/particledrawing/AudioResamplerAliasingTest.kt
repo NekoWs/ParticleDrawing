@@ -67,18 +67,18 @@ class AudioResamplerAliasingTest {
 
             val sink = OpenAlSink()
             val sameRate = sink.createSource()
-            sink.prepareSource(sameRate, 48_000)
+            sink.prepareSource(sameRate, 48_000, 2)
             assertEquals(
                 OpenAlLoopback.defaultResamplerIndex(), resamplerOf(sameRate),
                 "素材 48k + 设备 48k：不该去设重采样器",
             )
 
             val otherRate = sink.createSource()
-            sink.prepareSource(otherRate, rate)
+            sink.prepareSource(otherRate, rate, 2)
             assertEquals(picked, resamplerOf(otherRate), "素材 192k + 设备 48k：应当换成带限 sinc")
 
             val slightlyOff = sink.createSource()
-            sink.prepareSource(slightlyOff, 44_100)
+            sink.prepareSource(slightlyOff, 44_100, 2)
             assertEquals(picked, resamplerOf(slightlyOff), "素材 44.1k + 设备 48k：也要换（非整数比）")
 
             sink.deleteSource(sameRate)
@@ -95,7 +95,7 @@ class AudioResamplerAliasingTest {
             assumeTrue("设备率不是 192k，跳过", device.rate == 192_000)
             val sink = OpenAlSink()
             val src = sink.createSource()
-            sink.prepareSource(src, 192_000)
+            sink.prepareSource(src, 192_000, 2)
             assertEquals(
                 OpenAlLoopback.defaultResamplerIndex(), resamplerOf(src),
                 "素材 192k + 设备 192k：不该去设重采样器",
@@ -117,14 +117,14 @@ class AudioResamplerAliasingTest {
         val sink = OpenAlSink()
         OpenAlLoopback.withDevice(48_000) { _ ->
             val src = sink.createSource()
-            sink.prepareSource(src, 48_000)
+            sink.prepareSource(src, 48_000, 2)
             assertEquals(OpenAlLoopback.defaultResamplerIndex(), resamplerOf(src))
             sink.deleteSource(src)
         }
         OpenAlLoopback.withDevice(192_000) { device ->
             assumeTrue("设备率不是 192k，跳过", device.rate == 192_000)
             val src = sink.createSource()
-            sink.prepareSource(src, 48_000)
+            sink.prepareSource(src, 48_000, 2)
             assertEquals(picked, resamplerOf(src), "换设备后不该沿用旧设备率的判定")
             sink.deleteSource(src)
         }

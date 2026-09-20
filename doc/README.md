@@ -115,37 +115,55 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 
 ## 已知限制
 
-### 立体声源的 `pan` 在播放端无效（与编辑器分叉，未修）
+### 立体声源的 `pan`：已实施，与编辑器有两处已知差别
 
 编辑器把音频声像串在 Web Audio 的 `StereoPanner` 上（`objects/audio-playback.js`：
-`source → gain → panner → destination`），播放端把它塞进 `AL_POSITION`
-（`AudioStreamPlayer.applyMix`），而 OpenAL 对**立体声源**在立体声输出下走直通声道、位置分量
-不参与混音。
+`source → gain → panner → destination`）。播放端原来把它塞进 `AL_POSITION`，而 OpenAL 对**立体声源**
+在立体声输出下走直通声道、位置分量不参与混音——实测（`ALC_SOFT_loopback` 离屏渲染真 OpenAL Soft，
+见 `StereoSourcePanTest`）pan 从 -1 到 +1 左右电平差 **0.0 dB**，也就是声像完全无效。
 
-实测（`ALC_SOFT_loopback` 离屏渲染真 OpenAL Soft，见 `StereoSourcePanTest`）：立体声源 `pan` 从
--1 到 +1，左右声道电平差 **0.0 dB**——编辑器预览里听得到的 `pan` 关键帧进游戏后被静默忽略。
+现在立体声素材改走 `AL_SOFT_source_panning` 的 `AL_PAN_SOFT`（`OpenAlSink.prepareSource` 置
+`AL_PANNING_ENABLED_SOFT`，`setPan` 用 `AL_PAN_SOFT` 代替 `AL_POSITION`），实测是**真左右平衡**：
+pan=0 两侧不动，pan=±1 本侧不动、对侧 -177 dB，中段线性（±0.5 → 对侧 -6.1 dB）。扩展不可用时
+退回 `AL_POSITION`（即改动前的行为，不报错）；单声道素材也继续走 `AL_POSITION`（对它有效，行为不变）。
 
-可行修法（都未实施，按代价从低到高）：
+与编辑器仍有两处差别，都在两端之外：
 
-1. 本机 OpenAL 有 `AL_SOFT_source_panning` 时（MC 用的那套用草稿名 `AL_SOFTX_source_panning`
-   报出）：建 source 时置 `AL_PANNING_ENABLED_SOFT = TRUE`，再用 `AL_PAN_SOFT` 代替 `AL_POSITION`
-   传声像，约 20 行、不动队列。实测它是**纯平衡**：pan=0 两侧不动，pan=±1 本侧不动、对侧 -177 dB，
-   中段线性（±0.5 → 对侧 -6.1 dB）。与编辑器还差两点：中段曲线（Web Audio 是 `cos/sin` 等功率）
-   与「对侧折叠」（Web Audio 规范对立体声输入算的是 `outputL = inputL + inputR·gainL`，会把对侧
-   声道混进本侧；实测 `AL_PAN_SOFT` 不折叠，对侧分量 -104 dB）。另外开这种模式时必须同时停止设置
-   `AL_POSITION`，否则两套声像会叠起来。
-2. 要逐点完全一致，就自己按规范算增益**和折叠**：折叠要把右声道同时送进左右两路输出，两个单声道
-   源的 `AL_GAIN` 给不出来，得在解码块上做每样本的折叠混音（并在 `pan` 变化时重新上传）。
-   代价与拆双单声道源相当，会把分块队列、seek、位置记账与测试面都变成两路，不建议只为 `pan` 做。
-   顺带：不要用「单声道源 + `AL_POSITION`」凑——实测它的中间位置比贴边低 4.4 dB，也不是编辑器的
-   曲线。
+1. **中段曲线**：OpenAL 线性、Web Audio 等功率（`gainL = cos(x·π/2)`、`gainR = sin(x·π/2)`）。
+   pan=0 完全一致；pan=±1 对侧都静音、本侧自身内容都不衰减，只剩下面第 2 点的折叠差别；
+   中间不一致（pan=0.5 时对侧：OpenAL -6.1 dB、等功率 -3.0 dB）。
+2. **对侧折叠**：Web Audio 规范对立体声输入算的是 `outputL = inputL + inputR·gainL`，
+   硬声像时会把对侧声道**混进**近侧输出；`AL_PAN_SOFT` 不折叠（实测对侧分量 -104 dB），近侧
+   只剩本来的内容。
+
+若将来必须逐点一致，路径是自己按规范算增益与折叠（在解码块上做每样本混音，或拆双单声道源并
+保持队列/seek/位置记账锁步）——已评估 **150~200 行**，不建议只为这两点做。
+
+开关语义（实测）：开启 `AL_PANNING_ENABLED_SOFT` 之后 `AL_POSITION` 就不再参与这条 source 的混音
+（位置挪到右侧、`AL_PAN_SOFT` 给 0 时左右仍完全对称），所以两套声像不会叠加；`prepareSource` 仍把
+位置钉在原点，只是不留一个与实际声像对不上的旧值。这个开关只作用于 `AudioStreamPlayer` 自建、
+只播 `.pdrawc` 音频的 source；游戏本体的 3D 定位音效走 Minecraft 自己的 source，不受影响。
 
 ### 素材采样率不必等于设备率
 
 播放端把 WAV/OGG 头里的采样率原样交给 `alBufferData`，由 OpenAL 重采样到设备率。素材率 **≠**
 设备率时，建 source 会换成带限 sinc 重采样器（`AL_SOFT_source_resampler`）——OpenAL 默认那档是
 纯插值、没有抗混叠，会把 24kHz 以上的内容按原电平折回可听带（实测 192kHz 素材的 30kHz 单音折回
-可听带 **-9.0 dBFS**）。素材率 **==** 设备率时不会去设重采样器，mixer 走 1:1 快路径、零额外开销。
+可听带 **-9.0 dBFS**，换成带限 sinc 后 -70~-81 dBFS）。
+
+触发条件（实测 `AudioResamplerAliasingTest`，读回 `AL_SOURCE_RESAMPLER_SOFT` 确认）：
+
+| 设备率 | 素材率 | 行为 |
+| --- | --- | --- |
+| 48k | 48k | **不设**（读回仍是默认档），mixer 走 1:1 快路径，零开销、与不换挡时完全一致 |
+| 48k | 192k | 设为带限 sinc |
+| 48k | 44.1k | 也设（非整数比，同样在重采样） |
+| 192k | 192k | **不设** |
+| 设备率查不到（返回 0） | 任意 | 仍会设（保守：假设可能有重采样） |
+| 缺扩展 / 没有带限 sinc 可选 | — | 一个 AL 调用都不发，退回 OpenAL 默认 |
+
+设备率每次建 source **现查**（不缓存）：同一次播放里设备换了率，缓存旧值会把「新设备率 == 素材率」
+误判成立而漏换重采样器。换素材或换设备前照这张表看即可。
 
 ---
 
