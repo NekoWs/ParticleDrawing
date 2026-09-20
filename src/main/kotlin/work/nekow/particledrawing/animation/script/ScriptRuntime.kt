@@ -713,6 +713,9 @@ object ScriptRuntime {
             "onset" -> ScriptAudio.valueAt(v.asset, audioLocalMs(v)).onset
             "centroid" -> ScriptAudio.valueAt(v.asset, audioLocalMs(v)).centroid
             "rolloff" -> ScriptAudio.valueAt(v.asset, audioLocalMs(v)).rolloff
+            "sampleRate" -> ScriptWavePcm.rate(v.asset).toDouble()
+            "channels" -> ScriptWavePcm.channels(v.asset).toDouble()
+            "waveReady" -> ScriptWavePcm.ready(v.asset)
             else -> err("audio has no field '.$field'", n)
         }
 
@@ -722,6 +725,33 @@ object ScriptRuntime {
                 err("band requires an integer 0..${ScriptAudio.BANDS - 1}, got ${typeName(idx)}", n)
             }
             return ScriptAudio.valueAt(v.asset, audioLocalMs(v)).bands[i]
+        }
+
+        // —— 采样级取值（a.sampleAt / a.peakAt）——
+        // 数值来自 ScriptWavePcm（WAV 直读字节 / OGG 按窗口解码），这里只做与编辑器一致的参数校验：
+        // 声道号必须是非负整数，给了越界声道显式报错；未就绪（waveReady=false）时按静音回 0、不报错。
+
+        private fun audioChannelOf(v: AudioValue, ch: Any?, n: Node, method: String): Int {
+            if (ch == null) return 0
+            if (ch !is Double || ch % 1.0 != 0.0 || ch < 0.0) {
+                err("$method requires a channel index >= 0 (integer), got ${typeName(ch)}", n)
+            }
+            val c = ch.toInt()
+            val count = ScriptWavePcm.channels(v.asset)
+            if (count > 0 && c >= count) err("$method: channel $c out of range (this asset has $count)", n)
+            return c
+        }
+
+        private fun audioSampleAt(v: AudioValue, ms: Any?, ch: Any?, n: Node): Double {
+            if (ms !is Double) err("sampleAt requires a num, got ${typeName(ms)}", n)
+            return ScriptWavePcm.sampleAt(v.asset, ms, audioChannelOf(v, ch, n, "sampleAt"))
+        }
+
+        private fun audioPeakAt(v: AudioValue, ms: Any?, win: Any?, ch: Any?, n: Node): Double {
+            if (ms !is Double) err("peakAt requires a num for ms, got ${typeName(ms)}", n)
+            if (win !is Double) err("peakAt requires a num for windowMs, got ${typeName(win)}", n)
+            if (!(win > 0.0)) err("peakAt requires windowMs > 0", n)
+            return ScriptWavePcm.peakAt(v.asset, ms, win, audioChannelOf(v, ch, n, "peakAt"))
         }
 
         private fun vecFieldValues(value: Any?, len: Int, what: String, n: Node): List<Double> {
@@ -977,6 +1007,14 @@ object ScriptRuntime {
                 if (method == "band") {
                     if (args.size != 1) err("'band' expects exactly 1 argument", n)
                     return audioBand(obj, args[0], n)
+                }
+                if (method == "sampleAt") {
+                    if (args.size != 1 && args.size != 2) err("'sampleAt' expects 1 or 2 arguments", n)
+                    return audioSampleAt(obj, args[0], args.getOrNull(1), n)
+                }
+                if (method == "peakAt") {
+                    if (args.size != 2 && args.size != 3) err("'peakAt' expects 2 or 3 arguments", n)
+                    return audioPeakAt(obj, args[0], args[1], args.getOrNull(2), n)
                 }
                 err("audio has no method '.$method()'", n)
             }

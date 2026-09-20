@@ -33,6 +33,7 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | `ParticleAnimation` | 动画数据模型（轨道、粒子、贴图、UV、摄像机、文字对象、音频资产） |
 | `TextObject` / `TextChar` | 文字对象源记录（v15 texts section，v17 起无组）：文本/样式/字符→粒子映射，供脚本 this.get(id) 只读访问；含自转/公转空间与广告牌字段 |
 | `AudioAsset` | 音频资产（v16 audio section）：原始音频字节 + 量化特征列 + 拍点表，供游戏内播放与脚本只读访问 |
+| `ScriptWavePcm` | 音频采样级 PCM：脚本 `a.sampleAt/peakAt/sampleRate/channels/waveReady` 的取值来源，WAV 按字节直读、OGG 按窗口解码 |
 | `TrackPr` | 分量轨道标识枚举（pos/vel/col/scl/rot/spin/center 的 xyz + fov + target.xyz，共 26 个） |
 | `ClientAnimationPlayer` | 客户端逐 tick 求值器（公式/变量/轨道插值） |
 | `ServerAnimationManager` | 服务端动画引擎：playByName / play / stop / stopAll / updateVariable，含活跃播放查询 |
