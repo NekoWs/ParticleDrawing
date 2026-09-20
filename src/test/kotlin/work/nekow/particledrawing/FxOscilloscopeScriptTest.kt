@@ -93,7 +93,7 @@ class FxOscilloscopeScriptTest {
         assertTrue(particles.all { it.pos.all(Double::isFinite) && it.scale.all(Double::isFinite) })
     }
 
-    private companion object {
+    companion object {
         /** 示波器工程 fx1 的 vars 默认值（base 值，无关键帧）。 */
         val FX1_VARS: Map<String, Double> = mapOf(
             "winMs" to 12.0, "segMs" to 0.0104166667, "segsMax" to 4000.0, "size" to 1.0,

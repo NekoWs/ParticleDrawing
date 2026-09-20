@@ -8,6 +8,7 @@ import work.nekow.particledrawing.animation.AnimationProgress
 import work.nekow.particledrawing.animation.ClientAnimationPlayer
 import work.nekow.particledrawing.animation.ParticleAnimation
 import work.nekow.particledrawing.animation.PlaybackClock
+import work.nekow.particledrawing.animation.ProcessClock
 import work.nekow.particledrawing.animation.TrackPr
 import work.nekow.particledrawing.animation.timelineLength
 import work.nekow.particledrawing.animation.PdrawcReader
@@ -40,6 +41,8 @@ object ClientAnimationManager {
         val loop: Boolean = true,
         // 音频资产 → 播放器（按资产 id 索引；播放头进出区间时出声/暂停）
         val audioPlayers: MutableMap<String, AudioStreamPlayer> = HashMap(),
+        // 渲染帧 process 时刻的单调游标（防止 partialTick 与播放头口径不一致时往回跳）
+        val processClock: ProcessClock = ProcessClock(),
     )
 
     private val entries = ConcurrentHashMap<UUID, Entry>()
@@ -356,23 +359,42 @@ object ClientAnimationManager {
     /**
      * 每渲染帧推进函数对象 process（渲染帧率）：以「当前权威毫秒 + 渲染帧 partialTick 的帧内毫秒」
      * 作为目标时刻。process 每帧执行；frameSync=true 的派生粒子按帧同步；普通粒子与其余派生粒子由游戏 tick 推进。
+     *
+     * 目标时刻经 [ProcessClock] 单调化：partialTick 与播放头不是同一套时钟（frozen 帧直接给 1.0、
+     * 暂停恢复回填残余量、tickrate 口径不一致），直接相加会让 process 来回倒帧；只有播放头本身回退
+     * （循环回卷 / seek）才跟着倒退。见 `ProcessClock` 与 `ProcessClockTest`。
      */
     @JvmStatic
     fun frameTick(partialTick: Float) {
         if (entries.isEmpty()) return
-        val p = partialTick.coerceIn(0f, 1f).toDouble()
+        val p = if (partialTick.isFinite()) partialTick.coerceIn(0f, 1f).toDouble() else 0.0
         for ((_, entry) in entries) {
             val player = entry.player
             if (player.isStatic() || player.isFinished()) continue
-            val base = player.currentMsValue.toDouble()
             val step = entry.clock?.speed ?: 50.0
-            val max = player.maxMsValue
-            var t = base + p * step
-            if (max > 0) t = minOf(t, (max - 1).toDouble())
+            val t = entry.processClock.next(player.currentMsValue, p, step, player.maxMsValue)
             player.advanceFrame(t)
             syncDerivedFrame(entry)
         }
     }
+
+    /**
+     * 直写桥接粒子时是否关闭 tick 间插值（`xo/yo/zo` 与 `x/y/z` 写同值）。
+     *
+     * 派生粒子（函数对象 spawn）的位置由脚本 process 逐渲染帧整体重写：一个 game tick 内它已经换了
+     * 整整一幅图形（示波器迹线这类环形缓冲每帧全量重写，实测每段每 tick 位移可达整个图形半径量级）。
+     * 交给原版在 xo（上一 tick 位置）与 x（本 tick 位置）之间按 partialTick 线性插值，画出来就是
+     * 相邻两条迹线的混合——重影，并且整条迹线在 tick 内沿弦滑动——抖动。所以派生粒子一律关掉插值，
+     * 渲染只显示 process 最后算出的那一幅（插值量恒 0，见 `DerivedParticleInterpolationTest`）。
+     *
+     * 普通粒子的位置来自 tick 量化的轨道求值（两次 tick 之间是同一批端点），保留插值才能按渲染帧率平滑。
+     *
+     * 代价：关插值后派生粒子只在 game tick 更新（20Hz 采样保持）——迹线不再被插值涂抹，但每 50ms 换一幅。
+     * 需要「无 50ms 延迟的逐帧精确同步」（与编辑器预览一致）时，用函数对象的 frameSync 开关，
+     * 那条路径整体走 [frameTick]，与本开关无关。
+     */
+    @JvmStatic
+    fun snapDirectWrite(derived: Boolean): Boolean = derived
 
     /** 每渲染帧同步「帧级同步（frameSync=true）」派生粒子；其余派生粒子与普通粒子由 [sync] 按游戏 tick 同步。 */
     private fun syncDerivedFrame(entry: Entry) {
@@ -446,8 +468,10 @@ object ClientAnimationManager {
     }
 
     private fun sync(entry: Entry) {
-        // 回卷标记仅用于重置；连续可见粒子不再跳变（snap=false），
+        // 回卷标记仅用于重置；普通粒子的连续可见状态不再跳变（xo 保留上一 tick 位置），
         // 让原版渲染在 xo→x 间线性插值，自然穿过 360°≡0° 的闭合帧，循环无缝。
+        // 派生粒子例外：位置由 process 逐渲染帧整体重写，插值只会把相邻两幅迹线混成重影，一律 snap
+        // （见 [snapDirectWrite]）。
         // 这里处理普通粒子 + 未开启帧级同步（frameSync=false）的派生粒子；帧级同步派生粒子由 syncDerivedFrame 按帧处理。
         entry.player.consumeJustLooped()
         val engine = ClientParticleEngine.instance() ?: return
@@ -480,7 +504,9 @@ object ClientAnimationManager {
                 state.visible && live -> {
                     val pos = entry.anchor?.apply(state.pos) ?: state.pos
                     ClientParticleEngine.instance()?.updateParticleDirectArray(
-                        uuid, pos, state.color, state.scale, state.glowing, state.lightLevel, snap = false,
+                        uuid, pos, state.color, state.scale, state.glowing, state.lightLevel,
+                        // 派生粒子按帧重写的图形不做 tick 间插值（否则相邻两帧的迹线被插值混成重影）
+                        snap = snapDirectWrite(state.derived),
                         billboard = state.billboard, spin = state.spin, spinLocal = state.spinLocal,
                     )
                 }
