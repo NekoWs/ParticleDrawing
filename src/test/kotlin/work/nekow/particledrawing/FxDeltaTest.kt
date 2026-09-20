@@ -31,9 +31,9 @@ class FxDeltaTest {
             tracks = emptyList(),
             groups = emptyMap(),
             functions = listOf(
-                // duration 给一个非 0 值：duration=0 且时间轴为空的动画被当成静态动画，
-                // 静态动画只跑一次 setup、根本不跑 process（this.delta 也就无从谈起）。
-                FunctionObject(id = "fx", name = "fx", center = doubleArrayOf(0.0, 0.0, 0.0), source = source, seed = 0, vars = emptyMap(), duration = 60_000),
+                // duration 给 0（不限时长）+ 空时间轴：判据看脚本有没有 process 阶段，不看时长与时间轴长度，
+                // 所以这种动画照样每帧跑 process，this.delta 才有得算。
+                FunctionObject(id = "fx", name = "fx", center = doubleArrayOf(0.0, 0.0, 0.0), source = source, seed = 0, vars = emptyMap(), duration = 0),
             ),
         ),
         Vec3.ZERO,

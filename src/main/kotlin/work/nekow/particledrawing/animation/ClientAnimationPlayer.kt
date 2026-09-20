@@ -139,14 +139,40 @@ class ClientAnimationPlayer(
 
     private val maxMs: Int = animation.timelineLength()
 
-    // 静态动画（无轨道/时间轴，且公式与变量均不含 random()）：init 已算好 t=0 状态，每 tick 无需重算。
-    // 5w 粒子的静态粒子云若每刻重算会白费约 70ms/tick。
+    /**
+     * 按已过的 game tick 算播放头毫秒。
+     * 时间轴非空（maxMs > 0）走 [AnimationProgress.msAt] 的 wrap/clamp；时间轴为空（maxMs <= 0）时
+     * 播放头照样随时间前进，不能钉在 0：编辑器里函数对象 duration = 0 表示「不限时长」
+     * （animation-eval.js 的 fxParticleVisible：`duration <= 0` 视为无时长上限），播放头一直往前跑。
+     * 钉在 0 会让每帧传给脚本的时刻往回跳，函数对象运行时被反复重建（`t < rt.curMs` → resetFxRuntime），
+     * 脚本攒的状态（环形缓冲、包络、累计量）每刻清零。
+     */
+    private fun progressMsAt(elapsedTicks: Long): Int {
+        if (maxMs > 0) return AnimationProgress.msAt(elapsedTicks, maxMs, animation.loop)
+        val ms = elapsedTicks.coerceAtLeast(0L) * 50L
+        return ms.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    }
+
+    // 静态动画（无轨道/时间轴，且公式与变量均不含 random()、脚本也没有随时间跑的阶段）：
+    // init 已算好 t=0 状态，每 tick 无需重算。5w 粒子的静态粒子云若每刻重算会白费约 70ms/tick。
     // 存在 st 门控或入场预设时必然随时间变化，强制按动态处理。
-    private val isStaticAnimation: Boolean = run {
-        if (maxMs > 0) return@run false
-        if (animation.particles.any { it.st > 0 || it.ent != null }) return@run false
-        if (animation.functions.any { it.st > 0 || it.ent != null }) return@run false
+    // 带 tick/process 的脚本同样必然随时间变化（读 this.time / this.delta / 音频 / 被动输入）：
+    // 编辑器里这两段跟着播放头每帧求值（generators.js evaluateFxFrame），所以播放端不能因为
+    // duration == 0、时间轴为空就把整支 fx 跳过——那样画面会静悄悄地少一整块。
+    // 延迟求值：判据要用 fxRuntimes 里解析好的脚本阶段，它在本字段之后才初始化。
+    private val isStaticAnimation: Boolean by lazy {
+        if (maxMs > 0) return@lazy false
+        if (animation.particles.any { it.st > 0 || it.ent != null }) return@lazy false
+        if (animation.functions.any { it.st > 0 || it.ent != null }) return@lazy false
+        if (animation.functions.any { hasTimePhase(it) }) return@lazy false
         animation.functions.none { fx -> usesRandom(fx) }
+    }
+
+    /** 该函数对象的脚本有没有随时间跑的阶段（tick / process）。解析失败（runtime 为空）按没有算：
+     *  那个对象本来就跑不起来，构造时已经报过编译错误。 */
+    private fun hasTimePhase(fx: FunctionObject): Boolean {
+        val program = fxRuntimes[fx.id]?.program ?: return false
+        return program.process.isNotEmpty() || program.tick.isNotEmpty()
     }
 
     // —— 预构建求值索引（避免每 tick 线性扫描轨道 / 组 / 粒子） ——
@@ -610,9 +636,7 @@ class ClientAnimationPlayer(
         // reconcile 按当前存活粒子动态创建/更新/删除。
         // 按服务端权威进度定位到当前帧（elapsed = currentGameTick - startGameTick）：
         // 新播放等价于从 0 开始；重发/迟到加入则直接跳到其他玩家正在看的同一帧。
-        val initial = if (initialMs >= 0) initialMs else AnimationProgress.msAt(
-            (currentGameTick - startGameTick).coerceAtLeast(0L), maxMs, animation.loop
-        )
+        val initial = if (initialMs >= 0) initialMs else progressMsAt((currentGameTick - startGameTick))
         currentMs = initial
         advanceTo(initial.toDouble())
         advanceFunctions(initial.toDouble())
@@ -631,7 +655,7 @@ class ClientAnimationPlayer(
             finished = true
             return false
         }
-        val target = AnimationProgress.msAt(elapsedTicks, maxMs, animation.loop)
+        val target = progressMsAt(elapsedTicks)
         if (target != currentMs) {
             if (target < currentMs) {
                 justLooped = true // 循环回卷（st 门控粒子在 sync 中重新生成）
@@ -666,7 +690,7 @@ class ClientAnimationPlayer(
             finished = true
             return false
         }
-        val target = if (max <= 0) 0
+        val target = if (max <= 0) targetMs.coerceAtLeast(0)
         else if (animation.loop) ((targetMs % max) + max) % max
         else minOf(targetMs, max - 1)
         if (target != currentMs) {
