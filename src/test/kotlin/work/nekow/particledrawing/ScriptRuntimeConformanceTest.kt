@@ -556,6 +556,35 @@ class ScriptRuntimeConformanceTest {
     }
 
     @Test
+    fun deltaFieldReadableInAllPhases() {
+        // this.delta：调用方放进 ScriptCtx 的「距上一次跑 process/tick 的毫秒数」，三个阶段同名同义；
+        // 给 0（首次执行前、setup）就读 0。
+        val h = Harness(
+            "let d = -1.0\n" +
+                "func setup() { d = this.delta; }\n" +
+                "func tick() { d = this.delta; }\n" +
+                "func process() { let p = this.spawn(); p.position.x = this.delta; p.position.y = this.delta + d; }",
+        )
+        h.setup()
+        assertEquals(0.0, h.obj.globals["d"])
+        h.tick(t = 1.0)
+        assertEquals(0.0, h.obj.globals["d"])
+        h.process(t = 0.0, deltaMs = 16.7)
+        val host = h.particles[0] as TestHost
+        assertEquals(16.7, host.pos[0], 1e-12)
+        // process 里读到的 delta 就是本次给的 16.7；d 是 tick（默认 0）时留下的
+        assertEquals(16.7, host.pos[1], 1e-12)
+    }
+
+    @Test
+    fun deltaDefaultsToZeroWithoutCallerValue() {
+        // 没给 delta（首帧、setup 阶段）时读 0，而不是报「not available here」。
+        val h = Harness("func process() { let p = this.spawn(); p.position.x = this.delta; }")
+        h.process()
+        assertEquals(0.0, (h.particles[0] as TestHost).pos[0], 1e-12)
+    }
+
+    @Test
     fun processTakesNoParameters() {
         val h = Harness("func process() { let p = this.spawn(); p.position.x = this.duration; }", duration = 7.0)
         h.process(t = 5.0, deltaMs = 50.0)

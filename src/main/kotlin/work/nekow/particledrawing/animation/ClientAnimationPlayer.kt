@@ -238,6 +238,11 @@ class ClientAnimationPlayer(
         var spawnSerial = 0
         var cursorMs = 0.0
         var curMs = 0.0
+        /**
+         * 上一次真正跑过 tick/process 的时刻（毫秒）。this.delta = 本次时刻 − 它，上限 100ms；
+         * null = 本运行时还没跑过任何一个阶段，此时 this.delta 记 0（编辑器 generators.js 的 runtime.lastPhaseMs 同一套）。
+         */
+        var lastPhaseMs: Double? = null
         /** 函数对象级视图变换（脚本 this.viewScale / this.viewOffset）：本对象的派生粒子专用。 */
         val view = ViewTransform()
 
@@ -402,6 +407,9 @@ class ClientAnimationPlayer(
             spawnSerial = s.spawnSerial
             cursorMs = s.cursorMs
             curMs = s.curMs
+            // 回到本圈起点后时刻是往回走的，this.delta 不能拿回卷前的旧时刻算（会得到负值被钳成 0，
+            // 语义上却是「上一次阶段」错位）：按编辑器的重建路径记成「还没跑过」，下一个阶段给 0。
+            lastPhaseMs = null
             objState.globals.clear()
             for ((k, v) in s.globals) objState.globals[k] = deepCopyScriptValue(v)
             objState.rand.a = s.randState
@@ -430,6 +438,8 @@ class ClientAnimationPlayer(
         rt.cursorMs = ceil(fx.st.toDouble() / 50.0) * 50.0 - 50.0
         rt.curMs = fx.st.toDouble()
         ScriptRuntime.runSpawnSetup(program, obj, makeCtx(fx, rt, fx.st.toDouble()))
+        // 与编辑器一致：setup 不算「跑过阶段」，第一个 tick/process 的 this.delta 记 0。
+        rt.lastPhaseMs = fx.st.toDouble()
         rt
     } catch (e: Throwable) {
         println("[pdrawc] 函数对象 ${fx.id} 编译失败：${e.message}")
@@ -448,11 +458,22 @@ class ClientAnimationPlayer(
         rt.objState.topLevelDone = false
         rt.objState.rand.a = fx.seed
         rt.view.reset()
+        // 重建后第一个 process/tick 的 this.delta 记 0（编辑器重建运行时后 lastPhaseMs 也是空的）。
+        rt.lastPhaseMs = null
         try {
             ScriptRuntime.runSpawnSetup(rt.program, rt.objState, makeCtx(fx, rt, fx.st.toDouble()))
         } catch (e: Throwable) {
             println("[pdrawc] 函数对象 ${fx.id} setup 求值失败：${e.message}")
         }
+    }
+
+    /**
+     * this.delta：本次阶段时刻距上一次跑过 tick/process 的毫秒数，上限 100ms（编辑器 MAX_PHASE_DELTA_MS）。
+     * 首次执行前给 0——编辑器用 lastPhaseMs == null 表达同一件事。
+     */
+    private fun fxDeltaMs(rt: FxRuntime, t: Double): Double {
+        val last = rt.lastPhaseMs ?: return 0.0
+        return ((t - last).coerceAtLeast(0.0)).coerceAtMost(100.0)
     }
 
     private fun makeCtx(fx: FunctionObject, rt: FxRuntime, t: Double): ScriptRuntime.ScriptCtx =
@@ -462,6 +483,7 @@ class ClientAnimationPlayer(
             vars = varsAt(fx, t),
             particles = rt.particles,
             spawn = rt::spawn,
+            deltaMs = fxDeltaMs(rt, t),
             fastMath = fx.fastMath,
             print = { line -> println("[pdrawc:${fx.id}] $line") },
             st = fx.st.toDouble(),
@@ -867,6 +889,10 @@ class ClientAnimationPlayer(
             val ownUv = if (fx != null) fx.uv else animationParticleById[id]?.uv
             val resolvedUv = resolveUV(id, ownUv)
             if (resolvedUv != null && resolvedUv.hasExpressions()) {
+                // 与编辑器 ensureOut 一致：先把 out 归到默认值，再逐字段镜像本粒子状态。
+                // rotation/billboard/spinSpace 编辑器在 UV 表达式里也不镜像（只留在默认值），
+                // 这里同样不写；靠这次重置保证「上一个粒子写过的值」不会串到下一个粒子。
+                uvCtx.resetOut()
                 uvCtx.i = host?.index?.toDouble() ?: (particleGlobalIndex[id] ?: 0).toDouble()
                 uvCtx.n = n
                 uvCtx.t = t
@@ -916,6 +942,8 @@ class ClientAnimationPlayer(
                 if (rt.program.tick.isNotEmpty()) {
                     try {
                         ScriptRuntime.runTickFrame(rt.program, rt.objState, makeCtx(fx, rt, b))
+                        // 与编辑器一致：跑过的阶段才算「上一次」，this.delta 从它起算。
+                        rt.lastPhaseMs = b
                     } catch (e: Throwable) {
                         println("[pdrawc] 函数对象 ${fx.id} tick 求值失败：${e.message}")
                         break
@@ -935,6 +963,7 @@ class ClientAnimationPlayer(
             } else if (rt.program.process.isNotEmpty()) {
                 try {
                     ScriptRuntime.runProcessFrame(rt.program, rt.objState, makeCtx(fx, rt, t))
+                    rt.lastPhaseMs = t
                 } catch (e: Throwable) {
                     println("[pdrawc] 函数对象 ${fx.id} process 求值失败：${e.message}")
                 }

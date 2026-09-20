@@ -1,0 +1,215 @@
+// 主迹线：固定时长窗口 + 环形缓冲 + 定向线段（画法与量纲见 fx.mjs 顶部说明）。
+// 窗口里每个采样都画：一段一颗粒子，不抽稀。
+
+let rdx = []
+let rdy = []
+let mx = []
+let my = []
+let lk = []
+let rb = []
+let rw = []
+let segs = 0
+let stp = 0.0052083333
+let wn = 0
+let nt = -1
+let lx = 0
+let ly = 0
+let have = 0
+let filled = 0
+let dcX = 0
+let dcY = 0
+let dcInit = 0
+let dsumX = 0
+let dsumY = 0
+let frame = 0
+
+func setup() {
+  // 窗口时长：winMs 给了就用它，否则用 cutExp×τ（纯指数余辉那一档）。
+  let w = winMs
+  if (w <= 0) { w = cutExp * tauMs }
+  // 时间步：默认一个采样。只有指数余辉（要逐帧重写每段颜色）才需要按 segsMax 放粗时间步。
+  stp = segMs
+  if (ageMix > 0.5) {
+    let cap = w / segsMax
+    if (stp < cap) { stp = cap }
+  }
+  segs = int(w / stp)
+  if (segs < 64) { segs = 64 }
+  let i = 0
+  while (i < segs) {
+    rdx.push(0)
+    rdy.push(0)
+    mx.push(0)
+    my.push(0)
+    lk.push(0)
+    rb.push(0)
+    rw.push(0)
+    let p = this.spawn({ glow: glowOn })
+    p.billboard = false
+    p.scale = 0
+    i = i + 1
+  }
+}
+
+func process() {
+  let a = this.get("Primer")
+  let chR = 0
+  if (a.channels > 1) { chR = 1 }
+  let prog = a.progress
+  frame = frame + 1
+
+  // 每帧抄一次视图变换：线宽要除以它才是常量（渲染端尺寸会跟着 viewScale 放大）。
+  let vs = this.viewScale
+  if (vs < 0.000001) { vs = 0.000001 }
+  let lwU = lineW / vs
+  // 环还没建起来（首帧 / 倒退重建）：从窗口最老的一端开始补。
+  if (nt < 0) {
+    nt = prog - (segs - 1) * stp
+    wn = 0
+    filled = 0
+    have = 0
+    dcInit = 0
+  }
+  // 跳帧太大（seek/卡顿）就直接对齐到当前窗口 —— 环只留最近 segs 个采样。
+  if (nt < prog - segs * stp) { nt = prog - (segs - 1) * stp }
+
+  // ① 指数余辉（ageMix=1，真机）：把还看得见的段按 exp(-Δ/τ) 衰减一次，重写它们的 alpha。
+  // ① 指数余辉（ageMix=1，真机）：把还看得见的段按 exp(-Δ/τ) 衰减一次，重写它们的 alpha。
+  //    等权（ageMix=0，AU 对照档）时亮度出生就写死，这一步整块跳过 —— 逐帧重写颜色是
+  //    指数余辉主要的开销（实测每段约 0.6µs），所以循环里只留最少的话：顺着环走一遍、
+  //    一次乘法、一次数组写、一次颜色写（面板变量抄进局部，循环里不读全局）。
+  if (ageMix > 0.001) {
+    let decay = exp(0 - this.delta / tauMs)
+    let am = ageMix
+    let eq = 1 - am
+    if (am > 0.999) { eq = 0 }
+    let k = 0
+    while (k < filled) {
+      let w = rw[k] * decay
+      rw[k] = w
+      this.particles[k].color = color(0.30, 1.0, 0.50, rb[k] * (eq + am * w))
+      k = k + 1
+    }
+  }
+
+  // ② 追帧：把 (nt, prog] 上的采样按 stp 网格读进环。每帧最多补这么多：
+  //    稳态下就是「这一帧该补的 + 一点余量」（永远咬不到），首帧补环、卡顿后追帧时摊到多帧。
+  let maxApp = int(this.delta / stp) + int(segs / fillFrames) + 2
+  let firstSeg = 0
+  let nNew = 0
+  dsumX = 0
+  dsumY = 0
+  let speedRef = slopeRef * stp
+  // 面板变量与脚本全局先抄进局部：循环里每次读全局都比读局部贵，这段每帧要跑六百次。
+  let vp = velPow
+  let vmin = velMin
+  let br = bright
+  let nS = segs
+  let sT = stp
+  let vIs1 = vp > 0.999 && vp < 1.001
+  let vOn = vp > 0.001
+  while (nt <= prog && nNew < maxApp) {
+    let x = a.sampleAt(nt, 0)
+    let y = a.sampleAt(nt, chR)
+    let dx = 0
+    let dy = 0
+    let v = 0
+    let b = br
+    if (have > 0) {
+      dx = x - lx
+      dy = y - ly
+      v = sqrt(dx * dx + dy * dy)
+      // 停留时间定律：同样的时间摊在更短的一段上就更亮。velPow=0（AU 对照档）时这条不生效。
+      // velPow=1（最常拖到的那一档）直接用除法：pow() 逐段调用很贵，实测能省三成追加开销。
+      if (vIs1) {
+        let vv1 = v
+        if (vv1 < vmin * speedRef) { vv1 = vmin * speedRef }
+        b = br * speedRef / vv1
+      } else if (vOn) {
+        let vv = v
+        if (vv < vmin * speedRef) { vv = vmin * speedRef }
+        b = br * pow(speedRef / vv, vp)
+      }
+      if (b > 1) { b = 1 }
+    }
+    have = 1
+    // 段的几何在写采样时一次算好存进环（中点/长度/方向），写段时不用再开方。
+    // 直流估计：把这一帧的采样和攒起来，循环结束后一次性往指数平均里混（见 vars.dcTauMs）——
+    // 比逐采样做两次乘加便宜（连分支都省了），一帧的均值本来就把笔尖的高频抖动平掉了。
+    dsumX = dsumX + x
+    dsumY = dsumY + y
+    rdx[wn] = dx
+    rdy[wn] = dy
+    mx[wn] = (x + lx) * 0.5
+    my[wn] = (y + ly) * 0.5
+    lk[wn] = v
+    rb[wn] = b
+    rw[wn] = 1
+    lx = x
+    ly = y
+    if (filled < nS) { filled = filled + 1 }
+    // 新采样让「它的前一段」变成有效线段（环上「最新 → 最老」那一段不是迹线的一部分）
+    if (nNew == 0) {
+      firstSeg = wn - 1
+      if (firstSeg < 0) { firstSeg = nS - 1 }
+    }
+    nNew = nNew + 1
+    wn = wn + 1
+    if (wn >= nS) { wn = 0 }
+    nt = nt + sT
+  }
+
+  // ③ 直流（AC 耦合）：把这一帧的采样均值按 200ms 指数平均混进去（不跟着笔尖跑）。
+  //    首帧没有历史，直接拿这一帧的均值当起点。
+  if (nNew > 0) {
+    let fmX = dsumX / nNew
+    let fmY = dsumY / nNew
+    if (dcInit < 0.5) {
+      dcX = fmX
+      dcY = fmY
+      dcInit = 1
+    } else {
+      let ka = this.delta / dcTauMs
+      if (ka > 1) { ka = 1 }
+      dcX = dcX + (fmX - dcX) * ka
+      dcY = dcY + (fmY - dcY) * ka
+    }
+  }
+  let tox = dcX
+  let toy = dcY
+  if (dcCut < 0.5) { tox = 0 }
+  if (dcCut < 0.5) { toy = 0 }
+  // ④ 量程固定：tg 只跟 vars.gain 有关（真示波器就是按格标定死的），图形尺寸不随时间变。
+  let tg = gain * size
+  this.viewScale = tg
+  this.viewOffset = vec2(0 - tox * tg, 0 - toy * tg)
+
+  // ⑤ 写粒子：一段一颗粒子，只写本帧新追加的那几段（旧段的采样没变、位置也不该变）。
+  //    位置是归一化几何、增益与偏移在渲染端按对象套，所以这里永远不需要整环重写。
+  //    环上第 k 槽画的是「采样 k → k+1」这一段，它的中点/长度/亮度存在写 k+1 号采样时
+  //    一起算的槽里（mi = k+1），所以取几何要往后挪一格。
+  let ovlL = overlap / 0.2
+  let widL = lwU / 0.2
+  let seam = wn - 1
+  if (seam < 0) { seam = segs - 1 }
+  let i = 0
+  while (i < nNew) {
+    let k = firstSeg + i
+    if (k >= segs) { k = k - segs }
+    let p = this.particles[k]
+    if (k == seam) {
+      // 环上「最新 → 最老」那一段不是迹线的一部分（它是一条横穿图形的假线），藏掉
+      p.scale = 0
+    } else {
+      let mi = k + 1
+      if (mi >= segs) { mi = 0 }
+      let len = lk[mi]
+      if (len < lwU) { len = lwU }
+      p.position = vec3(mx[mi], my[mi], 0)
+      p.rotation = vec3(0, 0, atan2(rdy[mi], rdx[mi]) * RAD2DEG)
+      p.scale = vec2(len * ovlL, widL)
+      p.color = color(0.30, 1.0, 0.50, rb[mi])
+    }
+    i = i + 1
+  }
+}

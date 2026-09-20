@@ -116,7 +116,9 @@ private fun applySpawnConfig(host: ParticleHost, config: Any?) {
 }
 
 // spawn 模型脚本运行时（对应编辑器 script-lang.js）。
-// 生命周期：setup（对象级一次）/ tick（每动画 tick）/ process（每渲染帧）；this 只给 time/duration/particles/spawn，粒子经句柄字段读写与 kill()。
+// 生命周期：setup（对象级一次）/ tick（每动画 tick）/ process（每渲染帧）；this 给 time/animTime/delta/duration/particles/viewScale/viewOffset
+// 与 spawn()、get(资产名)，粒子经句柄字段读写与 kill()。
+// 接受哪些 this 成员由编辑器 test/format/player-format-contract.test.js 逐名比对，两边多一个少一个都会红。
 // 旧 ProcessCtx + ExpressionRunner 保留给 UV 字段裸表达式。
 object ScriptRuntime {
 
@@ -142,6 +144,9 @@ object ScriptRuntime {
         var glow: Boolean = false,
         var light: Double = 0.0,
         var life: Double = -1.0,
+        val rotation: DoubleArray = DoubleArray(3),
+        var billboard: Boolean = true,
+        var spinSpace: String = "local",
     )
 
     /** 表达式阶段上下文（UV 字段裸表达式；旧 index/count/time/delta/duration/uv 字段 + out）。 */
@@ -168,6 +173,9 @@ object ScriptRuntime {
             o.glow = false
             o.light = 0.0
             o.life = -1.0
+            o.rotation[0] = 0.0; o.rotation[1] = 0.0; o.rotation[2] = 0.0
+            o.billboard = true
+            o.spinSpace = "local"
         }
     }
 
@@ -181,7 +189,8 @@ object ScriptRuntime {
      * @param maxMs 整个动画总长（毫秒）
      * @param particles 运行时粒子列表（this.particles）
      * @param spawn 创建并返回一个粒子句柄（this.spawn()）
-     * @param deltaMs 帧毫秒增量（内部调度保留字段；脚本语言不再将其暴露给 process）
+     * @param deltaMs 距上一次跑 process/tick 的毫秒数（this.delta）；调用方按「本次时刻 − 上次时刻」封顶
+     *   100ms 算好，首次执行前给 0（与编辑器 script-lang.js 的 this.delta 同义）
      * @param view 函数对象级视图变换（this.viewScale / this.viewOffset）；同一个函数对象全程复用同一份状态
      */
     class ScriptCtx(
@@ -676,6 +685,9 @@ object ScriptRuntime {
                     "glow" -> out.glow
                     "light" -> out.light
                     "life" -> out.life
+                    "rotation" -> Vec3(out.rotation[0], out.rotation[1], out.rotation[2])
+                    "billboard" -> out.billboard
+                    "spinSpace" -> out.spinSpace
                     else -> err("unknown this field '.$field'", n)
                 }
             }
@@ -684,6 +696,11 @@ object ScriptRuntime {
             return when (field) {
                 "time" -> c.t - c.st
                 "animTime" -> c.t
+                // this.delta：距上一次跑 process/tick 的毫秒数（setup/tick/process 三个阶段同名同义）。
+                // 由调用方按「本次时刻 − 上次时刻」封顶 100ms 放进 ctx.deltaMs，首次执行前是 0；
+                // 单位、封顶与「首次为 0」都和编辑器 script-lang.js 一致——生成程序的物理积分靠它，
+                // 不能拿 this.time 当帧间隔。
+                "delta" -> if (c.deltaMs.isFinite()) c.deltaMs else 0.0
                 "duration" -> if (c.duration > 0.0) c.duration else c.maxMs
                 "particles" -> ParticleListValue(c.particles)
                 "viewScale" -> c.view.scale
