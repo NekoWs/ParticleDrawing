@@ -113,4 +113,31 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 
 ---
 
+## 已知限制
+
+### 立体声源的 `pan` 在播放端无效（与编辑器分叉，未修）
+
+编辑器把音频声像串在 Web Audio 的 `StereoPanner` 上（`objects/audio-playback.js`：
+`source → gain → panner → destination`），是真正的左右平衡；播放端把它塞进 `AL_POSITION`
+（`AudioStreamPlayer.applyMix`），而 OpenAL 对**立体声源**在立体声输出下走直通声道，位置分量
+不参与混音。
+
+实测（`ALC_SOFT_loopback` 离屏渲染真 OpenAL Soft，见 `StereoSourcePanTest`）：立体声源
+`pan` 从 -1 到 +1，左右声道的自身分量电平差 **0.0 dB**；同样操作放到单声道源上有 22.5 dB 的
+左右差。也就是编辑器预览里听得到的 `pan` 关键帧，进游戏后会被静默忽略。
+
+可行修法：把交织立体声拆成左右两路单声道源，每路各自的 `AL_GAIN` 按编辑器的 StereoPanner
+增益曲线给，并关掉空间化（单声道素材则两路喂同一份数据，走同一条代码路径）。不要直接用
+单声道源 + `AL_POSITION` 代替：实测它的中间位置比贴边低 4.4 dB，与编辑器的等功率平衡曲线不同。
+未实施——代价是分块队列、seek、位置记账与测试面都要变成两路。
+
+### 素材采样率不必等于设备率
+
+播放端把 WAV/OGG 头里的采样率原样交给 `alBufferData`，由 OpenAL 重采样到设备率。素材率 **≠**
+设备率时，建 source 会换成带限 sinc 重采样器（`AL_SOFT_source_resampler`）——OpenAL 默认那档是
+纯插值、没有抗混叠，会把 24kHz 以上的内容按原电平折回可听带（实测 192kHz 素材的 30kHz 单音折回
+可听带 **-9.0 dBFS**）。素材率 **==** 设备率时不会去设重采样器，mixer 走 1:1 快路径、零额外开销。
+
+---
+
 > 变更记录：`ParticleStyle` 枚举与 `core.motion` 运动算法包已移除——无贴图粒子统一渲染为纯色方块，帧级运动能力由编排式动画 API（spin / movePath / pulse）承担。

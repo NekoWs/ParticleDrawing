@@ -313,7 +313,6 @@ internal interface AudioSink {
 /** [AudioSink] 的真实实现：复用 Minecraft 当前 context 的 OpenAL。 */
 internal class OpenAlSink : AudioSink {
 
-    private var deviceRate = 0
     private var resampler = UNPROBED
     private val staging = HashMap<Int, ByteBuffer>()
 
@@ -406,7 +405,8 @@ internal class OpenAlSink : AudioSink {
 
     /** 设备率（= mixer 率）；查询失败回 0（那就照旧按可能的设备率差异处理）。 */
     private fun deviceFrequency(): Int {
-        if (deviceRate > 0) return deviceRate
+        // 不缓存：设备切换会换掉设备率，而 sink 实例跨一次播放的设备重建还活着，
+        // 缓存住旧设备率会让「新设备率 == 素材率」误判成立、漏掉换重采样器。
         var rate = 0
         try {
             val ctx = ALC10.alcGetCurrentContext()
@@ -423,7 +423,6 @@ internal class OpenAlSink : AudioSink {
         } catch (_: Exception) {
         } catch (_: LinkageError) {
         }
-        if (rate > 0) deviceRate = rate
         return rate
     }
 
