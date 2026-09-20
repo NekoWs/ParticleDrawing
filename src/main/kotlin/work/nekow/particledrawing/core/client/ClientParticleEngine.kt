@@ -37,18 +37,22 @@ class ClientParticleEngine {
     private var cachedIds: Array<UUID> = emptyArray()
     private var cachedSize = -1
 
-    /** 生成一个新粒子并注册到原版粒子系统。 */
+    /**
+     * 生成一个新粒子并注册到原版粒子系统。
+     * @param scaleArray 非均匀缩放 [sx, sy, sz]；给了就用它（出生瞬间就按轴取尺寸），否则用标量 [scale]
+     */
     fun spawnParticle(id: UUID, x: Double, y: Double, z: Double,
                       r: Float, g: Float, b: Float, a: Float, scale: Float,
                       lifetimeTicks: Int, groupId: UUID?, glowing: Boolean, lightLevel: Int,
                       uv: UvData? = null, billboard: Boolean = true,
                       spin: DoubleArray = ZERO_SPIN, spinLocal: Boolean = true,
-                      additive: Boolean = false) {
+                      additive: Boolean = false, scaleArray: FloatArray? = null) {
         if (particles.size >= ParticleDrawingConfig.CLIENT.maxRenderParticles.get()) return
 
         val lifetimeMs = if (lifetimeTicks > 0) lifetimeTicks * 50L else 0L
         val rp = RenderParticle(id, Vec3(x, y, z),
             Color.of(r, g, b, a), scale, glowing, lightLevel, lifetimeMs, uv)
+        if (scaleArray != null) rp.setScaleArrayDirect(scaleArray)
         particles[id] = rp
         if (glowing && lightLevel > 0) glowingIds.add(id)
 
@@ -57,6 +61,7 @@ class ClientParticleEngine {
         if (level != null) {
             val bp = BridgeParticle(id, level, x, y, z,
                 Color.of(r, g, b, a), scale, glowing, uv, additive)
+            if (scaleArray != null) bp.syncScaleArray(scaleArray)
             bp.syncOrientation(billboard, spin, spinLocal)
             pe.add(bp)
             bridges[id] = bp

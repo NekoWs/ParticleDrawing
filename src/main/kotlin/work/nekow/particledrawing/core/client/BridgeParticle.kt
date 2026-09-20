@@ -39,7 +39,7 @@ class BridgeParticle(
     // 贴图大小缩放因子：使用用户设置的 texSize / 16（基准 16px），用于控制贴图粒子的显示尺寸
     private val texScale: Float = computeTexScale()
 
-    // 非均匀缩放：width 沿相机 X 轴（水平），height 沿相机 Y 轴（垂直），单位 Minecraft 块
+    // 非均匀缩放：局部 X 轴（长）/ Y 轴（宽）两个半宽，单位 Minecraft 块
     private var scaleW: Float = 0f
     private var scaleH: Float = 0f
 
@@ -48,25 +48,29 @@ class BridgeParticle(
     private var spinDeg = DoubleArray(3)
     private var spinLocal = true
 
+    // 朝向四元数与自转角一起缓存：顶点生成是每渲染帧每颗粒子都跑的热路径，
+    // 自转只在同步时变，不能在那里现算三角函数
+    private val orientQ = Quaternionf()
+    private var orientDirty = true
+
     /** 同步朝向（广告牌/自转；billboard=true 时自转被忽略）。 */
     fun syncOrientation(billboard: Boolean, spin: DoubleArray, spinLocal: Boolean) {
+        if (this.billboard != billboard || this.spinLocal != spinLocal) orientDirty = true
+        else if (spin.size >= 3 && (spinDeg[0] != spin[0] || spinDeg[1] != spin[1] || spinDeg[2] != spin[2])) orientDirty = true
         this.billboard = billboard
+        this.spinLocal = spinLocal
         if (spin.size >= 3) {
             this.spinDeg[0] = spin[0]; this.spinDeg[1] = spin[1]; this.spinDeg[2] = spin[2]
         }
-        this.spinLocal = spinLocal
     }
 
-    /** 自转欧拉（度）→ 四元数。local = intrinsic XYZ（Rx·Ry·Rz）；world = extrinsic（Rz·Ry·Rx）。 */
+    /** 自转欧拉（度）→ 四元数（复用实例，只在自转变化后重算一次）。 */
     private fun orientationQuaternion(): Quaternionf {
-        val rx = Math.toRadians(spinDeg[0]).toFloat()
-        val ry = Math.toRadians(spinDeg[1]).toFloat()
-        val rz = Math.toRadians(spinDeg[2]).toFloat()
-        return if (spinLocal) {
-            Quaternionf().rotationXYZ(rx, ry, rz)
-        } else {
-            Quaternionf().rotationZ(rz).mul(Quaternionf().rotationY(ry)).mul(Quaternionf().rotationX(rx))
+        if (orientDirty) {
+            orientationQuaternion(spinDeg, spinLocal, orientQ)
+            orientDirty = false
         }
+        return orientQ
     }
 
     /** 计算贴图大小缩放因子（使用用户设置的 texSize，基准 16px，越大粒子越大）。 */
@@ -94,10 +98,16 @@ class BridgeParticle(
 
     fun isGlowing(): Boolean = isGlowing
 
+    // 世界坐标只读口：渲染分组做视锥剔除要用，而 Particle.x/y/z 是 protected，别的包读不到
+    fun renderX(): Double = x
+    fun renderY(): Double = y
+    fun renderZ(): Double = z
+
     /** 更新 UV 参数（动画粒子 UV 为静态属性，通常只在 spawn 时设置一次）。 */
     fun setUv(uv: UvData?) {
         this.uv = uv
         this.texEntry = resolveTexture()
+        this.layerCache = null
     }
 
     /** 解析当前 UV 指向的贴图（贴图在 spawn 前已由动画管理器预加载）。 */
@@ -160,7 +170,7 @@ class BridgeParticle(
 
     /**
      * 同步粒子非均匀缩放（三分量数组 [sx, sy, sz]）。
-     * sx → quad 宽度（相机 X 轴），sy → quad 高度（相机 Y 轴），sz 暂存数据不参与 billboard。
+     * sx → quad 长边（四边形的局部 X 轴），sy → quad 短边（局部 Y 轴），sz 暂存数据不参与渲染。
      * @param scaleArray 三分量缩放数组
      */
     fun syncScaleArray(scaleArray: FloatArray) {
@@ -170,15 +180,14 @@ class BridgeParticle(
     }
 
     /**
-     * 返回 quad 高度（供 QuadParticleGroup 批量渲染使用）。
-     * 宽度通过 QuadParticleRenderStateMixin 在 renderVertex 中独立应用。
+     * 返回 quad 高度（原版唯一的尺寸口，供 QuadParticleGroup 批量渲染使用）。
+     * 宽度由 OrientedQuadRenderState 单独记着，顶点生成时按 (长, 宽) 各自缩放。
      */
     override fun getQuadSize(partialTick: Float): Float = scaleH
 
     /**
-     * 重写 extractRotatedQuad：非均匀缩放时，将 scaleW 写入静态字段供 mixin 读取，
-     * 然后调用父类（传入 scaleH 作为 size）。mixin 在 renderVertex 中用 scaleW 替换
-     * nx 的缩放系数，实现宽度和高度独立缩放。
+     * 重写 extractRotatedQuad：非广告牌时把相机朝向换成自转朝向；非等宽时把宽度交给渲染状态，
+     * 顶点生成阶段再按 (长, 宽) 各自缩放。原版只认一个尺寸，走不出非等宽四边形。
      */
     override fun extractRotatedQuad(
         state: QuadParticleRenderState,
@@ -186,15 +195,11 @@ class BridgeParticle(
         rotation: Quaternionf,
         partialTick: Float
     ) {
-        // 非广告牌：用自转四元数替换相机朝向旋转
+        // 非广告牌：用自转四元数替换相机朝向旋转（四边形固定朝世界 +Z）
         val q = if (billboard) rotation else orientationQuaternion()
-        if (scaleW != scaleH) {
-            nonUniformScaleW = scaleW
-            super.extractRotatedQuad(state, camera, q, partialTick)
-            nonUniformScaleW = -1f
-        } else {
-            super.extractRotatedQuad(state, camera, q, partialTick)
-        }
+        // 非等宽：把宽度交给渲染状态，顶点生成时按 (长, 宽) 各自缩放（add() 里消费掉）
+        if (state is OrientedQuadRenderState) state.pendingWidth = if (scaleW != scaleH) scaleW else -1f
+        super.extractRotatedQuad(state, camera, q, partialTick)
     }
 
     override fun tick() {
@@ -204,23 +209,34 @@ class BridgeParticle(
         }
     }
 
+    /**
+     * 渲染分组缓存：混合模式与贴图没变时复用同一个 Layer 实例。
+     * 顶点生成每帧每颗粒子都会取一次分组，原版实现每次都要新建 record 并重算哈希。
+     */
+    private var layerCache: Layer? = null
+    private var layerTranslucent = false
+
     override fun getLayer(): Layer {
-        if (additive) {
+        val translucent = additive || alpha < 1.0f
+        val cached = layerCache
+        if (cached != null && translucent == layerTranslucent) return cached
+        val built = if (additive) {
             // 加法混合：始终走半透明通道 + ADDITIVE_PARTICLE 管线。
             // texEntry 恒非空（resolveTexture 对无贴图回退 defaultWhite），取它的 atlas id。
-            return Layer(true, texEntry!!.id, ADDITIVE_PARTICLE)
-        }
-        val entry = texEntry
-        return if (entry != null) {
-            val translucent = alpha < 1.0f
-            Layer(translucent, entry.id, if (translucent) RenderPipelines.TRANSLUCENT_PARTICLE else RenderPipelines.OPAQUE_PARTICLE)
+            Layer(true, texEntry!!.id, ADDITIVE_PARTICLE)
         } else {
-            if (alpha < 1.0f) {
+            val entry = texEntry
+            if (entry != null) {
+                Layer(translucent, entry.id, if (translucent) RenderPipelines.TRANSLUCENT_PARTICLE else RenderPipelines.OPAQUE_PARTICLE)
+            } else if (translucent) {
                 Layer.TRANSLUCENT
             } else {
                 Layer.OPAQUE
             }
         }
+        layerCache = built
+        layerTranslucent = translucent
+        return built
     }
 
     // 使用自定义分组（无 16384 上限），绕过原版 SINGLE_QUADS 的粒子数限制
@@ -332,13 +348,20 @@ class BridgeParticle(
         const val EDITOR_TO_MC_SCALE: Float = 0.1f
 
         /**
-         * 非均匀缩放宽度（由 extractRotatedQuad 在调用父类前设置，-1 表示均匀缩放）。
-         * QuadParticleRenderStateMixin 读取此字段在 renderVertex 中应用独立宽度。
-         * MC 渲染线程单线程，volatile 仅保证可见性。
+         * 自转欧拉（度）→ 四元数写入 [out]。local = intrinsic XYZ（Rx·Ry·Rz）；world = extrinsic（Rz·Ry·Rx）。
+         * 单独拆出来是为了能在不启动 Minecraft 的测试里验证朝向语义。
          */
         @JvmStatic
-        @Volatile
-        var nonUniformScaleW: Float = -1f
+        fun orientationQuaternion(spinDeg: DoubleArray, spinLocal: Boolean, out: Quaternionf) {
+            val rx = Math.toRadians(spinDeg[0]).toFloat()
+            val ry = Math.toRadians(spinDeg[1]).toFloat()
+            val rz = Math.toRadians(spinDeg[2]).toFloat()
+            if (spinLocal) {
+                out.rotationXYZ(rx, ry, rz)
+            } else {
+                out.rotationZ(rz).mul(Quaternionf().rotationY(ry)).mul(Quaternionf().rotationX(rx))
+            }
+        }
 
         /**
          * 无贴图粒子使用的默认精灵（原版粒子图集 generic_0），渲染时由颜色染色为纯色方块。

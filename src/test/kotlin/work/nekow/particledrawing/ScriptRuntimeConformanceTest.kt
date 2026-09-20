@@ -31,7 +31,8 @@ class ScriptRuntimeConformanceTest {
         override val pos = DoubleArray(3)
         override val color = doubleArrayOf(1.0, 1.0, 1.0, 1.0)
         override val vel = DoubleArray(3)
-        override var scale = 1.0
+        override val scale = DoubleArray(3) { 1.0 }
+        override var scaleDim = 0
         override var glow = false
         override var light = 0.0
         override var life = -1.0
@@ -92,12 +93,68 @@ class ScriptRuntimeConformanceTest {
         assertEquals(listOf(1.0, 2.0, 3.0), host.pos.toList())
         assertEquals(listOf(4.0, 5.0, 6.0), host.vel.toList())
         assertEquals(listOf(0.5, 0.25, 0.125, 1.0), host.color.toList())
-        assertEquals(0.5, host.scale, 1e-12)
+        assertEquals(0.5, host.scale[0], 1e-12)
+        assertEquals(0.5, host.scale[1], 1e-12)
+        assertEquals(1.0, host.scale[2], 1e-12)
         assertEquals(true, host.glow)
         assertEquals(12.0, host.light, 1e-12)
         assertEquals(7.0, host.life, 1e-12)
         assertEquals(9.0, host.fields["foo"])
         assertEquals(0.0, host.fields["bar"] ?: 0.0)
+    }
+
+    @Test
+    fun particleScaleAcceptsVector() {
+        val h = Harness(
+            "func setup() { let a = this.spawn(); a.scale = vec2(2, 0.05); " +
+                "let b = this.spawn(); b.scale = [3, 0.1]; " +
+                "let c = this.spawn(); c.scale = vec3(4, 5, 6); " +
+                "let d = this.spawn(); d.scale = 0.5; }",
+        )
+        h.setup()
+        // vec2：[长, 宽]，z 视为 1
+        assertEquals(listOf(2.0, 0.05, 1.0), (h.particles[0] as TestHost).scale.toList())
+        // 2 元数组与 vec2 同义
+        assertEquals(listOf(3.0, 0.1, 1.0), (h.particles[1] as TestHost).scale.toList())
+        assertEquals(listOf(4.0, 5.0, 6.0), (h.particles[2] as TestHost).scale.toList())
+        // 标量写法：X/Y 同值，Z 恒为 1（编辑器粒子模型的 Z 只有 1）
+        assertEquals(listOf(0.5, 0.5, 1.0), (h.particles[3] as TestHost).scale.toList())
+    }
+
+    @Test
+    fun spawnConfigScaleAcceptsVector() {
+        val h = Harness(
+            "func setup() { this.spawn({ scale: vec2(2, 0.05) }); this.spawn({ scale: [3, 0.1] }); this.spawn({ scale: 0.5 }); }",
+        )
+        h.setup()
+        assertEquals(listOf(2.0, 0.05, 1.0), (h.particles[0] as TestHost).scale.toList())
+        assertEquals(listOf(3.0, 0.1, 1.0), (h.particles[1] as TestHost).scale.toList())
+        assertEquals(listOf(0.5, 0.5, 1.0), (h.particles[2] as TestHost).scale.toList())
+    }
+
+    @Test
+    fun particleScaleReadsBackTheWrittenShape() {
+        val h = Harness(
+            "func setup() { let a = this.spawn(); a.scale = vec2(2, 0.05); a.asIs = a.scale; " +
+                "let b = this.spawn(); b.scale = 0.75; b.asIs = b.scale; }",
+        )
+        h.setup()
+        // 写向量读回 vec3（与编辑器一致：vec2 写入时 z 已是 1），写标量读回标量
+        assertEquals(work.nekow.particledrawing.animation.script.Vec3(2.0, 0.05, 1.0), (h.particles[0] as TestHost).fields["asIs"])
+        assertEquals(0.75, (h.particles[1] as TestHost).fields["asIs"])
+    }
+
+    @Test
+    fun particleScaleRejectsBadShape() {
+        assertFailsWith<ScriptException> {
+            Harness("func setup() { let p = this.spawn(); p.scale = \"big\"; }").setup()
+        }
+        assertFailsWith<ScriptException> {
+            Harness("func setup() { let p = this.spawn(); p.scale = [1, 2, 3, 4]; }").setup()
+        }
+        assertFailsWith<ScriptException> {
+            Harness("func setup() { this.spawn({ scale: vec4(1,2,3,4) }); }").setup()
+        }
     }
 
     @Test
@@ -132,7 +189,7 @@ class ScriptRuntimeConformanceTest {
         val host = h.particles[0] as TestHost
         assertEquals(1.0, host.fields["a"])
         assertEquals(2.0, host.fields["b"])
-        assertEquals(1.0, host.scale, 1e-12)
+        assertEquals(1.0, host.scale[0], 1e-12)
 
         // p.color.a / p.position.x 仍是向量分量，不落入自定义字段。
         val h2 = Harness("func setup() { let p = this.spawn(); p.color.a = 0.25; p.position.x = 3; }")
@@ -154,7 +211,7 @@ class ScriptRuntimeConformanceTest {
         h.process()
         val host = h.particles[0] as TestHost
         assertEquals(0.25, host.color[3], 1e-12)
-        assertEquals(0.25, host.scale, 1e-12)
+        assertEquals(0.25, host.scale[0], 1e-12)
         assertEquals(0.0, host.fields["alpha"] ?: 0.0)
     }
 
@@ -163,7 +220,7 @@ class ScriptRuntimeConformanceTest {
         val h = Harness("func setup() { let p = this.spawn(); let v = vec4(1,2,3,4); p.scale = v.alpha; }")
         h.setup()
         val host = h.particles[0] as TestHost
-        assertEquals(4.0, host.scale, 1e-12)
+        assertEquals(4.0, host.scale[0], 1e-12)
     }
 
     @Test
@@ -174,7 +231,7 @@ class ScriptRuntimeConformanceTest {
         h.setup()
         val host = h.particles[0] as TestHost
         assertEquals(listOf(15.0, 7.0, 9.0), host.pos.toList())
-        assertEquals(15.0, host.scale, 1e-12)
+        assertEquals(15.0, host.scale[0], 1e-12)
 
         val h2 = Harness(
             "func setup() { let p = this.spawn(); p.scale = 2; p.scale += 3; p.a = 5; p.a *= 2; }\n" +
@@ -182,11 +239,11 @@ class ScriptRuntimeConformanceTest {
         )
         h2.setup()
         val h0 = h2.particles[0] as TestHost
-        assertEquals(5.0, h0.scale, 1e-12)
+        assertEquals(5.0, h0.scale[0], 1e-12)
         assertEquals(10.0, h0.fields["a"])
         h2.process()
-        assertEquals(4.0, h0.scale, 1e-12)
-        assertEquals(10.0, (h2.particles[1] as TestHost).scale, 1e-12)
+        assertEquals(4.0, h0.scale[0], 1e-12)
+        assertEquals(10.0, (h2.particles[1] as TestHost).scale[0], 1e-12)
     }
 
     @Test
@@ -333,7 +390,7 @@ class ScriptRuntimeConformanceTest {
         assertEquals(5.0, host.pos[0], 1e-12)
         assertEquals(9.0, host.pos[1], 1e-12)
         assertEquals(11.0, host.pos[2], 1e-12)
-        assertEquals(0.0, host.scale, 1e-12)
+        assertEquals(0.0, host.scale[0], 1e-12)
     }
 
     @Test
@@ -449,7 +506,7 @@ class ScriptRuntimeConformanceTest {
         assertEquals(listOf(1.0, 2.0, 3.0), host.pos.toList())
         assertEquals(listOf(4.0, 5.0, 6.0), host.vel.toList())
         assertEquals(listOf(0.5, 0.25, 0.125, 1.0), host.color.toList())
-        assertEquals(2.0, host.scale, 1e-12)
+        assertEquals(2.0, host.scale[0], 1e-12)
         assertEquals(true, host.glow)
         assertEquals(5.0, host.light, 1e-12)
         assertEquals(3.0, host.life, 1e-12)
@@ -478,7 +535,7 @@ class ScriptRuntimeConformanceTest {
         h.setup()
         val host = h.particles[0] as TestHost
         assertEquals(listOf(4.0, 5.0, 6.0), host.pos.toList())
-        assertEquals(2.0, host.scale, 1e-12)
+        assertEquals(2.0, host.scale[0], 1e-12)
         assertEquals(7.0, host.life, 1e-12)
     }
 
@@ -504,7 +561,7 @@ class ScriptRuntimeConformanceTest {
         assertEquals(1.0, host.pos[0], 1e-12)
         assertEquals(0.5, host.pos[1], 1e-12)
         assertEquals(1.0, host.pos[2], 1e-12)
-        assertEquals(1.0, host.scale, 1e-12)
+        assertEquals(1.0, host.scale[0], 1e-12)
     }
 
     @Test

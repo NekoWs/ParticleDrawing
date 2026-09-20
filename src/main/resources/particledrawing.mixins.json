@@ -7,8 +7,7 @@
   "client": [
     "BrightnessGetterMixin",
     "CameraMixin",
-    "EntityRendererMixin",
-    "QuadParticleRenderStateMixin"
+    "EntityRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 1

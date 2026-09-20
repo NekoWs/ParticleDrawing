@@ -251,7 +251,8 @@ class ClientAnimationPlayer(
             override val pos = DoubleArray(3)
             override val color = doubleArrayOf(1.0, 1.0, 1.0, 1.0)
             override val vel = DoubleArray(3)
-            override var scale = 1.0
+            override val scale = DoubleArray(3) { 1.0 }
+            override var scaleDim = 0
             override var glow = false
             override var light = 0.0
             override var life = -1.0
@@ -300,7 +301,8 @@ class ClientAnimationPlayer(
             val pos: DoubleArray,
             val color: DoubleArray,
             val vel: DoubleArray,
-            val scale: Double,
+            val scale: DoubleArray,
+            val scaleDim: Int,
             val glow: Boolean,
             val light: Double,
             val life: Double,
@@ -319,7 +321,8 @@ class ClientAnimationPlayer(
                     pos = p.pos.copyOf(),
                     color = p.color.copyOf(),
                     vel = p.vel.copyOf(),
-                    scale = p.scale,
+                    scale = p.scale.copyOf(),
+                    scaleDim = p.scaleDim,
                     glow = p.glow,
                     light = p.light,
                     life = p.life,
@@ -375,7 +378,8 @@ class ClientAnimationPlayer(
                 hs.pos.copyInto(host.pos)
                 hs.color.copyInto(host.color)
                 hs.vel.copyInto(host.vel)
-                host.scale = hs.scale
+                hs.scale.copyInto(host.scale)
+                host.scaleDim = hs.scaleDim
                 host.glow = hs.glow
                 host.light = hs.light
                 host.life = hs.life
@@ -833,7 +837,7 @@ class ClientAnimationPlayer(
             if (p.id in dynamicParticleIds) {
                 s.pos = origin.add(particlePosition(p, t))
                 s.color = applyEntrance(particleColor(p, t), p.ent, localT)
-                s.scale = particleScale(p, t)
+                particleScaleInto(p, t, s.scale)
                 // v17：粒子级自转（仅非广告牌时渲染端可见）
                 s.billboard = p.billboard
                 s.spinLocal = p.spinLocal
@@ -998,8 +1002,7 @@ class ClientAnimationPlayer(
                 ),
                 fx.ent, fxLocalT,
             )
-            val base = if (host.scale.isFinite()) host.scale else 1.0
-            s.scale = fxScale(fx.id, base, t)
+            fxScaleInto(fx.id, host.scale, t, s.scale)
             s.glowing = host.glow
             s.lightLevel = host.light.toInt().coerceIn(0, 15)
             s.visible = visible
@@ -1299,13 +1302,12 @@ class ClientAnimationPlayer(
         )
     }
 
-    private fun particleScale(p: AnimParticle, t: Double): FloatArray {
-        // 粒子缩放只有 X/Y（billboard 尺寸由 sx/sy 决定）；组 scl 不再影响粒子大小，改为位置级整体缩放。
-        return floatArrayOf(
-            ownScaleComponent(p, TrackPr.SCL_X, t).toFloat().coerceAtLeast(0.01f),
-            ownScaleComponent(p, TrackPr.SCL_Y, t).toFloat().coerceAtLeast(0.01f),
-            1f,
-        )
+    private fun particleScaleInto(p: AnimParticle, t: Double, out: FloatArray) {
+        // 粒子缩放只有 X/Y（四边形两条边长由 sx/sy 决定）；组 scl 不再影响粒子大小，改为位置级整体缩放。
+        // 就地写进状态里那份数组：这里是每帧每颗粒子都跑的热路径，不能每次新建
+        out[0] = ownScaleComponent(p, TrackPr.SCL_X, t).toFloat().coerceAtLeast(0.01f)
+        out[1] = ownScaleComponent(p, TrackPr.SCL_Y, t).toFloat().coerceAtLeast(0.01f)
+        out[2] = 1f
     }
 
     private fun ownScaleComponent(p: AnimParticle, pr: TrackPr, t: Double): Double {
@@ -1316,16 +1318,18 @@ class ClientAnimationPlayer(
     }
 
     /**
-     * 函数对象整体缩放（三分量）：代码块输出标量 [base]，再叠加作用于 `f:fxId` 的
-     * `scl.x/y/z` 轨道（存在则覆盖对应分量，与编辑器 currentVisualDerived 语义一致）。
+     * 函数对象整体缩放（三分量）：代码块输出的尺寸 [base]（标量写法是 [s, s, 1]，vec2 的 z 也已是 1），
+     * 再叠加作用于 `f:fxId` 的 `scl.x/y/z` 轨道（存在则覆盖对应分量，与编辑器 currentVisualDerived 语义一致）。
      */
-    private fun fxScale(fxId: String, base: Double, t: Double): FloatArray {
-        return floatArrayOf(
-            scalarAt(TrackPr.SCL_X, "f:" + fxId, t, base).toFloat().coerceAtLeast(0.01f),
-            scalarAt(TrackPr.SCL_Y, "f:" + fxId, t, base).toFloat().coerceAtLeast(0.01f),
-            scalarAt(TrackPr.SCL_Z, "f:" + fxId, t, base).toFloat().coerceAtLeast(0.01f),
-        )
+    private fun fxScaleInto(fxId: String, base: DoubleArray, t: Double, out: FloatArray) {
+        // 就地写进状态里那份数组（原因同 particleScaleInto）
+        out[0] = scalarAt(TrackPr.SCL_X, "f:" + fxId, t, finiteOrOne(base[0])).toFloat().coerceAtLeast(0.01f)
+        out[1] = scalarAt(TrackPr.SCL_Y, "f:" + fxId, t, finiteOrOne(base[1])).toFloat().coerceAtLeast(0.01f)
+        out[2] = scalarAt(TrackPr.SCL_Z, "f:" + fxId, t, finiteOrOne(base[2])).toFloat().coerceAtLeast(0.01f)
     }
+
+    /** 脚本给的尺寸可能是 NaN/Inf（表达式算爆了）：按 1 兜底，别把坏尺寸传进渲染。 */
+    private fun finiteOrOne(v: Double): Double = if (v.isFinite()) v else 1.0
 
     /**
      * 解析粒子最终 UV（继承覆盖：p.uv > 组 guv[gname] > 函数对象 fx.uv）。

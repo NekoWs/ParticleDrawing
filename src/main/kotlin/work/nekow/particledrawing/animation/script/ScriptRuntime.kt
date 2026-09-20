@@ -54,6 +54,33 @@ private fun cfgColor(v: Any?): List<Double> = when {
     else -> throw ScriptException("spawn config 'color' requires a color, vec3, vec4 or [r,g,b(,a)]")
 }
 
+/**
+ * 粒子尺寸写法归一（spawn 配置的 scale 与脚本里的 p.scale 共用）：
+ * num 写 [s, s, 1]（编辑器粒子模型的 Z 恒为 1）、vec2（或 2 元数组）的 z 视为 1、vec3（或 3 元数组）原样。
+ * @return 写出的形态 0/2/3；写法不合法返回 -1，由调用方按自己的措辞报错
+ */
+private fun scaleShape(v: Any?, out: DoubleArray): Int {
+    fun comp(x: Any?): Double = x as? Double ?: Double.NaN
+    return when {
+        v is Double -> { out[0] = v; out[1] = v; out[2] = 1.0; 0 }
+        v is Vec2 -> { out[0] = v.x; out[1] = v.y; out[2] = 1.0; 2 }
+        v is Vec3 -> { out[0] = v.x; out[1] = v.y; out[2] = v.z; 3 }
+        v is MutableList<*> && v.size == 2 -> {
+            out[0] = comp(v[0]); out[1] = comp(v[1]); out[2] = 1.0
+            if (out[0].isNaN() || out[1].isNaN()) -1 else 2
+        }
+        v is MutableList<*> && v.size == 3 -> {
+            out[0] = comp(v[0]); out[1] = comp(v[1]); out[2] = comp(v[2])
+            if (out[0].isNaN() || out[1].isNaN() || out[2].isNaN()) -1 else 3
+        }
+        else -> -1
+    }
+}
+
+/** 按 [ParticleHost.scaleDim] 记下的写法把尺寸读回脚本：标量原样返回，向量一律读成 vec3（与编辑器一致）。 */
+private fun readScale(w: ParticleHost): Any =
+    if (w.scaleDim == 0) w.scale[0] else Vec3(w.scale[0], w.scale[1], w.scale[2])
+
 private fun applySpawnConfig(host: ParticleHost, config: Any?) {
     if (config !is ObjVal) throw ScriptException("this.spawn(config) requires an object")
     for ((key, v) in config.fields) {
@@ -72,7 +99,11 @@ private fun applySpawnConfig(host: ParticleHost, config: Any?) {
                 host.color[0] = clamp01(c[0]); host.color[1] = clamp01(c[1]); host.color[2] = clamp01(c[2])
                 host.color[3] = if (c.size == 4) clamp01(c[3]) else 1.0
             }
-            "scale" -> host.scale = (v as? Double) ?: throw ScriptException("spawn config 'scale' requires a num")
+            "scale" -> {
+                val dim = scaleShape(v, host.scale)
+                if (dim < 0) throw ScriptException("spawn config 'scale' requires a num, vec2, vec3 or array of 2/3 numbers")
+                host.scaleDim = dim
+            }
             "glow" -> host.glow = if (v is Boolean) v else ((v as? Double) ?: throw ScriptException("spawn config 'glow' requires a num")) > 0.5
             "light" -> host.light = clampNum(jsRound((v as? Double) ?: throw ScriptException("spawn config 'light' requires a num")), 0.0, 15.0)
             "life" -> {
@@ -660,7 +691,7 @@ object ScriptRuntime {
                 "position" -> Vec3(w.pos[0], w.pos[1], w.pos[2])
                 "color" -> ColorVal(w.color[0], w.color[1], w.color[2], w.color[3])
                 "velocity" -> Vec3(w.vel[0], w.vel[1], w.vel[2])
-                "scale" -> w.scale
+                "scale" -> readScale(w)
                 "glow" -> w.glow
                 "light" -> w.light
                 "life" -> w.life
@@ -808,7 +839,11 @@ object ScriptRuntime {
                     w.vel[0] = c[0]; w.vel[1] = c[1]; w.vel[2] = c[2]
                 }
                 "color" -> writeParticleColor(w, value, n)
-                "scale" -> w.scale = num(value, "particle.scale", n)
+                "scale" -> {
+                    val dim = scaleShape(value, w.scale)
+                    if (dim < 0) err("particle.scale requires a num, vec2, vec3 or array of 2/3 numbers, got ${typeName(value)}", n)
+                    w.scaleDim = dim
+                }
                 "glow" -> {
                     if (!isNum(value) && !isBool(value)) {
                         err("particle.glow requires a num/bool, got ${typeName(value)}", n)

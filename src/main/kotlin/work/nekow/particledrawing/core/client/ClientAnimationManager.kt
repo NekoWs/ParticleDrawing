@@ -550,7 +550,7 @@ object ClientAnimationManager {
             uuid, pos.x, pos.y, pos.z,
             state.color.r, state.color.g, state.color.b, state.color.a,
             state.scale[0], -1, null, state.glowing, state.lightLevel, state.uv,
-            state.billboard, state.spin, state.spinLocal, state.additive,
+            state.billboard, state.spin, state.spinLocal, state.additive, state.scale,
         )
     }
 

@@ -29,7 +29,8 @@ class EditorProgramConformanceTest {
         override val pos = DoubleArray(3)
         override val color = doubleArrayOf(1.0, 1.0, 1.0, 1.0)
         override val vel = DoubleArray(3)
-        override var scale = 1.0
+        override val scale = DoubleArray(3) { 1.0 }
+        override var scaleDim = 0
         override var glow = false
         override var light = 0.0
         override var life = -1.0

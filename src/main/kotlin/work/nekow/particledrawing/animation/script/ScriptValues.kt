@@ -58,7 +58,10 @@ interface ParticleHost {
     val pos: DoubleArray
     val color: DoubleArray
     val vel: DoubleArray
-    var scale: Double
+    /** 粒子尺寸三分量 [sx, sy, sz]：标量写 [s, s, 1]（编辑器粒子模型的 Z 恒为 1）、vec2 的 z 视为 1、vec3 原样。 */
+    val scale: DoubleArray
+    /** 最近一次写入 scale 的写法（0=标量、2=vec2、3=vec3）；读回时按写法返回 num 或 vec3。 */
+    var scaleDim: Int
     var glow: Boolean
     var light: Double
     var life: Double

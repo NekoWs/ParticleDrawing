@@ -49,7 +49,7 @@ class RenderParticle(
     private val col = EaseVar(Color.BLACK, Color.BLACK, Color.BLACK)
     private val scl = EaseVar(0f, 0f, 0f)
 
-    // 非均匀缩放三分量（动画系统使用）；null 时退化为标量 scl
+    // 非均匀缩放三分量 [sx, sy, sz]（动画系统使用）；标量路径写 [s, s, 1]（粒子模型的 Z 恒为 1）
     private var sclArray: FloatArray = floatArrayOf(0f, 0f, 0f)
 
     // 旋转 / 平移 / 偏移（绕轴心独立缓动后叠加）
@@ -80,7 +80,7 @@ class RenderParticle(
         col.tgt = color
         scl.cur = scale
         scl.tgt = scale
-        sclArray = floatArrayOf(scale, scale, scale)
+        sclArray[0] = scale; sclArray[1] = scale; sclArray[2] = 1f
         prevX = position.x
         prevY = position.y
         prevZ = position.z
@@ -123,7 +123,7 @@ class RenderParticle(
         pos.tgt = position
         col.tgt = color
         scl.tgt = scale
-        sclArray = floatArrayOf(scale, scale, scale)
+        setScaleScalar(scale)
         posEase.easing = easingType.curve
         colEase.easing = easingType.curve
         val now = System.nanoTime()
@@ -140,7 +140,7 @@ class RenderParticle(
         scl.start = scl.cur
         col.tgt = color
         scl.tgt = scale
-        sclArray = floatArrayOf(scale, scale, scale)
+        setScaleScalar(scale)
         colEase.easing = easingType.curve
         colEase.startTime = System.nanoTime()
         colEase.durationNs = durationMs * 1_000_000L
@@ -255,14 +255,26 @@ class RenderParticle(
     fun setScaleDirect(scale: Float) {
         scl.cur = scale
         scl.tgt = scale
-        sclArray = floatArrayOf(scale, scale, scale)
+        setScaleScalar(scale)
     }
 
-    /** 直接设置非均匀缩放（三分量数组 [sx, sy, sz]）。 */
+    /** 直接设置非均匀缩放（三分量数组 [sx, sy, sz]）；就地写入，避免每颗粒子每帧新分配数组。 */
     fun setScaleArrayDirect(scaleArray: FloatArray) {
-        sclArray = scaleArray.copyOf()
-        scl.cur = scaleArray[0]
-        scl.tgt = scaleArray[0]
+        setScaleTriple(scaleArray[0], scaleArray[1], scaleArray[2])
+        scl.cur = sclArray[0]
+        scl.tgt = sclArray[0]
+    }
+
+    /** 标量写法：X/Y 同值，Z 恒为 1（编辑器粒子模型的 Z 只有 1 这一种取值）。 */
+    private fun setScaleScalar(scale: Float) {
+        setScaleTriple(scale, scale, 1f)
+    }
+
+    /** 就地写三分量缩放，数组实例全程复用（顶点生成每帧都要读它）。 */
+    private fun setScaleTriple(x: Float, y: Float, z: Float) {
+        sclArray[0] = x
+        sclArray[1] = y
+        sclArray[2] = z
     }
 
     /**

@@ -53,7 +53,7 @@ class FunctionVar(
 /** 入场表现预设（粒子/函数对象的 ent 字段）。st 之前粒子完全不存在于渲染管线（隐藏门控，与 alpha 无关）；preset 目前支持 "fade"（出场后 dur 毫秒内 alpha 线性 0→1）。 */
 data class Entrance(val preset: String, val dur: Int = 5)
 
-/** 动画中的单个粒子。scale=[sx,sy,sz]（sx 参与 billboard 尺寸，sy/sz 暂存）；st 之前隐藏；ent 入场预设；life 为寿命毫秒（-1 无限）。
+/** 动画中的单个粒子。scale=[长, 宽, sz]（四边形自己的两条边长，sz 不参与渲染）；st 之前隐藏；ent 入场预设；life 为寿命毫秒（-1 无限）。
  *  v17：billboard=false 时四边形静止朝世界 +Z 并按 spin 轨道旋转；spinLocal=自转空间（true=local）。 */
 class AnimParticle(
     val id: String,
