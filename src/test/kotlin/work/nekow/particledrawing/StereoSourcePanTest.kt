@@ -22,6 +22,87 @@ class StereoSourcePanTest {
     private val leftFreq = 1000.0
     private val rightFreq = 3000.0
 
+    /** `AL_SOFTX_source_panning`（OpenAL Soft 草稿扩展，MC 那套 OpenAL 用 SOFTX 名字报出来）。 */
+    private val panningExt = "AL_SOFTX_source_panning"
+    private val panningExtAlt = "AL_SOFT_source_panning"
+
+    /** AL_PANNING_ENABLED_SOFT / AL_PAN_SOFT（alc/inprogext.h）。 */
+    private val panningEnabledSoft = 0x19EC
+    private val panSoft = 0x19ED
+
+    /**
+     * 给单 source 做真左右平衡的另一条路：开 `AL_SOFTX_source_panning` 后用 `AL_PAN_SOFT`，
+     * 不用拆双源。量出来它确实是平衡（贴边时对侧被压掉几十 dB），行为与编辑器 StereoPanner 同类。
+     */
+    @Test
+    fun `source panning extension gives a real balance on a stereo source`() {
+        OpenAlLoopback.withDevice(rate) { device ->
+            val ext = if (AL10.alIsExtensionPresent(panningExt)) panningExt
+            else if (AL10.alIsExtensionPresent(panningExtAlt)) panningExtAlt else null
+            org.junit.Assume.assumeTrue("OpenAL 没有 source panning 扩展", ext != null)
+
+            val pcm = ShortArray(rate * 2)
+            for (i in 0 until rate) {
+                pcm[i * 2] = (sin(2.0 * PI * leftFreq * i / rate) * 0.5 * 32767.0).toInt().toShort()
+                pcm[i * 2 + 1] = (sin(2.0 * PI * rightFreq * i / rate) * 0.5 * 32767.0).toInt().toShort()
+            }
+
+            fun measure(pan: Float): Pair<Double, Double> {
+                val y = OpenAlLoopback.renderPcm(device, pcm, rate, rate, stereoBuffer = true) { src ->
+                    AL10.alSourcei(src, panningEnabledSoft, AL10.AL_TRUE)
+                    AL10.alSourcef(src, panSoft, pan)
+                }
+                return OpenAlLoopback.toneDb(y, leftFreq, 0, rate) to
+                    OpenAlLoopback.toneDb(y, rightFreq, 1, rate)
+            }
+
+            val hardLeft = measure(-1f)
+            val center = measure(0f)
+            val hardRight = measure(1f)
+            println("[pan] 用 $ext + AL_PAN_SOFT 对立体声源做声像：")
+            for (pan in listOf(-1f, -0.75f, -0.5f, -0.25f, 0f, 0.25f, 0.5f, 0.75f, 1f)) {
+                val m = measure(pan)
+                println("        pan=%+.2f  左 %.1f dB / 右 %.1f dB".format(pan, m.first, m.second))
+            }
+
+            // 真平衡：贴边时对侧被压掉，本侧基本不动
+            assertTrue(
+                hardRight.first < center.first - 20.0,
+                "pan=+1 没把左声道压下去（%.1f → %.1f），不是平衡控制".format(center.first, hardRight.first),
+            )
+            assertTrue(
+                hardLeft.second < center.second - 20.0,
+                "pan=-1 没把右声道压下去（%.1f → %.1f），不是平衡控制".format(center.second, hardLeft.second),
+            )
+            assertTrue(
+                abs(hardLeft.first - center.first) < 1.0 && abs(hardRight.second - center.second) < 1.0,
+                "贴边时本侧也被改了（左 %.1f→%.1f，右 %.1f→%.1f），不是纯平衡"
+                    .format(center.first, hardLeft.first, center.second, hardRight.second),
+            )
+            // 中间单调：右声道随 pan 单调不减
+            var prev = -1e9
+            for (pan in listOf(-1f, -0.75f, -0.5f, -0.25f, 0f, 0.25f, 0.5f, 0.75f, 1f)) {
+                val right = measure(pan).second
+                assertTrue(right >= prev - 0.5, "右声道在 pan=%+.2f 处没单调（%.1f < %.1f）".format(pan, right, prev))
+                prev = right
+            }
+
+            // 与编辑器的剩余差别：Web Audio 的 StereoPanner 对立体声输入会把对侧声道**折进**本侧
+            // （规范：pan<=0 时 outputL = inputL + inputR*gainL），而 AL_PAN_SOFT 是纯平衡、直接丢掉对侧。
+            val fold = OpenAlLoopback.renderPcm(device, pcm, rate, rate, stereoBuffer = true) { src ->
+                AL10.alSourcei(src, panningEnabledSoft, AL10.AL_TRUE)
+                AL10.alSourcef(src, panSoft, -1f)
+            }
+            val leakedRightIntoLeft = OpenAlLoopback.toneDb(fold, rightFreq, 0, rate)
+            println("        pan=-1 时左声道里的右声道分量：%.1f dB（纯平衡应为极低；Web Audio 会折叠进来）"
+                .format(leakedRightIntoLeft))
+            assertTrue(
+                leakedRightIntoLeft < center.first - 30.0,
+                "对侧声道被折进了本侧（%.1f dB），与「纯平衡」的预期不符".format(leakedRightIntoLeft),
+            )
+        }
+    }
+
     @Test
     fun `pan is a no-op for a stereo source`() {
         OpenAlLoopback.withDevice(rate) { device ->

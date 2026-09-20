@@ -118,18 +118,27 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 ### 立体声源的 `pan` 在播放端无效（与编辑器分叉，未修）
 
 编辑器把音频声像串在 Web Audio 的 `StereoPanner` 上（`objects/audio-playback.js`：
-`source → gain → panner → destination`），是真正的左右平衡；播放端把它塞进 `AL_POSITION`
-（`AudioStreamPlayer.applyMix`），而 OpenAL 对**立体声源**在立体声输出下走直通声道，位置分量
+`source → gain → panner → destination`），播放端把它塞进 `AL_POSITION`
+（`AudioStreamPlayer.applyMix`），而 OpenAL 对**立体声源**在立体声输出下走直通声道、位置分量
 不参与混音。
 
-实测（`ALC_SOFT_loopback` 离屏渲染真 OpenAL Soft，见 `StereoSourcePanTest`）：立体声源
-`pan` 从 -1 到 +1，左右声道的自身分量电平差 **0.0 dB**；同样操作放到单声道源上有 22.5 dB 的
-左右差。也就是编辑器预览里听得到的 `pan` 关键帧，进游戏后会被静默忽略。
+实测（`ALC_SOFT_loopback` 离屏渲染真 OpenAL Soft，见 `StereoSourcePanTest`）：立体声源 `pan` 从
+-1 到 +1，左右声道电平差 **0.0 dB**——编辑器预览里听得到的 `pan` 关键帧进游戏后被静默忽略。
 
-可行修法：把交织立体声拆成左右两路单声道源，每路各自的 `AL_GAIN` 按编辑器的 StereoPanner
-增益曲线给，并关掉空间化（单声道素材则两路喂同一份数据，走同一条代码路径）。不要直接用
-单声道源 + `AL_POSITION` 代替：实测它的中间位置比贴边低 4.4 dB，与编辑器的等功率平衡曲线不同。
-未实施——代价是分块队列、seek、位置记账与测试面都要变成两路。
+可行修法（都未实施，按代价从低到高）：
+
+1. 本机 OpenAL 有 `AL_SOFT_source_panning` 时（MC 用的那套用草稿名 `AL_SOFTX_source_panning`
+   报出）：建 source 时置 `AL_PANNING_ENABLED_SOFT = TRUE`，再用 `AL_PAN_SOFT` 代替 `AL_POSITION`
+   传声像，约 20 行、不动队列。实测它是**纯平衡**：pan=0 两侧不动，pan=±1 本侧不动、对侧 -177 dB，
+   中段线性（±0.5 → 对侧 -6.1 dB）。与编辑器还差两点：中段曲线（Web Audio 是 `cos/sin` 等功率）
+   与「对侧折叠」（Web Audio 规范对立体声输入算的是 `outputL = inputL + inputR·gainL`，会把对侧
+   声道混进本侧；实测 `AL_PAN_SOFT` 不折叠，对侧分量 -104 dB）。另外开这种模式时必须同时停止设置
+   `AL_POSITION`，否则两套声像会叠起来。
+2. 要逐点完全一致，就自己按规范算增益**和折叠**：折叠要把右声道同时送进左右两路输出，两个单声道
+   源的 `AL_GAIN` 给不出来，得在解码块上做每样本的折叠混音（并在 `pan` 变化时重新上传）。
+   代价与拆双单声道源相当，会把分块队列、seek、位置记账与测试面都变成两路，不建议只为 `pan` 做。
+   顺带：不要用「单声道源 + `AL_POSITION`」凑——实测它的中间位置比贴边低 4.4 dB，也不是编辑器的
+   曲线。
 
 ### 素材采样率不必等于设备率
 
