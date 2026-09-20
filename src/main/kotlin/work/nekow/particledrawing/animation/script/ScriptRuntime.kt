@@ -273,6 +273,10 @@ object ScriptRuntime {
         rt.pushScope(HashMap())
         try {
             for (st in program.process) rt.execStmt(st)
+        } catch (f: Flow) {
+            // process 顶层的 return 就是「这一帧到此为止」（与编辑器同一含义），不是错误。
+            // 漏了这一步时，任何带顶层 return 的脚本每帧都会整支求值失败。
+            if (f.kind != "return") throw f
         } finally {
             rt.popScope()
         }
@@ -460,7 +464,9 @@ object ScriptRuntime {
                 is BreakNode -> throw Flow("break")
                 is ContinueNode -> throw Flow("continue")
                 is ReturnNode -> {
-                    if (!inFunction) err("return is only allowed inside a function", n)
+                    // 只有 process 顶层允许裸 return（结束这一帧，由 runProcessFrame 收尾）；
+                    // setup/tick 顶层与其它函数外位置仍按错误处理，与编辑器保持一致。
+                    if (!inFunction && phase != "process") err("return is only allowed inside a function", n)
                     throw Flow("return", if (n.expr != null) evalExpr(n.expr) else Undefined)
                 }
                 is DeclareNode -> execDeclare(n)
