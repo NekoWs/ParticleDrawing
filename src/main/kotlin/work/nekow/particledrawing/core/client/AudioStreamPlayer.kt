@@ -1,8 +1,10 @@
 package work.nekow.particledrawing.core.client
 
+import org.lwjgl.openal.AL
 import org.lwjgl.openal.AL10
 import org.lwjgl.openal.AL11
 import org.lwjgl.openal.ALC10
+import org.lwjgl.openal.SOFTSourceResampler
 import org.lwjgl.stb.STBVorbis
 import org.lwjgl.stb.STBVorbisInfo
 import org.lwjgl.system.MemoryStack
@@ -14,17 +16,61 @@ import java.nio.ByteOrder
 /**
  * 游戏内音频播放（.pdrawc 音频资产）。复用 Minecraft 的 OpenAL context 自建 source：
  * 分块解码 + 4×250ms 队列缓冲，seek 用「停源 → 清队列 → 从目标偏移重灌」（AL_SEC_OFFSET 对
- * 队列 source 跨实现不可靠）；播放位置由「已完成帧数 + AL_SAMPLE_OFFSET」计算，动画 tick 侧
- * 对比期望毫秒做漂移校正；音量走 AL_GAIN、声像走相对坐标 AL_POSITION、倍速走 AL_PITCH。
- * 所有 AL 调用在客户端主线程（update）执行——context 线程局部，
- * 换线程调用无效；context 不可用（设备切换/音效重载）时静默跳过，下次可用时重建 source 续播。
+ * 队列 source 跨实现不可靠）；播放位置由「队列起始帧 + 已完成帧数 + AL_SAMPLE_OFFSET」计算（实测
+ * AL_SAMPLE_OFFSET 相对当前队列计数、alSourceStop 会把它归零），动画 tick 侧对比期望毫秒做漂移校正；
+ * 音量走 AL_GAIN、声像走相对坐标 AL_POSITION、倍速走 AL_PITCH。
+ *
+ * 素材采样率由 WAV/OGG 头决定（常见 44.1/48kHz，也有 192kHz 整曲），原样交给 `alBufferData`，
+ * 由 OpenAL 重采样到设备率。OpenAL 默认重采样器是纯插值、没有抗混叠的，高采样率素材会把
+ * 24kHz 以上的内容按原电平折回可听带（听感就是「电音」/金属声），所以建 source 时换成带限 sinc
+ * （见 [pickAntiAliasedResampler]）。
+ *
+ * 所有 AL 调用在客户端主线程（update）执行——context 线程局部，换线程调用无效；
+ * context 不可用（设备切换/音效重载）时静默跳过，下次可用时重建 source 续播。
+ * AL 调用全部经 [AudioSink]，测试里换成假实现就能不接声音设备逐采样验证分块链路。
  */
-class AudioStreamPlayer(private val asset: AudioAsset) : AutoCloseable {
+class AudioStreamPlayer internal constructor(
+    private val asset: AudioAsset,
+    chunkMs: Int,
+    private val sink: AudioSink,
+) : AutoCloseable {
+
+    /** 生产构造：真实 OpenAL + 250ms 分块（[chunkMs]/[sink] 只在测试里换掉）。 */
+    constructor(asset: AudioAsset) : this(asset, CHUNK_MS, OpenAlSink())
 
     companion object {
         private const val BUFFER_COUNT = 4
         private const val CHUNK_MS = 250
         private const val MAX_FRAMES = Int.MAX_VALUE - 100
+
+        /**
+         * 带抗混叠的重采样器名字，按实测抑制能力从好到差排（192k→48k，25~85kHz 多音，
+         * 最差档位的抑制量）：23rd Sinc fast 87.8dB > 47th Sinc fast 64.7dB > 11th Sinc 51.6dB，
+         * 而 OpenAL 默认的 Cubic Spline 是 0dB（超声原电平折回可听带）。
+         * 同阶里 fast 变体在整数比降采样下更好：整数比能直接取表里的比例，非 fast 会在相邻比例间插值。
+         * 名字在 OpenAL Soft 各版本间稳定，因此按名字匹配而不按索引。
+         */
+        private val RESAMPLER_PREFERENCE = listOf(
+            "23rd order sinc (fast)",
+            "47th order sinc (fast)",
+            "23rd order sinc",
+            "47th order sinc",
+            "11th order sinc (fast)",
+            "11th order sinc",
+        )
+
+        /**
+         * 从 OpenAL 报出的重采样器名字里挑一个带抗混叠的，挑不到回 null。
+         * point/linear/spline/gaussian 都只是插值，降采样时不做抗混叠，不能用。
+         */
+        internal fun pickAntiAliasedResampler(names: List<String>): Int? {
+            for (want in RESAMPLER_PREFERENCE) {
+                val i = names.indexOfFirst { it.trim().lowercase() == want }
+                if (i >= 0) return i
+            }
+            val i = names.indexOfFirst { it.contains("sinc", ignoreCase = true) }
+            return if (i >= 0) i else null
+        }
     }
 
     private var decoder: AudioDecoder? = null
@@ -35,9 +81,11 @@ class AudioStreamPlayer(private val asset: AudioAsset) : AutoCloseable {
 
     private var source = 0
     private val buffers = IntArray(BUFFER_COUNT)
-    private val bufferData = arrayOfNulls<ByteBuffer>(BUFFER_COUNT)
     private val bufferFrames = IntArray(BUFFER_COUNT)
     private var queuedFrames = 0
+    /** 当前队列头部对应的内容帧号（seek 目标；没 seek 过就是从内容起点续上的位置）。 */
+    private var queueStartFrame = 0L
+    /** 当前队列里已经播完、被取回的帧数。 */
     private var playedFrames = 0L
 
     init {
@@ -45,7 +93,7 @@ class AudioStreamPlayer(private val asset: AudioAsset) : AutoCloseable {
             val d = if (asset.fmt == 1) WavDecoder(asset.data) else OggDecoder(asset.data)
             sampleRate = d.sampleRate
             channels = d.channels
-            chunkFrames = maxOf(256, sampleRate * CHUNK_MS / 1000)
+            chunkFrames = maxOf(256, sampleRate * chunkMs / 1000)
             d
         } catch (e: Exception) {
             println("[pdrawc] 音频解码失败 ${asset.name}: ${e.message}")
@@ -55,42 +103,46 @@ class AudioStreamPlayer(private val asset: AudioAsset) : AutoCloseable {
 
     fun available(): Boolean = decoder != null
 
-    private fun ensureContext(): Boolean = ALC10.alcGetCurrentContext() != MemoryUtil.NULL
-
     /**
      * 客户端主线程每 tick 调用：play = 是否出声；seekMs 非空时跳转到该毫秒（内容本地毫秒）；
      * gain = 音量（已含淡入淡出包络，0..1）；pan = 声像（-1 左 / 0 中 / 1 右）；rate = 倍速。
      */
     fun update(play: Boolean, seekMs: Double?, gain: Float, pan: Float, rate: Float) {
         if (decoder == null) return
-        if (!ensureContext()) {
+        if (!sink.hasContext()) {
             closeSource()
             return
         }
         try {
-            if (source == 0) openSource()
+            if (source == 0) {
+                openSource()
+                if (source == 0) return
+            }
             if (seekMs != null) doSeek(seekMs)
             refill()
             applyMix(gain, pan, rate)
-            val state = AL10.alGetSourcei(source, AL10.AL_SOURCE_STATE)
-            if (play && state != AL10.AL_PLAYING && !(eof && queuedFrames == 0)) {
-                AL10.alSourcePlay(source)
-            } else if (!play && state == AL10.AL_PLAYING) {
-                AL10.alSourcePause(source)
+            val playing = sink.isPlaying(source)
+            if (play && !playing && !(eof && queuedFrames == 0)) {
+                sink.play(source)
+            } else if (!play && playing) {
+                sink.pause(source)
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // 设备/context 异常：整体重建，下轮可用时按当前位置续播
             closeSource()
         }
     }
 
-    /** 当前内容播放位置（毫秒，相对音频内容起点；倍速下已是内容本地时间）。 */
+    /**
+     * 当前内容播放位置（毫秒，相对音频内容起点；倍速下已是内容本地时间）。
+     * 必须给绝对值——调用方拿它跟播放头算漂移，(seek 之后从头计数) 会让漂移判据每 tick 都成立，
+     * source 被反复停掉重灌，听到的就是连续咔哒。
+     */
     fun positionMs(): Double {
         if (source == 0 || sampleRate <= 0 || decoder == null) return 0.0
         return try {
-            val off = AL11.alGetSourcei(source, AL11.AL_SAMPLE_OFFSET)
-            (playedFrames + off) * 1000.0 / sampleRate
-        } catch (e: Exception) {
+            (queueStartFrame + playedFrames + sink.sampleOffset(source)) * 1000.0 / sampleRate
+        } catch (_: Exception) {
             0.0
         }
     }
@@ -101,27 +153,23 @@ class AudioStreamPlayer(private val asset: AudioAsset) : AutoCloseable {
         decoder = null
     }
 
-    private fun format(): Int = if (channels == 2) AL10.AL_FORMAT_STEREO16 else AL10.AL_FORMAT_MONO16
-
     /** 每 tick 套用音量/声像/倍速。 */
     private fun applyMix(gain: Float, pan: Float, rate: Float) {
         if (source == 0) return
-        AL10.alSourcef(source, AL10.AL_GAIN, gain.coerceIn(0f, 2f))
-        AL10.alSourcef(source, AL10.AL_PITCH, rate.coerceIn(0.25f, 4f))
+        sink.setGain(source, gain.coerceIn(0f, 2f))
+        sink.setPitch(source, rate.coerceIn(0.25f, 4f))
         // 声像：源坐标取相对听者（右为 +X、前方为 -Z），并把距离衰减关掉，效果与玩家朝向/位置无关
-        AL10.alSource3f(source, AL10.AL_POSITION, pan.coerceIn(-1f, 1f), 0f, -1f)
+        sink.setPan(source, pan.coerceIn(-1f, 1f))
     }
 
     private fun openSource() {
-        source = AL10.alGenSources()
-        AL10.alSourcef(source, AL10.AL_GAIN, 1f)
-        // 相对坐标 + 无衰减：只借 AL_POSITION 的左/右分量做声像，不听距离与朝向
-        AL10.alSourcei(source, AL10.AL_SOURCE_RELATIVE, AL10.AL_TRUE)
-        AL10.alSourcef(source, AL10.AL_ROLLOFF_FACTOR, 0f)
-        for (i in 0 until BUFFER_COUNT) {
-            buffers[i] = AL10.alGenBuffers()
-            bufferData[i] = MemoryUtil.memAlloc(chunkFrames * channels * 2)
-        }
+        val s = sink.createSource()
+        if (s == 0) return
+        source = s
+        sink.prepareSource(source, sampleRate)
+        for (i in 0 until BUFFER_COUNT) buffers[i] = sink.createBuffer(chunkFrames, channels)
+        // 重建 source（设备切换/音效重载）时解码器已经读到队列末尾了，新队列从那里接上
+        queueStartFrame += playedFrames
         playedFrames = 0
         queuedFrames = 0
         eof = false
@@ -130,16 +178,14 @@ class AudioStreamPlayer(private val asset: AudioAsset) : AutoCloseable {
     private fun closeSource() {
         if (source == 0) return
         try {
-            AL10.alSourceStop(source)
-            drainQueue()
+            sink.stop(source)
+            playedFrames += drainQueue()
             for (i in 0 until BUFFER_COUNT) {
-                if (buffers[i] != 0) AL10.alDeleteBuffers(buffers[i])
+                if (buffers[i] != 0) sink.deleteBuffer(buffers[i])
                 buffers[i] = 0
                 bufferFrames[i] = 0
-                MemoryUtil.memFree(bufferData[i])
-                bufferData[i] = null
             }
-            AL10.alDeleteSources(source)
+            sink.deleteSource(source)
         } catch (_: Exception) {
         } finally {
             source = 0
@@ -147,18 +193,30 @@ class AudioStreamPlayer(private val asset: AudioAsset) : AutoCloseable {
         }
     }
 
-    private fun drainQueue() {
-        var n = AL10.alGetSourcei(source, AL10.AL_BUFFERS_QUEUED)
-        while (n-- > 0) AL10.alSourceUnqueueBuffers(source)
+    /** 清空队列；返回被丢掉的帧数（这些帧解码器已经读过了）。 */
+    private fun drainQueue(): Long {
+        var n = sink.queuedBuffers(source)
+        var frames = 0L
+        while (n-- > 0) {
+            val b = sink.unqueueBuffers(source, 1)
+            if (b.isEmpty()) break
+            val idx = buffers.indexOf(b[0])
+            if (idx >= 0) {
+                frames += bufferFrames[idx]
+                bufferFrames[idx] = 0
+            }
+        }
+        return frames
     }
 
     private fun doSeek(ms: Double) {
-        decoder?.seekFrame((ms / 1000.0 * sampleRate).toLong().coerceIn(0, MAX_FRAMES.toLong()))
+        val target = (ms / 1000.0 * sampleRate).toLong().coerceIn(0, MAX_FRAMES.toLong())
+        decoder?.seekFrame(target)
+        queueStartFrame = target
         playedFrames = 0
         eof = false
-        AL10.alSourceStop(source)
+        sink.stop(source)
         drainQueue()
-        for (i in 0 until BUFFER_COUNT) bufferFrames[i] = 0
         queuedFrames = 0
     }
 
@@ -169,21 +227,19 @@ class AudioStreamPlayer(private val asset: AudioAsset) : AutoCloseable {
             eof = true
             return 0
         }
-        val buf = bufferData[idx] ?: return 0
-        buf.clear()
-        buf.asShortBuffer().put(dst, 0, frames * channels)
-        buf.position(0).limit(frames * channels * 2)
-        AL10.alBufferData(buffers[idx], format(), buf, sampleRate)
-        AL10.alSourceQueueBuffers(source, buffers[idx])
+        sink.upload(buffers[idx], dst, frames, sampleRate, channels == 2)
+        sink.queueBuffer(source, buffers[idx])
         return frames
     }
 
     private fun refill() {
         if (source == 0) return
-        val processed = AL10.alGetSourcei(source, AL10.AL_BUFFERS_PROCESSED)
-        for (i in 0 until processed) {
-            val b = AL10.alSourceUnqueueBuffers(source)
-            val idx = buffers.indexOf(b)
+        val processed = sink.processedBuffers(source)
+        var n = processed
+        while (n-- > 0) {
+            val b = sink.unqueueBuffers(source, 1)
+            if (b.isEmpty()) break
+            val idx = buffers.indexOf(b[0])
             if (idx >= 0) {
                 playedFrames += bufferFrames[idx]
                 queuedFrames -= bufferFrames[idx]
@@ -194,8 +250,213 @@ class AudioStreamPlayer(private val asset: AudioAsset) : AutoCloseable {
             if (bufferFrames[i] > 0) continue
             val fr = fillBuffer(i)
             if (fr <= 0) break
+            bufferFrames[i] = fr
             queuedFrames += fr
         }
+    }
+}
+
+/**
+ * OpenAL 侧的薄封装：抽出来是为了让「解码 → 分块 → 排队 → 取块」这条链路不带声音设备也能
+ * 逐采样验证（测试里换成假实现）。真实实现 [OpenAlSink] 全部走 LWJGL OpenAL。
+ */
+internal interface AudioSink {
+
+    /** 当前线程有可用的 AL context（Minecraft 的 context 是线程局部的）。 */
+    fun hasContext(): Boolean
+
+    /** 建一个 source，失败回 0。 */
+    fun createSource(): Int
+
+    /** source 的固定属性：相对坐标（只听位置分量的左右做声像）+ 关掉距离衰减 + 抗混叠重采样器。 */
+    fun prepareSource(source: Int, sampleRate: Int)
+
+    fun deleteSource(source: Int)
+
+    /** 建一个缓冲；[maxFrames]×[channels] 是它要装的最大采样数，实现自己准备直接内存。 */
+    fun createBuffer(maxFrames: Int, channels: Int): Int
+
+    fun deleteBuffer(buffer: Int)
+
+    /** 上传一块 16bit 交错 PCM（[frames] 个采样帧）并绑定到 [buffer]。 */
+    fun upload(buffer: Int, pcm: ShortArray, frames: Int, sampleRate: Int, stereo: Boolean)
+
+    fun queueBuffer(source: Int, buffer: Int)
+
+    /** 取回已播完的缓冲（按入队顺序，最多 [count] 个）。 */
+    fun unqueueBuffers(source: Int, count: Int): IntArray
+
+    /** 队列里已播完、可回收的缓冲个数。 */
+    fun processedBuffers(source: Int): Int
+
+    /** 队列里尚未取回的缓冲个数。 */
+    fun queuedBuffers(source: Int): Int
+
+    /** 当前队列内已播的采样帧数（不含已取回的缓冲——取回时由调用方累加）。 */
+    fun sampleOffset(source: Int): Int
+
+    fun isPlaying(source: Int): Boolean
+
+    fun play(source: Int)
+
+    fun pause(source: Int)
+
+    fun stop(source: Int)
+
+    fun setGain(source: Int, gain: Float)
+
+    fun setPitch(source: Int, pitch: Float)
+
+    fun setPan(source: Int, pan: Float)
+}
+
+/** [AudioSink] 的真实实现：复用 Minecraft 当前 context 的 OpenAL。 */
+internal class OpenAlSink : AudioSink {
+
+    private var deviceRate = 0
+    private var resampler = UNPROBED
+    private val staging = HashMap<Int, ByteBuffer>()
+
+    override fun hasContext(): Boolean = ALC10.alcGetCurrentContext() != MemoryUtil.NULL
+
+    override fun createSource(): Int = AL10.alGenSources()
+
+    override fun prepareSource(source: Int, sampleRate: Int) {
+        // 相对坐标 + 无衰减：只借 AL_POSITION 的左/右分量做声像，不听距离与朝向
+        AL10.alSourcei(source, AL10.AL_SOURCE_RELATIVE, AL10.AL_TRUE)
+        AL10.alSourcef(source, AL10.AL_ROLLOFF_FACTOR, 0f)
+        useAntiAliasedResampler(source, sampleRate)
+    }
+
+    override fun deleteSource(source: Int) = AL10.alDeleteSources(source)
+
+    override fun createBuffer(maxFrames: Int, channels: Int): Int {
+        val b = AL10.alGenBuffers()
+        staging[b] = MemoryUtil.memAlloc(maxFrames * channels * 2)
+        return b
+    }
+
+    override fun deleteBuffer(buffer: Int) {
+        AL10.alDeleteBuffers(buffer)
+        MemoryUtil.memFree(staging.remove(buffer))
+    }
+
+    override fun upload(buffer: Int, pcm: ShortArray, frames: Int, sampleRate: Int, stereo: Boolean) {
+        val buf = staging[buffer] ?: return
+        buf.clear()
+        buf.asShortBuffer().put(pcm, 0, frames * (if (stereo) 2 else 1))
+        buf.position(0).limit(frames * (if (stereo) 2 else 1) * 2)
+        AL10.alBufferData(
+            buffer,
+            if (stereo) AL10.AL_FORMAT_STEREO16 else AL10.AL_FORMAT_MONO16,
+            buf, sampleRate,
+        )
+    }
+
+    override fun queueBuffer(source: Int, buffer: Int) = AL10.alSourceQueueBuffers(source, buffer)
+
+    override fun unqueueBuffers(source: Int, count: Int): IntArray {
+        if (count <= 0) return IntArray(0)
+        return if (count == 1) {
+            intArrayOf(AL10.alSourceUnqueueBuffers(source))
+        } else {
+            MemoryStack.stackPush().use { stack ->
+                val p = stack.mallocInt(count)
+                AL10.alSourceUnqueueBuffers(source, p)
+                val out = IntArray(count) { p.get(it) }
+                out
+            }
+        }
+    }
+
+    override fun processedBuffers(source: Int): Int =
+        AL10.alGetSourcei(source, AL10.AL_BUFFERS_PROCESSED)
+
+    override fun queuedBuffers(source: Int): Int =
+        AL10.alGetSourcei(source, AL10.AL_BUFFERS_QUEUED)
+
+    override fun sampleOffset(source: Int): Int = AL11.alGetSourcei(source, AL11.AL_SAMPLE_OFFSET)
+
+    override fun isPlaying(source: Int): Boolean =
+        AL10.alGetSourcei(source, AL10.AL_SOURCE_STATE) == AL10.AL_PLAYING
+
+    override fun play(source: Int) = AL10.alSourcePlay(source)
+
+    override fun pause(source: Int) = AL10.alSourcePause(source)
+
+    override fun stop(source: Int) = AL10.alSourceStop(source)
+
+    override fun setGain(source: Int, gain: Float) = AL10.alSourcef(source, AL10.AL_GAIN, gain)
+
+    override fun setPitch(source: Int, pitch: Float) = AL10.alSourcef(source, AL10.AL_PITCH, pitch)
+
+    override fun setPan(source: Int, pan: Float) = AL10.alSource3f(source, AL10.AL_POSITION, pan, 0f, -1f)
+
+    /**
+     * 素材采样率与设备率不一致时 OpenAL 会自己重采样，方法由实现自选。默认那档是纯插值，
+     * 高采样率素材的超声会按原电平折回可听带；这里换成带限 sinc（AL_SOFT_source_resampler）。
+     * 采样率一致时 mixer 走 1:1 快路径，不动它。
+     */
+    private fun useAntiAliasedResampler(source: Int, sampleRate: Int) {
+        val rate = deviceFrequency()
+        if (rate > 0 && rate == sampleRate) return
+        val idx = resamplerIndex()
+        if (idx >= 0) AL10.alSourcei(source, SOFTSourceResampler.AL_SOURCE_RESAMPLER_SOFT, idx)
+    }
+
+    /** 设备率（= mixer 率）；查询失败回 0（那就照旧按可能的设备率差异处理）。 */
+    private fun deviceFrequency(): Int {
+        if (deviceRate > 0) return deviceRate
+        var rate = 0
+        try {
+            val ctx = ALC10.alcGetCurrentContext()
+            if (ctx != MemoryUtil.NULL) {
+                val dev = ALC10.alcGetContextsDevice(ctx)
+                if (dev != MemoryUtil.NULL) {
+                    MemoryStack.stackPush().use { stack ->
+                        val p = stack.mallocInt(1)
+                        ALC10.alcGetIntegerv(dev, ALC10.ALC_FREQUENCY, p)
+                        rate = p.get(0)
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        } catch (_: LinkageError) {
+        }
+        if (rate > 0) deviceRate = rate
+        return rate
+    }
+
+    /** 挑出来的重采样器索引；没有可用的回 -1。缺扩展/查不到时只探一次。 */
+    private fun resamplerIndex(): Int {
+        if (resampler != UNPROBED) return resampler
+        resampler = -1
+        try {
+            if (AL.getCapabilities().AL_SOFT_source_resampler) {
+                MemoryStack.stackPush().use { stack ->
+                    val p = stack.mallocInt(1)
+                    AL11.alGetIntegerv(SOFTSourceResampler.AL_NUM_RESAMPLERS_SOFT, p)
+                    val n = p.get(0)
+                    val names = ArrayList<String>(n)
+                    for (i in 0 until n) {
+                        names.add(
+                            SOFTSourceResampler.alGetStringiSOFT(
+                                SOFTSourceResampler.AL_RESAMPLER_NAME_SOFT, i
+                            ) ?: ""
+                        )
+                    }
+                    resampler = AudioStreamPlayer.pickAntiAliasedResampler(names) ?: -1
+                }
+            }
+        } catch (_: Exception) {
+        } catch (_: LinkageError) {
+        }
+        return resampler
+    }
+
+    private companion object {
+        /** 尚未查询过。 */
+        const val UNPROBED = -2
     }
 }
 
