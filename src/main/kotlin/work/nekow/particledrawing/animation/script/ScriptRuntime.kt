@@ -55,23 +55,18 @@ private fun cfgColor(v: Any?): List<Double> = when {
 }
 
 /**
- * 向量写法归一（粒子尺寸 p.scale / spawn 配置的 scale、函数对象视图偏移 this.viewOffset 共用）：
- * [scalarZ] 非 null 时标量写法按它当 z（形态记 0）、vec2（或 2 元数组）的 z 取 [vec2Z]、vec3（或 3 元数组）原样。
- * 粒子尺寸那边 [scalarZ] 与 [vec2Z] 都是 1（编辑器粒子模型的 Z 恒为 1），视图偏移那边 vec2 的 z 为 0。
+ * 粒子尺寸写法归一（spawn 配置的 scale 与脚本里的 p.scale 共用）：
+ * num 写 [s, s, 1]（编辑器粒子模型的 Z 恒为 1）、vec2（或 2 元数组）的 z 视为 1、vec3（或 3 元数组）原样。
  * @return 写出的形态 0/2/3；写法不合法返回 -1，由调用方按自己的措辞报错
  */
-private fun vecShape(v: Any?, out: DoubleArray, scalarZ: Double?, vec2Z: Double): Int {
+private fun scaleShape(v: Any?, out: DoubleArray): Int {
     fun comp(x: Any?): Double = x as? Double ?: Double.NaN
-    if (v is Double) {
-        if (scalarZ == null) return -1
-        out[0] = v; out[1] = v; out[2] = scalarZ
-        return 0
-    }
     return when {
-        v is Vec2 -> { out[0] = v.x; out[1] = v.y; out[2] = vec2Z; 2 }
+        v is Double -> { out[0] = v; out[1] = v; out[2] = 1.0; 0 }
+        v is Vec2 -> { out[0] = v.x; out[1] = v.y; out[2] = 1.0; 2 }
         v is Vec3 -> { out[0] = v.x; out[1] = v.y; out[2] = v.z; 3 }
         v is MutableList<*> && v.size == 2 -> {
-            out[0] = comp(v[0]); out[1] = comp(v[1]); out[2] = vec2Z
+            out[0] = comp(v[0]); out[1] = comp(v[1]); out[2] = 1.0
             if (out[0].isNaN() || out[1].isNaN()) -1 else 2
         }
         v is MutableList<*> && v.size == 3 -> {
@@ -105,7 +100,7 @@ private fun applySpawnConfig(host: ParticleHost, config: Any?) {
                 host.color[3] = if (c.size == 4) clamp01(c[3]) else 1.0
             }
             "scale" -> {
-                val dim = vecShape(v, host.scale, scalarZ = 1.0, vec2Z = 1.0)
+                val dim = scaleShape(v, host.scale)
                 if (dim < 0) throw ScriptException("spawn config 'scale' requires a num, vec2, vec3 or array of 2/3 numbers")
                 host.scaleDim = dim
             }
@@ -700,20 +695,23 @@ object ScriptRuntime {
         /** 函数对象级视图变换的成员名（this.viewScale / this.viewOffset）：读写都指对象自己，不受 apply{} 接收者影响。 */
         private fun isViewField(field: String): Boolean = field == "viewScale" || field == "viewOffset"
 
-        /** 写 this.viewScale / this.viewOffset（写法校验与报错在此）。 */
+        /** 写 this.viewScale / this.viewOffset（写法校验与报错在此，与编辑器 ctxWrite 同一套）。 */
         private fun writeViewField(field: String, value: Any?, n: Node) {
-            val c = ctx ?: err("context unavailable", n)
+            val cx = ctx ?: err("context unavailable", n)
             when (field) {
                 "viewScale" -> {
                     val v = value as? Double
                         ?: err("this.viewScale requires a num, got ${typeName(value)}", n)
-                    c.view.scale = v
+                    if (!v.isFinite()) err("this.viewScale requires a finite num", n)
+                    cx.view.scale = v
                 }
                 "viewOffset" -> {
-                    val dim = vecShape(value, c.view.offset, scalarZ = null, vec2Z = 0.0)
-                    if (dim < 0) {
-                        err("this.viewOffset requires a vec2, vec3 or array of 2/3 numbers, got ${typeName(value)}", n)
-                    }
+                    // 位置偏移：vec2 当 z=0，其余走三分量写法（数组只收 3 元，与编辑器 vecFieldValues(…, 3) 一致）
+                    val comps = if (value is Vec2) listOf(value.x, value.y, 0.0)
+                    else vecFieldValues(value, 3, "this.viewOffset", n)
+                    cx.view.offset[0] = comps[0]
+                    cx.view.offset[1] = comps[1]
+                    cx.view.offset[2] = comps[2]
                 }
             }
         }
@@ -875,7 +873,7 @@ object ScriptRuntime {
                 }
                 "color" -> writeParticleColor(w, value, n)
                 "scale" -> {
-                    val dim = vecShape(value, w.scale, scalarZ = 1.0, vec2Z = 1.0)
+                    val dim = scaleShape(value, w.scale)
                     if (dim < 0) err("particle.scale requires a num, vec2, vec3 or array of 2/3 numbers, got ${typeName(value)}", n)
                     w.scaleDim = dim
                 }

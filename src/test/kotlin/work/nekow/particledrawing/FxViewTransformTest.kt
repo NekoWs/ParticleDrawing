@@ -1,11 +1,15 @@
 package work.nekow.particledrawing
 
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.animation.AnimKeyframe
 import work.nekow.particledrawing.animation.AnimParticle
+import work.nekow.particledrawing.animation.AnimTrack
 import work.nekow.particledrawing.animation.ClientAnimationPlayer
 import work.nekow.particledrawing.animation.FunctionObject
 import work.nekow.particledrawing.animation.ParticleAnimation
+import work.nekow.particledrawing.animation.TrackPr
 import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.core.easing.EasingType
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -24,14 +28,14 @@ class FxViewTransformTest {
         FunctionObject(id = id, name = id, center = doubleArrayOf(0.0, 0.0, 0.0), source = source, seed = 0, vars = emptyMap(), duration = 0)
 
     /** 一个设了视图变换的对象 + 一个没设的同类对象 + 一颗普通粒子，用来看「谁受影响」。 */
-    private fun animation(viewSource: String): ParticleAnimation = ParticleAnimation(
+    private fun animation(viewSource: String, tracks: List<AnimTrack> = emptyList()): ParticleAnimation = ParticleAnimation(
         loop = false,
         particles = listOf(
             AnimParticle(
                 "p0", Color.WHITE, floatArrayOf(5f, 5f, 1f), false, 0, Vec3(7.0, 0.0, 0.0), Vec3.ZERO, life = -1,
             ),
         ),
-        tracks = emptyList(),
+        tracks = tracks,
         groups = emptyMap(),
         functions = listOf(
             fx("view", viewSource),
@@ -39,8 +43,8 @@ class FxViewTransformTest {
         ),
     )
 
-    private fun player(viewSource: String): ClientAnimationPlayer =
-        ClientAnimationPlayer(animation(viewSource), Vec3.ZERO, startGameTick = 0L, currentGameTick = 0L)
+    private fun player(viewSource: String, tracks: List<AnimTrack> = emptyList()): ClientAnimationPlayer =
+        ClientAnimationPlayer(animation(viewSource, tracks), Vec3.ZERO, startGameTick = 0L, currentGameTick = 0L)
 
     private val plainSource = "func setup() { let p = this.spawn(); p.position = [1, 2, 0]; p.scale = 5; }"
 
@@ -93,5 +97,20 @@ class FxViewTransformTest {
         val ordinary = states.first { it.id == "p0" }
         assertEquals(listOf(7.0, 0.0, 0.0), listOf(ordinary.pos.x, ordinary.pos.y, ordinary.pos.z))
         assertEquals(listOf(5f, 5f, 1f), ordinary.scale.toList())
+    }
+
+    @Test
+    fun `自转会把 viewOffset 一起带着转（与 p_position 同坐标系）`() {
+        // viewOffset 加在粒子的局部坐标上、在自转之前：offset (1,0,0) 被绕 Z 的 90° 自转带到 +Y。
+        // 若把它套在自转之后（本实现先前那版），偏移会停在 (1,0,0) —— 这条就是那个语义的分界。
+        val spinZ = AnimTrack(
+            TrackPr.SPIN_Z, listOf("f:view"),
+            listOf(AnimKeyframe(0, 90.0, EasingType.LINEAR)), AnimTrack.Mode.SET,
+        )
+        val s = player("func setup() { this.viewOffset = vec2(1, 0); let p = this.spawn(); p.position = [0, 0, 0]; p.scale = 1; }", listOf(spinZ))
+            .currentStates().first { it.id == "view:p0" }
+        assertEquals(0.0, s.pos.x, 1e-9)
+        assertEquals(1.0, s.pos.y, 1e-9)
+        assertEquals(0.0, s.pos.z, 1e-9)
     }
 }

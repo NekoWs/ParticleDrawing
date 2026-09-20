@@ -198,22 +198,36 @@ class ScriptRuntimeConformanceTest {
         h.setup()
         assertEquals(listOf(1.0, 2.0, 3.0), h.view.offset.toList())
 
-        val h2 = Harness("func setup() { this.viewOffset = [4, 5]; }")
+        // 3 元数组与 vec3 同义；vec2 也收（z 记 0）
+        val h2 = Harness("func setup() { this.viewOffset = [4, 5, 6]; }")
         h2.setup()
-        assertEquals(listOf(4.0, 5.0, 0.0), h2.view.offset.toList())
+        assertEquals(listOf(4.0, 5.0, 6.0), h2.view.offset.toList())
+
+        val h3 = Harness("func setup() { this.viewOffset = vec2(7, 8); }")
+        h3.setup()
+        assertEquals(listOf(7.0, 8.0, 0.0), h3.view.offset.toList())
     }
 
     @Test
     fun viewTransformRejectsBadShape() {
-        // viewScale 只收 num；viewOffset 只收 vec2/vec3/2~3 元数组
+        // viewScale 只收有限 num；viewOffset 只收 vec2/vec3/3 元数组（与编辑器 ctxWrite 一致）
         assertFailsWith<ScriptException> {
             Harness("func setup() { this.viewScale = vec2(1, 2); }").setup()
+        }
+        assertFailsWith<ScriptException> {
+            Harness("func setup() { this.viewScale = 1/0; }").setup()
         }
         assertFailsWith<ScriptException> {
             Harness("func setup() { this.viewOffset = 3; }").setup()
         }
         assertFailsWith<ScriptException> {
+            Harness("func setup() { this.viewOffset = [1, 2]; }").setup()
+        }
+        assertFailsWith<ScriptException> {
             Harness("func setup() { this.viewOffset = [1, 2, 3, 4]; }").setup()
+        }
+        assertFailsWith<ScriptException> {
+            Harness("func setup() { this.viewOffset = vec4(1, 2, 3, 4); }").setup()
         }
     }
 

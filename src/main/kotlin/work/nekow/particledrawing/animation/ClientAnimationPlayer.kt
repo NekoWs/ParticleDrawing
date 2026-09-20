@@ -998,20 +998,21 @@ class ClientAnimationPlayer(
                 ParticleState(id, Vec3.ZERO, Color.WHITE, floatArrayOf(1f, 1f, 1f), false, 0, null, visible = true, derived = true, additive = fx.additive)
             }
             s.additive = fx.additive   // 已在状态里时也保持跟随函数对象（导出文件里该字段不变，但保持一致）
-            var pos = Vec3(host.pos[0] + cx, host.pos[1] + cy, host.pos[2] + cz)
+            // 函数对象级视图变换（脚本 this.viewScale / this.viewOffset）：整条迹线的全局增益与直流偏移。
+            // 套在粒子自己的局部坐标上——与脚本 p.position 同一套坐标系，也就是下面这条链路（center → 自转 →
+            // pos op → 公转）的**最前**；于是对象有自转/公转时偏移会被一起带着转（有意语义）。
+            val vs = rt.view.scale
+            val vo = rt.view.offset
+            var pos = Vec3(
+                host.pos[0] * vs + vo[0] + cx,
+                host.pos[1] * vs + vo[1] + cy,
+                host.pos[2] * vs + vo[2] + cz,
+            )
             if (hasSpin) pos = if (fx.spinLocal) rotateAroundLocal(pos, spinPivot, spin) else rotateAround(pos, spinPivot, spin)
             // pos op 位移必须先于公转：函数对象的实际世界位置应绕公转中心旋转。
             pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
             if (hasRot) pos = if (fx.rotLocal) rotateAroundLocalOrbit(pos, orbitPivot, rot, spin, fx.spinLocal) else rotateAround(pos, orbitPivot, rot)
-            // 函数对象级视图变换（脚本 this.viewScale / this.viewOffset）：整条迹线的全局增益与直流偏移。
-            // 折进这一步的构造里，不额外新建 Vec3；尺寸那一份在下面 fxScaleInto 之后一起乘。
-            val vs = rt.view.scale
-            val vo = rt.view.offset
-            s.pos = Vec3(
-                origin.x + pos.x * vs + vo[0],
-                origin.y + pos.y * vs + vo[1],
-                origin.z + pos.z * vs + vo[2],
-            )
+            s.pos = origin.add(pos)
             s.color = applyEntrance(
                 Color.of(
                     host.color[0].coerceIn(0.0, 1.0).toFloat(),
