@@ -404,7 +404,7 @@ internal class OpenAlSink(
     override fun setPitch(source: Int, pitch: Float) = AL10.alSourcef(source, AL10.AL_PITCH, pitch)
 
     override fun setPan(source: Int, pan: Float) {
-        // 开了平衡声像就走 AL_PAN_SOFT——此时不能再设 AL_POSITION，两套声像会叠起来
+        // 开了平衡声像的 source 走 AL_PAN_SOFT；其余（单声道素材、扩展不可用）仍用 AL_POSITION
         if (source in panningSources) AL10.alSourcef(source, AL_PAN_SOFT, pan)
         else AL10.alSource3f(source, AL10.AL_POSITION, pan, 0f, -1f)
     }
