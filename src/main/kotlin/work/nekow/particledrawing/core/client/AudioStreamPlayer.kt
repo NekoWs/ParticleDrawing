@@ -199,7 +199,7 @@ class AudioStreamPlayer(private val asset: AudioAsset) : AutoCloseable {
     }
 }
 
-/** 音频解码器：按帧 seek，读交错 16bit PCM（返回样本帧数）。 */
+/** 音频解码器：按采样帧 seek（seek 后下一次 read 就从该帧开始），读交错 16bit PCM（返回样本帧数）。 */
 internal interface AudioDecoder : AutoCloseable {
     val sampleRate: Int
     val channels: Int
@@ -210,30 +210,47 @@ internal interface AudioDecoder : AutoCloseable {
 /** OGG Vorbis 解码（LWJGL STB，公版库）。 */
 internal class OggDecoder(bytes: ByteArray) : AudioDecoder {
 
+    // stb_vorbis 在句柄存活期间会一直读这块输入内存，必须堆分配并留到 close——
+    // 栈内存（MemoryStack）pop 之后随时会被后续分配覆盖。整份字节只此一份拷贝，close 时释放。
+    private val mem: ByteBuffer = MemoryUtil.memAlloc(bytes.size)
+    private var memFreed = false
     private var handle = 0L
     override val sampleRate: Int
     override val channels: Int
 
     init {
-        MemoryStack.stackPush().use { stack ->
-            val buf = stack.malloc(bytes.size).put(bytes).flip()
-            val err = stack.mallocInt(1)
-            handle = STBVorbis.stb_vorbis_open_memory(buf, err, null)
-            if (handle == 0L) throw IllegalStateException("STB Vorbis 打开失败: ${err.get(0)}")
+        var rate = 0
+        var ch = 0
+        try {
+            mem.put(bytes).flip()
+            var errCode = 0
+            MemoryStack.stackPush().use { stack ->
+                val err = stack.mallocInt(1)
+                handle = STBVorbis.stb_vorbis_open_memory(mem, err, null)
+                errCode = err.get(0)
+            }
+            if (handle == 0L) throw IllegalStateException("STB Vorbis 打开失败: $errCode")
             val info = STBVorbisInfo.malloc()
-            STBVorbis.stb_vorbis_get_info(handle, info)
-            sampleRate = info.sample_rate()
-            channels = info.channels()
-            info.free()
-        }
-        if (channels !in 1..2) {
+            try {
+                STBVorbis.stb_vorbis_get_info(handle, info)
+                rate = info.sample_rate()
+                ch = info.channels()
+            } finally {
+                info.free()
+            }
+            if (ch !in 1..2) throw IllegalStateException("OGG 声道数不支持: $ch")
+        } catch (e: Exception) {
             close()
-            throw IllegalStateException("OGG 声道数不支持: $channels")
+            throw e
         }
+        sampleRate = rate
+        channels = ch
     }
 
     override fun seekFrame(frame: Long) {
-        STBVorbis.stb_vorbis_seek_frame(handle, frame.toInt().coerceAtLeast(0))
+        // stb_vorbis_seek 是采样级精确的；seek_frame 只保证下一帧「包含」目标采样，
+        // 取样本会从帧边界开始，最多偏移一个块，播放头与听到的位置就对不上了。
+        STBVorbis.stb_vorbis_seek(handle, frame.toInt().coerceAtLeast(0))
     }
 
     override fun read(dst: ShortArray): Int =
@@ -243,6 +260,10 @@ internal class OggDecoder(bytes: ByteArray) : AudioDecoder {
         if (handle != 0L) {
             STBVorbis.stb_vorbis_close(handle)
             handle = 0L
+        }
+        if (!memFreed) {
+            memFreed = true
+            MemoryUtil.memFree(mem)
         }
     }
 }
@@ -284,8 +305,10 @@ internal class WavDecoder(bytes: ByteArray) : AudioDecoder {
                     if (fmtFloat) fmtBits = 32
                 }
                 "data" -> {
+                    // remaining() 已经是「从 data 块正文到文件末尾」的字节数，body 是绝对位置，不能再减一次；
+                    // 减两次会把每首曲子尾部砍掉 body 字节，短 WAV 还会直接判成没有 data 块。
                     dataOffset = body
-                    dataLength = size.coerceAtMost(buf.remaining() - body)
+                    dataLength = size.coerceAtMost(buf.remaining())
                 }
             }
             buf.position(body + size + (size and 1))
@@ -299,11 +322,16 @@ internal class WavDecoder(bytes: ByteArray) : AudioDecoder {
         if (bits != 16 && bits != 8 && !isFloat) {
             throw IllegalStateException("WAV 位深不支持: $fmtBits")
         }
+        // 没 seek 过就直接 read 时也要从 data 块正文开始，否则会把 RIFF 头当样本读出来
+        dataPos = dataOffset
     }
 
     override fun seekFrame(frame: Long) {
         val frameBytes = channels * (bits / 8)
-        dataPos = dataOffset + (frame * frameBytes).toInt().coerceAtMost(dataLength)
+        // 先按 Long 钳到 data 区再转 Int：frame 很大时 frame*frameBytes 会溢出成负数，
+        // 位置跑到 data 块之前会让后面的 buf.position 直接抛异常。
+        val offset = (frame * frameBytes).coerceIn(0L, dataLength.toLong())
+        dataPos = dataOffset + offset.toInt()
     }
 
     override fun read(dst: ShortArray): Int {

@@ -62,7 +62,7 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | `BridgeParticle` | 桥接原版粒子系统的渲染代理（纯色方块 / 自定义贴图 + UV 采样；v17 非广告牌粒子按自转四元数固定朝向） |
 | `TextureCache` | 内嵌贴图缓存（PNG 字节 → DynamicTexture） |
 | `ClientAnimationManager` | 客户端 .pdraw 动画播放管理 |
-| `AudioStreamPlayer` | 游戏内音频播放（OpenAL 队列流式 + OGG/WAV 解码 + seek 重灌 + 漂移校正，主线程驱动） |
+| `AudioStreamPlayer` | 游戏内音频播放（OpenAL 队列流式 + OGG/WAV 解码 + 采样级精确 seek 重灌 + 漂移校正，主线程驱动） |
 | `ClientAnimationProgramManager` | 编排动画程序解释器：指令流本地求值、实体通道、公式模式（客户端自驱） |
 | `ClientAnimationSyncManager` | 配置阶段文件接收管理 |
 | `ParticleRenderHandler` | 客户端 tick 事件处理 |
