@@ -55,18 +55,23 @@ private fun cfgColor(v: Any?): List<Double> = when {
 }
 
 /**
- * 粒子尺寸写法归一（spawn 配置的 scale 与脚本里的 p.scale 共用）：
- * num 写 [s, s, 1]（编辑器粒子模型的 Z 恒为 1）、vec2（或 2 元数组）的 z 视为 1、vec3（或 3 元数组）原样。
+ * 向量写法归一（粒子尺寸 p.scale / spawn 配置的 scale、函数对象视图偏移 this.viewOffset 共用）：
+ * [scalarZ] 非 null 时标量写法按它当 z（形态记 0）、vec2（或 2 元数组）的 z 取 [vec2Z]、vec3（或 3 元数组）原样。
+ * 粒子尺寸那边 [scalarZ] 与 [vec2Z] 都是 1（编辑器粒子模型的 Z 恒为 1），视图偏移那边 vec2 的 z 为 0。
  * @return 写出的形态 0/2/3；写法不合法返回 -1，由调用方按自己的措辞报错
  */
-private fun scaleShape(v: Any?, out: DoubleArray): Int {
+private fun vecShape(v: Any?, out: DoubleArray, scalarZ: Double?, vec2Z: Double): Int {
     fun comp(x: Any?): Double = x as? Double ?: Double.NaN
+    if (v is Double) {
+        if (scalarZ == null) return -1
+        out[0] = v; out[1] = v; out[2] = scalarZ
+        return 0
+    }
     return when {
-        v is Double -> { out[0] = v; out[1] = v; out[2] = 1.0; 0 }
-        v is Vec2 -> { out[0] = v.x; out[1] = v.y; out[2] = 1.0; 2 }
+        v is Vec2 -> { out[0] = v.x; out[1] = v.y; out[2] = vec2Z; 2 }
         v is Vec3 -> { out[0] = v.x; out[1] = v.y; out[2] = v.z; 3 }
         v is MutableList<*> && v.size == 2 -> {
-            out[0] = comp(v[0]); out[1] = comp(v[1]); out[2] = 1.0
+            out[0] = comp(v[0]); out[1] = comp(v[1]); out[2] = vec2Z
             if (out[0].isNaN() || out[1].isNaN()) -1 else 2
         }
         v is MutableList<*> && v.size == 3 -> {
@@ -100,7 +105,7 @@ private fun applySpawnConfig(host: ParticleHost, config: Any?) {
                 host.color[3] = if (c.size == 4) clamp01(c[3]) else 1.0
             }
             "scale" -> {
-                val dim = scaleShape(v, host.scale)
+                val dim = vecShape(v, host.scale, scalarZ = 1.0, vec2Z = 1.0)
                 if (dim < 0) throw ScriptException("spawn config 'scale' requires a num, vec2, vec3 or array of 2/3 numbers")
                 host.scaleDim = dim
             }
@@ -182,6 +187,7 @@ object ScriptRuntime {
      * @param particles 运行时粒子列表（this.particles）
      * @param spawn 创建并返回一个粒子句柄（this.spawn()）
      * @param deltaMs 帧毫秒增量（内部调度保留字段；脚本语言不再将其暴露给 process）
+     * @param view 函数对象级视图变换（this.viewScale / this.viewOffset）；同一个函数对象全程复用同一份状态
      */
     class ScriptCtx(
         var t: Double,
@@ -196,6 +202,7 @@ object ScriptRuntime {
         var maxMs: Double = 0.0,
         val spawnConfig: (Any?) -> ParticleHost = { cfg -> spawn().also { if (cfg != null) applySpawnConfig(it, cfg) } },
         val get: (String) -> Any? = { throw ScriptException("this.get is not available here") },
+        val view: ViewTransform = ViewTransform(),
     )
 
     fun createObjectState(seed: Int): ObjectState = ObjectState(HashMap(), RandState(seed), seed)
@@ -605,6 +612,11 @@ object ScriptRuntime {
 
         private fun assignMemberField(target: MemberTarget, value: Any?, n: Node) {
             if (target.obj is VarNode && target.obj.name == CTX_NAME) {
+                // 视图变换是对象自己的成员；即使写在 apply{} 里也写对象，不写接收者粒子
+                if (isViewField(target.field)) {
+                    writeViewField(target.field, value, n)
+                    return
+                }
                 if (receiverStack.isNotEmpty()) {
                     particleSetField(receiverStack.last(), target.field, value, n)
                     return
@@ -679,7 +691,30 @@ object ScriptRuntime {
                 "animTime" -> c.t
                 "duration" -> if (c.duration > 0.0) c.duration else c.maxMs
                 "particles" -> ParticleListValue(c.particles)
+                "viewScale" -> c.view.scale
+                "viewOffset" -> Vec3(c.view.offset[0], c.view.offset[1], c.view.offset[2])
                 else -> err("this.$field is not available here", n)
+            }
+        }
+
+        /** 函数对象级视图变换的成员名（this.viewScale / this.viewOffset）：读写都指对象自己，不受 apply{} 接收者影响。 */
+        private fun isViewField(field: String): Boolean = field == "viewScale" || field == "viewOffset"
+
+        /** 写 this.viewScale / this.viewOffset（写法校验与报错在此）。 */
+        private fun writeViewField(field: String, value: Any?, n: Node) {
+            val c = ctx ?: err("context unavailable", n)
+            when (field) {
+                "viewScale" -> {
+                    val v = value as? Double
+                        ?: err("this.viewScale requires a num, got ${typeName(value)}", n)
+                    c.view.scale = v
+                }
+                "viewOffset" -> {
+                    val dim = vecShape(value, c.view.offset, scalarZ = null, vec2Z = 0.0)
+                    if (dim < 0) {
+                        err("this.viewOffset requires a vec2, vec3 or array of 2/3 numbers, got ${typeName(value)}", n)
+                    }
+                }
             }
         }
 
@@ -840,7 +875,7 @@ object ScriptRuntime {
                 }
                 "color" -> writeParticleColor(w, value, n)
                 "scale" -> {
-                    val dim = scaleShape(value, w.scale)
+                    val dim = vecShape(value, w.scale, scalarZ = 1.0, vec2Z = 1.0)
                     if (dim < 0) err("particle.scale requires a num, vec2, vec3 or array of 2/3 numbers, got ${typeName(value)}", n)
                     w.scaleDim = dim
                 }
@@ -961,6 +996,8 @@ object ScriptRuntime {
 
         private fun evalMember(n: MemberNode): Any? {
             if (n.obj is VarNode && n.obj.name == CTX_NAME) {
+                // 视图变换是对象自己的成员；即使写在 apply{} 里也指对象，不指接收者粒子
+                if (isViewField(n.field)) return ctxRead(n.field, n)
                 if (receiverStack.isNotEmpty()) return particleGetField(receiverStack.last(), n.field, n)
                 return ctxRead(n.field, n)
             }

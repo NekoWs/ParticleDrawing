@@ -11,12 +11,14 @@ import work.nekow.particledrawing.animation.script.ScriptException
 import work.nekow.particledrawing.animation.script.ScriptRuntime
 import work.nekow.particledrawing.animation.script.TextValue
 import work.nekow.particledrawing.animation.script.Vec2
+import work.nekow.particledrawing.animation.script.ViewTransform
 import work.nekow.particledrawing.animation.script.parseProgram
 import work.nekow.particledrawing.api.Color
 import kotlin.math.sin
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 /**
  * spawn 模型运行时回归测试：setup/tick/process 入口 + ScriptCtx + 简单 ParticleHost。
@@ -59,6 +61,8 @@ class ScriptRuntimeConformanceTest {
         val obj = ScriptRuntime.createObjectState(seed)
         val particles = ArrayList<ParticleHost>()
         var serial = 0
+        /** 与播放端一致：同一个函数对象全程复用同一份视图变换状态（跨 ctx 调用保持）。 */
+        val view = ViewTransform()
 
         fun spawn(): ParticleHost {
             val h = TestHost(serial++) { host -> particles.remove(host) }
@@ -67,7 +71,7 @@ class ScriptRuntimeConformanceTest {
         }
 
         private fun ctx(t: Double = 0.0, deltaMs: Double = 0.0): ScriptRuntime.ScriptCtx =
-            ScriptRuntime.ScriptCtx(t, duration, emptyMap(), particles, ::spawn, deltaMs, fastMath, {})
+            ScriptRuntime.ScriptCtx(t, duration, emptyMap(), particles, ::spawn, deltaMs, fastMath, {}, view = view)
 
         fun setup(t: Double = 0.0) {
             ScriptRuntime.runSpawnSetup(program, obj, ctx(t))
@@ -155,6 +159,72 @@ class ScriptRuntimeConformanceTest {
         assertFailsWith<ScriptException> {
             Harness("func setup() { this.spawn({ scale: vec4(1,2,3,4) }); }").setup()
         }
+    }
+
+    @Test
+    fun viewTransformDefaultsAndWrites() {
+        val h = Harness(
+            "func setup() { let p = this.spawn(); p.d0 = this.viewScale; p.o0 = this.viewOffset; " +
+                "this.viewScale = 2.5; this.viewOffset = vec2(1, -2); p.d1 = this.viewScale; p.o1 = this.viewOffset; }",
+        )
+        h.setup()
+        val host = h.particles[0] as TestHost
+        // 默认 1 / 0（未设置时与以前完全一致）
+        assertEquals(1.0, host.fields["d0"])
+        assertEquals(work.nekow.particledrawing.animation.script.Vec3(0.0, 0.0, 0.0), host.fields["o0"])
+        // 写后读回拿到自己设的值；vec2 的 z 视为 0
+        assertEquals(2.5, host.fields["d1"])
+        assertEquals(work.nekow.particledrawing.animation.script.Vec3(1.0, -2.0, 0.0), host.fields["o1"])
+        // 同时落到对象级状态（播放端逐 tick 从这里取）
+        assertEquals(2.5, h.view.scale, 1e-12)
+        assertEquals(listOf(1.0, -2.0, 0.0), h.view.offset.toList())
+    }
+
+    @Test
+    fun viewTransformSharesStateAcrossPhases() {
+        val h = Harness(
+            "func setup() { this.viewScale = 4; }\n" +
+                "func process() { let p = this.spawn(); p.d = this.viewScale; p.o = this.viewOffset; }",
+        )
+        h.setup()
+        h.process()
+        assertEquals(4.0, (h.particles[0] as TestHost).fields["d"])
+        assertEquals(work.nekow.particledrawing.animation.script.Vec3(0.0, 0.0, 0.0), (h.particles[0] as TestHost).fields["o"])
+    }
+
+    @Test
+    fun viewTransformAcceptsVec3AndArrayOffset() {
+        val h = Harness("func setup() { this.viewOffset = vec3(1, 2, 3); }")
+        h.setup()
+        assertEquals(listOf(1.0, 2.0, 3.0), h.view.offset.toList())
+
+        val h2 = Harness("func setup() { this.viewOffset = [4, 5]; }")
+        h2.setup()
+        assertEquals(listOf(4.0, 5.0, 0.0), h2.view.offset.toList())
+    }
+
+    @Test
+    fun viewTransformRejectsBadShape() {
+        // viewScale 只收 num；viewOffset 只收 vec2/vec3/2~3 元数组
+        assertFailsWith<ScriptException> {
+            Harness("func setup() { this.viewScale = vec2(1, 2); }").setup()
+        }
+        assertFailsWith<ScriptException> {
+            Harness("func setup() { this.viewOffset = 3; }").setup()
+        }
+        assertFailsWith<ScriptException> {
+            Harness("func setup() { this.viewOffset = [1, 2, 3, 4]; }").setup()
+        }
+    }
+
+    @Test
+    fun viewTransformReservedInsideApply() {
+        // 视图变换是对象自己的成员：写在 apply{} 里也指对象，不会变成粒子自定义字段
+        val h = Harness("func setup() { let p = this.spawn(); p.apply { this.viewScale = 3; } }")
+        h.setup()
+        val host = h.particles[0] as TestHost
+        assertEquals(3.0, h.view.scale, 1e-12)
+        assertTrue(host.fields.isEmpty(), "不该落到粒子的自定义字段上")
     }
 
     @Test

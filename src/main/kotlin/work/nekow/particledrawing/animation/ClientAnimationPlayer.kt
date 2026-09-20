@@ -7,6 +7,7 @@ import work.nekow.particledrawing.animation.script.ScriptException
 import work.nekow.particledrawing.animation.script.ScriptProgram
 import work.nekow.particledrawing.animation.script.ScriptRuntime
 import work.nekow.particledrawing.animation.script.TextValue
+import work.nekow.particledrawing.animation.script.ViewTransform
 import work.nekow.particledrawing.animation.script.parseProgram
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.util.rotateAround
@@ -237,6 +238,8 @@ class ClientAnimationPlayer(
         var spawnSerial = 0
         var cursorMs = 0.0
         var curMs = 0.0
+        /** 函数对象级视图变换（脚本 this.viewScale / this.viewOffset）：本对象的派生粒子专用。 */
+        val view = ViewTransform()
 
         companion object {
             // 与编辑器 generators.js 一致：阻止恶意脚本逐帧无限 spawn 造成内存/渲染 DoS。
@@ -293,6 +296,8 @@ class ClientAnimationPlayer(
             val curMs: Double,
             val globals: Map<String, Any?>,
             val randState: Int,
+            val viewScale: Double,
+            val viewOffset: DoubleArray,
         )
 
         class HostSnapshot(
@@ -341,6 +346,8 @@ class ClientAnimationPlayer(
                 for ((k, v) in objState.globals) out[k] = deepCopyScriptValue(v)
             },
             randState = objState.rand.a,
+            viewScale = view.scale,
+            viewOffset = view.offset.copyOf(),
         )
 
         fun captureLoopSnapshot() {
@@ -398,6 +405,8 @@ class ClientAnimationPlayer(
             objState.globals.clear()
             for ((k, v) in s.globals) objState.globals[k] = deepCopyScriptValue(v)
             objState.rand.a = s.randState
+            view.scale = s.viewScale
+            s.viewOffset.copyInto(view.offset)
         }
     }
 
@@ -438,6 +447,7 @@ class ClientAnimationPlayer(
         rt.objState.constGlobals.clear()
         rt.objState.topLevelDone = false
         rt.objState.rand.a = fx.seed
+        rt.view.reset()
         try {
             ScriptRuntime.runSpawnSetup(rt.program, rt.objState, makeCtx(fx, rt, fx.st.toDouble()))
         } catch (e: Throwable) {
@@ -456,6 +466,7 @@ class ClientAnimationPlayer(
             print = { line -> println("[pdrawc:${fx.id}] $line") },
             st = fx.st.toDouble(),
             maxMs = maxMs.toDouble(),
+            view = rt.view,
             get = { name ->
                 animation.texts.firstOrNull { it.name == name }?.let { TextValue(it) }
                     ?: animation.audioAssets.firstOrNull { it.name == name }?.let { a ->
@@ -992,7 +1003,15 @@ class ClientAnimationPlayer(
             // pos op 位移必须先于公转：函数对象的实际世界位置应绕公转中心旋转。
             pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
             if (hasRot) pos = if (fx.rotLocal) rotateAroundLocalOrbit(pos, orbitPivot, rot, spin, fx.spinLocal) else rotateAround(pos, orbitPivot, rot)
-            s.pos = origin.add(pos)
+            // 函数对象级视图变换（脚本 this.viewScale / this.viewOffset）：整条迹线的全局增益与直流偏移。
+            // 折进这一步的构造里，不额外新建 Vec3；尺寸那一份在下面 fxScaleInto 之后一起乘。
+            val vs = rt.view.scale
+            val vo = rt.view.offset
+            s.pos = Vec3(
+                origin.x + pos.x * vs + vo[0],
+                origin.y + pos.y * vs + vo[1],
+                origin.z + pos.z * vs + vo[2],
+            )
             s.color = applyEntrance(
                 Color.of(
                     host.color[0].coerceIn(0.0, 1.0).toFloat(),
@@ -1003,6 +1022,13 @@ class ClientAnimationPlayer(
                 fx.ent, fxLocalT,
             )
             fxScaleInto(fx.id, host.scale, t, s.scale)
+            // 尺寸同样按全局增益均匀缩放（脚本会写 width = lineW / viewScale 来补偿线宽）
+            if (vs != 1.0) {
+                val vsf = vs.toFloat()
+                s.scale[0] *= vsf
+                s.scale[1] *= vsf
+                s.scale[2] *= vsf
+            }
             s.glowing = host.glow
             s.lightLevel = host.light.toInt().coerceIn(0, 15)
             s.visible = visible

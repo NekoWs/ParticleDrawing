@@ -78,6 +78,24 @@ interface ParticleHost {
 /** 粒子句柄（spawn 模型）。 */
 class ParticleValue(val host: ParticleHost)
 
+/**
+ * 函数对象级的「视图变换」（脚本 this.viewScale / this.viewOffset）：
+ * 把整条迹线的全局增益与直流偏移做成一个不随粒子数变化的量，脚本改它就不必逐粒子重排。
+ * 只作用于**该函数对象自己的派生粒子**，默认 1 / 0（即不做任何变换）。
+ */
+class ViewTransform {
+    /** 全局增益：位置与尺寸都乘它（均匀，不单独处理某个轴）。 */
+    var scale: Double = 1.0
+    /** 直流偏移（世界单位）：只加到位置上，vec2 写法时 z 为 0。 */
+    val offset: DoubleArray = DoubleArray(3)
+
+    /** 恢复默认（向后 seek 重建运行时用）。 */
+    fun reset() {
+        scale = 1.0
+        offset[0] = 0.0; offset[1] = 0.0; offset[2] = 0.0
+    }
+}
+
 /** 粒子列表（this.particles）。 */
 class ParticleListValue(val hosts: MutableList<ParticleHost>) {
     val size: Int get() = hosts.size
