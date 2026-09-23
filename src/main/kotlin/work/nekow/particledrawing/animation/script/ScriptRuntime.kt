@@ -638,6 +638,10 @@ object ScriptRuntime {
                 particleSetField(obj, target.field, value, n)
                 return
             }
+            if (obj is ParticleListValue || obj is List<*>) {
+                val what = if (obj is List<*>) "array" else "particle list"
+                err("$what '.${target.field}' is read-only (read the count with .size)", n)
+            }
             if (obj is ObjVal) {
                 obj.fields[target.field] = value
                 return
@@ -1024,11 +1028,20 @@ object ScriptRuntime {
             }
             val obj = evalExpr(n.obj)
             if (obj is ParticleValue) return particleGetField(obj, n.field, n)
+            if (obj is ParticleListValue) return listSizeGetField(obj.size, n.field, n, false)
+            if (obj is List<*>) return listSizeGetField(obj.size, n.field, n, true)
             if (obj is ObjVal) return obj.fields[n.field] ?: Undefined
             if (obj is TextValue) return textGetField(obj, n.field, n)
             if (obj is TextCharValue) return textCharGetField(obj, n.field, n)
             if (obj is AudioValue) return audioGetField(obj, n.field, n)
             err("member '.${n.field}' requires a particle or object, got ${typeName(obj)}", n)
+        }
+
+        /** 列表/数组的成员读取：只提供只读数量，`.size` 与 `.size()` 都认（与编辑器同语义）。 */
+        private fun listSizeGetField(len: Int, field: String, n: Node, isArr: Boolean): Any? {
+            if (field == "size") return len.toDouble()
+            val what = if (isArr) "array" else "particle list"
+            err("$what has no member '.$field' (use .size or .size())", n)
         }
 
         private fun evalLValue(target: AssignTarget): Any? = when (target) {

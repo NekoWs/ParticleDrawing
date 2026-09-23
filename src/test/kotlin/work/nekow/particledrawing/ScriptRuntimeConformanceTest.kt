@@ -344,6 +344,40 @@ class ScriptRuntimeConformanceTest {
     }
 
     @Test
+    fun particleListSizeAsProperty() {
+        // `.size` 属性与 `.size()` 方法等价（与编辑器同语义：少踩一次「忘了括号」的坑）；数组同理
+        val h = Harness(
+            "func setup() { this.spawn(); this.spawn(); }\n" +
+                "func process() { let p = this.spawn(); let a = [1, 2, 3, 4]; " +
+                "p.position.x = this.particles.size; p.position.y = this.particles.size(); p.position.z = a.size; }",
+        )
+        h.setup()
+        h.process()
+        val host = h.particles[2] as TestHost
+        assertEquals(3.0, host.pos[0], 1e-12)
+        assertEquals(3.0, host.pos[1], 1e-12)
+        assertEquals(4.0, host.pos[2], 1e-12)
+    }
+
+    @Test
+    fun listSizeIsReadOnlyAndUnknownMembersFail() {
+        assertFailsWith<ScriptException> {
+            val h = Harness("func process() { this.particles.size = 1; }")
+            h.setup()
+            h.process()
+        }
+        assertFailsWith<ScriptException> {
+            val h = Harness("func process() { let n = this.particles.count; }")
+            h.setup()
+            h.process()
+        }
+        assertFailsWith<ScriptException> {
+            val h = Harness("func setup() { let a = [1, 2]; a.size = 1; }")
+            h.setup()
+        }
+    }
+
+    @Test
     fun particleListSizeAndIndexAccess() {
         val h = Harness(
             "func setup() { this.spawn(); this.spawn(); }\n" +
