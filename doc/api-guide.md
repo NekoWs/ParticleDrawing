@@ -352,7 +352,9 @@ handle.position()      // 只读回服务端的权威位置；粒子不存在时
 
 ```kotlin
 val ids = handles.map { it.id }
-manager.trackAll(ids, positions)   // 两个列表按顺序一一对应，长度不同按短的一方截断
+manager.trackAll(ids, positions)         // 两个列表按顺序一一对应，长度不同按短的一方截断
+manager.setVelocityAll(ids, velocities)  // 每颗粒子各自的速度，一样是一个包
+manager.applyForceAll(ids, accelerations, ticks = 1)  // 每颗粒子各自的加速度，共用一个 ticks
 ```
 
 需要「沿一个力运动」而不是逐 tick 报位置时用 `applyForce`：只在开始施力时下发一次，
@@ -376,6 +378,9 @@ handle.attachToLocal(entity.id, Vec3(0.0, 0.0, 0.6))   // 偏移随实体朝向�
 `applyForce` 与 `setVelocity` 叠加（力不覆盖已有速度）。服务端暂停（单人按 Esc）时
 客户端不再推进速度/力粒子，恢复后两端从同一状态继续。
 
+批量施力（`applyForceAll`）的 `ticks` 全组共用，默认 `1`（只施这一 tick）：每 tick 按距离
+重算一次力的用法就是每 tick 一包全组；要长效施力显式给 `-1`。
+
 ### 程序化粒子集（ParticleBatch）
 
 成员逐 tick 增删、每颗粒子各自受力/轨迹/寿命、按位置条件回收的粒子流（黑洞吸入、重力场下落、
@@ -395,13 +400,16 @@ swarm.ensureSize(60) { i ->
 swarm.removeIf { _, pos, _ -> pos.distanceTo(center) < 0.1 }
 swarm.forEach { i, handle, pos, vel -> /* 想每 tick 亲自算位置也可以 */ }
 
-swarm.trackAll(newPositions)   // 一次包覆盖全组（成员顺序 = add 顺序）
+swarm.trackAll(newPositions)                  // 一次包覆盖全组（成员顺序 = add 顺序）
+swarm.setVelocityAll(velocities)              // 每颗粒子各自的速度，也是一个包
+swarm.applyForceAll(accelerations, ticks = 1) // 每 tick 重算的力：一包全组，位置由两端积分
 swarm.trackEach { i, handle -> nextPos(i) }
 swarm.clear()
 ```
 
 成员在 PD 侧过期/被销毁后自动出列（`evictDead()`，其它操作里也会顺带做）；
-`track` / `trackAll` / `removeIf` / `forEach` 读到的都是 PD 的服务端权威位置与速度。
+`track` / `trackAll` / `setVelocityAll` / `applyForceAll` / `removeIf` / `forEach`
+读到的都是 PD 的服务端权威位置与速度。
 
 ### 身份与偏移：三套入口怎么选
 

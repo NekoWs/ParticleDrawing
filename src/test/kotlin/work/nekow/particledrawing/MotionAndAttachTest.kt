@@ -6,13 +6,17 @@ import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.core.client.RenderParticle
 import work.nekow.particledrawing.core.network.ParticleAttachPayload
+import work.nekow.particledrawing.core.network.ParticleForceBatchPayload
 import work.nekow.particledrawing.core.network.ParticleForcePayload
 import work.nekow.particledrawing.core.network.ParticleTrackBatchPayload
+import work.nekow.particledrawing.core.network.ParticleVelocityBatchPayload
 import work.nekow.particledrawing.core.server.ParticleData
 import work.nekow.particledrawing.util.AttachMath
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * 力驱动（applyForce）两端积分一致 + 实体锚点求解 + 新增载荷编解码。
@@ -116,5 +120,83 @@ class MotionAndAttachTest {
         assertEquals(force, ParticleForcePayload.STREAM_CODEC.decode(buf))
         assertEquals(attach, ParticleAttachPayload.STREAM_CODEC.decode(buf))
         assertEquals(attachById, ParticleAttachPayload.STREAM_CODEC.decode(buf), "只按网络 id 挂载时 uuid 必须能编成 null")
+    }
+
+    @Test
+    fun `批量速度与批量力载荷编解码对称`() {
+        val velocities = List(3) { i ->
+            ParticleVelocityBatchPayload.Update(UUID.randomUUID(), i * 0.1, -i * 0.2, 0.25 * i)
+        }
+        val forces = List(2) { i ->
+            ParticleForceBatchPayload.Update(UUID.randomUUID(), 0.1 * i, -0.5, 0.0)
+        }
+
+        val buf = FriendlyByteBuf(Unpooled.buffer())
+        ParticleVelocityBatchPayload.STREAM_CODEC.encode(buf, ParticleVelocityBatchPayload(velocities))
+        ParticleForceBatchPayload.STREAM_CODEC.encode(buf, ParticleForceBatchPayload(-1, forces))
+
+        assertEquals(velocities, ParticleVelocityBatchPayload.STREAM_CODEC.decode(buf).updates)
+
+        val decodedForce = ParticleForceBatchPayload.STREAM_CODEC.decode(buf)
+        assertEquals(-1, decodedForce.ticks, "无限施力（ticks < 0）必须原样编解码")
+        assertEquals(forces, decodedForce.updates)
+    }
+
+    @Test
+    fun `批量施力一包覆盖多粒子，两端逐 tick 位置仍然一致`() {
+        val accelerations = listOf(
+            Vec3(0.02, -0.05, 0.0),
+            Vec3(-0.03, 0.01, 0.04),
+            Vec3(0.0, -0.1, 0.0),
+        )
+        val server = accelerations.map { serverData() }
+
+        // 服务端把每颗粒子的力打进一个包；客户端按解码结果逐条施加（与客户端处理器同一路径）
+        val payload = ParticleForceBatchPayload(
+            ticks = 5,
+            updates = server.mapIndexed { i, data ->
+                ParticleForceBatchPayload.Update(
+                    data.id, accelerations[i].x, accelerations[i].y, accelerations[i].z
+                )
+            },
+        )
+        val buf = FriendlyByteBuf(Unpooled.buffer())
+        ParticleForceBatchPayload.STREAM_CODEC.encode(buf, payload)
+        val received = ParticleForceBatchPayload.STREAM_CODEC.decode(buf)
+
+        val client = received.updates.map { clientParticle(it.particleId) }
+        server.forEachIndexed { i, data -> data.setAcceleration(accelerations[i], received.ticks) }
+        received.updates.forEachIndexed { i, u ->
+            client[i].setAcceleration(Vec3(u.ax, u.ay, u.az), received.ticks)
+        }
+
+        for (tick in 1..40) {
+            for (i in server.indices) {
+                server[i].stepMotion()
+                client[i].tick()
+                assertEquals(server[i].position().x, client[i].x(), 1e-12, "第 $i 颗第 $tick tick X 不一致")
+                assertEquals(server[i].position().y, client[i].y(), 1e-12, "第 $i 颗第 $tick tick Y 不一致")
+                assertEquals(server[i].position().z, client[i].z(), 1e-12, "第 $i 颗第 $tick tick Z 不一致")
+            }
+        }
+    }
+
+    @Test
+    fun `速度与力指令接管位置并解除实体锚点`() {
+        val byVelocity = serverData()
+        byVelocity.attach(42, UUID.randomUUID(), Vec3(0.0, 1.0, 0.0), false)
+        assertTrue(byVelocity.isAttached())
+        byVelocity.setVelocity(Vec3(0.1, 0.0, 0.0))
+        assertFalse(byVelocity.isAttached(), "设速度后必须解除锚点，否则位置每 tick 仍被锚点覆盖")
+
+        val byForce = serverData()
+        byForce.attach(42, null, Vec3.ZERO, false)
+        byForce.setAcceleration(Vec3(0.0, -0.05, 0.0), 5)
+        assertFalse(byForce.isAttached(), "施力后必须解除锚点")
+
+        val byClear = serverData()
+        byClear.attach(42, null, Vec3.ZERO, false)
+        byClear.setAcceleration(Vec3.ZERO, 0)
+        assertFalse(byClear.isAttached(), "清力同样是运动指令，一样接管位置")
     }
 }

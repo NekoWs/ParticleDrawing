@@ -69,6 +69,34 @@ class ParticleManager private constructor(val level: ServerLevel) {
         return getEngine().trackParticles(ids, positions, getPlayers())
     }
 
+    /**
+     * 批量设置速度（blocks/tick）：一个包覆盖多颗粒子，语义与 [ParticleHandle.setVelocity] 相同
+     * （速度驱动接管位置、解除实体锚点，之后两端按同一规则逐 tick 积分，位置不由调用方下发）。
+     * [ids] 与 [velocities] 按顺序一一对应，长度不同按短的一方截断，不存在的粒子跳过。
+     *
+     * @param ids 粒子 ID 列表
+     * @param velocities 与 [ids] 一一对应的速度
+     * @return 服务端实际生效的粒子数
+     */
+    fun setVelocityAll(ids: List<UUID>, velocities: List<Vec3>): Int {
+        if (ids.isEmpty() || velocities.isEmpty()) return 0
+        return getEngine().setVelocities(ids, velocities, getPlayers())
+    }
+
+    /**
+     * 批量施力：一个包覆盖多颗粒子，每颗粒子各自的加速度、共用一个 [ticks]。
+     * 语义与 [ParticleHandle.applyForce] 相同（力驱动接管位置、解除实体锚点、两端逐 tick 积分）。
+     *
+     * @param ids 粒子 ID 列表
+     * @param accelerations 与 [ids] 一一对应的加速度（blocks/tick²）
+     * @param ticks 施力 tick 数：>0 = 这么多 tick；<0 = 无限；0 = 清除
+     * @return 服务端实际生效的粒子数
+     */
+    fun applyForceAll(ids: List<UUID>, accelerations: List<Vec3>, ticks: Int = 1): Int {
+        if (ids.isEmpty() || accelerations.isEmpty()) return 0
+        return getEngine().applyForces(ids, accelerations, ticks, getPlayers())
+    }
+
     internal fun getPlayers(): Collection<ServerPlayer> = level.players()
 
     companion object {

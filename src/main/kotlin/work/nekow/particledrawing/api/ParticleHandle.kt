@@ -55,7 +55,8 @@ class ParticleHandle(
     }
 
     /**
-     * 设置粒子的速度向量（blocks/tick）。
+     * 设置粒子的速度向量（blocks/tick）：速度驱动接管位置（解除实体锚点），之后两端按同一规则
+     * 逐 tick 积分（位置 += 速度），不必每 tick 报位置。
      * @param velocity 速度向量
      * @return 自身，支持链式调用
      */
@@ -115,6 +116,8 @@ class ParticleHandle(
      *
      * 与 [setVelocity] 叠加（力不覆盖已有速度）；位置指令（[move]/[track]）会停掉速度与力。
      * 清除力用 `applyForce(Vec3.ZERO, 0)`，连速度一起停用 `setVelocity(Vec3.ZERO)`。
+     *
+     * 一整组粒子每颗各自的力（每 tick 按距离重算）用 [ParticleBatch.applyForceAll]：一次包覆盖全组。
      *
      * @param acceleration 加速度（blocks/tick²）
      * @param ticks 施力 tick 数：>0 = 施加这么多 tick；<0 = 无限（默认，直到被下一次指令覆盖）；0 = 清除力

@@ -12,6 +12,7 @@ import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.network.ParticleDestroyPayload
 import work.nekow.particledrawing.core.network.ParticleAttachPayload
 import work.nekow.particledrawing.core.network.ParticleForcePayload
+import work.nekow.particledrawing.core.network.ParticleForceBatchPayload
 import work.nekow.particledrawing.core.network.ParticleLightLevelPayload
 import work.nekow.particledrawing.core.network.ParticleRotationPayload
 import work.nekow.particledrawing.core.network.ParticleSetPositionPayload
@@ -21,6 +22,7 @@ import work.nekow.particledrawing.core.network.ParticleTrackPayload
 import work.nekow.particledrawing.core.network.ParticleTranslatePayload
 import work.nekow.particledrawing.core.network.ParticleUpdatePayload
 import work.nekow.particledrawing.core.network.ParticleVelocityPayload
+import work.nekow.particledrawing.core.network.ParticleVelocityBatchPayload
 import work.nekow.particledrawing.util.AttachMath
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -115,7 +117,7 @@ class ServerParticleEngine(
     }
 
     /**
-     * 设置粒子的速度向量并广播。
+     * 设置粒子的速度向量并广播（速度驱动接管位置，实体锚点解除）。
      * @param id 粒子 ID
      * @param velocity 速度向量（blocks/tick）
      * @param playersInDimension 维度内的玩家列表
@@ -126,6 +128,78 @@ class ServerParticleEngine(
 
         val payload = ParticleVelocityPayload(id, velocity.x, velocity.y, velocity.z)
         sendToVisible(playersInDimension, data.position(), payload)
+    }
+
+    /**
+     * 批量设置速度并广播：一个包覆盖多颗粒子，语义与 [setVelocity] 相同
+     * （速度驱动接管位置、解除实体锚点、之后两端同规则逐 tick 积分）。
+     * 逐玩家按可见性裁剪后再发，不因为合并成包就放松坐标可见性。
+     *
+     * @param ids 粒子 ID 列表
+     * @param velocities 与 [ids] 按顺序一一对应的速度（blocks/tick）
+     * @return 服务端实际生效的粒子数
+     */
+    fun setVelocities(ids: List<UUID>, velocities: List<Vec3>,
+                      playersInDimension: Collection<ServerPlayer>): Int {
+        val applied = LinkedHashMap<UUID, Vec3>()
+        for (i in 0 until minOf(ids.size, velocities.size)) {
+            val data = particles[ids[i]] ?: continue
+            data.setVelocity(velocities[i])
+            applied[ids[i]] = velocities[i]
+        }
+        sendMotionBatch(playersInDimension, applied) { visible ->
+            ParticleVelocityBatchPayload(visible.map { (id, v) ->
+                ParticleVelocityBatchPayload.Update(id, v.x, v.y, v.z)
+            })
+        }
+        return applied.size
+    }
+
+    /**
+     * 批量施力并广播：一个包覆盖多颗粒子，语义与 [applyForce] 相同（力驱动接管位置、
+     * 解除实体锚点、两端同规则逐 tick 积分），每颗粒子各自的加速度、共用一个 [ticks]。
+     * 逐玩家按可见性裁剪后再发。
+     *
+     * @param ids 粒子 ID 列表
+     * @param accelerations 与 [ids] 按顺序一一对应的加速度（blocks/tick²）
+     * @param ticks >0 = 施加这么多 tick；<0 = 无限；0 = 清除
+     * @return 服务端实际生效的粒子数
+     */
+    fun applyForces(ids: List<UUID>, accelerations: List<Vec3>, ticks: Int,
+                    playersInDimension: Collection<ServerPlayer>): Int {
+        val applied = LinkedHashMap<UUID, Vec3>()
+        for (i in 0 until minOf(ids.size, accelerations.size)) {
+            val data = particles[ids[i]] ?: continue
+            data.setAcceleration(accelerations[i], ticks)
+            applied[ids[i]] = accelerations[i]
+        }
+        sendMotionBatch(playersInDimension, applied) { visible ->
+            ParticleForceBatchPayload(ticks, visible.map { (id, a) ->
+                ParticleForceBatchPayload.Update(id, a.x, a.y, a.z)
+            })
+        }
+        return applied.size
+    }
+
+    /**
+     * 批量运动指令（速度/力）的下发：逐玩家按可见性裁剪后合成一包。
+     * 与 [trackParticles] 同一口径——包里的坐标同样敏感，不可见的玩家一颗都不发。
+     */
+    private fun sendMotionBatch(playersInDimension: Collection<ServerPlayer>,
+                                values: Map<UUID, Vec3>,
+                                payloadOf: (List<Pair<UUID, Vec3>>) -> CustomPacketPayload) {
+        if (values.isEmpty()) return
+        for (player in playersInDimension) {
+            val visible = ArrayList<Pair<UUID, Vec3>>(values.size)
+            for ((id, value) in values) {
+                val data = particles[id] ?: continue
+                if (!ParticleVisibilityManager.isWithinViewDistance(player, data.position())) continue
+                visible.add(id to value)
+            }
+            if (visible.isNotEmpty()) {
+                PacketDistributor.sendToPlayer(player, payloadOf(visible))
+            }
+        }
     }
 
     /**
@@ -186,7 +260,6 @@ class ServerParticleEngine(
     fun applyForce(id: UUID, acceleration: Vec3, ticks: Int,
                    playersInDimension: Collection<ServerPlayer>) {
         val data = particles[id] ?: return
-        data.detach()
         data.setAcceleration(acceleration, ticks)
 
         val payload = ParticleForcePayload(id, acceleration.x, acceleration.y, acceleration.z, ticks)
@@ -232,8 +305,7 @@ class ServerParticleEngine(
 
     /** 位置指令接管：解除实体锚点，清零速度与力（与服务端 tick、客户端渲染粒子的口径一致）。 */
     private fun takeOverPosition(data: ParticleData, position: Vec3) {
-        data.detach()
-        data.setVelocity(Vec3.ZERO)
+        data.setVelocity(Vec3.ZERO) // 速度指令接管位置，锚点随之解除
         data.setAcceleration(Vec3.ZERO, 0)
         data.setPosition(position)
     }

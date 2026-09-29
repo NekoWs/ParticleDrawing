@@ -15,8 +15,8 @@ import java.util.UUID
  * - 位置与速度一律读 PD 的权威值（[ParticleHandle.position] / [ParticleHandle.velocity]），
  *   调用方不必自己维护 id ↔ 状态表；
  * - PD 侧已过期/已销毁的成员，在下次操作时自动出列（[evictDead]），对调用方透明；
- * - [trackAll] 一次网络包覆盖全组；配合 [ParticleHandle.applyForce]，
- *   「每粒子受力」也只需在开始施力时发一次包。
+ * - [trackAll] / [setVelocityAll] / [applyForceAll] 都是一次网络包覆盖全组（每成员一个向量，
+ *   按登记顺序对应）；每 tick 都要重算的力用 [applyForceAll] 一包发完，不必逐粒子发包。
  *
  * @param manager 该粒子集所在维度的粒子管理器
  */
@@ -26,6 +26,8 @@ class ParticleBatch(private val manager: ParticleManager) {
         idOf = { it.id },
         stateOf = { it.state() },
         sendPositions = { ids, positions -> manager.trackAll(ids, positions) },
+        sendVelocities = { ids, velocities -> manager.setVelocityAll(ids, velocities) },
+        sendForces = { ids, accelerations, ticks -> manager.applyForceAll(ids, accelerations, ticks) },
         destroy = { it.remove() },
     )
 
@@ -78,10 +80,31 @@ class ParticleBatch(private val manager: ParticleManager) {
         return this
     }
 
+    /**
+     * 批量设置速度：一次网络包覆盖全组（成员顺序 = 登记顺序），[velocities] 与 [handles]
+     * 顺序一一对应，长度不同按短的一方截断。速度驱动接管位置——之后位置由两端按同一规则逐 tick 积分。
+     *
+     * @return 服务端实际生效的粒子数
+     */
+    fun setVelocityAll(velocities: List<Vec3>): Int = core.setVelocityAll(velocities)
+
     /** 给某成员施力（只在开始施力时下发一次，两端按同一规则逐 tick 积分）。 */
     fun applyForce(handle: ParticleHandle, acceleration: Vec3, ticks: Int = -1): ParticleBatch {
         handle.applyForce(acceleration, ticks)
         return this
+    }
+
+    /**
+     * 批量施力：一次网络包覆盖全组，每颗粒子各自的加速度、共用一个 [ticks]。
+     * [accelerations] 与 [handles] 顺序一一对应，长度不同按短的一方截断。
+     *
+     * 默认 `ticks = 1`（只施这一 tick）：批量调用方本来就每 tick 重算一次力，
+     * 施力停在调用之后比「调用结束力还留着」更符合直觉。要长效施力显式给 `-1`。
+     *
+     * @return 服务端实际生效的粒子数
+     */
+    fun applyForceAll(accelerations: List<Vec3>, ticks: Int = 1): Int {
+        return core.applyForceAll(accelerations, ticks)
     }
 
     /** 遍历仍存活的成员，回调里给的是 PD 的权威位置与速度。 */
@@ -109,13 +132,15 @@ class ParticleBatch(private val manager: ParticleManager) {
 }
 
 /**
- * 成员簿记的通用实现：只依赖「id / 权威状态 / 一次包直设位置 / 销毁」四个访问器，
+ * 成员簿记的通用实现：只依赖「id / 权威状态 / 一次包下发位置·速度·力 / 销毁」几个访问器，
  * 所以能用假成员直接单测（[ParticleHandle] 要真实服务端关卡才构造得出来）。
  */
 internal class BatchCore<T>(
     private val idOf: (T) -> UUID,
     private val stateOf: (T) -> Pair<Vec3, Vec3>?,
     private val sendPositions: (List<UUID>, List<Vec3>) -> Int,
+    private val sendVelocities: (List<UUID>, List<Vec3>) -> Int,
+    private val sendForces: (List<UUID>, List<Vec3>, Int) -> Int,
     private val destroy: (T) -> Unit,
 ) {
 
@@ -162,16 +187,37 @@ internal class BatchCore<T>(
     }
 
     fun trackAll(positions: List<Vec3>): Int {
+        val batch = aligned(positions) ?: return 0
+        return sendPositions(batch.first, batch.second)
+    }
+
+    /** 批量设速：与 [trackAll] 同一套对齐规则（成员顺序 = 登记顺序，长度不同按短的一方截断）。 */
+    fun setVelocityAll(velocities: List<Vec3>): Int {
+        val batch = aligned(velocities) ?: return 0
+        return sendVelocities(batch.first, batch.second)
+    }
+
+    /** 批量施力：与 [trackAll] 同一套对齐规则，[ticks] 全组共用。 */
+    fun applyForceAll(accelerations: List<Vec3>, ticks: Int): Int {
+        val batch = aligned(accelerations) ?: return 0
+        return sendForces(batch.first, batch.second, ticks)
+    }
+
+    /**
+     * 摘掉过期成员后，把一列「每成员一个的向量」按成员下标对齐成「id 列表 + 值列表」；
+     * 成员或值为空时返回 null（调用方当作 0 处理，不发包）。
+     */
+    private fun aligned(vectors: List<Vec3>): Pair<List<UUID>, List<Vec3>>? {
         evictDead()
-        if (members.isEmpty() || positions.isEmpty()) return 0
-        val ids = ArrayList<UUID>(members.size)
-        val pos = ArrayList<Vec3>(members.size)
-        for (i in 0 until minOf(members.size, positions.size)) {
+        if (members.isEmpty() || vectors.isEmpty()) return null
+        val count = minOf(members.size, vectors.size)
+        val ids = ArrayList<UUID>(count)
+        val values = ArrayList<Vec3>(count)
+        for (i in 0 until count) {
             ids.add(idOf(members[i]))
-            pos.add(positions[i])
+            values.add(vectors[i])
         }
-        if (ids.isEmpty()) return 0
-        return sendPositions(ids, pos)
+        return ids to values
     }
 
     fun trackEach(offsetAt: (index: Int, member: T) -> Vec3): Int {

@@ -50,11 +50,29 @@ internal object ClientPayloadHandler {
         }
     }
 
+    fun handleVelocityBatch(payload: ParticleVelocityBatchPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            val engine = ClientParticleEngine.instance() ?: return@enqueueWork
+            for (u in payload.updates) {
+                engine.setVelocity(u.particleId, u.vx, u.vy, u.vz)
+            }
+        }
+    }
+
     fun handleForce(payload: ParticleForcePayload, context: IPayloadContext) {
         context.enqueueWork {
             ClientParticleEngine.instance()?.setAcceleration(
                 payload.particleId, payload.ax, payload.ay, payload.az, payload.ticks
             )
+        }
+    }
+
+    fun handleForceBatch(payload: ParticleForceBatchPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            val engine = ClientParticleEngine.instance() ?: return@enqueueWork
+            for (u in payload.updates) {
+                engine.setAcceleration(u.particleId, u.ax, u.ay, u.az, payload.ticks)
+            }
         }
     }
 

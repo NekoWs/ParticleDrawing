@@ -253,7 +253,7 @@ class ClientParticleEngine {
     }
 
     /**
-     * 设置粒子的速度向量（blocks/tick）。
+     * 设置粒子的速度向量（blocks/tick）：速度驱动接管位置。
      * @param id 粒子唯一标识符
      * @param vx X 速度分量
      * @param vy Y 速度分量
@@ -262,6 +262,7 @@ class ClientParticleEngine {
     fun setVelocity(id: UUID, vx: Double, vy: Double, vz: Double) {
         directIds.remove(id)
         trackBuffers.remove(id) // 速度驱动接管位置，丢开 track 缓冲
+        attachments.remove(id)  // 与实体锚点同理：留着锚点位置每 tick 仍被锚点覆盖，速度白设
         particles[id]?.setVelocity(Vec3(vx, vy, vz))
         if (vx != 0.0 || vy != 0.0 || vz != 0.0) motionIds.add(id) else motionIds.remove(id)
     }

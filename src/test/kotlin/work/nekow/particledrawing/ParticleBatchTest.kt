@@ -10,9 +10,9 @@ import kotlin.test.assertTrue
 /**
  * 程序化粒子集的成员簿记（[BatchCore]）。
  *
- * 用假成员测：簿记只依赖「id / 权威状态 / 一次包直设位置 / 销毁」四个访问器，
+ * 用假成员测：簿记只依赖「id / 权威状态 / 一次包下发位置·速度·力 / 销毁」几个访问器，
  * 而真实 `ParticleHandle` 要服务端关卡才构造得出来。这里钉的是几条使用方最在意的语义：
- * 过期成员自动出列、批量直设位置只发一包且顺序与登记顺序一致、条件回收与补齐的策略。
+ * 过期成员自动出列、批量指令只发一包且顺序与登记顺序一致、条件回收与补齐的策略。
  */
 class ParticleBatchTest {
 
@@ -24,10 +24,14 @@ class ParticleBatchTest {
 
     private class Harness {
         val sent = ArrayList<Pair<List<UUID>, List<Vec3>>>()
+        val velocities = ArrayList<Pair<List<UUID>, List<Vec3>>>()
+        val forces = ArrayList<Triple<List<UUID>, List<Vec3>, Int>>()
         val core = BatchCore<Fake>(
             idOf = { it.id },
             stateOf = { f -> f.pos?.let { it to f.vel } },
             sendPositions = { ids, positions -> sent.add(ids to positions); ids.size },
+            sendVelocities = { ids, values -> velocities.add(ids to values); ids.size },
+            sendForces = { ids, values, ticks -> forces.add(Triple(ids, values, ticks)); ids.size },
             destroy = { it.destroyed = true },
         )
         val alive get() = sent.last()
@@ -65,6 +69,64 @@ class ParticleBatchTest {
         assertEquals(2, n)
         assertEquals(1, h.sent.size, "trackEach 也必须只发一包")
         assertEquals(listOf(Vec3(0.0, 0.0, 0.0), Vec3(1.0, 0.0, 0.0)), h.sent[0].second)
+    }
+
+    @Test
+    fun `批量设速只发一包，每颗粒子各自的速度与登记顺序对齐`() {
+        val h = Harness()
+        val a = Fake(); val b = Fake(); val c = Fake()
+        h.core.add(a); h.core.add(b); h.core.add(c)
+
+        val n = h.core.setVelocityAll(
+            listOf(Vec3(0.1, 0.0, 0.0), Vec3(0.0, 0.2, 0.0), Vec3(0.0, 0.0, 0.3))
+        )
+
+        assertEquals(3, n)
+        assertEquals(1, h.velocities.size, "三颗粒子的速度必须合并在一个包里")
+        assertEquals(listOf(a.id, b.id, c.id), h.velocities[0].first, "id 顺序 = 登记顺序")
+        assertEquals(
+            listOf(Vec3(0.1, 0.0, 0.0), Vec3(0.0, 0.2, 0.0), Vec3(0.0, 0.0, 0.3)),
+            h.velocities[0].second
+        )
+    }
+
+    @Test
+    fun `批量施力只发一包，每颗各自的加速度共用同一个 ticks`() {
+        val h = Harness()
+        val a = Fake(); val b = Fake()
+        h.core.add(a); h.core.add(b)
+
+        val n = h.core.applyForceAll(listOf(Vec3(0.1, 0.0, 0.0), Vec3(-0.1, 0.0, 0.0)), ticks = 1)
+
+        assertEquals(2, n)
+        assertEquals(1, h.forces.size, "两颗粒子的力必须合并在一个包里")
+        assertEquals(listOf(a.id, b.id), h.forces[0].first)
+        assertEquals(listOf(Vec3(0.1, 0.0, 0.0), Vec3(-0.1, 0.0, 0.0)), h.forces[0].second)
+        assertEquals(1, h.forces[0].third, "一包里的力共用同一个施力 tick 数")
+    }
+
+    @Test
+    fun `批量运动指令同样按短的一方截断，并先摘掉过期成员`() {
+        val h = Harness()
+        val dead = Fake().also { it.pos = null }
+        val live = Fake()
+        h.core.add(dead); h.core.add(live)
+
+        assertEquals(1, h.core.setVelocityAll(listOf(Vec3(1.0, 0.0, 0.0), Vec3(2.0, 0.0, 0.0), Vec3(3.0, 0.0, 0.0))))
+        assertEquals(listOf(live.id), h.velocities[0].first, "过期成员不该出现在速度包里")
+
+        h.core.applyForceAll(listOf(Vec3(9.0, 0.0, 0.0)), ticks = 5)
+        assertEquals(listOf(live.id), h.forces[0].first)
+    }
+
+    @Test
+    fun `没有成员或没有值时一个包都不发`() {
+        val h = Harness()
+        assertEquals(0, h.core.setVelocityAll(listOf(Vec3(1.0, 0.0, 0.0))))
+        h.core.add(Fake())
+        assertEquals(0, h.core.setVelocityAll(emptyList()))
+        assertEquals(0, h.core.applyForceAll(emptyList(), ticks = 1))
+        assertTrue(h.velocities.isEmpty() && h.forces.isEmpty(), "空输入不该产生空包")
     }
 
     @Test

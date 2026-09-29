@@ -54,13 +54,23 @@ class ParticleData(
     fun setGlowing(glowing: Boolean) { this.glowing = glowing }
     fun setLightLevel(lightLevel: Int) { this.lightLevel = lightLevel.coerceIn(0, 15) }
     fun setOffsetFromPivot(offset: Vec3) { this.offsetFromPivot = offset }
-    fun setVelocity(velocity: Vec3) { this.velocity = velocity }
 
     /**
-     * 设置加速度（力）与施加 tick 数。
+     * 设置速度：速度驱动接管位置，实体锚点一并解除（与 [attach] 的「锚点接管位置」互为反面）。
+     * 留着锚点会让速度白设——位置每 tick 仍由锚点解析。
+     */
+    fun setVelocity(velocity: Vec3) {
+        detach()
+        this.velocity = velocity
+    }
+
+    /**
+     * 设置加速度（力）与施加 tick 数：力驱动接管位置，实体锚点一并解除（同 [setVelocity]）。
+     *
      * @param ticks >0 = 施加这么多 tick；<0 = 无限（直到被下一次力/速度/位置指令覆盖）；0 = 清除
      */
     fun setAcceleration(acceleration: Vec3, ticks: Int) {
+        detach()
         this.acceleration = acceleration
         this.accelTicks = ticks
     }
