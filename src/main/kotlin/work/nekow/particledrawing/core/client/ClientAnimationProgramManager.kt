@@ -19,6 +19,7 @@ import work.nekow.particledrawing.animation.program.AnimInstruction
 import work.nekow.particledrawing.animation.program.EntityBinding
 import work.nekow.particledrawing.animation.program.PivotRef
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.util.AttachMath
 import work.nekow.particledrawing.util.rotateAround
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -49,7 +50,8 @@ internal object ClientAnimationProgramManager {
     }
 
     // 找实体：本地玩家 → 缓存（校验存活与维度，防冻结坐标）→ 全局注册表直查 → 渲染列表兜底。
-    private fun findEntity(uuid: UUID): Entity? {
+    // 原始粒子的实体锚点也走这里，保证两条路径对「实体身份」的解析完全一致。
+    internal fun findEntity(uuid: UUID): Entity? {
         val mc = Minecraft.getInstance()
         mc.player?.let { if (it.uuid == uuid) return it }
         entityByUuid[uuid]?.let { cached ->
@@ -94,6 +96,7 @@ internal object ClientAnimationProgramManager {
         var pivotFixed: Vec3 = Vec3.ZERO
         var pivotEntity: EntityBinding? = null
         var pivotEntityOffset: Vec3 = Vec3.ZERO
+        var pivotEntityLocal = false
 
         // 组级动画状态
         var pathOffset: Vec3 = Vec3.ZERO
@@ -446,7 +449,7 @@ internal object ClientAnimationProgramManager {
 
             val alpha = (aBase * fadeIn * (1f - fadeOut)).coerceIn(0f, 1f)
             val scale = (st.baseScale * p.scaleMul * p.pulseMul).coerceAtLeast(0.001f)
-            engine.applyProgramFrame(uuid, pivot.add(p.pathOffset).add(st.rel), r, g, b, alpha, scale)
+            engine.applyProgramFrame(uuid, pivot.apply(p.pathOffset.add(st.rel)), r, g, b, alpha, scale)
         }
     }
 
@@ -457,10 +460,27 @@ internal object ClientAnimationProgramManager {
         val from: Map<UUID, FloatArray>,
     )
 
-    private fun resolvePivot(p: Program): Vec3? {
-        val ch = p.pivotEntity ?: return p.pivotFixed
+    /**
+     * 轴心解算结果：固定轴心只给世界坐标；跟随实体时记下实体位置、偏移与朝向，
+     * local 模式下把组内相对坐标一起按实体朝向旋转（[AttachMath] 与实体锚点同一套约定）。
+     */
+    private class PivotFrame(
+        val pos: Vec3,
+        val offset: Vec3,
+        val yawDeg: Float,
+        val pitchDeg: Float,
+        val local: Boolean,
+    ) {
+        /** 把组内相对坐标（pathOffset + rel）映射为世界坐标。 */
+        fun apply(localVec: Vec3): Vec3 =
+            if (local) AttachMath.resolve(pos, yawDeg, pitchDeg, offset.add(localVec), true)
+            else pos.add(offset).add(localVec)
+    }
+
+    private fun resolvePivot(p: Program): PivotFrame? {
+        val ch = p.pivotEntity ?: return PivotFrame(p.pivotFixed, Vec3.ZERO, 0f, 0f, false)
         val e = findEntity(ch.uuid) ?: return null
-        return e.position().add(p.pivotEntityOffset)
+        return PivotFrame(e.position(), p.pivotEntityOffset, e.yRot, e.xRot, p.pivotEntityLocal)
     }
 
     private fun applySlot(p: Program, slot: Slot, now: Long) {
@@ -482,8 +502,15 @@ internal object ClientAnimationProgramManager {
 
         when (ins) {
             is AnimInstruction.BindPivot -> when (val ref = ins.pivot) {
-                is PivotRef.Fixed -> { p.pivotFixed = ref.pos; p.pivotEntity = null; p.pivotEntityOffset = Vec3.ZERO }
-                is PivotRef.FollowEntity -> { p.pivotEntity = EntityBinding("__pivot__", ref.uuid); p.pivotEntityOffset = ref.offset }
+                is PivotRef.Fixed -> {
+                    p.pivotFixed = ref.pos; p.pivotEntity = null
+                    p.pivotEntityOffset = Vec3.ZERO; p.pivotEntityLocal = false
+                }
+                is PivotRef.FollowEntity -> {
+                    p.pivotEntity = EntityBinding("__pivot__", ref.uuid)
+                    p.pivotEntityOffset = ref.offset
+                    p.pivotEntityLocal = ref.local
+                }
             }
 
             is AnimInstruction.FadeIn -> { p.fadeInStart = start; p.fadeInDur = ins.durationMs; p.fadeInEase = ins.easing }

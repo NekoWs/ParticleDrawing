@@ -12,7 +12,8 @@ import java.util.UUID
  * 实体怎么动粒子就怎么动，也没有逐 tick 的带宽开销。
  *
  * @param particleId 粒子 ID
- * @param entityId 实体网络 id（客户端按 `level.getEntity` 解析）
+ * @param entityId 实体网络 id（解析兜底；按 uuid 挂载且当拍未解析到时为 -1）
+ * @param entityUuid 实体 UUID；非 null 时客户端优先按它解析——网络 id 会随实体重载/换维度变化，UUID 不会
  * @param ox/oy/oz 相对实体位置的偏移
  * @param local true = 偏移按实体朝向旋转（实体局部空间）；false = 世界空间偏移
  */
@@ -20,6 +21,7 @@ import java.util.UUID
 data class ParticleAttachPayload(
     val particleId: UUID,
     val entityId: Int,
+    val entityUuid: UUID?,
     val ox: Double, val oy: Double, val oz: Double,
     val local: Boolean,
 ) : CustomPacketPayload {
@@ -36,16 +38,18 @@ data class ParticleAttachPayload(
                 override fun decode(buf: FriendlyByteBuf): ParticleAttachPayload {
                     val id = StreamCodecs.UUID_CODEC.decode(buf)
                     val entityId = buf.readVarInt()
+                    val entityUuid = StreamCodecs.readNullableUUID(buf)
                     val ox = buf.readDouble()
                     val oy = buf.readDouble()
                     val oz = buf.readDouble()
                     val local = buf.readBoolean()
-                    return ParticleAttachPayload(id, entityId, ox, oy, oz, local)
+                    return ParticleAttachPayload(id, entityId, entityUuid, ox, oy, oz, local)
                 }
 
                 override fun encode(buf: FriendlyByteBuf, p: ParticleAttachPayload) {
                     StreamCodecs.UUID_CODEC.encode(buf, p.particleId)
                     buf.writeVarInt(p.entityId)
+                    StreamCodecs.writeNullableUUID(buf, p.entityUuid)
                     buf.writeDouble(p.ox)
                     buf.writeDouble(p.oy)
                     buf.writeDouble(p.oz)

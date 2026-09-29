@@ -37,8 +37,8 @@ class ClientParticleEngine {
     // 实体锚点：客户端每 tick 本地解析（服务端只在挂载时下发一次）
     private val attachments: MutableMap<UUID, Attachment> = ConcurrentHashMap()
 
-    /** 一条实体锚点记录。 */
-    private class Attachment(val entityId: Int, val offset: Vec3, val local: Boolean)
+    /** 一条实体锚点记录：uuid 是主身份，网络 id 只是解析兜底。 */
+    private class Attachment(val entityId: Int, val uuid: UUID?, val offset: Vec3, val local: Boolean)
 
     private var syncCursor = 0
     private var cachedIds: Array<UUID> = emptyArray()
@@ -228,12 +228,14 @@ class ClientParticleEngine {
     /**
      * 把粒子挂到实体锚点上：位置由客户端每 tick 本地解析（实体位置 + 偏移，[local] 时偏移随实体朝向）。
      * 锚点接管位置，track 缓冲与速度积分一并让位；实体不在场时保持上次位置。
+     *
+     * @param entityUuid 非 null 时优先按它解析（网络 id 会随实体重载/换维度变化）
      */
-    fun attachParticle(id: UUID, entityId: Int, ox: Double, oy: Double, oz: Double, local: Boolean) {
+    fun attachParticle(id: UUID, entityId: Int, entityUuid: UUID?, ox: Double, oy: Double, oz: Double, local: Boolean) {
         directIds.add(id)
         motionIds.remove(id)
         trackBuffers.remove(id)
-        attachments[id] = Attachment(entityId, Vec3(ox, oy, oz), local)
+        attachments[id] = Attachment(entityId, entityUuid, Vec3(ox, oy, oz), local)
     }
 
     /** 每 tick 解析全部实体锚点，把结果写进渲染粒子与桥接粒子（原版按 partialTick 插值）。 */
@@ -241,7 +243,9 @@ class ClientParticleEngine {
         if (attachments.isEmpty()) return
         val level = Minecraft.getInstance().level ?: return
         for ((id, att) in attachments) {
-            val entity = level.getEntity(att.entityId) ?: continue
+            val entity = att.uuid?.let { ClientAnimationProgramManager.findEntity(it) }
+                ?: level.getEntity(att.entityId)
+                ?: continue // 实体不在场：保持上次位置
             val pos = AttachMath.resolve(entity.position(), entity.yRot, entity.xRot, att.offset, att.local)
             particles[id]?.setPositionDirect(pos)
             bridges[id]?.syncPosition(pos.x, pos.y, pos.z, snap = false)

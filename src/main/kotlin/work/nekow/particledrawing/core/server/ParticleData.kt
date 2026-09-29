@@ -26,8 +26,9 @@ class ParticleData(
     private var acceleration: Vec3 = Vec3.ZERO
     private var accelTicks: Int = 0
 
-    // 实体锚点：非 -1 时位置每 tick 由锚点解析，速度与力清空
+    // 实体锚点：非 -1 时位置每 tick 由锚点解析，速度与力清空。uuid 是主身份，网络 id 只是解析缓存。
     private var attachEntityId: Int = AttachMath.noEntity()
+    private var attachUuid: UUID? = null
     private var attachOffset: Vec3 = Vec3.ZERO
     private var attachLocal: Boolean = false
 
@@ -42,6 +43,7 @@ class ParticleData(
     fun hasVelocity(): Boolean = velocity.x != 0.0 || velocity.y != 0.0 || velocity.z != 0.0
     fun hasActiveForce(): Boolean = accelTicks != 0
     fun attachedEntityId(): Int = attachEntityId
+    fun attachedUuid(): UUID? = attachUuid
     fun attachOffset(): Vec3 = attachOffset
     fun attachLocal(): Boolean = attachLocal
 
@@ -63,9 +65,14 @@ class ParticleData(
         this.accelTicks = ticks
     }
 
-    /** 挂到实体上：位置交给锚点解析，速度与力一并清零。 */
-    fun attach(entityId: Int, offset: Vec3, local: Boolean) {
+    /**
+     * 挂到实体上：位置交给锚点解析，速度与力一并清零。
+     * @param entityId 当拍解析到的网络 id；未解析到时给 [AttachMath.noEntity]，之后由引擎按 uuid 补
+     * @param uuid 实体 UUID，作为主身份（可为 null = 只按网络 id 跟踪）
+     */
+    fun attach(entityId: Int, uuid: UUID?, offset: Vec3, local: Boolean) {
         attachEntityId = entityId
+        attachUuid = uuid
         attachOffset = offset
         attachLocal = local
         velocity = Vec3.ZERO
@@ -73,9 +80,18 @@ class ParticleData(
         accelTicks = 0
     }
 
+    /** 按 uuid 重新解析到了实体：刷新网络 id 缓存（不改偏移与朝向模式）。 */
+    fun refreshAttachedEntityId(entityId: Int) {
+        attachEntityId = entityId
+    }
+
+    /** 是否已挂载（按 uuid 或网络 id 任一存在）。 */
+    fun isAttached(): Boolean = attachEntityId != AttachMath.noEntity() || attachUuid != null
+
     /** 解除实体锚点：位置/速度指令接管时调用。 */
     fun detach() {
         attachEntityId = AttachMath.noEntity()
+        attachUuid = null
     }
 
     /**

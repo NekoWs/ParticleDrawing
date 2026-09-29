@@ -36,8 +36,11 @@ sealed class PivotRef {
         override val kind get() = Kind.FIXED
     }
 
-    /** 跟随实体：轴心 = 实体渲染位置 + [offset]，由客户端本地解析实体。 */
-    data class FollowEntity(val uuid: UUID, val offset: Vec3) : PivotRef() {
+    /**
+     * 跟随实体：轴心 = 实体位置 + [offset]，由客户端本地解析实体。
+     * [local] 为 true 时整组连偏移一起按实体朝向旋转（组跟着实体转，用于「贴在身前/身侧」的编排）。
+     */
+    data class FollowEntity(val uuid: UUID, val offset: Vec3, val local: Boolean = false) : PivotRef() {
         override val kind get() = Kind.FOLLOW_ENTITY
     }
 
@@ -52,12 +55,13 @@ sealed class PivotRef {
                     buf.writeVarInt(ref.kind.ordinal)
                     buf.writeUUID(ref.uuid)
                     writeVec(buf, ref.offset)
+                    buf.writeBoolean(ref.local)
                 }
             }
         }
 
         fun read(buf: FriendlyByteBuf): PivotRef = when (buf.readVarInt()) {
-            Kind.FOLLOW_ENTITY.ordinal -> FollowEntity(buf.readUUID(), readVec(buf))
+            Kind.FOLLOW_ENTITY.ordinal -> FollowEntity(buf.readUUID(), readVec(buf), buf.readBoolean())
             else -> Fixed(readVec(buf))
         }
     }

@@ -1,7 +1,9 @@
 package work.nekow.particledrawing.core.server
 
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
+import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.entity.Entity
 import net.minecraft.world.phys.Vec3
 import net.neoforged.neoforge.network.PacketDistributor
 import work.nekow.particledrawing.api.Color
@@ -192,16 +194,40 @@ class ServerParticleEngine(
     }
 
     /**
-     * 把粒子挂到实体锚点上并广播一次：客户端按实体 id 本地解析位置（[local] 为 true 时连朝向），
+     * 把粒子挂到实体锚点上并广播一次：客户端按实体身份本地解析位置（[local] 为 true 时连朝向），
      * 服务端只在这里更新锚点，之后不再为它发位置包。锚点接管位置，速度与力清零。
+     *
+     * @param entityId 当拍解析到的网络 id；未解析到时给 [AttachMath.noEntity]
+     * @param entityUuid 实体 UUID（主身份；客户端优先按它解析，网络 id 只是兜底）
      */
-    fun attachParticle(id: UUID, entityId: Int, offset: Vec3, local: Boolean,
+    fun attachParticle(id: UUID, entityId: Int, entityUuid: UUID?, offset: Vec3, local: Boolean,
                        playersInDimension: Collection<ServerPlayer>) {
         val data = particles[id] ?: return
-        data.attach(entityId, offset, local)
+        data.attach(entityId, entityUuid, offset, local)
 
-        val payload = ParticleAttachPayload(id, entityId, offset.x, offset.y, offset.z, local)
+        val payload = ParticleAttachPayload(id, entityId, entityUuid, offset.x, offset.y, offset.z, local)
         sendToVisible(playersInDimension, data.position(), payload)
+    }
+
+    /** 只按网络 id 挂载。 */
+    fun attachParticle(id: UUID, entityId: Int, offset: Vec3, local: Boolean,
+                       playersInDimension: Collection<ServerPlayer>) {
+        attachParticle(id, entityId, null, offset, local, playersInDimension)
+    }
+
+    /** 解析锚点实体：优先按 uuid（网络 id 会随实体重载/换维度变化），解析到就刷新 id 缓存。 */
+    private fun resolveAttached(level: ServerLevel?, data: ParticleData): Entity? {
+        if (level == null) return null
+        val uuid = data.attachedUuid()
+        if (uuid != null) {
+            val byUuid = level.getEntity(uuid)
+            if (byUuid != null) {
+                data.refreshAttachedEntityId(byUuid.id)
+                return byUuid
+            }
+        }
+        val id = data.attachedEntityId()
+        return if (id == AttachMath.noEntity()) null else level.getEntity(id)
     }
 
     /** 位置指令接管：解除实体锚点，清零速度与力（与服务端 tick、客户端渲染粒子的口径一致）。 */
@@ -378,9 +404,8 @@ class ServerParticleEngine(
         while (it.hasNext()) {
             val entry = it.next()
             val data = entry.value
-            val attachId = data.attachedEntityId()
-            if (attachId != AttachMath.noEntity()) {
-                val entity = level?.getEntity(attachId)
+            if (data.isAttached()) {
+                val entity = resolveAttached(level, data)
                 if (entity != null) {
                     data.setPosition(AttachMath.resolve(
                         entity.position(), entity.yRot, entity.xRot, data.attachOffset(), data.attachLocal()))

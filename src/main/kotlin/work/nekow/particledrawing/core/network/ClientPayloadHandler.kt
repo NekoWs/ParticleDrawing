@@ -78,7 +78,7 @@ internal object ClientPayloadHandler {
     fun handleAttach(payload: ParticleAttachPayload, context: IPayloadContext) {
         context.enqueueWork {
             ClientParticleEngine.instance()?.attachParticle(
-                payload.particleId, payload.entityId,
+                payload.particleId, payload.entityId, payload.entityUuid,
                 payload.ox, payload.oy, payload.oz, payload.local
             )
         }

@@ -12,9 +12,17 @@ import work.nekow.particledrawing.core.server.AnimationScheduler
 import net.neoforged.neoforge.network.PacketDistributor
 import java.util.UUID
 
-// 一组可同时变换的粒子集合，编排式动画的基本单位（经 Draw 工具或 ParticleManager.createGroup 创建）。
-// 动画方法是客户端自驱程序：录制 AnimInstruction 指令流一次下发，客户端本地求值直写渲染，持续动画（spin/pulse）零带宽。
-// delay 推进时间线游标（累积、不清零）；defineEntity/expression 提供实体句柄与表达式能力。
+/**
+ * 编排式动画的粒子组：一组可同时变换的粒子（经 Draw 工具或 [ParticleManager.createGroup] 创建）。
+ *
+ * **适用边界**：成员基本固定、变换是**组级统一**的编排式动画（旋转/缩放/脉冲/路径/淡入淡出）用它——
+ * 链式调用录制 [AnimInstruction] 指令流一次下发，客户端本地求值直写渲染，持续动画零带宽。
+ * 反过来，**成员逐 tick 增删、每颗粒子各自受力/轨迹/寿命、按位置条件回收**的粒子流
+ * （黑洞吸入、重力场下落）请用 [ParticleBatch]：本类的成员变更会重发全量受控清单，
+ * 组级变换也表达不了「每粒子沿各自轨迹运动」。
+ *
+ * delay 推进时间线游标（累积、不清零）；defineEntity/expression 提供实体句柄与表达式能力。
+ */
 @Suppress("unused")
 class ParticleGroup(
     val id: UUID,
@@ -68,10 +76,16 @@ class ParticleGroup(
         return setPivot(Vec3(x.toDouble(), y.toDouble(), z.toDouble()))
     }
 
-    /** 轴心切换为跟随实体：组随实体位置移动（+偏移），由客户端本地解析。 */
-    fun followEntity(uuid: UUID, offset: Vec3 = Vec3.ZERO): ParticleGroup {
+    /**
+     * 轴心切换为跟随实体：组随实体位置移动（+偏移），由客户端本地解析，零逐 tick 带宽。
+     *
+     * @param uuid 目标实体 UUID
+     * @param offset 相对实体位置（脚底）的偏移
+     * @param local true = 整组连偏移一起随实体朝向旋转（贴在身前/身侧）；false = 只跟随位置（世界朝向）
+     */
+    fun followEntity(uuid: UUID, offset: Vec3 = Vec3.ZERO, local: Boolean = false): ParticleGroup {
         pivot = offset.add(pivot)
-        emit(AnimInstruction.BindPivot(cursorNow(), PivotRef.FollowEntity(uuid, offset)))
+        emit(AnimInstruction.BindPivot(cursorNow(), PivotRef.FollowEntity(uuid, offset, local)))
         return this
     }
 

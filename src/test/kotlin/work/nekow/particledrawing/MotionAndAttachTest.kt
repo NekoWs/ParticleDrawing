@@ -106,12 +106,15 @@ class MotionAndAttachTest {
     fun `力与实体锚点载荷编解码对称`() {
         val id = UUID.randomUUID()
         val force = ParticleForcePayload(id, 0.1, -0.2, 0.3, -1)
-        val attach = ParticleAttachPayload(id, 42, 1.0, 2.0, 3.0, true)
+        val attach = ParticleAttachPayload(id, 42, UUID.randomUUID(), 1.0, 2.0, 3.0, true)
+        val attachById = ParticleAttachPayload(id, 7, null, 0.0, 1.0, 0.0, false)
 
         val buf = FriendlyByteBuf(Unpooled.buffer())
         ParticleForcePayload.STREAM_CODEC.encode(buf, force)
         ParticleAttachPayload.STREAM_CODEC.encode(buf, attach)
+        ParticleAttachPayload.STREAM_CODEC.encode(buf, attachById)
         assertEquals(force, ParticleForcePayload.STREAM_CODEC.decode(buf))
         assertEquals(attach, ParticleAttachPayload.STREAM_CODEC.decode(buf))
+        assertEquals(attachById, ParticleAttachPayload.STREAM_CODEC.decode(buf), "只按网络 id 挂载时 uuid 必须能编成 null")
     }
 }

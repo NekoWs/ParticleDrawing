@@ -1,8 +1,10 @@
 package work.nekow.particledrawing.api
 
+import net.minecraft.world.entity.Entity
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.server.ParticleData
+import work.nekow.particledrawing.util.AttachMath
 import java.util.UUID
 
 /**
@@ -100,6 +102,12 @@ class ParticleHandle(
         return manager.getEngine().getParticle(id)?.position()
     }
 
+    /** 集合簿记用：一次取到权威位置与速度；粒子已不存在时返回 null（不对外暴露 core 类型）。 */
+    internal fun state(): Pair<Vec3, Vec3>? {
+        val data = manager.getEngine().getParticle(id) ?: return null
+        return data.position() to data.velocity()
+    }
+
     /**
      * 给粒子施加加速度（服务端权威力）：只在开始施力时下发一次，之后服务端与客户端按同一
      * 规则逐 tick 积分（速度 += 加速度，位置 += 速度）。让大量粒子沿同一个力运动时，
@@ -126,16 +134,36 @@ class ParticleHandle(
      * 把粒子钉在实体上：位置 = 实体位置 + [offset]（世界空间），客户端每 tick 本地解析，
      * 服务端只在挂载时下发一次——实体怎么动粒子就怎么动，没有逐 tick 的带宽开销。
      *
-     * 实体不在场（超出加载范围/已消失）时粒子保持上次位置。位置与运动指令
+     * **身份**：[Entity] / `uuid` / `entityId` 三个入口是同一实现。服务端把 UUID 当主身份、
+     * 网络 id 当解析缓存（网络 id 会随实体重载/换维度变化，UUID 不会），客户端解析时也优先用 UUID。
+     *
+     * **生命周期**：实体不在场（未加载 / 已消失 / 换到别的维度）时粒子保持最后一次位置，
+     * 实体再出现就继续跟随；锚点不会替粒子决定寿命——粒子自身的 `lifetime` 与 [remove] 照常生效，
+     * 实体死亡也一样（要跟着销毁就自己调 [remove]）。位置与运动指令
      * （[move]/[track]/[setVelocity]/[applyForce]）会解除锚点。
      *
-     * @param entityId 实体网络 id
-     * @param offset 相对实体位置的偏移（世界空间）
+     * @param entity 目标实体
+     * @param offset 相对实体位置的偏移（世界空间，基准是实体脚底 `Entity.position()`）
      * @return 自身，支持链式调用
      */
+    fun attachTo(entity: Entity, offset: Vec3): ParticleHandle {
+        return attachTo(entity.id, entity.uuid, offset, false)
+    }
+
+    /** [attachTo] 的重载：按实体网络 id（拿不到 UUID 时用；进客户端后不再复核身份）。 */
     fun attachTo(entityId: Int, offset: Vec3): ParticleHandle {
-        manager.getEngine().attachParticle(id, entityId, offset, false, manager.getPlayers())
-        return this
+        return attachTo(entityId, null, offset, false)
+    }
+
+    /** [attachTo] 的重载：按实体 UUID（服务端当拍解析网络 id，解析不到则每 tick 重试）。 */
+    fun attachTo(uuid: UUID, offset: Vec3): ParticleHandle {
+        val entity = manager.level.getEntity(uuid)
+        return attachTo(entity?.id ?: AttachMath.noEntity(), uuid, offset, false)
+    }
+
+    /** [attachTo] 的分量重载。 */
+    fun attachTo(entity: Entity, x: Number, y: Number, z: Number): ParticleHandle {
+        return attachTo(entity, Vec3(x.toDouble(), y.toDouble(), z.toDouble()))
     }
 
     /** [attachTo] 的分量重载。 */
@@ -143,22 +171,53 @@ class ParticleHandle(
         return attachTo(entityId, Vec3(x.toDouble(), y.toDouble(), z.toDouble()))
     }
 
+    /** [attachTo] 的分量重载。 */
+    fun attachTo(uuid: UUID, x: Number, y: Number, z: Number): ParticleHandle {
+        return attachTo(uuid, Vec3(x.toDouble(), y.toDouble(), z.toDouble()))
+    }
+
     /**
      * 把粒子钉在实体上，偏移随实体朝向旋转（实体局部空间）。
      * 与 [attachTo] 只差 [offset] 的坐标系：需要「贴在身前/身侧」这类随转向变化的位置时用它。
      *
-     * @param entityId 实体网络 id
+     * @param entity 目标实体
      * @param offset 实体局部空间中的偏移
      * @return 自身，支持链式调用
      */
+    fun attachToLocal(entity: Entity, offset: Vec3): ParticleHandle {
+        return attachTo(entity.id, entity.uuid, offset, true)
+    }
+
+    /** [attachToLocal] 的重载：按实体网络 id。 */
     fun attachToLocal(entityId: Int, offset: Vec3): ParticleHandle {
-        manager.getEngine().attachParticle(id, entityId, offset, true, manager.getPlayers())
-        return this
+        return attachTo(entityId, null, offset, true)
+    }
+
+    /** [attachToLocal] 的重载：按实体 UUID。 */
+    fun attachToLocal(uuid: UUID, offset: Vec3): ParticleHandle {
+        val entity = manager.level.getEntity(uuid)
+        return attachTo(entity?.id ?: AttachMath.noEntity(), uuid, offset, true)
+    }
+
+    /** [attachToLocal] 的分量重载。 */
+    fun attachToLocal(entity: Entity, x: Number, y: Number, z: Number): ParticleHandle {
+        return attachToLocal(entity, Vec3(x.toDouble(), y.toDouble(), z.toDouble()))
     }
 
     /** [attachToLocal] 的分量重载。 */
     fun attachToLocal(entityId: Int, x: Number, y: Number, z: Number): ParticleHandle {
         return attachToLocal(entityId, Vec3(x.toDouble(), y.toDouble(), z.toDouble()))
+    }
+
+    /** [attachToLocal] 的分量重载。 */
+    fun attachToLocal(uuid: UUID, x: Number, y: Number, z: Number): ParticleHandle {
+        return attachToLocal(uuid, Vec3(x.toDouble(), y.toDouble(), z.toDouble()))
+    }
+
+    /** 锚点的统一实现：uuid 为主身份，[entityId] 只是当拍解析缓存（未解析到给 -1）。 */
+    private fun attachTo(entityId: Int, uuid: UUID?, offset: Vec3, local: Boolean): ParticleHandle {
+        manager.getEngine().attachParticle(id, entityId, uuid, offset, local, manager.getPlayers())
+        return this
     }
 
     /**

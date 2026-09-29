@@ -376,6 +376,50 @@ handle.attachToLocal(entity.id, Vec3(0.0, 0.0, 0.6))   // 偏移随实体朝向�
 `applyForce` 与 `setVelocity` 叠加（力不覆盖已有速度）。服务端暂停（单人按 Esc）时
 客户端不再推进速度/力粒子，恢复后两端从同一状态继续。
 
+### 程序化粒子集（ParticleBatch）
+
+成员逐 tick 增删、每颗粒子各自受力/轨迹/寿命、按位置条件回收的粒子流（黑洞吸入、重力场下落、
+跟随实体的一圈粒子）用 `ParticleBatch`——它是**程序化**路径，不是编排式动画：
+编排动画（成员固定 + 组级统一变换）用 `ParticleGroup`。
+
+```kotlin
+val swarm = ParticleBatch(manager)
+
+// 每 tick 补一个（被维度上限拒绝时 ensureSize 立即返回，下次再补）
+swarm.ensureSize(60) { i ->
+    manager.create().position(shellPoint(i)).color(purple).scale(0.3f)
+        .lifetime(60).spawn()?.applyForce(centripetal(i))   // 一次下发，之后两端自己积分
+}
+
+// 每 tick：按 PD 的权威位置/速度做判断，不用自己维护 id ↔ 状态表
+swarm.removeIf { _, pos, _ -> pos.distanceTo(center) < 0.1 }
+swarm.forEach { i, handle, pos, vel -> /* 想每 tick 亲自算位置也可以 */ }
+
+swarm.trackAll(newPositions)   // 一次包覆盖全组（成员顺序 = add 顺序）
+swarm.trackEach { i, handle -> nextPos(i) }
+swarm.clear()
+```
+
+成员在 PD 侧过期/被销毁后自动出列（`evictDead()`，其它操作里也会顺带做）；
+`track` / `trackAll` / `removeIf` / `forEach` 读到的都是 PD 的服务端权威位置与速度。
+
+### 身份与偏移：三套入口怎么选
+
+| 入口 | 身份 | 偏移语义 | 粒度 |
+|---|---|---|---|
+| `ParticleHandle.attachTo(entity / uuid / entityId, offset)` | 实体（uuid 优先） | 世界空间，相对实体脚底 `Entity.position()` | 单粒子 |
+| `ParticleHandle.attachToLocal(...)` | 同上 | 实体局部（随朝向） | 单粒子 |
+| `ParticleGroup.followEntity(uuid, offset, local = false)` | 实体 UUID | 组轴心相对实体的偏移；`local = true` 时整组随朝向 | 整组 |
+| `ParticleGroup.defineEntity(handle, uuid)` | 实体 UUID | 供公式 `get_entity_*(handle)` 取值 | 动画表达式 |
+
+推荐写法：**别把两段偏移隐式相加**。要「实体 + 轴心」两层，就先用
+`followEntity(uuid, entityOffset, local)` 把轴心钉在实体上，再用粒子的 `offsetFromPivot(hx, hy, hz)`
+表达相对轴心的位置——两段各写各的，改一段不会牵动另一段。单粒子要贴实体就直接
+`attachTo`/`attachToLocal`，一个包一次、之后零带宽。
+
+实体身份的生命周期语义（两条路径一致）：实体不在场（未加载/已消失/换维度）时位置保持不动，
+实体再出现即继续跟随；锚点不会替粒子决定寿命。
+
 ---
 
 ## 八、缓动（EasingType）
