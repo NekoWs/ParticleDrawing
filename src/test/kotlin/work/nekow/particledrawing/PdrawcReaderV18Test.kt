@@ -134,18 +134,15 @@ class PdrawcReaderV18Test {
         return unsigned + signer.sign()
     }
 
-    /** 公钥取 RFC 8032 压缩点（xy 拼成 little-endian）+ 私钥种子，供 Ed25519 签名。 */
+    /** 公钥取 RFC 8032 压缩点（= Ed25519 SPKI 末尾 32 字节）+ 私钥种子，供 Ed25519 签名。 */
     private fun keyPair(): Pair<ByteArray, java.security.PrivateKey> {
         val gen = KeyPairGenerator.getInstance("Ed25519")
         gen.initialize(NamedParameterSpec.ED25519)
         val kp = gen.generateKeyPair()
-        val y = (kp.public as java.security.interfaces.EdECPublicKey).point.y
-        var raw = y.toByteArray().reversedArray()      // BigInteger 大端 → 公钥 little-endian
-        if (raw.size > 32) raw = raw.copyOfRange(raw.size - 32, raw.size)
-        val pub = ByteArray(32)
-        raw.copyInto(pub, 32 - raw.size)               // 左侧补零对齐到 32 字节
-        if ((kp.public as java.security.interfaces.EdECPublicKey).point.isXOdd) pub[31] = (pub[31].toInt() or 0x80).toByte()
-        return pub to kp.private
+        // 别自己拿 point.y / isXOdd 拼压缩点：y 的大端表示可能短于 32 字节（首位为 0，约 1/256 的密钥），
+        // 手写补零会把 little-endian 数组整体错位，表现为「验签偶发失败」。SPKI 末尾 32 字节始终是压缩点。
+        val encoded = kp.public.encoded
+        return encoded.copyOfRange(encoded.size - 32, encoded.size) to kp.private
     }
 
     private fun deflate(bytes: ByteArray): ByteArray {
