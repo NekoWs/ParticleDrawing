@@ -8,14 +8,18 @@ import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.network.ParticleDestroyPayload
+import work.nekow.particledrawing.core.network.ParticleAttachPayload
+import work.nekow.particledrawing.core.network.ParticleForcePayload
 import work.nekow.particledrawing.core.network.ParticleLightLevelPayload
 import work.nekow.particledrawing.core.network.ParticleRotationPayload
 import work.nekow.particledrawing.core.network.ParticleSetPositionPayload
 import work.nekow.particledrawing.core.network.ParticleSpawnPayload
+import work.nekow.particledrawing.core.network.ParticleTrackBatchPayload
 import work.nekow.particledrawing.core.network.ParticleTrackPayload
 import work.nekow.particledrawing.core.network.ParticleTranslatePayload
 import work.nekow.particledrawing.core.network.ParticleUpdatePayload
 import work.nekow.particledrawing.core.network.ParticleVelocityPayload
+import work.nekow.particledrawing.util.AttachMath
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import org.apache.logging.log4j.LogManager
@@ -89,7 +93,7 @@ class ServerParticleEngine(
                        playersInDimension: Collection<ServerPlayer>) {
         val data = particles[id] ?: return
 
-        if (updatePos) data.setPosition(position)
+        if (updatePos) takeOverPosition(data, position)
         if (updateColor) data.setColor(color)
         if (updateScale) data.setScale(scale)
 
@@ -123,15 +127,89 @@ class ServerParticleEngine(
     }
 
     /**
-     * 直设粒子位置并广播（无缓动）：客户端用 partialTick 在上一位置与本位置之间插值。
+     * 直设粒子位置并广播（无缓动）：客户端每个 tick 消费一条，用 partialTick 在相邻两条之间插值。
+     * 位置指令接管运动，速度与力一并清零。
      * 供「每 tick 跟随一个非实体点」的粒子（如投射物本体）使用。
      */
     fun trackParticle(id: UUID, position: Vec3, playersInDimension: Collection<ServerPlayer>) {
         val data = particles[id] ?: return
-        data.setPosition(position)
+        takeOverPosition(data, position)
 
         val payload = ParticleTrackPayload(id, position.x, position.y, position.z)
         sendToVisible(playersInDimension, data.position(), payload)
+    }
+
+    /**
+     * 批量直设位置并广播：一个包覆盖多颗粒子，语义与 [trackParticle] 相同。
+     * 逐玩家按可见性裁剪后再发，不因为合并成包就放松坐标可见性。
+     *
+     * @return 服务端实际生效的粒子数
+     */
+    fun trackParticles(ids: List<UUID>, positions: List<Vec3>,
+                       playersInDimension: Collection<ServerPlayer>): Int {
+        val count = minOf(ids.size, positions.size)
+        if (count == 0) return 0
+
+        val moved = HashSet<UUID>(count)
+        for (i in 0 until count) {
+            val data = particles[ids[i]] ?: continue
+            takeOverPosition(data, positions[i])
+            moved.add(ids[i])
+        }
+        if (moved.isEmpty()) return 0
+
+        for (player in playersInDimension) {
+            val visible = ArrayList<ParticleTrackBatchPayload.Track>(moved.size)
+            for (i in 0 until count) {
+                val id = ids[i]
+                if (id !in moved) continue
+                val data = particles[id] ?: continue
+                if (!ParticleVisibilityManager.isWithinViewDistance(player, data.position())) continue
+                val p = positions[i]
+                visible.add(ParticleTrackBatchPayload.Track(id, p.x, p.y, p.z))
+            }
+            if (visible.isNotEmpty()) {
+                PacketDistributor.sendToPlayer(player, ParticleTrackBatchPayload(visible))
+            }
+        }
+        return moved.size
+    }
+
+    /**
+     * 设置粒子的加速度（服务端权威力）并广播一次：之后两端按同一规则逐 tick 积分
+     * （速度 += 加速度，位置 += 速度），中途不再发包。适合大量粒子沿同一个力运动。
+     *
+     * @param ticks >0 = 施加这么多 tick；<0 = 无限（直到被下一次力/速度/位置指令覆盖）；0 = 清除
+     */
+    fun applyForce(id: UUID, acceleration: Vec3, ticks: Int,
+                   playersInDimension: Collection<ServerPlayer>) {
+        val data = particles[id] ?: return
+        data.detach()
+        data.setAcceleration(acceleration, ticks)
+
+        val payload = ParticleForcePayload(id, acceleration.x, acceleration.y, acceleration.z, ticks)
+        sendToVisible(playersInDimension, data.position(), payload)
+    }
+
+    /**
+     * 把粒子挂到实体锚点上并广播一次：客户端按实体 id 本地解析位置（[local] 为 true 时连朝向），
+     * 服务端只在这里更新锚点，之后不再为它发位置包。锚点接管位置，速度与力清零。
+     */
+    fun attachParticle(id: UUID, entityId: Int, offset: Vec3, local: Boolean,
+                       playersInDimension: Collection<ServerPlayer>) {
+        val data = particles[id] ?: return
+        data.attach(entityId, offset, local)
+
+        val payload = ParticleAttachPayload(id, entityId, offset.x, offset.y, offset.z, local)
+        sendToVisible(playersInDimension, data.position(), payload)
+    }
+
+    /** 位置指令接管：解除实体锚点，清零速度与力（与服务端 tick、客户端渲染粒子的口径一致）。 */
+    private fun takeOverPosition(data: ParticleData, position: Vec3) {
+        data.detach()
+        data.setVelocity(Vec3.ZERO)
+        data.setAcceleration(Vec3.ZERO, 0)
+        data.setPosition(position)
     }
 
     /**
@@ -293,13 +371,22 @@ class ServerParticleEngine(
      * @param playersInDimension 维度内的玩家列表
      */
     fun tick(playersInDimension: Collection<ServerPlayer>) {
+        // 实体锚点：位置每 tick 由锚点解析（不逐 tick 发包）。无玩家在线时没有关卡可查，
+        // 保持上次位置即可——没有玩家也就没有渲染。
+        val level = playersInDimension.firstOrNull()?.level()
         val it = particles.entries.iterator()
         while (it.hasNext()) {
             val entry = it.next()
             val data = entry.value
-            val vel = data.velocity()
-            if (vel.x != 0.0 || vel.y != 0.0 || vel.z != 0.0) {
-                data.setPosition(data.position().add(vel))
+            val attachId = data.attachedEntityId()
+            if (attachId != AttachMath.noEntity()) {
+                val entity = level?.getEntity(attachId)
+                if (entity != null) {
+                    data.setPosition(AttachMath.resolve(
+                        entity.position(), entity.yRot, entity.xRot, data.attachOffset(), data.attachLocal()))
+                }
+            } else {
+                data.stepMotion()
             }
             data.tick()
             if (data.isExpired()) {

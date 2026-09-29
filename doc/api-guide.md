@@ -337,6 +337,45 @@ handle.moveInstant(pos)
 handle.remove()
 ```
 
+### 逐 tick 跟随与力驱动
+
+`track` 直设位置（无缓动）：客户端每个 tick 消费一条，原版按 partialTick 在**相邻两条**之间插值；
+某个 tick 没收到新位置时端点原地保持——不会退回上一段起点，所以高速目标也不会前后抖。
+
+```kotlin
+// 投射物本体：每 tick 贴住真实位置（位置只有这一处来源）
+handle.track(pos.x, pos.y, pos.z)
+handle.position()      // 只读回服务端的权威位置；粒子不存在时返回 null
+```
+
+逐粒子每 tick 一个包在多粒子场景下太贵，用批量接口（一个包覆盖多颗，逐玩家按可见性裁剪）：
+
+```kotlin
+val ids = handles.map { it.id }
+manager.trackAll(ids, positions)   // 两个列表按顺序一一对应，长度不同按短的一方截断
+```
+
+需要「沿一个力运动」而不是逐 tick 报位置时用 `applyForce`：只在开始施力时下发一次，
+之后服务端与客户端按同一规则逐 tick 积分（速度 += 加速度，位置 += 速度）。
+
+```kotlin
+handle.applyForce(Vec3(0.0, -0.05, 0.0))     // 无限施力，直到被下一次指令覆盖
+handle.applyForce(accel, ticks = 20)         // 只施 20 tick，之后按惯性继续
+handle.applyForce(Vec3.ZERO, ticks = 0)      // 清除力（速度保留）
+handle.setVelocity(Vec3.ZERO)                // 连速度一起停住
+```
+
+需要跟随实体（玩家/生物）时用实体锚点：服务端只在挂载时下发一次，之后位置由客户端每 tick 本地解析。
+
+```kotlin
+handle.attachTo(entity.id, Vec3(0.0, 0.9, 0.0))        // 世界空间偏移
+handle.attachToLocal(entity.id, Vec3(0.0, 0.0, 0.6))   // 偏移随实体朝向（贴在身前/身侧）
+```
+
+`move` / `moveInstant` / `track` / `setVelocity` / `applyForce` 都接管位置并解除锚点；
+`applyForce` 与 `setVelocity` 叠加（力不覆盖已有速度）。服务端暂停（单人按 Esc）时
+客户端不再推进速度/力粒子，恢复后两端从同一状态继续。
+
 ---
 
 ## 八、缓动（EasingType）

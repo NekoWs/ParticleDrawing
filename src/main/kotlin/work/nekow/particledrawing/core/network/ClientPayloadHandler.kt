@@ -50,10 +50,36 @@ internal object ClientPayloadHandler {
         }
     }
 
+    fun handleForce(payload: ParticleForcePayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientParticleEngine.instance()?.setAcceleration(
+                payload.particleId, payload.ax, payload.ay, payload.az, payload.ticks
+            )
+        }
+    }
+
     fun handleTrack(payload: ParticleTrackPayload, context: IPayloadContext) {
         context.enqueueWork {
             ClientParticleEngine.instance()?.trackParticle(
                 payload.particleId, payload.x, payload.y, payload.z
+            )
+        }
+    }
+
+    fun handleTrackBatch(payload: ParticleTrackBatchPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            val engine = ClientParticleEngine.instance() ?: return@enqueueWork
+            for (u in payload.updates) {
+                engine.trackParticle(u.particleId, u.x, u.y, u.z)
+            }
+        }
+    }
+
+    fun handleAttach(payload: ParticleAttachPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientParticleEngine.instance()?.attachParticle(
+                payload.particleId, payload.entityId,
+                payload.ox, payload.oy, payload.oz, payload.local
             )
         }
     }

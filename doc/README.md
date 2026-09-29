@@ -11,7 +11,7 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | 类 | 作用 |
 | --- | --- |
 | `ParticleManager` | 维度级入口，创建粒子与粒子组 |
-| `ParticleHandle` | 单粒子句柄：移动 / 速度 / 重着色 / 缩放 / 销毁，含流式 `Builder` |
+| `ParticleHandle` | 单粒子句柄：移动 / 速度 / 力 / 实体锚点 / 重着色 / 缩放 / 销毁，含流式 `Builder` 与 `position()`/`velocity()` 只读查询 |
 | `ParticleGroup` | 粒子组：编排式动画（客户端自驱程序：delay/fadeIn/spin/movePath/pulse/实体通道/公式指令） |
 | `Draw` | 绘图工具：点、线段、圆、圆盘、曲线、三角形、六芒星、矩形、球体、长方体；支持渐变着色与逐粒子入场 |
 | `ColorSource` | 形状参数化颜色来源：固定色 / 双色渐变 / 彩虹，支持 lambda |
@@ -57,7 +57,8 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 
 | 类 | 作用 |
 | --- | --- |
-| `ClientParticleEngine` | 客户端粒子引擎（缓动同步、直接同步、非均匀缩放） |
+| `ClientParticleEngine` | 客户端粒子引擎（缓动同步、直接同步、非均匀缩放、track 逐 tick 插值、实体锚点本地解析） |
+| `TrackBuffer` | track 的逐 tick 插值缓冲（按到达顺序排队、每 tick 消费一条、缺包原地保持） |
 | `RenderParticle` | 渲染粒子状态（缓动 + 速度积分 + 欧拉旋转） |
 | `BridgeParticle` | 桥接原版粒子系统的渲染代理（纯色方块 / 自定义贴图 + UV 采样；v17 非广告牌粒子按自转四元数固定朝向） |
 | `TextureCache` | 内嵌贴图缓存（PNG 字节 → DynamicTexture） |
@@ -81,6 +82,9 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | `SetProgramVarPayload` / `StopAnimationProgramPayload` | 程序变量热更 / 停止包 |
 | `ParticleRotationPayload` / `ParticleTranslatePayload` / `ParticleSetPositionPayload` | 绕轴心旋转 / 平移 / set 位置包 |
 | `ParticleVelocityPayload` / `ParticleLightLevelPayload` | 速度 / 光照等级包 |
+| `ParticleTrackBatchPayload` | 批量直设位置包（一个包覆盖多粒子） |
+| `ParticleForcePayload` | 加速度（力）包：只在开始施力时下发一次 |
+| `ParticleAttachPayload` | 实体锚点包：只在挂载时下发一次，客户端本地解析位置 |
 | `PlayAnimationPayload` / `StopAnimationPayload` / `VariableUpdatePayload` | 动画播放控制包 |
 | `AnimationSyncBegin/File/Done/Request Payload` | 配置阶段文件同步包 |
 | `StreamCodecs` | 编解码工具 |

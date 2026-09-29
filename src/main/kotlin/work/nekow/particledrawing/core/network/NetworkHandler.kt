@@ -16,7 +16,8 @@ object NetworkHandler {
     @SubscribeEvent
     @JvmStatic
     fun register(event: RegisterPayloadHandlersEvent) {
-        val registrar: PayloadRegistrar = event.registrar("1")
+        // 载荷集合变化即提升版本：新版客户端/服务端与旧版不会误配
+        val registrar: PayloadRegistrar = event.registrar("2")
 
         registrar.playToClient(ParticleSpawnPayload.TYPE, ParticleSpawnPayload.STREAM_CODEC, ClientPayloadHandler::handleSpawn)
         registrar.playToClient(ParticleUpdatePayload.TYPE, ParticleUpdatePayload.STREAM_CODEC, ClientPayloadHandler::handleUpdate)
@@ -26,7 +27,10 @@ object NetworkHandler {
         registrar.playToClient(SetProgramVarPayload.TYPE, SetProgramVarPayload.STREAM_CODEC, ClientPayloadHandler::handleSetProgramVar)
         registrar.playToClient(StopAnimationProgramPayload.TYPE, StopAnimationProgramPayload.STREAM_CODEC, ClientPayloadHandler::handleStopProgram)
         registrar.playToClient(ParticleVelocityPayload.TYPE, ParticleVelocityPayload.STREAM_CODEC, ClientPayloadHandler::handleVelocity)
+        registrar.playToClient(ParticleForcePayload.TYPE, ParticleForcePayload.STREAM_CODEC, ClientPayloadHandler::handleForce)
         registrar.playToClient(ParticleTrackPayload.TYPE, ParticleTrackPayload.STREAM_CODEC, ClientPayloadHandler::handleTrack)
+        registrar.playToClient(ParticleTrackBatchPayload.TYPE, ParticleTrackBatchPayload.STREAM_CODEC, ClientPayloadHandler::handleTrackBatch)
+        registrar.playToClient(ParticleAttachPayload.TYPE, ParticleAttachPayload.STREAM_CODEC, ClientPayloadHandler::handleAttach)
         registrar.playToClient(ParticleRotationPayload.TYPE, ParticleRotationPayload.STREAM_CODEC, ClientPayloadHandler::handleRotation)
         registrar.playToClient(ParticleTranslatePayload.TYPE, ParticleTranslatePayload.STREAM_CODEC, ClientPayloadHandler::handleTranslate)
         registrar.playToClient(ParticleSetPositionPayload.TYPE, ParticleSetPositionPayload.STREAM_CODEC, ClientPayloadHandler::handleSetPosition)

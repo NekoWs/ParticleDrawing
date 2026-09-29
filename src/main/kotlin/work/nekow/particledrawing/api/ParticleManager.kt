@@ -55,6 +55,20 @@ class ParticleManager private constructor(val level: ServerLevel) {
 
     fun getEngine() = ServerParticleEngine.getOrCreate(dimensionId)
 
+    /**
+     * 批量直设位置（无缓动）：一个包覆盖多颗粒子，语义与 [ParticleHandle.track] 相同
+     * （客户端每个 tick 消费一条，按 partialTick 在相邻两条之间插值）。
+     * [ids] 与 [positions] 按顺序一一对应，长度不同按短的一方截断，不存在的粒子跳过。
+     *
+     * @param ids 粒子 ID 列表
+     * @param positions 与 [ids] 一一对应的目标位置
+     * @return 服务端实际生效的粒子数
+     */
+    fun trackAll(ids: List<UUID>, positions: List<Vec3>): Int {
+        if (ids.isEmpty() || positions.isEmpty()) return 0
+        return getEngine().trackParticles(ids, positions, getPlayers())
+    }
+
     internal fun getPlayers(): Collection<ServerPlayer> = level.players()
 
     companion object {

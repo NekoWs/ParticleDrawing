@@ -93,6 +93,75 @@ class ParticleHandle(
     }
 
     /**
+     * 获取粒子当前在服务端的权威位置。
+     * @return 位置，不存在则返回 null
+     */
+    fun position(): Vec3? {
+        return manager.getEngine().getParticle(id)?.position()
+    }
+
+    /**
+     * 给粒子施加加速度（服务端权威力）：只在开始施力时下发一次，之后服务端与客户端按同一
+     * 规则逐 tick 积分（速度 += 加速度，位置 += 速度）。让大量粒子沿同一个力运动时，
+     * 不必每 tick 逐粒子广播速度或位置。
+     *
+     * 与 [setVelocity] 叠加（力不覆盖已有速度）；位置指令（[move]/[track]）会停掉速度与力。
+     * 清除力用 `applyForce(Vec3.ZERO, 0)`，连速度一起停用 `setVelocity(Vec3.ZERO)`。
+     *
+     * @param acceleration 加速度（blocks/tick²）
+     * @param ticks 施力 tick 数：>0 = 施加这么多 tick；<0 = 无限（默认，直到被下一次指令覆盖）；0 = 清除力
+     * @return 自身，支持链式调用
+     */
+    fun applyForce(acceleration: Vec3, ticks: Int = -1): ParticleHandle {
+        manager.getEngine().applyForce(id, acceleration, ticks, manager.getPlayers())
+        return this
+    }
+
+    /** [applyForce] 的分量重载。 */
+    fun applyForce(ax: Number, ay: Number, az: Number, ticks: Int = -1): ParticleHandle {
+        return applyForce(Vec3(ax.toDouble(), ay.toDouble(), az.toDouble()), ticks)
+    }
+
+    /**
+     * 把粒子钉在实体上：位置 = 实体位置 + [offset]（世界空间），客户端每 tick 本地解析，
+     * 服务端只在挂载时下发一次——实体怎么动粒子就怎么动，没有逐 tick 的带宽开销。
+     *
+     * 实体不在场（超出加载范围/已消失）时粒子保持上次位置。位置与运动指令
+     * （[move]/[track]/[setVelocity]/[applyForce]）会解除锚点。
+     *
+     * @param entityId 实体网络 id
+     * @param offset 相对实体位置的偏移（世界空间）
+     * @return 自身，支持链式调用
+     */
+    fun attachTo(entityId: Int, offset: Vec3): ParticleHandle {
+        manager.getEngine().attachParticle(id, entityId, offset, false, manager.getPlayers())
+        return this
+    }
+
+    /** [attachTo] 的分量重载。 */
+    fun attachTo(entityId: Int, x: Number, y: Number, z: Number): ParticleHandle {
+        return attachTo(entityId, Vec3(x.toDouble(), y.toDouble(), z.toDouble()))
+    }
+
+    /**
+     * 把粒子钉在实体上，偏移随实体朝向旋转（实体局部空间）。
+     * 与 [attachTo] 只差 [offset] 的坐标系：需要「贴在身前/身侧」这类随转向变化的位置时用它。
+     *
+     * @param entityId 实体网络 id
+     * @param offset 实体局部空间中的偏移
+     * @return 自身，支持链式调用
+     */
+    fun attachToLocal(entityId: Int, offset: Vec3): ParticleHandle {
+        manager.getEngine().attachParticle(id, entityId, offset, true, manager.getPlayers())
+        return this
+    }
+
+    /** [attachToLocal] 的分量重载。 */
+    fun attachToLocal(entityId: Int, x: Number, y: Number, z: Number): ParticleHandle {
+        return attachToLocal(entityId, Vec3(x.toDouble(), y.toDouble(), z.toDouble()))
+    }
+
+    /**
      * 动态修改粒子的发光光照等级 (0-15)，并同步到客户端。
      * @param level 目标光照等级，自动钳制到 [0, 15]
      * @return 自身，支持链式调用
