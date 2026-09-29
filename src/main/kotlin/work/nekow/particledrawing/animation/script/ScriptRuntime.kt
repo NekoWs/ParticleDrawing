@@ -45,12 +45,13 @@ private fun cfgVec(v: Any?, field: String, len: Int): List<Double> {
     throw ScriptException("spawn config '$field' requires a vec$len or array of $len numbers")
 }
 
-private fun cfgColor(v: Any?): List<Double> = when {
-    v is ColorVal -> listOf(v.r, v.g, v.b, v.a)
-    v is Vec4 -> listOf(v.x, v.y, v.z, v.w)
-    v is Vec3 -> listOf(v.x, v.y, v.z)
-    v is MutableList<*> && (v.size == 3 || v.size == 4) ->
+private fun cfgColor(v: Any?): List<Double> = when (v) {
+    is ColorVal -> listOf(v.r, v.g, v.b, v.a)
+    is Vec4 -> listOf(v.x, v.y, v.z, v.w)
+    is Vec3 -> listOf(v.x, v.y, v.z)
+    is MutableList<*> if (v.size == 3 || v.size == 4) ->
         v.mapIndexed { i, x -> (x as? Double) ?: throw ScriptException("spawn config 'color[$i]' requires a num") }
+
     else -> throw ScriptException("spawn config 'color' requires a color, vec3, vec4 or [r,g,b(,a)]")
 }
 
@@ -61,18 +62,20 @@ private fun cfgColor(v: Any?): List<Double> = when {
  */
 private fun scaleShape(v: Any?, out: DoubleArray): Int {
     fun comp(x: Any?): Double = x as? Double ?: Double.NaN
-    return when {
-        v is Double -> { out[0] = v; out[1] = v; out[2] = 1.0; 0 }
-        v is Vec2 -> { out[0] = v.x; out[1] = v.y; out[2] = 1.0; 2 }
-        v is Vec3 -> { out[0] = v.x; out[1] = v.y; out[2] = v.z; 3 }
-        v is MutableList<*> && v.size == 2 -> {
+    return when (v) {
+        is Double -> { out[0] = v; out[1] = v; out[2] = 1.0; 0 }
+        is Vec2 -> { out[0] = v.x; out[1] = v.y; out[2] = 1.0; 2 }
+        is Vec3 -> { out[0] = v.x; out[1] = v.y; out[2] = v.z; 3 }
+        is MutableList<*> if v.size == 2 -> {
             out[0] = comp(v[0]); out[1] = comp(v[1]); out[2] = 1.0
             if (out[0].isNaN() || out[1].isNaN()) -1 else 2
         }
-        v is MutableList<*> && v.size == 3 -> {
+
+        is MutableList<*> if v.size == 3 -> {
             out[0] = comp(v[0]); out[1] = comp(v[1]); out[2] = comp(v[2])
             if (out[0].isNaN() || out[1].isNaN() || out[2].isNaN()) -1 else 3
         }
+
         else -> -1
     }
 }
@@ -104,7 +107,8 @@ private fun applySpawnConfig(host: ParticleHost, config: Any?) {
                 if (dim < 0) throw ScriptException("spawn config 'scale' requires a num, vec2, vec3 or array of 2/3 numbers")
                 host.scaleDim = dim
             }
-            "glow" -> host.glow = if (v is Boolean) v else ((v as? Double) ?: throw ScriptException("spawn config 'glow' requires a num")) > 0.5
+            "glow" -> host.glow = v as? Boolean
+                ?: (((v as? Double) ?: throw ScriptException("spawn config 'glow' requires a num")) > 0.5)
             "light" -> host.light = clampNum(jsRound((v as? Double) ?: throw ScriptException("spawn config 'light' requires a num")), 0.0, 15.0)
             "life" -> {
                 val n = jsRound((v as? Double) ?: throw ScriptException("spawn config 'life' requires a num"))
@@ -505,16 +509,15 @@ object ScriptRuntime {
         }
 
         private fun execForPart(part: Node) {
-            when {
-                part is AssignNode -> execAssign(part)
-                part is DeclareNode -> execDeclare(part)
+            when (part) {
+                is AssignNode -> execAssign(part)
+                is DeclareNode -> execDeclare(part)
                 else -> evalExpr(part)
             }
         }
 
         private fun execForOf(n: ForOfNode) {
-            val iter = evalExpr(n.iter)
-            val snapshot: List<Any?> = when (iter) {
+            val snapshot: List<Any?> = when (val iter = evalExpr(n.iter)) {
                 is ParticleListValue -> iter.hosts.toList().map { ParticleValue(it) }
                 is MutableList<*> -> iter.toList()
                 else -> err("for-of requires a particle list or array, got ${typeName(iter)}", n.iter)
@@ -540,8 +543,7 @@ object ScriptRuntime {
         private fun execAssign(n: AssignNode) {
             val target = n.target
             if (target is UnpackTarget) {
-                val v = evalExpr(n.value)
-                val comps = when (v) {
+                val comps = when (val v = evalExpr(n.value)) {
                     is Vec2 -> listOf(v.x, v.y)
                     is Vec3 -> listOf(v.x, v.y, v.z)
                     is Vec4 -> listOf(v.x, v.y, v.z, v.w)
@@ -675,7 +677,7 @@ object ScriptRuntime {
 
         // —— this 字段读取 ——
 
-        private fun ctxRead(field: String, n: Node): Any? {
+        private fun ctxRead(field: String, n: Node): Any {
             if (phase == "expr") {
                 val c = pctx
                 when (field) {
@@ -745,7 +747,7 @@ object ScriptRuntime {
 
         // —— 粒子句柄字段读取/写入 ——
 
-        private fun particleGetField(pv: ParticleValue, field: String, n: Node): Any? {
+        private fun particleGetField(pv: ParticleValue, field: String): Any {
             val w = pv.host
             return when (field) {
                 "position" -> Vec3(w.pos[0], w.pos[1], w.pos[2])
@@ -765,7 +767,7 @@ object ScriptRuntime {
 
         // —— 文字对象句柄读取（只读，与编辑器 script-lang.js 的 textGetField 一致）——
 
-        private fun textGetField(v: TextValue, field: String, n: Node): Any? = when (field) {
+        private fun textGetField(v: TextValue, field: String, n: Node): Any = when (field) {
             "name" -> v.obj.name
             "text" -> v.obj.text
             "st" -> v.obj.st.toDouble()
@@ -774,7 +776,7 @@ object ScriptRuntime {
             else -> err("text has no field '.$field'", n)
         }
 
-        private fun textCharGetField(v: TextCharValue, field: String, n: Node): Any? = when (field) {
+        private fun textCharGetField(v: TextCharValue, field: String, n: Node): Any = when (field) {
             "index" -> v.ch.index.toDouble()
             "code" -> v.ch.code.toDouble()
             "pos" -> Vec3(v.ch.pos.x, v.ch.pos.y, v.ch.pos.z)
@@ -791,7 +793,7 @@ object ScriptRuntime {
             return ((v.at - st) * sp).coerceIn(0.0, v.asset.durMs.toDouble())
         }
 
-        private fun audioGetField(v: AudioValue, field: String, n: Node): Any? = when (field) {
+        private fun audioGetField(v: AudioValue, field: String, n: Node): Any = when (field) {
             "name" -> v.asset.name
             "st" -> v.asset.st.toDouble()
             "length" -> v.asset.durMs.toDouble()
@@ -829,7 +831,7 @@ object ScriptRuntime {
             }
             val c = ch.toInt()
             val count = ScriptWavePcm.channels(v.asset)
-            if (count > 0 && c >= count) err("$method: channel $c out of range (this asset has $count)", n)
+            if (count in 1..c) err("$method: channel $c out of range (this asset has $count)", n)
             return c
         }
 
@@ -862,27 +864,40 @@ object ScriptRuntime {
         }
 
         private fun writeParticleColor(w: ParticleHost, value: Any?, n: Node) {
-            when {
-                value is ColorVal -> {
-                    w.color[0] = clamp01(value.r); w.color[1] = clamp01(value.g); w.color[2] = clamp01(value.b); w.color[3] = clamp01(value.a)
+            when (value) {
+                is ColorVal -> {
+                    w.color[0] = clamp01(value.r)
+                    w.color[1] = clamp01(value.g)
+                    w.color[2] = clamp01(value.b)
+                    w.color[3] = clamp01(value.a)
                 }
-                value is Vec3 -> {
-                    w.color[0] = clamp01(value.x); w.color[1] = clamp01(value.y); w.color[2] = clamp01(value.z)
+
+                is Vec3 -> {
+                    w.color[0] = clamp01(value.x)
+                    w.color[1] = clamp01(value.y)
+                    w.color[2] = clamp01(value.z)
                 }
-                value is Vec4 -> {
-                    w.color[0] = clamp01(value.x); w.color[1] = clamp01(value.y); w.color[2] = clamp01(value.z); w.color[3] = clamp01(value.w)
+
+                is Vec4 -> {
+                    w.color[0] = clamp01(value.x)
+                    w.color[1] = clamp01(value.y)
+                    w.color[2] = clamp01(value.z)
+                    w.color[3] = clamp01(value.w)
                 }
-                value is MutableList<*> && value.size == 3 -> {
+
+                is MutableList<*> if value.size == 3 -> {
                     w.color[0] = clamp01(num(value[0], "particle.color[0]", n))
                     w.color[1] = clamp01(num(value[1], "particle.color[1]", n))
                     w.color[2] = clamp01(num(value[2], "particle.color[2]", n))
                 }
-                value is MutableList<*> && value.size == 4 -> {
+
+                is MutableList<*> if value.size == 4 -> {
                     w.color[0] = clamp01(num(value[0], "particle.color[0]", n))
                     w.color[1] = clamp01(num(value[1], "particle.color[1]", n))
                     w.color[2] = clamp01(num(value[2], "particle.color[2]", n))
                     w.color[3] = clamp01(num(value[3], "particle.color[3]", n))
                 }
+
                 else -> err("particle.color requires a vec3, vec4, [r,g,b] or [r,g,b,a], got ${typeName(value)}", n)
             }
         }
@@ -908,7 +923,7 @@ object ScriptRuntime {
                     if (!isNum(value) && !isBool(value)) {
                         err("particle.glow requires a num/bool, got ${typeName(value)}", n)
                     }
-                    w.glow = if (value is Boolean) value else (value as Double) > 0.5
+                    w.glow = value as? Boolean ?: ((value as Double) > 0.5)
                 }
                 "light" -> w.light = clampNum(jsRound(num(value, "particle.light", n)), 0.0, 15.0)
                 "life" -> {
@@ -923,7 +938,7 @@ object ScriptRuntime {
                     if (!isNum(value) && !isBool(value)) {
                         err("particle.billboard requires a num/bool, got ${typeName(value)}", n)
                     }
-                    w.billboard = if (value is Boolean) value else (value as Double) > 0.5
+                    w.billboard = value as? Boolean ?: ((value as Double) > 0.5)
                 }
                 "spinSpace" -> {
                     if (value !is String || (value != "local" && value != "world")) {
@@ -957,7 +972,7 @@ object ScriptRuntime {
             is CompNode -> {
                 val v = evalExpr(n.target)
                 // particle 上 .x/.y/.z/.w/.r/.g/.b/.a 不是保留字段，按自定义字段读取。
-                if (v is ParticleValue) return particleGetField(v, n.comp, n)
+                if (v is ParticleValue) return particleGetField(v, n.comp)
                 if (v is ColorVal) {
                     return when (COMP_ALIAS[n.comp] ?: n.comp) {
                         "x" -> v.r; "y" -> v.g; "z" -> v.b; else -> v.a
@@ -1019,15 +1034,15 @@ object ScriptRuntime {
             return target[idx]
         }
 
-        private fun evalMember(n: MemberNode): Any? {
+        private fun evalMember(n: MemberNode): Any {
             if (n.obj is VarNode && n.obj.name == CTX_NAME) {
                 // 视图变换是对象自己的成员；即使写在 apply{} 里也指对象，不指接收者粒子
                 if (isViewField(n.field)) return ctxRead(n.field, n)
-                if (receiverStack.isNotEmpty()) return particleGetField(receiverStack.last(), n.field, n)
+                if (receiverStack.isNotEmpty()) return particleGetField(receiverStack.last(), n.field)
                 return ctxRead(n.field, n)
             }
             val obj = evalExpr(n.obj)
-            if (obj is ParticleValue) return particleGetField(obj, n.field, n)
+            if (obj is ParticleValue) return particleGetField(obj, n.field)
             if (obj is ParticleListValue) return listSizeGetField(obj.size, n.field, n, false)
             if (obj is List<*>) return listSizeGetField(obj.size, n.field, n, true)
             if (obj is ObjVal) return obj.fields[n.field] ?: Undefined
@@ -1038,7 +1053,7 @@ object ScriptRuntime {
         }
 
         /** 列表/数组的成员读取：只提供只读数量，`.size` 与 `.size()` 都认（与编辑器同语义）。 */
-        private fun listSizeGetField(len: Int, field: String, n: Node, isArr: Boolean): Any? {
+        private fun listSizeGetField(len: Int, field: String, n: Node, isArr: Boolean): Any {
             if (field == "size") return len.toDouble()
             val what = if (isArr) "array" else "particle list"
             err("$what has no member '.$field' (use .size or .size())", n)
@@ -1052,7 +1067,7 @@ object ScriptRuntime {
             is UnpackTarget -> err("invalid increment target", VarNode("<unpack>", target.line, target.col))
         }
 
-        private fun incDecValue(v: Any?, op: String, n: Node): Any? {
+        private fun incDecValue(v: Any?, op: String, n: Node): Any {
             if (v !is Double) err("'$op' requires a num, got ${typeName(v)}", n)
             return if (op == "++") v + 1.0 else v - 1.0
         }
@@ -1147,7 +1162,7 @@ object ScriptRuntime {
             err("unknown variable '$name'", n)
         }
 
-        private fun negate(v: Any?, n: Node): Any? = when (v) {
+        private fun negate(v: Any?, n: Node): Any = when (v) {
             is Double -> -v
             is Vec2 -> Vec2(-v.x, -v.y)
             is Vec3 -> Vec3(-v.x, -v.y, -v.z)
@@ -1193,7 +1208,7 @@ object ScriptRuntime {
             return when (op) { "<" -> x < y; "<=" -> x <= y; ">" -> x > y; else -> x >= y }
         }
 
-        private fun arith(op: String, a: Any?, b: Any?, n: Node): Any? {
+        private fun arith(op: String, a: Any?, b: Any?, n: Node): Any {
             if (a is Double && b is Double) {
                 return when (op) {
                     "+" -> a + b; "-" -> a - b; "*" -> a * b
@@ -1207,7 +1222,7 @@ object ScriptRuntime {
             err("cannot apply '$op' to ${typeName(a)} and ${typeName(b)}", n)
         }
 
-        private fun vecArith(op: String, a: Any?, b: Any?, n: Node): Any? {
+        private fun vecArith(op: String, a: Any?, b: Any?, n: Node): Any {
             if (isVec(a) && isVec(b)) {
                 val dim = vecDim(a!!)
                 if (vecDim(b!!) != dim) err("vector dimension mismatch", n)
@@ -1242,7 +1257,7 @@ object ScriptRuntime {
             return err("operator '$op' not supported for ${typeName(a)} and ${typeName(b)}", n)
         }
 
-        private fun matArith(op: String, a: Any?, b: Any?, n: Node): Any? {
+        private fun matArith(op: String, a: Any?, b: Any?, n: Node): Any {
             when (op) {
                 "*" -> {
                     if (a is Mat3 && b is Vec3) {
@@ -1311,7 +1326,7 @@ object ScriptRuntime {
             }
         }
 
-        private fun arrayMethod(arr: MutableList<Any?>, method: String, args: List<Any?>, n: Node): Any? = when (method) {
+        private fun arrayMethod(arr: MutableList<Any?>, method: String, args: List<Any?>, n: Node) = when (method) {
             "push" -> { if (args.size != 1) err("push expects 1 argument", n); arr.add(args[0]); arr }
             "insert" -> {
                 if (args.size != 2) err("insert expects 2 arguments", n)
@@ -1331,7 +1346,7 @@ object ScriptRuntime {
                 fun normIdx(x: Double): Int { val k = jsTrunc(x).toInt(); return if (k < 0) (size + k).coerceAtLeast(0) else k.coerceAtMost(size) }
                 val s = if (args.isNotEmpty()) normIdx(num(args[0], "slice start", n)) else 0
                 val e = if (args.size > 1) normIdx(num(args[1], "slice end", n)) else size
-                if (s > e) mutableListOf<Any?>() else arr.subList(s, e).toMutableList()
+                if (s > e) mutableListOf() else arr.subList(s, e).toMutableList()
             }
             "size" -> { if (args.isNotEmpty()) err("size expects no arguments", n); arr.size.toDouble() }
             "find" -> {
@@ -1397,10 +1412,10 @@ object ScriptRuntime {
                 is Mat3 -> { val y = b as Mat3; for (i in 0 until 3) for (j in 0 until 3) { val c = numCmp(a.m[i][j], y.m[i][j]); if (c != 0) return c }; 0 }
                 is Mat4 -> { val y = b as Mat4; for (i in 0 until 4) for (j in 0 until 4) { val c = numCmp(a.m[i][j], y.m[i][j]); if (c != 0) return c }; 0 }
                 is MutableList<*> -> {
-                    val x = a; val y = b as MutableList<*>
-                    val n2 = minOf(x.size, y.size)
-                    for (i in 0 until n2) { val c = defaultCompare(x[i], y[i], n, depth + 1); if (c != 0) return c }
-                    if (x.size < y.size) -1 else if (x.size > y.size) 1 else 0
+                    val y = b as MutableList<*>
+                    val n2 = minOf(a.size, y.size)
+                    for (i in 0 until n2) { val c = defaultCompare(a[i], y[i], n, depth + 1); if (c != 0) return c }
+                    if (a.size < y.size) -1 else if (a.size > y.size) 1 else 0
                 }
                 else -> err("values of type $ta are not sortable", n)
             }
@@ -1463,7 +1478,7 @@ object ScriptRuntime {
             return result
         }
 
-        private fun applyReceiver(n: ApplyNode): Any? {
+        private fun applyReceiver(n: ApplyNode): Any {
             val target = evalExpr(n.target)
             if (target !is ParticleValue) err(".apply requires a particle, got ${typeName(target)}", n)
             val receiverScope = object : MutableMap<String, Any?> {
@@ -1476,7 +1491,7 @@ object ScriptRuntime {
                 override fun containsValue(value: Any?) = backing.containsValue(value)
                 override fun get(key: String): Any? {
                     if (backing.containsKey(key)) return backing[key]
-                    if (particleHasField(target, key)) return particleGetField(target, key, n)
+                    if (particleHasField(target, key)) return particleGetField(target, key)
                     return backing[key]
                 }
                 override fun isEmpty() = backing.isEmpty()
@@ -1580,8 +1595,7 @@ object ScriptRuntime {
                 "scale" -> {
                     if (args.size != 1) err("scale expects 1 argument", n)
                     val dim = vecDim(v!!)
-                    val s = args[0]
-                    when (s) {
+                    when (val s = args[0]) {
                         is Double -> mkVec(dim, vecComps(v).map { it * s })
                         is Vec2, is Vec3, is Vec4 -> {
                             if (vecDim(s) != dim) err("scale requires a scalar or same-dimension vec", n)
@@ -1595,8 +1609,8 @@ object ScriptRuntime {
             }
         }
 
-        private fun colorMethod(c: ColorVal, method: String, args: List<Any?>, n: Node): Any? {
-            fun channel(read: (ColorVal) -> Double, write: (ColorVal, Double) -> ColorVal): Any? {
+        private fun colorMethod(c: ColorVal, method: String, args: List<Any?>, n: Node): Any {
+            fun channel(read: (ColorVal) -> Double, write: (ColorVal, Double) -> ColorVal): Any {
                 if (args.isEmpty()) return read(c)
                 if (args.size == 1) return write(c, num(args[0], method, n))
                 err("$method expects 0 or 1 argument(s), got ${args.size}", n)
@@ -1678,7 +1692,7 @@ object ScriptRuntime {
             return ObjVal(fields)
         }
 
-        private fun repeatFn(count: Any?, fn: Any?, n: Node): Any? {
+        private fun repeatFn(count: Any?, fn: Any?, n: Node): Any {
             val c = jsTrunc(num(count, "repeat", n)).toInt()
             if (c <= 0) return 0.0
             for (i in 0 until c) {
@@ -1804,7 +1818,7 @@ object ScriptRuntime {
                 "map_range", "remap" -> mapRange(args[0], args[1], args[2], args[3], args[4], name == "remap", n)
                 "int" -> intConvert(args[0], n)
                 "float" -> floatConvert(args[0], n)
-                "bool" -> { val v = args[0]; if (isUndefined(v)) return false; if (v !is Double && v !is Boolean) err("bool requires a scalar", n); if (v is Boolean) v else v != 0.0 }
+                "bool" -> { val v = args[0]; if (isUndefined(v)) return false; if (v !is Double && v !is Boolean) err("bool requires a scalar", n); v as? Boolean ?: (v != 0.0) }
                 "sin" -> sin(num(args[0], "sin", n)); "cos" -> cos(num(args[0], "cos", n)); "tan" -> tan(num(args[0], "tan", n))
                 "asin" -> asin(num(args[0], "asin", n)); "acos" -> acos(num(args[0], "acos", n)); "atan" -> atan(num(args[0], "atan", n))
                 "atan2" -> atan2(num(args[0], "atan2", n), num(args[1], "atan2", n))
@@ -1825,7 +1839,7 @@ object ScriptRuntime {
                 "ease_linear" -> { val a = num(args[0], "ease", n); val b = num(args[1], "ease", n); val t = num(args[2], "ease", n); a + (b - a) * t }
                 "ease_in_out" -> { val a = num(args[0], "ease", n); val b = num(args[1], "ease", n); val t = num(args[2], "ease", n).coerceIn(0.0, 1.0); a + (b - a) * t * t * (3 - 2 * t) }
                 "ease_out_back" -> { val a = num(args[0], "ease", n); val b = num(args[1], "ease", n); val t = num(args[2], "ease", n).coerceIn(0.0, 1.0); val c1 = 1.70158; val c3 = c1 + 1; a + (b - a) * (1 + c3 * (t - 1).pow(3) + c1 * (t - 1).pow(2)) }
-                "ease_in_elastic" -> { val a = num(args[0], "ease", n); val b = num(args[1], "ease", n); val t = num(args[2], "ease", n).coerceIn(0.0, 1.0); val v = if (t == 0.0 || t == 1.0) t else -2.0.pow(10 * (t - 1)) * sin((t * 10 - 10.75) * (2 * PI) / 3); a + (b - a) * v }
+                "ease_in_elastic" -> { val a = num(args[0], "ease", n); val b = num(args[1], "ease", n); val t = num(args[2], "ease", n).coerceIn(0.0, 1.0); val v = if (t == 0.0 || t == 1.0) t else (-2.0).pow(10 * (t - 1)) * sin((t * 10 - 10.75) * (2 * PI) / 3); a + (b - a) * v }
                 "unique" -> arrayMethod(args[0] as? MutableList<Any?> ?: err("unique requires array", n), "unique", emptyList(), n)
                 "reverse" -> arrayMethod(args[0] as? MutableList<Any?> ?: err("reverse requires array", n), "reverse", emptyList(), n)
                 "sort" -> arrayMethod(args[0] as? MutableList<Any?> ?: err("sort requires array", n), "sort", args.drop(1), n)
@@ -1894,10 +1908,10 @@ object ScriptRuntime {
 
         private fun norm3(v: Vec3): Vec3 { val l = sqrt(v.x * v.x + v.y * v.y + v.z * v.z); return if (l == 0.0) v else Vec3(v.x / l, v.y / l, v.z / l) }
 
-        private fun dot(a: Any?, b: Any?, n: Node): Double = when {
-            a is Vec2 && b is Vec2 -> a.x * b.x + a.y * b.y
-            a is Vec3 && b is Vec3 -> a.x * b.x + a.y * b.y + a.z * b.z
-            a is Vec4 && b is Vec4 -> a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w
+        private fun dot(a: Any?, b: Any?, n: Node): Double = when (a) {
+            is Vec2 if b is Vec2 -> a.x * b.x + a.y * b.y
+            is Vec3 if b is Vec3 -> a.x * b.x + a.y * b.y + a.z * b.z
+            is Vec4 if b is Vec4 -> a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w
             else -> err("dot requires same-dimension vectors", n)
         }
 
@@ -1908,29 +1922,29 @@ object ScriptRuntime {
             else -> err("len requires a vector", n)
         }
 
-        private fun scaleVec(v: Any?, s: Double, n: Node): Any? = when (v) {
+        private fun scaleVec(v: Any?, s: Double, n: Node): Any = when (v) {
             is Vec2 -> Vec2(v.x * s, v.y * s)
             is Vec3 -> Vec3(v.x * s, v.y * s, v.z * s)
             is Vec4 -> Vec4(v.x * s, v.y * s, v.z * s, v.w * s)
             else -> err("scaleVec requires a vector", n)
         }
 
-        private fun subVec(a: Any?, b: Any?, n: Node): Any? = when {
-            a is Vec2 && b is Vec2 -> Vec2(a.x - b.x, a.y - b.y)
-            a is Vec3 && b is Vec3 -> Vec3(a.x - b.x, a.y - b.y, a.z - b.z)
-            a is Vec4 && b is Vec4 -> Vec4(a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w)
+        private fun subVec(a: Any?, b: Any?, n: Node): Any = when (a) {
+            is Vec2 if b is Vec2 -> Vec2(a.x - b.x, a.y - b.y)
+            is Vec3 if b is Vec3 -> Vec3(a.x - b.x, a.y - b.y, a.z - b.z)
+            is Vec4 if b is Vec4 -> Vec4(a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w)
             else -> err("subtraction requires vectors", n)
         }
 
-        private fun lerp(a: Any?, b: Any?, t: Double, n: Node): Any? = when {
-            a is Double && b is Double -> a + (b - a) * t
-            a is Vec2 && b is Vec2 -> Vec2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
-            a is Vec3 && b is Vec3 -> Vec3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t)
-            a is Vec4 && b is Vec4 -> Vec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t)
+        private fun lerp(a: Any?, b: Any?, t: Double, n: Node): Any = when (a) {
+            is Double if b is Double -> a + (b - a) * t
+            is Vec2 if b is Vec2 -> Vec2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
+            is Vec3 if b is Vec3 -> Vec3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t)
+            is Vec4 if b is Vec4 -> Vec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t)
             else -> err("lerp requires two nums or two vectors", n)
         }
 
-        private fun clamp(v: Any?, lo: Any?, hi: Any?, n: Node): Any? {
+        private fun clamp(v: Any?, lo: Any?, hi: Any?, n: Node): Any {
             if (v is Double) return clampNum(v, num(lo, "clamp lo", n), num(hi, "clamp hi", n))
             if (isVec(v)) {
                 val dim = vecDim(v!!)
@@ -1944,7 +1958,7 @@ object ScriptRuntime {
             return err("clamp not supported for ${typeName(v)}", n)
         }
 
-        private fun mapRange(v: Any?, in1: Any?, in2: Any?, out1: Any?, out2: Any?, clampOut: Boolean, n: Node): Any? {
+        private fun mapRange(v: Any?, in1: Any?, in2: Any?, out1: Any?, out2: Any?, clampOut: Boolean, n: Node): Any {
             val x = num(v, "map_range", n); val a = num(in1, "map_range", n); val b = num(in2, "map_range", n); val c = num(out1, "map_range", n); val d = num(out2, "map_range", n)
             if (b == a) err(if (clampOut) "remap input range is empty" else "map_range input range is empty", n)
             val t = (x - a) / (b - a)
@@ -1952,7 +1966,7 @@ object ScriptRuntime {
             return if (clampOut) r.coerceIn(min(c, d), max(c, d)) else r
         }
 
-        private fun intConvert(v: Any?, n: Node): Any? = when (v) {
+        private fun intConvert(v: Any?, n: Node): Any = when (v) {
             is Double -> jsTrunc(v)
             is Vec2 -> Vec2(jsTrunc(v.x), jsTrunc(v.y))
             is Vec3 -> Vec3(jsTrunc(v.x), jsTrunc(v.y), jsTrunc(v.z))
@@ -1962,7 +1976,7 @@ object ScriptRuntime {
             else -> err("int requires scalar, vector or matrix", n)
         }
 
-        private fun floatConvert(v: Any?, n: Node): Any? = when (v) {
+        private fun floatConvert(v: Any?, n: Node): Any = when (v) {
             is Double -> v
             is Vec2 -> Vec2(v.x, v.y)
             is Vec3 -> Vec3(v.x, v.y, v.z)
