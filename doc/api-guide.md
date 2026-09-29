@@ -177,13 +177,29 @@ Draw.line(m, a, b, 50) { t -> if (t < 0.5) Color.BLUE else Color.WHITE }
 `fadeIn(10)` 与紧随的 `spin(...)` 都在 t=0 并行推进；`.delay(100)` 之后的 `stopContinuous()`
 与 `fadeOut(20)` 则都在 t=100 同时发生。想要「停转后再等一会儿」就再补一个 `.delay(x)`。
 
+### 轴心：组级变换都绕它算（调用顺序即语义）
+
+轴心是**程序级状态**：`setPivot(...)` / `followEntity(...)` 绑定一次，对**其后**的
+`rotate` / `spin` / `scale` / `pulse` 全部生效，直到下一次绑定。这些方法**不接受轴心参数**，
+所以「绕实体转」只能靠顺序表达——先绑轴心，再旋转：
+
+```kotlin
+group.setPivot(center)                             // 轴心 = 固定坐标
+group.followEntity(owner.uuid, offset = Vec3(0.0, 1.2, 0.0))   // 轴心 = 实体（每 tick 本地解析，零带宽）
+group.spin(Vec3(0, 1, 0), Math.PI / 40)            // 绕当前轴心转；接在 followEntity 后面就是跟着实体转
+```
+
+轴心绑定到实体后是**活的**：组随实体位置移动（`local = true` 时连朝向一起），
+组内各粒子保持相对轴心的偏移。反过来 `.spin(...)` 写在 `followEntity` 之前，
+那一段只绕绑定前的固定点转——顺序反了不会报错，只是效果不对。
+
 ### 一次性变换
 
 ```kotlin
 group.move(Vec3(0.0, 2.0, 0.0), durationTicks = 30, easing = EasingType.EASE_OUT)
-group.rotate(Vec3(0, 1, 0), radians = Math.PI, durationTicks = 40)
+group.rotate(Vec3(0, 1, 0), radians = Math.PI, durationTicks = 40)   // 绕当前轴心
 group.recolor(Color.BLUE, durationTicks = 20)
-group.scale(ratio = 2f, durationTicks = 15)      // 放大到 2 倍（半径与视觉大小同步翻倍）
+group.scale(ratio = 2f, durationTicks = 15)      // 相对当前轴心放大到 2 倍（半径与视觉大小同步翻倍）
 ```
 
 > `scale` 是**倍率**语义（2f = 两倍，0.5f = 一半）；`durationTicks = 0` 表示瞬时跳变，
@@ -201,7 +217,7 @@ group.destroyAfter(ticks = 200)                  // 定时销毁
 ### 持续运动（服务端逐步驱动，客户端平滑插值）
 
 ```kotlin
-// 无限匀速旋转；负时长 = 无限，用 stopContinuous() 停止
+// 无限匀速旋转（绕当前轴心）；用 stopContinuous() 停止
 group.spin(axis = Vec3(0, 1, 0), radiansPerTick = Math.PI / 40)
 
 // 折线路径：从当前位置出发依次经过各点，easing 作用于全程进度
@@ -215,7 +231,7 @@ group.movePath(
     easing = EasingType.EASE_IN_OUT,
 )
 
-// 呼吸脉冲：当前缩放 ↔ 目标倍率往复；cycles = -1 无限
+// 呼吸脉冲：当前缩放 ↔ 目标倍率往复（相对当前轴心）；cycles = -1 无限
 group.pulse(peakRatio = 1.8f, halfPeriodTicks = 20, cycles = 3)   // 呼吸到 1.8 倍再回原大
 ```
 

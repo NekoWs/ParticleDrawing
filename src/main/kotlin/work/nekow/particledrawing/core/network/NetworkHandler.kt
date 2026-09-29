@@ -17,7 +17,7 @@ object NetworkHandler {
     @JvmStatic
     fun register(event: RegisterPayloadHandlersEvent) {
         // 载荷集合/字段变化即提升版本：新版客户端与服务端不会误配
-        val registrar: PayloadRegistrar = event.registrar("4")
+        val registrar: PayloadRegistrar = event.registrar("5")
 
         registrar.playToClient(ParticleSpawnPayload.TYPE, ParticleSpawnPayload.STREAM_CODEC, ClientPayloadHandler::handleSpawn)
         registrar.playToClient(ParticleUpdatePayload.TYPE, ParticleUpdatePayload.STREAM_CODEC, ClientPayloadHandler::handleUpdate)

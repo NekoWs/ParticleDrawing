@@ -24,7 +24,12 @@ enum class InstructionType {
     }
 }
 
-/** 变换基准点引用：固定世界坐标，或跟随某个实体的位置（+偏移）。 */
+/**
+ * 变换基准点（轴心）引用：固定世界坐标，或跟随某个实体的位置（+偏移）。
+ *
+ * 只在 [AnimInstruction.BindPivot] 里下发——轴心是**程序级的状态**，绑定一次对之后所有旋转/缩放类指令生效；
+ * 旋转类指令（[AnimInstruction.RotateOnce] / [AnimInstruction.Spin]）自己不带轴心，绕的就是当前绑定的那个。
+ */
 sealed class PivotRef {
     /** 本引用的种类标签（网络序号 = ordinal）。 */
     enum class Kind { FIXED, FOLLOW_ENTITY }
@@ -115,12 +120,12 @@ sealed class AnimInstruction {
                 InstructionType.RECOLOR -> Recolor(startMs, buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readVarInt(), readEasing(buf))
                 InstructionType.SCALE_BY -> ScaleBy(startMs, buf.readFloat(), buf.readVarInt(), readEasing(buf))
                 InstructionType.TRANSLATE -> Translate(startMs, readVec(buf), buf.readVarInt(), readEasing(buf))
-                InstructionType.ROTATE_ONCE -> RotateOnce(startMs, PivotRef.read(buf), readVec(buf), buf.readDouble(), buf.readVarInt(), readEasing(buf))
+                InstructionType.ROTATE_ONCE -> RotateOnce(startMs, readVec(buf), buf.readDouble(), buf.readVarInt(), readEasing(buf))
                 InstructionType.MOVE_PATH -> {
                     val n = buf.readVarInt()
                     MovePath(startMs, List(n) { readVec(buf) }, buf.readVarInt(), readEasing(buf))
                 }
-                InstructionType.SPIN -> Spin(startMs, PivotRef.read(buf), readVec(buf), buf.readDouble())
+                InstructionType.SPIN -> Spin(startMs, readVec(buf), buf.readDouble())
                 InstructionType.PULSE -> Pulse(startMs, buf.readFloat(), buf.readVarInt(), buf.readVarInt())
                 InstructionType.STOP_CONTINUOUS -> StopContinuous(startMs)
                 InstructionType.BIND_PIVOT -> BindPivot(startMs, PivotRef.read(buf))
@@ -197,10 +202,9 @@ sealed class AnimInstruction {
         }
     }
 
-    /** 绕基准点一次性旋转。 */
+    /** 绕**当前轴心绑定**一次性旋转（轴心只由 [BindPivot] 决定，见 `ParticleGroup.setPivot`/`followEntity`）。 */
     data class RotateOnce(
         override val startMs: Int,
-        val pivot: PivotRef,
         val axis: Vec3,
         val radians: Double,
         val durationMs: Int,
@@ -208,7 +212,7 @@ sealed class AnimInstruction {
     ) : AnimInstruction() {
         override val type get() = InstructionType.ROTATE_ONCE
         override fun writeBody(buf: FriendlyByteBuf) {
-            PivotRef.write(buf, pivot); writeVec(buf, axis)
+            writeVec(buf, axis)
             buf.writeDouble(radians); buf.writeVarInt(durationMs); writeEasing(buf, easing)
         }
     }
@@ -230,16 +234,19 @@ sealed class AnimInstruction {
 
     // —— 持续（客户端积分，零带宽） ——
 
-    /** 无限匀速旋转，直到 [StopContinuous]。 */
+    /**
+     * 无限匀速旋转，直到 [StopContinuous]。
+     *
+     * 同 [RotateOnce]：绕**当前轴心绑定**转（只认 [BindPivot] 设的轴心），指令里不带轴心。
+     */
     data class Spin(
         override val startMs: Int,
-        val pivot: PivotRef,
         val axis: Vec3,
         val radiansPerMs: Double,
     ) : AnimInstruction() {
         override val type get() = InstructionType.SPIN
         override fun writeBody(buf: FriendlyByteBuf) {
-            PivotRef.write(buf, pivot); writeVec(buf, axis); buf.writeDouble(radiansPerMs)
+            writeVec(buf, axis); buf.writeDouble(radiansPerMs)
         }
     }
 
@@ -262,7 +269,7 @@ sealed class AnimInstruction {
         override fun writeBody(buf: FriendlyByteBuf) {}
     }
 
-    /** 切换/设置变换基准点（可切到跟随实体）。 */
+    /** 切换/设置变换基准点（轴心）：绑定到实体后，之后所有旋转/缩放类指令都绕它算。 */
     data class BindPivot(
         override val startMs: Int,
         val pivot: PivotRef,

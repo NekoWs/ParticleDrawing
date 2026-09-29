@@ -22,6 +22,17 @@ import java.util.UUID
  * 组级变换也表达不了「每粒子沿各自轨迹运动」。
  *
  * delay 推进时间线游标（累积、不清零）；defineEntity/expression 提供实体句柄与表达式能力。
+ *
+ * **轴心语义（组级变换都绕它算）**：轴心是**程序级状态**，由 [setPivot] / [followEntity] 绑定，
+ * 绑定一次就对**其后**的 [rotate] / [spin] / [scale] / [pulse] 全部生效，直到下一次绑定。
+ * 旋转/缩放类指令**不接受轴心参数**，所以**调用顺序就是语义**：
+ *
+ * ```
+ * group.followEntity(uuid)        // 轴心 = 实体（每 tick 本地解析，零带宽）
+ *     .spin(Vec3(0.0, 1.0, 0.0), 0.02)   // 绕实体转；反过来先 spin 就只绕当时的固定点转
+ * ```
+ *
+ * 轴心绑定到实体后是**活的**（跟随位置，`local = true` 时连朝向一起），组内各粒子保持相对轴心的偏移。
  */
 @Suppress("unused")
 class ParticleGroup(
@@ -63,7 +74,8 @@ class ParticleGroup(
     // —— 基础 ——
 
     /**
-     * 设置变换基准点（固定坐标）。影响后续旋转/缩放类指令。
+     * 设置变换轴心（固定坐标）。**粘性**：一直生效到下一次 [setPivot] / [followEntity]，
+     * 之后所有 [rotate] / [spin] / [scale] / [pulse] 都绕它算。
      */
     fun setPivot(pivot: Vec3): ParticleGroup {
         this.pivot = pivot
@@ -78,6 +90,9 @@ class ParticleGroup(
 
     /**
      * 轴心切换为跟随实体：组随实体位置移动（+偏移），由客户端本地解析，零逐 tick 带宽。
+     *
+     * 同样是**粘性**的：绑定之后的 [rotate] / [spin] / [scale] / [pulse] 都绕/相对它算，
+     * 「跟随持有者 + 持续自转」就是本方法 + [spin] 的顺序（顺序反了只会绕固定点转）。
      *
      * @param uuid 目标实体 UUID
      * @param offset 相对实体位置（脚底）的偏移
@@ -227,9 +242,12 @@ class ParticleGroup(
         return move(Vec3(x.toDouble(), y.toDouble(), z.toDouble()), durationTicks, easing)
     }
 
-    /** 绕基准点一次性旋转。 */
+    /**
+     * 绕**当前轴心**一次性旋转（轴心见 [setPivot] / [followEntity]）。
+     * 想绕实体转就先 `followEntity(...)` 再调本方法——**调用顺序就是语义**，本方法不接受轴心参数。
+     */
     fun rotate(axis: Vec3, radians: Double, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
-        emit(AnimInstruction.RotateOnce(cursorMs, PivotRef.Fixed(pivot), axis, radians, durationTicks * 50, easing))
+        emit(AnimInstruction.RotateOnce(cursorMs, axis, radians, durationTicks * 50, easing))
         return this
     }
 
@@ -245,7 +263,7 @@ class ParticleGroup(
     }
 
     /**
-     * 相对基准点等比缩放：半径与视觉大小同乘 [ratio]（倍率语义，2f = 放大两倍）。
+     * 相对**当前轴心**等比缩放：粒子到轴心的距离与视觉大小同乘 [ratio]（倍率语义，2f = 放大两倍）。
      * durationTicks=0 表示瞬时跳变。
      */
     fun scale(ratio: Float, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
@@ -255,9 +273,13 @@ class ParticleGroup(
 
     // —— 持续运动 ——
 
-    /** 无限匀速旋转；用 [stopContinuous] 停止。 */
+    /**
+     * 无限匀速旋转（绕**当前轴心**，同 [rotate]）；用 [stopContinuous] 停止。
+     *
+     * 轴心是活的：先 [followEntity] 再本方法，就是「跟着实体转」——护盾一类「跟随持有者 + 自转」的写法。
+     */
     fun spin(axis: Vec3, radiansPerTick: Double): ParticleGroup {
-        emit(AnimInstruction.Spin(cursorMs, PivotRef.Fixed(pivot), axis, radiansPerTick / 50))
+        emit(AnimInstruction.Spin(cursorMs, axis, radiansPerTick / 50))
         return this
     }
 
@@ -269,7 +291,9 @@ class ParticleGroup(
         return this
     }
 
-    /** 呼吸脉冲：1× ↔ [peakRatio]× 往复；[cycles] 负数无限。 */
+    /**
+     * 呼吸脉冲：1× ↔ [peakRatio]× 往复（相对**当前轴心**缩放，同 [scale]）；[cycles] 负数无限。
+     */
     fun pulse(peakRatio: Float, halfPeriodTicks: Int, cycles: Int = -1): ParticleGroup {
         emit(AnimInstruction.Pulse(cursorMs, peakRatio, halfPeriodTicks * 50, cycles))
         return this
