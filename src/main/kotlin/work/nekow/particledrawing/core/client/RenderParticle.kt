@@ -65,6 +65,10 @@ class RenderParticle(
 
     private var rotPivot = Vec3.ZERO
     private var velocity = Vec3.ZERO
+
+    // 加速度（服务端权威力）：>0 = 还有这么多 tick；<0 = 无限；0 = 无
+    private var acceleration = Vec3.ZERO
+    private var accelTicks = 0
     private var deathTime: Long
     private var snapNextSync = false
 
@@ -206,6 +210,25 @@ class RenderParticle(
     /** 当前速度向量。 */
     fun velocity(): Vec3 = velocity
 
+    /**
+     * 设置加速度（服务端权威力）与施加 tick 数。服务端与客户端按同一规则逐 tick 积分：
+     * 速度 += 加速度，再按速度位移，因此只需在开始施力时下发一次。
+     * 与 [setVelocity] 叠加（力是持续的加速度，不覆盖已有速度）。
+     *
+     * @param ticks >0 = 施加这么多 tick；<0 = 无限（直到被下一次力/速度/位置指令覆盖）；0 = 清除
+     */
+    fun setAcceleration(acceleration: Vec3, ticks: Int) {
+        this.acceleration = acceleration
+        this.accelTicks = ticks
+        rotEase.active = false
+        transEase.active = false
+        offEase.active = false
+        if (accelTicks != 0) posEase.startTime = 0L
+    }
+
+    /** 是否还有未结束的施力。 */
+    fun hasActiveForce(): Boolean = accelTicks != 0
+
     /** 设置位置的缓动目标。 */
     fun setPositionTarget(x: Double, y: Double, z: Double, easingType: EasingType, durationMs: Long) {
         velocity = Vec3.ZERO
@@ -328,6 +351,12 @@ class RenderParticle(
     fun tick() {
         val now = System.nanoTime()
         var posChanged = false
+
+        // 施力：先改速度，再按速度位移（顺序与服务端 ParticleData.stepMotion 一致）
+        if (accelTicks != 0) {
+            velocity = velocity.add(acceleration)
+            if (accelTicks > 0) accelTicks--
+        }
 
         if (rotEase.active) {
             val elapsed = now - rotEase.startTime

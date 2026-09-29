@@ -22,11 +22,17 @@ object ParticleRenderHandler {
 
     private var engineInitialized = false
 
+    // 上次推进引擎时的关卡 gameTime：还是同一个值就说明这一 tick 关卡没走，引擎也不许动
+    private var lastLevelGameTime = Long.MIN_VALUE
+
     /**
      * 客户端 game tick 事件处理（约 20Hz）。
      * 负责粒子引擎的延迟初始化与缓动同步：速度积分与缓动轮转对时间敏感，
      * 只能按 game tick 推进，不能按渲染帧重写桥接粒子的 xo/x——渲染帧与
      * game tick 不同步，每帧改写会把插值端点折叠成同值对、破坏 partialTick 扫掠。
+     *
+     * 只在该 tick 关卡真的走过时推进。单人按 Esc 暂停时关卡不 tick（原版 particleEngine.tick
+     * 同样被跳过），引擎若照跑，速度/力驱动的粒子会在服务端冻结期间沿最后速度继续外推、飘出范围。
      */
     @SubscribeEvent
     @JvmStatic
@@ -36,6 +42,11 @@ object ParticleRenderHandler {
             ClientParticleEngine.init()
             engineInitialized = true
         }
+
+        val level = Minecraft.getInstance().level ?: return
+        val gameTime = level.gameTime
+        if (gameTime == lastLevelGameTime) return
+        lastLevelGameTime = gameTime
 
         ClientParticleEngine.instance()?.frameUpdate()
     }
@@ -78,6 +89,8 @@ object ParticleRenderHandler {
     @Suppress("UNUSED_PARAMETER")
     fun onClientLevelUnload(event: LevelEvent.Unload) {
         if (event.level is ClientLevel) {
+            // 换关卡后 gameTime 从新世界重新计，旧值留着会误判成「本 tick 没走」
+            lastLevelGameTime = Long.MIN_VALUE
             ClientAnimationManager.onClientLevelUnload()
         }
     }
