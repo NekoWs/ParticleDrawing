@@ -20,6 +20,9 @@ class ParticleBatchTest {
         var pos: Vec3? = Vec3.ZERO
         var vel: Vec3 = Vec3.ZERO
         var destroyed = false
+
+        /** 模拟 Builder.delay：已登记、但 PD 侧还没真正生成。 */
+        var pending = false
     }
 
     private class Harness {
@@ -33,6 +36,7 @@ class ParticleBatchTest {
             sendVelocities = { ids, values -> velocities.add(ids to values); ids.size },
             sendForces = { ids, values, ticks -> forces.add(Triple(ids, values, ticks)); ids.size },
             destroy = { it.destroyed = true },
+            isPending = { it.pending },
         )
         val alive get() = sent.last()
     }
@@ -218,6 +222,25 @@ class ParticleBatchTest {
         h.core.track(b, Vec3(7.0, 0.0, 0.0))
         assertEquals(listOf(b.id), h.sent[0].first)
         assertEquals(listOf(Vec3(7.0, 0.0, 0.0)), h.sent[0].second)
+    }
+
+    @Test
+    fun `延迟产生的成员在到点前不算已死：不摘掉、也不发指令`() {
+        val h = Harness()
+        val ready = Fake()
+        val delayed = Fake().also { it.pos = null; it.pending = true }
+        h.core.add(ready); h.core.add(delayed)
+
+        assertEquals(2, h.core.size(), "延迟成员在到点前仍应算成员")
+        h.core.forEach { _, _, _, _ -> }   // 遍历时跳过（还没有权威状态）
+        h.core.track(delayed, Vec3(1.0, 0.0, 0.0))
+        assertEquals(2, h.core.rawSize(), "延迟成员不该被摘掉")
+        assertEquals(0, h.sent.size, "没有权威状态时不发位置指令")
+
+        // 到点后仍不存在 → 按普通已死成员摘掉
+        delayed.pending = false
+        assertEquals(1, h.core.evictDead())
+        assertEquals(1, h.core.rawSize())
     }
 
     @Test

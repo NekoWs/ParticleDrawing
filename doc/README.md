@@ -10,11 +10,13 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 
 | 类 | 作用 |
 | --- | --- |
-| `ParticleManager` | 维度级入口，创建粒子与粒子组；批量指令 `trackAll` / `setVelocityAll` / `applyForceAll` |
+| `ParticleManager` | 维度级入口，创建粒子与粒子组；批量指令 `trackAll` / `setVelocityAll` / `applyForceAll`；程序化贴图登记 `registerTexture` / `registerBuiltinTextures` |
 | `ParticleHandle` | 单粒子句柄：移动 / 速度 / 力 / 实体锚点（`Entity`/`uuid`/`entityId` 三入口）/ 重着色 / 缩放 / 销毁，含流式 `Builder` 与 `position()`/`velocity()` 只读查询 |
 | `ParticleGroup` | 粒子组：编排式动画（客户端自驱程序：delay/fadeIn/spin/movePath/pulse/实体通道/公式指令）；组级变换绕**当前轴心**（`setPivot`/`followEntity` 绑定，先绑再转），缩放含半径、旋转可叠加、增量追加按「从现在起」 |
 | `ParticleBatch` | 程序化粒子集：成员逐 tick 增删、一次包批量下发位置/速度/力、按权威位置/速度条件回收、补齐到 N |
-| `Draw` | 绘图工具：点、线段、圆、圆盘、曲线、三角形、六芒星、矩形、球体、长方体；支持渐变着色与逐粒子入场 |
+| `Draw` | 绘图工具：点、线段、圆、圆盘、曲线、折线光束、三角形、六芒星、矩形、球体、长方体；支持渐变着色、逐粒子入场与外观规格（`visual` / `taper`） |
+| `ParticleVisual` | 逐粒子外观规格：贴图 / 子矩形 UV / 各向异性尺寸（编辑器单位或世界格）/ 朝向（广告牌、自转、长轴对齐）/ 加法混合 / 免光照；生成时定死 |
+| `ParticleStyle` | 内置外观形状枚举：`SQUARE`（纯白方块）/ `SOFT_DOT`（柔边圆点）/ `LINE`（两端渐隐的线段）；客户端按需生成 16px 贴图 |
 | `ColorSource` | 形状参数化颜色来源：固定色 / 双色渐变 / 彩虹，支持 lambda |
 | `Color` | 不可变 RGBA 颜色与工厂方法 |
 | `TransformOp` | 组变换操作描述 |
@@ -52,6 +54,7 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | `ServerParticleHandler` | 服务端 tick 事件处理（推进引擎 + 动画调度器） |
 | `AnimationSyncService` | .pdraw 文件同步服务 |
 | `AnimationSyncConfigTask` | 配置阶段文件同步任务 |
+| `TextureSyncService` | 程序化贴图下发（登记即广播 + 进服补发） |
 | `DynamicLightCleanup` | 动态光源清理 |
 
 ### core.client —— 客户端渲染
@@ -62,11 +65,12 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | `TrackBuffer` | track 的逐 tick 插值缓冲（按到达顺序排队、每 tick 消费一条、缺包原地保持） |
 | `RenderParticle` | 渲染粒子状态（缓动 + 速度积分 + 欧拉旋转） |
 | `BridgeParticle` | 桥接原版粒子系统的渲染代理（纯色方块 / 自定义贴图 + UV 采样；v17 非广告牌粒子按自转四元数固定朝向） |
-| `TextureCache` | 内嵌贴图缓存（PNG 字节 → DynamicTexture） |
+| `TextureCache` | 贴图缓存（PNG 字节 / 内置形状像素 → DynamicTexture），带版本号供晚到贴图重解析 |
 | `ClientAnimationManager` | 客户端 .pdraw 动画播放管理 |
 | `AudioStreamPlayer` | 游戏内音频播放（OpenAL 队列流式 + OGG/WAV 解码 + 采样级精确 seek 重灌 + 漂移校正，主线程驱动） |
 | `ClientAnimationProgramManager` | 编排动画程序解释器：指令流本地求值、实体通道、公式模式（客户端自驱） |
 | `ClientAnimationSyncManager` | 配置阶段文件接收管理 |
+| `ClientTextureSyncManager` | 程序化贴图接收（分块累积 → 解码注册）、重载与换服清理 |
 | `ParticleRenderHandler` | 客户端 tick 事件处理 |
 
 ### core.network —— 网络层
@@ -88,6 +92,8 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | `ParticleAttachPayload` | 实体锚点包：只在挂载时下发一次，客户端本地解析位置 |
 | `PlayAnimationPayload` / `StopAnimationPayload` / `VariableUpdatePayload` | 动画播放控制包 |
 | `AnimationSyncBegin/File/Done/Request Payload` | 配置阶段文件同步包 |
+| `ParticleTexturePayload` | 程序化贴图内容块（按 id 分块下发） |
+| `ParticleVisualCodec` | 生成载荷里的外观字段编解码（只写非默认字段；贴图按 id 引用） |
 | `StreamCodecs` | 编解码工具 |
 
 ### lighting —— 动态光照

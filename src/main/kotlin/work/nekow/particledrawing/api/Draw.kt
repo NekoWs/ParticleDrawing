@@ -30,11 +30,15 @@ fun interface ColorSource {
 }
 
 // 创建粒子形状的绘图工具，每个方法返回 ParticleGroup，可立即链式动画（fadeIn / spin / movePath 等）。
-// 通用参数：colorFn 渐变着色、scale 缩放、stagger 逐粒子入场延迟、group 复用已有组。
+// 通用参数：colorFn 渐变着色、scale 缩放、stagger 逐粒子入场延迟、group 复用已有组、
+// visual 外观规格（贴图/柔边形状/各向异性/朝向/加色/免光照，见 ParticleVisual）。
 @Suppress("unused")
 object Draw {
 
     private const val DEFAULT_SCALE = 1f
+
+    /** 两端细/渐隐时的端部尺寸系数（1 = 不细）。 */
+    private const val TAPER_MIN = 0.25
 
     // —— 低级绘制：单粒子 / 自由曲线 ——
 
@@ -46,16 +50,10 @@ object Draw {
     fun dot(
         manager: ParticleManager, pos: Vec3,
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
-        group: ParticleGroup? = null
+        group: ParticleGroup? = null, visual: ParticleVisual = ParticleVisual()
     ): ParticleGroup {
         val g = group ?: manager.createGroup(pos)
-        manager.create()
-            .position(pos)
-            .color(colorFn.colorAt(0.0))
-            .scale(scale)
-            .lifetime(-1)
-            .group(g.id)
-            .spawn()
+        spawnInto(manager, g, pos, colorFn.colorAt(0.0), scale, visual)
         return g
     }
 
@@ -65,13 +63,15 @@ object Draw {
      * @param start   起点
      * @param end     终点
      * @param count   线段上的粒子数量
+     * @param taper   为 true 时沿线从细到粗（起点最细）
      */
     @JvmStatic
     @JvmOverloads
     fun line(
         manager: ParticleManager, start: Vec3, end: Vec3, count: Int,
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
-        stagger: Int = 0, group: ParticleGroup? = null
+        stagger: Int = 0, group: ParticleGroup? = null,
+        visual: ParticleVisual = ParticleVisual(), taper: Boolean = false
     ): ParticleGroup {
         val g = group ?: manager.createGroup(start.add(end).scale(0.5))
         val dir = end.subtract(start)
@@ -79,7 +79,7 @@ object Draw {
 
         for (i in 0 until count) {
             val t = if (count > 1) i.toDouble() / (count - 1) else 0.5
-            place(manager, g, start.add(dir.scale(t)), colorFn.colorAt(t), scale, i, stagger)
+            place(manager, g, start.add(dir.scale(t)), colorFn.colorAt(t), scale, t, visual, taper, i, stagger)
         }
         return g
     }
@@ -89,20 +89,79 @@ object Draw {
      *
      * @param posFunc 接收 t ∈ [0, 1] 并返回世界坐标的函数
      * @param steps   采样点数
+     * @param taper   为 true 时沿曲线从细到粗
      */
     @JvmStatic
     @JvmOverloads
     fun curve(
         manager: ParticleManager, posFunc: (Double) -> Vec3, steps: Int,
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
-        stagger: Int = 0, group: ParticleGroup? = null
+        stagger: Int = 0, group: ParticleGroup? = null,
+        visual: ParticleVisual = ParticleVisual(), taper: Boolean = false
     ): ParticleGroup {
         val first = posFunc(0.0)
         val last = posFunc(1.0)
         val g = group ?: manager.createGroup(first.add(last).scale(0.5))
         for (i in 0 until steps) {
             val t = i.toDouble() / steps.coerceAtLeast(1)
-            place(manager, g, posFunc(t), colorFn.colorAt(t), scale, i, stagger)
+            place(manager, g, posFunc(t), colorFn.colorAt(t), scale, t, visual, taper, i, stagger)
+        }
+        return g
+    }
+
+    /**
+     * 折线 / 光束：**每段一颗**沿线段躺好的贴图四边形，一条调用画完一条丝。
+     *
+     * 与「一排小方块」是两种画法：丝的观感来自贴图（默认用内置 [ParticleStyle.LINE]：两端渐隐、上下柔边），
+     * 所以 40 颗小方块能干的事这里 1 颗就够（也就不用往上堆密度）。
+     *
+     * 每段：长轴 = 段长（世界格）、短轴 = [thickness]（世界格），朝向由线段方向定（非广告牌）。
+     *
+     * @param points    折线顶点（至少 2 个；相邻重合的点自动跳过）
+     * @param thickness 线粗（世界格整宽；想更精细用 [ParticleVisual] 自己拼）
+     * @param taper     为 true 时整条线两端收细，且未指定 [texture] 时用内置线段贴图
+     * @param texture   贴图名（[ParticleManager.registerTexture] 登记过或 [ParticleStyle] 内置名）；null = 用内置线段贴图（taper 时）
+     * @param additive  加法混合（辉光溢出）
+     * @param glowing   免光照（全亮）
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun polyline(
+        manager: ParticleManager, points: List<Vec3>,
+        thickness: Float = 0.1f, taper: Boolean = true, texture: String? = null,
+        additive: Boolean = false, glowing: Boolean = false,
+        colorFn: ColorSource = ColorSource.of(Color.WHITE),
+        stagger: Int = 0, group: ParticleGroup? = null
+    ): ParticleGroup {
+        val first = points.firstOrNull() ?: return manager.createGroup(Vec3.ZERO)
+        val last = points.last()
+        val g = group ?: manager.createGroup(first.add(last).scale(0.5))
+        if (points.size < 2) return g
+
+        // 累计弧长：taper 的端部收细按整条折线的位置算，不是每段各自算
+        var total = 0.0
+        for (i in 0 until points.size - 1) total += points[i].distanceTo(points[i + 1])
+
+        var arc = 0.0
+        var index = 0
+        for (i in 0 until points.size - 1) {
+            val a = points[i]
+            val b = points[i + 1]
+            val len = a.distanceTo(b)
+            if (len < 1.0000E-4) continue
+            val mid = arc + len / 2.0
+            val t = if (total > 0.0) mid / total else 0.0
+            arc += len
+
+            val width = (thickness * taperFactor(taper, sin(PI * t.coerceIn(0.0, 1.0)))).toFloat()
+            val look = ParticleVisual()
+            if (texture != null) look.texture(texture) else if (taper) look.style(ParticleStyle.LINE)
+            look.anisoWorld(len.toFloat(), width)
+            look.alignTo(a, b)
+            look.additive(additive)
+            look.glowing(glowing)
+
+            placeVisual(manager, g, a.add(b).scale(0.5), colorFn.colorAt(t), look, index++, stagger)
         }
         return g
     }
@@ -122,14 +181,15 @@ object Draw {
         manager: ParticleManager, center: Vec3,
         radius: Double, count: Int, axis: Axis = Axis.XZ,
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
-        stagger: Int = 0, group: ParticleGroup? = null
+        stagger: Int = 0, group: ParticleGroup? = null, visual: ParticleVisual = ParticleVisual()
     ): ParticleGroup {
         val g = group ?: manager.createGroup(center)
         for (i in 0 until count) {
             val angle = 2.0 * PI * i / count
             val u = cos(angle) * radius
             val v = sin(angle) * radius
-            place(manager, g, axisPoint(center, axis, u, v), colorFn.colorAt(i.toDouble() / count), scale, i, stagger)
+            val t = i.toDouble() / count
+            place(manager, g, axisPoint(center, axis, u, v), colorFn.colorAt(t), scale, t, visual, false, i, stagger)
         }
         return g
     }
@@ -146,7 +206,7 @@ object Draw {
         manager: ParticleManager, center: Vec3,
         radius: Double, perimeterCount: Int, layers: Int, axis: Axis = Axis.XZ,
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
-        stagger: Int = 0, group: ParticleGroup? = null
+        stagger: Int = 0, group: ParticleGroup? = null, visual: ParticleVisual = ParticleVisual()
     ): ParticleGroup {
         val g = group ?: manager.createGroup(center)
         var placed = 0
@@ -158,7 +218,8 @@ object Draw {
                 val u = cos(angle) * r
                 val v = sin(angle) * r
                 place(manager, g, axisPoint(center, axis, u, v),
-                    colorFn.colorAt(layer.toDouble() / maxOf(1, layers)), scale, placed++, stagger)
+                    colorFn.colorAt(layer.toDouble() / maxOf(1, layers)), scale,
+                    layer.toDouble() / maxOf(1, layers), visual, false, placed++, stagger)
             }
         }
         return g
@@ -176,7 +237,7 @@ object Draw {
         manager: ParticleManager, center: Vec3, radius: Double, segmentsPerEdge: Int = 30,
         rotationOffset: Double = 0.0, axis: Axis = Axis.XZ,
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
-        stagger: Int = 0, group: ParticleGroup? = null
+        stagger: Int = 0, group: ParticleGroup? = null, visual: ParticleVisual = ParticleVisual()
     ): ParticleGroup {
         val g = group ?: manager.createGroup(center)
         var placed = 0
@@ -187,8 +248,9 @@ object Draw {
                 val t = j.toDouble() / segmentsPerEdge
                 val x = (cos(a1) * (1 - t) + cos(a2) * t) * radius
                 val z = (sin(a1) * (1 - t) + sin(a2) * t) * radius
+                val prog = placed.toDouble() / (segmentsPerEdge * 3)
                 place(manager, g, axisPoint(center, axis, x, z),
-                    colorFn.colorAt(placed.toDouble() / (segmentsPerEdge * 3)), scale, placed++, stagger)
+                    colorFn.colorAt(prog), scale, prog, visual, false, placed++, stagger)
             }
         }
         return g
@@ -208,11 +270,11 @@ object Draw {
         colorFn1: ColorSource = ColorSource.of(Color.WHITE),
         colorFn2: ColorSource = ColorSource.of(Color.WHITE),
         scale: Float = DEFAULT_SCALE,
-        stagger: Int = 0, group: ParticleGroup? = null
+        stagger: Int = 0, group: ParticleGroup? = null, visual: ParticleVisual = ParticleVisual()
     ): ParticleGroup {
         val g = group ?: manager.createGroup(center)
-        triangle(manager, center, radius, segmentsPerEdge, 0.0, axis, colorFn1, scale, stagger, g)
-        triangle(manager, center, radius, segmentsPerEdge, PI / 3.0, axis, colorFn2, scale, stagger, g)
+        triangle(manager, center, radius, segmentsPerEdge, 0.0, axis, colorFn1, scale, stagger, g, visual)
+        triangle(manager, center, radius, segmentsPerEdge, PI / 3.0, axis, colorFn2, scale, stagger, g, visual)
         return g
     }
 
@@ -229,7 +291,7 @@ object Draw {
         width: Double, height: Double, particlesPerAxis: Int = 15,
         hollow: Boolean = false, axis: Axis = Axis.XZ,
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
-        stagger: Int = 0, group: ParticleGroup? = null
+        stagger: Int = 0, group: ParticleGroup? = null, visual: ParticleVisual = ParticleVisual()
     ): ParticleGroup {
         val g = group ?: manager.createGroup(center)
         val sp = maxOf(width, height) / (particlesPerAxis.coerceAtLeast(2) - 1)
@@ -248,7 +310,7 @@ object Draw {
                     Axis.XY -> Vec3(u, v, center.z)
                     Axis.YZ -> Vec3(center.x, u, v)
                 }
-                place(manager, g, pos, colorFn.colorAt(t), scale, placed++, stagger)
+                place(manager, g, pos, colorFn.colorAt(t), scale, t, visual, false, placed++, stagger)
             }
         }
         return g
@@ -266,7 +328,7 @@ object Draw {
     fun sphere(
         manager: ParticleManager, center: Vec3, radius: Double, count: Int,
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
-        stagger: Int = 0, group: ParticleGroup? = null
+        stagger: Int = 0, group: ParticleGroup? = null, visual: ParticleVisual = ParticleVisual()
     ): ParticleGroup {
         val g = group ?: manager.createGroup(center)
         val phi = PI * (3.0 - sqrt(5.0))
@@ -277,7 +339,7 @@ object Draw {
             val x = cos(theta) * r * radius
             val z = sin(theta) * r * radius
             place(manager, g, Vec3(center.x + x, center.y + y * radius, center.z + z),
-                colorFn.colorAt((1.0 - y) / 2.0), scale, i, stagger)
+                colorFn.colorAt((1.0 - y) / 2.0), scale, (1.0 - y) / 2.0, visual, false, i, stagger)
         }
         return g
     }
@@ -295,7 +357,7 @@ object Draw {
         width: Double, height: Double, depth: Double,
         particlesPerAxis: Int = 12, hollow: Boolean = true,
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
-        stagger: Int = 0, group: ParticleGroup? = null
+        stagger: Int = 0, group: ParticleGroup? = null, visual: ParticleVisual = ParticleVisual()
     ): ParticleGroup {
         val g = group ?: manager.createGroup(center)
         val step = particlesPerAxis.coerceAtLeast(2)
@@ -312,7 +374,8 @@ object Draw {
                 for (iz in 0..nz) {
                     val z = center.z - depth / 2 + iz * sp
                     if (hollow && ix > 0 && ix < nx && iy > 0 && iy < ny && iz > 0 && iz < nz) continue
-                    place(manager, g, Vec3(x, y, z), colorFn.colorAt(placed.toDouble() / total), scale, placed++, stagger)
+                    val t = placed.toDouble() / total
+                    place(manager, g, Vec3(x, y, z), colorFn.colorAt(t), scale, t, visual, false, placed++, stagger)
                 }
             }
         }
@@ -321,29 +384,65 @@ object Draw {
 
     // —— 内部工具 ——
 
-    /** 放置一个粒子；[index] × [stagger] 大于 0 时调度延迟出现（波浪入场）。 */
+    /** 端部收细系数：taper 时 [TAPER_MIN]（端部）→ 1（最粗处）。 */
+    private fun taperFactor(taper: Boolean, shape: Double): Double =
+        if (taper) TAPER_MIN + (1.0 - TAPER_MIN) * shape.coerceIn(0.0, 1.0) else 1.0
+
+    /**
+     * 放置一个粒子；[index] × [stagger] 大于 0 时调度延迟出现（波浪入场）。
+     * [taper] 打开时按 [t] 从细到粗（同时作用于标量 scale 与外观里的各向异性尺寸）。
+     */
     private fun place(
         manager: ParticleManager, group: ParticleGroup, pos: Vec3,
-        color: Color, scale: Float, index: Int, stagger: Int
+        color: Color, scale: Float, t: Double, visual: ParticleVisual,
+        taper: Boolean, index: Int, stagger: Int
     ) {
+        val f = taperFactor(taper, if (taper) t else 1.0).toFloat()
+        val look = if (taper && visual.hasAniso()) {
+            visual.copy().also { it.scaleW *= f; it.scaleH *= f }
+        } else {
+            visual
+        }
+        val s = scale * f
         if (stagger <= 0 || index == 0) {
-            spawnInto(manager, group, pos, color, scale)
+            spawnInto(manager, group, pos, color, s, look)
             return
         }
         AnimationScheduler.schedule(index * stagger) {
-            spawnInto(manager, group, pos, color, scale)
+            spawnInto(manager, group, pos, color, s, look)
         }
     }
 
-    private fun spawnInto(manager: ParticleManager, group: ParticleGroup, pos: Vec3, color: Color, scale: Float) {
-        manager.create()
+    /** 不需要 taper 的图元走的简写（t 恒 1）。 */
+    private fun placeVisual(
+        manager: ParticleManager, group: ParticleGroup, pos: Vec3,
+        color: Color, visual: ParticleVisual, index: Int, stagger: Int
+    ) {
+        if (stagger <= 0 || index == 0) {
+            spawnInto(manager, group, pos, color, 1f, visual)
+            return
+        }
+        AnimationScheduler.schedule(index * stagger) {
+            spawnInto(manager, group, pos, color, 1f, visual)
+        }
+    }
+
+    private fun spawnInto(
+        manager: ParticleManager, group: ParticleGroup, pos: Vec3,
+        color: Color, scale: Float, visual: ParticleVisual
+    ) {
+        val builder = manager.create()
             .position(pos)
             .color(color)
             .scale(scale)
             .lifetime(-1)
             .group(group.id)
             .offsetFromPivot(pos.subtract(group.pivot)) // 组变换（旋转/缩放）依赖该偏移
-            .spawn()
+        // 默认外观（纯白方块、不发光）不带 specs：省掉每颗粒子一份对象拷贝
+        if (!visual.isPristine()) {
+            builder.visual(visual).glowing(visual.glowing).lightLevel(visual.lightLevel)
+        }
+        builder.spawn()
     }
 
     /** 平面坐标 → 世界坐标：把平面内 (u, v) 放到以 [c] 为中心的对应平面。 */

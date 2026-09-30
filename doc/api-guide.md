@@ -102,9 +102,11 @@ fun demo(manager: ParticleManager, center: Vec3) {
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
 | `colorFn` | `ColorSource` | 沿形状参数 t ∈ [0,1] 渐变着色（默认纯白） |
-| `scale` | `Float` | 粒子大小（默认 0.5） |
+| `scale` | `Float` | 粒子大小（编辑器单位，默认 1） |
 | `stagger` | `Int` | 逐粒子入场延迟（tick），实现波浪式出现（默认 0 = 全部同时出现） |
 | `group` | `ParticleGroup?` | 复用已有组而非新建（默认 null） |
+| `visual` | `ParticleVisual` | 外观规格：贴图 / 柔边形状 / 各向异性 / 朝向 / 加色 / 免光照（默认纯白方块） |
+| `taper` | `Boolean` | 只在 `line` / `curve` / `polyline` 上：沿线从细到粗、两端渐隐（默认 false） |
 
 ### 形状一览
 
@@ -137,6 +139,33 @@ Draw.rect(m, center, width = 6.0, height = 4.0, hollow = true)
 // 球体（默认彩虹渐变）/ 长方体
 Draw.sphere(m, center, radius = 3.0, count = 400)
 Draw.cuboid(m, center, width = 6.0, height = 6.0, depth = 6.0, hollow = true)
+
+// 折线 / 光束：每段一颗沿线段躺好的贴图，一条调用画完一条丝
+Draw.polyline(m, listOf(a, b, c, d), thickness = 0.12f, additive = true, glowing = true)
+```
+
+### 用贴图与柔边形状（`visual` / `taper`）
+
+程序化粒子的默认外观是**纯白硬边方块**。要柔边圆点、丝线、辉光，就把外观规格交给 `visual`：
+
+```kotlin
+import work.nekow.particledrawing.api.ParticleStyle
+import work.nekow.particledrawing.api.ParticleVisual
+
+// 柔边圆点：黑核 / 能量球 / 薄雾的底色（内置形状，客户端就地生成，零带宽）
+Draw.sphere(m, center, 1.2, count = 120,
+    visual = ParticleVisual().style(ParticleStyle.SOFT_DOT).additive(true).glowing(true))
+
+// 柔边点阵排成一条丝：比硬方块拼的连续得多，也不用堆密度
+Draw.line(m, a, b, count = 24, scale = 0.4f,
+    visual = ParticleVisual().style(ParticleStyle.SOFT_DOT), taper = true)
+
+// 一条丝 = 一颗粒子（内置线段贴图：两端渐隐、上下柔边，长轴自动对齐线段方向）
+Draw.polyline(m, points, thickness = 0.1f, taper = true, additive = true, glowing = true)
+
+// 自己登记的贴图（见「贴图登记与下发」），并按世界格给尺寸
+Draw.polyline(m, points, thickness = 0.2f, texture = "mymod:bolt", additive = true)
+Draw.circle(m, center, 3.0, 60, visual = ParticleVisual().texture("mymod:glass").uv(0f, 0f, 32f, 32f))
 ```
 
 ### 波浪入场（stagger）
@@ -380,6 +409,65 @@ handle.lightLevel(7)
 handle.moveInstant(pos)
 handle.remove()
 ```
+
+### 外观：贴图 / UV / 各向异性 / 朝向 / 加色
+
+外观是**生成时定死**的：只在 `spawn()` 那一次同步给客户端，之后不产生任何逐 tick 开销（要换外观就销毁重生成）。
+Builder 上每个设置都有对应方法，也可以直接递一整份 `ParticleVisual`：
+
+```kotlin
+// 柔边圆点 + 免光照 + 加法混合
+manager.create().position(p).scale(0.5f).lifetime(60)
+    .style(ParticleStyle.SOFT_DOT)   // 内置形状（SQUARE 是默认的纯白方块）
+    .glowing(true)
+    .additive(true)                  // 亮部叠亮、有溢出感
+    .spawn()
+
+// 一张丝线：长轴沿线段躺好，长 = 3 格，粗 = 0.1 格
+manager.create().position(mid).lifetime(40)
+    .texture("mymod:bolt")
+    .scaleWorld(3.0f, 0.1f)          // 世界格整宽/整高（不随贴图尺寸放大）
+    .alignTo(a, b)                   // 长轴对齐 a→b（会关掉广告牌，否则自转不生效）
+    .additive(true)
+    .spawn()
+
+// 图集里取一格（贴图像素坐标）+ 自己给朝向
+manager.create().position(p).uv(16f, 0f, 32f, 16f)
+    .texture("mymod:sheet")
+    .billboard(false)                // 朝向固定（世界 +Z 起算）
+    .spin(Math.PI / 3)               // 平面内 60°（弧度）；三轴版本 spin(rx, ry, rz)
+    .spawn()
+
+// 逐粒子生成延迟：spawn 立刻返回句柄，粒子推迟 20 tick 才真正出现
+manager.create().position(p).delay(20).spawn()
+```
+
+**尺寸口径**（`scale` 与各向异性都按这两条之一算）：
+
+| 入口 | 单位 | 换算 |
+| --- | --- | --- |
+| `scale(Float)` / `scale(w, h)` | 编辑器单位 | 渲染**整宽** = 值 × 0.2 格 × 贴图尺寸系数 |
+| `scaleWorld(w, h)` | 世界格 | 直接就是整宽/整高（`Draw.polyline` 用的就是它） |
+
+「贴图尺寸系数」= 贴图取景框最长边 / 16（`uv` 时的取景框就是那个子矩形）。所以：
+16px 的贴图系数为 1（内置形状都是 16px），32px 的贴图会把尺寸放大到 2 倍——
+想精确控制世界尺寸就一律用 `scaleWorld`。
+
+**贴图登记与下发**（`ParticleManager.registerTexture`）：
+
+```kotlin
+// 模组初始化或特效第一次触发时都行；幂等（同名同图只登记一次）
+ParticleManager.registerTexture("mymod:glow", pngBytes)   // 字节上限 1 MiB
+```
+
+登记后字节会**自动同步到客户端**：单机与自带客户端就地解码，专用服务器在玩家进服时补发、
+运行中新登记的立即广播。逐粒子载荷只写贴图 id（不写名字），所以 5 万颗粒子共用一张贴图
+也只多 1 字节/颗。**没登记过的名字不会丢粒子**，只是渲染成纯白方块。
+
+内置形状不必登记：`ParticleStyle.SOFT_DOT` / `LINE` 两端各自生成同一份像素；
+需要提前确认可用时调 `ParticleManager.registerBuiltinTextures()`。
+
+`ParticleVisual` 是可变的链式对象：多颗粒子想共用一份外观再各改一点时用 `copy()`。
 
 ### 逐 tick 跟随与力驱动
 
@@ -759,3 +847,7 @@ fun ripples(m: ParticleManager, c: Vec3, waves: Int) {
 4. **无限动画要停止**：无限模式（`durationTicks = -1` / `cycles = -1`）的 spin/pulse 会一直占用 tick 与带宽，记得用 `stopContinuous()` 或让组 `fadeOut()`/`destroyAfter()` 收尾；组销毁会自动取消其全部持续动画。
 5. **stagger 与组查询**：`stagger > 0` 时粒子是陆续出现的，期间 `group.size()` 会逐步增长。
 6. **Java 调用**：所有带默认参数的方法均生成 `@JvmOverloads` 重载；lambda 用 `ColorSource` 接口实现。
+7. **外观不热改**：贴图 / UV / 各向异性 / 朝向 / 加色都在生成那一次定死（这是「零逐 tick 开销」的前提），
+   中途只能改颜色、缩放标量、位置、发光等级；确实要换外观就 `remove()` 后重新生成。
+8. **延迟生成的粒子**：`delay(n)` 期间它在 PD 侧还不存在，句柄上的操作一律无效，
+   也读不到权威位置；`ParticleBatch` 会把延迟成员留到到点（不会误摘），但到点后仍不存在就按普通已失效成员出列。

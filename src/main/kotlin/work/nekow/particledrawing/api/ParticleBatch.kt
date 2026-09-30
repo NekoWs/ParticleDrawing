@@ -15,6 +15,7 @@ import java.util.UUID
  * - 位置与速度一律读 PD 的权威值（[ParticleHandle.position] / [ParticleHandle.velocity]），
  *   调用方不必自己维护 id ↔ 状态表；
  * - PD 侧已过期/已销毁的成员，在下次操作时自动出列（[evictDead]），对调用方透明；
+ *   延迟生成（[ParticleHandle.Builder.delay]）的成员在到点前**不算已死**，不会被摘掉；
  * - [trackAll] / [setVelocityAll] / [applyForceAll] 都是一次网络包覆盖全组（每成员一个向量，
  *   按登记顺序对应）；每 tick 都要重算的力用 [applyForceAll] 一包发完，不必逐粒子发包。
  *
@@ -29,6 +30,7 @@ class ParticleBatch(private val manager: ParticleManager) {
         sendVelocities = { ids, velocities -> manager.setVelocityAll(ids, velocities) },
         sendForces = { ids, accelerations, ticks -> manager.applyForceAll(ids, accelerations, ticks) },
         destroy = { it.remove() },
+        isPending = { it.isPending() },
     )
 
     /** 登记一个已有粒子（`Builder.spawn()` 的返回值可直接传入；null 忽略）。 */
@@ -142,6 +144,7 @@ internal class BatchCore<T>(
     private val sendVelocities: (List<UUID>, List<Vec3>) -> Int,
     private val sendForces: (List<UUID>, List<Vec3>, Int) -> Int,
     private val destroy: (T) -> Unit,
+    private val isPending: (T) -> Boolean = { false },
 ) {
 
     private val members = ArrayList<T>()
@@ -165,12 +168,13 @@ internal class BatchCore<T>(
 
     fun isEmpty(): Boolean = size() == 0
 
-    /** 摘掉权威状态读不到的成员（PD 侧已过期/已销毁）。 */
+    /** 摘掉权威状态读不到的成员（PD 侧已过期/已销毁）；延迟生成中（[isPending]）的成员保留。 */
     fun evictDead(): Int {
         var removed = 0
         val it = members.iterator()
         while (it.hasNext()) {
-            if (stateOf(it.next()) == null) {
+            val member = it.next()
+            if (stateOf(member) == null && !isPending(member)) {
                 it.remove()
                 removed++
             }
@@ -180,7 +184,7 @@ internal class BatchCore<T>(
 
     fun track(member: T, pos: Vec3) {
         if (stateOf(member) == null) {
-            members.remove(member)
+            if (!isPending(member)) members.remove(member)
             return
         }
         sendPositions(listOf(idOf(member)), listOf(pos))
@@ -246,7 +250,7 @@ internal class BatchCore<T>(
         for (member in members.toList()) {
             val state = stateOf(member)
             if (state == null) {
-                members.remove(member)
+                if (!isPending(member)) members.remove(member)
                 continue
             }
             if (predicate(member, state.first, state.second)) {
