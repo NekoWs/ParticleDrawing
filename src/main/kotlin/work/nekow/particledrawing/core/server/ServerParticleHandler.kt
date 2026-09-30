@@ -75,6 +75,8 @@ object ServerParticleHandler {
         (event.entity as? ServerPlayer)?.let {
             ServerAnimationManager.syncPlaybacksToPlayer(it)
             ServerEffectManager.syncPlaybacksToPlayer(it)
+            // 程序化贴图：登记通常发生在任何人进服之前，进服时补发一遍（客户端按名幂等）
+            TextureSyncService.sendAll(it)
         }
     }
 }

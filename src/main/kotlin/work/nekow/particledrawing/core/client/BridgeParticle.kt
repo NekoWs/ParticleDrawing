@@ -13,6 +13,8 @@ import net.minecraft.util.Mth
 import org.joml.Quaternionf
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.api.ParticleVisual
+import work.nekow.particledrawing.util.VisualMath
 import java.util.UUID
 
 // 连接渲染粒子与 Minecraft 粒子系统的桥接粒子，把自定义粒子的位置/颜色/缩放同步进原版渲染管线。
@@ -36,8 +38,12 @@ class BridgeParticle(
     // flipbook 计时起点（墙钟，与编辑器 performance.now()/1000 语义一致）
     private val animStartNanos: Long = System.nanoTime()
 
-    // 贴图大小缩放因子：使用用户设置的 texSize / 16（基准 16px），用于控制贴图粒子的显示尺寸
-    private val texScale: Float = computeTexScale()
+    // 贴图大小缩放因子：使用用户设置的 texSize / 16（基准 16px），用于控制贴图粒子的显示尺寸。
+    // 贴图可能晚于粒子到货（运行时登记），到货后重解析时它要跟着更新，所以是 var。
+    private var texScale: Float = ParticleVisual.texScale(uv)
+
+    // 上次解析时的贴图表版本：版本一变（有新贴图注册/缓存被清）就重解析
+    private var seenTexVersion: Int = TextureCache.version()
 
     // 非均匀缩放：局部 X 轴（长）/ Y 轴（宽）两个半宽，单位 Minecraft 块
     private var scaleW: Float = 0f
@@ -73,11 +79,17 @@ class BridgeParticle(
         return orientQ
     }
 
-    /** 计算贴图大小缩放因子（使用用户设置的 texSize，基准 16px，越大粒子越大）。 */
-    private fun computeTexScale(): Float {
-        val u = uv ?: return 1f
-        val maxDim = maxOf(u.texSize[0], u.texSize[1])
-        return if (maxDim > 0) maxDim / 16f else 1f
+    /**
+     * 贴图晚于粒子到货（运行时登记的新贴图）时就地重解析：
+     * 错过这一步，生成时还没登记的粒子会永远停在纯白方块上。
+     */
+    private fun refreshTextureIfStale() {
+        val version = TextureCache.version()
+        if (version == seenTexVersion) return
+        seenTexVersion = version
+        texEntry = resolveTexture()
+        texScale = ParticleVisual.texScale(uv)
+        layerCache = null
     }
 
     init {
@@ -107,6 +119,8 @@ class BridgeParticle(
     fun setUv(uv: UvData?) {
         this.uv = uv
         this.texEntry = resolveTexture()
+        this.texScale = ParticleVisual.texScale(uv)
+        this.seenTexVersion = TextureCache.version()
         this.layerCache = null
     }
 
@@ -217,6 +231,7 @@ class BridgeParticle(
     private var layerTranslucent = false
 
     override fun getLayer(): Layer {
+        refreshTextureIfStale()
         val translucent = additive || alpha < 1.0f
         val cached = layerCache
         if (cached != null && translucent == layerTranslucent) return cached
@@ -345,7 +360,7 @@ class BridgeParticle(
          * 原版 quad 顶点把 scale 当「半宽」使用（±scale），而编辑器 aSize 是整宽，
          * 因此这里取编辑器 PARTICLE_SIZE_FACTOR(0.2) 的一半，使最终整宽一致。
          */
-        const val EDITOR_TO_MC_SCALE: Float = 0.1f
+        const val EDITOR_TO_MC_SCALE: Float = VisualMath.EDITOR_TO_MC_SCALE
 
         /**
          * 自转欧拉（度）→ 四元数写入 [out]。local = intrinsic XYZ（Rx·Ry·Rz）；world = extrinsic（Rz·Ry·Rx）。

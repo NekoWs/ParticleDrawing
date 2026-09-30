@@ -4,7 +4,12 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.level.Level
 import net.minecraft.world.phys.Vec3
+import net.neoforged.api.distmarker.Dist
+import net.neoforged.fml.loading.FMLEnvironment
+import work.nekow.particledrawing.core.TextureRegistry
+import work.nekow.particledrawing.core.client.ClientTextureSyncManager
 import work.nekow.particledrawing.core.server.ServerParticleEngine
+import work.nekow.particledrawing.core.server.TextureSyncService
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.*
 
@@ -109,6 +114,44 @@ class ParticleManager private constructor(val level: ServerLevel) {
                 throw IllegalArgumentException("ParticleManager requires a ServerLevel")
             }
             return ParticleManager(level)
+        }
+
+        /**
+         * 登记一张程序化粒子用的贴图（PNG 字节）。
+         *
+         * 登记后按名字引用：`manager.create().texture("mymod:glow")`，配套子矩形 UV 用
+         * [ParticleHandle.Builder.uv]。可随时调用（模组初始化、特效第一次触发都行），幂等：
+         * 同名重复登记按第一次的生效。
+         *
+         * 字节会**自动同步到客户端**——单机与自带客户端直接就地解码，专用服务器在玩家进服时补发。
+         * 名字未知或没登记过的贴图，客户端渲染成纯白方块（**不丢粒子**）。
+         *
+         * @param name 贴图名（建议带自己的命名空间，如 "primalspells:soft_glow"；≤256 字符）
+         * @param pngBytes PNG 字节（≤1 MiB）
+         * @return 名字/数据合法且已登记为 true；重复登记同名也是 true
+         */
+        @JvmStatic
+        fun registerTexture(name: String, pngBytes: ByteArray): Boolean {
+            val entry = TextureRegistry.register(name, pngBytes) ?: return false
+            // 本机就是客户端（单机 / 自带客户端）：就地解码，不必绕一趟网络
+            if (FMLEnvironment.getDist() == Dist.CLIENT) {
+                ClientTextureSyncManager.loadLocal(entry.name, pngBytes)
+            }
+            // 服务端：推给在线玩家；还没进服的玩家由 TextureSyncService.sendAll 在进服时补
+            TextureSyncService.broadcast(entry)
+            return true
+        }
+
+        /**
+         * 注册全部内置形状贴图（[ParticleStyle]）。
+         *
+         * 其实**不必显式调用**：内置形状在第一次被引用时就地生成（客户端）或按固定 id 引用（两端约定）。
+         * 需要提前确认贴图存在（比如自己按下标取 UV）时调它。
+         */
+        @JvmStatic
+        fun registerBuiltinTextures() {
+            if (FMLEnvironment.getDist() != Dist.CLIENT) return
+            ClientTextureSyncManager.ensureBuiltins()
         }
     }
 }

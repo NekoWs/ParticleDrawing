@@ -6,6 +6,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.api.ParticleVisual
 import java.util.UUID
 
 /**
@@ -19,6 +20,7 @@ import java.util.UUID
  * @param groupId 所属组 ID，可为 null
  * @param glowing 是否发光
  * @param lightLevel 发光粒子向外发出的光照等级 (0-15)
+ * @param visual 生成时定死的外观（贴图 / UV / 各向异性 / 朝向 / 加色）；null = 默认外观
  */
 @Suppress("unused")
 data class ParticleSpawnPayload(
@@ -29,7 +31,8 @@ data class ParticleSpawnPayload(
     val lifetime: Int,
     val groupId: UUID?,
     val glowing: Boolean,
-    val lightLevel: Int
+    val lightLevel: Int,
+    val visual: ParticleVisual? = null,
 ) : CustomPacketPayload {
 
     companion object {
@@ -55,7 +58,8 @@ data class ParticleSpawnPayload(
                     val gid = StreamCodecs.readNullableUUID(buf)
                     val glw = buf.readBoolean()
                     val light = buf.readVarInt()
-                    return ParticleSpawnPayload(pid, x, y, z, r, g, b, a, scale, lifetime, gid, glw, light)
+                    val visual = ParticleVisualCodec.read(buf)
+                    return ParticleSpawnPayload(pid, x, y, z, r, g, b, a, scale, lifetime, gid, glw, light, visual)
                 }
 
                 override fun encode(buf: FriendlyByteBuf, p: ParticleSpawnPayload) {
@@ -72,6 +76,7 @@ data class ParticleSpawnPayload(
                     StreamCodecs.writeNullableUUID(buf, p.groupId)
                     buf.writeBoolean(p.glowing)
                     buf.writeVarInt(p.lightLevel)
+                    ParticleVisualCodec.write(buf, p.visual)
                 }
             }
     }

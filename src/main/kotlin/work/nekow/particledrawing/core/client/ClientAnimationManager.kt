@@ -312,13 +312,15 @@ object ClientAnimationManager {
         CameraController.detach()
     }
 
-    /** 重载所有正在播放动画的内嵌贴图（/pdraw reload 使用）。 */
+    /** 重载所有正在播放动画的内嵌贴图与已登记的程序化贴图（/pdraw reload 使用）。 */
     @JvmStatic
     fun reloadTextures() {
         TextureCache.clear()
         for ((_, entry) in entries) {
             preloadTextures(entry.animation)
         }
+        // 程序化贴图（registerTexture 登记的）也一并重载，别让一次 reload 把它们清没了
+        ClientTextureSyncManager.reloadAll()
     }
 
     /** 每客户端 tick 推进所有动画并同步渲染。 */

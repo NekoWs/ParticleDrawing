@@ -7,6 +7,7 @@ import net.minecraft.world.entity.Entity
 import net.minecraft.world.phys.Vec3
 import net.neoforged.neoforge.network.PacketDistributor
 import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.network.ParticleDestroyPayload
@@ -46,21 +47,26 @@ class ServerParticleEngine(
     private var visibilityTickCounter = 0
     private var lastCapacityWarnNanos = 0L
 
-    /** 生成粒子并广播到视野内可见的玩家；达到维度上限时返回 null。 */
+    /**
+     * 生成粒子并广播到视野内可见的玩家；达到维度上限时返回 null。
+     *
+     * [id] 由调用方给（[work.nekow.particledrawing.api.ParticleHandle.Builder] 先分配再可能延迟生成）；
+     * [visual] 是生成时定死的外观规格。
+     */
     @Suppress("DataFlowIssue")
-    fun spawnParticle(position: Vec3, color: Color,
+    fun spawnParticle(id: UUID, position: Vec3, color: Color,
                       scale: Float, lifetime: Int, groupId: UUID?,
                       glowing: Boolean, lightLevel: Int, offsetFromPivot: Vec3?,
-                      playersInDimension: Collection<ServerPlayer>): ParticleData? {
+                      playersInDimension: Collection<ServerPlayer>,
+                      visual: ParticleVisual? = null): ParticleData? {
         val maxTotal = ParticleDrawingConfig.SERVER.maxParticlesPerDimension.get()
         if (particles.size >= maxTotal) {
             warnWhenOverCapacity()
             return null
         }
 
-        val id = UUID.randomUUID()
         val data = ParticleData.create(id, position, color, scale,
-            lifetime, groupId, glowing, lightLevel, offsetFromPivot)
+            lifetime, groupId, glowing, lightLevel, offsetFromPivot, visual)
         particles[id] = data
 
         if (groupId != null) {
@@ -70,7 +76,7 @@ class ServerParticleEngine(
         val payload = ParticleSpawnPayload(
             id, position.x, position.y, position.z,
             color.r, color.g, color.b, color.a,
-            scale, lifetime, groupId, glowing, lightLevel
+            scale, lifetime, groupId, glowing, lightLevel, visual
         )
 
         broadcastSpawn(playersInDimension, position, id, payload)
@@ -648,7 +654,8 @@ class ServerParticleEngine(
             data.id,
             data.position().x, data.position().y, data.position().z,
             data.color().r, data.color().g, data.color().b, data.color().a,
-            data.scale(), data.lifetime(), data.groupId, data.glowing(), data.lightLevel()
+            data.scale(), data.lifetime(), data.groupId, data.glowing(), data.lightLevel(),
+            data.visual()
         )
     }
 

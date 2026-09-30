@@ -2,9 +2,12 @@ package work.nekow.particledrawing.core.network
 
 import net.minecraft.world.phys.Vec3
 import net.neoforged.neoforge.network.handling.IPayloadContext
+import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.core.client.ClientAnimationManager
 import work.nekow.particledrawing.core.client.ClientAnimationSyncManager
 import work.nekow.particledrawing.core.client.ClientParticleEngine
+import work.nekow.particledrawing.core.client.ClientTextureSyncManager
+import work.nekow.particledrawing.core.client.TextureCache
 
 /**
  * 客户端数据包处理器，将各类数据包分发到 [ClientParticleEngine] 的对应方法。
@@ -13,13 +16,35 @@ internal object ClientPayloadHandler {
 
     fun handleSpawn(payload: ParticleSpawnPayload, context: IPayloadContext) {
         context.enqueueWork {
+            val visual = payload.visual
+            // 贴图 + 子矩形 → 渲染用 UV（贴图没到货时按名回落，UV 尺寸仍按请求的取景框算）
+            val entry = visual?.texture?.let { TextureCache.get(it) }
+            val uv = visual?.toUvData(entry?.width ?: 0, entry?.height ?: 0)
+            val spin = if (visual != null && !visual.billboard) {
+                doubleArrayOf(visual.spinXDeg, visual.spinYDeg, visual.spinZDeg)
+            } else {
+                ClientParticleEngine.ZERO_SPIN
+            }
             ClientParticleEngine.instance()?.spawnParticle(
                 payload.particleId,
                 payload.x, payload.y, payload.z,
                 payload.r, payload.g, payload.b, payload.a,
                 payload.scale, payload.lifetime,
-                payload.groupId, payload.glowing, payload.lightLevel
+                payload.groupId, payload.glowing, payload.lightLevel,
+                uv,
+                visual?.billboard ?: true,
+                spin,
+                visual?.spinLocal ?: true,
+                visual?.additive ?: false,
+                visual?.resolvedAniso(payload.scale, ParticleVisual.texScale(uv)),
             )
+        }
+    }
+
+    /** 程序化贴图内容块：按 id 累积，收齐后解码注册。 */
+    fun handleTexture(payload: ParticleTexturePayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientTextureSyncManager.onChunk(payload)
         }
     }
 

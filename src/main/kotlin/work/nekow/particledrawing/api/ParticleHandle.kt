@@ -3,6 +3,7 @@ package work.nekow.particledrawing.api
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.server.AnimationScheduler
 import work.nekow.particledrawing.core.server.ParticleData
 import work.nekow.particledrawing.util.AttachMath
 import java.util.UUID
@@ -16,6 +17,21 @@ class ParticleHandle(
     val id: UUID,
     private val manager: ParticleManager
 ) {
+
+    // 延迟生成的到点 tick（Builder.delay）：到点前这颗粒子在 PD 侧还不存在
+    @Volatile
+    private var pendingDueTick: Long = 0
+
+    /**
+     * 是否处在「已登记延迟、还没真正生成」的窗口里。
+     * [ParticleBatch] 靠它别把延迟成员当已过期摘掉；到点之后无论生成成功与否都按普通成员处理。
+     */
+    fun isPending(): Boolean = pendingDueTick > 0 && AnimationScheduler.currentTick() < pendingDueTick
+
+    internal fun markPending(dueTick: Long) {
+        pendingDueTick = dueTick
+    }
+
     /**
      * 使用缓动将粒子移动到新位置。
      * @param target 目标位置
@@ -288,6 +304,9 @@ class ParticleHandle(
 
     /**
      * 用于通过流式 API 创建粒子的构建器。
+     *
+     * 外观（贴图 / UV / 各向异性尺寸 / 朝向 / 加色）一律**生成时定死**：PD 只在生成那一次把它同步给
+     * 客户端，不产生任何逐 tick 开销，之后也改不了。
      */
     @Suppress("unused")
     class Builder(private val manager: ParticleManager) {
@@ -300,6 +319,12 @@ class ParticleHandle(
         private var glowing: Boolean = false
         private var lightLevel: Int = 15
         private var offsetFromPivot: Vec3 = Vec3.ZERO
+        private var delayTicks: Int = 0
+
+        // 外观规格按需创建：不碰外观的粒子（绝大多数）一个对象都不多分配
+        private var visualSpec: ParticleVisual? = null
+
+        private fun spec(): ParticleVisual = visualSpec ?: ParticleVisual().also { visualSpec = it }
 
         /** 设置粒子位置。 */
         fun position(pos: Vec3) = apply { this.position = pos }
@@ -322,8 +347,17 @@ class ParticleHandle(
             this.color = Color.ofInt(r, g, b, a)
         }
 
-        /** 设置粒子缩放。 */
+        /** 设置粒子缩放（各向同性，编辑器单位：渲染整宽 = 值 × 0.2 格 × 贴图尺寸系数）。 */
         fun scale(scale: Float) = apply { this.scale = scale }
+
+        /**
+         * 设置各向异性缩放（编辑器单位）：长轴 [w]（四边形局部 X）、短轴 [h]（局部 Y）。
+         * 任何一轴给 0 表示那一轴沿用 [scale]。要按世界格给尺寸用 [scaleWorld]。
+         */
+        fun scale(w: Float, h: Float) = apply { spec().aniso(w, h) }
+
+        /** 设置各向异性缩放（**世界格整宽/整高**）：与贴图尺寸无关，`Draw.polyline` 这类几何用它。 */
+        fun scaleWorld(w: Float, h: Float) = apply { spec().anisoWorld(w, h) }
 
         /**
          * 设置粒子生命周期（单位 tick）。-1 表示永存。
@@ -352,17 +386,77 @@ class ParticleHandle(
         }
 
         /**
+         * 用整张贴图（名字先经 [ParticleManager.registerTexture] 或 [ParticleStyle] 登记）。
+         * 没登记过的名字不会丢粒子，只是渲染成纯白方块。
+         */
+        fun texture(name: String) = apply { spec().texture(name) }
+
+        /** 用内置形状（[ParticleStyle.SQUARE] 等于清掉贴图）。 */
+        fun style(style: ParticleStyle) = apply { spec().style(style) }
+
+        /** 取贴图的子矩形 UV（贴图像素，顺序 u0, v0, u1, v1）；取样框同时决定渲染尺寸系数。 */
+        fun uv(u0: Float, v0: Float, u1: Float, v1: Float) = apply { spec().uv(u0, v0, u1, v1) }
+
+        /** 广告牌开关：false = 朝向固定（世界 +Z 起算），此时 [spin] / [alignTo] 才生效。 */
+        fun billboard(enabled: Boolean) = apply { spec().billboard(enabled) }
+
+        /** 绕四边形法线（局部 Z）转 [radians] 弧度；[spinLocal] = false 时按世界轴外旋。 */
+        @JvmOverloads
+        fun spin(radians: Double, spinLocal: Boolean = true) = apply { spec().spin(radians, spinLocal) }
+
+        /** 三轴自转（弧度）。 */
+        @JvmOverloads
+        fun spin(radiansX: Double, radiansY: Double, radiansZ: Double, spinLocal: Boolean = true) =
+            apply { spec().spin(radiansX, radiansY, radiansZ, spinLocal) }
+
+        /**
+         * 把长轴对齐到 `to - from` 方向（一条丝沿线段躺好）；会一并关掉广告牌。
+         * 配合 [scale] 的两参版本 / [scaleWorld] 用。
+         */
+        fun alignTo(from: Vec3, to: Vec3) = apply { spec().alignTo(from, to) }
+
+        /** 加法混合开关：亮部叠亮、有溢出感（参考图那种「光溢出来」靠它）。 */
+        fun additive(enabled: Boolean) = apply { spec().additive(enabled) }
+
+        /** 直接给一整份外观规格（会拷贝一份，之后改原对象不影响本颗粒子）。 */
+        fun visual(visual: ParticleVisual) = apply { this.visualSpec = visual.copy() }
+
+        /**
+         * 逐粒子生成延迟（tick）：生成请求推迟这么多 tick 才真正发出去。
+         *
+         * 用来「一条指令铺出分批出现」的粒子；与 [Draw] 的 `stagger` 是同一套调度器，
+         * 区别是这里按颗调度、[Draw] 按图元序号调度。
+         *
+         * 注意：延迟期间这颗粒子在 PD 侧还不存在——[spawn] 返回的句柄上的操作全部无效，
+         * 也**不要**在这之前把它登记进 [ParticleBatch]（成员会被当成已死而摘掉）。
+         */
+        fun delay(ticks: Int) = apply { this.delayTicks = ticks }
+
+        /**
          * 生成粒子并返回句柄以供后续控制。
+         *
+         * 带 [delay] 时只登记延迟任务，粒子的实际生成（含维度上限检查）在到点那一刻发生。
+         *
          * @return 生成粒子的句柄；因达到维度粒子上限被拒绝时为 null
          */
         fun spawn(): ParticleHandle? {
             val engine = manager.getEngine()
-            val data = engine.spawnParticle(
-                position, color, scale, lifetime,
-                groupId, glowing, lightLevel, offsetFromPivot,
-                manager.getPlayers()
-            ) ?: return null
-            return ParticleHandle(data.id, manager)
+            val id = UUID.randomUUID()
+            val players = manager.getPlayers()
+            val spec = visualSpec
+
+            if (delayTicks > 0) {
+                val due = AnimationScheduler.currentTick() + delayTicks.coerceAtLeast(1)
+                AnimationScheduler.schedule(delayTicks) {
+                    engine.spawnParticle(id, position, color, scale, lifetime,
+                        groupId, glowing, lightLevel, offsetFromPivot, players, spec)
+                }
+                return ParticleHandle(id, manager).also { it.markPending(due) }
+            }
+
+            engine.spawnParticle(id, position, color, scale, lifetime,
+                groupId, glowing, lightLevel, offsetFromPivot, players, spec) ?: return null
+            return ParticleHandle(id, manager)
         }
     }
 }

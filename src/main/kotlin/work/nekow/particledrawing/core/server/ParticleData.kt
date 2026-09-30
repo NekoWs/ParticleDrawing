@@ -2,6 +2,7 @@ package work.nekow.particledrawing.core.server
 
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.util.AttachMath
 import java.util.UUID
 
@@ -17,7 +18,8 @@ class ParticleData(
     val groupId: UUID?,
     private var glowing: Boolean,
     private var lightLevel: Int,
-    private var offsetFromPivot: Vec3 = Vec3.ZERO
+    private var offsetFromPivot: Vec3 = Vec3.ZERO,
+    private val visual: ParticleVisual? = null,
 ) {
 
     private var velocity: Vec3 = Vec3.ZERO
@@ -39,6 +41,9 @@ class ParticleData(
     fun glowing(): Boolean = glowing
     fun lightLevel(): Int = lightLevel
     fun offsetFromPivot(): Vec3 = offsetFromPivot
+
+    /** 生成时定死的外观规格（贴图 / UV / 各向异性 / 朝向 / 加色）；null = 默认外观。 */
+    fun visual(): ParticleVisual? = visual
     fun velocity(): Vec3 = velocity
     fun hasVelocity(): Boolean = velocity.x != 0.0 || velocity.y != 0.0 || velocity.z != 0.0
     fun hasActiveForce(): Boolean = accelTicks != 0
@@ -150,9 +155,9 @@ class ParticleData(
         fun create(id: UUID, position: Vec3,
                    color: Color, scale: Float, lifetime: Int,
                    groupId: UUID?, glowing: Boolean, lightLevel: Int,
-                   offsetFromPivot: Vec3?): ParticleData {
+                   offsetFromPivot: Vec3?, visual: ParticleVisual? = null): ParticleData {
             return ParticleData(id, position, color, scale, lifetime, lifetime,
-                groupId, glowing, lightLevel, offsetFromPivot ?: Vec3.ZERO)
+                groupId, glowing, lightLevel, offsetFromPivot ?: Vec3.ZERO, visual)
         }
     }
 
