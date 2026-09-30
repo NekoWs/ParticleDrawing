@@ -26,8 +26,8 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.floor
 
 // 客户端动画程序运行时：解释 AnimInstruction 指令流并直写渲染。
-// 组级状态（pivot/pathOffset/pulseMul/fade 因子）+ 粒子级 rel 快照；旋转类指令按「快照 + 总角度」重算，无累积误差。
-// 表达式模式每 tick×每粒子求值，输出世界绝对坐标。
+// 组级状态（pivot/pathOffset/scaleMul/pulseMul/fade 因子）+ 粒子级相对轴心的偏移 rel。
+// 旋转按「每帧增量」累加到 rel 上，所以 spin 与 rotate 互相叠加（见 RotationSlot）；表达式模式每 tick×每粒子求值，输出世界绝对坐标。
 @EventBusSubscriber(modid = ParticleDrawing.MODID, value = [Dist.CLIENT])
 internal object ClientAnimationProgramManager {
 
@@ -80,8 +80,8 @@ internal object ClientAnimationProgramManager {
     /** 指令槽位：首用快照。 */
     private class Slot(val ins: AnimInstruction) {
         var applied = false
-        var snapRel: Map<UUID, Vec3>? = null          // 旋转类：应用前各粒子 rel
         var snapPathOffset: Vec3 = Vec3.ZERO          // 平移类：应用前组位移
+        val rotation = RotationSlot()                 // 旋转类：角度累加账本
     }
 
     private class Program(
@@ -101,7 +101,7 @@ internal object ClientAnimationProgramManager {
         // 组级动画状态
         var pathOffset: Vec3 = Vec3.ZERO
         var pulseMul = 1f
-        var scaleMul = 1f                              // ScaleBy 累积倍率
+        var scaleMul = 1f                              // ScaleBy 当前倍率（作用于视觉尺寸与粒子到轴心的距离）
         var recolor: Recolor? = null
         var fadeInStart = -1L; var fadeInDur = 0; var fadeInEase = EasingType.EASE_OUT
         var fadeOutStart = -1L; var fadeOutDur = 0; var fadeOutEase = EasingType.EASE_IN
@@ -449,7 +449,10 @@ internal object ClientAnimationProgramManager {
 
             val alpha = (aBase * fadeIn * (1f - fadeOut)).coerceIn(0f, 1f)
             val scale = (st.baseScale * p.scaleMul * p.pulseMul).coerceAtLeast(0.001f)
-            engine.applyProgramFrame(uuid, pivot.apply(p.pathOffset.add(st.rel)), r, g, b, alpha, scale)
+            engine.applyProgramFrame(
+                uuid, pivot.apply(p.pathOffset.add(radialRel(st.rel, p.scaleMul, p.pulseMul))),
+                r, g, b, alpha, scale,
+            )
         }
     }
 
@@ -491,8 +494,6 @@ internal object ClientAnimationProgramManager {
         if (!slot.applied) {
             slot.applied = true
             when (ins) {
-                is AnimInstruction.RotateOnce, is AnimInstruction.Spin ->
-                    slot.snapRel = p.states.mapValues { it.value.rel }
                 is AnimInstruction.Translate, is AnimInstruction.MovePath ->
                     slot.snapPathOffset = p.pathOffset
                 else -> {}
@@ -535,14 +536,14 @@ internal object ClientAnimationProgramManager {
 
             is AnimInstruction.RotateOnce -> {
                 val angle = ins.radians * eased(ins.easing, progress(local, ins.durationMs))
-                rotateToSnapshot(p, slot, ins.axis, angle)
+                applyRotation(p, slot, ins.axis, angle)
             }
 
             is AnimInstruction.Spin -> {
                 val effective = if (p.continuousFrozenMs != null)
                     (p.continuousFrozenMs!! - start).coerceAtLeast(0)
                 else (now - start).coerceAtLeast(0)
-                rotateToSnapshot(p, slot, ins.axis, ins.radiansPerMs * effective.toDouble())
+                applyRotation(p, slot, ins.axis, ins.radiansPerMs * effective.toDouble())
             }
 
             is AnimInstruction.Pulse -> {
@@ -565,13 +566,15 @@ internal object ClientAnimationProgramManager {
         }
     }
 
-    private fun rotateToSnapshot(p: Program, slot: Slot, axis: Vec3, angleTotal: Double) {
-        val snaps = slot.snapRel ?: return
+    /**
+     * 旋转增量落地：每帧只把「本指令应达到的总角度」与「已写入角度」之差叠加到各粒子 rel 上。
+     * 于是多条旋转指令互相叠加（后一条不会把前一条的角度覆盖掉），一次性旋转的缓动按帧增量平滑推进。
+     */
+    private fun applyRotation(p: Program, slot: Slot, axis: Vec3, angleTotal: Double) {
+        val delta = slot.rotation.take(angleTotal)
+        if (delta == 0.0) return
         val nAxis = axis.normalize()
-        for ((uuid, base) in snaps) {
-            val st = p.states[uuid] ?: continue
-            st.rel = base.rotateAround(nAxis, angleTotal)
-        }
+        for (st in p.states.values) st.rel = st.rel.rotateAround(nAxis, delta)
     }
 
     private fun samplePath(points: List<Vec3>, t: Float): Vec3 {
