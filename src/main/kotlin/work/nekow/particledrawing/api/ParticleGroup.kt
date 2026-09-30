@@ -22,6 +22,7 @@ import java.util.UUID
  * 组级变换也表达不了「每粒子沿各自轨迹运动」。
  *
  * delay 推进时间线游标（累积、不清零）；defineEntity/expression 提供实体句柄与表达式能力。
+ * 程序下发之后录制的指令按「**从现在起**」读（见 [delay]），所以长寿组可以在运行期再追加一段动画。
  *
  * **轴心语义（组级变换都绕它算）**：轴心是**程序级状态**，由 [setPivot] / [followEntity] 绑定，
  * 绑定一次就对**其后**的 [rotate] / [spin] / [scale] / [pulse] 全部生效，直到下一次绑定。
@@ -33,6 +34,11 @@ import java.util.UUID
  * ```
  *
  * 轴心绑定到实体后是**活的**（跟随位置，`local = true` 时连朝向一起），组内各粒子保持相对轴心的偏移。
+ * 这个轴心同时是 **arm 基准**：客户端按「成员生成位置 − 轴心」反算各粒子的相对偏移，
+ * 所以 [move] / [movePath] **不会**改它——平移只作用于渲染位置，不参与相对偏移的换算。
+ *
+ * **旋转可叠加**：多条 [rotate] / [spin] 的角度是累加的（后一条不会覆盖前一条的相位），
+ * 于是「先自转一阵、再补一段一次性旋转、继续自转」能接得上（见 [rotate]）。
  */
 @Suppress("unused")
 class ParticleGroup(
@@ -49,6 +55,9 @@ class ParticleGroup(
 
     /** 程序是否已随粒子清单下发（后续走增量 append）。 */
     private var armed = false
+
+    /** 游标 → 程序时刻的换算（增量追加按「从现在起」读）。 */
+    private val clock = GroupClock()
 
     /** 实体注册表与初始变量。 */
     private val entityBindings = ArrayList<EntityBinding>()
@@ -74,8 +83,9 @@ class ParticleGroup(
     // —— 基础 ——
 
     /**
-     * 设置变换轴心（固定坐标）。**粘性**：一直生效到下一次 [setPivot] / [followEntity]，
-     * 之后所有 [rotate] / [spin] / [scale] / [pulse] 都绕它算。
+     * 设置变换轴心（固定坐标），同时作为 **arm 基准**（客户端按「成员生成位置 − 轴心」反算相对偏移）。
+     * **粘性**：一直生效到下一次 [setPivot] / [followEntity]，之后所有 [rotate] / [spin] / [scale] / [pulse]
+     * 都绕它算。[move] / [movePath] 不会改它。
      */
     fun setPivot(pivot: Vec3): ParticleGroup {
         this.pivot = pivot
@@ -93,6 +103,7 @@ class ParticleGroup(
      *
      * 同样是**粘性**的：绑定之后的 [rotate] / [spin] / [scale] / [pulse] 都绕/相对它算，
      * 「跟随持有者 + 持续自转」就是本方法 + [spin] 的顺序（顺序反了只会绕固定点转）。
+     * 绑定即改 arm 基准，所以**铺成员与绑定的先后**决定相对偏移的换算基准：先绑定再铺成员最直观。
      *
      * @param uuid 目标实体 UUID
      * @param offset 相对实体位置（脚底）的偏移
@@ -125,6 +136,10 @@ class ParticleGroup(
     /**
      * 把时间线游标向前推进 [ticks]：之后链式调用的动画方法都在新游标时刻触发。
      * 游标累积、不清零——连续两个动画共享同一时刻（如停转与淡出同刻）。
+     *
+     * **增量追加时读作「从现在起」**：程序已下发之后再录制的指令，其时刻按「录制那一刻 + 本会话已 delay 的时长」
+     * 换算（见 [GroupClock]）。所以长寿组跑了一阵子之后 `delay(1).fadeOut(5)` 就是「1 tick 后开始、5 tick 淡完」，
+     * 而不是因为游标落在过去而瞬间完成。全量重发（成员变化触发）会把时间轴重新从那一刻起算。
      */
     fun delay(ticks: Int): ParticleGroup {
         cursorMs += ticks.coerceAtLeast(0) * 50
@@ -133,39 +148,54 @@ class ParticleGroup(
 
     private fun cursorNow(): Int = cursorMs
 
-    /** 录制一条指令并触发下发。 */
-    private fun emit(ins: AnimInstruction) {
+    /**
+     * 录制一条指令并立即下发，返回它在程序时刻轴上的位置（供定时销毁对齐）。
+     * 指令在发送时才按当前会话换算时刻，因此没发出去的指令（如组里还没有成员）不会被错误地提前换算。
+     */
+    private fun emit(ins: AnimInstruction): Int {
+        val now = manager.level.gameTime
+        if (!armed) clock.onProgramStart(now)
+        val at = clock.programTime(ins.startMs, now)
         instructions.add(ins)
-        flush()
+        flush(now)
+        return at
     }
 
     /** 首次全量下发；其后增量追加。 */
-    private fun flush() {
+    private fun flush(nowTick: Long) {
         val players = manager.getPlayers()
         // 锚点必须与 level.gameTime 同源：客户端用它对齐自己的 level.gameTime，
         // 消除双端时钟漂移（勿用进程级计数器——与存档 gameTime 不同源会让时间线整体错位）
-        val anchor = manager.level.gameTime
         if (!armed) {
             val members = manager.getEngine().getGroup(id)?.memberIds()?.toList()
             if (members.isNullOrEmpty()) {
                 LOGGER.warn("[ParticleDrawing] group {} has no members; animation program not sent", id)
                 return
             }
-            val batch = ArrayList(instructions)
+            val batch = instructions.map { it.shiftStartMs(clock.shiftMs) }
             instructions.clear()
             for (player in players) {
                 PacketDistributor.sendToPlayer(
                     player,
-                    AnimationProgramPayload(id, members, anchor, pivot, entityBindings.toList(), vars.toMap(), batch),
+                    AnimationProgramPayload(id, members, nowTick, pivot, entityBindings.toList(), vars.toMap(), batch),
                 )
             }
             armed = true
         } else if (instructions.isNotEmpty()) {
-            val batch = ArrayList(instructions)
+            val batch = instructions.map { it.shiftStartMs(clock.shiftMs) }
             instructions.clear()
             for (player in players) {
                 PacketDistributor.sendToPlayer(player, AnimationProgramAppendPayload(id, batch))
             }
+        }
+        clock.onEmit(nowTick, cursorMs)
+    }
+
+    /** 排一次组销毁：把程序时刻换算成「从此刻起」的 tick 数，避免把销毁推后一整段已运行时长。 */
+    private fun scheduleDestroy(programTimeMs: Int) {
+        AnimationScheduler.schedule(clock.ticksFromNow(programTimeMs, manager.level.gameTime)) {
+            manager.getEngine().destroyGroup(id, manager.getPlayers())
+            stopProgramOnClient(destroyParticles = false)
         }
     }
 
@@ -180,28 +210,21 @@ class ParticleGroup(
     }
 
     /**
-     * 淡出：整组透明度缓动到 0；结束后由服务端定时销毁整组。
+     * 淡出：整组透明度缓动到 0；[removeAfter] 为 true 时淡出结束（+250ms 余量）由服务端销毁整组，
+     * 销毁时刻按「本指令的程序时刻 + 时长」从**当下**起算，与客户端口径一致。
      */
     fun fadeOut(durationTicks: Int, removeAfter: Boolean = true, easing: EasingType = EasingType.EASE_IN): ParticleGroup {
-        emit(AnimInstruction.FadeOut(cursorMs, durationTicks * 50, easing))
-        if (removeAfter) {
-            AnimationScheduler.schedule(((cursorMs + durationTicks * 50 + 250) / 50).coerceAtLeast(1)) {
-                manager.getEngine().destroyGroup(id, manager.getPlayers())
-                stopProgramOnClient(destroyParticles = false) // 粒子已随 destroy 包移除，仅清程序
-            }
-        }
+        val at = emit(AnimInstruction.FadeOut(cursorMs, durationTicks * 50, easing))
+        if (removeAfter) scheduleDestroy(at + durationTicks * 50 + 250)
         return this
     }
 
     /**
      * 定时销毁整组（含所有粒子）。
-     * @param ticks 从当前游标时刻起再等多少 tick 销毁
+     * @param ticks 从当前时刻起再等多少 tick 销毁（增量追加时同 [delay]，读作「从现在起」）
      */
     fun destroyAfter(ticks: Int): ParticleGroup {
-        AnimationScheduler.schedule(((cursorMs + ticks * 50) / 50).coerceAtLeast(1)) {
-            manager.getEngine().destroyGroup(id, manager.getPlayers())
-            stopProgramOnClient(destroyParticles = false)
-        }
+        scheduleDestroy(clock.programTime(cursorMs, manager.level.gameTime) + ticks * 50)
         return this
     }
 
@@ -230,9 +253,11 @@ class ParticleGroup(
 
     // —— 一次性变换（有限时长指令） ——
 
-    /** 组平移。 */
+    /**
+     * 组平移。[delta] 只影响渲染位置（客户端 `pathOffset`），**不改轴心绑定**——
+     * 轴心（arm 基准）只由 [setPivot] / [followEntity] 决定，所以「铺完成员先 move 一下」不会把成员的相对偏移算歪。
+     */
     fun move(delta: Vec3, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
-        pivot = pivot.add(delta)
         emit(AnimInstruction.Translate(cursorMs, delta, durationTicks * 50, easing))
         return this
     }
@@ -245,6 +270,9 @@ class ParticleGroup(
     /**
      * 绕**当前轴心**一次性旋转（轴心见 [setPivot] / [followEntity]）。
      * 想绕实体转就先 `followEntity(...)` 再调本方法——**调用顺序就是语义**，本方法不接受轴心参数。
+     *
+     * 与 [spin] **叠加**：多条旋转指令的角度累加，后一条不会把前一条的相位覆盖掉。
+     * 于是「已经自转了一阵 → 再补一段一次性旋转 → 继续自转」能接得上（`durationTicks = 0` 即瞬时补相位）。
      */
     fun rotate(axis: Vec3, radians: Double, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
         emit(AnimInstruction.RotateOnce(cursorMs, axis, radians, durationTicks * 50, easing))
@@ -264,6 +292,7 @@ class ParticleGroup(
 
     /**
      * 相对**当前轴心**等比缩放：粒子到轴心的距离与视觉大小同乘 [ratio]（倍率语义，2f = 放大两倍）。
+     * 半径 3 的圆 `scale(3f)` 之后半径就是 9 —— 组级「胀开 / 缩回」一个调用就够，客户端本地求值、零带宽。
      * durationTicks=0 表示瞬时跳变。
      */
     fun scale(ratio: Float, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
@@ -274,7 +303,7 @@ class ParticleGroup(
     // —— 持续运动 ——
 
     /**
-     * 无限匀速旋转（绕**当前轴心**，同 [rotate]）；用 [stopContinuous] 停止。
+     * 无限匀速旋转（绕**当前轴心**，同 [rotate]，与其它旋转指令叠加）；用 [stopContinuous] 停止。
      *
      * 轴心是活的：先 [followEntity] 再本方法，就是「跟着实体转」——护盾一类「跟随持有者 + 自转」的写法。
      */
@@ -283,16 +312,15 @@ class ParticleGroup(
         return this
     }
 
-    /** 折线路径移动：从当前基准出发依次经过 [points]，[easing] 作用于全程进度。 */
+    /** 折线路径移动：从当前基准出发依次经过 [points]，[easing] 作用于全程进度。同 [move]，不改轴心绑定。 */
     fun movePath(points: List<Vec3>, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
         require(points.isNotEmpty()) { "movePath 至少需要一个途经点" }
-        pivot = points.last()
         emit(AnimInstruction.MovePath(cursorMs, points, durationTicks * 50, easing))
         return this
     }
 
     /**
-     * 呼吸脉冲：1× ↔ [peakRatio]× 往复（相对**当前轴心**缩放，同 [scale]）；[cycles] 负数无限。
+     * 呼吸脉冲：1× ↔ [peakRatio]× 往复（同样作用于粒子到轴心的距离与视觉大小）；[cycles] 负数无限。
      */
     fun pulse(peakRatio: Float, halfPeriodTicks: Int, cycles: Int = -1): ParticleGroup {
         emit(AnimInstruction.Pulse(cursorMs, peakRatio, halfPeriodTicks * 50, cycles))

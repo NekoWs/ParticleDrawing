@@ -12,7 +12,7 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | --- | --- |
 | `ParticleManager` | 维度级入口，创建粒子与粒子组；批量指令 `trackAll` / `setVelocityAll` / `applyForceAll` |
 | `ParticleHandle` | 单粒子句柄：移动 / 速度 / 力 / 实体锚点（`Entity`/`uuid`/`entityId` 三入口）/ 重着色 / 缩放 / 销毁，含流式 `Builder` 与 `position()`/`velocity()` 只读查询 |
-| `ParticleGroup` | 粒子组：编排式动画（客户端自驱程序：delay/fadeIn/spin/movePath/pulse/实体通道/公式指令）；组级变换绕**当前轴心**（`setPivot`/`followEntity` 绑定，先绑再转） |
+| `ParticleGroup` | 粒子组：编排式动画（客户端自驱程序：delay/fadeIn/spin/movePath/pulse/实体通道/公式指令）；组级变换绕**当前轴心**（`setPivot`/`followEntity` 绑定，先绑再转），缩放含半径、旋转可叠加、增量追加按「从现在起」 |
 | `ParticleBatch` | 程序化粒子集：成员逐 tick 增删、一次包批量下发位置/速度/力、按权威位置/速度条件回收、补齐到 N |
 | `Draw` | 绘图工具：点、线段、圆、圆盘、曲线、三角形、六芒星、矩形、球体、长方体；支持渐变着色与逐粒子入场 |
 | `ColorSource` | 形状参数化颜色来源：固定色 / 双色渐变 / 彩虹，支持 lambda |

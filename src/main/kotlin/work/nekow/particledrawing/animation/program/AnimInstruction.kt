@@ -110,6 +110,28 @@ sealed class AnimInstruction {
 
     protected abstract fun writeBody(buf: FriendlyByteBuf)
 
+    /**
+     * 平移时间线时刻：增量追加的指令由服务端按「从现在起」改写 startMs 时用
+     * （见 `ParticleGroup` 的时间轴换算）；[delta] 为 0 时原样返回。
+     */
+    fun shiftStartMs(delta: Int): AnimInstruction {
+        if (delta == 0) return this
+        return when (this) {
+            is FadeIn -> copy(startMs = startMs + delta)
+            is FadeOut -> copy(startMs = startMs + delta)
+            is Recolor -> copy(startMs = startMs + delta)
+            is ScaleBy -> copy(startMs = startMs + delta)
+            is Translate -> copy(startMs = startMs + delta)
+            is RotateOnce -> copy(startMs = startMs + delta)
+            is MovePath -> copy(startMs = startMs + delta)
+            is Spin -> copy(startMs = startMs + delta)
+            is Pulse -> copy(startMs = startMs + delta)
+            is StopContinuous -> copy(startMs = startMs + delta)
+            is BindPivot -> copy(startMs = startMs + delta)
+            is Expression -> copy(startMs = startMs + delta)
+        }
+    }
+
     companion object {
         fun read(buf: FriendlyByteBuf): AnimInstruction {
             val type = InstructionType.fromOrdinal(buf.readVarInt())

@@ -63,6 +63,17 @@ class AnimationProgramInstructionTest {
     }
 
     @Test
+    fun `指令平移时刻保留其余字段，且可逆`() {
+        val shifted = sample.map { it.shiftStartMs(1500) }
+
+        for ((i, ins) in shifted.withIndex()) {
+            assertEquals(sample[i].startMs + 1500, ins.startMs, "第 $i 条的时刻没平移")
+        }
+        assertEquals(sample, shifted.map { it.shiftStartMs(-1500) }, "平移必须可逆、不丢字段")
+        assertTrue(sample[0].shiftStartMs(0) === sample[0], "偏移为 0 时原样返回，不做无谓拷贝")
+    }
+
+    @Test
     fun `旋转指令的线上长度里没有轴心的位置`() {
         val buf = FriendlyByteBuf(Unpooled.buffer())
         AnimInstruction.Spin(100, Vec3(0.0, 1.0, 0.0), 0.02).write(buf)

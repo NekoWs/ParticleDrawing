@@ -202,9 +202,37 @@ group.recolor(Color.BLUE, durationTicks = 20)
 group.scale(ratio = 2f, durationTicks = 15)      // 相对当前轴心放大到 2 倍（半径与视觉大小同步翻倍）
 ```
 
-> `scale` 是**倍率**语义（2f = 两倍，0.5f = 一半）；`durationTicks = 0` 表示瞬时跳变，
-> 需要渐变过程请给足时长。`stopContinuous` 同样受 `delay` 游标控制：
-> `.spin(...).delay(100).stopContinuous()` = 转 100 tick 后停。
+> `scale` 是**倍率**语义（2f = 两倍，0.5f = 一半），且作用于**粒子到轴心的距离 + 视觉大小**——
+> 半径 3 的圆 `scale(3f)` 之后半径就是 9（组级「胀开 / 缩回」一个调用就够）；
+> `durationTicks = 0` 表示瞬时跳变，需要渐变过程请给足时长。
+> `move` / `movePath` 只改渲染位置，**不动轴心绑定**，所以「先铺形状、再录一段位移」不会把相对偏移算歪。
+> `stopContinuous` 同样受 `delay` 游标控制：`.spin(...).delay(100).stopContinuous()` = 转 100 tick 后停。
+
+### 旋转可叠加
+
+多条 `rotate` / `spin` 的角度是**累加**的（后一条不会覆盖前一条的相位），所以可以「先自转一阵、
+中途补一段一次性旋转、再继续自转」——`durationTicks = 0` 就是瞬时补相位：
+
+```kotlin
+group.spin(axis, radiansPerTick = 0.02)              // 一直转
+// ...跑了一阵之后想把相位挪到某处，并保持同样的角速度：
+group.rotate(axis, radians = Math.PI / 2, durationTicks = 0)   // 补 90°，不打断自转
+```
+
+### 增量追加：delay 读作「从现在起」
+
+程序下发之后再录制的指令，其时刻按**录制那一刻**换算（同一 tick 内连续录制算一次会话，
+会话里的 `delay` 依次累加）。于是长寿组可以在运行期再追加动画：
+
+```kotlin
+val g = manager.createGroup(pos)      // 建组、铺成员、录一段出场动画
+// ...100 tick 之后玩家收起法杖：
+g.delay(1).fadeOut(durationTicks = 5) // 1 tick 后开始、5 tick 淡完（不是「瞬间完成」）
+```
+
+`fadeOut(removeAfter = true)` 的销毁时刻与客户端用同一套换算，都是从**当下**起算，
+不会把销毁推后「已经跑过的时长」那么多 tick（旧的绝对游标口径会留下看不见但还活着的粒子）。
+成员变化触发的**全量重发**会把时间轴重新从那一刻起算。
 
 ### 生命周期
 
@@ -231,7 +259,7 @@ group.movePath(
     easing = EasingType.EASE_IN_OUT,
 )
 
-// 呼吸脉冲：当前缩放 ↔ 目标倍率往复（相对当前轴心）；cycles = -1 无限
+// 呼吸脉冲：1× ↔ 目标倍率往复（同样作用于半径与视觉大小）；cycles = -1 无限
 group.pulse(peakRatio = 1.8f, halfPeriodTicks = 20, cycles = 3)   // 呼吸到 1.8 倍再回原大
 ```
 
