@@ -467,6 +467,16 @@ ParticleManager.registerTexture("mymod:glow", pngBytes)   // 字节上限 1 MiB
 内置形状不必登记：`ParticleStyle.SOFT_DOT` / `LINE` 两端各自生成同一份像素；
 需要提前确认可用时调 `ParticleManager.registerBuiltinTextures()`。
 
+两个内置贴图的**实际可见尺寸比标称小一点**（边缘要柔化，就必然有一部分是半透明的）：
+
+| 形状 | 可见比例 | 用途 |
+| --- | --- | --- |
+| `SOFT_DOT` | 直径 ≈ 0.75 × 尺寸 | 密铺成实心球体（黑核 / 能量球）：间距 ≤ 0.3 × 直径就不会有方块感或空隙 |
+| `LINE` | 粗细 ≈ 0.7 × 尺寸，两端各 ≈ 0.2 × 长度渐隐 | 一条丝 = 一颗粒子；相邻段接缝处会略暗（正是「两端渐隐」的样子） |
+
+`doc/` 里的预览（跑测试时写到 `build/preview/`）就是这两张贴图与「黑核 + 丝线」合成的人眼复核图，
+调密度前可以先看一眼。
+
 `ParticleVisual` 是可变的链式对象：多颗粒子想共用一份外观再各改一点时用 `copy()`。
 
 ### 逐 tick 跟随与力驱动
