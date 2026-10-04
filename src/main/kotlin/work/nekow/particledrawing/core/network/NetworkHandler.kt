@@ -17,9 +17,10 @@ object NetworkHandler {
     @JvmStatic
     fun register(event: RegisterPayloadHandlersEvent) {
         // 载荷集合/字段变化即提升版本：新版客户端与服务端不会误配
-        val registrar: PayloadRegistrar = event.registrar("6")
+        val registrar: PayloadRegistrar = event.registrar("7")
 
         registrar.playToClient(ParticleSpawnPayload.TYPE, ParticleSpawnPayload.STREAM_CODEC, ClientPayloadHandler::handleSpawn)
+        registrar.playToClient(ParticleSpawnBatchPayload.TYPE, ParticleSpawnBatchPayload.STREAM_CODEC, ClientPayloadHandler::handleSpawnBatch)
         registrar.playToClient(ParticleUpdatePayload.TYPE, ParticleUpdatePayload.STREAM_CODEC, ClientPayloadHandler::handleUpdate)
         registrar.playToClient(ParticleDestroyPayload.TYPE, ParticleDestroyPayload.STREAM_CODEC, ClientPayloadHandler::handleDestroy)
         registrar.playToClient(AnimationProgramPayload.TYPE, AnimationProgramPayload.STREAM_CODEC, ClientPayloadHandler::handleProgram)
@@ -49,6 +50,11 @@ object NetworkHandler {
         registrar.playToClient(ClockSyncPayload.TYPE, ClockSyncPayload.STREAM_CODEC, ClientPayloadHandler::handleClockSync)
         registrar.playToClient(EffectDataPayload.TYPE, EffectDataPayload.STREAM_CODEC, ClientPayloadHandler::handleEffectData)
         registrar.playToServer(EffectRequestPayload.TYPE, EffectRequestPayload.STREAM_CODEC, ServerPayloadHandler::handleEffectRequest)
+
+        // 运行时发射器：声明一次 + 变更时更新（发射在客户端逐渲染帧发生）
+        registrar.playToClient(EmitterSpawnPayload.TYPE, EmitterSpawnPayload.STREAM_CODEC, ClientPayloadHandler::handleEmitterSpawn)
+        registrar.playToClient(EmitterUpdatePayload.TYPE, EmitterUpdatePayload.STREAM_CODEC, ClientPayloadHandler::handleEmitterUpdate)
+        registrar.playToClient(EmitterStopPayload.TYPE, EmitterStopPayload.STREAM_CODEC, ClientPayloadHandler::handleEmitterStop)
 
         // 动画文件同步（配置阶段）：客户端请求 → 服务器下发文件块 → 完成信号
         registrar.configurationToServer(AnimationSyncRequestPayload.TYPE, AnimationSyncRequestPayload.STREAM_CODEC, ServerPayloadHandler::handleSyncRequest)

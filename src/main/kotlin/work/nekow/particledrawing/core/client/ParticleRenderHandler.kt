@@ -61,8 +61,12 @@ object ParticleRenderHandler {
     fun onRenderFrame(event: RenderFrameEvent.Pre) {
         val partialTick = event.partialTick.getGameTimeDeltaPartialTick(false)
         ClientAnimationManager.frameTick(partialTick)
+        // 运行时发射器：按渲染帧（不是 tick）推进里程/时间，出现与淡出都是逐帧的
+        ClientEmitterManager.frameTick(partialTick)
 
         val engine = ClientParticleEngine.instance() ?: return
+        // 带寿命曲线的粒子：淡出/收缩逐帧刷新（只改颜色/缩放，不动插值端点）
+        engine.frameSyncCurves()
         DynamicLightManager.renderDynamicLights(engine)
     }
 
@@ -92,6 +96,8 @@ object ParticleRenderHandler {
             // 换关卡后 gameTime 从新世界重新计，旧值留着会误判成「本 tick 没走」
             lastLevelGameTime = Long.MIN_VALUE
             ClientAnimationManager.onClientLevelUnload()
+            // 发射器声明随旧关卡一起作废：服务端会在新维度补发
+            ClientEmitterManager.clearAll()
         }
     }
 

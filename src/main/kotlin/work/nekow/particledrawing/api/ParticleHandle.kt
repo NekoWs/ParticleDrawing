@@ -324,6 +324,15 @@ class ParticleHandle(
         // 外观规格按需创建：不碰外观的粒子（绝大多数）一个对象都不多分配
         private var visualSpec: ParticleVisual? = null
 
+        // 寿命曲线与首帧插值端点（同样按需创建）
+        private var lifeCurve: ParticleLifeCurve? = null
+        private var prevPosition: Vec3? = null
+        private var fadeOutTicks: Int = 0
+        private var fadeOutEasing: EasingType = EasingType.EASE_IN
+        private var shrinkTarget: Float = 1f
+        private var shrinkTicks: Int = 0
+        private var shrinkEasing: EasingType = EasingType.EASE_IN
+
         private fun spec(): ParticleVisual = visualSpec ?: ParticleVisual().also { visualSpec = it }
 
         /** 设置粒子位置。 */
@@ -429,8 +438,81 @@ class ParticleHandle(
          *
          * 注意：延迟期间这颗粒子在 PD 侧还不存在——[spawn] 返回的句柄上的操作全部无效，
          * 也**不要**在这之前把它登记进 [ParticleBatch]（成员会被当成已死而摘掉）。
+         * 延迟生成没有「上一 tick」可言，所以与 [prevPosition] 同用时后者不生效。
          */
         fun delay(ticks: Int) = apply { this.delayTicks = ticks }
+
+        /**
+         * 首帧插值端点：客户端渲染的第一帧从 [prev] 扫到 [position]（与 `track` 的段同语义，
+         * 原版按 partialTick 在两点之间插值）。
+         *
+         * 用于「服务端每 tick 采样、逐颗铺拖尾」：把上一 tick 的位置一起给出，尾巴就不会
+         * 比头部超前或落后一整 tick（不给的话粒子直接钉在本 tick 位置，高刷下能看出一个 tick 的错位）。
+         */
+        fun prevPosition(prev: Vec3) = apply { this.prevPosition = prev }
+
+        /** [prevPosition] 的分量重载。 */
+        fun prevPosition(x: Number, y: Number, z: Number) = apply {
+            this.prevPosition = Vec3(x.toDouble(), y.toDouble(), z.toDouble())
+        }
+
+        /**
+         * 给某个通道逐帧的外观乘数（寿命曲线）：通道值缺省 1.0，之后逐帧乘在颜色/缩放上。
+         * 时刻从**生成那一刻**算起（tick），段内用后一关键帧的缓动。
+         */
+        fun curve(channel: CurveChannel, keys: List<CurveKey>) = apply {
+            lifeCurve = (lifeCurve ?: ParticleLifeCurve.EMPTY).plus(ParticleCurve(channel, keys))
+        }
+
+        /** 直接给一条曲线。 */
+        fun curve(curve: ParticleCurve) = apply {
+            lifeCurve = (lifeCurve ?: ParticleLifeCurve.EMPTY).plus(curve)
+        }
+
+        /** 透明度曲线（乘数）。 */
+        fun alphaCurve(vararg keys: CurveKey) = curve(ParticleCurve.alpha(*keys))
+
+        /** 尺寸曲线（乘数；>1 变大、<1 缩小）。 */
+        fun sizeCurve(vararg keys: CurveKey) = curve(ParticleCurve.scale(*keys))
+
+        /** RGB 三条颜色曲线（乘数，逐通道给关键帧）。 */
+        fun colorCurve(red: List<CurveKey>, green: List<CurveKey>, blue: List<CurveKey>) = apply {
+            curve(ParticleCurve(CurveChannel.RED, red))
+            curve(ParticleCurve(CurveChannel.GREEN, green))
+            curve(ParticleCurve(CurveChannel.BLUE, blue))
+        }
+
+        /** 直接给整套寿命曲线（覆盖之前设的）。 */
+        fun lifeCurve(curve: ParticleLifeCurve) = apply { this.lifeCurve = curve }
+
+        /**
+         * 寿命最后 [ticks] tick 内淡出到透明（需要有限寿命，见 [lifetime]）。
+         * 密集拖尾用它代替「额外两个更新包」的 recolor，零逐帧带宽。
+         */
+        fun fadeOut(ticks: Int, easing: EasingType = EasingType.EASE_IN) = apply {
+            fadeOutTicks = ticks
+            fadeOutEasing = easing
+        }
+
+        /** 寿命最后 [ticks] tick 内缩到 [factor] 倍（需要有限寿命）。 */
+        fun shrinkTo(factor: Float, ticks: Int, easing: EasingType = EasingType.EASE_IN) = apply {
+            shrinkTarget = factor
+            shrinkTicks = ticks
+            shrinkEasing = easing
+        }
+
+        /** 把 [fadeOut] / [shrinkTo] 的糖按当前寿命展开成关键帧。 */
+        private fun resolvedLifeCurve(): ParticleLifeCurve? {
+            if (fadeOutTicks <= 0 && shrinkTicks <= 0) return lifeCurve
+            var out = lifeCurve ?: ParticleLifeCurve.EMPTY
+            if (fadeOutTicks > 0) {
+                out = out.plus(LifeCurveSugar.fadeOut(lifetime, fadeOutTicks, fadeOutEasing))
+            }
+            if (shrinkTicks > 0) {
+                out = out.plus(LifeCurveSugar.shrinkTo(lifetime, shrinkTarget, shrinkTicks, shrinkEasing))
+            }
+            return out
+        }
 
         /**
          * 生成粒子并返回句柄以供后续控制。
@@ -444,18 +526,20 @@ class ParticleHandle(
             val id = UUID.randomUUID()
             val players = manager.getPlayers()
             val spec = visualSpec
+            // fadeOut/shrinkTo 要靠寿命算关键帧：在这里（寿命已定）展开，无限寿命会在这里明确报错
+            val curve = resolvedLifeCurve()
 
             if (delayTicks > 0) {
                 val due = AnimationScheduler.currentTick() + delayTicks.coerceAtLeast(1)
                 AnimationScheduler.schedule(delayTicks) {
                     engine.spawnParticle(id, position, color, scale, lifetime,
-                        groupId, glowing, lightLevel, offsetFromPivot, players, spec)
+                        groupId, glowing, lightLevel, offsetFromPivot, players, spec, curve, null)
                 }
                 return ParticleHandle(id, manager).also { it.markPending(due) }
             }
 
             engine.spawnParticle(id, position, color, scale, lifetime,
-                groupId, glowing, lightLevel, offsetFromPivot, players, spec) ?: return null
+                groupId, glowing, lightLevel, offsetFromPivot, players, spec, curve, prevPosition) ?: return null
             return ParticleHandle(id, manager)
         }
     }

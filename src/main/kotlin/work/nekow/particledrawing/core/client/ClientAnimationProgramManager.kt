@@ -18,6 +18,7 @@ import work.nekow.particledrawing.api.WorldProp
 import work.nekow.particledrawing.animation.program.AnimInstruction
 import work.nekow.particledrawing.animation.program.EntityBinding
 import work.nekow.particledrawing.animation.program.PivotRef
+import work.nekow.particledrawing.core.DebugFlags
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.util.AttachMath
 import work.nekow.particledrawing.util.rotateAround
@@ -82,6 +83,7 @@ internal object ClientAnimationProgramManager {
         var applied = false
         var snapPathOffset: Vec3 = Vec3.ZERO          // 平移类：应用前组位移
         val rotation = RotationSlot()                 // 旋转类：角度累加账本
+        var driftScale = 0f                           // MoveEach：本帧的「沿各自偏移方向」倍率
     }
 
     private class Program(
@@ -163,12 +165,17 @@ internal object ClientAnimationProgramManager {
             }
         }
         if (p.states.isEmpty()) {
-            com.mojang.logging.LogUtils.getLogger().warn(
+            LOGGER.warn(
                 "[ParticleDrawing] program {} armed with zero known particles ({} ids); client spawn packets missing?",
                 programId, particleIds.size,
             )
+        } else if (verboseLogging()) {
+            LOGGER.info(
+                "[ParticleDrawing] program {} armed: {} particles, {} instructions, anchorOffset={}",
+                programId, p.states.size, p.slots.size + (if (p.expressionCode != null) 1 else 0), p.anchorOffset,
+            )
         } else {
-            com.mojang.logging.LogUtils.getLogger().info(
+            LOGGER.debug(
                 "[ParticleDrawing] program {} armed: {} particles, {} instructions, anchorOffset={}",
                 programId, p.states.size, p.slots.size + (if (p.expressionCode != null) 1 else 0), p.anchorOffset,
             )
@@ -176,6 +183,15 @@ internal object ClientAnimationProgramManager {
         for (ins in instructions) addInstruction(p, ins)
         programs[programId] = p
     }
+
+    /**
+     * arm 日志是否走 INFO（默认 false = DEBUG）：
+     * 生存模式实战里一次受击会 arm 几十个组，INFO 会把日志刷爆；排查时用
+     * [work.nekow.particledrawing.api.ParticleManager.setDebugLogging] 或客户端配置打开。
+     */
+    private fun verboseLogging(): Boolean =
+        DebugFlags.verboseProgramLogging ||
+            work.nekow.particledrawing.config.ParticleDrawingConfig.CLIENT.debugProgramLogging.get()
 
     fun append(programId: UUID, instructions: List<AnimInstruction>) {
         val p = programs[programId] ?: return
@@ -432,6 +448,10 @@ internal object ClientAnimationProgramManager {
 
         for (slot in p.slots) applySlot(p, slot, now)
 
+        // 逐成员各自方向的漂移倍率：多条 MoveEach 叠加（与旋转/缩放的累加口径一致）
+        var driftScale = 0f
+        for (slot in p.slots) driftScale += slot.driftScale
+
         val fadeIn = fadeFactor(p.fadeInStart, p.fadeInDur, p.fadeInEase, now, default = 1f)
         val fadeOut = fadeFactor(p.fadeOutStart, p.fadeOutDur, p.fadeOutEase, now, default = 0f)
         val rc = p.recolor
@@ -449,8 +469,11 @@ internal object ClientAnimationProgramManager {
 
             val alpha = (aBase * fadeIn * (1f - fadeOut)).coerceIn(0f, 1f)
             val scale = (st.baseScale * p.scaleMul * p.pulseMul).coerceAtLeast(0.001f)
+            val local = radialRel(st.rel, p.scaleMul, p.pulseMul)
+            // 沿各自偏移方向外移：方向用**当前**的 rel（跟着旋转一起转），幅度 = 倍率 × 偏移长度
+            val shifted = if (driftScale == 0f) local else local.add(st.rel.scale(driftScale.toDouble()))
             engine.applyProgramFrame(
-                uuid, pivot.apply(p.pathOffset.add(radialRel(st.rel, p.scaleMul, p.pulseMul))),
+                uuid, pivot.apply(p.pathOffset.add(shifted)),
                 r, g, b, alpha, scale,
             )
         }
@@ -561,6 +584,10 @@ internal object ClientAnimationProgramManager {
 
             is AnimInstruction.StopContinuous ->
                 if (p.continuousFrozenMs == null || p.continuousFrozenMs!! > now) p.continuousFrozenMs = now
+
+            is AnimInstruction.MoveEach -> {
+                slot.driftScale = ins.offsetScale * eased(ins.easing, progress(local, ins.durationMs))
+            }
 
             is AnimInstruction.Expression -> {} // 表达式由 addInstruction 分流，不进入糖指令槽
         }

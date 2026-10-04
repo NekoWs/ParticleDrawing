@@ -7,6 +7,8 @@ import net.minecraft.world.entity.Entity
 import net.minecraft.world.phys.Vec3
 import net.neoforged.neoforge.network.PacketDistributor
 import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.api.ParticleLifeCurve
+import work.nekow.particledrawing.api.ParticleSpawnSpec
 import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.easing.EasingType
@@ -17,6 +19,7 @@ import work.nekow.particledrawing.core.network.ParticleForceBatchPayload
 import work.nekow.particledrawing.core.network.ParticleLightLevelPayload
 import work.nekow.particledrawing.core.network.ParticleRotationPayload
 import work.nekow.particledrawing.core.network.ParticleSetPositionPayload
+import work.nekow.particledrawing.core.network.ParticleSpawnBatchPayload
 import work.nekow.particledrawing.core.network.ParticleSpawnPayload
 import work.nekow.particledrawing.core.network.ParticleTrackBatchPayload
 import work.nekow.particledrawing.core.network.ParticleTrackPayload
@@ -51,14 +54,16 @@ class ServerParticleEngine(
      * 生成粒子并广播到视野内可见的玩家；达到维度上限时返回 null。
      *
      * [id] 由调用方给（[work.nekow.particledrawing.api.ParticleHandle.Builder] 先分配再可能延迟生成）；
-     * [visual] 是生成时定死的外观规格。
+     * [visual] 是生成时定死的外观规格，[lifeCurve] 是寿命曲线，[prev] 是首帧插值端点（可为 null）。
      */
     @Suppress("DataFlowIssue")
     fun spawnParticle(id: UUID, position: Vec3, color: Color,
                       scale: Float, lifetime: Int, groupId: UUID?,
                       glowing: Boolean, lightLevel: Int, offsetFromPivot: Vec3?,
                       playersInDimension: Collection<ServerPlayer>,
-                      visual: ParticleVisual? = null): ParticleData? {
+                      visual: ParticleVisual? = null,
+                      lifeCurve: ParticleLifeCurve? = null,
+                      prev: Vec3? = null): ParticleData? {
         val maxTotal = ParticleDrawingConfig.SERVER.maxParticlesPerDimension.get()
         if (particles.size >= maxTotal) {
             warnWhenOverCapacity()
@@ -66,7 +71,7 @@ class ServerParticleEngine(
         }
 
         val data = ParticleData.create(id, position, color, scale,
-            lifetime, groupId, glowing, lightLevel, offsetFromPivot, visual)
+            lifetime, groupId, glowing, lightLevel, offsetFromPivot, visual, lifeCurve)
         particles[id] = data
 
         if (groupId != null) {
@@ -76,11 +81,71 @@ class ServerParticleEngine(
         val payload = ParticleSpawnPayload(
             id, position.x, position.y, position.z,
             color.r, color.g, color.b, color.a,
-            scale, lifetime, groupId, glowing, lightLevel, visual
+            scale, lifetime, groupId, glowing, lightLevel, visual, lifeCurve, prev,
         )
 
         broadcastSpawn(playersInDimension, position, id, payload)
         return data
+    }
+
+    /**
+     * 批量生成：先逐条登记（超出维度上限的给 null），再**逐玩家按可见性裁剪成一包**下发。
+     *
+     * 与逐颗 [spawnParticle] 的差别只在带宽：每条记录的字段布局完全一致，客户端落地走同一条路径。
+     * 返回与 [specs] 一一对应的粒子数据（被拒绝的为 null）。
+     */
+    fun spawnParticles(specs: List<ParticleSpawnSpec>,
+                       playersInDimension: Collection<ServerPlayer>,
+                       groupId: UUID? = null): List<ParticleData?> {
+        if (specs.isEmpty()) return emptyList()
+        val maxTotal = ParticleDrawingConfig.SERVER.maxParticlesPerDimension.get()
+
+        val created = ArrayList<ParticleData?>(specs.size)
+        val payloads = ArrayList<ParticleSpawnPayload>(specs.size)
+        for (spec in specs) {
+            if (particles.size >= maxTotal) {
+                warnWhenOverCapacity()
+                created.add(null)
+                continue
+            }
+            val id = UUID.randomUUID()
+            val data = ParticleData.create(
+                id, spec.position, spec.color, spec.scale, spec.lifetime,
+                groupId, spec.glowing, spec.lightLevel, null, spec.visual, spec.resolvedLifeCurve(),
+            )
+            particles[id] = data
+            if (groupId != null) groups[groupId]?.addMember(id)
+            created.add(data)
+            payloads.add(
+                ParticleSpawnPayload(
+                    id, spec.position.x, spec.position.y, spec.position.z,
+                    spec.color.r, spec.color.g, spec.color.b, spec.color.a,
+                    spec.scale, spec.lifetime, groupId, spec.glowing, spec.lightLevel,
+                    spec.visual, spec.resolvedLifeCurve(), spec.prev,
+                )
+            )
+        }
+
+        // 逐玩家裁剪：可见性与每玩家上限都和单发同一套判定，然后按 MAX_BATCH 拆包
+        val maxPerPlayer = ParticleDrawingConfig.SERVER.maxParticlesPerPlayer.get()
+        for (player in playersInDimension) {
+            val batch = ArrayList<ParticleSpawnPayload>(payloads.size)
+            for (payload in payloads) {
+                if (!ParticleVisibilityManager.isWithinViewDistance(player, payload.position())) continue
+                val trackedCount = (playerParticles[player.uuid]?.size ?: 0) + batch.size
+                if (trackedCount >= maxPerPlayer) break
+                batch.add(payload)
+            }
+            var index = 0
+            while (index < batch.size) {
+                val end = minOf(index + ParticleSpawnBatchPayload.MAX_BATCH, batch.size)
+                val chunk = batch.subList(index, end)
+                PacketDistributor.sendToPlayer(player, ParticleSpawnBatchPayload(chunk.toList()))
+                for (payload in chunk) track(player.uuid, payload.particleId)
+                index = end
+            }
+        }
+        return created
     }
 
     /**
@@ -655,7 +720,7 @@ class ServerParticleEngine(
             data.position().x, data.position().y, data.position().z,
             data.color().r, data.color().g, data.color().b, data.color().a,
             data.scale(), data.lifetime(), data.groupId, data.glowing(), data.lightLevel(),
-            data.visual()
+            data.visual(), data.lifeCurve(), null,   // 迟到补发不带上一次的插值端点：按当前位置出生
         )
     }
 

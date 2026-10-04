@@ -268,6 +268,23 @@ class ParticleGroup(
     }
 
     /**
+     * **逐成员各自方向**的平移：每颗粒子沿自己「相对轴心的偏移」方向外移
+     * `scale × |偏移|`（整组一个包，成员各飞各的）。
+     *
+     * 用于「球面/多面体碎裂时碎片各自沿自己的法线向外飞」：这种效果组级 [move] 表达不了
+     * （整组只有一个位移向量），只能一片一个组，而组数直接等于 arm 日志行数与 arm 开销。
+     *
+     * 方向取**当前**偏移（跟着 [spin]/[rotate] 一起转），所以「边转边炸开」也是对的；
+     * `scale = 1` 表示每颗沿自己的方向走到「偏移长度翻倍」的位置。
+     *
+     * @param scale 沿各自偏移方向的位移倍率（1 = 移到 2 倍偏移处）
+     */
+    fun moveAlongOffset(scale: Float, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
+        emit(AnimInstruction.MoveEach(cursorMs, scale, durationTicks * 50, easing))
+        return this
+    }
+
+    /**
      * 绕**当前轴心**一次性旋转（轴心见 [setPivot] / [followEntity]）。
      * 想绕实体转就先 `followEntity(...)` 再调本方法——**调用顺序就是语义**，本方法不接受轴心参数。
      *

@@ -13,7 +13,8 @@ import java.util.UUID
  */
 enum class InstructionType {
     FADE_IN, FADE_OUT, RECOLOR, SCALE_BY, TRANSLATE,
-    ROTATE_ONCE, MOVE_PATH, SPIN, PULSE, STOP_CONTINUOUS, BIND_PIVOT, EXPRESSION;
+    ROTATE_ONCE, MOVE_PATH, SPIN, PULSE, STOP_CONTINUOUS, BIND_PIVOT, EXPRESSION,
+    MOVE_EACH;
 
     companion object {
         private val BY_ORDINAL = entries.toTypedArray()
@@ -129,6 +130,7 @@ sealed class AnimInstruction {
             is StopContinuous -> copy(startMs = startMs + delta)
             is BindPivot -> copy(startMs = startMs + delta)
             is Expression -> copy(startMs = startMs + delta)
+            is MoveEach -> copy(startMs = startMs + delta)
         }
     }
 
@@ -152,6 +154,7 @@ sealed class AnimInstruction {
                 InstructionType.STOP_CONTINUOUS -> StopContinuous(startMs)
                 InstructionType.BIND_PIVOT -> BindPivot(startMs, PivotRef.read(buf))
                 InstructionType.EXPRESSION -> Expression(startMs, buf.readUtf())
+                InstructionType.MOVE_EACH -> MoveEach(startMs, buf.readFloat(), buf.readVarInt(), readEasing(buf))
             }
         }
     }
@@ -316,6 +319,25 @@ sealed class AnimInstruction {
         override val type get() = InstructionType.EXPRESSION
         override fun writeBody(buf: FriendlyByteBuf) {
             buf.writeUtf(code)
+        }
+    }
+
+    /**
+     * **逐成员各自方向**的平移：每颗粒子沿自己「相对轴心的偏移」方向外移
+     * `offsetScale × |偏移|`（对「球面碎片向外飞」是现成语义）。
+     *
+     * 与 [Translate] 的区别：[Translate] 整组一个位移向量，表达不了「各飞各的」——
+     * 那样只能一片一个组，组数直接等于 arm 日志行数与 arm 开销。本指令整组一个包就够。
+     */
+    data class MoveEach(
+        override val startMs: Int,
+        val offsetScale: Float,
+        val durationMs: Int,
+        val easing: EasingType,
+    ) : AnimInstruction() {
+        override val type get() = InstructionType.MOVE_EACH
+        override fun writeBody(buf: FriendlyByteBuf) {
+            buf.writeFloat(offsetScale); buf.writeVarInt(durationMs); writeEasing(buf, easing)
         }
     }
 }

@@ -3,6 +3,8 @@ package work.nekow.particledrawing.core.client
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.api.CurveChannel
+import work.nekow.particledrawing.api.ParticleLifeCurve
 import work.nekow.particledrawing.core.easing.EasingCurve
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.util.rotateAround
@@ -31,6 +33,9 @@ private class EaseState(
  * @param glowing 是否发光
  * @param lightLevel 发光粒子向外发出的光照等级 (0-15)，仅在 glowing 为 true 时生效
  * @param lifetimeMs 存活时间（毫秒），0 表示永久
+ * @param uv 贴图取景框；null = 纯白方块
+ * @param lifeCurve 逐粒子寿命曲线（寿命内的颜色/尺寸乘数）；null = 恒定外观
+ * @param prev 上一 tick 的位置（与 [position] 组成插值段，供动态光照与首帧渲染端点插值）；null = 直接出生
  */
 @Suppress("unused")
 class RenderParticle(
@@ -42,6 +47,8 @@ class RenderParticle(
     private var lightLevel: Int,
     lifetimeMs: Long,
     var uv: UvData? = null,
+    private val lifeCurve: ParticleLifeCurve? = null,
+    prev: Vec3? = null,
 ) {
 
     // 位置 / 颜色 / 缩放（直接缓动）
@@ -77,6 +84,15 @@ class RenderParticle(
     private var prevY: Double
     private var prevZ: Double
 
+    // 寿命曲线：出生时刻 + 当前采样出的乘数（同一帧内多路读取只算一次）
+    private val bornNanos: Long = System.nanoTime()
+    private var curveSampleTicks = Float.NaN
+    private var mulR = 1f
+    private var mulG = 1f
+    private var mulB = 1f
+    private var mulA = 1f
+    private var mulScale = 1f
+
     init {
         pos.cur = position
         pos.tgt = position
@@ -85,9 +101,10 @@ class RenderParticle(
         scl.cur = scale
         scl.tgt = scale
         sclArray[0] = scale; sclArray[1] = scale; sclArray[2] = 1f
-        prevX = position.x
-        prevY = position.y
-        prevZ = position.z
+        val start = prev ?: position
+        prevX = start.x
+        prevY = start.y
+        prevZ = start.z
         deathTime = if (lifetimeMs > 0) System.nanoTime() + lifetimeMs * 1_000_000L else 0
         this.lightLevel = lightLevel.coerceIn(0, 15)
     }
@@ -95,6 +112,51 @@ class RenderParticle(
     fun id(): UUID = id
     fun glowing(): Boolean = glowing
     fun lightLevel(): Int = lightLevel
+
+    /** 生成后经过的 tick 数（墙钟计时，随渲染帧推进）。 */
+    fun ageTicks(): Float = (System.nanoTime() - bornNanos) / 50_000_000.0f
+
+    /**
+     * 当前寿命曲线的乘数，按 [CurveChannel] 顺序写进 [out] = `[r, g, b, a, scale]`；
+     * 没有曲线时返回 false 且不改动 [out]（调用方走原路径，零额外开销）。
+     */
+    fun curveMultipliers(out: FloatArray): Boolean {
+        if (lifeCurve == null) return false
+        refreshCurve()
+        out[0] = mulR
+        out[1] = mulG
+        out[2] = mulB
+        out[3] = mulA
+        out[4] = mulScale
+        return true
+    }
+
+    /** 寿命曲线调制后的透明度（发光粒子的可见性判断用；无曲线时就是自身 alpha）。 */
+    fun effectiveAlpha(): Float {
+        if (lifeCurve == null) return col.cur.a
+        refreshCurve()
+        return col.cur.a * mulA
+    }
+
+    /** 一帧内只按当前时刻采样一次曲线。 */
+    private fun refreshCurve() {
+        val curve = lifeCurve ?: return
+        val t = ageTicks()
+        if (t == curveSampleTicks) return
+        curveSampleTicks = t
+        var r = 1f; var g = 1f; var b = 1f; var a = 1f; var s = 1f
+        for (c in curve.curves) {
+            val v = c.valueAt(t)
+            when (c.channel) {
+                CurveChannel.ALPHA -> a *= v
+                CurveChannel.SCALE -> s *= v
+                CurveChannel.RED -> r *= v
+                CurveChannel.GREEN -> g *= v
+                CurveChannel.BLUE -> b *= v
+            }
+        }
+        mulR = r; mulG = g; mulB = b; mulA = a; mulScale = s
+    }
 
     fun x(): Double = pos.cur.x
     fun y(): Double = pos.cur.y

@@ -57,6 +57,7 @@ object ParticleDrawingConfig {
         val enableDynamicLights: ModConfigSpec.BooleanValue
         val maxRenderParticles: ModConfigSpec.IntValue
         val particleBatchSize: ModConfigSpec.IntValue
+        val debugProgramLogging: ModConfigSpec.BooleanValue
 
         init {
             builder.push("dynamic_lights")
@@ -81,6 +82,12 @@ object ParticleDrawingConfig {
             particleBatchSize = builder
                 .comment("The number of particles whose eased state is synchronized to the renderer per frame (fair round-robin batch).")
                 .defineInRange("particleBatchSize", 4096, 64, 65536)
+            builder.pop()
+
+            builder.push("logging")
+            debugProgramLogging = builder
+                .comment("Log every animation program arm at INFO. Off by default (those lines go to DEBUG) because combat can arm dozens of groups per hit and flood the log.")
+                .define("debugProgramLogging", false)
             builder.pop()
         }
     }

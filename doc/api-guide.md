@@ -229,7 +229,12 @@ group.move(Vec3(0.0, 2.0, 0.0), durationTicks = 30, easing = EasingType.EASE_OUT
 group.rotate(Vec3(0, 1, 0), radians = Math.PI, durationTicks = 40)   // 绕当前轴心
 group.recolor(Color.BLUE, durationTicks = 20)
 group.scale(ratio = 2f, durationTicks = 15)      // 相对当前轴心放大到 2 倍（半径与视觉大小同步翻倍）
+group.moveAlongOffset(scale = 0.6f, durationTicks = 20)  // 每颗沿自己相对轴心的方向向外飞
 ```
+
+> `moveAlongOffset` 是**逐成员各自方向**的平移（`scale × |偏移|`，方向取当前偏移，跟着自转一起转）：
+> 「球面碎片各自沿法线炸开」这种效果组级 `move` 表达不了——那样只能一片一个组，
+> 而组数直接等于 arm 日志行数与 arm 开销；本方法整组一个包就够。
 
 > `scale` 是**倍率**语义（2f = 两倍，0.5f = 一半），且作用于**粒子到轴心的距离 + 视觉大小**——
 > 半径 3 的圆 `scale(3f)` 之后半径就是 9（组级「胀开 / 缩回」一个调用就够）；
@@ -262,6 +267,10 @@ g.delay(1).fadeOut(durationTicks = 5) // 1 tick 后开始、5 tick 淡完（不�
 `fadeOut(removeAfter = true)` 的销毁时刻与客户端用同一套换算，都是从**当下**起算，
 不会把销毁推后「已经跑过的时长」那么多 tick（旧的绝对游标口径会留下看不见但还活着的粒子）。
 成员变化触发的**全量重发**会把时间轴重新从那一刻起算。
+
+> **arm 日志**：每次 arm 一行 INFO 在实战里会刷屏（护盾一次受击 arm 32 个组），所以默认只进 DEBUG。
+> 排查「程序到底有没有 arm、arm 了几颗粒子」时用 `ParticleManager.setDebugLogging(true)` 临时打开，
+> 或者把客户端配置 `debugProgramLogging` 设为 `true` 常开。
 
 ### 生命周期
 
@@ -478,6 +487,113 @@ ParticleManager.registerTexture("mymod:glow", pngBytes)   // 字节上限 1 MiB
 调密度前可以先看一眼。
 
 `ParticleVisual` 是可变的链式对象：多颗粒子想共用一份外观再各改一点时用 `copy()`。
+
+### 寿命曲线：淡出 / 收缩 / 逐通道乘数
+
+「寿命内慢慢淡掉、缩掉」原来要额外下发 `recolor` + `resize` 两个更新包；现在**随 spawn 包一次带过去**，
+之后零逐帧带宽。曲线值是**乘数**（缺省 1.0），时刻从**生成那一刻**算起（tick）。
+
+```kotlin
+// 拖尾颗粒：活 20 tick，最后 8 tick 淡出并缩到 0.2 倍
+manager.create().position(p).scale(0.4f).lifetime(20)
+    .style(ParticleStyle.SOFT_DOT)
+    .fadeOut(8)                 // 也能给缓动：fadeOut(8, EasingType.EASE_IN_QUAD)
+    .shrinkTo(0.2f, 8)
+    .spawn()
+
+// 想自己捏就逐通道给关键帧（段内用后一关键帧的缓动；step 是阶跃）
+manager.create().position(p).lifetime(40)
+    .alphaCurve(CurveKey.at(0, 1f), CurveKey.at(24, 1f), CurveKey.at(40, 0f, EasingType.EASE_IN))
+    .sizeCurve(CurveKey.at(0, 1f), CurveKey.at(40, 0.3f))
+    .colorCurve(                                     // RGB 三条分开给
+        listOf(CurveKey.at(0, 1f), CurveKey.at(40, 0.2f)),   // 红
+        listOf(CurveKey.at(0, 0.8f), CurveKey.at(40, 0.1f)), // 绿
+        listOf(CurveKey.at(0, 0.6f), CurveKey.at(40, 0f)),   // 蓝
+    )
+    .spawn()
+```
+
+- 通道：`ALPHA` / `SCALE` / `RED` / `GREEN` / `BLUE`；同一通道给多条曲线时**相乘**。
+- `curve(channel, keys)` 是通用入口，`alphaCurve` / `sizeCurve` / `colorCurve` 是现成写法。
+- `fadeOut` / `shrinkTo` 锚在**寿命末尾**，所以需要有限寿命（`lifetime(-1)` + `fadeOut` 会明确报错，
+  而不是悄悄按「生成后 N tick」算）。
+- 客户端逐**渲染帧**刷新带曲线的粒子外观（只改颜色/缩放，不动位置），所以淡出是平滑的、不是 20Hz 台阶。
+
+### 首帧插值端点：让程序化粒子和 track 走同一套语义
+
+`track` 的粒子由原版按 partialTick 在相邻两条权威位置之间插值；而 `spawn` 的粒子直接钉在当前位置，
+于是「每 tick 采样、逐颗铺尾迹」会出现**最多一整 tick 的错位**（尾迹冒在头部前面或落在后面）。
+给上「上一 tick 的位置」，第一帧就从它扫到当前位置，两边语义就一致了：
+
+```kotlin
+// 投射物每 tick 采样一次，尾迹颗粒带着上一 tick 的位置出生
+manager.create().position(now).prevPosition(before)
+    .scale(0.3f).lifetime(10).fadeOut(6).spawn()
+```
+
+不给 `prevPosition` 就是原来的行为（跳变出生）。延迟生成（`delay`）没有「上一 tick」可言，
+与 `prevPosition` 同用时后者不生效。
+
+### 运行时发射器（ParticleEmitter）
+
+「每 tick 采样、逐颗 spawn + 逐颗更新包」的写法有两个毛病：出现时刻被 tick 量化（高刷下一跳一跳地长），
+带宽还是 O(粒子)。发射器把这件事下沉成机制——**服务端声明一次，客户端按渲染帧用插值后的锚点位置自己发射**：
+
+```kotlin
+val trail = manager.emitter(Anchor.Movable(pos, velocity))   // 也可以 Anchor.Fixed / Anchor.Entity
+    .spacing(0.15)        // 按里程：每 0.15 格一颗（拖尾：速度变了密度不变）
+    .life(10)             // 每颗活 10 tick
+    .scale(0.4f)
+    .color(Color.WHITE)
+    .style(ParticleStyle.SOFT_DOT)   // 与 Builder 同款外观接口（texture / uv / additive / …）
+    .fadeOut(8)           // 寿命内淡出（等价于 alphaCurve）
+    .shrinkTo(0.2f, 8)
+    .spawn()
+
+// 投射物每 tick 挪一次锚点（只在变更时发包）
+trail.updateAnchor(Anchor.Movable(newPos, newVel))
+// 密度按速度自适应，或者干脆改成按时间发射
+trail.spacing(0.1)
+trail.interval(2)         // 每 2 tick 一颗（intervalMs 可给到渲染帧粒度）
+
+trail.stop()              // 停止发射；已经生成的粒子各自走完寿命
+trail.isActive()
+```
+
+- **两种口径**：`spacing(格)` 按锚点走过的里程发射（位置严格落在段内等距点上，与帧率无关）；
+  `interval(ticks)` / `intervalMs(ms)` 按时间发射。
+- **锚点插值**：客户端每渲染帧取锚点的本帧位置（实体取 `getPosition(partialTick)`，
+  可移动锚点取 `位置 + 速度 × partialTick`），所以 20Hz 报位置、120Hz 铺粒子是对的用法。
+- **外观与曲线**：`color/scale/style/texture/uv/aniso/billboard/spin/alignTo/additive/glowing/lightLevel`、
+  `alphaCurve/sizeCurve/colorCurve/fadeOut/shrinkTo` 与 `Builder` 同一套语义；
+  `velocity(...)` 给每颗粒子一个出生速度（默认静止，拖尾要留在原地淡出）。
+- **上限**：`maxAlive(n)`（默认 4096）限制单个发射器同时存活的粒子数，防止间距给太小把客户端灌满；
+  客户端还有全局的 `maxRenderParticles` 兜底。
+- **断线/换维度/走进范围**：PD 自己负责补发声明（后进服的玩家不会看到一条空尾迹）。
+- **游戏语义留在调用方**：「拖尾长度按格给、寿命 = 长度 ÷ 速度、总强度倍率」这些仍由你自己算，
+  发射器只提供机制。
+
+### 批量生成（一次包铺一整条尾迹）
+
+逐颗 `spawn()` 是「一颗一个包」。一颗一颗攒不划算时（一条尾迹、一次爆发），用 `ParticleSpawnSpec`
+攒好一批，一次包发完（每玩家按可见性裁剪、单包最多 256 条）：
+
+```kotlin
+val specs = (0 until 12).map { i ->
+    ParticleSpawnSpec.at(base.add(dir.scale(i * 0.15)))
+        .scale(0.3f).lifetime(10)
+        .color(200, 220, 255)
+        .fadeOut(6)
+        .visual(ParticleVisual().style(ParticleStyle.SOFT_DOT).additive(true))
+}
+
+manager.spawnAll(specs)                       // 一次包；返回与 specs 一一对应的句柄
+val batch = ParticleBatch(manager)
+batch.spawnAll(specs)                         // 直接从批量生成建一个粒子集
+```
+
+`ParticleSpawnSpec` 与 `Builder` 的字段一一对应（位置/颜色/缩放/寿命/外观/寿命曲线/`prevPosition`），
+服务端会按维度上限逐条判定：被拒绝的那些在返回值里是 `null` / 不计入成员数，不会静默丢。
 
 ### 逐 tick 跟随与力驱动
 
@@ -861,3 +977,7 @@ fun ripples(m: ParticleManager, c: Vec3, waves: Int) {
    中途只能改颜色、缩放标量、位置、发光等级；确实要换外观就 `remove()` 后重新生成。
 8. **延迟生成的粒子**：`delay(n)` 期间它在 PD 侧还不存在，句柄上的操作一律无效，
    也读不到权威位置；`ParticleBatch` 会把延迟成员留到到点（不会误摘），但到点后仍不存在就按普通已失效成员出列。
+9. **发射器要收尾**：`ParticleEmitter` 的声明不随调用方消失——用完（法术结束、投射物消亡）要 `stop()`，
+   否则客户端会一直发下去。发射器不是「开火一次就结束」的 API，也不是 `ParticleGroup` 的替代品。
+10. **批量生成的条数上限**：`ParticleManager.spawnAll` 单次最多 `MAX_SPAWN_BATCH`（256）条，
+   超出的规格不生成（返回值比入参短），服务端再按每玩家上限裁剪——密集场景分批调用而不是堆成一个大列表。

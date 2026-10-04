@@ -10,10 +10,13 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 
 | 类 | 作用 |
 | --- | --- |
-| `ParticleManager` | 维度级入口，创建粒子与粒子组；批量指令 `trackAll` / `setVelocityAll` / `applyForceAll`；程序化贴图登记 `registerTexture` / `registerBuiltinTextures` |
-| `ParticleHandle` | 单粒子句柄：移动 / 速度 / 力 / 实体锚点（`Entity`/`uuid`/`entityId` 三入口）/ 重着色 / 缩放 / 销毁，含流式 `Builder` 与 `position()`/`velocity()` 只读查询 |
-| `ParticleGroup` | 粒子组：编排式动画（客户端自驱程序：delay/fadeIn/spin/movePath/pulse/实体通道/公式指令）；组级变换绕**当前轴心**（`setPivot`/`followEntity` 绑定，先绑再转），缩放含半径、旋转可叠加、增量追加按「从现在起」 |
-| `ParticleBatch` | 程序化粒子集：成员逐 tick 增删、一次包批量下发位置/速度/力、按权威位置/速度条件回收、补齐到 N |
+| `ParticleManager` | 维度级入口，创建粒子 / 粒子组 / **运行时发射器**；批量生成 `spawnAll`；批量指令 `trackAll` / `setVelocityAll` / `applyForceAll`；程序化贴图登记 `registerTexture` / `registerBuiltinTextures`；调试日志开关 `setDebugLogging` |
+| `ParticleHandle` | 单粒子句柄：移动 / 速度 / 力 / 实体锚点（`Entity`/`uuid`/`entityId` 三入口）/ 重着色 / 缩放 / 销毁，含流式 `Builder`（外观 + **寿命曲线** `fadeOut`/`shrinkTo`/`curve` + 首帧插值端点 `prevPosition`）与 `position()`/`velocity()` 只读查询 |
+| `ParticleGroup` | 粒子组：编排式动画（客户端自驱程序：delay/fadeIn/spin/movePath/pulse/实体通道/公式指令/**逐成员各自方向漂移** `moveAlongOffset`）；组级变换绕**当前轴心**（`setPivot`/`followEntity` 绑定，先绑再转），缩放含半径、旋转可叠加、增量追加按「从现在起」 |
+| `ParticleBatch` | 程序化粒子集：成员逐 tick 增删、**批量生成 `spawnAll`**、一次包批量下发位置/速度/力、按权威位置/速度条件回收、补齐到 N |
+| `ParticleEmitter` / `EmitterHandle` | 运行时发射器：`manager.emitter(anchor).spacing(格)/interval(ticks).life(ticks).alphaCurve/sizeCurve/colorCurve.fadeOut/shrinkTo.spawn()`；服务端声明一次，客户端按**渲染帧**用插值锚点位置推进里程/时间并生成粒子（带宽 O(1)、出现与淡出逐帧）；句柄可 `updateAnchor` / `spacing` / `stop` |
+| `ParticleCurve` / `ParticleLifeCurve` | 逐粒子寿命曲线：通道（透明度/尺寸/RGB）乘数随「生成后 tick 数」变化，同通道多条相乘；随 spawn 包一次下发，客户端逐渲染帧求值（零逐帧带宽） |
+| `ParticleSpawnSpec` | 批量生成的单颗粒子规格（纯数据）：位置/颜色/缩放/寿命/外观/寿命曲线/首帧插值端点 |
 | `Draw` | 绘图工具：点、线段、圆、圆盘、曲线、折线光束、三角形、六芒星、矩形、球体、长方体；支持渐变着色、逐粒子入场与外观规格（`visual` / `taper`） |
 | `ParticleVisual` | 逐粒子外观规格：贴图 / 子矩形 UV / 各向异性尺寸（编辑器单位或世界格）/ 朝向（广告牌、自转、长轴对齐）/ 加法混合 / 免光照；生成时定死 |
 | `ParticleStyle` | 内置外观形状枚举：`SQUARE`（纯白方块）/ `SOFT_DOT`（柔边圆点）/ `LINE`（两端渐隐的线段）；客户端按需生成 16px 贴图 |
@@ -46,7 +49,8 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 
 | 类 | 作用 |
 | --- | --- |
-| `ServerParticleEngine` | 服务端权威粒子引擎（每维度一个）：生成/更新/销毁与可见性同步 |
+| `ServerParticleEngine` | 服务端权威粒子引擎（每维度一个）：生成/更新/销毁与可见性同步；批量生成 `spawnParticles`（逐玩家裁剪后一包下发） |
+| `ServerEmitterManager` | 服务端发射器登记表：声明一次 + 锚点/口径变更时更新，负责后进服与走进范围玩家的补发 |
 | `AnimationScheduler` | 服务端 tick 调度器：延迟任务队列（stagger 入场、定时销毁等） |
 | `ParticleData` | 粒子运行时数据 |
 | `ParticleGroupData` | 粒子组成员与轴心 |
@@ -61,9 +65,12 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 
 | 类 | 作用 |
 | --- | --- |
-| `ClientParticleEngine` | 客户端粒子引擎（缓动同步、直接同步、非均匀缩放、track 逐 tick 插值、实体锚点本地解析） |
+| `ClientParticleEngine` | 客户端粒子引擎（缓动同步、直接同步、非均匀缩放、track 逐 tick 插值、实体锚点本地解析、寿命曲线逐渲染帧刷新） |
 | `TrackBuffer` | track 的逐 tick 插值缓冲（按到达顺序排队、每 tick 消费一条、缺包原地保持） |
-| `RenderParticle` | 渲染粒子状态（缓动 + 速度积分 + 欧拉旋转） |
+| `ClientEmitterManager` | 客户端发射器运行时：按渲染帧用插值锚点位置推进里程/时间并就地生成粒子 |
+| `EmitterAdvance` | 发射推进的纯逻辑（里程等距切分 / 时间毫秒累积），与渲染网络解耦便于单测 |
+| `ResolvedVisual` | 外观规格的客户端解析结果（网络 spawn 包与本地发射器共用同一段解释） |
+| `RenderParticle` | 渲染粒子状态（缓动 + 速度积分 + 欧拉旋转 + 寿命曲线乘数） |
 | `BridgeParticle` | 桥接原版粒子系统的渲染代理（纯色方块 / 自定义贴图 + UV 采样；v17 非广告牌粒子按自转四元数固定朝向） |
 | `TextureCache` | 贴图缓存（PNG 字节 / 内置形状像素 → DynamicTexture），带版本号供晚到贴图重解析 |
 | `ClientAnimationManager` | 客户端 .pdraw 动画播放管理 |
@@ -80,7 +87,10 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 | `NetworkHandler` | 注册数据包 |
 | `ClientPayloadHandler` | 数据包分发到 `ClientParticleEngine` |
 | `ServerPayloadHandler` | 服务端配置阶段请求处理 |
-| `ParticleSpawnPayload` | 粒子生成包 |
+| `ParticleSpawnPayload` | 粒子生成包（含寿命曲线与首帧插值端点） |
+| `ParticleSpawnBatchPayload` | 批量粒子生成包（每条记录与单发同构，一次最多 256 条） |
+| `EmitterSpawnPayload` / `EmitterUpdatePayload` / `EmitterStopPayload` | 运行时发射器：声明 / 变更 / 停止包 |
+| `ParticleCurveCodec` | 寿命曲线编解码（通道 + 关键帧；缓动走紧凑编码，预设只占 1~2 字节） |
 | `ParticleUpdatePayload` | 粒子增量更新包（位置/颜色/缩放 + 缓动） |
 | `ParticleDestroyPayload` | 粒子销毁包 |
 | `AnimationProgramPayload` / `AnimationProgramAppendPayload` | 编排动画程序下发 / 追加指令包 |

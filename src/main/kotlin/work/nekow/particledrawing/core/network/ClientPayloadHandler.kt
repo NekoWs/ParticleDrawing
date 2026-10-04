@@ -2,12 +2,12 @@ package work.nekow.particledrawing.core.network
 
 import net.minecraft.world.phys.Vec3
 import net.neoforged.neoforge.network.handling.IPayloadContext
-import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.core.client.ClientAnimationManager
 import work.nekow.particledrawing.core.client.ClientAnimationSyncManager
+import work.nekow.particledrawing.core.client.ClientEmitterManager
 import work.nekow.particledrawing.core.client.ClientParticleEngine
 import work.nekow.particledrawing.core.client.ClientTextureSyncManager
-import work.nekow.particledrawing.core.client.TextureCache
+import work.nekow.particledrawing.core.client.ResolvedVisual
 
 /**
  * 客户端数据包处理器，将各类数据包分发到 [ClientParticleEngine] 的对应方法。
@@ -16,29 +16,30 @@ internal object ClientPayloadHandler {
 
     fun handleSpawn(payload: ParticleSpawnPayload, context: IPayloadContext) {
         context.enqueueWork {
-            val visual = payload.visual
-            // 贴图 + 子矩形 → 渲染用 UV（贴图没到货时按名回落，UV 尺寸仍按请求的取景框算）
-            val entry = visual?.texture?.let { TextureCache.get(it) }
-            val uv = visual?.toUvData(entry?.width ?: 0, entry?.height ?: 0)
-            val spin = if (visual != null && !visual.billboard) {
-                doubleArrayOf(visual.spinXDeg, visual.spinYDeg, visual.spinZDeg)
-            } else {
-                ClientParticleEngine.ZERO_SPIN
-            }
-            ClientParticleEngine.instance()?.spawnParticle(
-                payload.particleId,
-                payload.x, payload.y, payload.z,
-                payload.r, payload.g, payload.b, payload.a,
-                payload.scale, payload.lifetime,
-                payload.groupId, payload.glowing, payload.lightLevel,
-                uv,
-                visual?.billboard ?: true,
-                spin,
-                visual?.spinLocal ?: true,
-                visual?.additive ?: false,
-                visual?.resolvedAniso(payload.scale, ParticleVisual.texScale(uv)),
-            )
+            val engine = ClientParticleEngine.instance() ?: return@enqueueWork
+            spawnOne(engine, payload)
         }
+    }
+
+    /** 批量生成：整批走与单发完全相同的落地路径。 */
+    fun handleSpawnBatch(payload: ParticleSpawnBatchPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            val engine = ClientParticleEngine.instance() ?: return@enqueueWork
+            for (entry in payload.entries) spawnOne(engine, entry)
+        }
+    }
+
+    private fun spawnOne(engine: ClientParticleEngine, p: ParticleSpawnPayload) {
+        engine.spawnParticle(
+            p.particleId,
+            p.x, p.y, p.z,
+            p.r, p.g, p.b, p.a,
+            p.scale, p.lifetime,
+            p.groupId, p.glowing, p.lightLevel,
+            ResolvedVisual.of(p.visual, p.scale),
+            p.lifeCurve,
+            p.prev,
+        )
     }
 
     /** 程序化贴图内容块：按 id 累积，收齐后解码注册。 */
@@ -167,6 +168,26 @@ internal object ClientPayloadHandler {
             ClientParticleEngine.instance()?.setLightLevel(
                 payload.particleId, payload.lightLevel
             )
+        }
+    }
+
+    // —— 运行时发射器（客户端按渲染帧自己发射） ——
+
+    fun handleEmitterSpawn(payload: EmitterSpawnPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientEmitterManager.spawn(payload)
+        }
+    }
+
+    fun handleEmitterUpdate(payload: EmitterUpdatePayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientEmitterManager.update(payload)
+        }
+    }
+
+    fun handleEmitterStop(payload: EmitterStopPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientEmitterManager.stop(payload.emitterId)
         }
     }
 

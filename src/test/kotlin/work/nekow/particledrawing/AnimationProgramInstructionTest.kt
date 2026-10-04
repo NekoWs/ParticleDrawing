@@ -34,6 +34,7 @@ class AnimationProgramInstructionTest {
         AnimInstruction.BindPivot(0, PivotRef.Fixed(Vec3(4.0, 5.0, 6.0))),
         AnimInstruction.BindPivot(0, PivotRef.FollowEntity(UUID.randomUUID(), Vec3(0.0, 1.0, 0.0), local = true)),
         AnimInstruction.Expression(0, "[x,y,z]=get_entity_pos(p)"),
+        AnimInstruction.MoveEach(0, 0.35f, 12, EasingType.EASE_OUT),
     )
 
     @Test

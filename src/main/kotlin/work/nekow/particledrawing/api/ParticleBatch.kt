@@ -36,6 +36,26 @@ class ParticleBatch(private val manager: ParticleManager) {
     /** 登记一个已有粒子（`Builder.spawn()` 的返回值可直接传入；null 忽略）。 */
     fun add(handle: ParticleHandle?): ParticleHandle? = handle?.let { core.add(it) }
 
+    /**
+     * 批量生成：整批用**一个包**下发（[ParticleManager.spawnAll]），生成成功的成员就地登记进本集合。
+     *
+     * 「一条尾迹」这类「每 tick 补一批同款粒子」的用法不必逐颗发包；每颗的字段由
+     * [ParticleSpawnSpec] 给（含寿命曲线与首帧插值端点，见 [ParticleSpawnSpec.prevPosition]）。
+     *
+     * @return 实际新增的成员数（被维度上限拒绝的那些不登记）
+     */
+    fun spawnAll(specs: List<ParticleSpawnSpec>): Int {
+        val handles = manager.spawnAll(specs)
+        var added = 0
+        for (handle in handles) {
+            if (handle != null) {
+                core.add(handle)
+                added++
+            }
+        }
+        return added
+    }
+
     /** 批量登记；返回实际登记数（null 元素忽略）。 */
     fun addAll(handles: Collection<ParticleHandle?>): Int {
         var added = 0

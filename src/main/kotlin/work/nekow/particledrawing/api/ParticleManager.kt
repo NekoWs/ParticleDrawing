@@ -8,6 +8,8 @@ import net.neoforged.api.distmarker.Dist
 import net.neoforged.fml.loading.FMLEnvironment
 import work.nekow.particledrawing.core.TextureRegistry
 import work.nekow.particledrawing.core.client.ClientTextureSyncManager
+import work.nekow.particledrawing.core.network.EmitterParams
+import work.nekow.particledrawing.core.server.ServerEmitterManager
 import work.nekow.particledrawing.core.server.ServerParticleEngine
 import work.nekow.particledrawing.core.server.TextureSyncService
 import work.nekow.particledrawing.util.ParticleUtils
@@ -29,6 +31,71 @@ class ParticleManager private constructor(val level: ServerLevel) {
      * 创建一个新的粒子构建器。
      */
     fun create() = ParticleHandle.Builder(this)
+
+    /**
+     * 声明一个**运行时发射器**：服务端只说一次「沿这个锚点、按什么口径、发什么样的粒子」，
+     * 客户端按渲染帧自己推进里程/时间并生成粒子（带宽 O(1)，出现/淡出都是逐帧的）。
+     *
+     * ```
+     * val trail = manager.emitter(Anchor.Movable(pos, vel))
+     *     .spacing(0.15).life(10).scale(0.4f).fadeOut(8).shrinkTo(0.2f, 8)
+     *     .spawn()
+     * trail.updateAnchor(Anchor.Movable(newPos, newVel))   // 投射物每 tick 挪一次
+     * trail.stop()
+     * ```
+     *
+     * 与逐颗 [create] 的分工：需要「逐颗控制 / 每颗不同外观」就用 Builder；只需要
+     * 「沿锚点持续产出同一种粒子」用发射器，出现时刻不被 tick 量化、也不吃逐颗粒子的带宽。
+     *
+     * @param anchor 发射锚点（固定点 / 实体 / 可移动）
+     */
+    fun emitter(anchor: Anchor): ParticleEmitter = ParticleEmitter(this, anchor)
+
+    /** [emitter] 的固定点重载。 */
+    fun emitter(x: Number, y: Number, z: Number): ParticleEmitter =
+        emitter(Anchor.Fixed(Vec3(x.toDouble(), y.toDouble(), z.toDouble())))
+
+    /**
+     * 批量生成一批粒子：**一个包**发完整批（每颗的字段由 [ParticleSpawnSpec] 给）。
+     * 服务端按玩家可见性裁剪后下发，返回与 [specs] 一一对应的句柄（被维度上限拒绝的为 null）。
+     *
+     * 长度按 [MAX_SPAWN_BATCH] 截断（超出的规格不会生成，也不静默丢数据——返回值能看出少了哪些）。
+     */
+    fun spawnAll(specs: List<ParticleSpawnSpec>): List<ParticleHandle?> {
+        if (specs.isEmpty()) return emptyList()
+        val effective = if (specs.size > MAX_SPAWN_BATCH) specs.subList(0, MAX_SPAWN_BATCH) else specs
+        return getEngine().spawnParticles(effective, getPlayers()).map { data ->
+            data?.let { ParticleHandle(it.id, this) }
+        }
+    }
+
+    // —— 发射器的服务端登记（由 ParticleEmitter / EmitterHandle 调用） ——
+
+    internal fun startEmitter(emitter: ParticleEmitter, anchor: Anchor): EmitterHandle {
+        val params = EmitterParams(
+            emitter.modeOf(), emitter.spacingOf(), emitter.intervalMsOf(), emitter.lifetimeOf(),
+            emitter.colorOf().r, emitter.colorOf().g, emitter.colorOf().b, emitter.colorOf().a,
+            emitter.scaleOf(), emitter.visualOf(), emitter.resolvedLifeCurve(), emitter.velocityOf(),
+            emitter.glowingOf(), emitter.lightLevelOf(), emitter.maxAliveOf(),
+        )
+        val id = ServerEmitterManager.start(dimensionId, anchor, params, getPlayers())
+        return EmitterHandle(id, this)
+            .init(anchor, emitter.modeOf(), emitter.spacingOf(), emitter.intervalMsOf())
+    }
+
+    internal fun updateEmitterAnchor(id: UUID, anchor: Anchor) {
+        ServerEmitterManager.updateAnchor(id, anchor, getPlayers())
+    }
+
+    internal fun updateEmitterParams(id: UUID, mode: EmitMode, spacing: Double, intervalMs: Int) {
+        ServerEmitterManager.updateParams(id, mode, spacing, intervalMs, getPlayers())
+    }
+
+    internal fun stopEmitter(id: UUID) {
+        ServerEmitterManager.stop(id, getPlayers())
+    }
+
+    internal fun isEmitterActive(id: UUID): Boolean = ServerEmitterManager.isActive(id)
 
     /**
      * 创建一个新的空白粒子组。
@@ -105,6 +172,9 @@ class ParticleManager private constructor(val level: ServerLevel) {
     internal fun getPlayers(): Collection<ServerPlayer> = level.players()
 
     companion object {
+        /** 单次 [spawnAll] 的条数上限（超出的规格不生成，返回值里能看出少了哪些）。 */
+        const val MAX_SPAWN_BATCH = 256
+
         @JvmStatic
         fun of(level: ServerLevel) = ParticleManager(level)
 
@@ -114,6 +184,18 @@ class ParticleManager private constructor(val level: ServerLevel) {
                 throw IllegalArgumentException("ParticleManager requires a ServerLevel")
             }
             return ParticleManager(level)
+        }
+
+        /**
+         * 编排动画程序的 arm 日志开关（默认关：日志走 DEBUG）。
+         *
+         * 每次 arm 都打一行 INFO 会把生存模式实战的日志刷爆（护盾一次受击 arm 32 个组），
+         * 所以默认只在 DEBUG 里留：排查「程序到底有没有 arm、arm 了几颗粒子」时打开它，
+         * 或把客户端配置 `debugProgramLogging` 设为 true 常开。
+         */
+        @JvmStatic
+        fun setDebugLogging(enabled: Boolean) {
+            work.nekow.particledrawing.core.DebugFlags.verboseProgramLogging = enabled
         }
 
         /**

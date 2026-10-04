@@ -28,6 +28,8 @@ object ServerParticleHandler {
         // 特效 API：推进参考时钟（清理已播完）并批量下发本 tick 累积的可移动锚点更新
         ServerEffectManager.tickClocks()
         ServerEffectManager.flushAnchorUpdates(server)
+        // 发射器：定期给「刚进范围/后进服」的玩家补发声明
+        ServerEmitterManager.tick(server)
         for (level in server.allLevels) {
             val dim = ParticleUtils.dimensionUUID(level)
             // 清理该维度已播完（非循环）的动画播放记录，避免迟到玩家收到已结束的播放
@@ -44,6 +46,7 @@ object ServerParticleHandler {
             val dim = ParticleUtils.dimensionUUID(event.level as ServerLevel)
             ServerAnimationManager.stopAll(dim, (event.level as ServerLevel).players())
             ServerEffectManager.stopAll(dim, (event.level as ServerLevel).players())
+            ServerEmitterManager.clearDimension(dim, (event.level as ServerLevel).players())
             ServerParticleEngine.clearDimension(dim)
             AnimationScheduler.clear()
         }
@@ -57,6 +60,7 @@ object ServerParticleHandler {
         (event.entity as? ServerPlayer)?.let {
             ServerAnimationManager.syncPlaybacksToPlayer(it)
             ServerEffectManager.syncPlaybacksToPlayer(it)
+            ServerEmitterManager.syncToPlayer(it)
         }
     }
 
@@ -66,6 +70,7 @@ object ServerParticleHandler {
         (event.entity as? ServerPlayer)?.let {
             ServerAnimationManager.syncPlaybacksToPlayer(it)
             ServerEffectManager.syncPlaybacksToPlayer(it)
+            ServerEmitterManager.syncToPlayer(it)
         }
     }
 
@@ -75,8 +80,15 @@ object ServerParticleHandler {
         (event.entity as? ServerPlayer)?.let {
             ServerAnimationManager.syncPlaybacksToPlayer(it)
             ServerEffectManager.syncPlaybacksToPlayer(it)
+            ServerEmitterManager.syncToPlayer(it)
             // 程序化贴图：登记通常发生在任何人进服之前，进服时补发一遍（客户端按名幂等）
             TextureSyncService.sendAll(it)
         }
+    }
+
+    @SubscribeEvent
+    @JvmStatic
+    fun onPlayerLoggedOut(event: PlayerEvent.PlayerLoggedOutEvent) {
+        ServerEmitterManager.forgetPlayer(event.entity.uuid)
     }
 }

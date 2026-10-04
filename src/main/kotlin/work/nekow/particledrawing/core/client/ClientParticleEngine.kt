@@ -5,6 +5,7 @@ import net.minecraft.client.particle.ParticleEngine
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.api.ParticleLifeCurve
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.util.AttachMath
@@ -34,6 +35,10 @@ class ClientParticleEngine {
     // track 的逐 tick 插值缓冲（网络线程写、客户端主线程每 tick 消费一条）
     private val trackBuffers: MutableMap<UUID, TrackBuffer> = ConcurrentHashMap()
 
+    // 带寿命曲线的粒子：每**渲染帧**刷新颜色/缩放（淡出/收缩要逐帧，按 tick 同步会看出台阶）；
+    // 位置不在这里动——每帧改写 xo/x 会把插值端点折叠成同值对，破坏 partialTick 扫掠。
+    private val curveIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
+
     // 实体锚点：客户端每 tick 本地解析（服务端只在挂载时下发一次）
     private val attachments: MutableMap<UUID, Attachment> = ConcurrentHashMap()
 
@@ -47,13 +52,17 @@ class ClientParticleEngine {
     /**
      * 生成一个新粒子并注册到原版粒子系统。
      * @param scaleArray 非均匀缩放 [sx, sy, sz]；给了就用它（出生瞬间就按轴取尺寸），否则用标量 [scale]
+     * @param lifeCurve 逐粒子寿命曲线（寿命内的颜色/尺寸乘数）；null = 恒定外观
+     * @param prev 上一 tick 的位置：给了就让**首帧**从 [prev] 插值到当前位置（与 track 段同语义），
+     *   null = 直接在当前位置出生（跳变）
      */
     fun spawnParticle(id: UUID, x: Double, y: Double, z: Double,
                       r: Float, g: Float, b: Float, a: Float, scale: Float,
                       lifetimeTicks: Int, groupId: UUID?, glowing: Boolean, lightLevel: Int,
                       uv: UvData? = null, billboard: Boolean = true,
                       spin: DoubleArray = ZERO_SPIN, spinLocal: Boolean = true,
-                      additive: Boolean = false, scaleArray: FloatArray? = null) {
+                      additive: Boolean = false, scaleArray: FloatArray? = null,
+                      lifeCurve: ParticleLifeCurve? = null, prev: Vec3? = null) {
         if (particles.size >= ParticleDrawingConfig.CLIENT.maxRenderParticles.get()) return
 
         // 同一个 id 重新 spawn（服务端重发、迟到同步）：先把旧的整条状态摘干净。
@@ -65,18 +74,23 @@ class ClientParticleEngine {
 
         val lifetimeMs = if (lifetimeTicks > 0) lifetimeTicks * 50L else 0L
         val rp = RenderParticle(id, Vec3(x, y, z),
-            Color.of(r, g, b, a), scale, glowing, lightLevel, lifetimeMs, uv)
+            Color.of(r, g, b, a), scale, glowing, lightLevel, lifetimeMs, uv, lifeCurve, prev)
         if (scaleArray != null) rp.setScaleArrayDirect(scaleArray)
         particles[id] = rp
         if (glowing && lightLevel > 0) glowingIds.add(id)
+        if (lifeCurve != null && !lifeCurve.isEmpty()) curveIds.add(id)
 
         val pe: ParticleEngine = Minecraft.getInstance().particleEngine
         val level = Minecraft.getInstance().level
         if (level != null) {
-            val bp = BridgeParticle(id, level, x, y, z,
+            // 有 prev 就先把桥接粒子放在 prev，再按非跳变写当前位置 ——
+            // 于是 xo/x 天然是一对「上一 tick → 本 tick」的端点，原版渲染按 partialTick 扫掠。
+            val start = prev ?: Vec3(x, y, z)
+            val bp = BridgeParticle(id, level, start.x, start.y, start.z,
                 Color.of(r, g, b, a), scale, glowing, uv, additive)
             if (scaleArray != null) bp.syncScaleArray(scaleArray)
             bp.syncOrientation(billboard, spin, spinLocal)
+            if (prev != null) bp.syncPosition(x, y, z, snap = false)
             pe.add(bp)
             bridges[id] = bp
         }
@@ -84,6 +98,21 @@ class ClientParticleEngine {
         if (groupId != null) {
             groups.computeIfAbsent(groupId) { ConcurrentHashMap.newKeySet() }.add(id)
         }
+    }
+
+    /**
+     * [spawnParticle] 的外观规格版本：网络 spawn 包与客户端本地发射器都从这里落地，
+     * 两条路径对「贴图/朝向/各向异性」的解释完全一致。
+     */
+    internal fun spawnParticle(id: UUID, x: Double, y: Double, z: Double,
+                      r: Float, g: Float, b: Float, a: Float, scale: Float,
+                      lifetimeTicks: Int, groupId: UUID?, glowing: Boolean, lightLevel: Int,
+                      visual: ResolvedVisual, lifeCurve: ParticleLifeCurve? = null, prev: Vec3? = null) {
+        spawnParticle(
+            id, x, y, z, r, g, b, a, scale, lifetimeTicks, groupId, glowing, lightLevel,
+            visual.uv, visual.billboard, visual.spin, visual.spinLocal, visual.additive,
+            visual.scaleArray, lifeCurve, prev,
+        )
     }
 
     /**
@@ -355,6 +384,7 @@ class ClientParticleEngine {
         motionIds.remove(id)
         trackBuffers.remove(id)
         attachments.remove(id)
+        curveIds.remove(id)
     }
 
     /**
@@ -442,17 +472,7 @@ class ClientParticleEngine {
             }
             val wasSnap = rp.consumeSnap()
             rp.tick()
-            val bp = bridges[id]
-            if (bp != null) {
-                bp.syncPosition(rp.x(), rp.y(), rp.z(), wasSnap)
-                bp.syncColor(rp.r(), rp.g(), rp.b(), rp.a())
-                val sa = rp.scaleArray()
-                if (sa[0] != sa[1] || sa[0] != sa[2]) {
-                    bp.syncScaleArray(sa)
-                } else {
-                    bp.syncScale(rp.scale())
-                }
-            }
+            syncStateToBridge(rp, wasSnap)
         }
     }
 
@@ -483,17 +503,63 @@ class ClientParticleEngine {
 
             val wasSnap = rp.consumeSnap()
             rp.tick()
-            val bp = bridges[rp.id()]
-            if (bp != null) {
-                bp.syncPosition(rp.x(), rp.y(), rp.z(), wasSnap)
-                bp.syncColor(rp.r(), rp.g(), rp.b(), rp.a())
-                val sa = rp.scaleArray()
-                if (sa[0] != sa[1] || sa[0] != sa[2]) {
-                    bp.syncScaleArray(sa)
-                } else {
-                    bp.syncScale(rp.scale())
-                }
-            }
+            syncStateToBridge(rp, wasSnap)
+        }
+    }
+
+    /** 曲线乘数复用缓冲（客户端渲染单线程，无需每个粒子分配数组）。 */
+    private val curveMulBuf = FloatArray(5)
+    private val curveScaleBuf = FloatArray(3)
+
+    /**
+     * 把渲染粒子的当前位置/颜色/缩放写进桥接粒子。
+     * 带寿命曲线的粒子在这里乘上曲线乘数 —— 曲线是「寿命内的外观」，不是新的状态机，
+     * 所以只在写渲染层这一处生效，缓动/速度/力各条路径共用同一段。
+     */
+    private fun syncStateToBridge(rp: RenderParticle, snap: Boolean) {
+        val bp = bridges[rp.id()] ?: return
+        bp.syncPosition(rp.x(), rp.y(), rp.z(), snap)
+        syncAppearanceToBridge(rp, bp)
+    }
+
+    /** 颜色/缩放同步（含寿命曲线乘数）；位置不动，所以渲染帧也能安全调用。 */
+    private fun syncAppearanceToBridge(rp: RenderParticle, bp: BridgeParticle) {
+        if (rp.curveMultipliers(curveMulBuf)) {
+            bp.syncColor(
+                rp.r() * curveMulBuf[0], rp.g() * curveMulBuf[1],
+                rp.b() * curveMulBuf[2], rp.a() * curveMulBuf[3],
+            )
+            val sa = rp.scaleArray()
+            val m = curveMulBuf[4]
+            curveScaleBuf[0] = sa[0] * m
+            curveScaleBuf[1] = sa[1] * m
+            curveScaleBuf[2] = sa[2]
+            bp.syncScaleArray(curveScaleBuf)
+            return
+        }
+        bp.syncColor(rp.r(), rp.g(), rp.b(), rp.a())
+        val sa = rp.scaleArray()
+        if (sa[0] != sa[1] || sa[0] != sa[2]) {
+            bp.syncScaleArray(sa)
+        } else {
+            bp.syncScale(rp.scale())
+        }
+    }
+
+    /**
+     * 每渲染帧刷新带寿命曲线的粒子外观（由 `ParticleRenderHandler.onRenderFrame` 调用）。
+     *
+     * 只动颜色/缩放、不动位置：位置每帧改写会把桥接粒子的 `xo/x` 折叠成同值对，
+     * 反而毁掉原版按 partialTick 的扫掠（见 `ParticleRenderHandler.onClientTick` 的说明）。
+     * 数量只与「开了曲线的粒子」成正比，常态下是几条尾迹。
+     */
+    fun frameSyncCurves() {
+        if (curveIds.isEmpty()) return
+        for (id in curveIds) {
+            val rp = particles[id] ?: continue
+            if (id in directIds) continue // 动画/程序直写路径自己管外观
+            val bp = bridges[id] ?: continue
+            syncAppearanceToBridge(rp, bp)
         }
     }
 
@@ -544,7 +610,7 @@ class ClientParticleEngine {
         val glowing = ArrayList<RenderParticle>(glowingIds.size)
         for (id in glowingIds) {
             val p = particles[id] ?: continue
-            if (p.isAlive() && p.a() > 0.01f) glowing.add(p)
+            if (p.isAlive() && p.effectiveAlpha() > 0.01f) glowing.add(p)
         }
         return glowing
     }
