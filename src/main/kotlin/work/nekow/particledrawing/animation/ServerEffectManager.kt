@@ -14,6 +14,7 @@ import work.nekow.particledrawing.api.EffectRegistry
 import work.nekow.particledrawing.api.EffectVarStore
 import work.nekow.particledrawing.api.Orient
 import work.nekow.particledrawing.core.network.AnchorUpdateBatchPayload
+import work.nekow.particledrawing.core.network.BatchChunking
 import work.nekow.particledrawing.core.network.ClockSyncPayload
 import work.nekow.particledrawing.core.network.PlayEffectPayload
 import work.nekow.particledrawing.core.network.StopAnimationPayload
@@ -118,13 +119,17 @@ object ServerEffectManager {
         }
         for ((dim, list) in byDim) {
             val level = levelByDim[dim] ?: continue
-            val payload = AnchorUpdateBatchPayload(list)
             val targets = HashSet<ServerPlayer>()
             for (u in list) {
                 val pb = playbacks[u.playbackId] ?: continue
                 for (p in level.players()) if (p.uuid in pb.playerIds) targets.add(p)
             }
-            for (p in targets) PacketDistributor.sendToPlayer(p, payload)
+            if (targets.isEmpty()) continue
+            // 按载荷上限拆包：同时活着的播放实例多了之后，一个包塞不下
+            for (chunk in BatchChunking.chunks(list, AnchorUpdateBatchPayload.MAX_BATCH)) {
+                val payload = AnchorUpdateBatchPayload(chunk)
+                for (p in targets) PacketDistributor.sendToPlayer(p, payload)
+            }
         }
     }
 

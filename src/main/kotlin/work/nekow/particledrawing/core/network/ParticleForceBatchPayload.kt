@@ -23,6 +23,11 @@ data class ParticleForceBatchPayload(
     val updates: List<Update>,
 ) : CustomPacketPayload {
 
+    init {
+        // 超限直接报错：发送端必须先用 BatchChunking 拆包（编码端不拆会当场断客户端）
+        require(updates.size <= MAX_BATCH) { "粒子力批量超限: ${updates.size} > $MAX_BATCH" }
+    }
+
     /** 一条施力。 */
     data class Update(
         val particleId: UUID,

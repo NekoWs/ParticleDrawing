@@ -14,6 +14,11 @@ data class AnchorUpdateBatchPayload(
     val updates: List<AnchorUpdate>,
 ) : CustomPacketPayload {
 
+    init {
+        // 解码端也按同一上限拒绝：不设上限时一个畸形条数就能让客户端分配一大片内存
+        require(updates.size <= MAX_BATCH) { "锚点更新批量超限: ${updates.size} > $MAX_BATCH" }
+    }
+
     data class AnchorUpdate(
         val playbackId: UUID,
         val x: Double, val y: Double, val z: Double,
@@ -21,6 +26,9 @@ data class AnchorUpdateBatchPayload(
     )
 
     companion object {
+        /** 单包最大条数：发送端用 [BatchChunking] 拆包，畸形包显式拒绝、不静默截断。 */
+        const val MAX_BATCH = 512
+
         @JvmField
         val TYPE = CustomPacketPayload.Type<AnchorUpdateBatchPayload>(
             Identifier.fromNamespaceAndPath("particledrawing", "anchor_update_batch")
@@ -31,6 +39,7 @@ data class AnchorUpdateBatchPayload(
             object : StreamCodec<FriendlyByteBuf, AnchorUpdateBatchPayload> {
                 override fun decode(buf: FriendlyByteBuf): AnchorUpdateBatchPayload {
                     val n = buf.readVarInt()
+                    require(n in 0..MAX_BATCH) { "锚点更新批量超限: $n" }
                     val list = ArrayList<AnchorUpdate>(n)
                     repeat(n) {
                         list.add(

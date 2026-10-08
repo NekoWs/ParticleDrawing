@@ -17,6 +17,11 @@ data class ParticleTrackBatchPayload(
     val updates: List<Track>,
 ) : CustomPacketPayload {
 
+    init {
+        // 超限直接报错：发送端必须先用 BatchChunking 拆包（编码端不拆会当场断客户端）
+        require(updates.size <= MAX_BATCH) { "粒子位置批量超限: ${updates.size} > $MAX_BATCH" }
+    }
+
     /** 一条直设位置。 */
     data class Track(
         val particleId: UUID,

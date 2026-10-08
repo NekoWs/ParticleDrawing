@@ -12,6 +12,7 @@ import work.nekow.particledrawing.api.ParticleSpawnSpec
 import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.network.BatchChunking
 import work.nekow.particledrawing.core.network.ParticleDestroyPayload
 import work.nekow.particledrawing.core.network.ParticleAttachPayload
 import work.nekow.particledrawing.core.network.ParticleForcePayload
@@ -218,7 +219,7 @@ class ServerParticleEngine(
             data.setVelocity(velocities[i])
             applied[ids[i]] = velocities[i]
         }
-        sendMotionBatch(playersInDimension, applied) { visible ->
+        sendMotionBatch(playersInDimension, applied, ParticleVelocityBatchPayload.MAX_BATCH) { visible ->
             ParticleVelocityBatchPayload(visible.map { (id, v) ->
                 ParticleVelocityBatchPayload.Update(id, v.x, v.y, v.z)
             })
@@ -244,7 +245,7 @@ class ServerParticleEngine(
             data.setAcceleration(accelerations[i], ticks)
             applied[ids[i]] = accelerations[i]
         }
-        sendMotionBatch(playersInDimension, applied) { visible ->
+        sendMotionBatch(playersInDimension, applied, ParticleForceBatchPayload.MAX_BATCH) { visible ->
             ParticleForceBatchPayload(ticks, visible.map { (id, a) ->
                 ParticleForceBatchPayload.Update(id, a.x, a.y, a.z)
             })
@@ -253,11 +254,15 @@ class ServerParticleEngine(
     }
 
     /**
-     * 批量运动指令（速度/力）的下发：逐玩家按可见性裁剪后合成一包。
+     * 批量运动指令（速度/力）的下发：逐玩家按可见性裁剪后按 [maxBatch] 拆包。
      * 与 [trackParticles] 同一口径——包里的坐标同样敏感，不可见的玩家一颗都不发。
+     *
+     * 拆包是硬要求：公开 API 对成员数没有上限（[work.nekow.particledrawing.api.ParticleBatch]
+     * 只是把全部存活成员交过来），而载荷的 `MAX_BATCH` 是协议上限，超限的包会让客户端解码失败掉线。
      */
     private fun sendMotionBatch(playersInDimension: Collection<ServerPlayer>,
                                 values: Map<UUID, Vec3>,
+                                maxBatch: Int,
                                 payloadOf: (List<Pair<UUID, Vec3>>) -> CustomPacketPayload) {
         if (values.isEmpty()) return
         for (player in playersInDimension) {
@@ -267,8 +272,8 @@ class ServerParticleEngine(
                 if (!ParticleVisibilityManager.isWithinViewDistance(player, data.position())) continue
                 visible.add(id to value)
             }
-            if (visible.isNotEmpty()) {
-                PacketDistributor.sendToPlayer(player, payloadOf(visible))
+            for (chunk in BatchChunking.chunks(visible, maxBatch)) {
+                PacketDistributor.sendToPlayer(player, payloadOf(chunk))
             }
         }
     }
@@ -315,8 +320,9 @@ class ServerParticleEngine(
                 val p = positions[i]
                 visible.add(ParticleTrackBatchPayload.Track(id, p.x, p.y, p.z))
             }
-            if (visible.isNotEmpty()) {
-                PacketDistributor.sendToPlayer(player, ParticleTrackBatchPayload(visible))
+            // 与速度/力同口径拆包：成员数由调用方决定，协议上限由这里兜住
+            for (chunk in BatchChunking.chunks(visible, ParticleTrackBatchPayload.MAX_BATCH)) {
+                PacketDistributor.sendToPlayer(player, ParticleTrackBatchPayload(chunk))
             }
         }
         return moved.size
@@ -529,8 +535,10 @@ class ServerParticleEngine(
             particles.remove(id)
         }
 
-        val payload = ParticleDestroyPayload.group(groupId, ids)
-        sendToTracked(playersInDimension, ids, payload)
+        // 大组按上限拆包：一个包塞几百上千个 id 会撞上协议上限
+        for (payload in ParticleDestroyPayload.chunked(ids, groupId)) {
+            sendToTracked(playersInDimension, payload.particleIds.toList(), payload)
+        }
         untrackParticles(ids)
     }
 
@@ -618,7 +626,7 @@ class ServerParticleEngine(
     }
 
     /**
-     * 清除维度内所有粒子和组，分批发送销毁通知。
+     * 清除维度内所有粒子和组，按载荷上限分批发送销毁通知。
      *
      * @param playersInDimension 维度内的玩家列表
      * @return 清除的粒子数量
@@ -627,17 +635,9 @@ class ServerParticleEngine(
         val count = particles.size
 
         if (particles.isNotEmpty()) {
-            val allIds = particles.keys.toTypedArray()
-            val batchSize = 1000
-
-            var offset = 0
-            while (offset < allIds.size) {
-                val end = (offset + batchSize).coerceAtMost(allIds.size)
-                val batch = allIds.copyOfRange(offset, end)
-                val payload = ParticleDestroyPayload(batch, null)
-
-                sendToTracked(playersInDimension, batch.toList(), payload)
-                offset += batchSize
+            val allIds = particles.keys.toList()
+            for (payload in ParticleDestroyPayload.chunked(allIds)) {
+                sendToTracked(playersInDimension, payload.particleIds.toList(), payload)
             }
         }
 
