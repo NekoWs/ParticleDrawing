@@ -17,7 +17,7 @@ object NetworkHandler {
     @JvmStatic
     fun register(event: RegisterPayloadHandlersEvent) {
         // 载荷集合/字段变化即提升版本：新版客户端与服务端不会误配
-        val registrar: PayloadRegistrar = event.registrar("7")
+        val registrar: PayloadRegistrar = event.registrar("8")
 
         registrar.playToClient(ParticleSpawnPayload.TYPE, ParticleSpawnPayload.STREAM_CODEC, ClientPayloadHandler::handleSpawn)
         registrar.playToClient(ParticleSpawnBatchPayload.TYPE, ParticleSpawnBatchPayload.STREAM_CODEC, ClientPayloadHandler::handleSpawnBatch)
@@ -26,6 +26,8 @@ object NetworkHandler {
         registrar.playToClient(AnimationProgramPayload.TYPE, AnimationProgramPayload.STREAM_CODEC, ClientPayloadHandler::handleProgram)
         registrar.playToClient(AnimationProgramAppendPayload.TYPE, AnimationProgramAppendPayload.STREAM_CODEC, ClientPayloadHandler::handleProgramAppend)
         registrar.playToClient(SetProgramVarPayload.TYPE, SetProgramVarPayload.STREAM_CODEC, ClientPayloadHandler::handleSetProgramVar)
+        registrar.playToClient(SetProgramVarEasePayload.TYPE, SetProgramVarEasePayload.STREAM_CODEC, ClientPayloadHandler::handleSetProgramVarEase)
+        registrar.playToClient(ProgramAnchorPayload.TYPE, ProgramAnchorPayload.STREAM_CODEC, ClientPayloadHandler::handleProgramAnchor)
         registrar.playToClient(StopAnimationProgramPayload.TYPE, StopAnimationProgramPayload.STREAM_CODEC, ClientPayloadHandler::handleStopProgram)
         registrar.playToClient(ParticleVelocityPayload.TYPE, ParticleVelocityPayload.STREAM_CODEC, ClientPayloadHandler::handleVelocity)
         registrar.playToClient(ParticleVelocityBatchPayload.TYPE, ParticleVelocityBatchPayload.STREAM_CODEC, ClientPayloadHandler::handleVelocityBatch)

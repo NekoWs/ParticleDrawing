@@ -71,24 +71,21 @@ class ParticleManager private constructor(val level: ServerLevel) {
 
     // —— 发射器的服务端登记（由 ParticleEmitter / EmitterHandle 调用） ——
 
-    internal fun startEmitter(emitter: ParticleEmitter, anchor: Anchor): EmitterHandle {
-        val params = EmitterParams(
-            emitter.modeOf(), emitter.spacingOf(), emitter.intervalMsOf(), emitter.lifetimeOf(),
-            emitter.colorOf().r, emitter.colorOf().g, emitter.colorOf().b, emitter.colorOf().a,
-            emitter.scaleOf(), emitter.visualOf(), emitter.resolvedLifeCurve(), emitter.velocityOf(),
-            emitter.glowingOf(), emitter.lightLevelOf(), emitter.maxAliveOf(),
-        )
+    internal fun startEmitter(emitter: ParticleEmitter, anchor: Anchor, params: EmitterParams): EmitterHandle {
         val id = ServerEmitterManager.start(dimensionId, anchor, params, getPlayers())
-        return EmitterHandle(id, this)
-            .init(anchor, emitter.modeOf(), emitter.spacingOf(), emitter.intervalMsOf())
+        return EmitterHandle(id, this, emitter).init(anchor)
     }
 
     internal fun updateEmitterAnchor(id: UUID, anchor: Anchor) {
         ServerEmitterManager.updateAnchor(id, anchor, getPlayers())
     }
 
-    internal fun updateEmitterParams(id: UUID, mode: EmitMode, spacing: Double, intervalMs: Int) {
-        ServerEmitterManager.updateParams(id, mode, spacing, intervalMs, getPlayers())
+    internal fun updateEmitterCadence(id: UUID, mode: EmitMode, spacing: Double, intervalMs: Int) {
+        ServerEmitterManager.updateCadence(id, mode, spacing, intervalMs, getPlayers())
+    }
+
+    internal fun updateEmitterParams(id: UUID, params: EmitterParams) {
+        ServerEmitterManager.updateParams(id, params, getPlayers())
     }
 
     internal fun stopEmitter(id: UUID) {

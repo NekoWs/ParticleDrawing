@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 // 客户端发射器运行时：服务端只声明一次「沿哪个锚点、按什么口径、发什么样的粒子」，
 // 之后由这里按**渲染帧**推进里程/时间并就地生成粒子（零逐帧带宽、出现时刻不被 tick 量化）。
-// 里程口径用锚点的插值位置（partialTick），于是「投射物在渲染帧上走到哪，尾迹就铺到哪」。
+// 锚点用相邻两个服务器样本插值（见 MovableAnchorSamples），于是发射前沿与 track 头部同相位。
 internal object ClientEmitterManager {
 
     /** 单帧最多发射多少颗（掉帧/锚点瞬移时不让一帧炸出几百颗）。 */
@@ -24,18 +24,25 @@ internal object ClientEmitterManager {
 
     private class Active(
         val id: UUID,
-        val params: EmitterParams,
-        val visual: ResolvedVisual,
+        val seed: Long,
+        var params: EmitterParams,
+        var visual: ResolvedVisual,
         var anchor: Anchor,
-        var mode: EmitMode,
-        var spacing: Double,
-        var intervalMs: Int,
     ) {
         var distance: DistanceAdvance? = null
         var time: TimeAdvance? = null
 
+        /** 移动锚点的相邻样本（Fixed/Entity 锚点不用）。 */
+        val samples = MovableAnchorSamples()
+
         /** 上一帧的锚点位置（里程口径的段起点）；null = 还没建立基准。 */
         var lastPos: Vec3? = null
+
+        /** 上一帧的运动方向（时间口径的抖动平面用它）。 */
+        var lastDir: Vec3 = Vec3(0.0, 0.0, 1.0)
+
+        /** 已发射的颗数：逐颗抖动的确定性哈希靠它。 */
+        var emissionIndex: Long = 0L
 
         /** 已发射粒子各自的死亡时刻（nanoTime），用于 maxAlive 上限。 */
         val alive = ArrayDeque<Long>()
@@ -51,28 +58,44 @@ internal object ClientEmitterManager {
         val p = payload.params
         val active = Active(
             payload.emitterId,
+            EmitterSampling.seedOf(payload.emitterId),
             p,
             ResolvedVisual.of(p.visual, p.scale),
             payload.anchor,
-            p.mode,
-            p.spacing,
-            p.intervalMs,
         )
+        (payload.anchor as? Anchor.Movable)?.let {
+            active.samples.onSample(it.pos, it.velocity, System.nanoTime())
+        }
         emitters[payload.emitterId] = active
     }
 
+    /** 运行期变更：只应用载荷里带了的段（锚点 / 口径 / 整份静态参数）。 */
     fun update(payload: EmitterUpdatePayload) {
         val active = emitters[payload.emitterId] ?: return
-        active.anchor = payload.anchor
-        active.mode = payload.mode
-        // 口径变了：推进器重建（攒了一半的里程/时间不再沿用，避免换口径时补发一颗）
-        if (active.spacing != payload.spacing) {
-            active.spacing = payload.spacing
-            active.distance = null
+        val now = System.nanoTime()
+
+        payload.anchor?.let { anchor ->
+            active.anchor = anchor
+            if (anchor is Anchor.Movable) {
+                active.samples.onSample(anchor.pos, anchor.velocity, now)
+            }
         }
-        if (active.intervalMs != payload.intervalMs) {
-            active.intervalMs = payload.intervalMs
-            active.time = null
+
+        payload.cadence?.let { c ->
+            val old = active.params
+            if (old.mode != c.mode || old.spacing != c.spacing || old.intervalMs != c.intervalMs) {
+                active.params = old.copy(mode = c.mode, spacing = c.spacing, intervalMs = c.intervalMs)
+                // 口径变了：推进器重建（攒了一半的里程/时间不再沿用，避免换口径时补发一颗）
+                active.distance = null
+                active.time = null
+            }
+        }
+
+        payload.params?.let { p ->
+            val cadenceChanged = p.mode != active.params.mode || p.spacing != active.params.spacing
+            active.params = p
+            active.visual = ResolvedVisual.of(p.visual, p.scale)
+            if (cadenceChanged) active.distance = null
         }
     }
 
@@ -112,51 +135,68 @@ internal object ClientEmitterManager {
         }
         lastFrameNanos = now
 
-        for (active in emitters.values) emitFrame(active, engine, level, partialTick, deltaMs)
+        for (active in emitters.values) emitFrame(active, engine, level, partialTick, deltaMs, now)
     }
 
-    private fun emitFrame(active: Active, engine: ClientParticleEngine,
-                          level: ClientLevel, partialTick: Float, deltaMs: Double) {
-        val pos = resolveAnchor(active.anchor, level, partialTick) ?: return
+    private fun emitFrame(active: Active, engine: ClientParticleEngine, level: ClientLevel,
+                          partialTick: Float, deltaMs: Double, now: Long) {
+        val pos = resolveAnchor(active, level, partialTick, now) ?: return
         val prev = active.lastPos
         active.lastPos = pos
         if (prev == null) return // 第一帧只建立基准，不从「上一次位置」补发
 
-        if (active.mode == EmitMode.DISTANCE) {
-            val advance = active.distance ?: DistanceAdvance(active.spacing).also { active.distance = it }
+        val dir = frameDirection(active, pos, prev)
+        if (active.params.mode == EmitMode.DISTANCE) {
+            val advance = active.distance
+                ?: DistanceAdvance(active.params.spacing).also { active.distance = it }
             active.scratch.clear()
             advance.advance(prev, pos, active.scratch)
             val count = minOf(active.scratch.size, MAX_EMIT_PER_FRAME)
-            for (i in 0 until count) emitOne(active, engine, active.scratch[i])
+            for (i in 0 until count) emitOne(active, engine, active.scratch[i], dir, now)
         } else {
-            val advance = active.time ?: TimeAdvance(active.intervalMs.toDouble()).also { active.time = it }
+            val advance = active.time
+                ?: TimeAdvance(active.params.intervalMs.toDouble()).also { active.time = it }
             val count = advance.advance(deltaMs)
-            for (i in 0 until count) emitOne(active, engine, pos)
+            for (i in 0 until count) emitOne(active, engine, pos, dir, now)
         }
+    }
+
+    /** 本帧的运动方向：优先用锚点这一帧的位移，退化时沿用上一帧（原地发射也要有稳定的抖动平面）。 */
+    private fun frameDirection(active: Active, pos: Vec3, prev: Vec3): Vec3 {
+        val delta = pos.subtract(prev)
+        val dir = if (delta.lengthSqr() > 1e-10) delta.normalize() else active.lastDir
+        active.lastDir = dir
+        return dir
     }
 
     /**
-     * 锚点的**本帧**位置：Fixed 恒定；Entity 按 partialTick 取实体的插值位置（实体不在场返回 null，
-     * 这一帧不推进——里程基准保持在原地，实体回来接着铺）；Movable 用「上一 tick 位置 + 速度 × partialTick」。
+     * 锚点的**本帧**位置：
+     * - Fixed 恒定；
+     * - Entity 取实体的插值位置（实体不在场返回 null，这一帧不推进）；
+     * - Movable 用相邻两个服务器样本插值（瞬移/断流的语义见 [MovableAnchorSamples]）。
      */
-    private fun resolveAnchor(anchor: Anchor, level: ClientLevel, partialTick: Float): Vec3? = when (anchor) {
-        is Anchor.Fixed -> anchor.pos
-        is Anchor.Entity -> {
-            val entity = level.getEntity(anchor.entityId) ?: return null
-            entity.getPosition(partialTick).add(anchor.offset)
+    private fun resolveAnchor(active: Active, level: ClientLevel, partialTick: Float, now: Long): Vec3? =
+        when (val anchor = active.anchor) {
+            is Anchor.Fixed -> anchor.pos
+            is Anchor.Entity -> {
+                val entity = level.getEntity(anchor.entityId) ?: return null
+                entity.getPosition(partialTick).add(anchor.offset)
+            }
+            is Anchor.Movable -> active.samples.resolve(partialTick, now)
         }
-        is Anchor.Movable -> anchor.pos.add(anchor.velocity.scale(partialTick.toDouble()))
-    }
 
-    private fun emitOne(active: Active, engine: ClientParticleEngine, pos: Vec3) {
+    private fun emitOne(active: Active, engine: ClientParticleEngine, pos: Vec3, dir: Vec3, now: Long) {
         val p = active.params
-        val now = System.nanoTime()
         while (active.alive.isNotEmpty() && active.alive.first() <= now) active.alive.removeFirst()
         if (active.alive.size >= p.maxAlive) return
 
+        val index = active.emissionIndex++
+        val offset = EmitterSampling.offset(active.seed, index, dir, p.jitter, p.offsetAlong)
+        val spawnPos = if (offset.lengthSqr() == 0.0) pos else pos.add(offset)
+
         val id = UUID.randomUUID()
         engine.spawnParticle(
-            id, pos.x, pos.y, pos.z,
+            id, spawnPos.x, spawnPos.y, spawnPos.z,
             p.r, p.g, p.b, p.a, p.scale, p.lifetimeTicks,
             null, p.glowing, p.lightLevel, active.visual, p.lifeCurve,
         )

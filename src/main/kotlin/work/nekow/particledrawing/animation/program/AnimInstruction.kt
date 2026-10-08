@@ -2,6 +2,7 @@ package work.nekow.particledrawing.animation.program
 
 import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.api.Orient
 import work.nekow.particledrawing.core.easing.EasingType
 import java.util.UUID
 
@@ -14,7 +15,7 @@ import java.util.UUID
 enum class InstructionType {
     FADE_IN, FADE_OUT, RECOLOR, SCALE_BY, TRANSLATE,
     ROTATE_ONCE, MOVE_PATH, SPIN, PULSE, STOP_CONTINUOUS, BIND_PIVOT, EXPRESSION,
-    MOVE_EACH;
+    MOVE_EACH, SCALE_TO;
 
     companion object {
         private val BY_ORDINAL = entries.toTypedArray()
@@ -33,7 +34,7 @@ enum class InstructionType {
  */
 sealed class PivotRef {
     /** 本引用的种类标签（网络序号 = ordinal）。 */
-    enum class Kind { FIXED, FOLLOW_ENTITY }
+    enum class Kind { FIXED, FOLLOW_ENTITY, MOVABLE }
 
     abstract val kind: Kind
 
@@ -50,6 +51,20 @@ sealed class PivotRef {
         override val kind get() = Kind.FOLLOW_ENTITY
     }
 
+    /**
+     * 可移动轴心：位置由服务端逐 tick 的样本更新（见 `ParticleGroup.updateAnchor`），
+     * 客户端按**相邻两个样本**插值渲染；[orient] 为 [Orient.VELOCITY] 时整组随运动方向转向。
+     *
+     * 绑定一次即可（不像固定轴心那样每 tick 追加一条绑定指令），位置更新走专用小包。
+     */
+    data class Movable(
+        val pos: Vec3,
+        val velocity: Vec3 = Vec3.ZERO,
+        val orient: Orient = Orient.VELOCITY,
+    ) : PivotRef() {
+        override val kind get() = Kind.MOVABLE
+    }
+
     companion object {
         fun write(buf: FriendlyByteBuf, ref: PivotRef) {
             when (ref) {
@@ -63,11 +78,21 @@ sealed class PivotRef {
                     writeVec(buf, ref.offset)
                     buf.writeBoolean(ref.local)
                 }
+                is Movable -> {
+                    buf.writeVarInt(ref.kind.ordinal)
+                    writeVec(buf, ref.pos)
+                    writeVec(buf, ref.velocity)
+                    buf.writeByte(if (ref.orient == Orient.VELOCITY) 0 else 1)
+                }
             }
         }
 
         fun read(buf: FriendlyByteBuf): PivotRef = when (buf.readVarInt()) {
             Kind.FOLLOW_ENTITY.ordinal -> FollowEntity(buf.readUUID(), readVec(buf), buf.readBoolean())
+            Kind.MOVABLE.ordinal -> Movable(
+                readVec(buf), readVec(buf),
+                if (buf.readByte().toInt() == 0) Orient.VELOCITY else Orient.WORLD,
+            )
             else -> Fixed(readVec(buf))
         }
     }
@@ -131,6 +156,7 @@ sealed class AnimInstruction {
             is BindPivot -> copy(startMs = startMs + delta)
             is Expression -> copy(startMs = startMs + delta)
             is MoveEach -> copy(startMs = startMs + delta)
+            is ScaleTo -> copy(startMs = startMs + delta)
         }
     }
 
@@ -155,6 +181,7 @@ sealed class AnimInstruction {
                 InstructionType.BIND_PIVOT -> BindPivot(startMs, PivotRef.read(buf))
                 InstructionType.EXPRESSION -> Expression(startMs, buf.readUtf())
                 InstructionType.MOVE_EACH -> MoveEach(startMs, buf.readFloat(), buf.readVarInt(), readEasing(buf))
+                InstructionType.SCALE_TO -> ScaleTo(startMs, buf.readFloat(), buf.readVarInt(), readEasing(buf))
             }
         }
     }
@@ -199,7 +226,7 @@ sealed class AnimInstruction {
         }
     }
 
-    /** 等比缩放：粒子大小 ×[ratio]。 */
+    /** 等比缩放：粒子大小与到轴心的距离 ×[ratio]，**在当前倍率之上相乘**（不会把已有倍率重置回 1）。 */
     data class ScaleBy(
         override val startMs: Int,
         val ratio: Float,
@@ -209,6 +236,25 @@ sealed class AnimInstruction {
         override val type get() = InstructionType.SCALE_BY
         override fun writeBody(buf: FriendlyByteBuf) {
             buf.writeFloat(ratio); buf.writeVarInt(durationMs); writeEasing(buf, easing)
+        }
+    }
+
+    /**
+     * 把组级倍率缓动到**绝对目标** [target]（1 = 原始尺寸，0 = 完全收起不绘制）。
+     *
+     * 与 [ScaleBy] 的区别只在「终点怎么算」：本指令的终点是写死的 [target]，
+     * 起点则是**执行那一刻**的当前合成倍率——所以可以从任意倍率接退场、也可以从 0 展开，
+     * 中途追加的缩放不会把已经累积的倍率清掉。
+     */
+    data class ScaleTo(
+        override val startMs: Int,
+        val target: Float,
+        val durationMs: Int,
+        val easing: EasingType,
+    ) : AnimInstruction() {
+        override val type get() = InstructionType.SCALE_TO
+        override fun writeBody(buf: FriendlyByteBuf) {
+            buf.writeFloat(target); buf.writeVarInt(durationMs); writeEasing(buf, easing)
         }
     }
 

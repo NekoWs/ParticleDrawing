@@ -8,6 +8,7 @@ import work.nekow.particledrawing.animation.program.PivotRef
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.network.AnimationProgramAppendPayload
 import work.nekow.particledrawing.core.network.AnimationProgramPayload
+import work.nekow.particledrawing.core.network.ProgramAnchorPayload
 import work.nekow.particledrawing.core.server.AnimationScheduler
 import net.neoforged.neoforge.network.PacketDistributor
 import java.util.UUID
@@ -55,6 +56,9 @@ class ParticleGroup(
 
     /** 程序是否已随粒子清单下发（后续走增量 append）。 */
     private var armed = false
+
+    /** 是否已经绑定过可移动轴心（[updateAnchor] 的前置条件）。 */
+    private var movableAnchor = false
 
     /** 游标 → 程序时刻的换算（增量追加按「从现在起」读）。 */
     private val clock = GroupClock()
@@ -124,6 +128,74 @@ class ParticleGroup(
         manager.getEngine().getGroup(id)?.addMember(handle.id)
         armed = false // 成员变化后重发全量以刷新受控清单
     }
+
+    /**
+     * 绑定一个**可移动轴心**（黑洞中心、重力场中心、跟随投射物的法阵）：绑定一次即可，
+     * 位置用 [updateAnchor] 逐 tick 更新（专用小包），客户端按相邻两个样本插值渲染。
+     *
+     * 与 [setPivot] 的区别正在这里：固定轴心要挪就得每 tick 再 `setPivot` 一次
+     * （每 tick 一条绑定指令 + 立即替换，帧间是硬跳）；本方法只发位置。
+     *
+     * `Anchor.Movable` 的 [Orient.VELOCITY] 会让整组随运动方向转向（[Orient.WORLD] 只跟位置）；
+     * 实体锚点请用 [followEntity]（那里按 UUID 由客户端本地解析，比逐 tick 报位置更省）。
+     *
+     * @param anchor 只接受 `Anchor.Fixed`（等价 [setPivot]）与 `Anchor.Movable`
+     */
+    fun anchor(anchor: Anchor): ParticleGroup {
+        when (anchor) {
+            is Anchor.Fixed -> {
+                pivot = anchor.pos
+                emit(AnimInstruction.BindPivot(cursorNow(), PivotRef.Fixed(anchor.pos)))
+            }
+            is Anchor.Movable -> {
+                pivot = anchor.pos
+                movableAnchor = true
+                emit(AnimInstruction.BindPivot(cursorNow(), PivotRef.Movable(anchor.pos, anchor.velocity, anchor.orient)))
+            }
+            is Anchor.Entity -> throw IllegalArgumentException(
+                "ParticleGroup.anchor 不接受实体锚点：请用 followEntity(uuid, offset, local)（客户端本地解析，零逐 tick 带宽）"
+            )
+        }
+        return this
+    }
+
+    /**
+     * 更新可移动轴心的位置（配合 [anchor] 使用）：[previous] / [current] 是服务端相邻的两个样本。
+     *
+     * 客户端按这对样本插值渲染，相位与 `track` 粒子一致；两条样本离得太远（瞬移）或断流之后
+     * 第一条样本，都按跳变处理，不会在两点之间扫出一条假轨迹。
+     *
+     * @param previous 上一条样本（上一 tick 的位置）
+     * @param current 本条样本（本 tick 的位置）
+     * @param velocity 本 tick 的速度：只在轴心朝向为 `Orient.VELOCITY` 时用于整组转向
+     */
+    @JvmOverloads
+    fun updateAnchor(previous: Vec3, current: Vec3, velocity: Vec3 = current.subtract(previous)): ParticleGroup {
+        require(movableAnchor) {
+            "updateAnchor 需要先用 anchor(Anchor.Movable(...)) 绑定可移动轴心"
+        }
+        pivot = current
+        for (player in manager.getPlayers()) {
+            PacketDistributor.sendToPlayer(player, ProgramAnchorPayload(
+                id,
+                previous.x, previous.y, previous.z,
+                current.x, current.y, current.z,
+                velocity.x, velocity.y, velocity.z,
+            ))
+        }
+        return this
+    }
+
+    /** [updateAnchor] 的分量重载。 */
+    fun updateAnchor(
+        prevX: Number, prevY: Number, prevZ: Number,
+        x: Number, y: Number, z: Number,
+        vx: Number, vy: Number, vz: Number,
+    ): ParticleGroup = updateAnchor(
+        Vec3(prevX.toDouble(), prevY.toDouble(), prevZ.toDouble()),
+        Vec3(x.toDouble(), y.toDouble(), z.toDouble()),
+        Vec3(vx.toDouble(), vy.toDouble(), vz.toDouble()),
+    )
 
     /**
      * 获取组内成员数量。
@@ -311,9 +383,34 @@ class ParticleGroup(
      * 相对**当前轴心**等比缩放：粒子到轴心的距离与视觉大小同乘 [ratio]（倍率语义，2f = 放大两倍）。
      * 半径 3 的圆 `scale(3f)` 之后半径就是 9 —— 组级「胀开 / 缩回」一个调用就够，客户端本地求值、零带宽。
      * durationTicks=0 表示瞬时跳变。
+     *
+     * **倍率是累积的**：本指令的起点是**执行那一刻**的当前倍率（不是恒定的 1），所以
+     * `.scale(0.01f, 0).scale(100f, 3)` 会从 0.01 倍长回 1 倍；「先放大 1.5 倍、再缩回原尺寸」也接得上，
+     * 中途不会被重置回 1。要直接给绝对目标用 [scaleTo]。
      */
     fun scale(ratio: Float, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
         emit(AnimInstruction.ScaleBy(cursorMs, ratio, durationTicks * 50, easing))
+        return this
+    }
+
+    /**
+     * [scale] 的显式名字：**在当前倍率之上相乘**（`scaleBy(0.5f)` = 缩到一半，再来一次还是减半）。
+     * 与 [scaleTo] 配对使用，读代码时不用猜这条指令的终点怎么算。
+     */
+    fun scaleBy(ratio: Float, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup =
+        scale(ratio, durationTicks, easing)
+
+    /**
+     * 把组级倍率缓动到**绝对目标** [target]（1 = 原始尺寸）：与 [scale] 只差终点怎么算 ——
+     * 本方法的终点是写死的 [target]，起点同样是执行那一刻的当前倍率。
+     *
+     * 于是「固定结构从零尺寸展开」= 先 `scaleTo(0f, 0)` 铺成员、再 `scaleTo(1f, 6)` 长开；
+     * 「任意时刻退场」= 直接 `scaleTo(0f, 8)`，无论当时是 1 倍还是 3 倍都不会先跳回 1。
+     * `target = 0` 表示完全收起：客户端**不绘制**（不是缩到一个看不见但仍占用渲染的小尺寸）。
+     */
+    fun scaleTo(target: Float, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
+        require(target >= 0f) { "scaleTo 的目标倍率不能为负" }
+        emit(AnimInstruction.ScaleTo(cursorMs, target, durationTicks * 50, easing))
         return this
     }
 
@@ -392,6 +489,33 @@ class ParticleGroup(
         for (player in manager.getPlayers()) {
             PacketDistributor.sendToPlayer(player, work.nekow.particledrawing.core.network.SetProgramVarPayload(id, name, value))
         }
+    }
+
+    /**
+     * 运行时热更程序变量，并**在 [ticks] tick 内缓动**到目标值（不是立即赋常量）。
+     *
+     * 变量常被当作空间端点用（光束末端、场中心）：立即赋值会让整段几何瞬移，
+     * 本方法让客户端从当前值缓动过去——端点是「扫」过去的，与相邻样本插值同一个目标（高刷下连续）。
+     *
+     * [value] 仍是标量公式字符串（与 [setVariableLive] 同一套求值环境，不注入 t/i/n），
+     * 在收到那一刻求出目标值；`ticks = 0` 等价于立即赋值。
+     */
+    @JvmOverloads
+    fun setVariableInterpolated(
+        name: String,
+        value: String,
+        ticks: Int,
+        easing: EasingType = EasingType.LINEAR,
+    ): ParticleGroup {
+        require(ticks >= 0) { "setVariableInterpolated 的时长不能为负" }
+        lintGetters(value)
+        val payload = work.nekow.particledrawing.core.network.SetProgramVarEasePayload(
+            id, name, value, ticks * 50, easing,
+        )
+        for (player in manager.getPlayers()) {
+            PacketDistributor.sendToPlayer(player, payload)
+        }
+        return this
     }
 
     override fun toString() = "ParticleGroup{$id size=${size()}}"

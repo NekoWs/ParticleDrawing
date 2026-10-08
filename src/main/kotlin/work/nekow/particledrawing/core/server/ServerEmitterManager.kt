@@ -30,21 +30,20 @@ object ServerEmitterManager {
         val emitterId: UUID,
         var anchor: Anchor,
         var params: EmitterParams,
-        var mode: EmitMode,
-        var spacing: Double,
-        var intervalMs: Int,
     ) {
         /** 已收到声明的玩家：没收过的不发「更新/停止」（也顺带不泄露坐标）。 */
         val sent: MutableSet<UUID> = HashSet()
 
-        fun declaration(): EmitterSpawnPayload =
-            EmitterSpawnPayload(
-                emitterId, anchor,
-                params.copy(mode = mode, spacing = spacing, intervalMs = intervalMs),
-            )
+        fun declaration(): EmitterSpawnPayload = EmitterSpawnPayload(emitterId, anchor, params)
 
-        fun update(): EmitterUpdatePayload =
-            EmitterUpdatePayload(emitterId, anchor, mode, spacing, intervalMs)
+        fun anchorUpdate(): EmitterUpdatePayload = EmitterUpdatePayload(emitterId, anchor = anchor)
+
+        fun cadenceUpdate(): EmitterUpdatePayload = EmitterUpdatePayload(
+            emitterId,
+            cadence = EmitterUpdatePayload.EmitterCadence(params.mode, params.spacing, params.intervalMs),
+        )
+
+        fun paramsUpdate(): EmitterUpdatePayload = EmitterUpdatePayload(emitterId, params = params)
     }
 
     private val records = ConcurrentHashMap<UUID, Record>()
@@ -61,7 +60,7 @@ object ServerEmitterManager {
     fun start(dimensionId: UUID, anchor: Anchor, params: EmitterParams,
               players: Collection<ServerPlayer>): UUID {
         val emitterId = UUID.randomUUID()
-        val record = Record(dimensionId, emitterId, anchor, params, params.mode, params.spacing, params.intervalMs)
+        val record = Record(dimensionId, emitterId, anchor, params)
         records[emitterId] = record
         for (player in players) {
             if (!isWithinRange(player, anchor)) continue
@@ -72,7 +71,7 @@ object ServerEmitterManager {
     }
 
     /**
-     * 锚点变更（投射物每 tick 挪动时调）：已收到声明的玩家收更新，
+     * 锚点变更（投射物每 tick 挪动时调）：已收到声明的玩家收**只带锚点**的小包，
      * 这一拍刚走进范围的玩家直接收整份声明（不必等补发扫描）。
      */
     fun updateAnchor(emitterId: UUID, anchor: Anchor, players: Collection<ServerPlayer>) {
@@ -83,19 +82,30 @@ object ServerEmitterManager {
             if (record.sent.add(player.uuid)) {
                 PacketDistributor.sendToPlayer(player, record.declaration())
             } else {
-                PacketDistributor.sendToPlayer(player, record.update())
+                PacketDistributor.sendToPlayer(player, record.anchorUpdate())
             }
         }
     }
 
     /** 发射口径变更（间距/间隔）；已经收到过声明的玩家收一小包更新。 */
-    fun updateParams(emitterId: UUID, mode: EmitMode, spacing: Double, intervalMs: Int,
-                     players: Collection<ServerPlayer>) {
+    fun updateCadence(emitterId: UUID, mode: EmitMode, spacing: Double, intervalMs: Int,
+                      players: Collection<ServerPlayer>) {
         val record = records[emitterId] ?: return
-        record.mode = mode
-        record.spacing = spacing
-        record.intervalMs = intervalMs
-        val payload = record.update()
+        record.params = record.params.copy(mode = mode, spacing = spacing, intervalMs = intervalMs)
+        val payload = record.cadenceUpdate()
+        for (player in players) {
+            if (player.uuid in record.sent) PacketDistributor.sendToPlayer(player, payload)
+        }
+    }
+
+    /**
+     * 静态参数整份变更（寿命 / 缩放 / 曲线 / 外观 / 抖动…）：已经收到过声明的玩家收一份参数包，
+     * 客户端整份替换。**已生成的粒子不受影响**。
+     */
+    fun updateParams(emitterId: UUID, params: EmitterParams, players: Collection<ServerPlayer>) {
+        val record = records[emitterId] ?: return
+        record.params = params
+        val payload = record.paramsUpdate()
         for (player in players) {
             if (player.uuid in record.sent) PacketDistributor.sendToPlayer(player, payload)
         }

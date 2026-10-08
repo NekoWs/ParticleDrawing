@@ -2,6 +2,8 @@ package work.nekow.particledrawing.api
 
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.network.EmitterParams
+import work.nekow.particledrawing.core.network.EmitterUpdatePayload
 
 /**
  * 发射口径：按锚点走过的**里程**发射，还是按**时间**发射。
@@ -58,6 +60,8 @@ class ParticleEmitter internal constructor(
     private var lightLevel: Int = 15
     private var velocity: Vec3 = Vec3.ZERO
     private var maxAlive: Int = 4096
+    private var jitterBlocks: Double = 0.0
+    private var offsetAlongBlocks: Double = 0.0
     private var visualSpec: ParticleVisual? = null
     private var lifeCurve: ParticleLifeCurve? = null
     private var fadeOutTicks: Int = 0
@@ -208,8 +212,28 @@ class ParticleEmitter internal constructor(
     /** 单个发射器同时存活的粒子上限（防止间距给太小把客户端灌满）；默认 4096。 */
     fun maxAlive(count: Int): ParticleEmitter = apply { this.maxAlive = count.coerceAtLeast(1) }
 
-    /** 下发声明，返回句柄；之后用 [EmitterHandle.updateAnchor] / [EmitterHandle.stop] 控制。 */
-    fun spawn(): EmitterHandle = manager.startEmitter(this, anchor)
+    /**
+     * 逐颗的位置抖动：每颗粒子沿**垂直运动方向**的圆盘随机偏移，半径不超过 [blocks] 格。
+     *
+     * 偏移由「发射器 id + 第几颗」的哈希算出（确定性）：同一声明在任何客户端上第 N 颗的偏移都相同，
+     * 录屏/判读可复现，也不会因为纯随机让相邻两颗叠成一坨。0 = 不抖（默认）。
+     */
+    fun jitter(blocks: Double): ParticleEmitter = apply {
+        require(blocks >= 0.0) { "jitter 不能为负（格）" }
+        this.jitterBlocks = blocks
+    }
+
+    /**
+     * 沿运动方向的偏移（格）：所有粒子整体前移（正）/后移（负）。
+     * 用来把尾迹压后一点，或让火花出现在轨迹前方。
+     */
+    fun offsetAlong(blocks: Double): ParticleEmitter = apply { this.offsetAlongBlocks = blocks }
+
+    /**
+     * 下发声明，返回句柄；之后一律**通过句柄**改（锚点/口径/寿命/曲线/外观），
+     * 不要再回头用这个构建器改——两边会各持一份状态，改到构建器上的不会下发。
+     */
+    fun spawn(): EmitterHandle = manager.startEmitter(this, anchor, toParams())
 
     // —— 供管理器读取 ——
 
@@ -234,6 +258,17 @@ class ParticleEmitter internal constructor(
     internal fun lightLevelOf(): Int = lightLevel
 
     internal fun maxAliveOf(): Int = maxAlive
+
+    internal fun cadence(): EmitterUpdatePayload.EmitterCadence =
+        EmitterUpdatePayload.EmitterCadence(mode, spacingBlocks, intervalMillis)
+
+    /** 当前全部静态参数的快照（声明与运行期整份更新都用它）。 */
+    internal fun toParams(): EmitterParams = EmitterParams(
+        mode, spacingBlocks, intervalMillis, lifetimeTicks,
+        color.r, color.g, color.b, color.a,
+        scale, visualSpec, resolvedLifeCurve(), velocity,
+        glowing, lightLevel, maxAlive, jitterBlocks, offsetAlongBlocks,
+    )
 
     /**
      * 解析出最终曲线：把 [fadeOut] / [shrinkTo] 的糖按当前寿命换算成关键帧

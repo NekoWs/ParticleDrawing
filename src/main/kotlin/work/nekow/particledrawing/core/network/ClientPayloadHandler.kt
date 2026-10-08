@@ -218,6 +218,27 @@ internal object ClientPayloadHandler {
         }
     }
 
+    /** 变量热更 + 渐变（空间端点扫过去，而不是瞬移）。 */
+    fun handleSetProgramVarEase(payload: SetProgramVarEasePayload, context: IPayloadContext) {
+        context.enqueueWork {
+            work.nekow.particledrawing.core.client.ClientAnimationProgramManager.setVariableEased(
+                payload.programId, payload.name, payload.value, payload.durationMs, payload.easing
+            )
+        }
+    }
+
+    /** 移动轴心的相邻样本（上一位置 → 当前位置）。 */
+    fun handleProgramAnchor(payload: ProgramAnchorPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            work.nekow.particledrawing.core.client.ClientAnimationProgramManager.applyAnchor(
+                payload.programId,
+                Vec3(payload.prevX, payload.prevY, payload.prevZ),
+                Vec3(payload.x, payload.y, payload.z),
+                Vec3(payload.vx, payload.vy, payload.vz),
+            )
+        }
+    }
+
     fun handleStopProgram(payload: StopAnimationProgramPayload, context: IPayloadContext) {
         context.enqueueWork {
             work.nekow.particledrawing.core.client.ClientAnimationProgramManager.stop(

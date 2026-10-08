@@ -14,6 +14,7 @@ import work.nekow.particledrawing.animation.script.InputKey
 import work.nekow.particledrawing.animation.script.compileFunctionObject
 import work.nekow.particledrawing.animation.script.evaluate
 import work.nekow.particledrawing.api.EntityProp
+import work.nekow.particledrawing.api.Orient
 import work.nekow.particledrawing.api.WorldProp
 import work.nekow.particledrawing.animation.program.AnimInstruction
 import work.nekow.particledrawing.animation.program.EntityBinding
@@ -83,8 +84,18 @@ internal object ClientAnimationProgramManager {
         var applied = false
         var snapPathOffset: Vec3 = Vec3.ZERO          // 平移类：应用前组位移
         val rotation = RotationSlot()                 // 旋转类：角度累加账本
+        val scale = ScaleLedger()                     // 缩放类：执行起点倍率账本
         var driftScale = 0f                           // MoveEach：本帧的「沿各自偏移方向」倍率
     }
+
+    /** 一个正在渐变的变量：从 [from] 缓动到 [to]，[startMs] 为首帧（程序相对毫秒）。 */
+    private class VarEase(
+        val from: Double,
+        val to: Double,
+        val durationMs: Int,
+        val easing: EasingType,
+        var startMs: Long = -1L,
+    )
 
     private class Program(
         val particleIds: List<UUID>,
@@ -115,6 +126,19 @@ internal object ClientAnimationProgramManager {
         var expressionCode: String? = null
         var expressionStartMs = 0L
         var compiled: CompiledFunction? = null
+
+        // 可移动轴心（BindPivot(Movable) 绑定 + ProgramAnchorPayload 逐 tick 更新）
+        var movableAnchor = false
+        var movableOrientLocal = true
+        var anchorPos: Vec3 = Vec3.ZERO
+        var anchorPrev: Vec3 = Vec3.ZERO
+        var anchorVelocity: Vec3 = Vec3.ZERO
+        var anchorSampleNanos: Long = 0L
+        /** 本 tick 是否让粒子位置跳变（瞬移/断流刚恢复）：避免在两个远点之间扫出一条假轨迹。 */
+        var anchorSnapPending = false
+
+        /** 渐变中的变量：名字 → 目标与进度（见 `setVariableEased`）。 */
+        val varEases = HashMap<String, VarEase>()
 
         /** 名字 -> 注册序号（公式 getter 参数解析用）。 */
         val handleIndexByName: Map<String, Int> by lazy {
@@ -205,23 +229,48 @@ internal object ClientAnimationProgramManager {
     fun setVariable(programId: UUID, name: String, expr: String) {
         val p = programs[programId] ?: return
         if (name !in p.vars && name.length > 64) return
-        val rw = try {
-            GetterRewriter.rewrite(expr, p.handleIndexByName, p.entityBindings.size)
-        } catch (e: IllegalArgumentException) {
-            com.mojang.logging.LogUtils.getLogger().warn(
-                "[ParticleDrawing] setVariable {}:{} getter 解析失败: {}", programId, name, e.message,
-            )
-            return
-        }
-        val scope = HashMap<String, Any>(p.vars)
-        scope.putAll(p.latestInputs)
-        val v = try {
-            evaluate(rw.code, scope)
-        } catch (_: Exception) { null } ?: return
+        val v = evaluateVar(p, expr) ?: return
         val hadCode = p.expressionCode != null
+        // 立即赋值取消同名的渐变（后到的指令说了算）
+        p.varEases.remove(name)
         p.vars[name] = v
         // 变量名集合可能扩大：表达式指令的 externals 布局需随之重建
         if (hadCode) recompileExpression(p) else prepareExpressionBuffers(p)
+    }
+
+    /**
+     * 求一条变量公式的值：公式里的 get_* 先重写为合成变量，环境 = 其余变量 + 被动输入当前值。
+     * 未知名/解析失败记日志并返回 null（本次热更放弃）。
+     */
+    private fun evaluateVar(p: Program, expr: String): Double? {
+        val rw = try {
+            GetterRewriter.rewrite(expr, p.handleIndexByName, p.entityBindings.size)
+        } catch (e: IllegalArgumentException) {
+            LOGGER.warn(
+                "[ParticleDrawing] setVariable getter 解析失败: {}", e.message,
+            )
+            return null
+        }
+        val scope = HashMap<String, Any>(p.vars)
+        scope.putAll(p.latestInputs)
+        return try {
+            evaluate(rw.code, scope)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** 每 tick 推进渐变中的变量（到点即从表里摘掉，值停在目标上）。 */
+    private fun applyVarEases(p: Program, now: Long) {
+        if (p.varEases.isEmpty()) return
+        val it = p.varEases.entries.iterator()
+        while (it.hasNext()) {
+            val (name, ease) = it.next()
+            if (ease.startMs < 0L) ease.startMs = now
+            val k = progress(now - ease.startMs, ease.durationMs)
+            p.vars[name] = ease.from + (ease.to - ease.from) * eased(ease.easing, k).toDouble()
+            if (k >= 1f) it.remove()
+        }
     }
 
     fun stop(programId: UUID, destroyParticles: Boolean) {
@@ -241,8 +290,53 @@ internal object ClientAnimationProgramManager {
             recompileExpression(p)
             return
         }
+        if (ins is AnimInstruction.BindPivot && ins.pivot is PivotRef.Movable) {
+            // 可移动轴心：绑定一次，位置之后只走 ProgramAnchorPayload
+            val ref = ins.pivot
+            p.movableAnchor = true
+            p.movableOrientLocal = ref.orient == Orient.VELOCITY
+            p.anchorPos = ref.pos
+            p.anchorPrev = ref.pos
+            p.anchorVelocity = ref.velocity
+            p.anchorSampleNanos = System.nanoTime()
+        }
         p.slots.add(Slot(ins))
         prepareExpressionBuffers(p)
+    }
+
+    /**
+     * 移动轴心的相邻样本（服务端每 tick 一条）：
+     * 位置直接采用本 tick 的样本（渲染帧之间的插值由桥接粒子的 `xo/x` 完成，与 track 同相位）；
+     * [prev] 用来判断瞬移与断流恢复——那两种情况按跳变处理，不扫出一条假轨迹。
+     */
+    fun applyAnchor(programId: UUID, prev: Vec3, current: Vec3, velocity: Vec3) {
+        val p = programs[programId] ?: return
+        val now = System.nanoTime()
+        val stale = p.anchorSampleNanos != 0L && now - p.anchorSampleNanos > MovableAnchorSamples.STALE_NANOS
+        if (stale || current.distanceTo(prev) > MovableAnchorSamples.TELEPORT_LIMIT) {
+            p.anchorSnapPending = true
+        }
+        p.anchorPrev = prev
+        p.anchorPos = current
+        if (velocity.lengthSqr() > 1e-12) p.anchorVelocity = velocity
+        p.anchorSampleNanos = now
+    }
+
+    /**
+     * 热更变量并渐变到目标值：先按与 [setVariable] 相同的环境求出目标，
+     * 再让客户端在 [durationMs] 内从**当前值**缓动过去（空间端点因此是扫过去的，不是瞬移）。
+     */
+    fun setVariableEased(programId: UUID, name: String, expr: String, durationMs: Int, easing: EasingType) {
+        val p = programs[programId] ?: return
+        val target = evaluateVar(p, expr) ?: return
+        if (durationMs <= 0) {
+            p.varEases.remove(name)
+            p.vars[name] = target
+        } else {
+            p.varEases[name] = VarEase(p.vars[name] ?: target, target, durationMs, easing)
+        }
+        // 变量名集合可能扩大：表达式指令的 externals 布局需随之重建
+        if (p.expressionCode != null) recompileExpression(p) else prepareExpressionBuffers(p)
     }
 
     // —— 输入采样与编译缓冲 ——
@@ -398,6 +492,7 @@ internal object ClientAnimationProgramManager {
             // 指令 startMs 与公式变量 t 均为该相对域，量纲一致、与存档时长无关。
             val now = (nowClient + p.anchorOffset - p.startAnchor) * 50
             refreshInputs(p, nowClient)
+            applyVarEases(p, now)
 
             if (p.expressionCode != null) {
                 expressionFrame(p, engine, now)
@@ -425,7 +520,7 @@ internal object ClientAnimationProgramManager {
             val o = p.out
             readAttrs(p.regs, o)
             val alpha = (o[3].toFloat() * fadeIn * (1f - fadeOut)).coerceIn(0f, 1f)
-            val scl = (o[4].toFloat() * st.baseScale).coerceAtLeast(0.001f)
+            val scl = (o[4].toFloat() * st.baseScale).coerceAtLeast(0f)
             engine.applyProgramFrame(
                 uuid, Vec3(o[0], o[1], o[2]),
                 o[5].toFloat(), o[6].toFloat(), o[7].toFloat(),
@@ -457,6 +552,10 @@ internal object ClientAnimationProgramManager {
         val rc = p.recolor
         val kR = if (rc == null) 1f else eased(rc.ease, progress(now - rc.startMs, rc.durationMs))
 
+        // 轴心瞬移/断流恢复：这一帧让位置跳变，不在新旧两点之间扫出一条假轨迹
+        val anchorSnap = p.anchorSnapPending
+        p.anchorSnapPending = false
+
         for ((uuid, st) in p.states) {
             val r: Float; val g: Float; val b: Float; val aBase: Float
             if (rc != null) {
@@ -468,13 +567,14 @@ internal object ClientAnimationProgramManager {
             } else { r = st.baseR; g = st.baseG; b = st.baseB; aBase = st.baseA }
 
             val alpha = (aBase * fadeIn * (1f - fadeOut)).coerceIn(0f, 1f)
-            val scale = (st.baseScale * p.scaleMul * p.pulseMul).coerceAtLeast(0.001f)
+            // 倍率可以到 0：0 = 完全收起、什么都不画（不是钳到一个「很小但还看得见」的值）
+            val scale = (st.baseScale * p.scaleMul * p.pulseMul).coerceAtLeast(0f)
             val local = radialRel(st.rel, p.scaleMul, p.pulseMul)
             // 沿各自偏移方向外移：方向用**当前**的 rel（跟着旋转一起转），幅度 = 倍率 × 偏移长度
             val shifted = if (driftScale == 0f) local else local.add(st.rel.scale(driftScale.toDouble()))
             engine.applyProgramFrame(
                 uuid, pivot.apply(p.pathOffset.add(shifted)),
-                r, g, b, alpha, scale,
+                r, g, b, alpha, scale, anchorSnap,
             )
         }
     }
@@ -504,6 +604,12 @@ internal object ClientAnimationProgramManager {
     }
 
     private fun resolvePivot(p: Program): PivotFrame? {
+        // 可移动轴心：位置来自逐 tick 的样本；orient=VELOCITY 时整组随运动方向转向
+        if (p.movableAnchor) {
+            if (!p.movableOrientLocal) return PivotFrame(p.anchorPos, Vec3.ZERO, 0f, 0f, false)
+            val yp = EffectAnchorResolver.yawPitchDegrees(p.anchorVelocity) ?: return PivotFrame(p.anchorPos, Vec3.ZERO, 0f, 0f, false)
+            return PivotFrame(p.anchorPos, Vec3.ZERO, yp[0].toFloat(), yp[1].toFloat(), true)
+        }
         val ch = p.pivotEntity ?: return PivotFrame(p.pivotFixed, Vec3.ZERO, 0f, 0f, false)
         val e = findEntity(ch.uuid) ?: return null
         return PivotFrame(e.position(), p.pivotEntityOffset, e.yRot, e.xRot, p.pivotEntityLocal)
@@ -529,12 +635,16 @@ internal object ClientAnimationProgramManager {
                 is PivotRef.Fixed -> {
                     p.pivotFixed = ref.pos; p.pivotEntity = null
                     p.pivotEntityOffset = Vec3.ZERO; p.pivotEntityLocal = false
+                    p.movableAnchor = false
                 }
                 is PivotRef.FollowEntity -> {
                     p.pivotEntity = EntityBinding("__pivot__", ref.uuid)
                     p.pivotEntityOffset = ref.offset
                     p.pivotEntityLocal = ref.local
+                    p.movableAnchor = false
                 }
+                // 可移动轴心：绑定状态在 addInstruction 里就位，位置只走 ProgramAnchorPayload
+                is PivotRef.Movable -> Unit
             }
 
             is AnimInstruction.FadeIn -> { p.fadeInStart = start; p.fadeInDur = ins.durationMs; p.fadeInEase = ins.easing }
@@ -550,7 +660,14 @@ internal object ClientAnimationProgramManager {
 
             is AnimInstruction.ScaleBy -> {
                 val k = eased(ins.easing, progress(local, ins.durationMs))
-                p.scaleMul = 1f + (ins.ratio - 1f) * k
+                val target = slot.scale.begin(p.scaleMul, ins.ratio, absolute = false)
+                p.scaleMul = slot.scale.valueAt(target, k)
+            }
+
+            is AnimInstruction.ScaleTo -> {
+                val k = eased(ins.easing, progress(local, ins.durationMs))
+                val target = slot.scale.begin(p.scaleMul, ins.target, absolute = true)
+                p.scaleMul = slot.scale.valueAt(target, k)
             }
 
             is AnimInstruction.Translate -> {

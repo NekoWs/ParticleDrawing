@@ -23,6 +23,8 @@ import java.util.UUID
  * @param lifeCurve 每颗粒子的寿命曲线
  * @param velocity 出生速度（blocks/tick）
  * @param maxAlive 单个发射器同时存活的粒子上限
+ * @param jitter 垂直运动方向的随机偏移半径（格）；0 = 不抖
+ * @param offsetAlong 沿运动方向的偏移（格，正 = 往前）
  */
 data class EmitterParams(
     val mode: EmitMode,
@@ -37,6 +39,8 @@ data class EmitterParams(
     val glowing: Boolean,
     val lightLevel: Int,
     val maxAlive: Int,
+    val jitter: Double = 0.0,
+    val offsetAlong: Double = 0.0,
 )
 
 internal object EmitterParamsCodec {
@@ -54,6 +58,8 @@ internal object EmitterParamsCodec {
         buf.writeBoolean(p.glowing)
         buf.writeVarInt(p.lightLevel)
         buf.writeVarInt(p.maxAlive)
+        buf.writeDouble(p.jitter)
+        buf.writeDouble(p.offsetAlong)
     }
 
     fun read(buf: FriendlyByteBuf): EmitterParams = EmitterParams(
@@ -69,6 +75,8 @@ internal object EmitterParamsCodec {
         glowing = buf.readBoolean(),
         lightLevel = buf.readVarInt(),
         maxAlive = buf.readVarInt(),
+        jitter = buf.readDouble(),
+        offsetAlong = buf.readDouble(),
     )
 }
 
@@ -110,18 +118,27 @@ data class EmitterSpawnPayload(
 }
 
 /**
- * 发射器运行期变更（锚点挪了 / 密度改了）：整份可变旋钮一起下发，客户端整份替换——
- * 只改一项时其余项与声明时同值，不会出现「部分更新叠加出错」。
+ * 发射器运行期变更：**按段更新**，每次只带改动的部分。
+ *
+ * 分三段是有原因的：锚点每 tick 都在挪（[Anchor] 段，最便宜）、密度偶尔调（[EmitterCadence] 段）、
+ * 寿命/曲线/外观这类只在真正改动时才发（[params] 段，整份替换）——
+ * 三者混成一个整份参数包会让「每 tick 挪锚点」也背上曲线与外观的字节。
  */
 data class EmitterUpdatePayload(
     val emitterId: UUID,
-    val anchor: Anchor,
-    val mode: EmitMode,
-    val spacing: Double,
-    val intervalMs: Int,
+    val anchor: Anchor? = null,
+    val cadence: EmitterCadence? = null,
+    val params: EmitterParams? = null,
 ) : CustomPacketPayload {
 
+    /** 发射口径（密度旋钮）：按里程的格数 / 按时间的毫秒数。 */
+    data class EmitterCadence(val mode: EmitMode, val spacing: Double, val intervalMs: Int)
+
     companion object {
+        private const val FLAG_ANCHOR = 1 shl 0
+        private const val FLAG_CADENCE = 1 shl 1
+        private const val FLAG_PARAMS = 1 shl 2
+
         @JvmField
         val TYPE = CustomPacketPayload.Type<EmitterUpdatePayload>(
             Identifier.fromNamespaceAndPath("particledrawing", "emitter_update")
@@ -130,21 +147,35 @@ data class EmitterUpdatePayload(
         @JvmField
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, EmitterUpdatePayload> =
             object : StreamCodec<FriendlyByteBuf, EmitterUpdatePayload> {
-                override fun decode(buf: FriendlyByteBuf): EmitterUpdatePayload =
-                    EmitterUpdatePayload(
-                        StreamCodecs.UUID_CODEC.decode(buf),
-                        StreamCodecs.readAnchor(buf),
-                        if (buf.readVarInt() == EmitMode.TIME.ordinal) EmitMode.TIME else EmitMode.DISTANCE,
-                        buf.readDouble(),
-                        buf.readVarInt(),
-                    )
+                override fun decode(buf: FriendlyByteBuf): EmitterUpdatePayload {
+                    val emitterId = StreamCodecs.UUID_CODEC.decode(buf)
+                    val flags = buf.readVarInt()
+                    val anchor = if (flags and FLAG_ANCHOR != 0) StreamCodecs.readAnchor(buf) else null
+                    val cadence = if (flags and FLAG_CADENCE != 0) {
+                        EmitterCadence(
+                            if (buf.readVarInt() == EmitMode.TIME.ordinal) EmitMode.TIME else EmitMode.DISTANCE,
+                            buf.readDouble(),
+                            buf.readVarInt(),
+                        )
+                    } else null
+                    val params = if (flags and FLAG_PARAMS != 0) EmitterParamsCodec.read(buf) else null
+                    return EmitterUpdatePayload(emitterId, anchor, cadence, params)
+                }
 
                 override fun encode(buf: FriendlyByteBuf, p: EmitterUpdatePayload) {
                     StreamCodecs.UUID_CODEC.encode(buf, p.emitterId)
-                    StreamCodecs.writeAnchor(buf, p.anchor)
-                    buf.writeVarInt(p.mode.ordinal)
-                    buf.writeDouble(p.spacing)
-                    buf.writeVarInt(p.intervalMs)
+                    var flags = 0
+                    if (p.anchor != null) flags = flags or FLAG_ANCHOR
+                    if (p.cadence != null) flags = flags or FLAG_CADENCE
+                    if (p.params != null) flags = flags or FLAG_PARAMS
+                    buf.writeVarInt(flags)
+                    p.anchor?.let { StreamCodecs.writeAnchor(buf, it) }
+                    p.cadence?.let {
+                        buf.writeVarInt(it.mode.ordinal)
+                        buf.writeDouble(it.spacing)
+                        buf.writeVarInt(it.intervalMs)
+                    }
+                    p.params?.let { EmitterParamsCodec.write(buf, it) }
                 }
             }
     }

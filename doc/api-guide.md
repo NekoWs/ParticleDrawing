@@ -177,6 +177,20 @@ Draw.circle(m, center, 3.0, 60, visual = ParticleVisual().texture("mymod:glass")
 Draw.sphere(m, center, 5.0, count = 200, stagger = 2)
 ```
 
+### 形状里的实色片元自己做入场（lifeCurve）
+
+每个形状方法末尾都能接一条**逐粒子寿命曲线**：片元自己淡入/收放，不必去缩整个组
+（缩组会把形状的间距、半径一起缩掉，那不是「片元入场」）：
+
+```kotlin
+Draw.sphere(m, center, 5.0, count = 200,
+    lifeCurve = ParticleLifeCurve.of(
+        ParticleCurve.alpha(CurveKey.at(0, 0f), CurveKey.at(10, 1f, EasingType.EASE_OUT)),
+    ))
+```
+
+配合 `stagger` 就是「逐颗冒出来」；曲线本身随 spawn 包下发，零逐帧带宽。
+
 ---
 
 ## 五、渐变着色（ColorSource）
@@ -222,13 +236,32 @@ group.spin(Vec3(0, 1, 0), Math.PI / 40)            // 绕当前轴心转；接�
 组内各粒子保持相对轴心的偏移。反过来 `.spin(...)` 写在 `followEntity` 之前，
 那一段只绕绑定前的固定点转——顺序反了不会报错，只是效果不对。
 
+**可移动轴心**（黑洞中心、重力场中心、跟随投射物的法阵）：那不是实体，只能用「服务端每 tick 报位置」。
+用 `anchor(Anchor.Movable(...))` 绑定一次，之后 `updateAnchor(上一位置, 当前位置)` 逐 tick 更新：
+
+```kotlin
+group.anchor(Anchor.Movable(center, velocity))       // 绑定一次（位置 + 朝向模式）
+// ...每 tick：
+group.updateAnchor(before, now)                      // 相邻两个服务器样本，客户端按 partialTick 插值
+```
+
+- 与 `setPivot` 的区别：固定轴心要挪就得每 tick 再 `setPivot` 一次（每 tick 一条绑定指令 + 帧间硬跳）；
+  本方法只发位置，**相位与 `track` 粒子一致**（相邻样本插值）。
+- 朝向：`Anchor.Movable` 的 `Orient.VELOCITY` 让整组随运动方向转向（法阵面朝飞行方向），
+  `Orient.WORLD` 只跟位置不转向。
+- 边界语义：一条样本跳超 8 格（瞬移）或断流超过 3 tick，都按**跳变**处理——不会在两点之间扫出一条假轨迹；
+  关卡暂停（程序不推进）时位置保持，恢复后按新样本继续。
+- 实体锚点仍请用 `followEntity`（客户端本地解析，连位置包都不用发）。
+
 ### 一次性变换
 
 ```kotlin
 group.move(Vec3(0.0, 2.0, 0.0), durationTicks = 30, easing = EasingType.EASE_OUT)
 group.rotate(Vec3(0, 1, 0), radians = Math.PI, durationTicks = 40)   // 绕当前轴心
 group.recolor(Color.BLUE, durationTicks = 20)
-group.scale(ratio = 2f, durationTicks = 15)      // 相对当前轴心放大到 2 倍（半径与视觉大小同步翻倍）
+group.scale(ratio = 2f, durationTicks = 15)      // 在**当前倍率**之上乘 2（半径与视觉大小同步）
+group.scaleBy(0.5f, durationTicks = 10)          // scale 的显式名字：再来一次是再减半
+group.scaleTo(1.0f, durationTicks = 8)           // 缓动到**绝对** 1 倍（不管现在是几倍）
 group.moveAlongOffset(scale = 0.6f, durationTicks = 20)  // 每颗沿自己相对轴心的方向向外飞
 ```
 
@@ -236,11 +269,14 @@ group.moveAlongOffset(scale = 0.6f, durationTicks = 20)  // 每颗沿自己相�
 > 「球面碎片各自沿法线炸开」这种效果组级 `move` 表达不了——那样只能一片一个组，
 > 而组数直接等于 arm 日志行数与 arm 开销；本方法整组一个包就够。
 
-> `scale` 是**倍率**语义（2f = 两倍，0.5f = 一半），且作用于**粒子到轴心的距离 + 视觉大小**——
-> 半径 3 的圆 `scale(3f)` 之后半径就是 9（组级「胀开 / 缩回」一个调用就够）；
-> `durationTicks = 0` 表示瞬时跳变，需要渐变过程请给足时长。
-> `move` / `movePath` 只改渲染位置，**不动轴心绑定**，所以「先铺形状、再录一段位移」不会把相对偏移算歪。
-> `stopContinuous` 同样受 `delay` 游标控制：`.spin(...).delay(100).stopContinuous()` = 转 100 tick 后停。
+> **缩放的起点是「执行那一刻」的合成倍率**，不是恒定的 1：
+> - `scaleBy(r)`（`scale` 是它的别名）：终点 = 起点 × r，`scaleBy(0.01f).scaleBy(100f)` 会回到 1 倍；
+> - `scaleTo(t)`：终点 = t，从任意倍率接退场都不会先跳回 1（1.5 倍退场就是 1.5 → 0）；
+> - 运行中追加一条缩放，以那**一帧**的倍率为起点（帧级重定向），已有倍率、脉冲、旋转都不被重置；
+> - `scaleTo(0f, …)` 表示完全收起：客户端不绘制（不是缩到「很小但还看得见」）。固定结构想从零尺寸长开，
+>   就 `scaleTo(0f, 0)` 铺成员、之后 `scaleTo(1f, 6)`。
+> - `durationTicks = 0` 表示瞬时跳变；`move` / `movePath` 只改渲染位置，**不动轴心绑定**。
+> - `stopContinuous` 同样受 `delay` 游标控制：`.spin(...).delay(100).stopContinuous()` = 转 100 tick 后停。
 
 ### 旋转可叠加
 
@@ -351,9 +387,13 @@ group.expression("""
 ```kotlin
 group.setVariableLive("speed", "2")                // 直接给常量
 group.setVariableLive("rad", "speed * 2")          // 标量公式，可引用其它程序变量
+group.setVariableInterpolated("bx", "targetX", ticks = 10)   // 10 tick 内缓动到目标（空间端点扫过去）
 ```
 
 > `setVariableLive` 的公式走程序变量作用域，不注入 `t/i/n`，因此不能引用时间/序号。
+> `setVariableInterpolated` 与之同一套求值环境（收到那一刻算出目标值），只是**不瞬移**：
+> 客户端从当前值缓动过去，`easing` 可选，`ticks = 0` 等于立即赋值。
+> 变量常被当作空间端点用（光束末端、场中心），立即赋值会让整段几何跳一下——要连续就用它。
 
 > `expression` 一旦出现即为**表达式模式**：接管位置/颜色/缩放的最终解释权；
 > `fadeIn/fadeOut` 因子仍叠加在其 alpha 上。纯数据协议——不向客户端发送任何代码字节。
@@ -562,11 +602,19 @@ trail.isActive()
 
 - **两种口径**：`spacing(格)` 按锚点走过的里程发射（位置严格落在段内等距点上，与帧率无关）；
   `interval(ticks)` / `intervalMs(ms)` 按时间发射。
-- **锚点插值**：客户端每渲染帧取锚点的本帧位置（实体取 `getPosition(partialTick)`，
-  可移动锚点取 `位置 + 速度 × partialTick`），所以 20Hz 报位置、120Hz 铺粒子是对的用法。
+- **逐颗抖动**：`jitter(格)` 让每颗垂直运动方向随机偏开（圆盘内均匀），`offsetAlong(格)` 整条前后挪。
+  偏移由「发射器 id + 第几颗」的哈希算出，**确定性**：同一声明在任何客户端上第 N 颗的偏移相同。
+- **锚点插值**：客户端每渲染帧取锚点的本帧位置 —— 实体取 `getPosition(partialTick)`，
+  可移动锚点按**相邻两个服务器样本**插值（`lerp(prev, cur, partialTick)`），与 `track` 粒子同相位。
+  瞬移（一条样本跳超 8 格）与断流（>3 tick 没样本）都按跳变处理：停住或直接落到新位置，
+  不会在两点之间扫出一条假轨迹；Esc 暂停时不推进。
 - **外观与曲线**：`color/scale/style/texture/uv/aniso/billboard/spin/alignTo/additive/glowing/lightLevel`、
   `alphaCurve/sizeCurve/colorCurve/fadeOut/shrinkTo` 与 `Builder` 同一套语义；
   `velocity(...)` 给每颗粒子一个出生速度（默认静止，拖尾要留在原地淡出）。
+- **运行期改参数**：`spawn()` 返回的句柄上重新调同名方法即可，变更走小包、**已生成的粒子不受影响**：
+  `life(ticks)` / `scale` / `color` / `curve` / `fadeOut` / `shrinkTo` / `jitter` / `offsetAlong` / `visual`…
+  锚点变更（`updateAnchor`）只发锚点段、密度变更（`spacing`/`interval`）只发口径段，
+  所以带阻力的投射物可以随速度连续改 `life` 而不用重挂声明。
 - **上限**：`maxAlive(n)`（默认 4096）限制单个发射器同时存活的粒子数，防止间距给太小把客户端灌满；
   客户端还有全局的 `maxRenderParticles` 兜底。
 - **断线/换维度/走进范围**：PD 自己负责补发声明（后进服的玩家不会看到一条空尾迹）。
@@ -606,7 +654,8 @@ handle.track(pos.x, pos.y, pos.z)
 handle.position()      // 只读回服务端的权威位置；粒子不存在时返回 null
 ```
 
-逐粒子每 tick 一个包在多粒子场景下太贵，用批量接口（一个包覆盖多颗，逐玩家按可见性裁剪）：
+逐粒子每 tick 一个包在多粒子场景下太贵，用批量接口（一个包覆盖多颗，逐玩家按可见性裁剪，
+**超过单包上限自动拆包**——公开 API 对成员数没有上限，协议上限由 PD 兜住）：
 
 ```kotlin
 val ids = handles.map { it.id }
@@ -614,6 +663,10 @@ manager.trackAll(ids, positions)         // 两个列表按顺序一一对应，
 manager.setVelocityAll(ids, velocities)  // 每颗粒子各自的速度，一样是一个包
 manager.applyForceAll(ids, accelerations, ticks = 1)  // 每颗粒子各自的加速度，共用一个 ticks
 ```
+
+> 批量载荷的单包上限：速度 / 位置 / 力 / 销毁 / 锚点更新都是 512 条，生成是 256 条。
+> 发送端按这个上限拆包（顺序、id↔向量对应关系与最终状态都不变），构造超限的载荷会**当场报错**
+> 而不是把包发出去让客户端解码失败掉线。
 
 需要「沿一个力运动」而不是逐 tick 报位置时用 `applyForce`：只在开始施力时下发一次，
 之后服务端与客户端按同一规则逐 tick 积分（速度 += 加速度，位置 += 速度）。

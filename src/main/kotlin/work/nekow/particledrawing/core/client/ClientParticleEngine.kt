@@ -585,8 +585,12 @@ class ClientParticleEngine {
      * 首次接管（该粒子此前不在 direct 同步中）时桥接位置走跳变：
      * 程序接管 = 解释权切换点，若按普通端点补间，出生布局到公式布局的
      * 迁移会被拉长为整 tick 的交叉扫掠，视觉上一瞬乱序。
+     *
+     * @param snap 这一帧强制跳变（轴心瞬移 / 断流恢复）：同样不做整 tick 的交叉扫掠
      */
-    fun applyProgramFrame(id: UUID, pos: Vec3, r: Float, g: Float, b: Float, a: Float, scale: Float) {
+    @JvmOverloads
+    fun applyProgramFrame(id: UUID, pos: Vec3, r: Float, g: Float, b: Float, a: Float, scale: Float,
+                          snap: Boolean = false) {
         val rp = particles[id] ?: return
         val firstTakeover = id !in directIds
         directIds.add(id)
@@ -595,7 +599,7 @@ class ClientParticleEngine {
         rp.setColorDirect(Color.of(r, g, b, a))
         rp.setScaleDirect(scale)
         bridges[id]?.let {
-            it.syncPosition(pos.x, pos.y, pos.z, firstTakeover)
+            it.syncPosition(pos.x, pos.y, pos.z, firstTakeover || snap)
             it.syncColor(r, g, b, a)
             it.syncScale(scale)
         }
