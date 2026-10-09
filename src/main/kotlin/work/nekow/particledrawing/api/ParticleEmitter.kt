@@ -208,30 +208,7 @@ class ParticleEmitter internal constructor(
     /** 下发声明并返回句柄；后续改动通过句柄下发，构建器上的改动不会发包。 */
     fun spawn(): EmitterHandle = manager.startEmitter(this, anchor, toParams())
 
-    // 供管理器读取
-
-    internal fun modeOf(): EmitMode = mode
-
-    internal fun spacingOf(): Double = spacingBlocks
-
-    internal fun intervalMsOf(): Int = intervalMillis
-
-    internal fun lifetimeOf(): Int = lifetimeTicks
-
-    internal fun colorOf(): Color = color
-
-    internal fun scaleOf(): Float = scale
-
-    internal fun visualOf(): ParticleVisual? = visualSpec
-
-    internal fun velocityOf(): Vec3 = velocity
-
-    internal fun glowingOf(): Boolean = glowing
-
-    internal fun lightLevelOf(): Int = lightLevel
-
-    internal fun maxAliveOf(): Int = maxAlive
-
+    /** 当前发射口径（口径变更只发这一段）。 */
     internal fun cadence(): EmitterUpdatePayload.EmitterCadence =
         EmitterUpdatePayload.EmitterCadence(mode, spacingBlocks, intervalMillis)
 
