@@ -430,7 +430,8 @@ ParticleManager.registerTexture("mymod:glow", pngBytes)   // 幂等，字节上�
 
 登记后字节自动同步到客户端：单机与自带客户端就地解码，专用服务器在玩家进服时补发、运行中新登记的
 立即广播。逐粒子载荷只写贴图 id，5 万颗粒子共用一张贴图也只多 1 字节每颗。没登记过的名字不会丢粒子，
-只是渲染成纯白方块。
+只是渲染成纯白方块。贴图比粒子晚到货时先按 16px 计尺寸系数，到货后按贴图实际尺寸重算（只影响非 16px
+的贴图）。
 
 内置形状不必登记，`ParticleStyle.SOFT_DOT` / `LINE` 在两端各自生成同一份像素；需要提前确认可用时调
 `ParticleManager.registerBuiltinTextures()`。两张内置贴图的可见尺寸比标称略小：
@@ -811,6 +812,7 @@ anim.play(level.players(), origin).updateVariable("rad", "4");
 | 自转 | `SPIN_X` `SPIN_Y` `SPIN_Z` |
 | 公转中心 | `CENTER_X` `CENTER_Y` `CENTER_Z` |
 | 摄像机 | `FOV` `TARGET_X` `TARGET_Y` `TARGET_Z` |
+| 音频（属主 `a:<资产id>`） | `VOL` `SPEED` `PAN` `FADE_IN` `FADE_OUT` |
 
 `TrackPr.FOV` 是标量分量，没有 `.x` / `.y` / `.z`。
 

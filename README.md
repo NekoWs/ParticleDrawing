@@ -1,5 +1,7 @@
 # ParticleDrawing
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 [![Build](https://github.com/NekoWs/ParticleDrawing/actions/workflows/build.yml/badge.svg)](https://github.com/NekoWs/ParticleDrawing/actions/workflows/build.yml)
 [![Maven Central](https://img.shields.io/maven-central/v/work.nekow/particledrawing?label=Maven%20Central)](https://central.sonatype.com/artifact/work.nekow/particledrawing)
 [![Modrinth](https://img.shields.io/modrinth/dt/particledrawing?label=Modrinth&logo=modrinth)](https://modrinth.com/mod/particledrawing)
@@ -103,7 +105,7 @@ More in the [getting started guide](doc/getting-started.md).
 | ---------------------------- | --------------------------------------------------------------- |
 | `/pdraw list`                | List the animations available in `animations/`.                 |
 | `/pdraw play <name> [pos]`   | Play an animation at `pos`, or 3 blocks in front of the player. |
-| `/pdraw stop`                | Stop every animation playing in the current dimension.          |
+| `/pdraw stop`                | Stop every animation and effect playing in the current dimension. |
 | `/pdraw reload`              | Reload particle textures from disk (client side only).          |
 | `/pdraw camera <name\|stop>` | Preview through a camera of a playing animation.                |
 | `/pdraw var <name> <value>`  | Update a function object variable of the playing animations.    |

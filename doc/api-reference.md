@@ -38,7 +38,7 @@
 | `ParticleAnimation` | 动画数据模型：粒子、轨道、组、函数对象、贴图、UV、摄像机 |
 | `FunctionObject`、`FunctionVar`、`Entrance` | 函数对象、其变量与入场预设 |
 | `AnimParticle`、`AnimTrack`、`AnimKeyframe`、`AnimCamera` | 粒子、轨道、关键帧与摄像机 |
-| `TrackPr` | 轨道分量枚举，声明顺序即 `.pdrawc` 序号（共 26 个） |
+| `TrackPr` | 轨道分量枚举，声明顺序即 `.pdrawc` 序号（共 31 个，含音频对象的播放属性） |
 | `TextObject`、`TextChar` | 文字对象源记录，供脚本通过 `this.get(id)` 只读访问 |
 | `AudioAsset` | 音频资产：原始字节、量化特征列与拍点表 |
 | `UvData` | UV 参数模型：静态、填充、flipbook 动画三种模式 |
