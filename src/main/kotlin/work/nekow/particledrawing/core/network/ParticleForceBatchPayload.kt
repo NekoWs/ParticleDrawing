@@ -48,7 +48,7 @@ data class ParticleForceBatchPayload(
                 override fun decode(buf: FriendlyByteBuf): ParticleForceBatchPayload {
                     val ticks = ByteBufCodecs.VAR_INT.decode(buf)
                     val n = buf.readVarInt()
-                    require(n in 0..MAX_BATCH) { "particle force batch too large: $n" }
+                    require(n in 0..MAX_BATCH) { "粒子力批量超限: $n" }
                     val list = ArrayList<Update>(n)
                     repeat(n) {
                         list.add(

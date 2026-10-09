@@ -39,6 +39,8 @@ internal fun readEasingCompact(buf: FriendlyByteBuf): EasingType = when (buf.rea
 
 /**
  * 逐粒子寿命曲线：无曲线时只写一个 0。
+ *
+ * 空曲线与「没有曲线」编码相同，解码后统一为 null，两者语义一致。
  */
 internal object ParticleCurveCodec {
 

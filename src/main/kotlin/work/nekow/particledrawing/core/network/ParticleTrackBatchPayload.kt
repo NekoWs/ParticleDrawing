@@ -42,7 +42,7 @@ data class ParticleTrackBatchPayload(
             object : StreamCodec<FriendlyByteBuf, ParticleTrackBatchPayload> {
                 override fun decode(buf: FriendlyByteBuf): ParticleTrackBatchPayload {
                     val n = buf.readVarInt()
-                    require(n in 0..MAX_BATCH) { "particle track batch too large: $n" }
+                    require(n in 0..MAX_BATCH) { "粒子位置批量超限: $n" }
                     val list = ArrayList<Track>(n)
                     repeat(n) {
                         list.add(

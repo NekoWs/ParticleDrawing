@@ -34,7 +34,10 @@ fun interface LightAttenuation {
             }
         }
 
-        /** 反比线性衰减：近距离衰减快，远距离保留微弱光照。 */
+        /**
+         * 反比线性衰减：近距离衰减快，远距离保留微弱光照。
+         * 衰减尺度固定为 2.0，只用 [maxDistance] 做截断。
+         */
         @JvmField val INVERSE_LINEAR = LightAttenuation { distance, maxDistance ->
             if (distance >= maxDistance) 0f
             else 1f / (1f + distance * 2f)

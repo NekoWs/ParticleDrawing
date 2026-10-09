@@ -19,7 +19,7 @@ class ProcessClock {
      * @param baseMs 播放头毫秒（本 tick 的权威时刻）
      * @param partialTick 渲染帧在 tick 内的进度（0..1）
      * @param msPerTick 每 game tick 的时间轴毫秒（倍速播放时不是 50）
-     * @param maxMs 时间轴长度；>0 时封顶到 maxMs-1，与播放头口径一致
+     * @param maxMs 时间轴长度；>0 时封顶到 maxMs-1，渲染帧插值不越过时间轴末尾
      */
     fun next(baseMs: Int, partialTick: Double, msPerTick: Double, maxMs: Int): Double {
         // 播放头回退 = 循环回卷 / seek：合法倒退，丢掉游标重新起算

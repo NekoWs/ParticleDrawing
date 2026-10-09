@@ -23,7 +23,11 @@ object Effects {
         return EffectHandle(id, level)
     }
 
-    /** 便捷重载：从首个玩家所在维度推导 [ServerLevel]。 */
+    /**
+     * 便捷重载：从首个玩家所在维度推导 [ServerLevel]。
+     *
+     * @param players 收特效的玩家；为空抛 [IllegalArgumentException]
+     */
     @JvmStatic
     @JvmOverloads
     fun play(key: Identifier, players: Collection<ServerPlayer>, anchor: Anchor, options: EffectOptions = EffectOptions()): EffectHandle {
@@ -82,12 +86,18 @@ class EffectHandle internal constructor(
         return this
     }
 
+    /** 覆盖一个变量（字符串值）：非数字值客户端会忽略。 */
     fun setVariable(name: String, value: String): EffectHandle {
         ServerEffectManager.updateVariable(playbackId, name, value, level.players())
         return this
     }
 
-    /** 参数覆盖（数值）：只对编辑器里暴露的变量生效；未知变量在客户端会被忽略。 */
+    /**
+     * 参数覆盖（数值）：值与 [setVariable] 同一条链路下发。
+     *
+     * 没有失败返回：播放已结束或 id 不存在时是 no-op，未知变量名服务端照发、客户端忽略。
+     * 服务端记下的值用 [getParam] 读回。
+     */
     fun setParam(name: String, value: Double): EffectHandle {
         ServerEffectManager.updateVariable(playbackId, name, value.toString(), level.players())
         return this

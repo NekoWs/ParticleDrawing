@@ -27,6 +27,6 @@ class ParticleDrawing(bus: IEventBus, container: ModContainer) {
     }
 
     private fun onRegisterConfigurationTasks(event: RegisterConfigurationTasksEvent) {
-        event.register(AnimationSyncConfigTask(event.listener))
+        event.register(AnimationSyncConfigTask())
     }
 }

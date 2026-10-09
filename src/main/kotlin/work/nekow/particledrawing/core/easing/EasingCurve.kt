@@ -98,7 +98,7 @@ class EasingCurve(
         fun fromCss(css: String): EasingCurve {
             val inner = css.replace("cubic-bezier(", "").replace(")", "").trim()
             val parts = inner.split(",")
-            require(parts.size == 4) { "Invalid CSS cubic-bezier: $css" }
+            require(parts.size == 4) { "CSS cubic-bezier 参数非法: $css" }
             return EasingCurve(
                 parts[0].trim().toDouble(),
                 parts[1].trim().toDouble(),

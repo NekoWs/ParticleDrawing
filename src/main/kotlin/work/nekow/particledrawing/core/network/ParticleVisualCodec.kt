@@ -7,6 +7,7 @@ import work.nekow.particledrawing.core.TextureRegistry
 /**
  * 逐粒子外观的协议编解码：只写非默认字段，全默认时只占 1 字节。
  *
+ * 全默认外观与「没有外观」编码相同，解码后统一为 null，两者语义一致。
  * 贴图按 id 引用（登记时分配，见 [TextureRegistry]），服务端未登记该名字时退回内联名字。
  * 外观在生成时定死，没有对应的更新载荷。
  */

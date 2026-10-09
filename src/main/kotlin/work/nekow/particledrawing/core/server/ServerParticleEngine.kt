@@ -553,8 +553,7 @@ class ServerParticleEngine(
     /** @return 指定 ID 的组，不存在则返回 null */
     fun getGroup(groupId: UUID): ParticleGroupData? = groups[groupId]
 
-    /** 创建粒子组。 */
-    @Suppress("unused")
+    /** 创建粒子组（[work.nekow.particledrawing.api.ParticleManager.createGroup] 的引擎侧实现）。 */
     fun createGroup(groupId: UUID, pivot: Vec3): ParticleGroupData {
         val group = ParticleGroupData.create(groupId, pivot)
         groups[groupId] = group
@@ -694,7 +693,7 @@ class ServerParticleEngine(
         val now = System.nanoTime()
         if (now - lastCapacityWarnNanos > 1_000_000_000L) {
             lastCapacityWarnNanos = now
-            LOGGER.warn("Particle limit reached in dimension {}: cannot spawn more than {} particles",
+            LOGGER.warn("[ParticleDrawing] 维度 {} 的粒子数已达上限，最多 {} 颗粒子",
                 dimensionId, ParticleDrawingConfig.SERVER.maxParticlesPerDimension.get())
         }
     }

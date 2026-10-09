@@ -44,7 +44,7 @@ data class ParticleVelocityBatchPayload(
             object : StreamCodec<FriendlyByteBuf, ParticleVelocityBatchPayload> {
                 override fun decode(buf: FriendlyByteBuf): ParticleVelocityBatchPayload {
                     val n = buf.readVarInt()
-                    require(n in 0..MAX_BATCH) { "particle velocity batch too large: $n" }
+                    require(n in 0..MAX_BATCH) { "粒子速度批量超限: $n" }
                     val list = ArrayList<Update>(n)
                     repeat(n) {
                         list.add(

@@ -1,7 +1,6 @@
 package work.nekow.particledrawing.core.server
 
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
-import net.minecraft.network.protocol.configuration.ServerConfigurationPacketListener
 import net.minecraft.resources.Identifier
 import net.minecraft.server.network.ConfigurationTask
 import net.neoforged.neoforge.network.configuration.ICustomConfigurationTask
@@ -15,9 +14,7 @@ import java.util.function.Consumer
  * 在 [work.nekow.particledrawing.core.network.ServerPayloadHandler] 中调用
  * `ServerPayloadContext.finishCurrentTask` 完成。
  */
-class AnimationSyncConfigTask(
-    private val listener: ServerConfigurationPacketListener,
-) : ICustomConfigurationTask {
+class AnimationSyncConfigTask : ICustomConfigurationTask {
 
     override fun run(consumer: Consumer<CustomPacketPayload>) {
         consumer.accept(AnimationSyncBeginPayload)
