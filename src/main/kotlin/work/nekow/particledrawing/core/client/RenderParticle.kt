@@ -15,11 +15,11 @@ private val LINEAR = EasingCurve(0.0, 0.0, 1.0, 1.0)
 /** 缓动三元组：当前值 / 目标值 / 缓动起点。 */
 private class EaseVar<T>(var cur: T, var tgt: T, var start: T)
 
-/** 缓动计时状态。 */
+/** 缓动计时状态：时刻用**引擎毫秒**（每 tick +50），于是关卡暂停时缓动也停住。 */
 private class EaseState(
     var active: Boolean = false,
-    var startTime: Long = 0L,
-    var durationNs: Long = 0L,
+    var startMs: Long = -1L,
+    var durationMs: Long = 0L,
     var easing: EasingCurve = LINEAR
 )
 
@@ -32,7 +32,7 @@ private class EaseState(
  * @param scale 初始缩放
  * @param glowing 是否发光
  * @param lightLevel 发光粒子向外发出的光照等级 (0-15)，仅在 glowing 为 true 时生效
- * @param lifetimeMs 存活时间（毫秒），0 表示永久
+ * @param lifetimeTicks 存活 tick 数；<=0 表示永久。按**引擎 tick** 计（关卡暂停时不流逝）
  * @param uv 贴图取景框；null = 纯白方块
  * @param lifeCurve 逐粒子寿命曲线（寿命内的颜色/尺寸乘数）；null = 恒定外观
  * @param prev 上一 tick 的位置（与 [position] 组成插值段，供动态光照与首帧渲染端点插值）；null = 直接出生
@@ -45,7 +45,7 @@ class RenderParticle(
     scale: Float,
     private var glowing: Boolean,
     private var lightLevel: Int,
-    lifetimeMs: Long,
+    lifetimeTicks: Int,
     var uv: UvData? = null,
     private val lifeCurve: ParticleLifeCurve? = null,
     prev: Vec3? = null,
@@ -76,16 +76,23 @@ class RenderParticle(
     // 加速度（服务端权威力）：>0 = 还有这么多 tick；<0 = 无限；0 = 无
     private var acceleration = Vec3.ZERO
     private var accelTicks = 0
-    private var deathTime: Long
     private var snapNextSync = false
+
+    /** 存活 tick 数；<=0 = 永久。 */
+    private var lifetimeTicks: Int = lifetimeTicks
+
+    /** 已经活过的引擎 tick 数。 */
+    private var ticksAlive: Int = 0
+
+    /** 引擎时钟（毫秒，每 tick +50）：缓动与寿命曲线都按它推进。 */
+    private var engineMs: Long = 0L
 
     // 上一 game tick 的位置（供动态光照每帧 partialTick 插值，避免快速移动粒子光源跳变）
     private var prevX: Double
     private var prevY: Double
     private var prevZ: Double
 
-    // 寿命曲线：出生时刻 + 当前采样出的乘数（同一帧内多路读取只算一次）
-    private val bornNanos: Long = System.nanoTime()
+    // 寿命曲线：当前采样出的乘数（同一帧内多路读取只算一次）
     private var curveSampleTicks = Float.NaN
     private var mulR = 1f
     private var mulG = 1f
@@ -105,7 +112,6 @@ class RenderParticle(
         prevX = start.x
         prevY = start.y
         prevZ = start.z
-        deathTime = if (lifetimeMs > 0) System.nanoTime() + lifetimeMs * 1_000_000L else 0
         this.lightLevel = lightLevel.coerceIn(0, 15)
     }
 
@@ -113,8 +119,8 @@ class RenderParticle(
     fun glowing(): Boolean = glowing
     fun lightLevel(): Int = lightLevel
 
-    /** 生成后经过的 tick 数（墙钟计时，随渲染帧推进）。 */
-    fun ageTicks(): Float = (System.nanoTime() - bornNanos) / 50_000_000.0f
+    /** 生成后经过的 tick 数（引擎时钟：关卡暂停时不增长）。 */
+    fun ageTicks(): Float = engineMs / 50.0f
 
     /**
      * 当前寿命曲线的乘数，按 [CurveChannel] 顺序写进 [out] = `[r, g, b, a, scale]`；
@@ -174,8 +180,19 @@ class RenderParticle(
     fun interpolatedY(partialTick: Float): Double = prevY + (pos.cur.y - prevY) * partialTick
     fun interpolatedZ(partialTick: Float): Double = prevZ + (pos.cur.z - prevZ) * partialTick
 
-    fun isAlive(): Boolean = deathTime == 0L || System.nanoTime() < deathTime
+    fun isAlive(): Boolean = lifetimeTicks <= 0 || ticksAlive < lifetimeTicks
     fun isDead(): Boolean = !isAlive()
+
+    /**
+     * 推进一个引擎 tick：寿命与缓动时钟一起走（引擎每 tick 对每颗粒子调一次）。
+     *
+     * 「存活 tick 数」是 API 本来就说好的单位（`lifetime(40)` = 40 tick），原先按墙钟近似，
+     * 单人暂停时不 tick 的关卡回来后会一次性判死；缓动同理——暂停期间不该继续推进。
+     */
+    fun advanceEngine() {
+        engineMs += 50L
+        if (lifetimeTicks > 0) ticksAlive++
+    }
 
     /** 设置位置/颜色/缩放的缓动目标（标量缩放）。 */
     fun setTarget(position: Vec3, color: Color, scale: Float, easingType: EasingType, durationMs: Long) {
@@ -192,11 +209,11 @@ class RenderParticle(
         setScaleScalar(scale)
         posEase.easing = easingType.curve
         colEase.easing = easingType.curve
-        val now = System.nanoTime()
-        posEase.startTime = now
-        posEase.durationNs = durationMs * 1_000_000L
-        colEase.startTime = now
-        colEase.durationNs = durationMs * 1_000_000L
+        val now = engineMs
+        posEase.startMs = now
+        posEase.durationMs = durationMs
+        colEase.startMs = now
+        colEase.durationMs = durationMs
         if (durationMs == 0L) snapNextSync = true
     }
 
@@ -208,8 +225,8 @@ class RenderParticle(
         scl.tgt = scale
         setScaleScalar(scale)
         colEase.easing = easingType.curve
-        colEase.startTime = System.nanoTime()
-        colEase.durationNs = durationMs * 1_000_000L
+        colEase.startMs = engineMs
+        colEase.durationMs = durationMs
         if (durationMs == 0L) snapNextSync = true
     }
 
@@ -220,7 +237,7 @@ class RenderParticle(
         transEase.active = false
         offEase.active = false
         if (velocity.x != 0.0 || velocity.y != 0.0 || velocity.z != 0.0) {
-            posEase.startTime = 0L
+            posEase.startMs = -1L
         }
     }
 
@@ -231,11 +248,11 @@ class RenderParticle(
         rot.start = rot.cur.copyOf()
         rot.tgt = targetRot.copyOf()
         rotEase.easing = easingType.curve
-        rotEase.startTime = System.nanoTime()
-        rotEase.durationNs = durationMs * 1_000_000L
+        rotEase.startMs = engineMs
+        rotEase.durationMs = durationMs
         rotEase.active = true
         velocity = Vec3.ZERO
-        posEase.startTime = 0L
+        posEase.startMs = -1L
     }
 
     /** 设置平移缓动：绕 [pivot] 在 [offset] 基础上叠加 [delta]。 */
@@ -245,11 +262,11 @@ class RenderParticle(
         trans.start = trans.cur
         trans.tgt = delta
         transEase.easing = easingType.curve
-        transEase.startTime = System.nanoTime()
-        transEase.durationNs = durationMs * 1_000_000L
+        transEase.startMs = engineMs
+        transEase.durationMs = durationMs
         transEase.active = true
         velocity = Vec3.ZERO
-        posEase.startTime = 0L
+        posEase.startMs = -1L
     }
 
     /** 设置偏移缓动：把未旋转偏移缓动到 [offset]，清零平移。 */
@@ -258,15 +275,15 @@ class RenderParticle(
         off.start = off.cur
         off.tgt = offset
         offEase.easing = easingType.curve
-        offEase.startTime = System.nanoTime()
-        offEase.durationNs = durationMs * 1_000_000L
+        offEase.startMs = engineMs
+        offEase.durationMs = durationMs
         offEase.active = true
         trans.cur = Vec3.ZERO
         trans.start = Vec3.ZERO
         trans.tgt = Vec3.ZERO
         transEase.active = false
         velocity = Vec3.ZERO
-        posEase.startTime = 0L
+        posEase.startMs = -1L
     }
 
     /** 当前速度向量。 */
@@ -285,7 +302,7 @@ class RenderParticle(
         rotEase.active = false
         transEase.active = false
         offEase.active = false
-        if (accelTicks != 0) posEase.startTime = 0L
+        if (accelTicks != 0) posEase.startMs = -1L
     }
 
     /** 是否还有未结束的施力。 */
@@ -300,8 +317,8 @@ class RenderParticle(
         pos.start = pos.cur
         pos.tgt = Vec3(x, y, z)
         posEase.easing = easingType.curve
-        posEase.startTime = System.nanoTime()
-        posEase.durationNs = durationMs * 1_000_000L
+        posEase.startMs = engineMs
+        posEase.durationMs = durationMs
         if (durationMs == 0L) snapNextSync = true
     }
 
@@ -312,7 +329,7 @@ class RenderParticle(
         offEase.active = false
         pos.cur = Vec3(x, y, z)
         pos.tgt = Vec3(x, y, z)
-        posEase.startTime = 0L
+        posEase.startMs = -1L
         snapNextSync = true
     }
 
@@ -326,14 +343,14 @@ class RenderParticle(
         prevZ = pos.cur.z
         pos.cur = position
         pos.tgt = position
-        posEase.startTime = 0L
+        posEase.startMs = -1L
     }
 
     /** 直接设置颜色。 */
     fun setColorDirect(color: Color) {
         col.cur = color
         col.tgt = color
-        colEase.startTime = 0L
+        colEase.startMs = -1L
     }
 
     /** 直接设置缩放（标量）。 */
@@ -368,10 +385,10 @@ class RenderParticle(
      * 若等分批轮转的 tick 落地，紧随其后的缓动包会把起点读成旧值，渐变失效。
      */
     fun finishColorScale() {
-        if (colEase.startTime != 0L) {
+        if (colEase.startMs >= 0L) {
             col.cur = col.tgt
             scl.cur = scl.tgt
-            colEase.startTime = 0L
+            colEase.startMs = -1L
         }
     }
 
@@ -402,16 +419,17 @@ class RenderParticle(
     }
 
     /**
-     * 设置存活时间。
-     * @param lifetimeMs 存活时间（毫秒），0 表示永久
+     * 重设存活 tick 数（从此刻重新计）。
+     * @param lifetimeTicks 存活 tick 数；<=0 表示永久。按**引擎 tick** 计（关卡暂停时不流逝）
      */
-    fun setLifetime(lifetimeMs: Long) {
-        deathTime = if (lifetimeMs > 0) System.nanoTime() + lifetimeMs * 1_000_000L else 0
+    fun setLifetimeTicks(lifetimeTicks: Int) {
+        this.lifetimeTicks = lifetimeTicks
+        ticksAlive = 0
     }
 
-    /** 每帧推进速度积分与缓动插值。 */
+    /** 每帧推进速度积分与缓动插值（[advanceEngine] 负责推进时钟，这里只用它算值）。 */
     fun tick() {
-        val now = System.nanoTime()
+        val now = engineMs
         var posChanged = false
 
         // 施力：先改速度，再按速度位移（顺序与服务端 ParticleData.stepMotion 一致）
@@ -421,33 +439,33 @@ class RenderParticle(
         }
 
         if (rotEase.active) {
-            val elapsed = now - rotEase.startTime
-            if (elapsed >= rotEase.durationNs) {
+            val elapsed = now - rotEase.startMs
+            if (elapsed >= rotEase.durationMs) {
                 rot.cur = rot.tgt.copyOf()
                 rotEase.active = false
             } else {
-                val e = rotEase.easing.evaluate(elapsed.toFloat() / rotEase.durationNs)
+                val e = rotEase.easing.evaluate(elapsed.toFloat() / rotEase.durationMs)
                 for (i in 0..2) rot.cur[i] = lerp(rot.start[i], rot.tgt[i], e)
             }
             posChanged = true
         }
         if (transEase.active) {
-            val elapsed = now - transEase.startTime
-            if (elapsed >= transEase.durationNs) {
+            val elapsed = now - transEase.startMs
+            if (elapsed >= transEase.durationMs) {
                 trans.cur = trans.tgt
                 transEase.active = false
             } else {
-                trans.cur = lerpVec(trans.start, trans.tgt, transEase.easing.evaluate(elapsed.toFloat() / transEase.durationNs))
+                trans.cur = lerpVec(trans.start, trans.tgt, transEase.easing.evaluate(elapsed.toFloat() / transEase.durationMs))
             }
             posChanged = true
         }
         if (offEase.active) {
-            val elapsed = now - offEase.startTime
-            if (elapsed >= offEase.durationNs) {
+            val elapsed = now - offEase.startMs
+            if (elapsed >= offEase.durationMs) {
                 off.cur = off.tgt
                 offEase.active = false
             } else {
-                off.cur = lerpVec(off.start, off.tgt, offEase.easing.evaluate(elapsed.toFloat() / offEase.durationNs))
+                off.cur = lerpVec(off.start, off.tgt, offEase.easing.evaluate(elapsed.toFloat() / offEase.durationMs))
             }
             posChanged = true
         }
@@ -462,13 +480,13 @@ class RenderParticle(
             pos.cur = pos.cur.add(velocity)
             pos.tgt = pos.tgt.add(velocity)
             posUpdated = true
-        } else if (posEase.startTime != 0L) {
-            val elapsed = now - posEase.startTime
-            if (elapsed >= posEase.durationNs) {
+        } else if (posEase.startMs >= 0L) {
+            val elapsed = now - posEase.startMs
+            if (elapsed >= posEase.durationMs) {
                 pos.cur = pos.tgt
-                posEase.startTime = 0L
+                posEase.startMs = -1L
             } else {
-                pos.cur = lerpVec(pos.start, pos.tgt, posEase.easing.evaluate(elapsed.toFloat() / posEase.durationNs))
+                pos.cur = lerpVec(pos.start, pos.tgt, posEase.easing.evaluate(elapsed.toFloat() / posEase.durationMs))
             }
             posUpdated = true
         }
@@ -478,14 +496,14 @@ class RenderParticle(
             prevZ = pos.cur.z
         }
 
-        if (colEase.startTime != 0L) {
-            val elapsed = now - colEase.startTime
-            if (elapsed >= colEase.durationNs) {
+        if (colEase.startMs >= 0L) {
+            val elapsed = now - colEase.startMs
+            if (elapsed >= colEase.durationMs) {
                 col.cur = col.tgt
                 scl.cur = scl.tgt
-                colEase.startTime = 0L
+                colEase.startMs = -1L
             } else {
-                val e = colEase.easing.evaluate(elapsed.toFloat() / colEase.durationNs)
+                val e = colEase.easing.evaluate(elapsed.toFloat() / colEase.durationMs)
                 col.cur = col.start.lerp(col.tgt, e)
                 scl.cur = lerp(scl.start, scl.tgt, e)
             }

@@ -72,7 +72,8 @@ class ParticleManager private constructor(val level: ServerLevel) {
     // —— 发射器的服务端登记（由 ParticleEmitter / EmitterHandle 调用） ——
 
     internal fun startEmitter(emitter: ParticleEmitter, anchor: Anchor, params: EmitterParams): EmitterHandle {
-        val id = ServerEmitterManager.start(dimensionId, anchor, params, getPlayers())
+        // 声明泄漏到上限时服务端会拒绝（打 ERROR）：句柄仍然可用，只是 isActive() 为 false
+        val id = ServerEmitterManager.start(dimensionId, anchor, params, getPlayers()) ?: UUID.randomUUID()
         return EmitterHandle(id, this, emitter).init(anchor)
     }
 

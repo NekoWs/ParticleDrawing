@@ -44,7 +44,7 @@ internal object ClientEmitterManager {
         /** 已发射的颗数：逐颗抖动的确定性哈希靠它。 */
         var emissionIndex: Long = 0L
 
-        /** 已发射粒子各自的死亡时刻（nanoTime），用于 maxAlive 上限。 */
+        /** 已发射粒子各自的到期引擎 tick，用于 maxAlive 上限（与寿命同一时钟：暂停时不流逝）。 */
         val alive = ArrayDeque<Long>()
 
         /** 一帧内要发射的位置（复用列表，避免每帧分配）。 */
@@ -152,12 +152,12 @@ internal object ClientEmitterManager {
             active.scratch.clear()
             advance.advance(prev, pos, active.scratch)
             val count = minOf(active.scratch.size, MAX_EMIT_PER_FRAME)
-            for (i in 0 until count) emitOne(active, engine, active.scratch[i], dir, now)
+            for (i in 0 until count) emitOne(active, engine, active.scratch[i], dir)
         } else {
             val advance = active.time
                 ?: TimeAdvance(active.params.intervalMs.toDouble()).also { active.time = it }
             val count = advance.advance(deltaMs)
-            for (i in 0 until count) emitOne(active, engine, pos, dir, now)
+            for (i in 0 until count) emitOne(active, engine, pos, dir)
         }
     }
 
@@ -185,9 +185,10 @@ internal object ClientEmitterManager {
             is Anchor.Movable -> active.samples.resolve(partialTick, now)
         }
 
-    private fun emitOne(active: Active, engine: ClientParticleEngine, pos: Vec3, dir: Vec3, now: Long) {
+    private fun emitOne(active: Active, engine: ClientParticleEngine, pos: Vec3, dir: Vec3) {
         val p = active.params
-        while (active.alive.isNotEmpty() && active.alive.first() <= now) active.alive.removeFirst()
+        val nowTick = ClientParticleEngine.tickSequence()
+        while (active.alive.isNotEmpty() && active.alive.first() <= nowTick) active.alive.removeFirst()
         if (active.alive.size >= p.maxAlive) return
 
         val index = active.emissionIndex++
@@ -200,7 +201,7 @@ internal object ClientEmitterManager {
             p.r, p.g, p.b, p.a, p.scale, p.lifetimeTicks,
             null, p.glowing, p.lightLevel, active.visual, p.lifeCurve,
         )
-        active.alive.addLast(now + p.lifetimeTicks * 50_000_000L)
+        active.alive.addLast(nowTick + p.lifetimeTicks)
         if (p.velocity.x != 0.0 || p.velocity.y != 0.0 || p.velocity.z != 0.0) {
             engine.setVelocity(id, p.velocity.x, p.velocity.y, p.velocity.z)
         }

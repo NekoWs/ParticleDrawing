@@ -22,8 +22,13 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object ServerEmitterManager {
 
+    private val LOGGER = org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing")
+
     /** 补发扫描间隔（tick）：后进服/走进范围的玩家在这个周期内收到声明。 */
     private const val CATCH_UP_INTERVAL = 20
+
+    /** 同时活跃的发射器上限（防「忘了 stop()」的声明泄漏）。 */
+    private const val MAX_ACTIVE_EMITTERS = 512
 
     private class Record(
         val dimensionId: UUID,
@@ -56,9 +61,21 @@ object ServerEmitterManager {
         is Anchor.Movable -> anchor.pos
     }
 
-    /** 声明一个发射器：向维度内可见玩家下发，返回发射器 id。 */
+    /**
+     * 声明一个发射器：向维度内可见玩家下发，返回发射器 id；已达数量上限时返回 null。
+     *
+     * 上限是防泄漏的：发射器不消失（服务端一直留着登记、客户端一直发），调用方忘了 `stop()`
+     * 就会越攒越多。到顶时打 ERROR 并拒绝登记（`EmitterHandle.isActive()` 会是 false，可检测）。
+     */
     fun start(dimensionId: UUID, anchor: Anchor, params: EmitterParams,
-              players: Collection<ServerPlayer>): UUID {
+              players: Collection<ServerPlayer>): UUID? {
+        if (records.size >= MAX_ACTIVE_EMITTERS) {
+            LOGGER.error(
+                "发射器数量已达上限（{}），本次声明被拒绝：用完请 stop()，别让声明泄漏",
+                MAX_ACTIVE_EMITTERS,
+            )
+            return null
+        }
         val emitterId = UUID.randomUUID()
         val record = Record(dimensionId, emitterId, anchor, params)
         records[emitterId] = record

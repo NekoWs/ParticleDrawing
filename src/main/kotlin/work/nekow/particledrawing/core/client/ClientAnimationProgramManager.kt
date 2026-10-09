@@ -148,6 +148,14 @@ internal object ClientAnimationProgramManager {
         /** 有限指令的最晚结束时刻（程序相对毫秒）；-1 = 没有有限指令。 */
         var instructionEndMs: Long = -1L
 
+        /**
+         * 已经走完、但**还没上报**的变量缓动终点。
+         *
+         * 缓动一到达终点就从 [varEases] 里摘掉，而「到点」与「上报」之间隔着 [COMPLETION_MARGIN_MS]
+         * 的桥接余量：不留这一笔，纯变量组会在该上报的那一 tick 发现账本已经空了，永远错过完成信号。
+         */
+        var completedVarEndMs: Long = -1L
+
         /** 上一次上报的账本终点：账本再往后延（追加指令 / 重定向缓动）就允许再报一次。 */
         var reportedEndMs: Long = -1L
 
@@ -178,6 +186,11 @@ internal object ClientAnimationProgramManager {
     }
 
     private val programs = ConcurrentHashMap<UUID, Program>()
+
+    /** 空程序巡检的节拍计数（每 [PRUNE_INTERVAL_TICKS] tick 走一次全量探活）。 */
+    private var pruneCounter = 0
+
+    private const val PRUNE_INTERVAL_TICKS = 40
 
     // —— 协议入口 ——
 
@@ -283,7 +296,12 @@ internal object ClientAnimationProgramManager {
             if (ease.startMs < 0L) ease.startMs = now
             val k = progress(now - ease.startMs, ease.durationMs)
             p.vars[name] = ease.from + (ease.to - ease.from) * eased(ease.easing, k).toDouble()
-            if (k >= 1f) it.remove()
+            if (k >= 1f) {
+                // 终点留账：上报那一 tick 才用得上（见 completedVarEndMs）
+                val end = ease.startMs + ease.durationMs
+                if (end > p.completedVarEndMs) p.completedVarEndMs = end
+                it.remove()
+            }
         }
     }
 
@@ -312,6 +330,26 @@ internal object ClientAnimationProgramManager {
     /** 维度卸载 / 断线清理。 */
     @JvmStatic
     fun clearAll() { programs.clear(); entityByUuid.clear() }
+
+    /**
+     * 巡检并收掉「粒子已经全没了」的程序（每 [PRUNE_INTERVAL_TICKS] tick 一次）。
+     *
+     * 成员的寿命由 spawn 包定死：它们自然到期、或被别的路径销毁之后，程序在客户端就只剩空转
+     * （服务端那边也未必知道该发停止包）。按 id 逐个探活，遇到第一个还在的就短路。
+     */
+    private fun pruneDeadPrograms(engine: ClientParticleEngine) {
+        if (programs.isEmpty()) return
+        val it = programs.entries.iterator()
+        while (it.hasNext()) {
+            val (programId, p) = it.next()
+            if (p.particleIds.any { engine.containsParticle(it) }) continue
+            LOGGER.debug("[ParticleDrawing] program {} 的粒子已全部消失，收掉本地程序", programId)
+            it.remove()
+        }
+    }
+
+    /** 到点与上报之间留给桥接插值的余量（毫秒）：1 tick。 */
+    private const val COMPLETION_MARGIN_MS = 50L
 
     private fun addInstruction(p: Program, ins: AnimInstruction) {
         if (ins is AnimInstruction.Expression) {
@@ -352,7 +390,7 @@ internal object ClientAnimationProgramManager {
      */
     private fun reportCompletionIfDue(p: Program, ledgerEndMs: Long, now: Long) {
         if (ledgerEndMs < 0L) return
-        if (now < ledgerEndMs + 50L) return
+        if (now < ledgerEndMs + COMPLETION_MARGIN_MS) return
         if (ledgerEndMs <= p.reportedEndMs) return
         p.reportedEndMs = ledgerEndMs
         ClientPacketDistributor.sendToServer(ProgramCompletePayload(p.animationId))
@@ -371,6 +409,7 @@ internal object ClientAnimationProgramManager {
             expressionMode = p.expressionCode != null,
             expressionEndMs = p.expressionEndMs,
             varEaseEnds = easeEnds,
+            completedVarEndMs = p.completedVarEndMs,
         )
     }
 
@@ -560,6 +599,10 @@ internal object ClientAnimationProgramManager {
         val level = Minecraft.getInstance().level ?: return
         val engine = ClientParticleEngine.instance() ?: return
         val nowClient = level.gameTime
+
+        // 巡检：程序控的粒子全没了（成员寿命到期、被别的路径销毁）就把程序也收掉，
+        // 否则它会一直按 20Hz 对不存在的粒子空转，还替一个死组上报完成
+        if (++pruneCounter % PRUNE_INTERVAL_TICKS == 0) pruneDeadPrograms(engine)
 
         for ((programId, p) in programs.toList()) {
             // 统一到「程序相对毫秒」域：

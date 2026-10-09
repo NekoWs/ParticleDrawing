@@ -73,6 +73,8 @@ internal class ScaleLedger {
  * @param expressionMode 是否表达式组（那时改看 [expressionEndMs]）
  * @param expressionEndMs 表达式自己的到期时刻（[expression] 的有限时长）；-1 = 一直求值
  * @param varEaseEnds 每个活跃变量缓动的终点（还没开始的按「本 tick 开始」算）
+ * @param completedVarEndMs 已经走完、但还没上报的缓动终点：缓动到点即从表里摘掉，
+ *   而「到点」与「上报」之间隔着一 tick 的桥接余量——不留这一笔，纯变量组会永远错过信号
  * @return 最晚终点；-1 = 这本账上没有能完成的事
  */
 internal fun completionLedgerEndMs(
@@ -80,10 +82,11 @@ internal fun completionLedgerEndMs(
     expressionMode: Boolean,
     expressionEndMs: Long,
     varEaseEnds: Collection<Long>,
+    completedVarEndMs: Long = -1L,
 ): Long {
     var end = if (expressionMode) expressionEndMs else instructionEndMs
     for (easeEnd in varEaseEnds) {
         if (easeEnd > end) end = easeEnd
     }
-    return end
+    return maxOf(end, completedVarEndMs)
 }

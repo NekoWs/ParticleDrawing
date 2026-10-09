@@ -15,6 +15,12 @@ import java.util.UUID
 
 /** 编排动画程序编解码工具。 */
 internal object AnimationProgramCodecs {
+
+    /** 单包指令条数上限（ParticleGroup 的拆段阈值就是它）。 */
+    const val MAX_INSTRUCTIONS_PER_PAYLOAD = 512
+
+    /** 一个组的成员上限：受控清单要一次发完，超了请拆组。 */
+    const val MAX_PROGRAM_MEMBERS = 8192
     fun writeInstructionList(buf: FriendlyByteBuf, list: List<AnimInstruction>) {
         buf.writeVarInt(list.size)
         for (ins in list) ins.write(buf)
@@ -22,6 +28,7 @@ internal object AnimationProgramCodecs {
 
     fun readInstructionList(buf: FriendlyByteBuf): List<AnimInstruction> {
         val n = buf.readVarInt()
+        require(n in 0..MAX_INSTRUCTIONS_PER_PAYLOAD) { "编排指令条数越界: $n" }
         return List(n) { AnimInstruction.read(buf) }
     }
 
@@ -91,6 +98,15 @@ data class AnimationProgramPayload(
     val instructions: List<AnimInstruction>,
 ) : CustomPacketPayload {
 
+    init {
+        require(instructions.size <= AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD) {
+            "编排指令包超限: ${instructions.size} > ${AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD}"
+        }
+        require(particleIds.size <= AnimationProgramCodecs.MAX_PROGRAM_MEMBERS) {
+            "编排程序成员过多: ${particleIds.size} > ${AnimationProgramCodecs.MAX_PROGRAM_MEMBERS}"
+        }
+    }
+
     companion object {
         @JvmField
         val TYPE = CustomPacketPayload.Type<AnimationProgramPayload>(
@@ -131,6 +147,13 @@ data class AnimationProgramAppendPayload(
     val programId: UUID,
     val instructions: List<AnimInstruction>,
 ) : CustomPacketPayload {
+
+    init {
+        // 超限直接报错：发送端已按 MAX_INSTRUCTIONS_PER_PAYLOAD 拆段，编码端不拆会撞上客户端最大载荷
+        require(instructions.size <= AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD) {
+            "编排指令追加包超限: ${instructions.size} > ${AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD}"
+        }
+    }
 
     companion object {
         @JvmField

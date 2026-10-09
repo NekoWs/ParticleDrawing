@@ -178,7 +178,7 @@ class ParticleCurveTest {
         )
         val rp = RenderParticle(
             UUID.randomUUID(), Vec3.ZERO, Color.of(0.8f, 0.6f, 0.4f, 1f), 1.5f,
-            false, 15, 1000L, null, life,
+            false, 15, 20, null, life,
         )
         val out = FloatArray(5)
         assertTrue(rp.curveMultipliers(out), "有曲线时给出乘数")
@@ -189,7 +189,7 @@ class ParticleCurveTest {
         assertEquals(2f, out[4], "尺寸")
         assertEquals(0.5f, rp.effectiveAlpha(), 1e-6f, "发光可见性判断用的是调制后的 alpha")
 
-        val plain = RenderParticle(UUID.randomUUID(), Vec3.ZERO, Color.WHITE, 1f, false, 15, 0L)
+        val plain = RenderParticle(UUID.randomUUID(), Vec3.ZERO, Color.WHITE, 1f, false, 15, 0)
         assertFalse(plain.curveMultipliers(out), "没有曲线时返回 false，调用方走原路径")
         assertEquals(1f, plain.effectiveAlpha())
     }
@@ -197,19 +197,20 @@ class ParticleCurveTest {
     @Test
     fun `首帧插值端点：给了 prev 就从它扫到当前位置，不给则原地出生`() {
         val moving = RenderParticle(
-            UUID.randomUUID(), Vec3(2.0, 0.0, 0.0), Color.WHITE, 1f, false, 15, 0L, null, null,
+            UUID.randomUUID(), Vec3(2.0, 0.0, 0.0), Color.WHITE, 1f, false, 15, 0, null, null,
             Vec3(0.0, 0.0, 0.0),
         )
         assertEquals(0.0, moving.interpolatedX(0f), 1e-9)
         assertEquals(1.0, moving.interpolatedX(0.5f), 1e-9, "半个 tick 处正好在段中点")
         assertEquals(2.0, moving.interpolatedX(1f), 1e-9)
 
-        val snapped = RenderParticle(UUID.randomUUID(), Vec3(2.0, 0.0, 0.0), Color.WHITE, 1f, false, 15, 0L)
+        val snapped = RenderParticle(UUID.randomUUID(), Vec3(2.0, 0.0, 0.0), Color.WHITE, 1f, false, 15, 0)
         assertEquals(2.0, snapped.interpolatedX(0.5f), 1e-9, "没有 prev 时不插值（跳变出生）")
     }
 
     @Test
-    fun `批量生成：整批一包，逐条与单发同构，超限直接报错`() {        val first = spawnPayload(lifeCurve = ParticleLifeCurve.of(ParticleCurve.alpha(CurveKey.at(0, 1f))))
+    fun `批量生成：整批一包，逐条与单发同构，超限直接报错`() {
+        val first = spawnPayload(lifeCurve = ParticleLifeCurve.of(ParticleCurve.alpha(CurveKey.at(0, 1f))))
         val second = spawnPayload(prev = Vec3(4.0, 5.0, 6.0), visual = ParticleVisual().additive(true))
         val entries = listOf(first, second)
 

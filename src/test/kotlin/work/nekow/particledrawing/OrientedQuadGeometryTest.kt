@@ -79,7 +79,7 @@ class OrientedQuadGeometryTest {
 
     @Test
     fun `粒子状态按轴保存非等宽尺寸且不被外部数组带着走`() {
-        val rp = RenderParticle(UUID.randomUUID(), Vec3.ZERO, Color.WHITE, 1f, false, 0, 0L)
+        val rp = RenderParticle(UUID.randomUUID(), Vec3.ZERO, Color.WHITE, 1f, false, 0, 0)
         val editor = floatArrayOf(1.5f, 0.02f, 1f)
         rp.setScaleArrayDirect(editor)
         assertEquals(1.5f, rp.scaleArray()[0])
@@ -94,7 +94,7 @@ class OrientedQuadGeometryTest {
 
     @Test
     fun `标量尺寸落到 X Y 同值 Z 为一`() {
-        val rp = RenderParticle(UUID.randomUUID(), Vec3.ZERO, Color.WHITE, 1f, false, 0, 0L)
+        val rp = RenderParticle(UUID.randomUUID(), Vec3.ZERO, Color.WHITE, 1f, false, 0, 0)
         rp.setScaleDirect(0.25f)
         // 编辑器粒子模型的 Z 恒为 1，标量只描述 X/Y
         assertEquals(0.25f, rp.scaleArray()[0])

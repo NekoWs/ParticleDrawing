@@ -35,22 +35,41 @@ object ServerProgramCompletion {
         var retireGrace: Int = -1
 
         var done = false
+
+        /**
+         * 登记版本：每次登记或账本重排都自增，**排好的兜底任务带上排它时的版本**。
+         * 过期任务因此在触发时什么都不做——否则「缓动重定向后账本往后挪」时，
+         * 旧兜底仍会按老时刻把最新登记吃掉（实机表现为回调提前到旧兜底的时刻）。
+         */
+        var version: Long = 0L
     }
 
     private val entries = ConcurrentHashMap<UUID, Entry>()
 
-    /** 登记「客户端跑完后回调」；[fallbackTicks] < 0 表示不排兜底。 */
+    /** 登记「客户端跑完后回调」；[fallbackTicks] < 0 表示按「立即到点」排兜底。 */
     fun onComplete(groupId: UUID, dimensionId: UUID, fallbackTicks: Int, action: (UUID) -> Unit) {
         val entry = entries.computeIfAbsent(groupId) { Entry(dimensionId) }
         entry.action = action
-        scheduleFallback(groupId, fallbackTicks)
+        scheduleFallback(groupId, entry, fallbackTicks)
     }
 
-    /** 登记「客户端跑完后（+[graceTicks]）销毁整组」；[fallbackTicks] < 0 表示不排兜底。 */
+    /** 登记「客户端跑完后（+[graceTicks]）销毁整组」。 */
     fun retire(groupId: UUID, dimensionId: UUID, graceTicks: Int, fallbackTicks: Int) {
         val entry = entries.computeIfAbsent(groupId) { Entry(dimensionId) }
         entry.retireGrace = graceTicks.coerceAtLeast(0)
-        scheduleFallback(groupId, fallbackTicks)
+        scheduleFallback(groupId, entry, fallbackTicks)
+    }
+
+    /**
+     * 账本往后挪了（追加有限指令、变量缓动重定向、立即赋值取消缓动）：
+     * 兜底时刻跟着重排，旧任务按版本失效。
+     *
+     * 没登记过的组什么都不做（绝大多数组没有完成信号）。
+     */
+    fun rescheduleFallback(groupId: UUID, fallbackTicks: Int) {
+        val entry = entries[groupId] ?: return
+        if (entry.done) return
+        scheduleFallback(groupId, entry, fallbackTicks)
     }
 
     /** 客户端上报完成：回调 + 按需排定销毁。一次性（触发后注销）。 */
@@ -77,13 +96,22 @@ object ServerProgramCompletion {
     /** 当前登记数（调试用）。 */
     fun size(): Int = entries.size
 
-    private fun scheduleFallback(groupId: UUID, fallbackTicks: Int) {
-        if (fallbackTicks < 0) return
-        AnimationScheduler.schedule(fallbackTicks + FALLBACK_MARGIN_TICKS) {
-            val entry = entries.remove(groupId) ?: return@schedule
-            if (entry.done) return@schedule
-            entry.done = true
-            fire(groupId, entry)
+    /**
+     * 排一次兜底：带上当前版本，只有「排它之后账本没再变过」的那个任务才作数。
+     *
+     * [fallbackTicks] < 0（账本空了，例如缓动被立即赋值取消）按 0 处理：
+     * 已经登记的组不能因为账本变空就再也不收尾。
+     */
+    private fun scheduleFallback(groupId: UUID, entry: Entry, fallbackTicks: Int) {
+        entry.version++
+        val version = entry.version
+        val delay = (if (fallbackTicks < 0) 0 else fallbackTicks) + FALLBACK_MARGIN_TICKS
+        AnimationScheduler.schedule(delay) {
+            val current = entries[groupId] ?: return@schedule
+            if (current !== entry || current.done || current.version != version) return@schedule
+            current.done = true
+            entries.remove(groupId)
+            fire(groupId, current)
         }
     }
 

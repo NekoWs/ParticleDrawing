@@ -7,6 +7,8 @@ import work.nekow.particledrawing.animation.program.EntityBinding
 import work.nekow.particledrawing.animation.program.PivotRef
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.network.AnimationProgramAppendPayload
+import work.nekow.particledrawing.core.network.AnimationProgramCodecs
+import work.nekow.particledrawing.core.network.BatchChunking
 import work.nekow.particledrawing.core.network.AnimationProgramPayload
 import work.nekow.particledrawing.core.network.ProgramAnchorPayload
 import work.nekow.particledrawing.core.server.ServerProgramCompletion
@@ -265,6 +267,14 @@ class ParticleGroup(
         return this
     }
 
+    /**
+     * 账本动了（追加有限指令 / 变量缓动重定向 / 立即赋值取消缓动）：
+     * 兜底时刻跟着重排，旧兜底按版本失效（没登记完成信号的组什么都不做）。
+     */
+    private fun ledgerChanged() {
+        ServerProgramCompletion.rescheduleFallback(id, fallbackTicks())
+    }
+
     /** 账本上还有没有「会完成的」事：指令侧（表达式看自己的时长）或未到点的变量缓动。 */
     private fun hasCompletionSource(): Boolean {
         pruneVarEaseEnds()
@@ -335,7 +345,10 @@ class ParticleGroup(
         } else {
             ins.finiteDurationMs()?.let { duration ->
                 val end = at.toLong() + duration
-                if (end > timelineEndMs) timelineEndMs = end
+                if (end > timelineEndMs) {
+                    timelineEndMs = end
+                    ledgerChanged()
+                }
             }
         }
         instructions.add(ins)
@@ -343,7 +356,7 @@ class ParticleGroup(
         return at
     }
 
-    /** 首次全量下发；其后增量追加。 */
+    /** 首次全量下发；其后增量追加。指令按单包上限拆段，成员数超限直接报错（见常量说明）。 */
     private fun flush(nowTick: Long) {
         val players = manager.getPlayers()
         // 锚点必须与 level.gameTime 同源：客户端用它对齐自己的 level.gameTime，
@@ -352,25 +365,48 @@ class ParticleGroup(
             val members = manager.getEngine().getGroup(id)?.memberIds()?.toList()
             if (members.isNullOrEmpty()) {
                 LOGGER.warn("[ParticleDrawing] group {} has no members; animation program not sent", id)
+                // 没有成员时指令发不出去：留一小段等成员到位，不许无限攒（否则是内存泄漏）
+                if (instructions.size > MAX_PENDING_INSTRUCTIONS) {
+                    LOGGER.warn(
+                        "[ParticleDrawing] group {} 待发指令过多（{} 条）且没有成员，已丢弃；补上成员后请重录动画",
+                        id, instructions.size,
+                    )
+                    instructions.clear()
+                }
                 return
+            }
+            require(members.size <= MAX_MEMBERS_PER_PROGRAM) {
+                "group $id 成员过多（${members.size} > $MAX_MEMBERS_PER_PROGRAM）：受控清单要一次发完，" +
+                    "请拆成多个组（一个组是「一段编排」，不是粒子场）"
             }
             val batch = instructions.map { it.shiftStartMs(clock.shiftMs) }
             instructions.clear()
+            val head = batch.take(MAX_INSTRUCTIONS_PER_PAYLOAD)
             for (player in players) {
                 PacketDistributor.sendToPlayer(
                     player,
-                    AnimationProgramPayload(id, members, nowTick, pivot, entityBindings.toList(), vars.toMap(), batch),
+                    AnimationProgramPayload(id, members, nowTick, pivot, entityBindings.toList(), vars.toMap(), head),
                 )
             }
             armed = true
+            // 指令多到一个包塞不下：剩下的按序补追加包（客户端按顺序应用）
+            val rest = batch.drop(MAX_INSTRUCTIONS_PER_PAYLOAD)
+            if (rest.isNotEmpty()) sendAppends(rest, players)
         } else if (instructions.isNotEmpty()) {
             val batch = instructions.map { it.shiftStartMs(clock.shiftMs) }
             instructions.clear()
-            for (player in players) {
-                PacketDistributor.sendToPlayer(player, AnimationProgramAppendPayload(id, batch))
-            }
+            sendAppends(batch, players)
         }
         clock.onEmit(nowTick, cursorMs)
+    }
+
+    /** 追加指令：按单包上限拆段后下发（长寿组反复追加也不会攒出超限的包）。 */
+    private fun sendAppends(batch: List<AnimInstruction>, players: Collection<net.minecraft.server.level.ServerPlayer>) {
+        for (chunk in BatchChunking.chunks(batch, MAX_INSTRUCTIONS_PER_PAYLOAD)) {
+            for (player in players) {
+                PacketDistributor.sendToPlayer(player, AnimationProgramAppendPayload(id, chunk))
+            }
+        }
     }
 
     /** 排一次组销毁：把程序时刻换算成「从此刻起」的 tick 数，避免把销毁推后一整段已运行时长。 */
@@ -608,6 +644,7 @@ class ParticleGroup(
     fun setVariableLive(name: String, value: String) {
         lintGetters(value)
         varEaseEndTicks.remove(name)
+        ledgerChanged()
         for (player in manager.getPlayers()) {
             PacketDistributor.sendToPlayer(player, work.nekow.particledrawing.core.network.SetProgramVarPayload(id, name, value))
         }
@@ -641,6 +678,8 @@ class ParticleGroup(
         } else {
             varEaseEndTicks.remove(name)
         }
+        // 重定向/取消都要重排兜底：旧任务按版本失效，否则它会按老时刻把这次登记的组提前收走
+        ledgerChanged()
         val payload = work.nekow.particledrawing.core.network.SetProgramVarEasePayload(
             id, name, value, ticks * 50, easing,
         )
@@ -653,6 +692,15 @@ class ParticleGroup(
     override fun toString() = "ParticleGroup{$id size=${size()}}"
 
     companion object {
+        /** 单包指令条数上限：超出就拆成多个追加包（与载荷里的常量同源）。 */
+        private const val MAX_INSTRUCTIONS_PER_PAYLOAD = AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD
+
+        /** 一个组的成员上限：受控清单要一次发完，超了请拆组（见 flush 的报错说明）。 */
+        private const val MAX_MEMBERS_PER_PROGRAM = AnimationProgramCodecs.MAX_PROGRAM_MEMBERS
+
+        /** 没有成员时最多缓存多少条待发指令（之后丢弃并告警，避免无限增长）。 */
+        private const val MAX_PENDING_INSTRUCTIONS = 4096
+
         private val LOGGER = org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing")
     }
 }

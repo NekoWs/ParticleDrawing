@@ -61,6 +61,8 @@ class ParticleVisual {
 
     /** 用整张贴图（[name] 见 [texture]）；会清掉之前设的子矩形 UV。 */
     fun texture(name: String): ParticleVisual {
+        // 名字随 spawn 包内联下发（未登记时），过长会把包撑大；登记名上限也是 256
+        require(name.length <= MAX_TEXTURE_NAME) { "贴图名过长（${name.length} > $MAX_TEXTURE_NAME）" }
         texture = name
         uvRect = null
         return this
@@ -225,6 +227,9 @@ class ParticleVisual {
     }
 
     companion object {
+        /** 贴图名长度上限（与 TextureRegistry 的登记上限一致）。 */
+        const val MAX_TEXTURE_NAME = 256
+
         /**
          * 贴图尺寸系数：UV 取景框（[UvData.texSize]）最长边 / 16，基准 16px 时为 1。
          * 渲染整宽 = 编辑器尺寸 × 0.2 × 本系数；[worldUnits] 口径下换算时也用它。

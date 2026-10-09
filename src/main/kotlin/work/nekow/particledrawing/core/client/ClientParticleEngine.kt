@@ -72,9 +72,8 @@ class ClientParticleEngine {
             for (memberSet in groups.values) memberSet.remove(id)
         }
 
-        val lifetimeMs = if (lifetimeTicks > 0) lifetimeTicks * 50L else 0L
         val rp = RenderParticle(id, Vec3(x, y, z),
-            Color.of(r, g, b, a), scale, glowing, lightLevel, lifetimeMs, uv, lifeCurve, prev)
+            Color.of(r, g, b, a), scale, glowing, lightLevel, lifetimeTicks, uv, lifeCurve, prev)
         if (scaleArray != null) rp.setScaleArrayDirect(scaleArray)
         particles[id] = rp
         if (glowing && lightLevel > 0) glowingIds.add(id)
@@ -409,6 +408,8 @@ class ClientParticleEngine {
 
         val deadIds = ArrayList<UUID>()
         for ((id, rp) in particles) {
+            // 寿命与缓动都按引擎时钟（这里每 tick 推一次）：关卡暂停时不流逝
+            rp.advanceEngine()
             if (rp.isDead()) deadIds.add(id)
         }
         for (id in deadIds) removeOne(id)
@@ -597,6 +598,9 @@ class ClientParticleEngine {
      * @return 活跃粒子数
      */
     fun activeCount(): Int = particles.size
+
+    /** 这颗粒子还在不在（比 [snapshot] 便宜：不构造快照，供「整组是否已经没了」这类巡检用）。 */
+    fun containsParticle(id: UUID): Boolean = particles.containsKey(id)
 
     /** 粒子当前视觉快照（动画程序 arm 时初始化基态用）。 */
     class Snapshot(val position: Vec3, val r: Float, val g: Float, val b: Float, val a: Float, val scale: Float)

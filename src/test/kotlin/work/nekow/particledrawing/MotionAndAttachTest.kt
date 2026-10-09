@@ -33,7 +33,7 @@ class MotionAndAttachTest {
     }
 
     private fun clientParticle(id: UUID, pos: Vec3 = Vec3.ZERO, vel: Vec3 = Vec3.ZERO): RenderParticle {
-        val particle = RenderParticle(id, pos, Color.WHITE, 1f, false, 15, 0L)
+        val particle = RenderParticle(id, pos, Color.WHITE, 1f, false, 15, 0)
         particle.setVelocity(vel)
         return particle
     }
