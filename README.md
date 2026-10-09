@@ -30,3 +30,7 @@ dependencies {
 }
 ```
 The API development is still being gradually improved. Welcome to visit [Github](https://github.com/NekoWs/ParticleDrawing) to submit PRs!
+
+## Versioning
+`mod_version` in `gradle.properties` is the single source of truth. Whenever it changes, the same commit
+gets a matching tag (`v<mod_version>`, e.g. `v1.0.20-ALPHA`) — no release without a tag.
