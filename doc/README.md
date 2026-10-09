@@ -1,198 +1,31 @@
-# ParticleDrawing 类索引
+# ParticleDrawing 文档
 
-ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 26.2）的粒子效果库。
+ParticleDrawing 是面向 [NeoForge](https://neoforged.net/)（Minecraft 26.2）的粒子效果库：播放网页编辑器
+导出的 `.pdrawc` 动画，同时提供 Kotlin / Java API 在代码里绘制与编排粒子。
 
-本目录仅作**类索引**，说明每个类的作用。详细用法与参数说明均写在对应类的 KDoc / Javadoc 注释中；上手教程与动画编排示例见 [api-guide.md](./api-guide.md)。
+粒子由服务端创建与持有，客户端本地求值、逐渲染帧渲染。编排动画、寿命曲线、发射器这类声明式能力
+只下发一次，运行期几乎不占带宽。
 
-## 类索引
+## 目录
 
-### api —— 公开 API
-
-| 类 | 作用 |
+| 文档 | 内容 |
 | --- | --- |
-| `ParticleManager` | 维度级入口，创建粒子 / 粒子组 / **运行时发射器**；批量生成 `spawnAll`；批量指令 `trackAll` / `setVelocityAll` / `applyForceAll`；程序化贴图登记 `registerTexture` / `registerBuiltinTextures` |
-| `ParticleHandle` | 单粒子句柄：移动 / 速度 / 力 / 实体锚点（`Entity`/`uuid`/`entityId` 三入口）/ 重着色 / 缩放 / 销毁，含流式 `Builder`（外观 + **寿命曲线** `fadeOut`/`shrinkTo`/`curve` + 首帧插值端点 `prevPosition`）与 `position()`/`velocity()` 只读查询 |
-| `ParticleGroup` | 粒子组：编排式动画（客户端自驱程序：delay/fadeIn/spin/movePath/pulse/实体通道/公式指令/**逐成员各自方向漂移** `moveAlongOffset`）；组级变换绕**当前轴心**（`setPivot` / `followEntity` / **可移动轴心** `anchor`+`updateAnchor`），缩放 **`scaleBy` 在当前倍率上相乘 / `scaleTo` 到绝对目标**（起点是执行那一刻的倍率、0 = 不绘制），旋转可叠加、增量追加按「从现在起」、`setVariableInterpolated` 变量渐变；**完成信号** `onAnimationComplete` / `retire`（账本 = 有限指令 ∪ 变量缓动 ∪ 表达式有限时长；销毁与客户端真正到零对齐） |
-| `ParticleBatch` | 程序化粒子集：成员逐 tick 增删、**批量生成 `spawnAll`**、一次包批量下发位置/速度/力（超过单包上限自动拆包）、按权威位置/速度条件回收、补齐到 N |
-| `ParticleEmitter` / `EmitterHandle` | 运行时发射器：`manager.emitter(anchor).spacing(格)/interval(ticks).life(ticks).jitter(格).offsetAlong(格).alphaCurve/sizeCurve/colorCurve.fadeOut/shrinkTo.spawn()`；服务端声明一次，客户端按**渲染帧**沿锚点的**相邻服务器样本**推进里程/时间并生成粒子（带宽 O(1)、出现与淡出逐帧）；句柄上同名方法可分档改锚点/口径/寿命/曲线/外观，**已生成的粒子不受影响** |
-| `ParticleCurve` / `ParticleLifeCurve` | 逐粒子寿命曲线：通道（透明度/尺寸/RGB）乘数随「生成后 tick 数」变化，同通道多条相乘；随 spawn 包一次下发，客户端逐渲染帧求值（零逐帧带宽） |
-| `ParticleSpawnSpec` | 批量生成的单颗粒子规格（纯数据）：位置/颜色/缩放/寿命/外观/寿命曲线/首帧插值端点 |
-| `Draw` | 绘图工具：点、线段、圆、圆盘、曲线、折线光束、三角形、六芒星、矩形、球体、长方体；支持渐变着色、逐粒子入场（`stagger` / `lifeCurve`）与外观规格（`visual` / `taper`） |
-| `ParticleVisual` | 逐粒子外观规格：贴图 / 子矩形 UV / 各向异性尺寸（编辑器单位或世界格）/ 朝向（广告牌、自转、长轴对齐）/ 加法混合 / 免光照；生成时定死 |
-| `ParticleStyle` | 内置外观形状枚举：`SQUARE`（纯白方块）/ `SOFT_DOT`（柔边圆点）/ `LINE`（两端渐隐的线段）；客户端按需生成 16px 贴图 |
-| `ColorSource` | 形状参数化颜色来源：固定色 / 双色渐变 / 彩虹，支持 lambda |
-| `Color` | 不可变 RGBA 颜色与工厂方法 |
-| `TransformOp` | 组变换操作描述 |
+| [getting-started.md](getting-started.md) | 引入依赖、第一个效果、核心概念 |
+| [guide.md](guide.md) | 绘制形状、编排动画、单粒子、粒子集、发射器、缓动、播放动画、代码构建动画 |
+| [api-reference.md](api-reference.md) | 按包分类的类索引 |
+| [known-issues.md](known-issues.md) | 平台差异与已知限制 |
 
-### core.easing —— 缓动系统
+## 包结构
 
-| 类 | 作用 |
+| 包 | 内容 |
 | --- | --- |
-| `EasingCurve` | 三次贝塞尔缓动曲线 |
-| `EasingType` | 缓动类型：14 种预设 + 无缓动（阶跃）+ 自定义曲线，支持序列化 |
+| `work.nekow.particledrawing.api` | 公开 API：粒子管理器、绘制、粒子组、单粒子句柄、粒子集、发射器、特效、动画构建 |
+| `work.nekow.particledrawing.animation` | `.pdrawc` 读取与验签、播放进度、客户端逐 tick 求值、服务端播放管理 |
+| `work.nekow.particledrawing.animation.script` | 函数对象脚本：词法语法、运行时、标量字节码快路径、音频采样 |
+| `work.nekow.particledrawing.core.client` | 客户端渲染引擎、桥接原版粒子、编排程序解释器、音频播放、贴图缓存 |
+| `work.nekow.particledrawing.core.network` | 全部数据包与编解码 |
+| `work.nekow.particledrawing.core.server` | 服务端权威粒子引擎、调度器、发射器登记、动画文件同步 |
+| `work.nekow.particledrawing.lighting` | 动态光照注入与衰减函数 |
+| `work.nekow.particledrawing.command`、`.config`、`.util` | `/pdraw` 命令、配置、工具函数 |
 
-### core.animation —— .pdraw 动画播放
-
-| 类 | 作用 |
-| --- | --- |
-| `AnimationLoader` | 解析 .pdraw 工程文件（含内嵌贴图 texData） |
-| `ParticleAnimation` | 动画数据模型（轨道、粒子、贴图、UV、摄像机、文字对象、音频资产） |
-| `TextObject` / `TextChar` | 文字对象源记录（v15 texts section，v17 起无组）：文本/样式/字符→粒子映射，供脚本 this.get(id) 只读访问；含自转/公转空间与广告牌字段 |
-| `AudioAsset` | 音频资产（v16 audio section）：原始音频字节 + 量化特征列 + 拍点表，供游戏内播放与脚本只读访问 |
-| `ScriptWavePcm` | 音频采样级 PCM：脚本 `a.sampleAt/peakAt/sampleRate/channels/waveReady` 的取值来源，WAV 按字节直读、OGG 按窗口解码 |
-| `TrackPr` | 分量轨道标识枚举（pos/vel/col/scl/rot/spin/center 的 xyz + fov + target.xyz，共 26 个） |
-| `ClientAnimationPlayer` | 客户端逐 tick 求值器（公式/变量/轨道插值） |
-| `ServerAnimationManager` | 服务端动画引擎：playByName / play / stop / stopAll / updateVariable，含活跃播放查询 |
-| `UvData` | UV 参数数据模型（静态 / 填充 / flipbook 动画模式） |
-
-### core.server —— 服务端权威引擎
-
-| 类 | 作用 |
-| --- | --- |
-| `ServerParticleEngine` | 服务端权威粒子引擎（每维度一个）：生成/更新/销毁与可见性同步；批量生成 `spawnParticles`（逐玩家裁剪后一包下发） |
-| `ServerEmitterManager` | 服务端发射器登记表：声明一次 + 锚点/口径变更时更新，负责后进服与走进范围玩家的补发 |
-| `ServerProgramCompletion` | 编排动画完成信号的登记表：客户端上报后回调/销毁，另有更晚的兜底销毁 |
-| `AnimationScheduler` | 服务端 tick 调度器：延迟任务队列（stagger 入场、定时销毁等） |
-| `ParticleData` | 粒子运行时数据 |
-| `ParticleGroupData` | 粒子组成员与轴心 |
-| `ParticleVisibilityManager` | 粒子可见性判定 |
-| `ServerParticleHandler` | 服务端 tick 事件处理（推进引擎 + 动画调度器） |
-| `AnimationSyncService` | .pdraw 文件同步服务 |
-| `AnimationSyncConfigTask` | 配置阶段文件同步任务 |
-| `TextureSyncService` | 程序化贴图下发（登记即广播 + 进服补发） |
-| `DynamicLightCleanup` | 动态光源清理 |
-
-### core.client —— 客户端渲染
-
-| 类 | 作用 |
-| --- | --- |
-| `ClientParticleEngine` | 客户端粒子引擎（缓动同步、直接同步、非均匀缩放、track 逐 tick 插值、实体锚点本地解析、寿命曲线逐渲染帧刷新） |
-| `TrackBuffer` | track 的逐 tick 插值缓冲（按到达顺序排队、每 tick 消费一条、缺包原地保持） |
-| `ClientEmitterManager` | 客户端发射器运行时：按渲染帧沿锚点的相邻服务器样本推进里程/时间并就地生成粒子 |
-| `ParticleTakeover` | 粒子的位置接管 / 外观接管标记（`track` 只接管位置，寿命曲线继续管外观） |
-| `LightCachePolicy` | 光照缓存的失效判定（动态光版本 / 方块 / 分摊超时） |
-| `EmitterAdvance` | 发射推进的纯逻辑（里程等距切分 / 时间毫秒累积），与渲染网络解耦便于单测 |
-| `EmitterSampling` | 逐颗抖动的确定性哈希 + 可移动锚点的相邻样本（瞬移/断流语义） |
-| `ResolvedVisual` | 外观规格的客户端解析结果（网络 spawn 包与本地发射器共用同一段解释） |
-| `RenderParticle` | 渲染粒子状态（缓动 + 速度积分 + 欧拉旋转 + 寿命曲线乘数） |
-| `BridgeParticle` | 桥接原版粒子系统的渲染代理（纯色方块 / 自定义贴图 + UV 采样；非广告牌粒子按自转四元数固定朝向；**按 partialTick 插值尺寸/颜色/透明度**，20Hz 求值的组动画在高刷下也连续；光照缓存按动态光版本与分摊超时失效） |
-| `TextureCache` | 贴图缓存（PNG 字节 / 内置形状像素 → DynamicTexture），带版本号供晚到贴图重解析 |
-| `ClientAnimationManager` | 客户端 .pdraw 动画播放管理 |
-| `AudioStreamPlayer` | 游戏内音频播放（OpenAL 队列流式 + OGG/WAV 解码 + 采样级精确 seek 重灌 + 漂移校正，主线程驱动） |
-| `ClientAnimationProgramManager` | 编排动画程序解释器：指令流本地求值、实体通道、公式模式（客户端自驱） |
-| `ClientAnimationSyncManager` | 配置阶段文件接收管理 |
-| `ClientTextureSyncManager` | 程序化贴图接收（分块累积 → 解码注册）、重载与换服清理 |
-| `ParticleRenderHandler` | 客户端 tick 事件处理 |
-
-### core.network —— 网络层
-
-| 类 | 作用 |
-| --- | --- |
-| `NetworkHandler` | 注册数据包 |
-| `ClientPayloadHandler` | 数据包分发到 `ClientParticleEngine` |
-| `ServerPayloadHandler` | 服务端配置阶段请求处理 |
-| `ParticleSpawnPayload` | 粒子生成包（含寿命曲线与首帧插值端点） |
-| `ParticleSpawnBatchPayload` | 批量粒子生成包（每条记录与单发同构，一次最多 256 条） |
-| `EmitterSpawnPayload` / `EmitterUpdatePayload` / `EmitterStopPayload` | 运行时发射器：声明 / 分档变更（锚点 / 口径 / 整份参数）/ 停止包 |
-| `ProgramAnchorPayload` | 编排程序的移动轴心样本（上一位置 → 当前位置） |
-| `ProgramCompletePayload` | 编排动画完成信号（客户端 → 服务端，驱动 `onAnimationComplete` / `retire`；账本含变量缓动与表达式有限时长） |
-| `BatchChunking` | 批量载荷拆包（发送端按单包上限切段，顺序与对应关系不变） |
-| `ParticleCurveCodec` | 寿命曲线编解码（通道 + 关键帧；缓动走紧凑编码，预设只占 1~2 字节） |
-| `ParticleUpdatePayload` | 粒子增量更新包（位置/颜色/缩放 + 缓动） |
-| `ParticleDestroyPayload` | 粒子销毁包 |
-| `AnimationProgramPayload` / `AnimationProgramAppendPayload` | 编排动画程序下发 / 追加指令包 |
-| `SetProgramVarPayload` / `StopAnimationProgramPayload` | 程序变量热更 / 停止包 |
-| `ParticleRotationPayload` / `ParticleTranslatePayload` / `ParticleSetPositionPayload` | 绕轴心旋转 / 平移 / set 位置包 |
-| `ParticleVelocityPayload` / `ParticleLightLevelPayload` | 速度 / 光照等级包 |
-| `ParticleTrackBatchPayload` | 批量直设位置包（一个包覆盖多粒子） |
-| `ParticleForcePayload` | 加速度（力）包：只在开始施力时下发一次 |
-| `ParticleAttachPayload` | 实体锚点包：只在挂载时下发一次，客户端本地解析位置 |
-| `PlayAnimationPayload` / `StopAnimationPayload` / `VariableUpdatePayload` | 动画播放控制包 |
-| `AnimationSyncBegin/File/Done/Request Payload` | 配置阶段文件同步包 |
-| `ParticleTexturePayload` | 程序化贴图内容块（按 id 分块下发） |
-| `ParticleVisualCodec` | 生成载荷里的外观字段编解码（只写非默认字段；贴图按 id 引用） |
-| `StreamCodecs` | 编解码工具 |
-
-### lighting —— 动态光照
-
-| 类 | 作用 |
-| --- | --- |
-| `DynamicLightManager` | 动态光源管理与光照等级查询 |
-| `DynamicLightEngine` | 放置 / 移除光源方块 |
-| `DynamicLightPositions` | 光源位置追踪 |
-| `LightAttenuation` | 光照衰减函数 |
-
-### command / config / util
-
-| 类 | 作用 |
-| --- | --- |
-| `command.ParticleDrawCommands` | `/pdraw` 命令（play / stop / reload 等） |
-| `config.ParticleDrawingConfig` | 服务端 / 客户端配置 |
-| `util.ParticleUtils` | 工具方法 |
-| `util.Vec3Math` | 向量数学（Rodrigues 轴角旋转扩展函数） |
-
-### mixin —— 渲染注入（Java）
-
-| 类 | 作用 |
-| --- | --- |
-| `EntityRendererMixin` | 实体光照注入 |
-| `BrightnessGetterMixin` | 亮度查询注入 |
-| `QuadParticleRenderStateMixin` | 非均匀缩放粒子渲染注入 |
-
----
-
-## 已知限制
-
-### 立体声源的 `pan`：已实施，与编辑器有两处已知差别
-
-编辑器把音频声像串在 Web Audio 的 `StereoPanner` 上（`objects/audio-playback.js`：
-`source → gain → panner → destination`）。播放端原来把它塞进 `AL_POSITION`，而 OpenAL 对**立体声源**
-在立体声输出下走直通声道、位置分量不参与混音——实测（`ALC_SOFT_loopback` 离屏渲染真 OpenAL Soft，
-见 `StereoSourcePanTest`）pan 从 -1 到 +1 左右电平差 **0.0 dB**，也就是声像完全无效。
-
-现在立体声素材改走 `AL_SOFT_source_panning` 的 `AL_PAN_SOFT`（`OpenAlSink.prepareSource` 置
-`AL_PANNING_ENABLED_SOFT`，`setPan` 用 `AL_PAN_SOFT` 代替 `AL_POSITION`），实测是**真左右平衡**：
-pan=0 两侧不动，pan=±1 本侧不动、对侧 -177 dB，中段线性（±0.5 → 对侧 -6.1 dB）。扩展不可用时
-退回 `AL_POSITION`（即改动前的行为，不报错）；单声道素材也继续走 `AL_POSITION`（对它有效，行为不变）。
-
-与编辑器仍有两处差别，都在两端之外：
-
-1. **中段曲线**：OpenAL 线性、Web Audio 等功率（`gainL = cos(x·π/2)`、`gainR = sin(x·π/2)`）。
-   pan=0 完全一致；pan=±1 对侧都静音、本侧自身内容都不衰减，只剩下面第 2 点的折叠差别；
-   中间不一致（pan=0.5 时对侧：OpenAL -6.1 dB、等功率 -3.0 dB）。
-2. **对侧折叠**：Web Audio 规范对立体声输入算的是 `outputL = inputL + inputR·gainL`，
-   硬声像时会把对侧声道**混进**近侧输出；`AL_PAN_SOFT` 不折叠（实测对侧分量 -104 dB），近侧
-   只剩本来的内容。
-
-若将来必须逐点一致，路径是自己按规范算增益与折叠（在解码块上做每样本混音，或拆双单声道源并
-保持队列/seek/位置记账锁步）——已评估 **150~200 行**，不建议只为这两点做。
-
-开关语义（实测）：开启 `AL_PANNING_ENABLED_SOFT` 之后 `AL_POSITION` 就不再参与这条 source 的混音
-（位置挪到右侧、`AL_PAN_SOFT` 给 0 时左右仍完全对称），所以两套声像不会叠加；`prepareSource` 仍把
-位置钉在原点，只是不留一个与实际声像对不上的旧值。这个开关只作用于 `AudioStreamPlayer` 自建、
-只播 `.pdrawc` 音频的 source；游戏本体的 3D 定位音效走 Minecraft 自己的 source，不受影响。
-
-### 素材采样率不必等于设备率
-
-播放端把 WAV/OGG 头里的采样率原样交给 `alBufferData`，由 OpenAL 重采样到设备率。素材率 **≠**
-设备率时，建 source 会换成带限 sinc 重采样器（`AL_SOFT_source_resampler`）——OpenAL 默认那档是
-纯插值、没有抗混叠，会把 24kHz 以上的内容按原电平折回可听带（实测 192kHz 素材的 30kHz 单音折回
-可听带 **-9.0 dBFS**，换成带限 sinc 后 -70~-81 dBFS）。
-
-触发条件（实测 `AudioResamplerAliasingTest`，读回 `AL_SOURCE_RESAMPLER_SOFT` 确认）：
-
-| 设备率 | 素材率 | 行为 |
-| --- | --- | --- |
-| 48k | 48k | **不设**（读回仍是默认档），mixer 走 1:1 快路径，零开销、与不换挡时完全一致 |
-| 48k | 192k | 设为带限 sinc |
-| 48k | 44.1k | 也设（非整数比，同样在重采样） |
-| 192k | 192k | **不设** |
-| 设备率查不到（返回 0） | 任意 | 仍会设（保守：假设可能有重采样） |
-| 缺扩展 / 没有带限 sinc 可选 | — | 一个 AL 调用都不发，退回 OpenAL 默认 |
-
-设备率每次建 source **现查**（不缓存）：同一次播放里设备换了率，缓存旧值会把「新设备率 == 素材率」
-误判成立而漏换重采样器。换素材或换设备前照这张表看即可。
-
----
-
-> 变更记录：`ParticleStyle` 枚举与 `core.motion` 运动算法包已移除——无贴图粒子统一渲染为纯色方块，帧级运动能力由编排式动画 API（spin / movePath / pulse）承担。
+原版渲染注入（Mixin）在 `src/main/java/work/nekow/particledrawing/mixin`。
