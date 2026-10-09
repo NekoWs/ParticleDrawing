@@ -53,14 +53,14 @@
 ```kotlin
 // build.gradle.kts
 dependencies {
-    compileOnly("work.nekow:particledrawing:1.0.20-ALPHA")
-    localRuntime("work.nekow:particledrawing:1.0.20-ALPHA")
+    compileOnly("work.nekow:particledrawing:<version>")
+    localRuntime("work.nekow:particledrawing:<version>")
 }
 ```
 
-版本号跟随 `gradle.properties` 里的 `mod_version`，最新版本见
-[Maven Central](https://central.sonatype.com/artifact/work.nekow/particledrawing)。要把库打进自己的 jar、不要求
-玩家单独安装，用 `jarJar(implementation("work.nekow:particledrawing:<version>"))`。
+`<version>` 取最新发布版，见顶部的 Maven Central 徽章或
+[Maven Central](https://central.sonatype.com/artifact/work.nekow/particledrawing)。要把库打进自己的 jar、
+不要求玩家单独安装，用 `jarJar(implementation("work.nekow:particledrawing:<version>"))`。
 
 还要在 `META-INF/neoforge.mods.toml` 里声明依赖：
 
@@ -126,8 +126,8 @@ cd ParticleDrawing
 ## 发布
 
 `gradle.properties` 里的 `mod_version` 是唯一事实来源。它每次变化，同一个提交都会打上对应的标签
-（`v<mod_version>`，例如 `v1.0.20-ALPHA`）。推送这样的标签会通过 `publish.yml` 把产物发布到
-Maven Central；没有标签就没有发布。
+（`v<mod_version>`）。推送这样的标签会通过 `publish.yml` 把产物发布到 Maven Central；标签名与
+`mod_version` 不一致时该工作流会直接失败，没有标签就没有发布。
 
 ## 许可
 

@@ -61,14 +61,14 @@ The library is published to Maven Central:
 ```kotlin
 // build.gradle.kts
 dependencies {
-    compileOnly("work.nekow:particledrawing:1.0.20-ALPHA")
-    localRuntime("work.nekow:particledrawing:1.0.20-ALPHA")
+    compileOnly("work.nekow:particledrawing:<version>")
+    localRuntime("work.nekow:particledrawing:<version>")
 }
 ```
 
-The version follows `mod_version` in `gradle.properties`; see
-[Maven Central](https://central.sonatype.com/artifact/work.nekow/particledrawing) for the newest
-release. To ship the library inside your own jar instead of requiring players to install it, use
+Replace `<version>` with the newest release, shown by the Maven Central badge above or on
+[Maven Central](https://central.sonatype.com/artifact/work.nekow/particledrawing). To ship the library
+inside your own jar instead of requiring players to install it, use
 `jarJar(implementation("work.nekow:particledrawing:<version>"))`.
 
 Declare the dependency in `META-INF/neoforge.mods.toml` as well:
@@ -135,8 +135,9 @@ The build requires JDK 25. Runtime artifacts are written to `build/libs/`.
 ## Releasing
 
 `mod_version` in `gradle.properties` is the single source of truth. Whenever it changes, the same
-commit gets a matching tag (`v<mod_version>`, e.g. `v1.0.20-ALPHA`). Pushing such a tag publishes the
-artifact to Maven Central through `publish.yml`; there is no release without a tag.
+commit gets a matching tag (`v<mod_version>`). Pushing such a tag publishes the artifact to Maven
+Central through `publish.yml`, which fails if the tag name does not match `mod_version`; there is no
+release without a tag.
 
 ## License
 

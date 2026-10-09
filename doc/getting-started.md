@@ -17,16 +17,18 @@
 ```kotlin
 // build.gradle.kts
 dependencies {
-    compileOnly("work.nekow:particledrawing:1.0.20-ALPHA")
-    localRuntime("work.nekow:particledrawing:1.0.20-ALPHA")
+    compileOnly("work.nekow:particledrawing:<version>")
+    localRuntime("work.nekow:particledrawing:<version>")
 }
 ```
 
-版本号跟随 `gradle.properties` 的 `mod_version`。也可以把库打进自己的 jar，让玩家不必单独安装：
+`<version>` 取最新发布版，见
+[Maven Central](https://central.sonatype.com/artifact/work.nekow/particledrawing)。也可以把库打进自己的 jar，
+让玩家不必单独安装：
 
 ```kotlin
 dependencies {
-    jarJar(implementation("work.nekow:particledrawing:1.0.20-ALPHA"))
+    jarJar(implementation("work.nekow:particledrawing:<version>"))
 }
 ```
 
