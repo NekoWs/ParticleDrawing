@@ -17,7 +17,7 @@ object NetworkHandler {
     @JvmStatic
     fun register(event: RegisterPayloadHandlersEvent) {
         // 载荷集合/字段变化即提升版本：新版客户端与服务端不会误配
-        val registrar: PayloadRegistrar = event.registrar("8")
+        val registrar: PayloadRegistrar = event.registrar("9")
 
         registrar.playToClient(ParticleSpawnPayload.TYPE, ParticleSpawnPayload.STREAM_CODEC, ClientPayloadHandler::handleSpawn)
         registrar.playToClient(ParticleSpawnBatchPayload.TYPE, ParticleSpawnBatchPayload.STREAM_CODEC, ClientPayloadHandler::handleSpawnBatch)
@@ -52,6 +52,8 @@ object NetworkHandler {
         registrar.playToClient(ClockSyncPayload.TYPE, ClockSyncPayload.STREAM_CODEC, ClientPayloadHandler::handleClockSync)
         registrar.playToClient(EffectDataPayload.TYPE, EffectDataPayload.STREAM_CODEC, ClientPayloadHandler::handleEffectData)
         registrar.playToServer(EffectRequestPayload.TYPE, EffectRequestPayload.STREAM_CODEC, ServerPayloadHandler::handleEffectRequest)
+        // 编排动画的完成信号（客户端 → 服务端）：销毁与「视觉真正到零」对齐
+        registrar.playToServer(ProgramCompletePayload.TYPE, ProgramCompletePayload.STREAM_CODEC, ServerPayloadHandler::handleProgramComplete)
 
         // 运行时发射器：声明一次 + 变更时更新（发射在客户端逐渲染帧发生）
         registrar.playToClient(EmitterSpawnPayload.TYPE, EmitterSpawnPayload.STREAM_CODEC, ClientPayloadHandler::handleEmitterSpawn)

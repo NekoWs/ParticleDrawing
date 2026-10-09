@@ -7,6 +7,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext
 import work.nekow.particledrawing.api.EffectRegistry
 import work.nekow.particledrawing.core.server.AnimationSyncConfigTask
 import work.nekow.particledrawing.core.server.AnimationSyncService
+import work.nekow.particledrawing.core.server.ServerProgramCompletion
 import java.util.Collections
 import java.util.WeakHashMap
 
@@ -49,6 +50,16 @@ internal object ServerPayloadHandler {
             val player = context.player() as? ServerPlayer ?: return@enqueueWork
             val data = EffectRegistry.dataFor(payload.key) ?: return@enqueueWork
             PacketDistributor.sendToPlayer(player, EffectDataPayload(payload.key, data))
+        }
+    }
+
+    /**
+     * 处理客户端「编排动画跑完了」：触发注册的完成回调，并（若登记了 retire）在余量后销毁整组。
+     * 多个客户端各自上报，第一个到达即生效（同一段程序、同一套时钟，本来就在同一两个 tick 内）。
+     */
+    fun handleProgramComplete(payload: ProgramCompletePayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ServerProgramCompletion.complete(payload.programId)
         }
     }
 

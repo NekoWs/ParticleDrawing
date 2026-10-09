@@ -5,11 +5,13 @@ import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.program.AnimInstruction
 import work.nekow.particledrawing.animation.program.PivotRef
+import work.nekow.particledrawing.animation.program.finiteDurationMs
 import work.nekow.particledrawing.api.Orient
 import work.nekow.particledrawing.core.easing.EasingType
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -84,5 +86,22 @@ class AnimationProgramInstructionTest {
 
         // tag(1) + startMs(1) + axis(24) + radiansPerMs(8)；若再塞一个 PivotRef.Fixed 会多出 1 + 24 字节
         assertEquals(34, buf.readableBytes(), "Spin 的载荷只该有轴向量与角速度")
+    }
+
+    @Test
+    fun `有限指令给出终点，无限持续的不参与判定`() {
+        assertEquals(250, AnimInstruction.FadeOut(0, 250, EasingType.LINEAR).finiteDurationMs())
+        assertEquals(400, AnimInstruction.ScaleTo(0, 0f, 400, EasingType.LINEAR).finiteDurationMs())
+        assertEquals(80, AnimInstruction.MoveEach(0, 0.5f, 80, EasingType.LINEAR).finiteDurationMs())
+        assertEquals(0, AnimInstruction.BindPivot(0, PivotRef.Movable(Vec3.ZERO)).finiteDurationMs())
+
+        assertNull(AnimInstruction.Spin(0, Vec3(0.0, 1.0, 0.0), 0.02).finiteDurationMs(), "无限自转没有终点")
+        assertNull(AnimInstruction.Pulse(0, 1.2f, 100, -1).finiteDurationMs(), "无限脉冲没有终点")
+        assertNull(AnimInstruction.Expression(0, "[x]=0").finiteDurationMs())
+    }
+
+    @Test
+    fun `有限脉冲的终点按「半周期 × 2 × 圈数」算`() {
+        assertEquals(600, AnimInstruction.Pulse(0, 1.2f, 100, 3).finiteDurationMs())
     }
 }

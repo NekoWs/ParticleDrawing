@@ -9,6 +9,8 @@ import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.network.AnimationProgramAppendPayload
 import work.nekow.particledrawing.core.network.AnimationProgramPayload
 import work.nekow.particledrawing.core.network.ProgramAnchorPayload
+import work.nekow.particledrawing.core.server.ServerProgramCompletion
+import work.nekow.particledrawing.animation.program.finiteDurationMs
 import work.nekow.particledrawing.core.server.AnimationScheduler
 import net.neoforged.neoforge.network.PacketDistributor
 import java.util.UUID
@@ -59,6 +61,11 @@ class ParticleGroup(
 
     /** 是否已经绑定过可移动轴心（[updateAnchor] 的前置条件）。 */
     private var movableAnchor = false
+
+    /** 时间轴里最晚的「有限指令结束时刻」（程序相对毫秒）；-1 = 没有有限指令。 */
+    private var timelineEndMs: Long = -1L
+
+    private val hasFiniteInstruction: Boolean get() = timelineEndMs >= 0L
 
     /** 游标 → 程序时刻的换算（增量追加按「从现在起」读）。 */
     private val clock = GroupClock()
@@ -203,6 +210,50 @@ class ParticleGroup(
      */
     fun size(): Int = manager.getEngine().getGroup(id)?.size() ?: 0
 
+    // —— 完成信号（客户端真正收尾的那一刻） ——
+
+    /**
+     * 这段编排的**有限指令全部跑完**时回调（服务端主线程，误差不超过一两个 tick）。
+     *
+     * 判定的是「脚本时间轴上最后一件事做完」：`spin`、无限 `pulse`、表达式这类没有终点的指令
+     * 不参与判定（它们不拦着有限指令的终点）。整段都没有有限指令时不会触发——那种组本来就没有「跑完」。
+     *
+     * 典型用法：法阵从零展开、`scaleTo(1f, 8)` 长完之后在最准的时刻接音效/特效，
+     * 而不是服务端自己掐表估。
+     */
+    fun onAnimationComplete(action: (ParticleGroup) -> Unit): ParticleGroup {
+        if (!hasFiniteInstruction) {
+            LOGGER.warn("[ParticleDrawing] group {} 没有有限时长指令，onAnimationComplete 不会触发", id)
+            return this
+        }
+        ServerProgramCompletion.onComplete(id, manager.dimensionId, fallbackTicks(), action = { action(this) })
+        return this
+    }
+
+    /**
+     * 客户端把这段编排跑完之后（+[graceTicks]，默认 2 tick 给桥接插值收尾）**销毁整组**。
+     *
+     * 与 [destroyAfter] 的区别：那个按服务端时钟掐表，客户端晚一点就会把还在收尾的画面切掉；
+     * 本方法等客户端的完成信号，销毁时刻与「视觉真正到零」对齐。
+     * 没人上场/客户端一直不上报时，按服务端时间轴末端 + 1 秒兜底销毁，不让组泄漏。
+     */
+    @JvmOverloads
+    fun retire(graceTicks: Int = 2): ParticleGroup {
+        require(graceTicks >= 0) { "retire 的余量不能为负" }
+        if (!hasFiniteInstruction) {
+            LOGGER.warn("[ParticleDrawing] group {} 没有有限时长指令，retire 不会触发（改用 destroyAfter）", id)
+            return this
+        }
+        ServerProgramCompletion.retire(id, manager.dimensionId, graceTicks, fallbackTicks())
+        return this
+    }
+
+    /** 从此刻起多少 tick 后走到时间轴末端（兜底用）；没有有限指令时给 -1（不排兜底）。 */
+    private fun fallbackTicks(): Int {
+        if (!hasFiniteInstruction) return -1
+        return clock.ticksFromNow(timelineEndMs.toInt(), manager.level.gameTime)
+    }
+
     // —— 时间线编排 ——
 
     /**
@@ -228,6 +279,12 @@ class ParticleGroup(
         val now = manager.level.gameTime
         if (!armed) clock.onProgramStart(now)
         val at = clock.programTime(ins.startMs, now)
+        // 记下时间轴末端（有限指令才算；spin/无限 pulse/表达式没有终点）：
+        // 完成信号与 retire 的兜底时刻都靠它
+        ins.finiteDurationMs()?.let { duration ->
+            val end = at.toLong() + duration
+            if (end > timelineEndMs) timelineEndMs = end
+        }
         instructions.add(ins)
         flush(now)
         return at
@@ -270,7 +327,6 @@ class ParticleGroup(
             stopProgramOnClient(destroyParticles = false)
         }
     }
-
     // —— 生命周期 ——
 
     /**
@@ -318,6 +374,8 @@ class ParticleGroup(
     }
 
     private fun stopProgramOnClient(destroyParticles: Boolean) {
+        // 组已经收尾：完成信号/兜底销毁的登记一并注销
+        ServerProgramCompletion.cancel(id)
         for (player in manager.getPlayers()) {
             PacketDistributor.sendToPlayer(player, work.nekow.particledrawing.core.network.StopAnimationProgramPayload(id, destroyParticles))
         }

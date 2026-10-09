@@ -313,8 +313,26 @@ g.delay(1).fadeOut(durationTicks = 5) // 1 tick 后开始、5 tick 淡完（不�
 ```kotlin
 group.fadeIn(durationTicks = 15)                 // 透明度 0 → 当前值
 group.fadeOut(durationTicks = 20)                // 透明度 → 0 并销毁整组
-group.destroyAfter(ticks = 200)                  // 定时销毁
+group.destroyAfter(ticks = 200)                  // 定时销毁（服务端时钟掐表）
+group.scaleTo(0f, durationTicks = 8).retire()    // 退场到零后由**客户端完成信号**销毁
+group.onAnimationComplete { /* 有限指令全部跑完的那一刻 */ }
 ```
+
+> `destroyAfter` 是按服务端时钟估的时间：客户端因为网络延迟或时钟锚点晚一点收尾时，
+> 它会把还在收尾的画面切掉。`retire(graceTicks = 2)` 改为等客户端的完成信号（`ProgramCompletePayload`），
+> 销毁时刻与「视觉真正到零」对齐；客户端不在场/一直不上报时按服务端时间轴末端 + 1 秒兜底销毁，不让组泄漏。
+> `onAnimationComplete` 判定的也是「时间轴上最后一件事做完」：`spin`、无限 `pulse`、表达式这类没有终点的
+> 指令不参与判定；整段都没有有限指令时两者都不会触发（控制台会提醒）。
+
+### 视觉通道逐渲染帧（60/144Hz 也连续）
+
+组级尺寸（`scaleTo`/`scaleBy`/表达式 `sc`）、颜色与透明度都在**渲染帧**上按 partialTick 插值：
+
+- 位置本来就由桥接粒子的 `xo/x` 按 partialTick 扫掠；
+- 尺寸与颜色/透明度由 `BridgeParticle` 记下「上一 tick → 本 tick」两个端点，在顶点生成前插值——
+  所以 20Hz 求值的组动画与变量缓动在高刷下不会出现阶梯（末端的「硬切」也随之消失）。
+
+程序本身仍按 game tick 求值（不按渲染帧重算，避免 3 倍计算量），插值只发生在写渲染层那一步。
 
 ### 持续运动（服务端逐步驱动，客户端平滑插值）
 
@@ -558,6 +576,8 @@ manager.create().position(p).lifetime(40)
 - `fadeOut` / `shrinkTo` 锚在**寿命末尾**，所以需要有限寿命（`lifetime(-1)` + `fadeOut` 会明确报错，
   而不是悄悄按「生成后 N tick」算）。
 - 客户端逐**渲染帧**刷新带曲线的粒子外观（只改颜色/缩放，不动位置），所以淡出是平滑的、不是 20Hz 台阶。
+- **曲线与 `track` 可以同时用**：`track`/`trackAll` 只接管**位置**，外观仍由曲线逐帧驱动。
+  「每 tick 逐刻跟随 + 尺寸从零长起来」的组合是支持的（出生、保持、收尾全程都按曲线走）。
 
 ### 首帧插值端点：让程序化粒子和 track 走同一套语义
 
@@ -1034,3 +1054,7 @@ fun ripples(m: ParticleManager, c: Vec3, waves: Int) {
    否则客户端会一直发下去。发射器不是「开火一次就结束」的 API，也不是 `ParticleGroup` 的替代品。
 10. **批量生成的条数上限**：`ParticleManager.spawnAll` 单次最多 `MAX_SPAWN_BATCH`（256）条，
    超出的规格不生成（返回值比入参短），服务端再按每玩家上限裁剪——密集场景分批调用而不是堆成一个大列表。
+11. **静态粒子的光照缓存会失效**：光照结果按「方块坐标 + 动态光版本 + 分摊超时」缓存。
+    动态光（发光粒子）移动/销毁/关闭时**下一渲染帧**就刷新；插/拆火把、昼夜变化、区块重载这类
+    没有版本号的世界光变化，由每颗粒子各自错开的重采样时刻（1 秒周期）兜住——
+    静止的非发光片元也会跟着变亮/变暗，不必移动位置或重建粒子。

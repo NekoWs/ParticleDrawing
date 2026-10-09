@@ -27,6 +27,29 @@ enum class InstructionType {
 }
 
 /**
+ * 一条指令的**有限时长**（毫秒）；返回 null 表示它是无限持续的（`spin`、无限 `pulse`、表达式）。
+ *
+ * 「这段编排什么时候跑完」由它算出来：服务端据此排定兜底收尾，客户端据此上报完成。
+ * 无限持续的指令不参与判定——它不给出终点，也拦不住后面有限指令的终点。
+ */
+internal fun AnimInstruction.finiteDurationMs(): Int? = when (this) {
+    is AnimInstruction.Spin -> null
+    is AnimInstruction.Expression -> null
+    is AnimInstruction.Pulse -> if (cycles < 0) null else halfPeriodMs * 2 * cycles
+    is AnimInstruction.FadeIn -> durationMs
+    is AnimInstruction.FadeOut -> durationMs
+    is AnimInstruction.Recolor -> durationMs
+    is AnimInstruction.ScaleBy -> durationMs
+    is AnimInstruction.ScaleTo -> durationMs
+    is AnimInstruction.Translate -> durationMs
+    is AnimInstruction.RotateOnce -> durationMs
+    is AnimInstruction.MovePath -> durationMs
+    is AnimInstruction.MoveEach -> durationMs
+    is AnimInstruction.StopContinuous -> 0
+    is AnimInstruction.BindPivot -> 0
+}
+
+/**
  * 变换基准点（轴心）引用：固定世界坐标，或跟随某个实体的位置（+偏移）。
  *
  * 只在 [AnimInstruction.BindPivot] 里下发——轴心是**程序级的状态**，绑定一次对之后所有旋转/缩放类指令生效；

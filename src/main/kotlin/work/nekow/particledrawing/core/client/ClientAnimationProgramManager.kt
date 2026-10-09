@@ -19,10 +19,13 @@ import work.nekow.particledrawing.api.WorldProp
 import work.nekow.particledrawing.animation.program.AnimInstruction
 import work.nekow.particledrawing.animation.program.EntityBinding
 import work.nekow.particledrawing.animation.program.PivotRef
+import work.nekow.particledrawing.animation.program.finiteDurationMs
 import work.nekow.particledrawing.core.DebugFlags
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.network.ProgramCompletePayload
 import work.nekow.particledrawing.util.AttachMath
 import work.nekow.particledrawing.util.rotateAround
+import net.neoforged.neoforge.client.network.ClientPacketDistributor
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.floor
@@ -98,6 +101,8 @@ internal object ClientAnimationProgramManager {
     )
 
     private class Program(
+        /** 程序 id（= 粒子组 id）：上报完成时要用它。 */
+        val animationId: UUID,
         val particleIds: List<UUID>,
         val anchorOffset: Long,
         /** 下发时刻的服务端 gameTime：把绝对时钟换算为「程序相对 tick」的原点。 */
@@ -136,6 +141,12 @@ internal object ClientAnimationProgramManager {
         var anchorSampleNanos: Long = 0L
         /** 本 tick 是否让粒子位置跳变（瞬移/断流刚恢复）：避免在两个远点之间扫出一条假轨迹。 */
         var anchorSnapPending = false
+
+        /** 有限指令的最晚结束时刻（程序相对毫秒）；-1 = 这是一段没有终点的编排。 */
+        var endMs: Long = -1L
+
+        /** 是否已经把「跑完了」上报给服务端（每次时间轴被追加延长后会重置，可再报一次）。 */
+        var completionReported = false
 
         /** 渐变中的变量：名字 → 目标与进度（见 `setVariableEased`）。 */
         val varEases = HashMap<String, VarEase>()
@@ -177,7 +188,7 @@ internal object ClientAnimationProgramManager {
         instructions: List<AnimInstruction>,
     ) {
         val level = Minecraft.getInstance().level
-        val p = Program(particleIds, anchorGameTime - (level?.gameTime ?: 0L), anchorGameTime, HashMap())
+        val p = Program(programId, particleIds, anchorGameTime - (level?.gameTime ?: 0L), anchorGameTime, HashMap())
         p.pivotFixed = initialPivot
         p.entityBindings.addAll(entitiesIn)
         for ((k, v) in varsIn) p.vars[k] = v
@@ -273,6 +284,23 @@ internal object ClientAnimationProgramManager {
         }
     }
 
+    /**
+     * 某个变量此刻的值：正在渐变就**按当前程序时钟求旧曲线的值**（不是上一 tick 的快照），
+     * 否则取静态快照。热更重定向时用它当新起点，连续重设目标才不会一轮比一轮落后。
+     */
+    private fun currentVarValue(p: Program, name: String, now: Long): Double? {
+        val ease = p.varEases[name] ?: return p.vars[name]
+        if (ease.startMs < 0L) return p.vars[name]
+        val k = progress(now - ease.startMs, ease.durationMs)
+        return ease.from + (ease.to - ease.from) * eased(ease.easing, k).toDouble()
+    }
+
+    /** 程序相对毫秒的当前值（按客户端的 gameTime 与程序时钟锚点算）。 */
+    private fun programNowMs(p: Program): Long? {
+        val level = Minecraft.getInstance().level ?: return null
+        return (level.gameTime + p.anchorOffset - p.startAnchor) * 50
+    }
+
     fun stop(programId: UUID, destroyParticles: Boolean) {
         val p = programs.remove(programId) ?: return
         if (destroyParticles) ClientParticleEngine.instance()?.destroyParticles(p.particleIds.toTypedArray())
@@ -300,8 +328,27 @@ internal object ClientAnimationProgramManager {
             p.anchorVelocity = ref.velocity
             p.anchorSampleNanos = System.nanoTime()
         }
+        // 时间轴被延长就重新允许上报（长寿组运行期追加一段动画后同样能报「这回也跑完了」）
+        ins.finiteDurationMs()?.let { duration ->
+            val end = ins.startMs.toLong() + duration
+            if (end > p.endMs) {
+                p.endMs = end
+                p.completionReported = false
+            }
+        }
         p.slots.add(Slot(ins))
         prepareExpressionBuffers(p)
+    }
+
+    /**
+     * 有限指令全部跑完时向服务端上报一次（多给 1 tick 余量，等桥接粒子的插值端点收尾）。
+     * 没有有限时长指令（只有 spin / 无限 pulse / 表达式）的程序不上报——它本来就没有终点。
+     */
+    private fun reportCompletionIfDue(p: Program, now: Long) {
+        if (p.endMs < 0L || p.completionReported) return
+        if (now < p.endMs + 50L) return
+        p.completionReported = true
+        ClientPacketDistributor.sendToServer(ProgramCompletePayload(p.animationId))
     }
 
     /**
@@ -333,7 +380,12 @@ internal object ClientAnimationProgramManager {
             p.varEases.remove(name)
             p.vars[name] = target
         } else {
-            p.varEases[name] = VarEase(p.vars[name] ?: target, target, durationMs, easing)
+            // 重定向：起点取「旧渐变按当前时钟的值」，不是上一 tick 的快照 ——
+            // 连续热更时每轮都从真正的位置接着走，不会越落越远。
+            val now = programNowMs(p)
+            val from = if (now != null) currentVarValue(p, name, now) ?: target else p.vars[name] ?: target
+            p.vars[name] = from
+            p.varEases[name] = VarEase(from, target, durationMs, easing)
         }
         // 变量名集合可能扩大：表达式指令的 externals 布局需随之重建
         if (p.expressionCode != null) recompileExpression(p) else prepareExpressionBuffers(p)
@@ -491,14 +543,17 @@ internal object ClientAnimationProgramManager {
             // clientGameTime + anchorOffset ≈ 服务端绝对 gameTime；再减程序起点、×50 = 相对毫秒。
             // 指令 startMs 与公式变量 t 均为该相对域，量纲一致、与存档时长无关。
             val now = (nowClient + p.anchorOffset - p.startAnchor) * 50
-            refreshInputs(p, nowClient)
+            // 先推进变量渐变、再形成表达式输入快照：否则公式读到的是上一 tick 的旧值，
+            // 连续热更（每 tick 重设目标）会一直落后一拍，看起来「不收敛」。
             applyVarEases(p, now)
+            refreshInputs(p, nowClient)
 
             if (p.expressionCode != null) {
                 expressionFrame(p, engine, now)
                 continue
             }
             sugarFrame(p, engine, now)
+            reportCompletionIfDue(p, now)
         }
     }
 

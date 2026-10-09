@@ -47,6 +47,8 @@ object ServerParticleHandler {
             ServerAnimationManager.stopAll(dim, (event.level as ServerLevel).players())
             ServerEffectManager.stopAll(dim, (event.level as ServerLevel).players())
             ServerEmitterManager.clearDimension(dim, (event.level as ServerLevel).players())
+            // 完成信号登记随关卡作废（关卡没了，客户端不会再上报）
+            ServerProgramCompletion.clearDimension(dim)
             ServerParticleEngine.clearDimension(dim)
             AnimationScheduler.clear()
         }
