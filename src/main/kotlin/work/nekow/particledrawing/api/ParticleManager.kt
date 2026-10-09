@@ -165,11 +165,10 @@ class ParticleManager private constructor(val level: ServerLevel) {
         @JvmStatic
         fun of(level: Level): ParticleManager {
             if (level !is ServerLevel) {
-                throw IllegalArgumentException("ParticleManager requires a ServerLevel")
+                throw IllegalArgumentException("ParticleManager 需要 ServerLevel")
             }
             return ParticleManager(level)
         }
-
 
         /**
          * 登记一张程序化粒子用的贴图（PNG 字节），可随时调用；幂等，同名重复登记按第一次的生效。
@@ -184,13 +183,17 @@ class ParticleManager private constructor(val level: ServerLevel) {
          */
         @JvmStatic
         fun registerTexture(name: String, pngBytes: ByteArray): Boolean {
+            val duplicate = TextureRegistry.byName(name) != null
             val entry = TextureRegistry.register(name, pngBytes) ?: return false
             // 本机就是客户端（单机 / 自带客户端）：就地解码
-            if (FMLEnvironment.getDist() == Dist.CLIENT) {
-                ClientTextureSyncManager.loadLocal(entry.name, pngBytes)
+            // 重复登记时解的也是注册表里第一次的字节，与广播出去的那份一致
+            val bytes = entry.bytes
+            if (bytes != null && FMLEnvironment.getDist() == Dist.CLIENT) {
+                ClientTextureSyncManager.loadLocal(entry.name, bytes)
             }
             // 服务端：推给在线玩家；还没进服的玩家由 TextureSyncService.sendAll 在进服时补
-            TextureSyncService.broadcast(entry)
+            // 重复登记的字节与第一次相同，不必重发
+            if (!duplicate) TextureSyncService.broadcast(entry)
             return true
         }
 

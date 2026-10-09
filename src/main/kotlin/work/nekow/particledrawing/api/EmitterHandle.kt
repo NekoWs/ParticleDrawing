@@ -7,6 +7,8 @@ import java.util.UUID
 /**
  * 已声明发射器的句柄：运行期改动都通过它下发，方法名与 [ParticleEmitter] 一致。
  *
+ * 自己持一份参数快照，与构建器互不影响：`spawn()` 之后再改构建器不会动到句柄。
+ *
  * 变更按三档下发：
  * - [updateAnchor]：锚点（投射物每 tick 挪动走这条）；
  * - [spacing] / [interval] / [intervalMs]：发射口径；
@@ -19,8 +21,11 @@ class EmitterHandle internal constructor(
     /** 发射器 id（服务端与客户端一致）。 */
     val id: UUID,
     private val manager: ParticleManager,
-    private val emitter: ParticleEmitter,
+    emitter: ParticleEmitter,
 ) {
+
+    /** 句柄自己的参数快照；构建器之后的改动不外泄到这里。 */
+    private val state: ParticleEmitter = emitter.snapshot()
 
     private var currentAnchor: Anchor = Anchor.Fixed(Vec3.ZERO)
 
@@ -52,21 +57,21 @@ class EmitterHandle internal constructor(
 
     /** 改成按里程发射，每 [blocks] 格一颗。 */
     fun spacing(blocks: Double): EmitterHandle {
-        emitter.spacing(blocks)
+        state.spacing(blocks)
         pushCadence()
         return this
     }
 
     /** 改成按时间发射，每 [ticks] tick 一颗。 */
     fun interval(ticks: Int): EmitterHandle {
-        emitter.interval(ticks)
+        state.interval(ticks)
         pushCadence()
         return this
     }
 
     /** 改成按时间发射，每 [ms] 毫秒一颗。 */
     fun intervalMs(ms: Int): EmitterHandle {
-        emitter.intervalMs(ms)
+        state.intervalMs(ms)
         pushCadence()
         return this
     }
@@ -160,14 +165,14 @@ class EmitterHandle internal constructor(
     fun isActive(): Boolean = manager.isEmitterActive(id)
 
     private fun pushCadence() {
-        val c = emitter.cadence()
+        val c = state.cadence()
         manager.updateEmitterCadence(id, c.mode, c.spacing, c.intervalMs)
     }
 
     /** 改一处静态参数后整份下发；客户端整份替换，不做部分叠加。 */
     private inline fun params(change: (ParticleEmitter) -> Unit): EmitterHandle {
-        change(emitter)
-        manager.updateEmitterParams(id, emitter.toParams())
+        change(state)
+        manager.updateEmitterParams(id, state.toParams())
         return this
     }
 }

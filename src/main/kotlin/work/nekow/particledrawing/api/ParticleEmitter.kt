@@ -239,9 +239,38 @@ class ParticleEmitter internal constructor(
     internal fun toParams(): EmitterParams = EmitterParams(
         mode, spacingBlocks, intervalMillis, lifetimeTicks,
         color.r, color.g, color.b, color.a,
-        scale, visualSpec, resolvedLifeCurve(), velocity,
+        scale, visualSpec?.copy(), resolvedLifeCurve(), velocity,
         glowing, lightLevel, maxAlive, jitterBlocks, offsetAlongBlocks,
     )
+
+    /**
+     * 当前参数的独立副本，句柄持有它：两边的改动互不影响。
+     *
+     * 外观要连 [visualSpec] 一起拷，曲线对象本身不可变，可以直接共用。
+     */
+    internal fun snapshot(): ParticleEmitter {
+        val c = ParticleEmitter(manager, anchor)
+        c.mode = mode
+        c.spacingBlocks = spacingBlocks
+        c.intervalMillis = intervalMillis
+        c.lifetimeTicks = lifetimeTicks
+        c.color = color
+        c.scale = scale
+        c.glowing = glowing
+        c.lightLevel = lightLevel
+        c.velocity = velocity
+        c.maxAlive = maxAlive
+        c.jitterBlocks = jitterBlocks
+        c.offsetAlongBlocks = offsetAlongBlocks
+        c.visualSpec = visualSpec?.copy()
+        c.lifeCurve = lifeCurve
+        c.fadeOutTicks = fadeOutTicks
+        c.fadeOutEasing = fadeOutEasing
+        c.shrinkTarget = shrinkTarget
+        c.shrinkTicks = shrinkTicks
+        c.shrinkEasing = shrinkEasing
+        return c
+    }
 
     /** 解析出最终曲线：把 [fadeOut] / [shrinkTo] 的糖按当前寿命换算成关键帧。 */
     internal fun resolvedLifeCurve(): ParticleLifeCurve? {
