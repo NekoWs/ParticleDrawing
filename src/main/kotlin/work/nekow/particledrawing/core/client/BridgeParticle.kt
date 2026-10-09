@@ -14,6 +14,7 @@ import org.joml.Quaternionf
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleVisual
+import work.nekow.particledrawing.lighting.DynamicLightManager
 import work.nekow.particledrawing.util.VisualMath
 import java.util.UUID
 
@@ -48,6 +49,18 @@ class BridgeParticle(
     // 非均匀缩放：局部 X 轴（长）/ Y 轴（宽）两个半宽，单位 Minecraft 块
     private var scaleW: Float = 0f
     private var scaleH: Float = 0f
+
+    // 上一 tick 的外观端点（尺寸 / 颜色 / 透明度）：渲染帧按 partialTick 在两端之间插值，
+    // 于是「每 tick 算一次的组动画与变量缓动」在高刷下也是连续的。
+    private var prevScaleW: Float = 0f
+    private var prevScaleH: Float = 0f
+    private var prevR: Float = 1f
+    private var prevG: Float = 1f
+    private var prevB: Float = 1f
+    private var prevA: Float = 1f
+
+    /** 上一次捕获 prev 时的引擎 tick 序号：同一 tick 内多次同步只捕获一次（prev 始终是「上一 tick」）。 */
+    private var appearanceTick: Long = Long.MIN_VALUE
 
     // v17 非广告牌朝向：billboard=false 时四边形静止朝世界 +Z，再按 spin 旋转（spinLocal=局部轴）
     private var billboard = true
@@ -106,6 +119,31 @@ class BridgeParticle(
         lifetime = Int.MAX_VALUE
         gravity = 0f
         hasPhysics = false
+
+        // 出生时两端同值：第一帧不会从「上一 tick 的 0」插值出来
+        prevScaleW = scaleW
+        prevScaleH = scaleH
+        prevR = rCol
+        prevG = gCol
+        prevB = bCol
+        prevA = alpha
+        appearanceTick = ClientParticleEngine.tickSequence()
+    }
+
+    /**
+     * 在外观被覆写前记下「上一 tick」的端点：同一 tick 内只记一次，
+     * 所以 prev 恒为上一 tick 的值，不受本 tick 内被同步几次（tick 同步 + 曲线逐帧刷新）影响。
+     */
+    private fun captureAppearancePrev() {
+        val tick = ClientParticleEngine.tickSequence()
+        if (appearanceTick == tick) return
+        appearanceTick = tick
+        prevScaleW = scaleW
+        prevScaleH = scaleH
+        prevR = rCol
+        prevG = gCol
+        prevB = bCol
+        prevA = alpha
     }
 
     fun isGlowing(): Boolean = isGlowing
@@ -130,8 +168,9 @@ class BridgeParticle(
         return TextureCache.get(tex) ?: TextureCache.defaultWhite()
     }
 
-    /** 更新发光状态（本地动画逐 tick 求值时同步）。 */
+    /** 更新发光状态（本地动画逐 tick 求值时同步）；发光与非发光走不同光照路径，缓存立即失效。 */
     fun setGlowing(glowing: Boolean) {
+        if (isGlowing != glowing) cachedLight = -1
         isGlowing = glowing
     }
 
@@ -159,12 +198,17 @@ class BridgeParticle(
 
     /**
      * 同步粒子颜色与透明度。
+     *
+     * 写入的是**本 tick 的权威值**；渲染帧上的中间值由 [extract] 按 partialTick 在
+     * 上一 tick 与本 tick 之间插值（组动画与变量缓动的视觉通道因此不再有 20Hz 台阶）。
+     *
      * @param r 红色分量
      * @param g 绿色分量
      * @param b 蓝色分量
      * @param a 透明度分量
      */
     fun syncColor(r: Float, g: Float, b: Float, a: Float) {
+        captureAppearancePrev()
         rCol = r
         gCol = g
         bCol = b
@@ -176,6 +220,7 @@ class BridgeParticle(
      * @param scale 目标缩放值（编辑器数据模型值）
      */
     fun syncScale(scale: Float) {
+        captureAppearancePrev()
         val s = scale * EDITOR_TO_MC_SCALE * texScale
         scaleW = s
         scaleH = s
@@ -188,16 +233,70 @@ class BridgeParticle(
      * @param scaleArray 三分量缩放数组
      */
     fun syncScaleArray(scaleArray: FloatArray) {
+        captureAppearancePrev()
         scaleW = scaleArray[0] * EDITOR_TO_MC_SCALE * texScale
         scaleH = scaleArray[1] * EDITOR_TO_MC_SCALE * texScale
         quadSize = scaleW  // 兼容原版字段
     }
 
+    /** 本帧的插值权重（渲染帧在相邻两个 tick 之间的进度）。 */
+    private fun frameFactor(partialTick: Float): Float = partialTick.coerceIn(0f, 1f)
+
     /**
      * 返回 quad 高度（原版唯一的尺寸口，供 QuadParticleGroup 批量渲染使用）。
      * 宽度由 OrientedQuadRenderState 单独记着，顶点生成时按 (长, 宽) 各自缩放。
+     *
+     * 按 partialTick 在**上一 tick → 本 tick** 之间插值：组动画/变量缓动的尺寸因此在
+     * 60/144Hz 下也是连续变化的，而不是 20Hz 的阶梯（位置早就由 `xo/x` 这样处理了）。
      */
-    override fun getQuadSize(partialTick: Float): Float = scaleH
+    override fun getQuadSize(partialTick: Float): Float {
+        val f = frameFactor(partialTick)
+        return prevScaleH + (scaleH - prevScaleH) * f
+    }
+
+    /** 本帧插值后的长轴/短轴半宽（渲染用，不写回字段）。 */
+    private fun frameWidth(partialTick: Float): Float {
+        val f = frameFactor(partialTick)
+        return prevScaleW + (scaleW - prevScaleW) * f
+    }
+
+    private fun frameHeight(partialTick: Float): Float {
+        val f = frameFactor(partialTick)
+        return prevScaleH + (scaleH - prevScaleH) * f
+    }
+
+    /**
+     * 顶点生成前的最后一站：把颜色/透明度换成**本帧插值后的值**再交给原版。
+     * MC 在 `extract` 里直接读 `rCol/alpha` 这些字段（没有 partialTick 口），所以只能临时替换、
+     * 读完还原——字段本身仍是本 tick 的权威值，供 [getLayer]、[getLightCoords] 等其它读取使用。
+     */
+    override fun extract(
+        state: QuadParticleRenderState,
+        camera: net.minecraft.client.Camera,
+        partialTick: Float
+    ) {
+        val f = frameFactor(partialTick)
+        if (f <= 0f) {
+            super.extract(state, camera, partialTick)
+            return
+        }
+        val cr = rCol
+        val cg = gCol
+        val cb = bCol
+        val ca = alpha
+        rCol = prevR + (cr - prevR) * f
+        gCol = prevG + (cg - prevG) * f
+        bCol = prevB + (cb - prevB) * f
+        alpha = prevA + (ca - prevA) * f
+        try {
+            super.extract(state, camera, partialTick)
+        } finally {
+            rCol = cr
+            gCol = cg
+            bCol = cb
+            alpha = ca
+        }
+    }
 
     /**
      * 重写 extractRotatedQuad：非广告牌时把相机朝向换成自转朝向；非等宽时把宽度交给渲染状态，
@@ -212,7 +311,11 @@ class BridgeParticle(
         // 非广告牌：用自转四元数替换相机朝向旋转（四边形固定朝世界 +Z）
         val q = if (billboard) rotation else orientationQuaternion()
         // 非等宽：把宽度交给渲染状态，顶点生成时按 (长, 宽) 各自缩放（add() 里消费掉）
-        if (state is OrientedQuadRenderState) state.pendingWidth = if (scaleW != scaleH) scaleW else -1f
+        if (state is OrientedQuadRenderState) {
+            val w = frameWidth(partialTick)
+            val h = frameHeight(partialTick)
+            state.pendingWidth = if (w != h) w else -1f
+        }
         super.extractRotatedQuad(state, camera, q, partialTick)
     }
 
@@ -333,10 +436,15 @@ class BridgeParticle(
 
     // 光照查询缓存：原版 getLightCoords 每渲染帧都会查世界光照（含动态光照 mixin 的方块查询），
     // 5w 粒子会放大成每秒数十万次查询。光照按方块坐标变化，粒子在同一方块内可复用缓存。
+    //
+    // 复用的是「方块光 + 动态光」合并后的结果，所以除坐标外还要跟动态光版本与一个分摊的兜底超时
+    // （见 LightCachePolicy）：否则光源挪走/销毁后，静止的非发光片元会一直亮着旧值。
     private var cachedLight = -1
     private var cacheBX = Int.MIN_VALUE
     private var cacheBY = Int.MIN_VALUE
     private var cacheBZ = Int.MIN_VALUE
+    private var cacheLightVersion = Int.MIN_VALUE
+    private var lightDueNanos = 0L
 
     override fun getLightCoords(partialTick: Float): Int {
         if (isGlowing) {
@@ -345,11 +453,22 @@ class BridgeParticle(
         val bx = Mth.floor(this.x)
         val by = Mth.floor(this.y)
         val bz = Mth.floor(this.z)
-        if (cachedLight < 0 || bx != cacheBX || by != cacheBY || bz != cacheBZ) {
+        val now = System.nanoTime()
+        val lightVersion = DynamicLightManager.version()
+        val query = LightCachePolicy.shouldQuery(
+            hasCache = cachedLight >= 0,
+            blockChanged = bx != cacheBX || by != cacheBY || bz != cacheBZ,
+            lightVersionChanged = lightVersion != cacheLightVersion,
+            dueNanos = lightDueNanos,
+            nowNanos = now,
+        )
+        if (query) {
             cachedLight = super.getLightCoords(partialTick)
             cacheBX = bx
             cacheBY = by
             cacheBZ = bz
+            cacheLightVersion = lightVersion
+            lightDueNanos = LightCachePolicy.nextDueNanos(now, particleId.hashCode())
         }
         return cachedLight
     }

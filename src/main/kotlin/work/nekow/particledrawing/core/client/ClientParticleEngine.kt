@@ -23,7 +23,7 @@ class ClientParticleEngine {
     private val groups: MutableMap<UUID, MutableSet<UUID>> = ConcurrentHashMap()
 
     // 动画本地播放直接同步的粒子：跳过 frameUpdate 的缓动轮转（避免每帧冗余插值并破坏 partialTick）
-    private val directIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
+    private val takeover = ParticleTakeover()
 
     // 发光粒子索引：增量维护，避免 getGlowingParticles 每帧遍历全部粒子
     private val glowingIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
@@ -137,7 +137,7 @@ class ClientParticleEngine {
                        hasPos: Boolean, hasColor: Boolean, hasScale: Boolean,
                        durationTicks: Int, easing: EasingType) {
         val rp = particles[id] ?: return
-        directIds.remove(id)
+        takeover.clear(id)
         if (hasPos) {
             motionIds.remove(id) // 位置更新会把速度清零
             trackBuffers.remove(id) // 缓动接管位置，丢开 track 缓冲
@@ -213,7 +213,7 @@ class ClientParticleEngine {
                             billboard: Boolean = true, spin: DoubleArray = ZERO_SPIN,
                             spinLocal: Boolean = true) {
         val rp = particles[id] ?: return
-        directIds.add(id)
+        takeover.markAppearance(id)
         trackBuffers.remove(id) // 动画直写接管位置，丢开 track 缓冲
         attachments.remove(id)
         val wasGlowing = rp.glowing() && rp.lightLevel() > 0
@@ -242,7 +242,7 @@ class ClientParticleEngine {
      * @param ticks >0 = 施加这么多 tick；<0 = 无限；0 = 清除
      */
     fun setAcceleration(id: UUID, ax: Double, ay: Double, az: Double, ticks: Int) {
-        directIds.remove(id)
+        takeover.clear(id)
         trackBuffers.remove(id)
         attachments.remove(id)
         val rp = particles[id] ?: return
@@ -261,7 +261,7 @@ class ClientParticleEngine {
      * @param entityUuid 非 null 时优先按它解析（网络 id 会随实体重载/换维度变化）
      */
     fun attachParticle(id: UUID, entityId: Int, entityUuid: UUID?, ox: Double, oy: Double, oz: Double, local: Boolean) {
-        directIds.add(id)
+        takeover.markPosition(id)
         motionIds.remove(id)
         trackBuffers.remove(id)
         attachments[id] = Attachment(entityId, entityUuid, Vec3(ox, oy, oz), local)
@@ -289,7 +289,7 @@ class ClientParticleEngine {
      * @param vz Z 速度分量
      */
     fun setVelocity(id: UUID, vx: Double, vy: Double, vz: Double) {
-        directIds.remove(id)
+        takeover.clear(id)
         trackBuffers.remove(id) // 速度驱动接管位置，丢开 track 缓冲
         attachments.remove(id)  // 与实体锚点同理：留着锚点位置每 tick 仍被锚点覆盖，速度白设
         particles[id]?.setVelocity(Vec3(vx, vy, vz))
@@ -312,7 +312,7 @@ class ClientParticleEngine {
                        ox: Double, oy: Double, oz: Double,
                        rx: Double, ry: Double, rz: Double,
                        durationTicks: Int, easing: EasingType) {
-        directIds.remove(id)
+        takeover.clear(id)
         motionIds.remove(id) // 旋转指令会把速度清零
         trackBuffers.remove(id)
         particles[id]?.setRotation(
@@ -328,7 +328,7 @@ class ClientParticleEngine {
                           ox: Double, oy: Double, oz: Double,
                           tx: Double, ty: Double, tz: Double,
                           durationTicks: Int, easing: EasingType) {
-        directIds.remove(id)
+        takeover.clear(id)
         motionIds.remove(id) // 平移指令会把速度清零
         trackBuffers.remove(id)
         particles[id]?.setTranslation(
@@ -343,7 +343,7 @@ class ClientParticleEngine {
     fun setPosition(id: UUID, px: Double, py: Double, pz: Double,
                     ox: Double, oy: Double, oz: Double,
                     durationTicks: Int, easing: EasingType) {
-        directIds.remove(id)
+        takeover.clear(id)
         motionIds.remove(id) // 组 set 位置轨道会把速度清零
         trackBuffers.remove(id)
         particles[id]?.setPositionSet(
@@ -379,7 +379,7 @@ class ClientParticleEngine {
     private fun removeOne(id: UUID) {
         particles.remove(id)
         bridges.remove(id)?.remove()
-        directIds.remove(id)
+        takeover.clear(id)
         glowingIds.remove(id)
         motionIds.remove(id)
         trackBuffers.remove(id)
@@ -387,10 +387,17 @@ class ClientParticleEngine {
         curveIds.remove(id)
     }
 
+    /** 引擎 tick 序号（供桥接粒子记录外观端点用；见 companion 里的说明）。 */
+    @Volatile
+    private var tickSequenceCounter: Long = 0L
+
     /**
      * 每帧更新：驱动粒子缓动并同步到桥接粒子。
      */
     fun frameUpdate() {
+        // 抬 tick 序号：桥接粒子据此把「上一 tick 的外观端点」记下来，供渲染帧插值
+        tickSequenceCounter++
+        tickSequence = tickSequenceCounter
         // 先推进 track 粒子的插值端点（每 tick 一段，没收到新位置就原地保持）
         advanceTrackedParticles()
         // 实体锚点：本地解析位置（无逐 tick 带宽）
@@ -438,7 +445,7 @@ class ClientParticleEngine {
 
     /** 把 track 位置写进渲染粒子与桥接粒子：直接定位，跳过缓动轮转与运动积分。 */
     private fun applyTrackPosition(id: UUID, pos: Vec3, snap: Boolean) {
-        directIds.add(id)
+        takeover.markPosition(id)
         motionIds.remove(id)
         attachments.remove(id)
         val rp = particles[id]
@@ -465,7 +472,7 @@ class ClientParticleEngine {
                 it.remove()
                 continue
             }
-            if (id in directIds) continue // 已被动画直接接管
+            if (takeover.hasPosition(id)) continue // 已被动画直接接管
             if (rp.velocity().lengthSqr() == 0.0 && !rp.hasActiveForce()) {
                 it.remove()
                 continue
@@ -499,7 +506,7 @@ class ClientParticleEngine {
 
             val rp = particles[id] ?: continue
             if (rp.id() in motionParticles) continue
-            if (rp.id() in directIds) continue
+            if (takeover.hasPosition(rp.id())) continue
 
             val wasSnap = rp.consumeSnap()
             rp.tick()
@@ -557,7 +564,7 @@ class ClientParticleEngine {
         if (curveIds.isEmpty()) return
         for (id in curveIds) {
             val rp = particles[id] ?: continue
-            if (id in directIds) continue // 动画/程序直写路径自己管外观
+            if (takeover.hasAppearance(id)) continue // 动画/程序直写路径自己管外观
             val bp = bridges[id] ?: continue
             syncAppearanceToBridge(rp, bp)
         }
@@ -592,8 +599,8 @@ class ClientParticleEngine {
     fun applyProgramFrame(id: UUID, pos: Vec3, r: Float, g: Float, b: Float, a: Float, scale: Float,
                           snap: Boolean = false) {
         val rp = particles[id] ?: return
-        val firstTakeover = id !in directIds
-        directIds.add(id)
+        val firstTakeover = !takeover.hasPosition(id)
+        takeover.markAppearance(id)
         trackBuffers.remove(id) // 程序接管位置，丢开 track 缓冲
         rp.setPositionDirect(pos)
         rp.setColorDirect(Color.of(r, g, b, a))
@@ -622,6 +629,19 @@ class ClientParticleEngine {
     companion object {
         @Volatile
         private var INSTANCE: ClientParticleEngine? = null
+
+        /**
+         * 引擎 tick 序号：每次 [frameUpdate] 自增。
+         *
+         * 桥接粒子用它把「上一 tick 的外观端点」只记一次（同一 tick 内被同步多次——tick 同步
+         * 加曲线逐渲染帧刷新——prev 仍然恒为上一 tick 的值）。
+         */
+        @Volatile
+        private var tickSequence: Long = 0L
+
+        /** 当前引擎 tick 序号。 */
+        @JvmStatic
+        fun tickSequence(): Long = tickSequence
 
         /** 零自转向量（缺省参数复用，避免每次分配）。 */
         val ZERO_SPIN = DoubleArray(3)

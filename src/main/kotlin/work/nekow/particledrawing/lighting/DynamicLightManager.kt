@@ -51,6 +51,19 @@ object DynamicLightManager {
     @Volatile
     private var hasLights = false
 
+    /**
+     * 动态光照**版本号**：光源集合、位置、亮度或开关有任何变化就自增。
+     *
+     * 桥接粒子的光照缓存按它失效——缓存的是「方块光叠加动态光之后」的结果，
+     * 光源挪走/销毁/关掉时若不失效，静止的非发光粒子会一直亮着旧值。
+     */
+    @Volatile
+    private var version: Int = 0
+
+    /** 上一次的轻量签名：与 [version] 一起用来判断「这一帧的光场变了没有」。 */
+    private var lastSignature: Long = 0L
+    private var lastEnabled: Boolean = false
+
     /** 每个光源上次烘焙时的位置（仅渲染线程访问），用于判断是否需要重建。 */
     private val lastBaked = HashMap<UUID, BakedState>()
 
@@ -89,6 +102,14 @@ object DynamicLightManager {
         val renderDistance = mc.options.effectiveRenderDistance * 16.0
         val partialTick = mc.deltaTracker.getGameTimeDeltaPartialTick(false)
         val newSources = collectSources(engine, player.x, player.y, player.z, renderDistance, partialTick)
+
+        // 光场变了就抬版本号：位置/亮度/数量任一变化都算（桥接粒子的光照缓存据此失效）
+        val signature = signatureOf(newSources)
+        if (signature != lastSignature || !lastEnabled) {
+            lastSignature = signature
+            lastEnabled = true
+            version++
+        }
 
         // 计算需要重建的区块（新增 / 移动 / 移除的光源）。
         val dirtySections = HashSet<Long>()
@@ -217,6 +238,30 @@ object DynamicLightManager {
             LOCK.writeLock().unlock()
         }
         lastBaked.clear()
+        // 光源全没了也是「光场变了」：桥接粒子必须重新采样，否则会亮着旧值
+        if (lastEnabled || lastSignature != 0L) {
+            lastEnabled = false
+            lastSignature = 0L
+            version++
+        }
+    }
+
+    /**
+     * 当前动态光照版本（每次光场变化自增）。桥接粒子用它决定光照缓存是否还有效。
+     */
+    @JvmStatic
+    fun version(): Int = version
+
+    /** 光源列表的轻量签名：数量、身份、位置与亮度都摊进来（移动与亮度变化都会改变签名）。 */
+    private fun signatureOf(list: List<LightSource>): Long {
+        var h = 1125899906842597L
+        h = h * 31 + list.size
+        for (src in list) {
+            h = h * 31 + src.id.hashCode()
+            h = h * 31 + java.lang.Double.hashCode(src.x + src.y * 3.0 + src.z * 7.0)
+            h = h * 31 + src.luminance.toLong()
+        }
+        return h
     }
 
     /** @return 动态光照功能是否启用 */
