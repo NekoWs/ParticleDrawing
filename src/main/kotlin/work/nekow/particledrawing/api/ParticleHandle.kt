@@ -506,7 +506,7 @@ class ParticleHandle(
 
             if (delayTicks > 0) {
                 val due = AnimationScheduler.currentTick() + delayTicks.coerceAtLeast(1)
-                AnimationScheduler.schedule(delayTicks) {
+                AnimationScheduler.schedule(manager.dimensionId, delayTicks) {
                     engine.spawnParticle(id, position, color, scale, lifetime,
                         groupId, glowing, lightLevel, offsetFromPivot, players, spec, curve, null)
                 }

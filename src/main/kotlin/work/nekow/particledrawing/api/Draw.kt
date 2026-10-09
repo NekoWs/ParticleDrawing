@@ -413,7 +413,7 @@ object Draw {
             spawnInto(manager, group, pos, color, s, look, lifeCurve)
             return
         }
-        AnimationScheduler.schedule(index * stagger) {
+        AnimationScheduler.schedule(manager.dimensionId, index * stagger) {
             spawnInto(manager, group, pos, color, s, look, lifeCurve)
         }
     }
@@ -428,7 +428,7 @@ object Draw {
             spawnInto(manager, group, pos, color, 1f, visual, lifeCurve)
             return
         }
-        AnimationScheduler.schedule(index * stagger) {
+        AnimationScheduler.schedule(manager.dimensionId, index * stagger) {
             spawnInto(manager, group, pos, color, 1f, visual, lifeCurve)
         }
     }

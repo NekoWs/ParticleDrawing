@@ -105,7 +105,7 @@ object ServerProgramCompletion {
         entry.version++
         val version = entry.version
         val delay = (if (fallbackTicks < 0) 0 else fallbackTicks) + FALLBACK_MARGIN_TICKS
-        AnimationScheduler.schedule(delay) {
+        AnimationScheduler.schedule(entry.dimensionId, delay) {
             val current = entries[groupId] ?: return@schedule
             if (current !== entry || current.done || current.version != version) return@schedule
             current.done = true
@@ -121,7 +121,7 @@ object ServerProgramCompletion {
         if (grace == 0) {
             destroy(groupId, entry.dimensionId)
         } else {
-            AnimationScheduler.schedule(grace) { destroy(groupId, entry.dimensionId) }
+            AnimationScheduler.schedule(entry.dimensionId, grace) { destroy(groupId, entry.dimensionId) }
         }
     }
 

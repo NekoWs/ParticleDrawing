@@ -127,14 +127,16 @@ object ServerAnimationManager {
         return play(dimensionId, players, data, origin)
     }
 
-    /** 停止指定维度全部播放。 */
+    /**
+     * 停止指定维度全部播放。
+     *
+     * 只停这个维度登记的播放，逐个按 ID 通知它覆盖到的玩家；不发「全部停止」，
+     * 否则同一名玩家在别的维度正在播的动画会被一起停掉。
+     */
     @JvmStatic
     fun stopAll(dimensionId: UUID, players: Collection<ServerPlayer>) {
         val ids = playbacks.values.filter { it.dimensionId == dimensionId }.map { it.animationId }
-        if (ids.isEmpty()) return
-        val payload = StopAnimationPayload(null)
-        for (player in players) PacketDistributor.sendToPlayer(player, payload)
-        for (id in ids) playbacks.remove(id)
+        for (id in ids) stop(id, players)
     }
 
     /**

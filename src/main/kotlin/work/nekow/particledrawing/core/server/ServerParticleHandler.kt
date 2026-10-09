@@ -6,6 +6,7 @@ import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.event.entity.player.PlayerEvent
 import net.neoforged.neoforge.event.level.LevelEvent
+import net.neoforged.neoforge.event.server.ServerStoppingEvent
 import net.neoforged.neoforge.event.tick.ServerTickEvent
 import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.animation.ServerAnimationManager
@@ -50,8 +51,16 @@ object ServerParticleHandler {
             // 完成信号登记随关卡作废；关卡没了，客户端不会再上报
             ServerProgramCompletion.clearDimension(dim)
             ServerParticleEngine.clearDimension(dim)
-            AnimationScheduler.clear()
+            // 只清这个维度排的任务：别的维度还有刚排的编排要跑
+            AnimationScheduler.clearDimension(dim)
         }
+    }
+
+    // 服务器关闭：各维度陆续卸载，剩下的调度任务已无处可用，全清
+    @SubscribeEvent
+    @JvmStatic
+    fun onServerStopping(event: ServerStoppingEvent) {
+        AnimationScheduler.clearAll()
     }
 
     // 维度切换 / 重生 / 登录后，客户端会重建 ClientLevel 与原版 ParticleEngine，

@@ -6,6 +6,8 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.phys.Vec3
 import net.neoforged.neoforge.network.PacketDistributor
+import org.apache.logging.log4j.LogManager
+import org.apache.logging.log4j.Logger
 import work.nekow.particledrawing.api.Anchor
 import work.nekow.particledrawing.api.Authority
 import work.nekow.particledrawing.api.EffectCallbacks
@@ -26,6 +28,8 @@ import java.util.concurrent.ConcurrentHashMap
 // 服务端特效播放管理器（按 key 播放 .pdrawc + 可移动锚点 + 播放时钟）。
 // 资源注册表按 key 播放；可移动锚点每 tick 批量下发一次；时钟支持 seek/暂停/变速。
 object ServerEffectManager {
+
+    private val LOGGER: Logger = LogManager.getLogger("ParticleDrawing")
 
     private class Playback(
         val playbackId: UUID,
@@ -91,10 +95,16 @@ object ServerEffectManager {
     /**
      * 更新可移动锚点（魔法模组每 tick 调用一次）。调用即覆盖最新值，
      * 由 [flushAnchorUpdates] 在服务端 tick 末批量下发。
+     *
+     * playbackId 没有对应的播放（已停止或已自然播完）时这次更新直接丢弃，
+     * 只记一条 debug 日志：没有播放可下发，补写 pending 也会在下发时被丢掉。
      */
     @JvmStatic
     fun updateAnchor(playbackId: UUID, pos: Vec3, velocity: Vec3) {
-        val pb = playbacks[playbackId] ?: return
+        val pb = playbacks[playbackId] ?: run {
+            LOGGER.debug("锚点更新找不到播放 {}，已丢弃", playbackId)
+            return
+        }
         val orient = (pb.anchor as? Anchor.Movable)?.orient ?: Orient.VELOCITY
         pb.anchor = Anchor.Movable(pos, velocity, orient)
         pendingAnchors[playbackId] = AnchorUpdateBatchPayload.AnchorUpdate(
@@ -206,16 +216,16 @@ object ServerEffectManager {
         return true
     }
 
+    /**
+     * 停止指定维度全部播放。
+     *
+     * 只停这个维度登记的播放，逐个按 ID 通知它覆盖到的玩家；不发「全部停止」，
+     * 否则同一名玩家在别的维度正在播的特效会被一起停掉。
+     */
     @JvmStatic
     fun stopAll(dimensionId: UUID, players: Collection<ServerPlayer>) {
         val ids = playbacks.values.filter { it.dimensionId == dimensionId }.map { it.playbackId }
-        if (ids.isEmpty()) return
-        for (p in players) PacketDistributor.sendToPlayer(p, StopAnimationPayload(null))
-        for (id in ids) {
-            playbacks.remove(id)
-            pendingAnchors.remove(id)
-            EffectCallbacks.fireFinished(id)
-        }
+        for (id in ids) stop(id, players)
     }
 
     /** 更新某次播放的变量（复用 VariableUpdatePayload，客户端同一链路处理）。 */

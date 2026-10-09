@@ -328,7 +328,7 @@ class ParticleGroup(
         if (!armed) {
             val members = manager.getEngine().getGroup(id)?.memberIds()?.toList()
             if (members.isNullOrEmpty()) {
-                LOGGER.warn("[ParticleDrawing] group {} has no members; animation program not sent", id)
+                LOGGER.warn("[ParticleDrawing] group {} 没有成员，动画程序未下发", id)
                 // 没有成员时指令发不出去：留一小段等成员到位，超过上限就丢弃，避免无限增长
                 if (instructions.size > MAX_PENDING_INSTRUCTIONS) {
                     LOGGER.warn(
@@ -375,7 +375,7 @@ class ParticleGroup(
 
     /** 排一次组销毁：把程序时刻换算成「从此刻起」的 tick 数，避免把销毁推后一整段已运行时长。 */
     private fun scheduleDestroy(programTimeMs: Int) {
-        AnimationScheduler.schedule(clock.ticksFromNow(programTimeMs, manager.level.gameTime)) {
+        AnimationScheduler.schedule(manager.dimensionId, clock.ticksFromNow(programTimeMs, manager.level.gameTime)) {
             manager.getEngine().destroyGroup(id, manager.getPlayers())
             stopProgramOnClient(destroyParticles = false)
         }

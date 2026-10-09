@@ -18,6 +18,7 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent
 import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.animation.AnimationLoader
 import work.nekow.particledrawing.animation.ServerAnimationManager
+import work.nekow.particledrawing.animation.ServerEffectManager
 import work.nekow.particledrawing.api.Draw
 import work.nekow.particledrawing.api.ParticleManager
 import work.nekow.particledrawing.core.client.CameraController
@@ -119,7 +120,12 @@ object ParticleDrawCommands {
         val origin: Vec3 = try {
             Vec3Argument.getVec3(ctx, "pos")
         } catch (_: IllegalArgumentException) {
-            val player = ctx.source.playerOrException
+            // 命令方块、告示牌一类非玩家执行者拿不到朝向，回退不了就明确报错，别抛原始异常
+            val player = ctx.source.player
+            if (player == null) {
+                ctx.source.sendFailure(Component.literal("命令方块执行 /pdraw play 时必须给出 pos"))
+                return 0
+            }
             player.position().add(player.lookAngle.scale(3.0))
         }
 
@@ -132,13 +138,15 @@ object ParticleDrawCommands {
     }
 
     /**
-     * /pdraw stop：停止当前维度的全部动画。
+     * /pdraw stop：停止当前维度的全部动画与特效播放。
      */
     private fun stopAnimations(ctx: CommandContext<CommandSourceStack>): Int {
         val level = ctx.source.level
         val dim = ParticleUtils.dimensionUUID(level)
         ServerAnimationManager.stopAll(dim, level.players())
-        ctx.source.sendSuccess({ Component.literal("已停止当前维度的全部动画") }, false)
+        // 特效与文件动画共用客户端的播放表：只停动画会留下服务端还在、客户端已消失的特效记录
+        ServerEffectManager.stopAll(dim, level.players())
+        ctx.source.sendSuccess({ Component.literal("已停止当前维度的全部动画与特效") }, false)
         return 1
     }
 
