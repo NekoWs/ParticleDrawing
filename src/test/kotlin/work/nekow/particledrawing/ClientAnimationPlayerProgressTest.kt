@@ -62,7 +62,7 @@ class ClientAnimationPlayerProgressTest {
         val player = ClientAnimationPlayer(animation(true), Vec3(100.0, 0.0, 0.0), startGameTick = 1000L, currentGameTick = 1019L)
         assertEquals(950, player.currentMsValue)
         assertFalse(player.consumeJustLooped())
-        assertTrue(player.tick(1020L)) // elapsed=1000ms → 回卷到 0
+        assertTrue(player.tick(1020L)) // elapsed=1000ms：循环动画回卷到 0
         assertEquals(0, player.currentMsValue)
         assertTrue(player.consumeJustLooped())
         assertEquals(100.0, posOf(player), 1e-6)
@@ -75,7 +75,7 @@ class ClientAnimationPlayerProgressTest {
         val player = ClientAnimationPlayer(animation(false), Vec3(100.0, 0.0, 0.0), startGameTick = 1000L, currentGameTick = 1019L)
         assertEquals(950, player.currentMsValue)
         assertTrue(player.tick(1019L)) // 同 tick：目标不变
-        assertFalse(player.tick(1020L)) // elapsed=1000ms → 结束
+        assertFalse(player.tick(1020L)) // elapsed=1000ms：非循环动画判为结束
     }
 
     @Test

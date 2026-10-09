@@ -94,11 +94,11 @@ class TrackInterpolationTest {
     }
 
     @Test
-    fun `症状实测：老规则在缺包 tick 上把粒子往回退，5 格每 tick 的目标退满一格`() {
+    fun `老规则在缺包 tick 上把粒子往回退，5 格每 tick 的目标退满一格`() {
         val old = run(newRule = false, speed = 5.0)
         assertTrue(old.samples.size > 100, "样本太少：${old.samples.size}")
-        assertTrue(old.backwardSteps > 0, "老规则必然出现倒退，实测 ${old.backwardSteps} 次")
-        assertTrue(old.maxBackward > 1.0, "单次倒退应到一个 tick 的位移量级，实测 ${old.maxBackward} 格")
+        assertTrue(old.backwardSteps > 0, "老规则必然出现倒退，实际 ${old.backwardSteps} 次")
+        assertTrue(old.maxBackward > 1.0, "单次倒退应到一个 tick 的位移量级，实际 ${old.maxBackward} 格")
     }
 
     @Test
@@ -192,7 +192,7 @@ class TrackInterpolationTest {
     }
 
     /**
-     * 把两条规则的插值轨迹画成图，写到 `build/verification/track-interpolation.png`；
+     * 把两条规则的插值轨迹画成图，写到项目 `build/verification/track-interpolation.png`；
      * 纵轴是渲染位置减去平均步进的残差，产物供人工复核。
      */
     @Test
@@ -263,13 +263,28 @@ class TrackInterpolationTest {
         g.drawString("yellow = backward jump of the old rule (full tick of motion)", 40, 74)
         g.dispose()
 
-        val out = File("build/verification/track-interpolation.png")
+        val out = File(verificationDir(), "track-interpolation.png")
         out.parentFile.mkdirs()
         ImageIO.write(image, "png", out)
         assertTrue(out.length() > 0, "轨迹图应当写出来")
     }
 
-    /** AWT 颜色别名。 */
+    /**
+     * 复核产物的落盘目录：从运行目录往上找带 settings.gradle 的项目根，找不到就用运行目录本身。
+     *
+     * IDE 与 `gradlew test` 给的测试工作目录未必都是项目根（IDE 常用模块目录），
+     * 按标记文件定位才能让两种入口都把产物落在项目的 build/ 下。
+     */
+    private fun verificationDir(): File {
+        val cwd = File(System.getProperty("user.dir", ".")).absoluteFile
+        var dir: File? = cwd
+        while (dir != null) {
+            if (File(dir, "settings.gradle").isFile) return File(dir, "build/verification")
+            dir = dir.parentFile
+        }
+        return File(cwd, "build/verification")
+    }
 }
 
+/** AWT 颜色别名。 */
 private typealias AwtColor = java.awt.Color

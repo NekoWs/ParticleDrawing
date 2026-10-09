@@ -36,7 +36,6 @@ class ParticleBatchTest {
             destroy = { it.destroyed = true },
             isPending = { it.pending },
         )
-        val alive get() = sent.last()
     }
 
     @Test

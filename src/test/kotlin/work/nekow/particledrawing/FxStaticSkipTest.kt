@@ -148,8 +148,29 @@ class FxStaticSkipTest {
         assertEquals(listOf(0.0, 5_020.0, 5_070.0), spawnXs(player, "fx"))
     }
 
+    @Test
+    fun `字符串与注释里的 random 不算随机源`() {
+        val commented = FunctionObject(
+            id = "fx", name = "fx", center = doubleArrayOf(0.0, 0.0, 0.0),
+            source = "// random(0, 1) 只是注释\nfunc setup() { print(\"random(1)\") }",
+            seed = 0, vars = emptyMap(), duration = 0,
+        )
+        assertTrue(playerOf(commented).isStatic(), "注释/字符串里的 random( 不该把静态动画判成动态")
+
+        val real = FunctionObject(
+            id = "fx", name = "fx", center = doubleArrayOf(0.0, 0.0, 0.0),
+            source = "func setup() { print(random()) }",
+            seed = 0, vars = emptyMap(), duration = 0,
+        )
+        assertFalse(playerOf(real).isStatic(), "真的调用 random() 要按动态处理")
+    }
+
     /**
-     * 每帧开销实测：只打印读数，断言只钉静态跳过的 advanceFrame 近乎零成本。
+     * 每帧开销实测：读数一律打印，断言只钉静态跳过的 advanceFrame 近乎零成本。
+     *
+     * 静态跳过只是一次早返回，开发机读数在亚微秒级（安静机器上 0.03µs）；阈值留四个数量级，
+     * 500 帧的平均值要涨到 500µs，得在计时窗口里累计停顿 250ms，慢机器与 CI 上不会因此假性失败。
+     * 这条只挡「静态跳过整段失效」这类粗回归，各档逐帧开销以打印读数为准。
      */
     @Test
     fun `每帧开销实测`() {
@@ -186,7 +207,7 @@ class FxStaticSkipTest {
                 emptyTimeline.particleCount, emptyUs, real60Us, real160Us, realAudio160.particleCount,
             ),
         )
-        assertTrue(staticUs < 100.0, "静态动画的 advanceFrame 应当还是近乎零成本，实际 %.2fµs".format(staticUs))
+        assertTrue(staticUs < 500.0, "静态动画的 advanceFrame 应当还是近乎零成本，实际 %.2fµs".format(staticUs))
     }
 
     /** 每帧开销（µs）：先热身 [_warmup] 帧不计数，再计时 [_frames] 帧，帧内时刻按 [stepMs] 递增。 */

@@ -60,6 +60,22 @@ class ParticleVisualTest {
     }
 
     @Test
+    fun `整图取景框在贴图未知时不写死尺寸，尺寸系数按到货后的实际尺寸算`() {
+        val uv = ParticleVisual().texture("t:late").toUvData(0, 0)!!
+        assertEquals(0, uv.texSize[0], "取景框待定时不写死 16，否则晚到的非 16px 贴图会算错系数")
+        assertEquals(0, uv.texSize[1])
+        assertEquals(1f, ParticleVisual.texScale(uv), 1e-6f, "贴图未知时先按 16px 计")
+
+        // 贴图到货后按实际尺寸重算
+        assertEquals(2f, ParticleVisual.texScaleOf(uv, 32, 32), 1e-6f)
+        assertEquals(0.5f, ParticleVisual.texScaleOf(uv, 8, 8), 1e-6f)
+
+        // 取景框已知（子矩形）时以取景框为准，与贴图实际尺寸无关
+        val rect = ParticleVisual().texture("t:atlas").uv(0f, 0f, 24f, 24f).toUvData(0, 0)!!
+        assertEquals(1.5f, ParticleVisual.texScaleOf(rect, 64, 64), 1e-6f)
+    }
+
+    @Test
     fun `无贴图没有 UV`() {
         assertNull(ParticleVisual().toUvData(16, 16))
         assertNull(ParticleVisual().style(ParticleStyle.SQUARE).toUvData(16, 16))

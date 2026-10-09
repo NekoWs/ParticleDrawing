@@ -75,4 +75,19 @@ class ClientAnimationPlayerExternalClockTest {
         assertTrue(player.tickExternal(950)) // 同位置：目标不变，仍在播放
         assertFalse(player.tickExternal(1000)) // 越过 maxMs → 结束
     }
+
+    @Test
+    fun nonLoopingEndsAtSameFrameAsGameClock() {
+        // 外部时钟给到 maxMs-1 也只落在末帧 950：与 gameTime 时钟的末帧一致
+        val external = ClientAnimationPlayer(animation(false), Vec3.ZERO, 0L, 0L, initialMs = 0)
+        assertTrue(external.tickExternal(999))
+        assertEquals(950, external.currentMsValue)
+        assertTrue(external.tickExternal(999))
+        assertEquals(950, external.currentMsValue)
+
+        // gameTime 时钟：elapsed 950ms 就是最后一帧，elapsed 1000ms 结束
+        val game = ClientAnimationPlayer(animation(false), Vec3.ZERO, 1000L, 1019L)
+        assertEquals(950, game.currentMsValue)
+        assertFalse(game.tick(1020L))
+    }
 }

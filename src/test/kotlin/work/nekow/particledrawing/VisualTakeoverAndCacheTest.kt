@@ -25,7 +25,7 @@ class VisualTakeoverAndCacheTest {
         takeover.markPosition(tracked)
 
         assertTrue(takeover.hasPosition(tracked), "位置归直写管：分批缓动与速度积分要让位")
-        assertFalse(takeover.hasAppearance(tracked), "外观不该被一起接管——否则尺寸曲线冻结在出生那一帧")
+        assertFalse(takeover.hasAppearance(tracked), "外观不该被一起接管，否则尺寸曲线会冻结在出生那一帧")
     }
 
     @Test

@@ -106,7 +106,7 @@ class StereoSourcePanTest {
             println("[pan] 扩展不可用时的退路（AL_POSITION）最大电平变化：%.1f dB".format(worst))
             assertTrue(
                 worst < 0.5,
-                "退路下 pan 对立体声源生效了（最大变化 %.1f dB）——文档里的已知限制可能过时了".format(worst),
+                "退回 AL_POSITION 的退路上 pan 对立体声源生效了（最大变化 %.1f dB）".format(worst),
             )
         }
     }
@@ -179,7 +179,7 @@ class StereoSourcePanTest {
             // 开了这模式位置分量不再参与混音，两套声像不会叠加
             assertTrue(
                 abs(movedLeft - movedRight) < 1.0,
-                "开了平衡声像后位置声像又生效了（左 %.1f / 右 %.1f）——会两套叠加，请改文档与注释"
+                "开了平衡声像后位置声像不该再参与混音（左 %.1f / 右 %.1f）"
                     .format(movedLeft, movedRight),
             )
         }

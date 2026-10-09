@@ -18,8 +18,9 @@ import kotlin.test.assertTrue
  * 编排动画指令流的编解码，以及旋转轴心在指令形状上的体现。
  *
  * 轴心是程序级状态：由 [AnimInstruction.BindPivot] 绑定一次，之后所有旋转/缩放类指令都绕它算，
- * 所以 [AnimInstruction.Spin] / [AnimInstruction.RotateOnce] 没有轴心字段，
- * 指令顺序（先绑定轴心再旋转）即语义。
+ * 所以 [AnimInstruction.Spin] / [AnimInstruction.RotateOnce] 没有轴心字段，线上也不带轴心。
+ *
+ * 「先绑定轴心再旋转」是运行期程序求值的语义，本文件只压编解码与指令形状，不覆盖它。
  */
 class AnimationProgramInstructionTest {
 

@@ -135,7 +135,7 @@ class BatchChunkingTest {
     }
 
     @Test
-    fun `1024 个成员（中途有死亡出列）时 id 与向量仍逐个对齐`() {
+    fun `1024 个成员里死掉约三分之一后 id 与值仍逐个对齐`() {
         val sent = ArrayList<Pair<List<UUID>, List<Vec3>>>()
         val core = BatchCore<Fake>(
             idOf = { it.id },
@@ -147,19 +147,33 @@ class BatchChunkingTest {
         )
         val members = List(1024) { Fake() }
         for (m in members) core.add(m)
-        // 每隔 3 个死掉一个：出列后剩下的必须仍与各自的速度对上号
+        // 每隔 3 个死掉一个（约三分之一出列）：出列后剩下的必须仍与各自的位置/速度/力对上号
         for (i in members.indices step 3) members[i].pos = null
 
         val alive = members.filter { it.pos != null }
         val velocities = alive.map { Vec3(it.id.leastSignificantBits.toDouble(), 0.0, 0.0) }
-        val n = core.setVelocityAll(velocities)
+        // 位置与力各取一个可区分的分量：串位就会对不上
+        val positions = alive.map { Vec3(0.0, it.id.leastSignificantBits.toDouble(), 0.0) }
+        val forces = alive.map { Vec3(0.0, 0.0, it.id.leastSignificantBits.toDouble()) }
 
-        assertEquals(alive.size, n)
+        assertEquals(alive.size, core.setVelocityAll(velocities))
         assertEquals(alive.map { it.id }, sent[0].first, "出列后顺序不变")
         assertEquals(velocities, sent[0].second, "速度与 id 逐个对齐")
 
+        // 位置与力走同一套对齐规则，一并压一遍
+        assertEquals(alive.size, core.trackAll(positions))
+        assertEquals(alive.map { it.id }, sent[1].first, "位置包同样按出列后的顺序")
+        assertEquals(positions, sent[1].second, "位置与 id 逐个对齐")
+
+        assertEquals(alive.size, core.applyForceAll(forces, 3))
+        assertEquals(alive.map { it.id }, sent[2].first, "力包同样按出列后的顺序")
+        assertEquals(forces, sent[2].second, "力与 id 逐个对齐")
+
         // 拆包后仍然逐段对齐：flatten 回来必须等于原序列
-        assertEquals(sent[0].first, BatchChunking.chunks(sent[0].first, 512).flatten())
+        for ((ids, values) in sent) {
+            assertEquals(ids, BatchChunking.chunks(ids, 512).flatten(), "拆包不能改顺序")
+            assertEquals(ids.size, values.size, "id 与值必须等长")
+        }
     }
 
     @Test

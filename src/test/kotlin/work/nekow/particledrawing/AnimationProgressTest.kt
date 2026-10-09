@@ -42,6 +42,24 @@ class AnimationProgressTest {
     }
 
     @Test
+    fun externalClockUsesSameLastFrame() {
+        assertEquals(950, AnimationProgress.lastFrameMs(1000))
+        assertEquals(0, AnimationProgress.lastFrameMs(30))
+        // 非循环：外部时钟给到 maxMs-1 也只能落在末帧
+        assertEquals(950, AnimationProgress.seekMs(950, 1000, false))
+        assertEquals(950, AnimationProgress.seekMs(999, 1000, false))
+        assertEquals(950, AnimationProgress.seekMs(1_000_000, 1000, false))
+        assertEquals(0, AnimationProgress.seekMs(-5, 1000, false))
+        // 循环：取余，负数按圈回卷
+        assertEquals(0, AnimationProgress.seekMs(1000, 1000, true))
+        assertEquals(250, AnimationProgress.seekMs(250, 1000, true))
+        assertEquals(900, AnimationProgress.seekMs(-100, 1000, true))
+        // 不限时长：只保证非负
+        assertEquals(5000, AnimationProgress.seekMs(5000, 0, false))
+        assertEquals(0, AnimationProgress.seekMs(-5, 0, false))
+    }
+
+    @Test
     fun finishedOnlyForNonLoopingWithPositiveLength() {
         assertFalse(AnimationProgress.isFinished(19, 1000, false))
         assertTrue(AnimationProgress.isFinished(20, 1000, false))

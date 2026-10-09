@@ -4,6 +4,9 @@ import work.nekow.particledrawing.animation.PlaybackClock
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
+/**
+ * 特效播放时钟的推进规则：每 tick 走「倍速」毫秒，暂停不动，恢复后从暂停位置接着走。
+ */
 class PlaybackClockTest {
 
     @Test

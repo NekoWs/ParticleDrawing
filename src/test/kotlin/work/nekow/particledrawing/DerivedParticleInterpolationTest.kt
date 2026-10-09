@@ -17,11 +17,11 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 派生粒子的 tick 间插值必须为 0（症状为重影）。
+ * 派生粒子的 tick 间插值必须为 0，否则相邻两幅迹线会混成重影。
  *
  * 派生粒子的位置由脚本 process 逐渲染帧整体重写，一个 game tick 内已经换了整整一幅图形；
  * 若只按 game tick 写进桥接粒子、再由原版按 partialTick 在上一 tick 与本 tick 之间插值，
- * 画出来就是相邻两幅迹线的混合。这里量症状（每段每 tick 的位移与弦中点偏离真实曲线的量），
+ * 画出来就是相邻两幅迹线的混合。这里量化每段每 tick 的位移与弦中点偏离真实曲线的量，
  * 并验证桥接端点由生产代码的 [ClientAnimationManager.snapDirectWrite] 决定：
  * 派生粒子取 true（`xo=x`，插值量恒 0），普通粒子取 false（保留插值做帧率平滑）。
  *
@@ -44,7 +44,12 @@ class DerivedParticleInterpolationTest {
         ),
     )
 
-    /** 按原版帧表跑 [frames] 帧真实播放器，返回每个 game tick 边界上读到的派生粒子状态。 */
+    /**
+     * 按原版帧表跑 [frames] 个渲染帧，返回每个 game tick 边界上读到的派生粒子状态。
+     *
+     * 帧数不等于 tick 数：60fps 下每帧只累计 16.7ms，够 50ms 才走一个 game tick，
+     * 所以 [SNAPSHOT_FRAMES] 帧覆盖的快照数是 [SNAPSHOT_TICKS]。
+     */
     private fun tickSnapshots(player: ClientAnimationPlayer, frames: Int): List<Snap> {
         val snaps = ArrayList<Snap>()
         val clock = ProcessClock()
@@ -77,9 +82,9 @@ class DerivedParticleInterpolationTest {
     }
 
     @Test
-    fun `症状：每段每 tick 的位移非零（snap=false 时就是插值量）`() {
-        val snaps = tickSnapshots(ClientAnimationPlayer(animation(), Vec3.ZERO, 0L, 0L), 400)
-        assertTrue(snaps.size > 100, "帧表应当跑出足够多的 tick 快照，实际 ${snaps.size}")
+    fun `每段每 tick 的位移非零（snap=false 时就是插值量）`() {
+        val snaps = tickSnapshots(ClientAnimationPlayer(animation(), Vec3.ZERO, 0L, 0L), SNAPSHOT_FRAMES)
+        assertEquals(SNAPSHOT_TICKS, snaps.size, "帧表覆盖的 tick 数与 SNAPSHOT_TICKS 不一致")
 
         var maxChord = 0.0
         var sumChord = 0.0
@@ -102,7 +107,7 @@ class DerivedParticleInterpolationTest {
 
     @Test
     fun `弦中点偏离真实曲线的量（重影位移）非零`() {
-        val snaps = tickSnapshots(ClientAnimationPlayer(animation(), Vec3.ZERO, 0L, 0L), 400)
+        val snaps = tickSnapshots(ClientAnimationPlayer(animation(), Vec3.ZERO, 0L, 0L), SNAPSHOT_FRAMES)
         // 与脚本同一公式的解析曲线：position = (sin(a)*1.2, cos(a*1.3)*0.9, 0)，a = time*0.02 + i*0.15
         var maxMid = 0.0
         for (k in 1 until snaps.size) {
@@ -125,7 +130,7 @@ class DerivedParticleInterpolationTest {
 
     @Test
     fun `派生粒子直写关闭 tick 间插值，插值量为 0`() {
-        val snaps = tickSnapshots(ClientAnimationPlayer(animation(), Vec3.ZERO, 0L, 0L), 400)
+        val snaps = tickSnapshots(ClientAnimationPlayer(animation(), Vec3.ZERO, 0L, 0L), SNAPSHOT_FRAMES)
         val a = snaps[snaps.size - 2].pos
         val b = snaps.last().pos
         // 桥接端点：xo 是上一 tick 位置，x 是本 tick 位置；snap 由生产代码判定
@@ -172,6 +177,12 @@ class DerivedParticleInterpolationTest {
 
     private companion object {
         const val SEGS = 40
+
+        /** 快照用的渲染帧数。 */
+        const val SNAPSHOT_FRAMES = 400
+
+        /** [SNAPSHOT_FRAMES] 帧在原版帧表下覆盖的 game tick 数。 */
+        const val SNAPSHOT_TICKS = 133
 
         /** 每帧把整条迹线整体重写（与示波器 fx1 同一形状：环形缓冲槽位逐帧写新几何）。 */
         val TRACE_SOURCE = """

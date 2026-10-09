@@ -56,7 +56,7 @@ class ProcessClockTest {
         }
         assertEquals(0.0, maxBackward, "单调游标不许让 process 时刻回退")
         // frozen 帧之后那一帧被钳住
-        assertTrue(maxHold > 1.0, "冻结帧之后的回落应当被钳住，实测钳掉 ${maxHold}ms")
+        assertTrue(maxHold > 1.0, "冻结帧之后的回落应当被钳住，实际钳掉 ${maxHold}ms")
     }
 
     @Test

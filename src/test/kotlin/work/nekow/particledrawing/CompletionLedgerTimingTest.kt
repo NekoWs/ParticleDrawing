@@ -21,13 +21,13 @@ class CompletionLedgerTimingTest {
     @BeforeTest
     fun setUp() {
         ServerProgramCompletion.clearAll()
-        AnimationScheduler.clear()
+        AnimationScheduler.clearAll()
     }
 
     @AfterTest
     fun tearDown() {
         ServerProgramCompletion.clearAll()
-        AnimationScheduler.clear()
+        AnimationScheduler.clearAll()
     }
 
     @Test
@@ -84,7 +84,7 @@ class CompletionLedgerTimingTest {
         val group = UUID.randomUUID()
         var fired = 0
         ServerProgramCompletion.onComplete(group, UUID.randomUUID(), fallbackTicks = 40) { fired++ }
-        // 缓动被 setVariableLive 取消：账本空了（-1）→ 按 0 处理，仍要收尾
+        // 调用方在账本变空时按 -1 重排（例如缓动被立即赋值取消）：兜底按 0 处理，仍要收尾
         ServerProgramCompletion.rescheduleFallback(group, fallbackTicks = -1)
 
         repeat(fallbackMargin + 1) { AnimationScheduler.tick() }

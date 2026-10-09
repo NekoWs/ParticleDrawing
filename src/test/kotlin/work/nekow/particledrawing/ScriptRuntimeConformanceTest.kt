@@ -18,6 +18,7 @@ import kotlin.math.sin
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -826,5 +827,25 @@ class ScriptRuntimeConformanceTest {
         assertEquals((2.0 + 34.0) / 2 / 255.0, v.bands[2], 1e-12)
         // 越界钳制到末 hop
         assertEquals(32768.0 / 65535.0, ScriptAudio.valueAt(makeAudioAsset(), 5000.0).rms, 1e-12)
+    }
+
+    @Test
+    fun scriptAudioWindowSharesDurationWithValueAt() {
+        val a = makeAudioAsset()
+        assertTrue(ScriptAudio.windowAt(a, 100.0))
+        assertTrue(ScriptAudio.windowAt(a, 4099.0))
+        assertFalse(ScriptAudio.windowAt(a, 4100.0))
+        assertFalse(ScriptAudio.windowAt(a, 99.0))
+        // durMs <= 0：时长按 hop 数推算（与 valueAt 的查表跨度同一口径），不再是恒空窗口
+        val noDur = AudioAsset(
+            id = "aud2", name = "n", fmt = 0, data = ByteArray(0), st = 0, durMs = 0, hopCount = 4,
+            bpm = 0.0, beatOffsetMs = 0.0, onsetMax = 1.0, beats = emptyList(),
+            rms = ShortArray(4), peak = ShortArray(4), centroid = ShortArray(4),
+            onset = ByteArray(4), rolloff = ByteArray(4), bands = ByteArray(4 * 16),
+        )
+        assertEquals(4 * ScriptAudio.HOP_MS, ScriptAudio.durationMs(noDur), 1e-9)
+        assertTrue(ScriptAudio.windowAt(noDur, 0.0))
+        assertTrue(ScriptAudio.windowAt(noDur, 46.0))
+        assertFalse(ScriptAudio.windowAt(noDur, 47.0))
     }
 }
