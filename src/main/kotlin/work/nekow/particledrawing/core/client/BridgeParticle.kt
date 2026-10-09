@@ -50,17 +50,9 @@ class BridgeParticle(
     private var scaleW: Float = 0f
     private var scaleH: Float = 0f
 
-    // 上一 tick 的外观端点（尺寸 / 颜色 / 透明度）：渲染帧按 partialTick 在两端之间插值，
-    // 于是「每 tick 算一次的组动画与变量缓动」在高刷下也是连续的。
-    private var prevScaleW: Float = 0f
-    private var prevScaleH: Float = 0f
-    private var prevR: Float = 1f
-    private var prevG: Float = 1f
-    private var prevB: Float = 1f
-    private var prevA: Float = 1f
-
-    /** 上一次捕获 prev 时的引擎 tick 序号：同一 tick 内多次同步只捕获一次（prev 始终是「上一 tick」）。 */
-    private var appearanceTick: Long = Long.MIN_VALUE
+    // 外观插值端点（尺寸 / 颜色 / 透明度）：渲染帧按 partialTick 在「上一 tick → 本 tick」间插值，
+    // 于是「每 tick 算一次的组动画与变量缓动」在高刷下也是连续的；出生后第一次同步原子落地（见 AppearanceBlend）。
+    private val blend = AppearanceBlend()
 
     // v17 非广告牌朝向：billboard=false 时四边形静止朝世界 +Z，再按 spin 旋转（spinLocal=局部轴）
     private var billboard = true
@@ -120,30 +112,8 @@ class BridgeParticle(
         gravity = 0f
         hasPhysics = false
 
-        // 出生时两端同值：第一帧不会从「上一 tick 的 0」插值出来
-        prevScaleW = scaleW
-        prevScaleH = scaleH
-        prevR = rCol
-        prevG = gCol
-        prevB = bCol
-        prevA = alpha
-        appearanceTick = ClientParticleEngine.tickSequence()
-    }
-
-    /**
-     * 在外观被覆写前记下「上一 tick」的端点：同一 tick 内只记一次，
-     * 所以 prev 恒为上一 tick 的值，不受本 tick 内被同步几次（tick 同步 + 曲线逐帧刷新）影响。
-     */
-    private fun captureAppearancePrev() {
-        val tick = ClientParticleEngine.tickSequence()
-        if (appearanceTick == tick) return
-        appearanceTick = tick
-        prevScaleW = scaleW
-        prevScaleH = scaleH
-        prevR = rCol
-        prevG = gCol
-        prevB = bCol
-        prevA = alpha
+        // 出生状态两端同值，但**还没 settled**：出生后第一次真正同步会把两端原子写成新值
+        blend.initialize(rCol, gCol, bCol, alpha, scaleW, scaleH)
     }
 
     fun isGlowing(): Boolean = isGlowing
@@ -207,8 +177,8 @@ class BridgeParticle(
      * @param b 蓝色分量
      * @param a 透明度分量
      */
-    fun syncColor(r: Float, g: Float, b: Float, a: Float) {
-        captureAppearancePrev()
+    fun syncColor(r: Float, g: Float, b: Float, a: Float, snap: Boolean = false) {
+        blend.setColor(r, g, b, a, snap)
         rCol = r
         gCol = g
         bCol = b
@@ -219,9 +189,9 @@ class BridgeParticle(
      * 同步粒子缩放（标量，均匀）。
      * @param scale 目标缩放值（编辑器数据模型值）
      */
-    fun syncScale(scale: Float) {
-        captureAppearancePrev()
+    fun syncScale(scale: Float, snap: Boolean = false) {
         val s = scale * EDITOR_TO_MC_SCALE * texScale
+        blend.setScale(s, s, snap)
         scaleW = s
         scaleH = s
         quadSize = s
@@ -232,11 +202,13 @@ class BridgeParticle(
      * sx → quad 长边（四边形的局部 X 轴），sy → quad 短边（局部 Y 轴），sz 暂存数据不参与渲染。
      * @param scaleArray 三分量缩放数组
      */
-    fun syncScaleArray(scaleArray: FloatArray) {
-        captureAppearancePrev()
-        scaleW = scaleArray[0] * EDITOR_TO_MC_SCALE * texScale
-        scaleH = scaleArray[1] * EDITOR_TO_MC_SCALE * texScale
-        quadSize = scaleW  // 兼容原版字段
+    fun syncScaleArray(scaleArray: FloatArray, snap: Boolean = false) {
+        val w = scaleArray[0] * EDITOR_TO_MC_SCALE * texScale
+        val h = scaleArray[1] * EDITOR_TO_MC_SCALE * texScale
+        blend.setScale(w, h, snap)
+        scaleW = w
+        scaleH = h
+        quadSize = w  // 兼容原版字段
     }
 
     /** 本帧的插值权重（渲染帧在相邻两个 tick 之间的进度）。 */
@@ -249,21 +221,12 @@ class BridgeParticle(
      * 按 partialTick 在**上一 tick → 本 tick** 之间插值：组动画/变量缓动的尺寸因此在
      * 60/144Hz 下也是连续变化的，而不是 20Hz 的阶梯（位置早就由 `xo/x` 这样处理了）。
      */
-    override fun getQuadSize(partialTick: Float): Float {
-        val f = frameFactor(partialTick)
-        return prevScaleH + (scaleH - prevScaleH) * f
-    }
+    override fun getQuadSize(partialTick: Float): Float = blend.heightAt(frameFactor(partialTick))
 
     /** 本帧插值后的长轴/短轴半宽（渲染用，不写回字段）。 */
-    private fun frameWidth(partialTick: Float): Float {
-        val f = frameFactor(partialTick)
-        return prevScaleW + (scaleW - prevScaleW) * f
-    }
+    private fun frameWidth(partialTick: Float): Float = blend.widthAt(frameFactor(partialTick))
 
-    private fun frameHeight(partialTick: Float): Float {
-        val f = frameFactor(partialTick)
-        return prevScaleH + (scaleH - prevScaleH) * f
-    }
+    private fun frameHeight(partialTick: Float): Float = blend.heightAt(frameFactor(partialTick))
 
     /**
      * 顶点生成前的最后一站：把颜色/透明度换成**本帧插值后的值**再交给原版。
@@ -284,10 +247,10 @@ class BridgeParticle(
         val cg = gCol
         val cb = bCol
         val ca = alpha
-        rCol = prevR + (cr - prevR) * f
-        gCol = prevG + (cg - prevG) * f
-        bCol = prevB + (cb - prevB) * f
-        alpha = prevA + (ca - prevA) * f
+        rCol = blend.redAt(f)
+        gCol = blend.greenAt(f)
+        bCol = blend.blueAt(f)
+        alpha = blend.alphaAt(f)
         try {
             super.extract(state, camera, partialTick)
         } finally {

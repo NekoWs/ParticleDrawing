@@ -157,11 +157,12 @@ class ClientParticleEngine {
             val scl = if (hasScale) scale else rp.scale()
             rp.setTargetColorScale(color, scl, easing, durationTicks * 50L)
             if (durationTicks <= 0) {
-                // 零时长目标立即落地（不等分批轮转），保证紧随其后的缓动包起点正确
+                // 零时长目标立即落地（不等分批轮转），保证紧随其后的缓动包起点正确；
+                // 两端一起写：即时改色/改尺寸是跳变，不该被插值成一小段渐变
                 rp.finishColorScale()
                 bridges[id]?.let {
-                    it.syncColor(rp.r(), rp.g(), rp.b(), rp.a())
-                    it.syncScale(rp.scale())
+                    it.syncColor(rp.r(), rp.g(), rp.b(), rp.a(), snap = true)
+                    it.syncScale(rp.scale(), snap = true)
                 }
             }
         }
@@ -631,10 +632,13 @@ class ClientParticleEngine {
         rp.setPositionDirect(pos)
         rp.setColorDirect(Color.of(r, g, b, a))
         rp.setScaleDirect(scale)
+        val atomic = firstTakeover || snap
         bridges[id]?.let {
-            it.syncPosition(pos.x, pos.y, pos.z, firstTakeover || snap)
-            it.syncColor(r, g, b, a)
-            it.syncScale(scale)
+            // 首次接管与显式瞬移必须**原子**：位置、宽高、颜色/透明度一起落地，
+            // 否则首帧会在「出生状态」与「首个表达式状态」之间插值（出生透明 + 首帧零尺寸先闪半尺寸再缩回）
+            it.syncPosition(pos.x, pos.y, pos.z, atomic)
+            it.syncColor(r, g, b, a, atomic)
+            it.syncScale(scale, atomic)
         }
     }
 
