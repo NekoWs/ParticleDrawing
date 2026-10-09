@@ -44,6 +44,7 @@ repo/
 /mcplogo.png
 /url.png
 /reports/
+/logs/
 
 # 本地临时脚本与工具配置
 /particle-editor/test/zz-*
