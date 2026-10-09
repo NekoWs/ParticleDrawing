@@ -34,7 +34,7 @@ enum class InstructionType {
  */
 internal fun AnimInstruction.finiteDurationMs(): Int? = when (this) {
     is AnimInstruction.Spin -> null
-    is AnimInstruction.Expression -> null
+    is AnimInstruction.Expression -> if (durationMs <= 0) null else durationMs
     is AnimInstruction.Pulse -> if (cycles < 0) null else halfPeriodMs * 2 * cycles
     is AnimInstruction.FadeIn -> durationMs
     is AnimInstruction.FadeOut -> durationMs
@@ -202,7 +202,7 @@ sealed class AnimInstruction {
                 InstructionType.PULSE -> Pulse(startMs, buf.readFloat(), buf.readVarInt(), buf.readVarInt())
                 InstructionType.STOP_CONTINUOUS -> StopContinuous(startMs)
                 InstructionType.BIND_PIVOT -> BindPivot(startMs, PivotRef.read(buf))
-                InstructionType.EXPRESSION -> Expression(startMs, buf.readUtf())
+                InstructionType.EXPRESSION -> Expression(startMs, buf.readUtf(), buf.readVarInt())
                 InstructionType.MOVE_EACH -> MoveEach(startMs, buf.readFloat(), buf.readVarInt(), readEasing(buf))
                 InstructionType.SCALE_TO -> ScaleTo(startMs, buf.readFloat(), buf.readVarInt(), readEasing(buf))
             }
@@ -384,10 +384,13 @@ sealed class AnimInstruction {
     data class Expression(
         override val startMs: Int,
         val code: String,
+        /** 有限时长（毫秒）；<=0 = 一直求值（默认）。到期后不再求值，粒子停在最后一帧的状态。 */
+        val durationMs: Int = 0,
     ) : AnimInstruction() {
         override val type get() = InstructionType.EXPRESSION
         override fun writeBody(buf: FriendlyByteBuf) {
             buf.writeUtf(code)
+            buf.writeVarInt(durationMs)
         }
     }
 

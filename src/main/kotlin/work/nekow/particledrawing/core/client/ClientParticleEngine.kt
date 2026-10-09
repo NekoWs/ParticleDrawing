@@ -571,6 +571,28 @@ class ClientParticleEngine {
     }
 
     /**
+     * 客户端世界卸载（切维度/重生/退出世界）时清空全部本地状态。
+     *
+     * 旧 ClientLevel 的 ParticleEngine 随之销毁、桥接粒子全部失效，映射留着只会：
+     * 让不死的粒子在下个世界继续被分批轮转空转；而 `particles` 里的旧 id 一旦与服务端重发的
+     * 新粒子 id 撞上，还会把新粒子当成「已存在」而只做更新。
+     */
+    fun clearAll() {
+        particles.clear()
+        bridges.clear()
+        groups.clear()
+        takeover.clearAll()
+        glowingIds.clear()
+        motionIds.clear()
+        trackBuffers.clear()
+        attachments.clear()
+        curveIds.clear()
+        cachedIds = emptyArray()
+        cachedSize = -1
+        syncCursor = 0
+    }
+
+    /**
      * 获取当前活跃粒子数量。
      * @return 活跃粒子数
      */

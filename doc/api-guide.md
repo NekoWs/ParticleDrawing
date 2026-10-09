@@ -315,14 +315,26 @@ group.fadeIn(durationTicks = 15)                 // 透明度 0 → 当前值
 group.fadeOut(durationTicks = 20)                // 透明度 → 0 并销毁整组
 group.destroyAfter(ticks = 200)                  // 定时销毁（服务端时钟掐表）
 group.scaleTo(0f, durationTicks = 8).retire()    // 退场到零后由**客户端完成信号**销毁
-group.onAnimationComplete { /* 有限指令全部跑完的那一刻 */ }
+group.onAnimationComplete { /* 账本走完的那一刻 */ }
+
+// 表达式组没有糖指令，照样能收尾：7 tick 后 presence 归零 → 完成 → 销毁
+group.setVariableInterpolated("presence", "0", ticks = 7).retire()
+// 或者给表达式自己的有限时长（到期后不再求值，粒子停在最后一帧）
+group.expression("[x,y,z]=get_entity_pos(e)", durationTicks = 40).retire()
 ```
 
 > `destroyAfter` 是按服务端时钟估的时间：客户端因为网络延迟或时钟锚点晚一点收尾时，
 > 它会把还在收尾的画面切掉。`retire(graceTicks = 2)` 改为等客户端的完成信号（`ProgramCompletePayload`），
-> 销毁时刻与「视觉真正到零」对齐；客户端不在场/一直不上报时按服务端时间轴末端 + 1 秒兜底销毁，不让组泄漏。
-> `onAnimationComplete` 判定的也是「时间轴上最后一件事做完」：`spin`、无限 `pulse`、表达式这类没有终点的
-> 指令不参与判定；整段都没有有限指令时两者都不会触发（控制台会提醒）。
+> 销毁时刻与「视觉真正到零」对齐；客户端不在场/一直不上报时按账本末端 + 1 秒兜底销毁，不让组泄漏。
+>
+> **完成账本** = 有限时长指令的终点 ∪ **变量缓动的终点** ∪ 表达式自己的有限时长：
+> - `setVariableInterpolated` 就是一笔「N tick 后到点」的账，最后一次有效缓动跑完即算完成；
+> - **重定向替换同名旧终点**，所以「每 tick 重设新目标」期间不会提前触发上一次的回调；
+> - 表达式组里糖指令一条都不会执行，因此**不认**它们（拿不生效的有限指令当完成标记是假的），
+>   要给它终点就用 `expression(code, durationTicks)` 或一条变量缓动；
+> - 没有终点的东西不参与：`spin`、无限 `pulse`、`setVariableLive`（立即赋值，会取消同名缓动）。
+>
+> 账本上什么都没有时两者都不会触发（控制台会提醒）。
 
 ### 视觉通道逐渲染帧（60/144Hz 也连续）
 
@@ -408,13 +420,18 @@ group.setVariableLive("rad", "speed * 2")          // 标量公式，可引用�
 group.setVariableInterpolated("bx", "targetX", ticks = 10)   // 10 tick 内缓动到目标（空间端点扫过去）
 ```
 
-> `setVariableLive` 的公式走程序变量作用域，不注入 `t/i/n`，因此不能引用时间/序号。
+> `setVariableLive` 的公式走程序变量作用域，不注入 `t/i/n`，因此不能引用时间/序号；
+> 它会**取消同名变量正在进行的缓动**（连同该缓动在完成账本上的终点）。
 > `setVariableInterpolated` 与之同一套求值环境（收到那一刻算出目标值），只是**不瞬移**：
 > 客户端从当前值缓动过去，`easing` 可选，`ticks = 0` 等于立即赋值。
 > 变量常被当作空间端点用（光束末端、场中心），立即赋值会让整段几何跳一下——要连续就用它。
+> 这条缓动同时进**完成账本**：`setVariableInterpolated("presence", "0", 7).retire()` 就是
+> 「7 tick 归零、然后销毁」，表达式组因此也能靠它收尾（重定向替换旧终点，不会提前触发）。
 
 > `expression` 一旦出现即为**表达式模式**：接管位置/颜色/缩放的最终解释权；
 > `fadeIn/fadeOut` 因子仍叠加在其 alpha 上。纯数据协议——不向客户端发送任何代码字节。
+> **表达式模式下糖指令一条都不会执行**，所以别拿它们当完成标记；要给表达式一个终点就用
+> `expression(code, durationTicks)`（到期后不再求值，粒子停在最后一帧的状态）。
 
 ### 综合链式示例：出现 → 放大 → 旋转 → 停转 → 淡出
 

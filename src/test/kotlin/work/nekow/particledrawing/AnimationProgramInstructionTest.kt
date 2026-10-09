@@ -104,4 +104,17 @@ class AnimationProgramInstructionTest {
     fun `有限脉冲的终点按「半周期 × 2 × 圈数」算`() {
         assertEquals(600, AnimInstruction.Pulse(0, 1.2f, 100, 3).finiteDurationMs())
     }
+
+    @Test
+    fun `表达式可带有限时长，且随指令一起编解码`() {
+        val infinite = AnimInstruction.Expression(0, "[x]=0")
+        assertNull(infinite.finiteDurationMs(), "默认一直求值：没有终点")
+        assertEquals(350, AnimInstruction.Expression(0, "[x]=t", 350).finiteDurationMs())
+
+        val buf = FriendlyByteBuf(Unpooled.buffer())
+        val finite = AnimInstruction.Expression(120, "[x,y,z]=get_entity_pos(e)", 350)
+        finite.write(buf)
+        assertEquals(finite, AnimInstruction.read(buf), "表达式时长必须逐字段往返")
+        assertEquals(0, buf.readableBytes())
+    }
 }

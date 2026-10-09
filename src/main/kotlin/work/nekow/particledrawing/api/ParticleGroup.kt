@@ -65,7 +65,20 @@ class ParticleGroup(
     /** 时间轴里最晚的「有限指令结束时刻」（程序相对毫秒）；-1 = 没有有限指令。 */
     private var timelineEndMs: Long = -1L
 
-    private val hasFiniteInstruction: Boolean get() = timelineEndMs >= 0L
+    /**
+     * 变量缓动的截止 tick（服务端 tick，名字 → 到点时刻）。
+     * **重定向会替换同名旧终点**（新目标取消旧结束点），完成账本按它算。
+     */
+    private val varEaseEndTicks = HashMap<String, Long>()
+
+    /**
+     * 是否已经出现表达式指令：表达式组里糖指令一条都不会执行（解释权在表达式手里），
+     * 所以账本只认表达式自己的有限时长与变量缓动，不能拿一条不生效的有限糖指令当完成标记。
+     */
+    private var expressionMode = false
+
+    /** 表达式自己的到期时刻（程序相对毫秒）；-1 = 一直求值。 */
+    private var expressionEndMs: Long = -1L
 
     /** 游标 → 程序时刻的换算（增量追加按「从现在起」读）。 */
     private val clock = GroupClock()
@@ -213,17 +226,20 @@ class ParticleGroup(
     // —— 完成信号（客户端真正收尾的那一刻） ——
 
     /**
-     * 这段编排的**有限指令全部跑完**时回调（服务端主线程，误差不超过一两个 tick）。
+     * 这段编排的**账本走完**时回调（服务端主线程，误差不超过一两个 tick）。
      *
-     * 判定的是「脚本时间轴上最后一件事做完」：`spin`、无限 `pulse`、表达式这类没有终点的指令
-     * 不参与判定（它们不拦着有限指令的终点）。整段都没有有限指令时不会触发——那种组本来就没有「跑完」。
+     * 账本 = 有限时长指令的终点 ∪ **变量缓动的终点**（[setVariableInterpolated]）∪ 表达式自己的有限时长：
+     * - `setVariableInterpolated("presence", "0", ticks = 7)` 就是「7 tick 后归零」，
+     *   最后一次有效缓动跑完即算完成——表达式组（没有可执行的糖指令）因此同样拿得到完成信号；
+     * - 表达式组另可给 `expression(code, durationTicks)` 的到期时刻；
+     * - 没有终点的东西不参与：`spin`、无限 `pulse`、无限时长的表达式、`setVariableLive`（立即赋值）；
+     * - 重定向会**替换同名旧终点**，所以「每 tick 重设新目标」期间不会提前触发旧回调。
      *
-     * 典型用法：法阵从零展开、`scaleTo(1f, 8)` 长完之后在最准的时刻接音效/特效，
-     * 而不是服务端自己掐表估。
+     * 账本上什么都没有时不会触发（控制台会提醒）——那种组本来就没有「跑完」可言。
      */
     fun onAnimationComplete(action: (ParticleGroup) -> Unit): ParticleGroup {
-        if (!hasFiniteInstruction) {
-            LOGGER.warn("[ParticleDrawing] group {} 没有有限时长指令，onAnimationComplete 不会触发", id)
+        if (!hasCompletionSource()) {
+            LOGGER.warn("[ParticleDrawing] group {} 账本上没有有限终点，onAnimationComplete 不会触发", id)
             return this
         }
         ServerProgramCompletion.onComplete(id, manager.dimensionId, fallbackTicks(), action = { action(this) })
@@ -235,23 +251,56 @@ class ParticleGroup(
      *
      * 与 [destroyAfter] 的区别：那个按服务端时钟掐表，客户端晚一点就会把还在收尾的画面切掉；
      * 本方法等客户端的完成信号，销毁时刻与「视觉真正到零」对齐。
-     * 没人上场/客户端一直不上报时，按服务端时间轴末端 + 1 秒兜底销毁，不让组泄漏。
+     * 判定口径与 [onAnimationComplete] 相同（有限指令 ∪ 变量缓动）；客户端不在场/一直不上报时，
+     * 按账本末端 + 1 秒兜底销毁，不让组泄漏。
      */
     @JvmOverloads
     fun retire(graceTicks: Int = 2): ParticleGroup {
         require(graceTicks >= 0) { "retire 的余量不能为负" }
-        if (!hasFiniteInstruction) {
-            LOGGER.warn("[ParticleDrawing] group {} 没有有限时长指令，retire 不会触发（改用 destroyAfter）", id)
+        if (!hasCompletionSource()) {
+            LOGGER.warn("[ParticleDrawing] group {} 账本上没有有限终点，retire 不会触发（改用 destroyAfter）", id)
             return this
         }
         ServerProgramCompletion.retire(id, manager.dimensionId, graceTicks, fallbackTicks())
         return this
     }
 
-    /** 从此刻起多少 tick 后走到时间轴末端（兜底用）；没有有限指令时给 -1（不排兜底）。 */
+    /** 账本上还有没有「会完成的」事：指令侧（表达式看自己的时长）或未到点的变量缓动。 */
+    private fun hasCompletionSource(): Boolean {
+        pruneVarEaseEnds()
+        if (instructionLedgerEndMs() >= 0L) return true
+        return varEaseEndTicks.isNotEmpty()
+    }
+
+    /** 指令侧的账本终点：表达式模式看表达式自己的到期时刻，否则看有限糖指令。 */
+    private fun instructionLedgerEndMs(): Long =
+        if (expressionMode) expressionEndMs else timelineEndMs
+
+    /** 丢掉已经到点的变量缓动（它们不再是「待完成」的事）。 */
+    private fun pruneVarEaseEnds() {
+        val now = manager.level.gameTime
+        varEaseEndTicks.entries.removeIf { it.value <= now }
+    }
+
+    /**
+     * 从此刻起多少 tick 后走到账本末端（兜底用）；账本为空时给 -1（不排兜底）。
+     *
+     * 账本末端落在过去时钳到 0：那说明 `retire()` 是在编排早就跑完之后才登记的
+     * （客户端的完成信号已经发过、没人接），兜底必须照排，否则这个组再也等不到销毁。
+     */
     private fun fallbackTicks(): Int {
-        if (!hasFiniteInstruction) return -1
-        return clock.ticksFromNow(timelineEndMs.toInt(), manager.level.gameTime)
+        val now = manager.level.gameTime
+        pruneVarEaseEnds()
+        var ticks = -1
+        val instructionEnd = instructionLedgerEndMs()
+        if (instructionEnd >= 0L) {
+            ticks = clock.ticksFromNow(instructionEnd.toInt(), now).coerceAtLeast(0)
+        }
+        for (deadline in varEaseEndTicks.values) {
+            val remaining = (deadline - now).toInt()
+            if (remaining > ticks) ticks = remaining
+        }
+        return ticks
     }
 
     // —— 时间线编排 ——
@@ -279,11 +328,15 @@ class ParticleGroup(
         val now = manager.level.gameTime
         if (!armed) clock.onProgramStart(now)
         val at = clock.programTime(ins.startMs, now)
-        // 记下时间轴末端（有限指令才算；spin/无限 pulse/表达式没有终点）：
-        // 完成信号与 retire 的兜底时刻都靠它
-        ins.finiteDurationMs()?.let { duration ->
-            val end = at.toLong() + duration
-            if (end > timelineEndMs) timelineEndMs = end
+        // 记下账本末端（完成信号与 retire 的兜底时刻都靠它）：
+        // 表达式走它自己的到期时刻（糖指令在表达式组里不执行），其它有限指令记进 timelineEndMs
+        if (ins is AnimInstruction.Expression) {
+            expressionEndMs = if (ins.durationMs > 0) at.toLong() + ins.durationMs else -1L
+        } else {
+            ins.finiteDurationMs()?.let { duration ->
+                val end = at.toLong() + duration
+                if (end > timelineEndMs) timelineEndMs = end
+            }
         }
         instructions.add(ins)
         flush(now)
@@ -530,10 +583,18 @@ class ParticleGroup(
      * 与 .pdraw 函数对象的 this 脚本语言不同）。
      * 输出 [x,y,z] 为世界绝对坐标；可用 i/n/t、全套标量数学函数、get_* 被动输入、程序变量。
      * 一旦出现即接管位置/颜色/缩放的最终解释权；FADE 因子仍叠加其上。
+     *
+     * @param durationTicks 有限时长：>0 表示求值这么多 tick 后**停止求值**（粒子停在最后一帧的状态），
+     *   这个到期时刻同样进完成账本（[onAnimationComplete] / [retire] 认它）；
+     *   0（默认）= 一直求值，此时只能靠变量缓动给出终点。
      */
-    fun expression(code: String): ParticleGroup {
+    @JvmOverloads
+    fun expression(code: String, durationTicks: Int = 0): ParticleGroup {
+        require(durationTicks >= 0) { "expression 的时长不能为负" }
         lintGetters(code)
-        emit(AnimInstruction.Expression(cursorMs, code))
+        // 出现表达式即进入表达式模式：糖指令一条都不会执行，完成账本随之改看表达式与变量缓动
+        expressionMode = true
+        emit(AnimInstruction.Expression(cursorMs, code, durationTicks * 50))
         return this
     }
 
@@ -541,9 +602,12 @@ class ParticleGroup(
      * 运行时热更程序变量（对已激活程序生效）：value 为标量公式字符串，
      * 可引用其它程序变量（如 `group.setVariableLive("rad", "speed * 2")`）或直接给常量。
      * 注：该路径不注入 t/i/n，公式不能引用它们。
+     *
+     * 立即赋值会**取消该变量正在进行的缓动**（连同它在完成账本上的终点）。
      */
     fun setVariableLive(name: String, value: String) {
         lintGetters(value)
+        varEaseEndTicks.remove(name)
         for (player in manager.getPlayers()) {
             PacketDistributor.sendToPlayer(player, work.nekow.particledrawing.core.network.SetProgramVarPayload(id, name, value))
         }
@@ -555,8 +619,12 @@ class ParticleGroup(
      * 变量常被当作空间端点用（光束末端、场中心）：立即赋值会让整段几何瞬移，
      * 本方法让客户端从当前值缓动过去——端点是「扫」过去的，与相邻样本插值同一个目标（高刷下连续）。
      *
+     * **这条缓动同时进完成账本**：`setVariableInterpolated("presence", "0", 7).retire()` 就是
+     * 「7 tick 后归零、然后销毁」——表达式组（没有糖指令）也照此收尾。重定向会替换同名旧终点，
+     * 所以每 tick 重设目标期间不会提前触发上一次的回调。
+     *
      * [value] 仍是标量公式字符串（与 [setVariableLive] 同一套求值环境，不注入 t/i/n），
-     * 在收到那一刻求出目标值；`ticks = 0` 等价于立即赋值。
+     * 在收到那一刻求出目标值；`ticks = 0` 等价于立即赋值（不进账本）。
      */
     @JvmOverloads
     fun setVariableInterpolated(
@@ -567,6 +635,12 @@ class ParticleGroup(
     ): ParticleGroup {
         require(ticks >= 0) { "setVariableInterpolated 的时长不能为负" }
         lintGetters(value)
+        // 账本：同名重定向直接替换旧终点；0 tick 等于立即赋值，不留终点
+        if (ticks > 0) {
+            varEaseEndTicks[name] = manager.level.gameTime + ticks
+        } else {
+            varEaseEndTicks.remove(name)
+        }
         val payload = work.nekow.particledrawing.core.network.SetProgramVarEasePayload(
             id, name, value, ticks * 50, easing,
         )

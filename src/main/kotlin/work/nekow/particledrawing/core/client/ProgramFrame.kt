@@ -58,3 +58,32 @@ internal class ScaleLedger {
     /** 本次进度 [k] ∈ [0,1] 对应的倍率。 */
     fun valueAt(target: Float, k: Float): Float = from + (target - from) * k
 }
+
+/**
+ * 完成账本的合成：把「指令的终点」与「各变量缓动的终点」并成**最晚**那个时刻（毫秒）。
+ *
+ * 两块都要算：组动画可以只用变量缓动（表达式组的 `presence` 归零）、也可以只用有限指令
+ * （`scaleTo` 退场），两者都没有终点时才算「这段编排没有跑完可言」。
+ *
+ * **表达式模式下只认表达式自己的有限时长**：那时糖指令一条都不会执行（解释权在表达式手里），
+ * 拿一条不生效的有限指令当完成标记是假的；而 `expression(code, durationTicks)` 给的到期时刻
+ * 是真正会发生的终点。
+ *
+ * @param instructionEndMs 糖指令的最晚终点；-1 = 没有
+ * @param expressionMode 是否表达式组（那时改看 [expressionEndMs]）
+ * @param expressionEndMs 表达式自己的到期时刻（[expression] 的有限时长）；-1 = 一直求值
+ * @param varEaseEnds 每个活跃变量缓动的终点（还没开始的按「本 tick 开始」算）
+ * @return 最晚终点；-1 = 这本账上没有能完成的事
+ */
+internal fun completionLedgerEndMs(
+    instructionEndMs: Long,
+    expressionMode: Boolean,
+    expressionEndMs: Long,
+    varEaseEnds: Collection<Long>,
+): Long {
+    var end = if (expressionMode) expressionEndMs else instructionEndMs
+    for (easeEnd in varEaseEnds) {
+        if (easeEnd > end) end = easeEnd
+    }
+    return end
+}

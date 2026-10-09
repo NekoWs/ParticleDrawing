@@ -98,6 +98,10 @@ object ParticleRenderHandler {
             ClientAnimationManager.onClientLevelUnload()
             // 发射器声明随旧关卡一起作废：服务端会在新维度补发
             ClientEmitterManager.clearAll()
+            // 编排程序同样不能留：旧关卡的粒子桥接已随 ParticleEngine 销毁，
+            // 留着只会对着不存在的桥接空转（还会替已经不存在的组上报完成）
+            ClientAnimationProgramManager.clearAll()
+            ClientParticleEngine.instance()?.clearAll()
         }
     }
 

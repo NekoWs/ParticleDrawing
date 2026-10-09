@@ -130,6 +130,9 @@ internal object ClientAnimationProgramManager {
         val vars = LinkedHashMap<String, Double>()
         var expressionCode: String? = null
         var expressionStartMs = 0L
+
+        /** 表达式自己的有限时长终点（程序相对毫秒）；-1 = 一直求值。 */
+        var expressionEndMs: Long = -1L
         var compiled: CompiledFunction? = null
 
         // 可移动轴心（BindPivot(Movable) 绑定 + ProgramAnchorPayload 逐 tick 更新）
@@ -142,11 +145,11 @@ internal object ClientAnimationProgramManager {
         /** 本 tick 是否让粒子位置跳变（瞬移/断流刚恢复）：避免在两个远点之间扫出一条假轨迹。 */
         var anchorSnapPending = false
 
-        /** 有限指令的最晚结束时刻（程序相对毫秒）；-1 = 这是一段没有终点的编排。 */
-        var endMs: Long = -1L
+        /** 有限指令的最晚结束时刻（程序相对毫秒）；-1 = 没有有限指令。 */
+        var instructionEndMs: Long = -1L
 
-        /** 是否已经把「跑完了」上报给服务端（每次时间轴被追加延长后会重置，可再报一次）。 */
-        var completionReported = false
+        /** 上一次上报的账本终点：账本再往后延（追加指令 / 重定向缓动）就允许再报一次。 */
+        var reportedEndMs: Long = -1L
 
         /** 渐变中的变量：名字 → 目标与进度（见 `setVariableEased`）。 */
         val varEases = HashMap<String, VarEase>()
@@ -315,6 +318,8 @@ internal object ClientAnimationProgramManager {
             // 表达式唯一化：后到覆盖先到
             p.expressionCode = ins.code
             p.expressionStartMs = ins.startMs.toLong()
+            // 有限时长的表达式也算一笔账（到期即完成）；0 = 一直求值
+            p.expressionEndMs = if (ins.durationMs > 0) ins.startMs.toLong() + ins.durationMs else -1L
             recompileExpression(p)
             return
         }
@@ -328,27 +333,45 @@ internal object ClientAnimationProgramManager {
             p.anchorVelocity = ref.velocity
             p.anchorSampleNanos = System.nanoTime()
         }
-        // 时间轴被延长就重新允许上报（长寿组运行期追加一段动画后同样能报「这回也跑完了」）
+        // 时间轴被延长，账本自然跟着往后（上报判定用的就是账本本身）
         ins.finiteDurationMs()?.let { duration ->
             val end = ins.startMs.toLong() + duration
-            if (end > p.endMs) {
-                p.endMs = end
-                p.completionReported = false
-            }
+            if (end > p.instructionEndMs) p.instructionEndMs = end
         }
         p.slots.add(Slot(ins))
         prepareExpressionBuffers(p)
     }
 
     /**
-     * 有限指令全部跑完时向服务端上报一次（多给 1 tick 余量，等桥接粒子的插值端点收尾）。
-     * 没有有限时长指令（只有 spin / 无限 pulse / 表达式）的程序不上报——它本来就没有终点。
+     * 账本走完时向服务端上报一次（多给 1 tick 余量，等桥接粒子的插值端点收尾）。
+     *
+     * 账本 = 指令终点 ∪ 变量缓动终点（见 [completionLedgerEndMs]）：表达式组没有可执行的糖指令，
+     * 但它照样会因为最后一条 `setVariableInterpolated` 缓动（或有限的表达式时长）而完成——
+     * 所以**两个分支都要走这里**。
+     * 账本再往后延（追加指令 / 重定向缓动）后允许再报一次；一本账只报一次，重复重定向不会提前触发。
      */
-    private fun reportCompletionIfDue(p: Program, now: Long) {
-        if (p.endMs < 0L || p.completionReported) return
-        if (now < p.endMs + 50L) return
-        p.completionReported = true
+    private fun reportCompletionIfDue(p: Program, ledgerEndMs: Long, now: Long) {
+        if (ledgerEndMs < 0L) return
+        if (now < ledgerEndMs + 50L) return
+        if (ledgerEndMs <= p.reportedEndMs) return
+        p.reportedEndMs = ledgerEndMs
         ClientPacketDistributor.sendToServer(ProgramCompletePayload(p.animationId))
+    }
+
+    /**
+     * 本轮账本的终点（在 [applyVarEases] **之前**取）：这一 tick 恰好结束的那条缓动还在表里，
+     * 它的终点因此不会被漏掉（缓动结束即从表里摘掉，取晚了就什么都没了）。
+     */
+    private fun ledgerEndMs(p: Program, now: Long): Long {
+        val easeEnds = p.varEases.values.map { ease ->
+            if (ease.startMs >= 0L) ease.startMs + ease.durationMs else now + ease.durationMs
+        }
+        return completionLedgerEndMs(
+            instructionEndMs = p.instructionEndMs,
+            expressionMode = p.expressionCode != null,
+            expressionEndMs = p.expressionEndMs,
+            varEaseEnds = easeEnds,
+        )
     }
 
     /**
@@ -543,6 +566,8 @@ internal object ClientAnimationProgramManager {
             // clientGameTime + anchorOffset ≈ 服务端绝对 gameTime；再减程序起点、×50 = 相对毫秒。
             // 指令 startMs 与公式变量 t 均为该相对域，量纲一致、与存档时长无关。
             val now = (nowClient + p.anchorOffset - p.startAnchor) * 50
+            // 账本在推进缓动**之前**取：这一 tick 恰好结束的缓动还在表里，终点不会被漏掉
+            val ledgerEnd = ledgerEndMs(p, now)
             // 先推进变量渐变、再形成表达式输入快照：否则公式读到的是上一 tick 的旧值，
             // 连续热更（每 tick 重设目标）会一直落后一拍，看起来「不收敛」。
             applyVarEases(p, now)
@@ -550,10 +575,11 @@ internal object ClientAnimationProgramManager {
 
             if (p.expressionCode != null) {
                 expressionFrame(p, engine, now)
-                continue
+            } else {
+                sugarFrame(p, engine, now)
             }
-            sugarFrame(p, engine, now)
-            reportCompletionIfDue(p, now)
+            // 两个分支都要走：表达式组没有可执行的糖指令，但它会因为最后一条变量缓动结束而完成
+            reportCompletionIfDue(p, ledgerEnd, now)
         }
     }
 
@@ -561,6 +587,8 @@ internal object ClientAnimationProgramManager {
 
     private fun expressionFrame(p: Program, engine: ClientParticleEngine, now: Long) {
         val cf = p.compiled ?: return
+        // 有限时长的表达式到期后不再求值：粒子停在最后一帧的状态（收尾交给变量缓动或糖指令）
+        if (p.expressionEndMs >= 0L && now > p.expressionEndMs) return
         if (p.regs.size != cf.regCount) prepareExpressionBuffers(p)
         val local = (now - p.expressionStartMs).coerceAtLeast(0).toDouble()
         fillExternal(p)
