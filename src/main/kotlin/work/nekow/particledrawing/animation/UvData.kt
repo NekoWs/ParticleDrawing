@@ -29,7 +29,10 @@ class UvData(
         uvStartExpr.any { it != null } || uvSizeExpr.any { it != null } ||
         uvStepExpr.any { it != null } || fpsExpr != null || maxFrameExpr != null
 
-    /** 有效帧数上限（动画模式）。maxFrame <=1 视为「自动」（不限制）。 */
+    /**
+     * 有效帧数（动画模式）：maxFrame<=1（未设/旧默认 1）按自动帧数算满，
+     * 否则按 maxFrame 取上限；两者都要再封顶到 [autoFrames]（不超过贴图布局格数），结果至少 1。
+     */
     fun effectiveMaxFrame(autoFrames: Int): Int {
         val mf = if (maxFrame > 1) maxFrame else autoFrames
         return maxOf(1, minOf(mf, autoFrames))

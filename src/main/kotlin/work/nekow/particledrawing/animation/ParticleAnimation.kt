@@ -53,7 +53,9 @@ class FunctionVar(
 /** 入场表现预设（粒子/函数对象的 ent 字段）。st 之前粒子完全不存在于渲染管线（隐藏门控，与 alpha 无关）；preset 目前支持 "fade"（出场后 dur 毫秒内 alpha 线性 0→1）。 */
 data class Entrance(val preset: String, val dur: Int = 5)
 
-/** 动画中的单个粒子。scale=[长, 宽, sz]（四边形自己的两条边长，sz 不参与渲染）；st 之前隐藏；ent 入场预设；life 为寿命毫秒（-1 无限）。
+/** 动画中的单个粒子。scale=[长, 宽, sz]：渲染只用前两项（四边形自己的两条边长），sz 不参与渲染；
+ *  函数对象派生粒子的 ParticleState.scale[2] 装的是对象整体缩放的 z 分量，渲染端同样不读。
+ *  st 之前隐藏；ent 入场预设；life 为寿命毫秒（-1 无限）。
  *  billboard=false 时四边形静止朝世界 +Z 并按 spin 轨道旋转；spinLocal=自转空间（true=local）。 */
 class AnimParticle(
     val id: String,
@@ -101,7 +103,8 @@ class AnimCamera(
 )
 
 // 文字对象（.pdrawc texts section）：编辑器像素文字生成器的源记录，粒子本体已按普通粒子烘焙，
-// 播放端不做光栅化；脚本经 this.get(id) 只读访问（chars/每字符粒子列表）。
+// 播放端不做光栅化；脚本经 this.get(名称) 只读访问（chars/每字符粒子列表）。
+// id 是内部键（轨道属主 "t:<id>"、编解码索引），脚本侧不暴露，查找只认 name。
 // 文字对象不建组：对象级轨道属主 "t:<id>"，成员 = chars[].particles 并集。
 class TextObject(
     val id: String,

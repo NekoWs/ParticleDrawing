@@ -7,8 +7,10 @@ import work.nekow.particledrawing.animation.script.ScriptException
 import work.nekow.particledrawing.animation.script.ScriptProgram
 import work.nekow.particledrawing.animation.script.ScriptRuntime
 import work.nekow.particledrawing.animation.script.TextValue
+import work.nekow.particledrawing.animation.script.TokenType
 import work.nekow.particledrawing.animation.script.ViewTransform
 import work.nekow.particledrawing.animation.script.parseProgram
+import work.nekow.particledrawing.animation.script.tokenize
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.util.rotateAround
 import kotlin.math.ceil
@@ -23,7 +25,7 @@ class ClientAnimationPlayer(
     // 服务端权威进度起点（维度 gameTime）；进度 = wrap/clamp(currentGameTick - startGameTick)
     private val startGameTick: Long = 0L,
     currentGameTick: Long = 0L,
-    // 显式起始毫秒（特效 API 使用；<0 时按 gameTime 时钟定位）
+    // 显式起始毫秒（特效 API 使用；<0 时按 gameTime 时钟定位，>=0 时按 AnimationProgress.seekMs 钳制到时间轴内）
     initialMs: Int = -1,
 ) {
 
@@ -503,6 +505,7 @@ class ClientAnimationPlayer(
             st = fx.st.toDouble(),
             maxMs = maxMs.toDouble(),
             view = rt.view,
+            // this.get(名称)：查找键是资产名称（与编辑器一致），id 只是轨道属主/编解码的内部键。
             get = { name ->
                 animation.texts.firstOrNull { it.name == name }?.let { TextValue(it) }
                     ?: animation.audioAssets.firstOrNull { it.name == name }?.let { a ->
@@ -622,8 +625,12 @@ class ClientAnimationPlayer(
         }
         // 函数对象运行时已在字段初始化阶段构建（setup 各执行一次）；派生粒子状态由 advanceFunctions 的
         // reconcile 按当前存活粒子动态创建/更新/删除。
-        // 按服务端权威进度定位到当前帧（elapsed = currentGameTick - startGameTick）。
-        val initial = if (initialMs >= 0) initialMs else progressMsAt((currentGameTick - startGameTick))
+        // 按服务端权威进度定位到当前帧（elapsed = currentGameTick - startGameTick）；显式起始毫秒按 seekMs 同口径钳制。
+        val initial = if (initialMs >= 0) {
+            AnimationProgress.seekMs(initialMs, maxMs, animation.loop)
+        } else {
+            progressMsAt(currentGameTick - startGameTick)
+        }
         currentMs = initial
         advanceTo(initial.toDouble())
         advanceFunctions(initial.toDouble())
@@ -665,7 +672,8 @@ class ClientAnimationPlayer(
 
     /**
      * 由外部播放时钟驱动推进（特效 API 使用）：直接给定目标时间轴毫秒，
-     * 而非由 `gameTime - startGameTick` 推导。支持任意 seek（含向后回退）、暂停与变速。
+     * 而非由 `gameTime - startGameTick` 推导。支持任意 seek（含向后回退）、暂停与变速；
+     * 非循环的末帧封顶与 game tick 时钟同口径（[AnimationProgress.lastFrameMs]）。
      * @return 是否仍在播放（非循环动画越过 maxMs 时返回 false 并置 finished）
      */
     fun tickExternal(targetMs: Int): Boolean {
@@ -676,9 +684,7 @@ class ClientAnimationPlayer(
             finished = true
             return false
         }
-        val target = if (max <= 0) targetMs.coerceAtLeast(0)
-        else if (animation.loop) ((targetMs % max) + max) % max
-        else minOf(targetMs, max - 1)
+        val target = AnimationProgress.seekMs(targetMs, max, animation.loop)
         if (target != currentMs) {
             if (target < currentMs && animation.loop) {
                 justLooped = true
@@ -709,8 +715,25 @@ class ClientAnimationPlayer(
         }
     }
 
-    private fun usesRandom(fx: FunctionObject): Boolean =
-        Regex("\\brandom\\s*\\(").containsMatchIn(fx.source) || Regex("\\brand\\s*\\(").containsMatchIn(fx.source)
+    /**
+     * 是否调用随机源（random / rand）：按 token 判断函数调用，注释与字符串字面量里的同名文字不算。
+     * 词法解析失败（脚本本来也编译不过）按动态处理，不把内容误当静止。
+     */
+    private fun usesRandom(fx: FunctionObject): Boolean {
+        val tokens = try {
+            tokenize(fx.source)
+        } catch (_: Throwable) {
+            return true
+        }
+        for (i in 0 until tokens.size - 1) {
+            val t = tokens[i]
+            if (t.type != TokenType.IDENT) continue
+            if (t.text != "random" && t.text != "rand") continue
+            if (tokens[i + 1].text == "(") return true
+        }
+        return false
+    }
+
     fun currentStates(): Collection<ParticleState> = states.values
 
     /** 派生粒子 id（fxId:p<serial>）判断。 */
@@ -810,8 +833,11 @@ class ClientAnimationPlayer(
         return if (tr.mode == AnimTrack.Mode.OP) base + trackValueAt(tr, t, 0.0) else trackValueAt(tr, t, base)
     }
 
+    /**
+     * 更新函数对象变量的基值：所有声明该变量的函数对象都生效，非数字值忽略。
+     * 同时清空这些变量名下的关键帧并重建对应函数对象的运行时，已生成的派生粒子、全局变量与 PRNG 状态都会随之重置。
+     */
     fun updateVariable(name: String, value: String) {
-        // 非数字值忽略；数字值对整组生效：所有声明该变量的函数对象都更新。
         val numeric = value.toDoubleOrNull() ?: return
         for (fx in animation.functions) {
             val v = fx.vars[name] ?: continue

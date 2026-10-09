@@ -14,6 +14,9 @@ object ScriptAudio {
     const val BANDS = 16
     const val NYQUIST = 22050.0
 
+    /** 特征 hop 宽（毫秒）：512 采样 @ 44.1kHz，与编辑器的 AUDIO_HOP_MS 同值。 */
+    const val HOP_MS = 512.0 / 44100.0 * 1000.0
+
     data class Values(
         val rms: Double,
         val peak: Double,
@@ -23,16 +26,23 @@ object ScriptAudio {
         val bands: DoubleArray,
     )
 
-    /** 播放头是否在音频区间 [st, st+durMs) 内。 */
+    /**
+     * 内容时长（毫秒）：优先用资产自带的 durMs；
+     * durMs <= 0（文件没写时长）时按 hop 数推算，与 [valueAt] 的查表跨度同一口径。
+     */
+    fun durationMs(a: AudioAsset): Double =
+        if (a.durMs > 0) a.durMs.toDouble() else a.hopCount * HOP_MS
+
+    /** 播放头（时间轴毫秒）是否落在音频内容区间 [st, st+时长) 内；时长为 0 时恒 false。 */
     fun windowAt(a: AudioAsset, ms: Double): Boolean {
         val st = a.st.toDouble()
-        return ms >= st && ms < st + a.durMs
+        return ms >= st && ms < st + durationMs(a)
     }
 
     fun valueAt(a: AudioAsset, localMs: Double): Values {
         val n = a.hopCount
         if (n <= 0) return Values(0.0, 0.0, 0.0, 0.0, 0.0, DoubleArray(BANDS))
-        val durMs = if (a.durMs > 0) a.durMs.toDouble() else n * (512.0 / 44100.0 * 1000.0)
+        val durMs = durationMs(a)
         val pos = localMs.coerceIn(0.0, durMs) / (durMs / n)
         var i = floor(pos).toInt()
         var f = pos - i

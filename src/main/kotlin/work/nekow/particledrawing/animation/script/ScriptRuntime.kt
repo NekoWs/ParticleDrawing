@@ -303,18 +303,8 @@ object ScriptRuntime {
     private class Flow(val kind: String, val value: Any? = null) : Throwable()
     private val IT_UNSET = Any()
 
-    private val BUILTINS = setOf(
-        "print", "assert",
-        "vec2", "vec3", "vec4", "vec", "mat3", "mat4",
-        "norm", "hash", "phases", "repeat",
-        "clamp", "map_range", "remap", "int", "float", "bool",
-        "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sqrt", "abs", "sign", "exp", "log", "ln",
-        "floor", "ceil", "round", "fract", "pow", "min", "max", "step", "smoothstep", "mod",
-        "noise", "fbm", "rand", "random",
-        "ease_linear", "ease_in_out", "ease_out_back", "ease_in_elastic",
-        "color",
-        "unique", "reverse", "sort",
-    )
+    /** 脚本内建函数名：parser 的保留名校验与运行时调用分发共用 [BuiltinRegistry] 这一份。 */
+    private val BUILTINS = BuiltinRegistry.names
 
     private class Runtime(
         val phase: String,
@@ -2003,7 +1993,7 @@ object ScriptRuntime {
     )
 }
 
-/** 供 parser 校验保留名使用。 */
+/** 脚本内建函数名唯一来源：parser 拿它校验保留名，运行时拿它分发调用。 */
 object BuiltinRegistry {
     val names: Set<String> = setOf(
         "print", "assert",

@@ -39,9 +39,9 @@ class BridgeParticle(
     // flipbook 计时起点（墙钟）
     private val animStartNanos: Long = System.nanoTime()
 
-    // 贴图大小缩放因子：texSize / 16（基准 16px）。
+    // 贴图大小缩放因子：取景框最长边 / 16（基准 16px）。
     // 贴图可能晚于粒子到货（运行时登记），重解析时要跟着更新，所以是 var。
-    private var texScale: Float = ParticleVisual.texScale(uv)
+    private var texScale: Float = texScaleFor()
 
     // 上次解析时的贴图表版本：版本一变（有新贴图注册/缓存被清）就重解析
     private var seenTexVersion: Int = TextureCache.version()
@@ -49,6 +49,10 @@ class BridgeParticle(
     // 非均匀缩放：局部 X 轴（长）/ Y 轴（宽）两个半宽，单位 Minecraft 块
     private var scaleW: Float = 0f
     private var scaleH: Float = 0f
+
+    // 未乘 texScale 的编辑器单位尺寸：贴图到货后重算渲染尺寸要用它
+    private var baseScaleW: Float = 0f
+    private var baseScaleH: Float = 0f
 
     // 外观插值端点（尺寸 / 颜色 / 透明度）：渲染帧按 partialTick 在「上一 tick → 本 tick」间插值；
     // 出生后第一次同步原子落地（见 AppearanceBlend）。
@@ -92,7 +96,12 @@ class BridgeParticle(
         if (version == seenTexVersion) return
         seenTexVersion = version
         texEntry = resolveTexture()
-        texScale = ParticleVisual.texScale(uv)
+        val scale = texScaleFor()
+        if (scale != texScale) {
+            texScale = scale
+            // 尺寸系数变了：按同一份编辑器单位尺寸重算，跳变落地避免插值出一次缩放
+            applyScale(snap = true)
+        }
         layerCache = null
     }
 
@@ -103,9 +112,11 @@ class BridgeParticle(
 
         setColor(color.r, color.g, color.b)
         alpha = color.a
-        // 纳入贴图大小缩放：texSize 越大粒子越大
-        scaleW = scale * EDITOR_TO_MC_SCALE * texScale
-        scaleH = scaleW  // 标量初始化为正方形
+        // 纳入贴图大小缩放：取景框越大粒子越大
+        baseScaleW = scale
+        baseScaleH = scale
+        scaleW = baseScaleW * EDITOR_TO_MC_SCALE * texScale
+        scaleH = baseScaleH * EDITOR_TO_MC_SCALE * texScale
         quadSize = scaleW  // 兼容原版字段（getQuadSize 回退）
         lifetime = Int.MAX_VALUE
         gravity = 0f
@@ -126,9 +137,10 @@ class BridgeParticle(
     fun setUv(uv: UvData?) {
         this.uv = uv
         this.texEntry = resolveTexture()
-        this.texScale = ParticleVisual.texScale(uv)
+        this.texScale = texScaleFor()
         this.seenTexVersion = TextureCache.version()
         this.layerCache = null
+        applyScale(snap = true)
     }
 
     /** 解析当前 UV 指向的贴图（贴图在 spawn 前已由动画管理器预加载）。 */
@@ -179,11 +191,9 @@ class BridgeParticle(
      * 同步粒子缩放（标量，均匀）。
      */
     fun syncScale(scale: Float, snap: Boolean = false) {
-        val s = scale * EDITOR_TO_MC_SCALE * texScale
-        blend.setScale(s, s, snap)
-        scaleW = s
-        scaleH = s
-        quadSize = s
+        baseScaleW = scale
+        baseScaleH = scale
+        applyScale(snap)
     }
 
     /**
@@ -191,12 +201,25 @@ class BridgeParticle(
      * sx → quad 长边（局部 X 轴），sy → quad 短边（局部 Y 轴），sz 暂存不参与渲染。
      */
     fun syncScaleArray(scaleArray: FloatArray, snap: Boolean = false) {
-        val w = scaleArray[0] * EDITOR_TO_MC_SCALE * texScale
-        val h = scaleArray[1] * EDITOR_TO_MC_SCALE * texScale
+        baseScaleW = scaleArray[0]
+        baseScaleH = scaleArray[1]
+        applyScale(snap)
+    }
+
+    /** 按当前 texScale 把编辑器单位尺寸落到渲染尺寸与插值两端点上。 */
+    private fun applyScale(snap: Boolean) {
+        val w = baseScaleW * EDITOR_TO_MC_SCALE * texScale
+        val h = baseScaleH * EDITOR_TO_MC_SCALE * texScale
         blend.setScale(w, h, snap)
         scaleW = w
         scaleH = h
         quadSize = w  // 兼容原版字段
+    }
+
+    /** 贴图尺寸系数：取景框已知按取景框，整图且贴图未到货按已到货贴图的尺寸，都没有按 16 计。 */
+    private fun texScaleFor(): Float {
+        val entry = uv?.texture?.let { TextureCache.get(it) }
+        return ParticleVisual.texScaleOf(uv, entry?.width ?: 0, entry?.height ?: 0)
     }
 
     /** 本帧的插值权重（渲染帧在相邻两个 tick 之间的进度）。 */
@@ -309,7 +332,8 @@ class BridgeParticle(
     override fun getGroup(): ParticleRenderType = BATCHED_QUADS
 
     // UV 采样：贴图像素坐标 → 归一化 [0,1]。GPU 纹理第 0 行 = PNG 顶部（NativeImage 自然顺序），
-    // quad 顶点 v0=底部、v1=顶部（SingleQuadParticle 顶点布局）。
+    // 与编辑器 scene.js 的 flipY=false 同一口径：像素行与纹理 v 都自顶向下，不做翻转；
+    // 原版 quad 上边缘取 v0、下边缘取 v1（QuadParticleRenderState.renderRotatedQuad）。
 
     private fun currentFrameIndex(): Int {
         val u = uv ?: return 0

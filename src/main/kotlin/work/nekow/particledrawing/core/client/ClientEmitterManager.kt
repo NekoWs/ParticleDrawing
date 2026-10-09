@@ -153,7 +153,7 @@ internal object ClientEmitterManager {
             for (i in 0 until count) emitOne(active, engine, active.scratch[i], dir)
         } else {
             val advance = active.time
-                ?: TimeAdvance(active.params.intervalMs.toDouble()).also { active.time = it }
+                ?: TimeAdvance(active.params.intervalMs.toDouble(), MAX_EMIT_PER_FRAME).also { active.time = it }
             val count = advance.advance(deltaMs)
             for (i in 0 until count) emitOne(active, engine, pos, dir)
         }

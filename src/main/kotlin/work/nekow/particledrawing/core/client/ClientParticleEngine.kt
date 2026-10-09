@@ -13,7 +13,7 @@ import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 客户端粒子引擎，管理渲染粒子的生命周期、桥接与每帧同步。
+ * 客户端粒子引擎，管理渲染粒子的生命周期、桥接与逐 tick 同步（缓动与寿命走引擎 tick，[frameSyncCurves] 例外）。
  */
 @Suppress("unused")
 class ClientParticleEngine {
@@ -355,7 +355,7 @@ class ClientParticleEngine {
     private var tickSequenceCounter: Long = 0L
 
     /**
-     * 每帧更新：驱动粒子缓动并同步到桥接粒子。
+     * 每个引擎 tick 更新一次：驱动粒子缓动并同步到桥接粒子。
      */
     fun frameUpdate() {
         // 抬 tick 序号：桥接粒子据此把「上一 tick 的外观端点」记下来，供渲染帧插值

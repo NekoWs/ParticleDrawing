@@ -184,6 +184,9 @@ internal object ClientAnimationProgramManager {
 
     private const val PRUNE_INTERVAL_TICKS = 40
 
+    /** 程序变量名的长度上限；已在册的名字不受限，只有新名字会被挡下。 */
+    private const val MAX_VAR_NAME_LENGTH = 64
+
     fun arm(
         programId: UUID,
         particleIds: List<UUID>,
@@ -227,7 +230,13 @@ internal object ClientAnimationProgramManager {
      */
     fun setVariable(programId: UUID, name: String, expr: String) {
         val p = programs[programId] ?: return
-        if (name !in p.vars && name.length > 64) return
+        if (name !in p.vars && name.length > MAX_VAR_NAME_LENGTH) {
+            LOGGER.warn(
+                "[ParticleDrawing] 变量名过长（{} > {}），setVariable 热更丢弃: {}",
+                name.length, MAX_VAR_NAME_LENGTH, name,
+            )
+            return
+        }
         val v = evaluateVar(p, expr) ?: return
         val hadCode = p.expressionCode != null
         // 立即赋值取消同名的渐变（后到的指令说了算）
@@ -440,6 +449,12 @@ internal object ClientAnimationProgramManager {
         p.extNames = extAll.toTypedArray()
         p.requiredKeys = rw.keys
         p.compiled = compileFunctionObject(rw.code, emptyList(), extAll)
+        if (p.compiled == null) {
+            // 快路径编不出（向量/矩阵/分量访问一类）时表达式没有解释器兜底，必须报出来
+            LOGGER.error(
+                "[ParticleDrawing] 表达式含非标量因素，无法编译，该表达式不生效: {}", rw.code,
+            )
+        }
         prepareExpressionBuffers(p)
     }
 

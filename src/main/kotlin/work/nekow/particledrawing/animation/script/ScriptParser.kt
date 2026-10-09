@@ -269,23 +269,6 @@ private val CONSTANT_NAMES = setOf("TAU", "HALF_PI", "QUARTER_PI", "DEG2RAD", "R
 private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w", "alpha" to "w")
 private val COMP_NAMES = setOf("x", "y", "z", "w", "r", "g", "b", "a", "alpha")
 
-// 内建函数保留名。
-private val BUILTIN_NAMES = setOf(
-    "print", "assert",
-    "vec2", "vec3", "vec4", "vec", "mat3", "mat4",
-    "norm",
-    "clamp", "map_range", "remap", "int", "float", "bool",
-    "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-    "sqrt", "abs", "sign", "exp", "log", "ln",
-    "floor", "ceil", "round", "fract", "pow", "min", "max",
-    "step", "smoothstep", "mod",
-    "noise", "fbm", "rand", "random",
-    "ease_linear", "ease_in_out", "ease_out_back", "ease_in_elastic",
-    "hash", "phases", "repeat",
-    "color",
-    "unique", "reverse", "sort",
-)
-
 // 复合赋值运算符 → 对应的二元运算符。
 private val COMPOUND_ASSIGN = mapOf("+=" to "+", "-=" to "-", "*=" to "*", "/=" to "/", "%=" to "%", "^=" to "^")
 
@@ -425,7 +408,7 @@ class ScriptParser(private val source: String) {
 
     private fun validateFuncName(tok: Token) {
         val name = tok.text
-        if (name in KEYWORDS || name in LIFECYCLE_FUNCS || name == CTX_NAME || name in CONSTANT_NAMES || name in BUILTIN_NAMES) {
+        if (name in KEYWORDS || name in LIFECYCLE_FUNCS || name == CTX_NAME || name in CONSTANT_NAMES || name in BuiltinRegistry.names) {
             errorAt(tok, "reserved name cannot be used as function name: '$name'")
         }
     }

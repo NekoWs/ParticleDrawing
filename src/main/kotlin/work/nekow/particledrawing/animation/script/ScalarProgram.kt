@@ -5,28 +5,25 @@ import kotlin.math.*
 // 纯标量代码块的栈式字节码编译与执行：执行期只用 DoubleArray 寄存器与栈。
 // 含向量/矩阵/分量/拆包的代码块不在快路径内，回退解释器。
 
-/** 寄存器槽布局：0..2 内建 i/n/t，3..16 属性（含 maxAge），17.. 变量，之后临时变量。 */
+/** 寄存器槽布局：0..2 内建 i/n/t，3..15 属性，16.. 变量，之后临时变量。 */
 internal object Reg {
     const val I = 0; const val N = 1; const val T = 2
     const val X = 3; const val Y = 4; const val Z = 5
     const val R = 6; const val G = 7; const val B = 8; const val A = 9
     const val VX = 10; const val VY = 11; const val VZ = 12
     const val SC = 13; const val GLOW = 14; const val LIGHT = 15
-    /** maxAge 输出槽（毫秒；<0 表示无限）。仅表达式模式消费。 */
-    const val MAXAGE = 16
-    const val ATTR_COUNT = 14
-    const val VAR_START = 17
+    const val ATTR_COUNT = 13
+    const val VAR_START = 16
 }
 
-/** 属性寄存器初始值（X,Y,Z,R,G,B,A,VX,VY,VZ,SC,GLOW,LIGHT,MAXAGE）；maxAge 缺省 -1=无限。 */
-private val ATTR_INIT = doubleArrayOf(0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0)
+/** 属性寄存器初始值（X,Y,Z,R,G,B,A,VX,VY,VZ,SC,GLOW,LIGHT）。 */
+private val ATTR_INIT = doubleArrayOf(0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0)
 
 private val ATTR_SLOTS = mapOf(
     "x" to Reg.X, "y" to Reg.Y, "z" to Reg.Z,
     "r" to Reg.R, "g" to Reg.G, "b" to Reg.B, "a" to Reg.A,
     "vx" to Reg.VX, "vy" to Reg.VY, "vz" to Reg.VZ,
     "sc" to Reg.SC, "glow" to Reg.GLOW, "light" to Reg.LIGHT,
-    "maxAge" to Reg.MAXAGE,
 )
 
 /** 栈式指令集。pops 为该指令从求值栈弹出的操作数个数；数据搬运类恒为 -1。 */
@@ -121,14 +118,14 @@ internal class ScalarProgram(
                 ScalarOp.F_POW -> { sp--; stack[sp - 1] = stack[sp - 1].pow(stack[sp]) }
                 ScalarOp.F_MIN -> { sp--; stack[sp - 1] = min(stack[sp - 1], stack[sp]) }
                 ScalarOp.F_MAX -> { sp--; stack[sp - 1] = max(stack[sp - 1], stack[sp]) }
-                ScalarOp.F_CLAMP -> { sp -= 2; stack[sp] = stack[sp].coerceIn(stack[sp + 1], stack[sp + 2]) }
-                ScalarOp.F_LERP -> { sp -= 2; stack[sp] = stack[sp] + (stack[sp + 1] - stack[sp]) * stack[sp + 2] }
+                ScalarOp.F_CLAMP -> { sp -= 2; stack[sp - 1] = stack[sp - 1].coerceIn(stack[sp], stack[sp + 1]) }
+                ScalarOp.F_LERP -> { sp -= 2; stack[sp - 1] = stack[sp - 1] + (stack[sp] - stack[sp - 1]) * stack[sp + 1] }
                 ScalarOp.F_STEP -> { sp--; stack[sp - 1] = if (stack[sp] >= stack[sp - 1]) 1.0 else 0.0 }
                 ScalarOp.F_SMOOTHSTEP -> {
                     sp -= 2
-                    val e0 = stack[sp]; val e1 = stack[sp + 1]; val x = stack[sp + 2]
+                    val e0 = stack[sp - 1]; val e1 = stack[sp]; val x = stack[sp + 1]
                     val t = ((x - e0) / (e1 - e0)).coerceIn(0.0, 1.0)
-                    stack[sp] = t * t * (3 - 2 * t)
+                    stack[sp - 1] = t * t * (3 - 2 * t)
                 }
                 ScalarOp.F_MOD -> { sp--; val a = stack[sp - 1]; val b = stack[sp]; stack[sp - 1] = a - b * floor(a / b) }
                 ScalarOp.F_RANDOM -> stack[sp++] = Math.random()

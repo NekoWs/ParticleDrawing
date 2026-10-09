@@ -166,7 +166,10 @@ class ParticleVisual {
     /** 是否给了各向异性尺寸（任一轴 > 0）。 */
     fun hasAniso(): Boolean = scaleW > 0f || scaleH > 0f
 
-    /** 是否一个字都没设过（默认外观，渲染成纯白方块）。 */
+    /**
+     * 是否一个字都没设过（默认外观，渲染成纯白方块）。
+     * [lightLevel] 只在 [glowing] 为 true 时生效，已由 [glowing] 覆盖，这里不再单独判。
+     */
     fun isPristine(): Boolean = texture == null && uvRect == null && !hasAniso() &&
         billboard && spinXDeg == 0.0 && spinYDeg == 0.0 && spinZDeg == 0.0 && spinLocal &&
         !additive && !glowing
@@ -174,6 +177,9 @@ class ParticleVisual {
     /**
      * 解析成渲染用的 UV，由客户端调用。[texW]/[texH] 是已注册贴图的像素尺寸，未知传 0。
      * 无贴图返回 null。
+     *
+     * 整图取景框在贴图未知时不写死尺寸（[UvData.texSize] 记 0），晚到的贴图才能按实际尺寸
+     * 重算尺寸系数，见 [texScaleOf]。
      */
     fun toUvData(texW: Int, texH: Int): UvData? {
         val name = texture ?: return null
@@ -190,8 +196,8 @@ class ParticleVisual {
         } else {
             x0 = 0
             y0 = 0
-            w = if (texW > 0) texW else 16
-            h = if (texH > 0) texH else 16
+            w = if (texW > 0) texW else 0
+            h = if (texH > 0) texH else 0
         }
         // STATIC：始终取 (x0, y0) 起的 w×h 像素；texSize 决定渲染尺寸系数
         return UvData(
@@ -224,13 +230,20 @@ class ParticleVisual {
 
         /**
          * 贴图尺寸系数：UV 取景框（[UvData.texSize]）最长边 / 16，基准 16px 时为 1。
+         * 取景框未定时（整图且出生时贴图尺寸未知）用 [texW]/[texH]；两者都没有时按 16 计（系数 1）。
          * [worldUnits] 口径换算世界格时也用它。
          */
         @JvmStatic
-        fun texScale(uv: UvData?): Float {
-            val size = uv?.texSize ?: return 1f
-            val maxDim = max(size[0], size[1])
-            return if (maxDim > 0) maxDim / 16f else 1f
+        fun texScaleOf(uv: UvData?, texW: Int, texH: Int): Float {
+            val size = uv?.texSize
+            val box = if (size != null) max(size[0], size[1]) else 0
+            if (box > 0) return box / 16f
+            val dim = max(texW, texH)
+            return if (dim > 0) dim / 16f else 1f
         }
+
+        /** [texScaleOf] 的简写：贴图尺寸未知时按整图 16px 计。 */
+        @JvmStatic
+        fun texScale(uv: UvData?): Float = texScaleOf(uv, 0, 0)
     }
 }

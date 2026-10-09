@@ -514,6 +514,9 @@ object ClientAnimationManager {
         for (ap in entry.audioPlayers.values) ap.close()
     }
 
+    /** 音频播放位置与内容位置的漂移上限（毫秒）：超过就按内容位置 seek 回来。 */
+    private const val AUDIO_DRIFT_SEEK_MS = 150.0
+
     /**
      * 每 tick 同步音频：按内容本地毫秒判断是否出声，算出淡入淡出包络后的音量、声像与倍速；
      * 漂移超阈值时按内容位置 seek。
@@ -541,7 +544,7 @@ object ClientAnimationManager {
             val gain = player.audioProp(owner, TrackPr.VOL, a.vol, t).coerceIn(0.0, 2.0) * fade
             val pan = player.audioProp(owner, TrackPr.PAN, a.pan, t).coerceIn(-1.0, 1.0)
             var seek: Double? = null
-            if (inWindow && Math.abs(ap.positionMs() - local) > 150) seek = local
+            if (inWindow && Math.abs(ap.positionMs() - local) > AUDIO_DRIFT_SEEK_MS) seek = local
             ap.update(inWindow, seek, gain.toFloat().coerceIn(0f, 2f), pan.toFloat(), rate.toFloat())
         }
     }

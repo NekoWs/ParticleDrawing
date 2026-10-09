@@ -414,7 +414,7 @@ class RenderParticle(
         ticksAlive = 0
     }
 
-    /** 每帧推进速度积分与缓动插值（[advanceEngine] 负责推进时钟，这里只用它算值）。 */
+    /** 每个引擎 tick 推进速度积分与缓动插值（[advanceEngine] 负责推进时钟，这里只用它算值）。 */
     fun tick() {
         val now = engineMs
         var posChanged = false
