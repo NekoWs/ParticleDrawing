@@ -8,7 +8,9 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-// /pdraw camera 预览姿态的回归测试：姿态要加播放原点，渲染帧按 partialTick 插值。
+/**
+ * /pdraw camera 预览姿态：姿态加播放原点，渲染帧按 partialTick 插值。
+ */
 class CameraControllerTest {
 
     private fun pose(x: Double, y: Double, z: Double, tx: Double, ty: Double, tz: Double) =

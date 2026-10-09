@@ -2,7 +2,7 @@ package work.nekow.particledrawing.core.easing
 
 import kotlin.math.abs
 
-// 缓动类型：预设或自定义三次贝塞尔曲线，支持序列化以便网络传输。
+// 缓动类型：预设或自定义三次贝塞尔曲线，可序列化以便网络传输。
 @Suppress("unused")
 class EasingType private constructor(
     val name: String?,
@@ -14,7 +14,7 @@ class EasingType private constructor(
     /**
      * 在给定进度下计算缓动值。
      * @param t 动画进度，范围 [0, 1]
-     * @return 缓动后的值
+     * @return 缓动后的值，范围 [0, 1]
      */
     fun evaluate(t: Float): Float {
         if (step) return if (t >= 1f) 1f else 0f // 无缓动：阶跃（保持到下一关键帧）
@@ -90,12 +90,11 @@ class EasingType private constructor(
         private val PRESET_ARRAY: Array<EasingType> = PRESETS.toTypedArray()
 
         /**
-         * 使用自定义贝塞尔控制点创建缓动类型。
+         * 用自定义贝塞尔控制点创建缓动类型。
          * @param x1 第一控制点的 X 坐标
          * @param y1 第一控制点的 Y 坐标
          * @param x2 第二控制点的 X 坐标
          * @param y2 第二控制点的 Y 坐标
-         * @return 自定义 EasingType 实例
          */
         @JvmStatic
         fun custom(x1: Double, y1: Double, x2: Double, y2: Double): EasingType {
@@ -103,12 +102,7 @@ class EasingType private constructor(
         }
 
         /**
-         * 根据控制点匹配最近的预设，若无匹配则创建自定义类型。
-         * @param x1 第一控制点的 X 坐标
-         * @param y1 第一控制点的 Y 坐标
-         * @param x2 第二控制点的 X 坐标
-         * @param y2 第二控制点的 Y 坐标
-         * @return 匹配的预设或自定义 EasingType 实例
+         * 按控制点匹配最近的预设，无匹配则创建自定义类型。
          */
         @JvmStatic
         fun fromCurve(x1: Double, y1: Double, x2: Double, y2: Double): EasingType {
@@ -123,9 +117,8 @@ class EasingType private constructor(
         }
 
         /**
-         * 从序列化数据反序列化缓动类型。
-         * @param data 包含类型标识与控制点参数的数组
-         * @return 反序列化后的 EasingType 实例
+         * 从 [serialize] 的输出反序列化缓动类型。
+         * @param data 类型标识与控制点参数，格式同 [serialize]
          */
         @JvmStatic
         fun deserialize(data: DoubleArray): EasingType {

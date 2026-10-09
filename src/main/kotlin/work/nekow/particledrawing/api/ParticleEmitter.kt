@@ -6,44 +6,22 @@ import work.nekow.particledrawing.core.network.EmitterParams
 import work.nekow.particledrawing.core.network.EmitterUpdatePayload
 
 /**
- * 发射口径：按锚点走过的**里程**发射，还是按**时间**发射。
+ * 发射口径：按锚点走过的里程发射，还是按时间发射。
  */
 enum class EmitMode {
-    /** 每走过 [spacing] 格发射一颗（拖尾：速度变了密度不变）。 */
+    /** 每走过 [spacing] 格发射一颗；拖尾用，密度与速度无关。 */
     DISTANCE,
 
-    /** 每过 [intervalMs] 毫秒发射一颗（雨点/星尘：与移动速度无关）。 */
+    /** 每过 [intervalMs] 毫秒发射一颗，与移动速度无关。 */
     TIME,
 }
 
 /**
- * 运行时发射器：**服务端声明一次，客户端按渲染帧自己发射**。
+ * 运行时发射器：服务端声明一次，客户端按渲染帧沿锚点推进里程/时间并生成粒子（带宽 O(1)）。
  *
- * 解决的问题：逐颗 `create().spawn()` 只能服务端每 tick 采样下发，出现时刻被 tick 量化
- * （高刷下「一跳一跳地长出来」），带宽还是 O(粒子)。发射器把「长度/密度/尺寸曲线」从代码
- * 变成参数：服务端只说「沿这个锚点、每 0.15 格来一颗、活 10 tick、寿命内淡出收缩」，
- * 客户端用**插值后的锚点位置**逐渲染帧推进里程/时间，出现与淡出都是逐帧的，带宽 O(1)。
- *
- * ```
- * val trail = manager.emitter(Anchor.Movable(pos, vel))
- *     .spacing(0.15)          // 每 0.15 格一颗
- *     .life(10)               // 活 10 tick
- *     .color(Color.WHITE)
- *     .scale(0.4f)
- *     .fadeOut(8)             // 寿命最后 8 tick 淡出
- *     .shrinkTo(0.2f, 8)      // 同时收缩到 0.2 倍
- *     .spawn()
- *
- * // 投射物每 tick 挪一次锚点（变更时才发包）
- * trail.updateAnchor(Anchor.Movable(newPos, newVel))
- * // 不需要了就停
- * trail.stop()
- * ```
- *
- * 边界：游戏语义留在调用方 —— 「拖尾长度按格给、寿命＝长度÷速度、总强度倍率」这些由调用方算好
- * 再翻译成 [spacing] / [life] / [scale]；发射器只管机制。
- *
- * 与 [ParticleGroup] 的分工：组是「先有一批粒子、再整组做变换」；发射器是「按锚点运动持续产出粒子」。
+ * 游戏语义留在调用侧：「拖尾长度按格给、寿命 = 长度 ÷ 速度」这类换算先算好，
+ * 再翻译成 [spacing] / [life] / [scale]，发射器只管机制。
+ * 与 [ParticleGroup] 的分工：组先有一批粒子再整组变换，发射器按锚点运动持续产出粒子。
  */
 class ParticleEmitter internal constructor(
     private val manager: ParticleManager,
@@ -74,7 +52,7 @@ class ParticleEmitter internal constructor(
     fun anchor(): Anchor = anchor
 
     /**
-     * 按里程发射：锚点每走过 [blocks] 格发射一颗。这是拖尾的默认口径 ——
+     * 按里程发射：锚点每走过 [blocks] 格发射一颗（默认口径）；
      * 投射物快慢不影响粒子密度，长度按格给。
      */
     fun spacing(blocks: Double): ParticleEmitter {
@@ -92,7 +70,7 @@ class ParticleEmitter internal constructor(
         return this
     }
 
-    /** 按时间发射：每 [ms] 毫秒一颗；要按渲染帧粒度给就到这里给毫秒。 */
+    /** 按时间发射：每 [ms] 毫秒一颗，可给到渲染帧粒度。 */
     fun intervalMs(ms: Int): ParticleEmitter {
         require(ms > 0) { "intervalMs 必须为正（每多少毫秒一颗）" }
         mode = EmitMode.TIME
@@ -116,7 +94,7 @@ class ParticleEmitter internal constructor(
     /** 每颗粒子的缩放（编辑器单位：渲染整宽 = 值 × 0.2 格 × 贴图尺寸系数）。 */
     fun scale(scale: Float): ParticleEmitter = apply { this.scale = scale }
 
-    /** 每颗粒子出生时的速度（blocks/tick）；默认静止（拖尾要留在原地看过它淡出）。 */
+    /** 每颗粒子出生时的速度（blocks/tick）；默认静止。 */
     fun velocity(velocity: Vec3): ParticleEmitter = apply { this.velocity = velocity }
 
     /** [velocity] 的分量重载。 */
@@ -132,11 +110,11 @@ class ParticleEmitter internal constructor(
     /** 外观规格（贴图 / UV / 各向异性 / 朝向 / 加色）；给的是拷贝，之后改原对象不影响。 */
     fun visual(visual: ParticleVisual): ParticleEmitter = apply { this.visualSpec = visual.copy() }
 
-    // —— 外观的链式转发（与 ParticleHandle.Builder 同一套语义，按需创建规格对象） ——
+    // 外观的链式转发，语义与 ParticleHandle.Builder 一致；规格对象按需创建
 
     private fun spec(): ParticleVisual = visualSpec ?: ParticleVisual().also { visualSpec = it }
 
-    /** 用整张贴图（名字先经 [ParticleManager.registerTexture] 或 [ParticleStyle] 登记）。 */
+    /** 用整张贴图；名字先经 [ParticleManager.registerTexture] 或 [ParticleStyle] 登记。 */
     fun texture(name: String): ParticleEmitter = apply { spec().texture(name) }
 
     /** 用内置形状（[ParticleStyle.SQUARE] 等于清掉贴图）。 */
@@ -163,13 +141,13 @@ class ParticleEmitter internal constructor(
     fun spin(radiansX: Double, radiansY: Double, radiansZ: Double, spinLocal: Boolean = true): ParticleEmitter =
         apply { spec().spin(radiansX, radiansY, radiansZ, spinLocal) }
 
-    /** 把长轴对齐到 `to - from` 方向（一条丝沿线段躺好）。 */
+    /** 把长轴对齐到 `to - from` 方向（丝沿线段躺好）。 */
     fun alignTo(from: Vec3, to: Vec3): ParticleEmitter = apply { spec().alignTo(from, to) }
 
     /** 加法混合开关。 */
     fun additive(enabled: Boolean): ParticleEmitter = apply { spec().additive(enabled) }
 
-    /** 整条寿命曲线的乘数（同 spawn 的 [ParticleHandle.Builder.curve]）。 */
+    /** 整条寿命曲线的乘数，同 spawn 的 [ParticleHandle.Builder.curve]。 */
     fun curve(channel: CurveChannel, keys: List<CurveKey>): ParticleEmitter =
         apply { lifeCurve = (lifeCurve ?: ParticleLifeCurve.EMPTY).plus(ParticleCurve(channel, keys)) }
 
@@ -209,14 +187,13 @@ class ParticleEmitter internal constructor(
         shrinkEasing = easing
     }
 
-    /** 单个发射器同时存活的粒子上限（防止间距给太小把客户端灌满）；默认 4096。 */
+    /** 单个发射器同时存活的粒子上限；默认 4096。 */
     fun maxAlive(count: Int): ParticleEmitter = apply { this.maxAlive = count.coerceAtLeast(1) }
 
     /**
-     * 逐颗的位置抖动：每颗粒子沿**垂直运动方向**的圆盘随机偏移，半径不超过 [blocks] 格。
+     * 逐颗的位置抖动：每颗粒子沿垂直运动方向的圆盘随机偏移，半径不超过 [blocks] 格；0 = 不抖（默认）。
      *
-     * 偏移由「发射器 id + 第几颗」的哈希算出（确定性）：同一声明在任何客户端上第 N 颗的偏移都相同，
-     * 录屏/判读可复现，也不会因为纯随机让相邻两颗叠成一坨。0 = 不抖（默认）。
+     * 偏移由「发射器 id + 第几颗」的哈希算出，同一声明在任何客户端上第 N 颗的偏移都相同。
      */
     fun jitter(blocks: Double): ParticleEmitter = apply {
         require(blocks >= 0.0) { "jitter 不能为负（格）" }
@@ -225,17 +202,13 @@ class ParticleEmitter internal constructor(
 
     /**
      * 沿运动方向的偏移（格）：所有粒子整体前移（正）/后移（负）。
-     * 用来把尾迹压后一点，或让火花出现在轨迹前方。
      */
     fun offsetAlong(blocks: Double): ParticleEmitter = apply { this.offsetAlongBlocks = blocks }
 
-    /**
-     * 下发声明，返回句柄；之后一律**通过句柄**改（锚点/口径/寿命/曲线/外观），
-     * 不要再回头用这个构建器改——两边会各持一份状态，改到构建器上的不会下发。
-     */
+    /** 下发声明并返回句柄；后续改动通过句柄下发，构建器上的改动不会发包。 */
     fun spawn(): EmitterHandle = manager.startEmitter(this, anchor, toParams())
 
-    // —— 供管理器读取 ——
+    // 供管理器读取
 
     internal fun modeOf(): EmitMode = mode
 
@@ -270,10 +243,7 @@ class ParticleEmitter internal constructor(
         glowing, lightLevel, maxAlive, jitterBlocks, offsetAlongBlocks,
     )
 
-    /**
-     * 解析出最终曲线：把 [fadeOut] / [shrinkTo] 的糖按当前寿命换算成关键帧
-     * （它们在寿命末尾，所以必须等寿命定下来才算得出来）。
-     */
+    /** 解析出最终曲线：把 [fadeOut] / [shrinkTo] 的糖按当前寿命换算成关键帧。 */
     internal fun resolvedLifeCurve(): ParticleLifeCurve? {
         if (fadeOutTicks <= 0 && shrinkTicks <= 0) return lifeCurve
         var out = lifeCurve ?: ParticleLifeCurve.EMPTY

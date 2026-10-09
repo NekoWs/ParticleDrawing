@@ -6,7 +6,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
 
 /**
- * 服务端按需下发特效的 .pdrawc 字节（客户端收到 PlayEffectPayload 但缓存缺失时请求）。
+ * 服务端按需下发特效的 .pdrawc 字节，客户端缓存缺失时请求。
  */
 @Suppress("unused")
 data class EffectDataPayload(

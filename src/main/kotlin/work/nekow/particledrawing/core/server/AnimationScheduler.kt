@@ -3,7 +3,7 @@ package work.nekow.particledrawing.core.server
 import org.apache.logging.log4j.LogManager
 import org.apache.logging.log4j.Logger
 
-// 服务端动画调度器：按 game tick 执行延迟与循环任务，是编排式动画 API（ParticleGroup 的 delay/fadeIn/spin/pulse 等）的驱动核心。
+// 服务端动画调度器：按 game tick 驱动延迟与循环任务。
 // 所有方法只能在服务端主线程调用；队列无并发保护依赖这一前提。
 object AnimationScheduler {
 
@@ -25,7 +25,7 @@ object AnimationScheduler {
         queue.add(Task(serverTick + delayTicks.coerceAtLeast(1), action))
     }
 
-    /** 服务端每 tick 推进：到期任务按先后出队执行（任务内可再入队）。 */
+    /** 服务端每 tick 推进：到期任务按先后出队执行。 */
     @JvmStatic
     fun tick() {
         serverTick++

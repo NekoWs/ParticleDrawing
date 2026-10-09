@@ -13,9 +13,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 /**
- * v18 读取端回归：v17 及更早的音频夹具已随版本升级失效（旧包不再可读），
- * 这里就地造一份最小 v18 字节流，把「音频 5 个播放属性 → f32/varint 顺序」和
- * 「轨道引用 kind=5 → a:<资产id>」这两条二进制约定钉死在读取端。
+ * v18 读取端：最小 v18 字节流里，音频的 5 个播放属性按 f32/varint 顺序解出，
+ * 轨道引用 kind=5 解析成 a:<资产 id>。
  */
 class PdrawcReaderV18Test {
 
@@ -139,8 +138,7 @@ class PdrawcReaderV18Test {
         val gen = KeyPairGenerator.getInstance("Ed25519")
         gen.initialize(NamedParameterSpec.ED25519)
         val kp = gen.generateKeyPair()
-        // 别自己拿 point.y / isXOdd 拼压缩点：y 的大端表示可能短于 32 字节（首位为 0，约 1/256 的密钥），
-        // 手写补零会把 little-endian 数组整体错位，表现为「验签偶发失败」。SPKI 末尾 32 字节始终是压缩点。
+        // SPKI 末尾 32 字节始终是 Ed25519 压缩点；手写拼压缩点在 y 首字节为 0 时会错位
         val encoded = kp.public.encoded
         return encoded.copyOfRange(encoded.size - 32, encoded.size) to kp.private
     }

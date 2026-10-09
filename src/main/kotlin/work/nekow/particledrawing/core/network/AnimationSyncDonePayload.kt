@@ -8,10 +8,9 @@ import net.minecraft.resources.Identifier
 /**
  * 服务器 → 客户端「动画同步完成」信号（playToClient）。
  *
- * 服务器在发送完所有差异文件（或无差异，直接发送本包）后发出；客户端收到后视为同步结束，
- * 即可解除配置阶段的阻塞、进入 Play 世界。
+ * 服务器发完所有差异文件后发出，客户端收到即视为同步结束，可解除配置阶段的阻塞并进入世界。
  *
- * @param fileCount 本次同步下发的文件总数（用于日志/进度校验，可无差异时为 0）
+ * @param fileCount 下发的文件总数，无差异时为 0
  */
 @Suppress("unused")
 data class AnimationSyncDonePayload(

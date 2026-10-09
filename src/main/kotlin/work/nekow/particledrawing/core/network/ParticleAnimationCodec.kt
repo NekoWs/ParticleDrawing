@@ -20,15 +20,13 @@ import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.core.easing.EasingType
 
 /**
- * 代码生成 [ParticleAnimation] 的网络编解码（手写二进制，与 .pdrawc 无关，不签名）。
+ * 代码生成 [ParticleAnimation] 的网络编解码：手写二进制，与 .pdrawc 无关，不签名。
  *
- * 布局：version varint + loop + particles + tracks + groups + functions + textures +
- * groupUV + texData + groupSpinSpace + groupRotSpace + cameras + texts + audioAssets。
- * 客户端按同一版本号解析；版本不符抛异常拒绝播放。
+ * 首字段为 version varint，客户端按同一版本号解析，版本不符抛异常拒绝播放。
  */
 internal object ParticleAnimationCodec {
 
-    const val VERSION = 9   // v9：音频资产新增 vol/speed/pan/fadeIn/fadeOut（与 .pdrawc v18 对应）
+    const val VERSION = 9   // v9：音频资产含 vol/speed/pan/fadeIn/fadeOut
 
     fun write(buf: FriendlyByteBuf, anim: ParticleAnimation) {
         buf.writeVarInt(VERSION)
@@ -466,7 +464,7 @@ internal object ParticleAnimationCodec {
         buf.writeFloat(uv.fps)
         buf.writeVarInt(uv.maxFrame)
         buf.writeBoolean(uv.loop)
-        // v2：loop 后 1 字节 exprFlags，按位序写存在的表达式字符串（null=用数值字段）
+        // v2：loop 后 1 字节 exprFlags，按位序写存在的表达式字符串（null = 用数值字段）
         var exprFlags = 0
         if (uv.uvStartExpr[0] != null) exprFlags = exprFlags or (1 shl 0)
         if (uv.uvStartExpr[1] != null) exprFlags = exprFlags or (1 shl 1)

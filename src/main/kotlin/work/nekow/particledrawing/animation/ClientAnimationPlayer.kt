@@ -35,15 +35,15 @@ class ClientAnimationPlayer(
         var glowing: Boolean,
         var lightLevel: Int,
         var uv: UvData?,
-        /** t ≥ st 才为 true；隐藏门控在同步层生效（未出场粒子不生成/已回收）。 */
+        /** t ≥ st 才为 true；隐藏门控在同步层生效。 */
         var visible: Boolean = true,
         /** 是否为函数对象派生粒子（id = fxId:p<serial>）。 */
         val derived: Boolean = false,
-        /** v17：广告牌模式（false=固定朝向，按 spin 旋转）。 */
+        /** 广告牌模式（false=固定朝向，按 spin 旋转）。 */
         var billboard: Boolean = true,
-        /** v17：自转（XYZ 度）；billboard=true 时渲染端忽略。 */
+        /** 自转（XYZ 度）；billboard=true 时渲染端忽略。 */
         var spin: DoubleArray = DoubleArray(3),
-        /** v17：自转空间（true=local）。 */
+        /** 自转空间（true=local）。 */
         var spinLocal: Boolean = true,
         /** true=加法混合（来自所属函数对象的 flags bit7）；渲染端据此换 ADDITIVE_PARTICLE 管线。 */
         var additive: Boolean = false,
@@ -126,7 +126,7 @@ class ClientAnimationPlayer(
     private var prevAdvanceT = 0.0
     private var advanceInitialized = false
 
-    // —— 调试统计 ——
+    // 调试统计
     var lastAdvanceNanos: Long = 0; private set
     var frameCount: Long = 0; private set
     private var advanceNanosTotal = 0L
@@ -141,11 +141,8 @@ class ClientAnimationPlayer(
 
     /**
      * 按已过的 game tick 算播放头毫秒。
-     * 时间轴非空（maxMs > 0）走 [AnimationProgress.msAt] 的 wrap/clamp；时间轴为空（maxMs <= 0）时
-     * 播放头照样随时间前进，不能钉在 0：编辑器里函数对象 duration = 0 表示「不限时长」
-     * （animation-eval.js 的 fxParticleVisible：`duration <= 0` 视为无时长上限），播放头一直往前跑。
-     * 钉在 0 会让每帧传给脚本的时刻往回跳，函数对象运行时被反复重建（`t < rt.curMs` → resetFxRuntime），
-     * 脚本攒的状态（环形缓冲、包络、累计量）每刻清零。
+     * 时间轴非空（maxMs > 0）走 [AnimationProgress.msAt] 的 wrap/clamp；时间轴为空（maxMs <= 0，编辑器里表示「不限时长」）
+     * 时播放头照样随时间前进，钉在 0 会让传给脚本的时刻往回跳、函数对象运行时被反复重建。
      */
     private fun progressMsAt(elapsedTicks: Long): Int {
         if (maxMs > 0) return AnimationProgress.msAt(elapsedTicks, maxMs, animation.loop)
@@ -153,12 +150,9 @@ class ClientAnimationPlayer(
         return ms.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
 
-    // 静态动画（无轨道/时间轴，且公式与变量均不含 random()、脚本也没有随时间跑的阶段）：
-    // init 已算好 t=0 状态，每 tick 无需重算。5w 粒子的静态粒子云若每刻重算会白费约 70ms/tick。
-    // 存在 st 门控或入场预设时必然随时间变化，强制按动态处理。
-    // 带 tick/process 的脚本同样必然随时间变化（读 this.time / this.delta / 音频 / 被动输入）：
-    // 编辑器里这两段跟着播放头每帧求值（generators.js evaluateFxFrame），所以播放端不能因为
-    // duration == 0、时间轴为空就把整支 fx 跳过——那样画面会静悄悄地少一整块。
+    // 静态动画（无轨道/时间轴，公式与变量均不含 random()，脚本也没有随时间跑的阶段）：
+    // init 已算好 t=0 状态，每 tick 无需重算。存在 st 门控或入场预设时必然随时间变化，强制按动态处理；
+    // 带 tick/process 的脚本同样必然随时间变化（读 this.time / this.delta / 音频 / 被动输入）。
     // 延迟求值：判据要用 fxRuntimes 里解析好的脚本阶段，它在本字段之后才初始化。
     private val isStaticAnimation: Boolean by lazy {
         if (maxMs > 0) return@lazy false
@@ -168,14 +162,13 @@ class ClientAnimationPlayer(
         animation.functions.none { fx -> usesRandom(fx) }
     }
 
-    /** 该函数对象的脚本有没有随时间跑的阶段（tick / process）。解析失败（runtime 为空）按没有算：
-     *  那个对象本来就跑不起来，构造时已经报过编译错误。 */
+    /** 该函数对象的脚本有没有随时间跑的阶段（tick / process）；解析失败按没有算。 */
     private fun hasTimePhase(fx: FunctionObject): Boolean {
         val program = fxRuntimes[fx.id]?.program ?: return false
         return program.process.isNotEmpty() || program.tick.isNotEmpty()
     }
 
-    // —— 预构建求值索引（避免每 tick 线性扫描轨道 / 组 / 粒子） ——
+    // 预构建求值索引，避免每 tick 线性扫描轨道 / 组 / 粒子
     private val trackIndex: Map<TrackPr, Map<String, AnimTrack>> = buildTrackIndex()
     private val opTracks: List<AnimTrack> = animation.tracks.filter { it.mode == AnimTrack.Mode.OP }
     private val opTracksByPr: Map<TrackPr, List<AnimTrack>> = opTracks.filter { it.keyframes.isNotEmpty() }.groupBy { it.pr }
@@ -194,8 +187,7 @@ class ClientAnimationPlayer(
     }
     private val camUp = Vec3(0.0, 1.0, 0.0)
 
-    // —— UV 字段表达式 ——
-    // 普通粒子全局序号：index=全局序号、count=粒子总数（普通 + 派生，与编辑器 state.particles.length 一致）；
+    // UV 字段表达式：普通粒子 index=全局序号、count=粒子总数（普通 + 派生）；
     // 派生粒子 index=spawn 序号、uv=(0,0)。
     private val particleGlobalIndex: Map<String, Int> = animation.particles.mapIndexed { i, p -> p.id to i }.toMap()
     private val animationParticleById: Map<String, AnimParticle> = animation.particles.associateBy { it.id }
@@ -203,7 +195,7 @@ class ClientAnimationPlayer(
     // UV 表达式 runner 缓存：同一表达式字符串跨粒子复用编译产物。
     private val uvExprCache = HashMap<String, ScriptRuntime.ExpressionRunner?>()
 
-    // 普通粒子 UV 表达式复用的 ProcessCtx（每次求值前改字段；vars 恒为 emptyMap）。
+    // 普通粒子 UV 表达式复用的 ProcessCtx；每次求值前改字段，vars 恒为 emptyMap。
     private val uvCtx = ScriptRuntime.ProcessCtx(
         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, emptyMap(),
         fastMath = false, duration = 0.0,
@@ -252,7 +244,7 @@ class ClientAnimationPlayer(
         return UvData(uv.texture, uv.mode, uv.texSize, start, size, step, fps, maxFrame, uv.loop)
     }
 
-    // —— 函数对象脚本运行时（setup 一次、tick 补跑、process 每帧一次） ——
+    // 函数对象脚本运行时：setup 一次、tick 补跑、process 每帧一次
     private val fxById: Map<String, FunctionObject> = animation.functions.associateBy { it.id }
 
     private class FxRuntime(
@@ -265,15 +257,15 @@ class ClientAnimationPlayer(
         var cursorMs = 0.0
         var curMs = 0.0
         /**
-         * 上一次真正跑过 tick/process 的时刻（毫秒）。this.delta = 本次时刻 − 它，上限 100ms；
-         * null = 本运行时还没跑过任何一个阶段，此时 this.delta 记 0（编辑器 generators.js 的 runtime.lastPhaseMs 同一套）。
+         * 上一次真正跑过 tick/process 的时刻（毫秒）。this.delta = 当前时刻 − 它，上限 100ms；
+         * null = 本运行时还没跑过任何一个阶段，此时 this.delta 记 0。
          */
         var lastPhaseMs: Double? = null
         /** 函数对象级视图变换（脚本 this.viewScale / this.viewOffset）：本对象的派生粒子专用。 */
         val view = ViewTransform()
 
         companion object {
-            // 与编辑器 generators.js 一致：阻止恶意脚本逐帧无限 spawn 造成内存/渲染 DoS。
+            // 每帧 spawn 上限，防止脚本无限 spawn 造成内存/渲染 DoS。
             private const val MAX_FX_PARTICLES = 100_000
         }
 
@@ -313,7 +305,7 @@ class ClientAnimationPlayer(
             return host
         }
 
-        // —— 循环回卷快照：避免回卷时重新 setup / 重建粒子造成顿挫，并保证 rand/global 确定性。 ——
+        // 循环回卷快照：回卷时直接恢复，避免重新 setup / 重建粒子。
         // loopSnapshot：process 前（首圈活动窗口首个 tick、cursor == st）捕获，供一般向后 seek 正向补跑。
         // loopDoneSnapshot：process 后（t == st）捕获，供回卷恰好落在 st 时直接恢复并跳过 process。
         var loopSnapshot: LoopSnapshot? = null
@@ -402,8 +394,7 @@ class ClientAnimationPlayer(
         }
 
         private fun applySnapshot(s: LoopSnapshot) {
-            // 原地恢复：按 index 复用本圈仍存活的句柄，只回写字段；
-            // 避免每圈全量重新分配粒子句柄（每个句柄还带 3 个 DoubleArray + fields Map）造成 GC 顿挫。
+            // 原地恢复：按 index 复用本圈仍存活的句柄，只回写字段。
             val aliveByIndex = HashMap<Int, FxParticleHost>(particles.size)
             for (h in particles) {
                 val host = h as FxParticleHost
@@ -429,12 +420,11 @@ class ClientAnimationPlayer(
                 for ((k, v) in hs.fields) host.fields[k] = deepCopyScriptValue(v)
                 particles.add(host)
             }
-            // aliveByIndex 剩余的是本圈额外 spawn / 已被 kill 的句柄，不再入列，自然丢弃。
+            // aliveByIndex 剩余的是本圈额外 spawn / 已被 kill 的句柄，不再入列。
             spawnSerial = s.spawnSerial
             cursorMs = s.cursorMs
             curMs = s.curMs
-            // 回到本圈起点后时刻是往回走的，this.delta 不能拿回卷前的旧时刻算（会得到负值被钳成 0，
-            // 语义上却是「上一次阶段」错位）：按编辑器的重建路径记成「还没跑过」，下一个阶段给 0。
+            // 回到本圈起点后时刻是往回走的，this.delta 按「还没跑过阶段」记，下一个阶段给 0。
             lastPhaseMs = null
             objState.globals.clear()
             for ((k, v) in s.globals) objState.globals[k] = deepCopyScriptValue(v)
@@ -464,7 +454,7 @@ class ClientAnimationPlayer(
         rt.cursorMs = ceil(fx.st.toDouble() / 50.0) * 50.0 - 50.0
         rt.curMs = fx.st.toDouble()
         ScriptRuntime.runSpawnSetup(program, obj, makeCtx(fx, rt, fx.st.toDouble()))
-        // 与编辑器一致：setup 不算「跑过阶段」，第一个 tick/process 的 this.delta 记 0。
+        // setup 不算「跑过阶段」，第一个 tick/process 的 this.delta 记 0。
         rt.lastPhaseMs = fx.st.toDouble()
         rt
     } catch (e: Throwable) {
@@ -477,14 +467,13 @@ class ClientAnimationPlayer(
         rt.spawnSerial = 0
         rt.cursorMs = ceil(fx.st.toDouble() / 50.0) * 50.0 - 50.0
         rt.curMs = fx.st.toDouble()
-        // 与编辑器一致：向后 seek 重建 objState（fresh globals + fresh PRNG），
-        // 避免 setup 反复在脏 global / 已推进的 rand 状态上叠加导致漂移。
+        // 向后 seek 重建 objState（fresh globals + fresh PRNG），避免在脏状态上叠加。
         rt.objState.globals.clear()
         rt.objState.constGlobals.clear()
         rt.objState.topLevelDone = false
         rt.objState.rand.a = fx.seed
         rt.view.reset()
-        // 重建后第一个 process/tick 的 this.delta 记 0（编辑器重建运行时后 lastPhaseMs 也是空的）。
+        // 重建后第一个 process/tick 的 this.delta 记 0。
         rt.lastPhaseMs = null
         try {
             ScriptRuntime.runSpawnSetup(rt.program, rt.objState, makeCtx(fx, rt, fx.st.toDouble()))
@@ -494,8 +483,7 @@ class ClientAnimationPlayer(
     }
 
     /**
-     * this.delta：本次阶段时刻距上一次跑过 tick/process 的毫秒数，上限 100ms（编辑器 MAX_PHASE_DELTA_MS）。
-     * 首次执行前给 0——编辑器用 lastPhaseMs == null 表达同一件事。
+     * this.delta：当前阶段时刻距上一次跑过 tick/process 的毫秒数，上限 100ms；首次执行前给 0。
      */
     private fun fxDeltaMs(rt: FxRuntime, t: Double): Double {
         val last = rt.lastPhaseMs ?: return 0.0
@@ -519,7 +507,7 @@ class ClientAnimationPlayer(
                 animation.texts.firstOrNull { it.name == name }?.let { TextValue(it) }
                     ?: animation.audioAssets.firstOrNull { it.name == name }?.let { a ->
                         val owner = "a:" + a.id
-                        // v18：内容位置按倍速折算，倍速/是否在窗口内都走轨道求值（与编辑器同一套公式）
+                        // 内容位置按倍速折算，倍速与是否在窗口内都走轨道求值
                         val speed = audioSpeedOf(audioProp(owner, TrackPr.SPEED, a.speed, t)).coerceIn(0.25, 4.0)
                         val local = (t - a.st) * speed
                         AudioValue(a, t, local >= 0.0 && local < a.durMs, speed)
@@ -603,7 +591,7 @@ class ClientAnimationPlayer(
         return fxById[id.substring(0, marker)]
     }
 
-    // 标记「视觉会随时间变化」的普通粒子（有轨道/速度/入场过渡）；其余静态粒子只更新 st/life 可见性，省去每 tick 重算与分配。
+    // 标记「视觉会随时间变化」的普通粒子（有轨道/速度/入场过渡）；其余静态粒子每 tick 只更新 st/life 可见性。
     // 派生粒子由函数对象循环求值，不在本集合内。
     private fun buildDynamicParticleIds(): Set<String> {
         val ids = HashSet<String>()
@@ -634,8 +622,7 @@ class ClientAnimationPlayer(
         }
         // 函数对象运行时已在字段初始化阶段构建（setup 各执行一次）；派生粒子状态由 advanceFunctions 的
         // reconcile 按当前存活粒子动态创建/更新/删除。
-        // 按服务端权威进度定位到当前帧（elapsed = currentGameTick - startGameTick）：
-        // 新播放等价于从 0 开始；重发/迟到加入则直接跳到其他玩家正在看的同一帧。
+        // 按服务端权威进度定位到当前帧（elapsed = currentGameTick - startGameTick）。
         val initial = if (initialMs >= 0) initialMs else progressMsAt((currentGameTick - startGameTick))
         currentMs = initial
         advanceTo(initial.toDouble())
@@ -644,8 +631,7 @@ class ClientAnimationPlayer(
 
     /**
      * 以维度 gameTime 为权威时钟推进一 tick。
-     * 所有客户端使用同一 startGameTick 与同一 gameTime，因此帧号完全一致；
-     * 本地不再各自递增，杜绝客户端间漂移与重发后从头重播的问题。
+     * 所有客户端使用同一 startGameTick 与同一 gameTime，因此帧号完全一致。
      */
     fun tick(gameTick: Long): Boolean {
         if (finished) return false
@@ -735,7 +721,7 @@ class ClientAnimationPlayer(
 
     fun stop() { finished = true }
 
-    // 查询摄像机在 t 时刻的姿态；与编辑器 cameraPoseAt 语义一致。
+    // 查询摄像机在 t 时刻的姿态。
     // pos/target：set=绝对值、op=增量；roll 静态不走关键帧；fov 不分 set/op。
     // 旋转 = 位置绕 target 公转：world 绕世界轴，local 按 lookAt+roll 朝向做 intrinsic XYZ。摄像机不存在时返回 null。
     fun cameraPoseAt(camId: String, t: Double): CameraPose? {
@@ -785,7 +771,7 @@ class ClientAnimationPlayer(
 
     /**
      * 摄像机 lookAt+roll 朝向基（列 = 世界坐标）：(right, camUp, back)。
-     * 与编辑器一致：局部 +Z = normalize(pos − target)（即局部 −Z 指向目标），
+     * 局部 +Z = normalize(pos − target)（即局部 −Z 指向目标），
      * right = normalize(cross(up, back))，camUp = cross(back, right)，再绕 back 翻滚 roll。
      * 视线与世界 up 平行（lookAt 退化）时返回 null。
      */
@@ -800,7 +786,7 @@ class ClientAnimationPlayer(
         return Triple(right.rotateAround(back, rz), up.rotateAround(back, rz), back)
     }
 
-    /** 在给定正交基（列 = 世界坐标）下做 intrinsic XYZ 旋转（绕原点；与编辑器 M_look·M_local·M_lookᵀ 等价）。 */
+    /** 在给定正交基（列 = 世界坐标）下做 intrinsic XYZ 旋转（绕原点；等价于 M_look·M_local·M_lookᵀ）。 */
     private fun rotateAroundFrame(p: Vec3, rot: DoubleArray, xAxis: Vec3, yAxis: Vec3, zAxis: Vec3): Vec3 {
         var r = p
         val rx = Math.toRadians(rot[0])
@@ -825,8 +811,7 @@ class ClientAnimationPlayer(
     }
 
     fun updateVariable(name: String, value: String) {
-        // 非数字值：忽略（不把用户参数悄悄清零——静默降级禁止）。数字值：整组生效——
-        // §5.4 契约「对整组生效」，所有声明该变量的函数对象都要更新，不是第一个。
+        // 非数字值忽略；数字值对整组生效：所有声明该变量的函数对象都更新。
         val numeric = value.toDoubleOrNull() ?: return
         for (fx in animation.functions) {
             val v = fx.vars[name] ?: continue
@@ -849,7 +834,7 @@ class ClientAnimationPlayer(
 
     /**
      * 每渲染帧推进函数对象脚本到渲染帧时刻 t（毫秒，可为小数）。
-     * 与编辑器语义一致：process 每渲染帧执行一次；tick 只在 50ms 边界补跑；寿命按真实经过毫秒递减。
+     * process 每渲染帧执行一次；tick 只在 50ms 边界补跑；寿命按真实经过毫秒递减。
      * 顺带刷新 UV，使 process 新 spawn 的派生粒子当帧即获得正确贴图。
      */
     fun advanceFrame(t: Double) {
@@ -871,7 +856,7 @@ class ClientAnimationPlayer(
         }
     }
 
-    /** 仅 reconcile 函数对象（宿主状态 → 渲染状态），不跑 process/tick；用于循环回卷后立即刷新派生粒子状态。 */
+    /** 仅 reconcile 函数对象（宿主状态 → 渲染状态），不跑 process/tick；循环回卷后立即刷新派生粒子状态。 */
     private fun reconcileFunctions(t: Double) {
         for (fx in animation.functions) {
             val rt = fxRuntimes[fx.id] ?: continue
@@ -895,7 +880,7 @@ class ClientAnimationPlayer(
                 s.pos = origin.add(particlePosition(p, t))
                 s.color = applyEntrance(particleColor(p, t), p.ent, localT)
                 particleScaleInto(p, t, s.scale)
-                // v17：粒子级自转（仅非广告牌时渲染端可见）
+                // 粒子级自转（仅非广告牌时渲染端可见）
                 s.billboard = p.billboard
                 s.spinLocal = p.spinLocal
                 val sp = spinVectorAt(p.id, t)
@@ -904,7 +889,7 @@ class ClientAnimationPlayer(
         }
     }
 
-    /** UV 字段表达式求值（普通 + 派生粒子统一；n=总粒子数，与编辑器 state.particles.length 一致）。 */
+    /** UV 字段表达式求值（普通 + 派生粒子统一；n=总粒子数）。 */
     private fun advanceUv(t: Double) {
         val n = states.size.toDouble()
         for ((id, s) in states) {
@@ -913,9 +898,8 @@ class ClientAnimationPlayer(
             val ownUv = if (fx != null) fx.uv else animationParticleById[id]?.uv
             val resolvedUv = resolveUV(id, ownUv)
             if (resolvedUv != null && resolvedUv.hasExpressions()) {
-                // 与编辑器 ensureOut 一致：先把 out 归到默认值，再逐字段镜像本粒子状态。
-                // rotation/billboard/spinSpace 编辑器在 UV 表达式里也不镜像（只留在默认值），
-                // 这里同样不写；靠这次重置保证「上一个粒子写过的值」不会串到下一个粒子。
+                // 先把 out 归到默认值，再逐字段镜像本粒子状态；rotation/billboard/spinSpace 不镜像（与编辑器一致）。
+                // 这次重置保证上一个粒子写过的值不会串到下一个粒子。
                 uvCtx.resetOut()
                 uvCtx.i = host?.index?.toDouble() ?: (particleGlobalIndex[id] ?: 0).toDouble()
                 uvCtx.n = n
@@ -949,7 +933,7 @@ class ClientAnimationPlayer(
         }
     }
 
-    // 把函数对象推进到时间 t（毫秒，与编辑器 evaluateFxFrame 同语义）。
+    // 把函数对象推进到时间 t（毫秒）。
     // t < st 或超时长只保持 setup；向后 seek 重建运行时；正常则按经过毫秒递减寿命、补跑 50ms 边界 tick()、再跑一次 process()。
     private fun advanceFx(fx: FunctionObject, rt: FxRuntime, t: Double) {
         val st = fx.st.toDouble()
@@ -966,7 +950,7 @@ class ClientAnimationPlayer(
                 if (rt.program.tick.isNotEmpty()) {
                     try {
                         ScriptRuntime.runTickFrame(rt.program, rt.objState, makeCtx(fx, rt, b))
-                        // 与编辑器一致：跑过的阶段才算「上一次」，this.delta 从它起算。
+                        // 跑过的阶段才算「上一次」，this.delta 从它起算。
                         rt.lastPhaseMs = b
                     } catch (e: Throwable) {
                         println("[pdrawc] 函数对象 ${fx.id} tick 求值失败：${e.message}")
@@ -1050,10 +1034,10 @@ class ClientAnimationPlayer(
             val s = states.getOrPut(id) {
                 ParticleState(id, Vec3.ZERO, Color.WHITE, floatArrayOf(1f, 1f, 1f), false, 0, null, visible = true, derived = true, additive = fx.additive)
             }
-            s.additive = fx.additive   // 已在状态里时也保持跟随函数对象（导出文件里该字段不变，但保持一致）
-            // 函数对象级视图变换（脚本 this.viewScale / this.viewOffset）：整条迹线的全局增益与直流偏移。
-            // 套在粒子自己的局部坐标上——与脚本 p.position 同一套坐标系，也就是下面这条链路（center → 自转 →
-            // pos op → 公转）的**最前**；于是对象有自转/公转时偏移会被一起带着转（有意语义）。
+            s.additive = fx.additive   // 已在状态里时也保持跟随函数对象
+            // 函数对象级视图变换（脚本 this.viewScale / this.viewOffset）：整条迹线的全局增益与偏移。
+            // 套在粒子自己的局部坐标上，即下面这条链路（center → 自转 →
+            // pos op → 公转）的最前；于是对象有自转/公转时偏移会被一起带着转。
             val vs = rt.view.scale
             val vo = rt.view.offset
             var pos = Vec3(
@@ -1062,7 +1046,7 @@ class ClientAnimationPlayer(
                 host.pos[2] * vs + vo[2] + cz,
             )
             if (hasSpin) pos = if (fx.spinLocal) rotateAroundLocal(pos, spinPivot, spin) else rotateAround(pos, spinPivot, spin)
-            // pos op 位移必须先于公转：函数对象的实际世界位置应绕公转中心旋转。
+            // pos op 位移先于公转：函数对象的实际世界位置要绕公转中心旋转。
             pos = Vec3(pos.x + dx, pos.y + dy, pos.z + dz)
             if (hasRot) pos = if (fx.rotLocal) rotateAroundLocalOrbit(pos, orbitPivot, rot, spin, fx.spinLocal) else rotateAround(pos, orbitPivot, rot)
             s.pos = origin.add(pos)
@@ -1076,7 +1060,7 @@ class ClientAnimationPlayer(
                 fx.ent, fxLocalT,
             )
             fxScaleInto(fx.id, host.scale, t, s.scale)
-            // 尺寸同样按全局增益均匀缩放（脚本会写 width = lineW / viewScale 来补偿线宽）
+            // 尺寸同样按全局增益均匀缩放（脚本用 width = lineW / viewScale 补偿线宽）
             if (vs != 1.0) {
                 val vsf = vs.toFloat()
                 s.scale[0] *= vsf
@@ -1086,7 +1070,7 @@ class ClientAnimationPlayer(
             s.glowing = host.glow
             s.lightLevel = host.light.toInt().coerceIn(0, 15)
             s.visible = visible
-            // v17：脚本逐粒子广告牌/自转（billboard=true 时渲染端忽略 spin）
+            // 脚本逐粒子广告牌/自转（billboard=true 时渲染端忽略 spin）
             s.billboard = host.billboard
             s.spinLocal = host.spinLocal
             s.spin[0] = host.rotation[0]; s.spin[1] = host.rotation[1]; s.spin[2] = host.rotation[2]
@@ -1236,8 +1220,8 @@ class ClientAnimationPlayer(
     }
 
     /**
-     * 音频对象播放属性求值（v18）：属主 [owner] = "a:<资产id>"，[pr] 为 VOL/SPEED/PAN/FADE_IN/FADE_OUT。
-     * 没有轨道或轨道无关键帧时取资产自带的基础值 [base]（与编辑器 audioPropAt 一致）。
+     * 音频对象播放属性求值：属主 [owner] = "a:<资产id>"，[pr] 为 VOL/SPEED/PAN/FADE_IN/FADE_OUT。
+     * 没有轨道或轨道无关键帧时取资产自带的基础值 [base]。
      */
     fun audioProp(owner: String, pr: TrackPr, base: Double, t: Double): Double {
         val tr = findTrackByPr(pr, owner) ?: return base
@@ -1245,7 +1229,7 @@ class ClientAnimationPlayer(
         return trackValueAt(tr, t, base)
     }
 
-    /** 倍速兜底：非有限值/<=0 一律按 1（与编辑器 audioSpeedOf 一致）。 */
+    /** 倍速兜底：非有限值/<=0 一律按 1。 */
     private fun audioSpeedOf(speed: Double): Double = if (speed.isFinite() && speed > 0.0) speed else 1.0
 
     private fun componentValueAt(p: AnimParticle, pr: TrackPr, t: Double): Double {
@@ -1383,7 +1367,7 @@ class ClientAnimationPlayer(
     }
 
     private fun particleScaleInto(p: AnimParticle, t: Double, out: FloatArray) {
-        // 粒子缩放只有 X/Y（四边形两条边长由 sx/sy 决定）；组 scl 不再影响粒子大小，改为位置级整体缩放。
+        // 粒子缩放只有 X/Y（四边形两条边长由 sx/sy 决定）；组 scl 不影响粒子大小，作用于位置级整体缩放。
         // 就地写进状态里那份数组：这里是每帧每颗粒子都跑的热路径，不能每次新建
         out[0] = ownScaleComponent(p, TrackPr.SCL_X, t).toFloat().coerceAtLeast(0.01f)
         out[1] = ownScaleComponent(p, TrackPr.SCL_Y, t).toFloat().coerceAtLeast(0.01f)
@@ -1399,16 +1383,16 @@ class ClientAnimationPlayer(
 
     /**
      * 函数对象整体缩放（三分量）：代码块输出的尺寸 [base]（标量写法是 [s, s, 1]，vec2 的 z 也已是 1），
-     * 再叠加作用于 `f:fxId` 的 `scl.x/y/z` 轨道（存在则覆盖对应分量，与编辑器 currentVisualDerived 语义一致）。
+     * 再叠加作用于 `f:fxId` 的 `scl.x/y/z` 轨道（存在则覆盖对应分量）。
      */
     private fun fxScaleInto(fxId: String, base: DoubleArray, t: Double, out: FloatArray) {
-        // 就地写进状态里那份数组（原因同 particleScaleInto）
+        // 就地写进状态里那份数组，避免每帧每粒子新建
         out[0] = scalarAt(TrackPr.SCL_X, "f:" + fxId, t, finiteOrOne(base[0])).toFloat().coerceAtLeast(0.01f)
         out[1] = scalarAt(TrackPr.SCL_Y, "f:" + fxId, t, finiteOrOne(base[1])).toFloat().coerceAtLeast(0.01f)
         out[2] = scalarAt(TrackPr.SCL_Z, "f:" + fxId, t, finiteOrOne(base[2])).toFloat().coerceAtLeast(0.01f)
     }
 
-    /** 脚本给的尺寸可能是 NaN/Inf（表达式算爆了）：按 1 兜底，别把坏尺寸传进渲染。 */
+    /** 脚本给的尺寸可能是 NaN/Inf（表达式算爆了）：按 1 兜底，避免坏尺寸进渲染。 */
     private fun finiteOrOne(v: Double): Double = if (v.isFinite()) v else 1.0
 
     /**
@@ -1421,7 +1405,7 @@ class ClientAnimationPlayer(
             if (!okey.startsWith("g:")) continue // 文字对象无组级 UV
             animation.groupUV[okey.removePrefix("g:")]?.let { if (it.texture != null) return it }
         }
-        // 派生粒子：函数对象级 uv 已在 ownUv 传入；此处兜底再查一次（按 id 反查 fx）
+        // 派生粒子兜底：按 id 反查函数对象级 uv
         val fx = particleFunction(stateId)
         if (fx?.uv != null && fx.uv.texture != null) return fx.uv
         return ownUv

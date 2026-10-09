@@ -7,14 +7,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * 渲染帧 process 时刻的单调性（`ProcessClock`）。
+ * 渲染帧 process 时刻的单调游标：同一播放头基准下只前进、不回退。
  *
- * 目标时刻 =「播放头毫秒 + partialTick × 每 tick 毫秒」，两个来源不是同一套时钟：
- * 原版 `DeltaTracker.Timer.getGameTimeDeltaPartialTick(false)` 在关卡不按常速跑时（frozen）直接
- * 返回 1.0F，暂停恢复时把残余量回填成暂停前的值，tickrate 与固定 50ms 口径不一致时帧内推进量也对不上。
- * 实测（第 1 条）：纯粹的 60/144/30fps 正常路径下这个和本来就是单调的（回退次数 0）——20Hz 的抖动
- * 不是时间基准回退造成的；回退只出现在上面那几条边界路径上。[ProcessClock] 把回退钳住，
- * 保证 process 不会倒着重算（脚本攒的环形缓冲/包络/PRNG 会被 resetFxRuntime 整块清掉）。
+ * process 时刻 = 播放头毫秒 + partialTick × 每 tick 毫秒，两个来源不是同一套时钟，
+ * 原版在 frozen 帧、暂停恢复、tickrate 变化时都可能给出倒退的 partialTick。
+ * 播放头自身回退（循环回卷 / seek）是合法倒退，此时游标跟着倒退。
  *
  * 帧表由 [frameSchedule] 按原版计时器生成。
  */
@@ -58,7 +55,7 @@ class ProcessClockTest {
             prev = t
         }
         assertEquals(0.0, maxBackward, "单调游标不许让 process 时刻回退")
-        // 保护确实生效过（frozen 帧之后那一帧被钳住），不是形同虚设
+        // frozen 帧之后那一帧被钳住
         assertTrue(maxHold > 1.0, "冻结帧之后的回落应当被钳住，实测钳掉 ${maxHold}ms")
     }
 
@@ -68,7 +65,7 @@ class ProcessClockTest {
         for (base in 0..600 step 50) {
             assertEquals(base + 37.5, clock.next(base, 0.75, 50.0, 300_000), 1e-9, "前进段应当等于原始表达式")
         }
-        // 回卷到 100ms：播放头回退是合法倒退，游标必须跟着回去，不能把脚本钉在 637.5
+        // 回卷到 100ms：播放头回退是合法倒退，游标跟着回去
         assertEquals(100.0, clock.next(100, 0.0, 50.0, 300_000), 1e-9, "回卷后 process 时刻必须跟着倒退")
         assertEquals(150.0, clock.next(150, 0.0, 50.0, 300_000), 1e-9)
     }

@@ -17,17 +17,16 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 派生粒子的 tick 间插值必须为 0（症状「重影」）。
+ * 派生粒子的 tick 间插值必须为 0（症状为重影）。
  *
- * 派生粒子的位置由脚本 process 逐渲染帧整体重写：一个 game tick 内它已经换了整整一幅图形。
- * 只按 game tick 写进桥接粒子、再让原版按 partialTick 在 xo（上一 tick）与 x（本 tick）之间做线性插值，
- * 画出来就是相邻两幅迹线的混合，并且整条迹线在 tick 内沿弦滑动。这里做两件事：
- *  1. 量症状：跑一遍真实播放器，量每段每 tick 的位移（= 会被插值的那段弦）与弦中点偏离真实曲线的量；
- *  2. 钉修法：桥接端点由生产代码的 [ClientAnimationManager.snapDirectWrite] 决定——
- *     派生粒子必须取 true（`xo=x`，插值量恒 0），普通粒子必须取 false（保留插值做帧率平滑）。
+ * 派生粒子的位置由脚本 process 逐渲染帧整体重写，一个 game tick 内已经换了整整一幅图形；
+ * 若只按 game tick 写进桥接粒子、再由原版按 partialTick 在上一 tick 与本 tick 之间插值，
+ * 画出来就是相邻两幅迹线的混合。这里量症状（每段每 tick 的位移与弦中点偏离真实曲线的量），
+ * 并验证桥接端点由生产代码的 [ClientAnimationManager.snapDirectWrite] 决定：
+ * 派生粒子取 true（`xo=x`，插值量恒 0），普通粒子取 false（保留插值做帧率平滑）。
  *
- * 无游戏进程时构造不出 `BridgeParticle`（构造要 Minecraft 的粒子图集与 ClientLevel），所以「插值量为 0」
- * 这一条落在判定函数与端点语义上；弦长实测证明这个量本身不是 0，测试不是空转。
+ * 无游戏进程时构造不出 `BridgeParticle`（构造要 Minecraft 的粒子图集与 ClientLevel），
+ * 所以插值量为 0 这一条落在判定函数与端点语义上。
  */
 class DerivedParticleInterpolationTest {
 
@@ -78,7 +77,7 @@ class DerivedParticleInterpolationTest {
     }
 
     @Test
-    fun `症状实测：每段每 tick 的位移非零（snap=false 时就是插值量）`() {
+    fun `症状：每段每 tick 的位移非零（snap=false 时就是插值量）`() {
         val snaps = tickSnapshots(ClientAnimationPlayer(animation(), Vec3.ZERO, 0L, 0L), 400)
         assertTrue(snaps.size > 100, "帧表应当跑出足够多的 tick 快照，实际 ${snaps.size}")
 
@@ -96,9 +95,9 @@ class DerivedParticleInterpolationTest {
             }
         }
         val meanChord = sumChord / n
-        // 图形半径 1.2×0.9 世界单位：位移均值到图上量级 = 被插值的是「两条完全不同的迹线」
-        assertTrue(meanChord > 0.5, "派生粒子每 tick 位移应达图形量级，实测均值 $meanChord")
-        assertTrue(maxChord > 1.0, "最坏一格位移应超过 1 个世界单位，实测 $maxChord")
+        // 图形半径 1.2×0.9 世界单位：位移均值到图上量级 = 被插值的是两条完全不同的迹线
+        assertTrue(meanChord > 0.5, "派生粒子每 tick 位移应达图形量级，均值 $meanChord")
+        assertTrue(maxChord > 1.0, "最坏一格位移应超过 1 个世界单位，最大 $maxChord")
     }
 
     @Test
@@ -112,7 +111,7 @@ class DerivedParticleInterpolationTest {
             if (b.frameTime <= a.frameTime) continue
             val midT = (a.frameTime + b.frameTime) * 0.5
             for (i in a.pos.indices) {
-                // partialTick=0.5 时原版画在弦中点；真实曲线在两端时刻的中点处 —— 两者之差就是重影偏移
+                // partialTick=0.5 时原版画在弦中点，真实曲线在两端时刻的中点处：两者之差就是重影偏移
                 val midX = (a.pos[i].x + b.pos[i].x) * 0.5
                 val midY = (a.pos[i].y + b.pos[i].y) * 0.5
                 val angle = midT * 0.02 + i * 0.15
@@ -121,7 +120,7 @@ class DerivedParticleInterpolationTest {
                 maxMid = max(maxMid, sqrt(dx * dx + dy * dy))
             }
         }
-        assertTrue(maxMid > 0.05, "弦中点应明显偏离真实曲线（重影可见），实测最大偏移 $maxMid 世界单位")
+        assertTrue(maxMid > 0.05, "弦中点应明显偏离真实曲线（重影可见），最大偏移 $maxMid 世界单位")
     }
 
     @Test

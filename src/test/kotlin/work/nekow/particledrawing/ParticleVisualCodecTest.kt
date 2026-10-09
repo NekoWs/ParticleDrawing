@@ -16,9 +16,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 生成载荷里的外观字段（协议契约）：
- * 默认外观只多 1 字节；贴图按 id 引用（不写名字）；服务端没登记过的名字退回内联名；
- * 未知 id 回落「无贴图」但**不丢粒子**。
+ * 校验生成载荷里外观字段的协议契约：默认外观不额外占字节，贴图按 id 引用，
+ * 未登记的名字内联下发，未知 id 回落成无贴图。
  */
 class ParticleVisualCodecTest {
 
@@ -79,7 +78,7 @@ class ParticleVisualCodecTest {
     @Test
     fun `未知 id：回落无贴图而不是丢粒子`() {
         assertNull(TextureRegistry.nameOf(987654))
-        // 白盒：直接构造「只带贴图位、id 未知」的字段块
+        // 直接构造「只带贴图位、id 未知」的字段块
         val b = buf()
         b.writeVarInt(1)          // ParticleVisualCodec 的 FLAG_TEXTURE
         b.writeVarInt(987654)

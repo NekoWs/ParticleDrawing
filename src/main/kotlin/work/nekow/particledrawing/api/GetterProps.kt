@@ -35,13 +35,13 @@ enum class EntityProp(val wire: String) {
     companion object {
         private val BY_WIRE = entries.associateBy { it.wire }
 
-        /** 按线上名反查；未知名返回 null（调用方 fail-fast）。 */
+        /** 按线上名反查；未知名返回 null。 */
         fun fromWire(wire: String): EntityProp? = BY_WIRE[wire]
     }
 }
 
 /**
- * 世界环境属性枚举：`get_world_<wire>()` 的封闭词表。世界输入无需登记句柄。
+ * 世界环境属性枚举：`get_world_<wire>()` 的封闭词表，无需登记句柄。
  */
 enum class WorldProp(val wire: String) {
     /** 主世界时钟当日刻（0~23999）。 */
@@ -61,7 +61,7 @@ enum class WorldProp(val wire: String) {
     companion object {
         private val BY_WIRE = entries.associateBy { it.wire }
 
-        /** 按线上名反查；未知名返回 null（调用方 fail-fast）。 */
+        /** 按线上名反查；未知名返回 null。 */
         fun fromWire(wire: String): WorldProp? = BY_WIRE[wire]
     }
 }

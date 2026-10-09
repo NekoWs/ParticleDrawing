@@ -9,7 +9,6 @@ import net.minecraft.resources.Identifier
  * 服务器 → 客户端「程序化贴图内容块」（playToClient）。
  *
  * 大贴图按 [CHUNK_SIZE] 拆分逐块发送，客户端按 [id] 累积，收到 `eof=true` 的块后解码注册。
- * 进服时服务器把已登记的全部贴图推一遍，运行中新登记的立即广播（见 `TextureSyncService`）。
  *
  * @param id 贴图协议 id（与逐粒子载荷里引用的是同一个 id）
  * @param name 贴图名（客户端按名解码缓存，重名同名同图才复用）
@@ -25,7 +24,7 @@ data class ParticleTexturePayload(
 ) : CustomPacketPayload {
 
     companion object {
-        /** 单包字节上限（约 32 KiB）：贴图通常几 KB，留足够余量给协议包体。 */
+        /** 单包字节上限（32 KiB）。 */
         const val CHUNK_SIZE: Int = 32 * 1024
 
         @JvmField

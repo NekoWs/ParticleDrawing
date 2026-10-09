@@ -10,12 +10,10 @@ import kotlin.test.Test
 import kotlin.test.assertTrue
 
 /**
- * 内置形状贴图的**人眼复核预览**：把像素写成 PNG（`build/preview/`），跑测试时顺带产出。
+ * 内置形状贴图的人眼复核预览：把像素写成 PNG（`build/preview/`），跑测试时顺带产出。
  *
- * 不是实机截图——朝向、混合由渲染层负责；这里只看贴图本身对不对：
- * 白方块是硬边、柔边圆点有没有过渡、线段两端有没有渐隐；
- * `thread_preview.png` 再用同一套贴图按「沿线段长度拉长 + 两端收细 + 加法混合」合成一条丝，
- * 复核「一条丝 = 一张贴图」这个观感方向。
+ * 不覆盖朝向与混合（由渲染层负责），只看贴图本身：白方块是硬边、柔边圆点有没有过渡、
+ * 线段两端有没有渐隐；`thread_preview.png` 再用同一套贴图合成一条丝，复核观感方向。
  */
 class BuiltinTexturePreviewTest {
 
@@ -30,7 +28,7 @@ class BuiltinTexturePreviewTest {
         assertTrue(File(outDir, "thread_preview.png").length() > 0)
     }
 
-    /** 三联图：默认白方块 / 柔边圆点 / 线段，各放大 8 倍（最近邻，方便看像素）。 */
+    /** 三联图：默认白方块 / 柔边圆点 / 线段，各放大 8 倍（最近邻，便于看像素）。 */
     private fun writeContactSheet(file: File) {
         val scale = 8
         val size = BuiltinTextures.SIZE
@@ -39,7 +37,7 @@ class BuiltinTexturePreviewTest {
         val h = size * scale + gap * 2
         val img = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
 
-        // 背景：中灰棋盘，透明处一看就分得出（合成时不做加法，直接 alpha 混合）
+        // 背景：中灰棋盘，透明处一看就分得出（直接 alpha 混合）
         for (y in 0 until h) {
             for (x in 0 until w) {
                 val c = if (((x / 8) + (y / 8)) % 2 == 0) 0xFF3A3A3A.toInt() else 0xFF4A4A4A.toInt()
@@ -74,13 +72,13 @@ class BuiltinTexturePreviewTest {
         val cx = w / 2.0
         val cy = h / 2.0
 
-        // 背景的暖色辉光（加法混合铺一层大软斑）——黑核要有东西可「吃」才看得出是黑核
+        // 背景的暖色辉光（加法混合铺一层大软斑），黑核要有背景可压才看得出是黑核
         for (i in 0 until 40) {
             val r = 40.0 + i * 6.0
             softBlob(img, dot, cx, cy, r * 2.2, 0x14FF8A3C, additive = true)
         }
 
-        // 黑核：柔边圆点**密铺**成实心球（间距远小于斑径 → 不该出现方块感或空隙）
+        // 黑核：柔边圆点密铺成实心球（间距远小于斑径，不该出现方块感或空隙）
         val blob = 30.0
         val step = blob * 0.28
         var ring = 0

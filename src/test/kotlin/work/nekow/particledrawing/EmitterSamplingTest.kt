@@ -11,14 +11,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * 发射器采样与组缩放账本的纯逻辑：
- * - 逐颗抖动必须**确定性**（同一声明第 N 颗的偏移固定）且**垂直运动方向**；
- * - 移动锚点按相邻两个样本插值，瞬移/断流按跳变处理（不扫假轨迹）；
- * - 组缩放从**执行起点**的合成倍率出发（倍率累积、可从 0 展开、可任意时刻退场）。
+ * 发射器采样与组缩放账本的纯逻辑：抖动偏移的确定性与方向、移动锚点的相邻样本插值、
+ * 组缩放账本从执行起点的合成倍率出发。
  */
 class EmitterSamplingTest {
-
-    // —— 逐颗抖动 ——
 
     @Test
     fun `同一种子与序号得到同一偏移，不同序号彼此不同`() {
@@ -65,8 +61,6 @@ class EmitterSamplingTest {
         assertEquals(a, b)
         assertTrue(a.length() <= 0.1 + 1e-9)
     }
-
-    // —— 移动锚点的相邻样本 ——
 
     @Test
     fun `两条样本之间按 partialTick 线性插值`() {
@@ -119,8 +113,6 @@ class EmitterSamplingTest {
         assertTrue(s.resolve(0.5f, 1L) != null)
     }
 
-    // —— 组缩放账本 ——
-
     @Test
     fun `相对缩放从执行起点相乘，可先缩到 0 再长回 1`() {
         val ledger = ScaleLedger()
@@ -130,7 +122,7 @@ class EmitterSamplingTest {
         var current = ledger.valueAt(target, 1f)
         assertEquals(0.01f, current, 1e-6f)
 
-        // 第二条：从 0.01 乘 100 → 终点是 1（旧实现会覆盖成 100）
+        // 第二条：从 0.01 乘 100 → 终点是 1
         val ledger2 = ScaleLedger()
         target = ledger2.begin(current, 100f, absolute = false)
         assertEquals(1f, target, 1e-6f)

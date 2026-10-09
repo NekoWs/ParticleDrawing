@@ -14,11 +14,9 @@ import org.lwjgl.system.MemoryUtil
 import java.nio.ByteBuffer
 
 /**
- * 用 ALC_SOFT_loopback 离屏渲染**真实 OpenAL Soft**：不要声卡、不写文件、按需喂帧，因此可复现。
- * 只有真实现才知道的行为（重采样器有没有抗混叠、立体声源的声像怎么算）靠它量，不靠读文档猜。
+ * 用 ALC_SOFT_loopback 离屏渲染真实 OpenAL Soft：不需要声卡、不写文件、按需喂帧。
  *
- * 环境缺 OpenAL native / 缺 loopback 扩展时 [withDevice] 会 assume 跳过整个用例——不把环境问题
- * 当代码问题，但也不静默返回假结果。
+ * 缺 OpenAL native 或 loopback 扩展时 [withDevice] 会 assume 跳过用例。
  */
 internal object OpenAlLoopback {
 
@@ -104,8 +102,8 @@ internal object OpenAlLoopback {
 
     /**
      * 把一个 16bit 交错 buffer 挂到新 source 上离屏渲染 [outFrames] 帧，返回 float 交错样本。
-     * [stereoBuffer] 只决定 **buffer** 格式（假 sink 之外还能量单声道源）；输出固定立体声交错。
-     * [configure] 拿到 source 句柄，可设声像/重采样器/关空间化等属性；排队与播放由这里做。
+     * [stereoBuffer] 只决定 buffer 格式，输出固定立体声交错；[configure] 拿到 source 句柄，
+     * 可设声像/重采样器/关空间化等属性，排队与播放由这里做。
      */
     fun renderPcm(
         device: Device,

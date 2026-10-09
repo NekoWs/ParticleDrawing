@@ -24,7 +24,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 // 服务端特效播放管理器（按 key 播放 .pdrawc + 可移动锚点 + 播放时钟）。
-// 与 ServerAnimationManager 并存：资源注册表按 key 播放；可移动锚点每 tick 批量下发一次；时钟支持 seek/暂停/变速。
+// 资源注册表按 key 播放；可移动锚点每 tick 批量下发一次；时钟支持 seek/暂停/变速。
 object ServerEffectManager {
 
     private class Playback(
@@ -38,7 +38,7 @@ object ServerEffectManager {
         val loop: Boolean,
         val startGameTick: Long,
         val clock: PlaybackClock,
-        /** 最近一次覆盖的变量值（getParam 的诚实实现：服务器读不到客户端运行时） */
+        /** 最近一次覆盖的变量值；服务器读不到客户端运行时，getParam 以此为准。 */
         val vars: EffectVarStore = EffectVarStore(),
     )
 
@@ -125,7 +125,7 @@ object ServerEffectManager {
                 for (p in level.players()) if (p.uuid in pb.playerIds) targets.add(p)
             }
             if (targets.isEmpty()) continue
-            // 按载荷上限拆包：同时活着的播放实例多了之后，一个包塞不下
+            // 按载荷上限拆包：同时活着的播放实例多了之后一个包塞不下
             for (chunk in BatchChunking.chunks(list, AnchorUpdateBatchPayload.MAX_BATCH)) {
                 val payload = AnchorUpdateBatchPayload(chunk)
                 for (p in targets) PacketDistributor.sendToPlayer(p, payload)
@@ -148,7 +148,7 @@ object ServerEffectManager {
         }
     }
 
-    // —— 播放控制（服务端权威时才广播） ——
+    // 播放控制：仅在服务端权威时才广播
 
     @JvmStatic
     fun seek(playbackId: UUID, players: Collection<ServerPlayer>, ms: Double): Boolean {
@@ -193,7 +193,7 @@ object ServerEffectManager {
         }
     }
 
-    // —— 停止 / 变量 / 查询 ——
+    // 停止 / 变量 / 查询
 
     @JvmStatic
     fun stop(playbackId: UUID, players: Collection<ServerPlayer>): Boolean {
@@ -218,7 +218,7 @@ object ServerEffectManager {
         }
     }
 
-    /** 更新某次播放的变量（复用旧 VariableUpdatePayload，客户端同一链路处理）。 */
+    /** 更新某次播放的变量（复用 VariableUpdatePayload，客户端同一链路处理）。 */
     @JvmStatic
     fun updateVariable(playbackId: UUID, name: String, value: String, players: Collection<ServerPlayer>) {
         val pb = playbacks[playbackId] ?: return

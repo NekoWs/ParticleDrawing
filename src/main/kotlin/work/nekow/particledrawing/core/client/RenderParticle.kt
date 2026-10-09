@@ -15,7 +15,7 @@ private val LINEAR = EasingCurve(0.0, 0.0, 1.0, 1.0)
 /** 缓动三元组：当前值 / 目标值 / 缓动起点。 */
 private class EaseVar<T>(var cur: T, var tgt: T, var start: T)
 
-/** 缓动计时状态：时刻用**引擎毫秒**（每 tick +50），于是关卡暂停时缓动也停住。 */
+/** 缓动计时状态：时刻用引擎毫秒（每 tick +50），关卡暂停时缓动也停住。 */
 private class EaseState(
     var active: Boolean = false,
     var startMs: Long = -1L,
@@ -26,16 +26,11 @@ private class EaseState(
 /**
  * 渲染粒子：保存可视化状态并支持缓动过渡与速度积分。
  *
- * @param id 粒子唯一标识符
- * @param position 初始位置
- * @param color 初始颜色
- * @param scale 初始缩放
- * @param glowing 是否发光
  * @param lightLevel 发光粒子向外发出的光照等级 (0-15)，仅在 glowing 为 true 时生效
- * @param lifetimeTicks 存活 tick 数；<=0 表示永久。按**引擎 tick** 计（关卡暂停时不流逝）
+ * @param lifetimeTicks 存活 tick 数；<=0 表示永久。按引擎 tick 计（关卡暂停时不流逝）
  * @param uv 贴图取景框；null = 纯白方块
  * @param lifeCurve 逐粒子寿命曲线（寿命内的颜色/尺寸乘数）；null = 恒定外观
- * @param prev 上一 tick 的位置（与 [position] 组成插值段，供动态光照与首帧渲染端点插值）；null = 直接出生
+ * @param prev 上一 tick 的位置，与 [position] 组成插值段；null = 直接出生
  */
 @Suppress("unused")
 class RenderParticle(
@@ -56,7 +51,7 @@ class RenderParticle(
     private val col = EaseVar(Color.BLACK, Color.BLACK, Color.BLACK)
     private val scl = EaseVar(0f, 0f, 0f)
 
-    // 非均匀缩放三分量 [sx, sy, sz]（动画系统使用）；标量路径写 [s, s, 1]（粒子模型的 Z 恒为 1）
+    // 非均匀缩放三分量 [sx, sy, sz]；标量路径写 [s, s, 1]（粒子模型的 Z 恒为 1）
     private var sclArray: FloatArray = floatArrayOf(0f, 0f, 0f)
 
     // 旋转 / 平移 / 偏移（绕轴心独立缓动后叠加）
@@ -87,7 +82,7 @@ class RenderParticle(
     /** 引擎时钟（毫秒，每 tick +50）：缓动与寿命曲线都按它推进。 */
     private var engineMs: Long = 0L
 
-    // 上一 game tick 的位置（供动态光照每帧 partialTick 插值，避免快速移动粒子光源跳变）
+    // 上一 game tick 的位置（供动态光照按 partialTick 插值）
     private var prevX: Double
     private var prevY: Double
     private var prevZ: Double
@@ -124,7 +119,7 @@ class RenderParticle(
 
     /**
      * 当前寿命曲线的乘数，按 [CurveChannel] 顺序写进 [out] = `[r, g, b, a, scale]`；
-     * 没有曲线时返回 false 且不改动 [out]（调用方走原路径，零额外开销）。
+     * 没有曲线时返回 false 且不改动 [out]。
      */
     fun curveMultipliers(out: FloatArray): Boolean {
         if (lifeCurve == null) return false
@@ -175,7 +170,7 @@ class RenderParticle(
     /** 非均匀缩放三分量 [sx, sy, sz]（动画系统使用）。 */
     fun scaleArray(): FloatArray = sclArray
 
-    // 每帧 partialTick 插值后的位置（动态光照用，避免快速移动粒子光源跳变）
+    // 每帧 partialTick 插值后的位置（动态光照用）
     fun interpolatedX(partialTick: Float): Double = prevX + (pos.cur.x - prevX) * partialTick
     fun interpolatedY(partialTick: Float): Double = prevY + (pos.cur.y - prevY) * partialTick
     fun interpolatedZ(partialTick: Float): Double = prevZ + (pos.cur.z - prevZ) * partialTick
@@ -184,10 +179,8 @@ class RenderParticle(
     fun isDead(): Boolean = !isAlive()
 
     /**
-     * 推进一个引擎 tick：寿命与缓动时钟一起走（引擎每 tick 对每颗粒子调一次）。
-     *
-     * 「存活 tick 数」是 API 本来就说好的单位（`lifetime(40)` = 40 tick），原先按墙钟近似，
-     * 单人暂停时不 tick 的关卡回来后会一次性判死；缓动同理——暂停期间不该继续推进。
+     * 推进一个引擎 tick：寿命与缓动时钟一起走。引擎时钟在关卡暂停时不推进，
+     * 所以 `lifetime(40)` 的 40 tick 不会因暂停被一次性判死。
      */
     fun advanceEngine() {
         engineMs += 50L
@@ -290,11 +283,10 @@ class RenderParticle(
     fun velocity(): Vec3 = velocity
 
     /**
-     * 设置加速度（服务端权威力）与施加 tick 数。服务端与客户端按同一规则逐 tick 积分：
-     * 速度 += 加速度，再按速度位移，因此只需在开始施力时下发一次。
-     * 与 [setVelocity] 叠加（力是持续的加速度，不覆盖已有速度）。
+     * 设置加速度（服务端权威力）与施加 tick 数：服务端与客户端按同一规则逐 tick 积分
+     * （速度 += 加速度，再按速度位移），与 [setVelocity] 叠加。
      *
-     * @param ticks >0 = 施加这么多 tick；<0 = 无限（直到被下一次力/速度/位置指令覆盖）；0 = 清除
+     * @param ticks >0 = 施加这么多 tick；<0 = 无限；0 = 清除
      */
     fun setAcceleration(acceleration: Vec3, ticks: Int) {
         this.acceleration = acceleration
@@ -367,12 +359,12 @@ class RenderParticle(
         scl.tgt = sclArray[0]
     }
 
-    /** 标量写法：X/Y 同值，Z 恒为 1（编辑器粒子模型的 Z 只有 1 这一种取值）。 */
+    /** 标量写法：X/Y 同值，Z 恒为 1。 */
     private fun setScaleScalar(scale: Float) {
         setScaleTriple(scale, scale, 1f)
     }
 
-    /** 就地写三分量缩放，数组实例全程复用（顶点生成每帧都要读它）。 */
+    /** 就地写三分量缩放，数组实例全程复用。 */
     private fun setScaleTriple(x: Float, y: Float, z: Float) {
         sclArray[0] = x
         sclArray[1] = y
@@ -381,8 +373,7 @@ class RenderParticle(
 
     /**
      * 立即完成进行中的颜色/缩放缓动（cur = tgt 并停止计时）。
-     * 零时长目标（duration=0）由 [ClientParticleEngine.updateParticle] 调用：
-     * 若等分批轮转的 tick 落地，紧随其后的缓动包会把起点读成旧值，渐变失效。
+     * 零时长目标由 [ClientParticleEngine.updateParticle] 调用；等分批轮转落地会让后续缓动包读到旧起点。
      */
     fun finishColorScale() {
         if (colEase.startMs >= 0L) {
@@ -402,25 +393,21 @@ class RenderParticle(
     /** 缓动的目标位置。 */
     fun targetPosition(): Vec3 = pos.tgt
 
-    /**
-     * 设置发光状态。
-     * @param glowing 是否发光
-     */
+    /** 设置发光状态。 */
     fun setGlowing(glowing: Boolean) {
         this.glowing = glowing
     }
 
     /**
-     * 设置发光光照等级。
-     * @param level 光照等级，自动钳制到 [0, 15]
+     * 设置发光光照等级，自动钳制到 [0, 15]。
      */
     fun setLightLevel(level: Int) {
         this.lightLevel = level.coerceIn(0, 15)
     }
 
     /**
-     * 重设存活 tick 数（从此刻重新计）。
-     * @param lifetimeTicks 存活 tick 数；<=0 表示永久。按**引擎 tick** 计（关卡暂停时不流逝）
+     * 重设存活 tick 数，从此刻重新计。
+     * @param lifetimeTicks 存活 tick 数；<=0 表示永久。按引擎 tick 计（关卡暂停时不流逝）
      */
     fun setLifetimeTicks(lifetimeTicks: Int) {
         this.lifetimeTicks = lifetimeTicks
@@ -432,7 +419,7 @@ class RenderParticle(
         val now = engineMs
         var posChanged = false
 
-        // 施力：先改速度，再按速度位移（顺序与服务端 ParticleData.stepMotion 一致）
+        // 施力：先改速度，再按速度位移
         if (accelTicks != 0) {
             velocity = velocity.add(acceleration)
             if (accelTicks > 0) accelTicks--

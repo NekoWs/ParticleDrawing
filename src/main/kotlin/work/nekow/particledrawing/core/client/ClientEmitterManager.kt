@@ -11,15 +11,14 @@ import work.nekow.particledrawing.core.network.EmitterUpdatePayload
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-// 客户端发射器运行时：服务端只声明一次「沿哪个锚点、按什么口径、发什么样的粒子」，
-// 之后由这里按**渲染帧**推进里程/时间并就地生成粒子（零逐帧带宽、出现时刻不被 tick 量化）。
-// 锚点用相邻两个服务器样本插值（见 MovableAnchorSamples），于是发射前沿与 track 头部同相位。
+// 客户端发射器运行时：服务端声明一次锚点、口径与粒子外观，之后由这里按渲染帧推进里程/时间并就地生成粒子，
+// 锚点位置取相邻两个服务器样本的插值。
 internal object ClientEmitterManager {
 
-    /** 单帧最多发射多少颗（掉帧/锚点瞬移时不让一帧炸出几百颗）。 */
+    /** 单帧最多发射多少颗，避免掉帧或锚点瞬移时一帧炸出几百颗。 */
     private const val MAX_EMIT_PER_FRAME = 64
 
-    /** 单帧计入的时间上限（毫秒）：切窗口回来/长卡顿不补发一大段。 */
+    /** 单帧计入的时间上限（毫秒）：切窗口回来或长卡顿时不补发一大段。 */
     private const val MAX_FRAME_MS = 250.0
 
     private class Active(
@@ -32,22 +31,22 @@ internal object ClientEmitterManager {
         var distance: DistanceAdvance? = null
         var time: TimeAdvance? = null
 
-        /** 移动锚点的相邻样本（Fixed/Entity 锚点不用）。 */
+        /** 移动锚点的相邻样本；Fixed / Entity 锚点不用。 */
         val samples = MovableAnchorSamples()
 
-        /** 上一帧的锚点位置（里程口径的段起点）；null = 还没建立基准。 */
+        /** 上一帧的锚点位置，即里程口径的段起点；null = 还没建立基准。 */
         var lastPos: Vec3? = null
 
-        /** 上一帧的运动方向（时间口径的抖动平面用它）。 */
+        /** 上一帧的运动方向，时间口径的抖动平面用它。 */
         var lastDir: Vec3 = Vec3(0.0, 0.0, 1.0)
 
-        /** 已发射的颗数：逐颗抖动的确定性哈希靠它。 */
+        /** 已发射的颗数，逐颗抖动的确定性哈希用它。 */
         var emissionIndex: Long = 0L
 
-        /** 已发射粒子各自的到期引擎 tick，用于 maxAlive 上限（与寿命同一时钟：暂停时不流逝）。 */
+        /** 已发射粒子各自的到期引擎 tick，用于 maxAlive 上限；与寿命同一时钟，暂停时不流逝。 */
         val alive = ArrayDeque<Long>()
 
-        /** 一帧内要发射的位置（复用列表，避免每帧分配）。 */
+        /** 一帧内要发射的位置；复用列表，避免每帧分配。 */
         val scratch = ArrayList<Vec3>(8)
     }
 
@@ -85,7 +84,7 @@ internal object ClientEmitterManager {
             val old = active.params
             if (old.mode != c.mode || old.spacing != c.spacing || old.intervalMs != c.intervalMs) {
                 active.params = old.copy(mode = c.mode, spacing = c.spacing, intervalMs = c.intervalMs)
-                // 口径变了：推进器重建（攒了一半的里程/时间不再沿用，避免换口径时补发一颗）
+                // 口径变了推进器重建，攒了一半的里程/时间不再沿用
                 active.distance = null
                 active.time = null
             }
@@ -103,18 +102,17 @@ internal object ClientEmitterManager {
         emitters.remove(emitterId)
     }
 
-    /** 维度卸载 / 断线：全部清掉（已生成的粒子由粒子引擎自己走完寿命）。 */
+    /** 维度卸载 / 断线：全部清掉；已生成的粒子由粒子引擎自己走完寿命。 */
     fun clearAll() {
         emitters.clear()
         lastFrameNanos = 0L
     }
 
-    /** 当前活跃发射器数量（调试用）。 */
+    /** 当前活跃发射器数量，调试用。 */
     fun activeCount(): Int = emitters.size
 
     /**
-     * 每渲染帧推进（由 `ParticleRenderHandler.onRenderFrame` 调用）。
-     *
+     * 每渲染帧推进一次，由 `ParticleRenderHandler.onRenderFrame` 调用。
      * 暂停时不推进：单人 Esc 暂停时世界不走，尾迹也不该继续长。
      */
     fun frameTick(partialTick: Float) {
@@ -143,7 +141,7 @@ internal object ClientEmitterManager {
         val pos = resolveAnchor(active, level, partialTick, now) ?: return
         val prev = active.lastPos
         active.lastPos = pos
-        if (prev == null) return // 第一帧只建立基准，不从「上一次位置」补发
+        if (prev == null) return // 第一帧只建立基准，不从上次位置补发
 
         val dir = frameDirection(active, pos, prev)
         if (active.params.mode == EmitMode.DISTANCE) {
@@ -161,7 +159,7 @@ internal object ClientEmitterManager {
         }
     }
 
-    /** 本帧的运动方向：优先用锚点这一帧的位移，退化时沿用上一帧（原地发射也要有稳定的抖动平面）。 */
+    /** 本帧的运动方向：优先用锚点这一帧的位移，位移退化时沿用上一帧，原地发射也要有稳定的抖动平面。 */
     private fun frameDirection(active: Active, pos: Vec3, prev: Vec3): Vec3 {
         val delta = pos.subtract(prev)
         val dir = if (delta.lengthSqr() > 1e-10) delta.normalize() else active.lastDir
@@ -170,10 +168,10 @@ internal object ClientEmitterManager {
     }
 
     /**
-     * 锚点的**本帧**位置：
+     * 锚点本帧的位置：
      * - Fixed 恒定；
-     * - Entity 取实体的插值位置（实体不在场返回 null，这一帧不推进）；
-     * - Movable 用相邻两个服务器样本插值（瞬移/断流的语义见 [MovableAnchorSamples]）。
+     * - Entity 取实体的插值位置，实体不在场返回 null，这一帧不推进；
+     * - Movable 用相邻两个服务器样本插值，瞬移与断流的语义见 [MovableAnchorSamples]。
      */
     private fun resolveAnchor(active: Active, level: ClientLevel, partialTick: Float, now: Long): Vec3? =
         when (val anchor = active.anchor) {

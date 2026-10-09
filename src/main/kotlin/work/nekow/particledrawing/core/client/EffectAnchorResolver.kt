@@ -9,8 +9,8 @@ import work.nekow.particledrawing.api.Orient
 import kotlin.math.atan2
 import kotlin.math.sqrt
 
-// 客户端锚点解析器：维护「位置 + 旋转四元数 + 整体缩放」，把播放器输出的本地坐标映射为世界坐标。
-// Fixed=恒定位置；Entity=每 tick 从实体取位置与 yaw/pitch；Movable=由更新包驱动，朝向由速度推导。
+// 客户端锚点解析器：维护位置、旋转四元数与整体缩放，把播放器输出的本地坐标映射为世界坐标。
+// Fixed 为恒定位置；Entity 每 tick 从实体取位置与 yaw/pitch；Movable 由更新包驱动，朝向由速度推导。
 // 旋转约定与 MC 视角一致：look = RotY(-yaw)·RotX(pitch)·(0,0,1)。
 internal class EffectAnchorResolver(
     private val anchorKind: Anchor,
@@ -28,7 +28,7 @@ internal class EffectAnchorResolver(
                 quat.identity()
             }
             is Anchor.Entity -> {
-                pos = Vec3.ZERO // 由 resolveEntity 在首个 tick 前填充
+                pos = Vec3.ZERO // 首个 tick 前由 resolveEntity 填充
                 quat.identity()
             }
             is Anchor.Movable -> {
@@ -40,7 +40,7 @@ internal class EffectAnchorResolver(
         }
     }
 
-    /** 更新可移动锚点（位置 + 速度 → 朝向）。 */
+    /** 更新可移动锚点的位置与速度，并重算朝向。 */
     fun updateMovable(newPos: Vec3, newVel: Vec3) {
         pos = newPos
         velocity = newVel
@@ -70,14 +70,14 @@ internal class EffectAnchorResolver(
             quat.identity()
             return
         }
-        val yp = yawPitchDegrees(velocity) ?: return // 速度过小：保持上次朝向
+        val yp = yawPitchDegrees(velocity) ?: return // 速度近似为零，保持上次朝向
         quat = Quaternionf().rotationYXZ(-Math.toRadians(yp[0]).toFloat(), Math.toRadians(yp[1]).toFloat(), 0f)
     }
 
     companion object {
         /**
-         * 速度向量 → [yawDeg, pitchDeg]（与 MC look 向量约定一致）。
-         * 速度近似为零时返回 null（调用方保持原朝向，避免翻转）。
+         * 速度向量 → [yawDeg, pitchDeg]，与 MC look 向量约定一致。
+         * 速度近似为零时返回 null，调用方保持原朝向。
          */
         @JvmStatic
         fun yawPitchDegrees(velocity: Vec3): DoubleArray? {

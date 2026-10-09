@@ -11,13 +11,8 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * 循环里的 return / 顶层 return 的回归测试。
- *
- * 编辑器侧踩过一次：循环体里出现 return 会写坏字节码，runProcessFrame 抛 unknown bytecode op 后
- * 静默回退 AST —— 脚本没坏，只是慢。播放端是另一套实现（树遍历解释器，没有字节码也没有回退后路），
- * 所以这里单独钉住：循环里的 return 结果要对、不抛错；process 顶层的 return 就是「这一帧到此为止」。
- *
- * 断言只看粒子字段：脚本把结果写进 p.position，测试读出来比对（跑不通会直接抛，测试即红）。
+ * 循环里的 return 与 process 顶层 return 的语义：循环内的 return 带值退出函数，
+ * process 顶层的 return 表示这一帧到此为止。
  */
 class ScriptLoopReturnTest {
 
@@ -71,7 +66,7 @@ class ScriptLoopReturnTest {
         val count: Int get() = particles.size
     }
 
-    // —— 用户函数里的循环 return：值要带出来，循环后面的代码不能跑 ——
+    // 用户函数里的循环 return
 
     @Test
     fun `while 里 return 带值`() {
@@ -80,7 +75,7 @@ class ScriptLoopReturnTest {
                 "func process() { let p = this.spawn(); p.position.x = f(); p.position.y = f(); }",
         )
         h.process()
-        // 两次调用都是 50：第一次的提前返回没有把状态/作用域留脏
+        // 两次调用都取到 50，提前返回不留脏状态
         assertEquals(50.0, h.x(), 1e-12)
         assertEquals(50.0, h.y(), 1e-12)
     }
@@ -92,7 +87,7 @@ class ScriptLoopReturnTest {
                 "func process() { let p = this.spawn(); p.foo = 0; f(p); p.position.x = p.foo; }",
         )
         h.process()
-        // a 走到 5 就返回：p.foo 只加到 4；循环后的 p.foo = p.foo + 1000 不能跑（return 不是 break）
+        // a 走到 5 就返回：p.foo 只加到 4，循环后的代码不跑
         assertEquals(4.0, h.x(), 1e-12)
     }
 
@@ -158,7 +153,7 @@ class ScriptLoopReturnTest {
         assertEquals(33.0, h.y(), 1e-12)
     }
 
-    // —— process 顶层的 return：结束这一帧（与编辑器同一含义） ——
+    // process 顶层的 return：结束这一帧
 
     @Test
     fun `process 顶层 return 结束这一帧`() {
@@ -206,7 +201,7 @@ class ScriptLoopReturnTest {
         assertEquals(32.0, h.x(2), 1e-12)
     }
 
-    // —— 循环控制：break/continue 与 return 必须互相不串味 ——
+    // 循环控制：break / continue
 
     @Test
     fun `循环里的 break 与 continue 仍按循环语义走`() {
@@ -230,7 +225,7 @@ class ScriptLoopReturnTest {
         assertEquals(8.0, h.x(), 1e-12)
     }
 
-    // —— 与编辑器对齐的边界：循环外的 break/continue 两端都是解析期硬拒绝 ——
+    // 循环外的 break / continue 是解析期错误
 
     @Test
     fun `process 顶层 break 与 continue 解析期报错`() {
@@ -242,8 +237,7 @@ class ScriptLoopReturnTest {
 
     @Test
     fun `setup 与 tick 顶层 return 仍按错误处理`() {
-        // 播放端沿用编辑器的边界：只有 process 顶层的 return 是「这一帧到此为止」，
-        // setup/tick 顶层 return 两端都不当合法写法（编辑器那边会抛内部 Flow）。
+        // setup / tick 顶层的 return 不是合法写法
         val h = Harness("func setup() { let p = this.spawn(); return; }")
         val err = assertFailsWith<ScriptException> { h.setup() }
         assertTrue(err.message!!.contains("return is only allowed inside a function"), "实际报错：${err.message}")

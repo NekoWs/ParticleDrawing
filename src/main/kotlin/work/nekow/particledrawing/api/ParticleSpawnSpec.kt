@@ -6,10 +6,8 @@ import work.nekow.particledrawing.core.easing.EasingType
 /**
  * 一次批量生成里的一颗粒子。
  *
- * 与 [ParticleHandle.Builder] 的区别：Builder 走「构造 → 单发 spawn 包 → 拿到句柄」，
- * 适合逐颗控制；本类是**纯数据**，一次可以攒一批交给 [ParticleManager.spawnAll] /
- * [ParticleBatch.spawnAll] 用一个包发完（一条尾迹、一次爆发不必逐颗发包）。
- * 字段含义与 Builder 的对应方法完全一致。
+ * 纯数据：一次可攒一批交给 [ParticleManager.spawnAll] / [ParticleBatch.spawnAll] 用一个包发完，
+ * 逐颗控制仍用 [ParticleHandle.Builder]。字段含义与 Builder 的对应方法一致。
  */
 class ParticleSpawnSpec {
 
@@ -45,7 +43,7 @@ class ParticleSpawnSpec {
 
     fun lightLevel(level: Int): ParticleSpawnSpec = apply { this.lightLevel = level.coerceIn(0, 15) }
 
-    /** 外观规格（贴图 / UV / 各向异性 / 朝向 / 加色）；按拷贝存，之后改原对象不影响本规格。 */
+    /** 外观规格（贴图 / UV / 各向异性 / 朝向 / 加色）；按拷贝存。 */
     fun visual(visual: ParticleVisual): ParticleSpawnSpec = apply { this.visual = visual.copy() }
 
     /** 直接给一条寿命曲线。 */
@@ -86,8 +84,7 @@ class ParticleSpawnSpec {
     }
 
     /**
-     * 首帧插值端点：第一帧从 [prev] 渲染到 [position]（与 `track` 的段同语义）。
-     * 逐 tick 铺拖尾时给「上一 tick 的位置」，尾巴就不会比头部超前或落后一整 tick。
+     * 首帧插值端点：第一帧从 [prev] 渲染到 [position]，与 `track` 的段同语义。
      */
     fun prevPosition(prev: Vec3): ParticleSpawnSpec = apply { this.prev = prev }
 
@@ -106,7 +103,7 @@ class ParticleSpawnSpec {
         return out
     }
 
-    /** 复制一份（含曲线引用；曲线不可变，可安全共享）。 */
+    /** 复制一份（含曲线引用；曲线不可变，可共享）。 */
     fun copy(): ParticleSpawnSpec {
         val c = ParticleSpawnSpec()
         c.position = position

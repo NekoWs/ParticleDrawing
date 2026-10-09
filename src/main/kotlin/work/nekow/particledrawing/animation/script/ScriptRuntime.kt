@@ -1,13 +1,12 @@
-// UNCHECKED_CAST：这是动态类型解释器——运行时栈/数组按 Any? 存取，6 处转换全部紧跟在
-// `is MutableList<*>` 守卫或 `as?` 判型之后，越界/类型错误在运行时按 err() 显式拒绝；
-// 消除这些警告需要重写成泛型栈，会牺牲运行时语义。按 Kotlin 惯例文件级压制并说明理由。
+// 动态类型解释器：运行时栈与数组按 Any? 存取，转换紧跟在 `is MutableList<*>` 守卫或 `as?` 判型之后，
+// 类型错误由 err() 在运行时显式拒绝；改成泛型栈会损坏运行时语义，故文件级压制。
 @file:Suppress("UNCHECKED_CAST")
 
 package work.nekow.particledrawing.animation.script
 
 import kotlin.math.*
 
-// this 对象名（与 ScriptParser 一致）。
+// this 对象名。
 private const val CTX_NAME = "this"
 
 // 向量分量别名：r/g/b → x/y/z，a → w。
@@ -21,7 +20,7 @@ private fun hasComp(v: Any?, comp: String): Boolean = when (v) {
     else -> false
 }
 
-/** 写回单分量，返回新向量（对应 JS setVecComp）。 */
+/** 写回单分量，返回新向量。 */
 private fun setVecComp(v: Any?, comp: String, value: Double): Any = when (v) {
     is Vec2 -> Vec2(if (comp == "x") value else v.x, if (comp == "y") value else v.y)
     is Vec3 -> Vec3(if (comp == "x") value else v.x, if (comp == "y") value else v.y, if (comp == "z") value else v.z)
@@ -29,7 +28,7 @@ private fun setVecComp(v: Any?, comp: String, value: Double): Any = when (v) {
     else -> throw ScriptException("not a vector")
 }
 
-// this.spawn(config) 可选字段（与编辑器 generators.js 一致）。
+// this.spawn(config) 可选字段。
 private val SPAWN_CONFIG_FIELDS = setOf("position", "color", "velocity", "scale", "glow", "light", "life", "uv")
 
 private fun cfgVec(v: Any?, field: String, len: Int): List<Double> {
@@ -57,8 +56,9 @@ private fun cfgColor(v: Any?): List<Double> = when (v) {
 
 /**
  * 粒子尺寸写法归一（spawn 配置的 scale 与脚本里的 p.scale 共用）：
- * num 写 [s, s, 1]（编辑器粒子模型的 Z 恒为 1）、vec2（或 2 元数组）的 z 视为 1、vec3（或 3 元数组）原样。
- * @return 写出的形态 0/2/3；写法不合法返回 -1，由调用方按自己的措辞报错
+ * num 写 [s, s, 1]（Z 恒为 1），vec2 或 2 元数组的 z 视为 1，vec3 或 3 元数组原样。
+ *
+ * @return 写法 0/2/3；不合法返回 -1，由调用方自行报错
  */
 private fun scaleShape(v: Any?, out: DoubleArray): Int {
     fun comp(x: Any?): Double = x as? Double ?: Double.NaN
@@ -80,16 +80,14 @@ private fun scaleShape(v: Any?, out: DoubleArray): Int {
     }
 }
 
-/** 按 [ParticleHost.scaleDim] 记下的写法把尺寸读回脚本：标量原样返回，向量一律读成 vec3（与编辑器一致）。 */
+/** 按 [ParticleHost.scaleDim] 记下的写法把尺寸读回脚本：标量原样返回，向量读成 vec3。 */
 private fun readScale(w: ParticleHost): Any =
     if (w.scaleDim == 0) w.scale[0] else Vec3(w.scale[0], w.scale[1], w.scale[2])
 
 private fun applySpawnConfig(host: ParticleHost, config: Any?) {
     if (config !is ObjVal) throw ScriptException("this.spawn(config) requires an object")
     for ((key, v) in config.fields) {
-        // §10.5.2 A2：spawn 配置是**通用参数容器**——未知键不当错误，作为粒子的命名标量存进 fields，
-        // 脚本里用 p.键名 读写。编辑器发射器就靠这个传 dx/dy/dz/ix（曾经直接抛 unknown spawn config
-        // field 'dx'，整条动画在游戏里播不出来；跨仓夹具 emitter-* 抓到的）。
+        // spawn 配置是通用参数容器：未知键不当错误，作为粒子的命名标量存进 fields，脚本里用 p.键名 读写。
         if (key !in SPAWN_CONFIG_FIELDS) {
             host.fields[key] = v
             continue
@@ -119,11 +117,10 @@ private fun applySpawnConfig(host: ParticleHost, config: Any?) {
     }
 }
 
-// spawn 模型脚本运行时（对应编辑器 script-lang.js）。
-// 生命周期：setup（对象级一次）/ tick（每动画 tick）/ process（每渲染帧）；this 给 time/animTime/delta/duration/particles/viewScale/viewOffset
-// 与 spawn()、get(资产名)，粒子经句柄字段读写与 kill()。
-// 接受哪些 this 成员由编辑器 test/format/player-format-contract.test.js 逐名比对，两边多一个少一个都会红。
-// 旧 ProcessCtx + ExpressionRunner 保留给 UV 字段裸表达式。
+// spawn 模型脚本运行时，this 成员与编辑器逐名对齐。
+// 生命周期：setup（对象级一次）/ tick（每动画 tick）/ process（每渲染帧）；
+// this 提供 time/animTime/delta/duration/particles/viewScale/viewOffset 与 spawn()、get(资产名)，
+// 粒子经句柄字段读写与 kill()。
 object ScriptRuntime {
 
     const val TICKS_PER_SEC = 20
@@ -139,7 +136,7 @@ object ScriptRuntime {
         var topLevelDone: Boolean = false,
     )
 
-    /** 表达式阶段输出（UV 字段表达式把 out 字段镜像为最终渲染值）。 */
+    /** 表达式阶段输出；UV 字段表达式把 out 字段镜像为最终渲染值。 */
     class ScriptOut(
         val pos: DoubleArray = DoubleArray(3),
         val color: DoubleArray = doubleArrayOf(1.0, 1.0, 1.0, 1.0),
@@ -153,7 +150,7 @@ object ScriptRuntime {
         var spinSpace: String = "local",
     )
 
-    /** 表达式阶段上下文（UV 字段裸表达式；旧 index/count/time/delta/duration/uv 字段 + out）。 */
+    /** 表达式阶段上下文：index/count/time/delta/duration/uv 字段与 out。 */
     class ProcessCtx(
         var i: Double,
         var n: Double,
@@ -184,8 +181,7 @@ object ScriptRuntime {
     }
 
     /**
-     * spawn 模型上下文（setup/tick/process 三阶段共用；setup 用 env 形态但字段同构）。
-     * 时间单位均为毫秒。
+     * spawn 模型上下文，setup / tick / process 三阶段共用，时间单位均为毫秒。
      *
      * @param t 绝对播放毫秒（动画全局时间轴位置）
      * @param st 函数对象起点 fx.st（毫秒）
@@ -193,9 +189,8 @@ object ScriptRuntime {
      * @param maxMs 整个动画总长（毫秒）
      * @param particles 运行时粒子列表（this.particles）
      * @param spawn 创建并返回一个粒子句柄（this.spawn()）
-     * @param deltaMs 距上一次跑 process/tick 的毫秒数（this.delta）；调用方按「本次时刻 − 上次时刻」封顶
-     *   100ms 算好，首次执行前给 0（与编辑器 script-lang.js 的 this.delta 同义）
-     * @param view 函数对象级视图变换（this.viewScale / this.viewOffset）；同一个函数对象全程复用同一份状态
+     * @param deltaMs 距上一次跑 process/tick 的毫秒数（this.delta），封顶 100ms，首次执行前为 0
+     * @param view 函数对象级视图变换（this.viewScale / this.viewOffset），同一函数对象全程复用
      */
     class ScriptCtx(
         var t: Double,
@@ -278,18 +273,14 @@ object ScriptRuntime {
         try {
             for (st in program.process) rt.execStmt(st)
         } catch (f: Flow) {
-            // process 顶层的 return 就是「这一帧到此为止」（与编辑器同一含义），不是错误。
-            // 漏了这一步时，任何带顶层 return 的脚本每帧都会整支求值失败。
+            // process 顶层的 return 表示这一帧到此为止，不是错误。
             if (f.kind != "return") throw f
         } finally {
             rt.popScope()
         }
     }
 
-    /**
-     * 可复用的裸表达式执行器（UV 字段表达式等）：同一表达式跨粒子复用 Runtime / 作用域。
-     * 表达式必须求值为标量（Double）。
-     */
+    /** 可复用的裸表达式执行器：同一表达式跨粒子复用 Runtime 与作用域，结果必须是标量。 */
     class ExpressionRunner(expr: String) {
         private val node: Node = parseExpression(expr)
         private val program = ScriptProgram(emptyList(), emptyList(), emptyList(), emptyMap())
@@ -396,7 +387,7 @@ object ScriptRuntime {
             return d.toInt()
         }
 
-        // JS `x | 0`：先要求整数（与 expectInt 一致），再按 ToInt32 回绕（与 toInt 的饱和截断不同）。
+        // JS `x | 0`：先要求整数，再按 ToInt32 回绕（与截断不同）。
         private fun int32(v: Any?, what: String, n: Node): Int {
             val d = num(v, what, n)
             if (d % 1.0 != 0.0) err("$what requires an integer, got $d", n)
@@ -468,8 +459,7 @@ object ScriptRuntime {
                 is BreakNode -> throw Flow("break")
                 is ContinueNode -> throw Flow("continue")
                 is ReturnNode -> {
-                    // 只有 process 顶层允许裸 return（结束这一帧，由 runProcessFrame 收尾）；
-                    // setup/tick 顶层与其它函数外位置仍按错误处理，与编辑器保持一致。
+                    // 只有 process 顶层允许裸 return（结束这一帧）；setup/tick 顶层等其它位置按错误处理。
                     if (!inFunction && phase != "process") err("return is only allowed inside a function", n)
                     throw Flow("return", if (n.expr != null) evalExpr(n.expr) else Undefined)
                 }
@@ -675,8 +665,6 @@ object ScriptRuntime {
             err("undeclared variable '$name'", n)
         }
 
-        // —— this 字段读取 ——
-
         private fun ctxRead(field: String, n: Node): Any {
             if (phase == "expr") {
                 val c = pctx
@@ -708,10 +696,8 @@ object ScriptRuntime {
             return when (field) {
                 "time" -> c.t - c.st
                 "animTime" -> c.t
-                // this.delta：距上一次跑 process/tick 的毫秒数（setup/tick/process 三个阶段同名同义）。
-                // 由调用方按「本次时刻 − 上次时刻」封顶 100ms 放进 ctx.deltaMs，首次执行前是 0；
-                // 单位、封顶与「首次为 0」都和编辑器 script-lang.js 一致——生成程序的物理积分靠它，
-                // 不能拿 this.time 当帧间隔。
+                // this.delta：距上一次跑 process/tick 的毫秒数，由调用方封顶 100ms 放进 ctx.deltaMs，首次为 0。
+                // 生成程序的物理积分靠它，不能拿 this.time 当帧间隔。
                 "delta" -> if (c.deltaMs.isFinite()) c.deltaMs else 0.0
                 "duration" -> if (c.duration > 0.0) c.duration else c.maxMs
                 "particles" -> ParticleListValue(c.particles)
@@ -724,7 +710,7 @@ object ScriptRuntime {
         /** 函数对象级视图变换的成员名（this.viewScale / this.viewOffset）：读写都指对象自己，不受 apply{} 接收者影响。 */
         private fun isViewField(field: String): Boolean = field == "viewScale" || field == "viewOffset"
 
-        /** 写 this.viewScale / this.viewOffset（写法校验与报错在此，与编辑器 ctxWrite 同一套）。 */
+        /** 写 this.viewScale / this.viewOffset，写法校验与报错在此。 */
         private fun writeViewField(field: String, value: Any?, n: Node) {
             val cx = ctx ?: err("context unavailable", n)
             when (field) {
@@ -735,7 +721,7 @@ object ScriptRuntime {
                     cx.view.scale = v
                 }
                 "viewOffset" -> {
-                    // 位置偏移：vec2 当 z=0，其余走三分量写法（数组只收 3 元，与编辑器 vecFieldValues(…, 3) 一致）
+                    // 位置偏移：vec2 当 z=0，其余走三分量写法（数组只收 3 元）
                     val comps = if (value is Vec2) listOf(value.x, value.y, 0.0)
                     else vecFieldValues(value, 3, "this.viewOffset", n)
                     cx.view.offset[0] = comps[0]
@@ -744,8 +730,6 @@ object ScriptRuntime {
                 }
             }
         }
-
-        // —— 粒子句柄字段读取/写入 ——
 
         private fun particleGetField(pv: ParticleValue, field: String): Any {
             val w = pv.host
@@ -765,7 +749,7 @@ object ScriptRuntime {
             }
         }
 
-        // —— 文字对象句柄读取（只读，与编辑器 script-lang.js 的 textGetField 一致）——
+        // 文字对象句柄读取（只读）
 
         private fun textGetField(v: TextValue, field: String, n: Node): Any = when (field) {
             "name" -> v.obj.name
@@ -785,7 +769,7 @@ object ScriptRuntime {
             else -> err("char has no field '.$field'", n)
         }
 
-        // —— 音频句柄读取（只读；随时间字段按帧时查表插值，与编辑器 script-lang.js 一致）——
+        // 音频句柄读取（只读）；随时间字段按帧时查表插值。
 
         private fun audioLocalMs(v: AudioValue): Double {
             val st = v.asset.st.toDouble()
@@ -820,9 +804,8 @@ object ScriptRuntime {
             return ScriptAudio.valueAt(v.asset, audioLocalMs(v)).bands[i]
         }
 
-        // —— 采样级取值（a.sampleAt / a.peakAt）——
-        // 数值来自 ScriptWavePcm（WAV 直读字节 / OGG 按窗口解码），这里只做与编辑器一致的参数校验：
-        // 声道号必须是非负整数，给了越界声道显式报错；未就绪（waveReady=false）时按静音回 0、不报错。
+        // 采样级取值（a.sampleAt / a.peakAt）：数值来自 ScriptWavePcm，这里只做参数校验。
+        // 声道号必须是非负整数且越界报错；未就绪（waveReady=false）时按静音回 0，不报错。
 
         private fun audioChannelOf(v: AudioValue, ch: Any?, n: Node, method: String): Int {
             if (ch == null) return 0
@@ -1052,7 +1035,7 @@ object ScriptRuntime {
             err("member '.${n.field}' requires a particle or object, got ${typeName(obj)}", n)
         }
 
-        /** 列表/数组的成员读取：只提供只读数量，`.size` 与 `.size()` 都认（与编辑器同语义）。 */
+        /** 列表/数组的成员读取：只提供只读数量，`.size` 与 `.size()` 都认。 */
         private fun listSizeGetField(len: Int, field: String, n: Node, isArr: Boolean): Any {
             if (field == "size") return len.toDouble()
             val what = if (isArr) "array" else "particle list"
@@ -1086,7 +1069,7 @@ object ScriptRuntime {
         }
 
         private fun evalMethod(n: MethodNode): Any? {
-            // this.get(资产名)：取工程级资产句柄（文字对象），只读。
+            // this.get(资产名)：取工程级资产句柄，只读。
             if (n.obj is VarNode && n.obj.name == CTX_NAME && n.method == "get") {
                 if (n.args.size != 1) err("this.get expects exactly 1 argument", n)
                 val c = ctx ?: err("this.get is not available here", n)
@@ -1173,7 +1156,7 @@ object ScriptRuntime {
         }
 
         private fun evalBinary(n: BinaryNode): Any? {
-            // && / || 返回操作数值并短路（与编辑器一致：真值返回左操作数，否则右操作数）。
+            // && / || 返回操作数值并短路：真值返回左操作数，否则右操作数。
             if (n.op == "&&") {
                 val l = evalExpr(n.left)
                 if (!truthy(l, n.left)) return l
@@ -1662,14 +1645,8 @@ object ScriptRuntime {
         }
 
         private fun hash32(seed: Int, salt: Int): Double {
-            // 三个常量都超出 Int 范围（0x9e3779b9 = 2654435769 等），Kotlin 会把它们当 **Long** 字面量，
-            // 于是这里的加减乘全变成 64 位运算——而编辑器那边（JS）是 32 位回绕：
-            //   x = ((seed ^ salt) + 0x9e3779b9) | 0
-            //   x = Math.imul(x ^ (x >>> 16), 0x85ebca6b) | 0
-            // 结果就是**两端的 hash 不是同一个函数**。实测（跨仓夹具 hash-vectors）：
-            //   hash(0,56) 编辑器 0.08495863014832139 / 播放端 0.32055495539680123，
-            //   并连带让体素采样的拒绝判定不同：同一物体编辑器 278 点、游戏里 270 点。
-            // 必须显式 .toInt() 把常量与运算都摁回 32 位，才能与 JS 的 |0 / imul 完全一致。
+            // 三个常量都超出 Int 范围，显式 .toInt() 把常量与运算都摁回 32 位，
+            // 才能与 JS 的 |0 与 imul 逐位一致。
             var x = (seed xor salt) + 0x9e3779b9.toInt()
             x = (x xor (x ushr 16)) * 0x85ebca6b.toInt()
             x = (x xor (x ushr 13)) * 0xc2b2ae35.toInt()

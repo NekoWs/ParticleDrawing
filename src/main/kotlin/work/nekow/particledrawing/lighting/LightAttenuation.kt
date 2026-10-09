@@ -2,7 +2,7 @@ package work.nekow.particledrawing.lighting
 
 import work.nekow.particledrawing.core.easing.EasingCurve
 
-// 光照衰减函数接口：定义动态光源随距离衰减的强度计算方式。
+// 光照衰减接口：定义动态光源随距离衰减的强度计算方式。
 @Suppress("unused")
 fun interface LightAttenuation {
 
@@ -10,13 +10,13 @@ fun interface LightAttenuation {
     fun evaluate(distance: Float, maxDistance: Float): Float
 
     companion object {
-        /** 线性衰减: 距离越远越暗 */
+        /** 线性衰减。 */
         @JvmField val LINEAR = LightAttenuation { distance, maxDistance ->
             if (distance >= maxDistance) 0f
             else 1f - (distance / maxDistance)
         }
 
-        /** 平方反比衰减: 模拟真实物理光照 */
+        /** 平方反比衰减：模拟物理光照。 */
         @JvmField val INVERSE_SQUARE = LightAttenuation { distance, maxDistance ->
             if (distance >= maxDistance) 0f
             else {
@@ -25,7 +25,7 @@ fun interface LightAttenuation {
             }
         }
 
-        /** 平滑阶梯衰减: 使用 S 曲线过渡 */
+        /** 平滑阶梯衰减：S 曲线过渡。 */
         @JvmField val SMOOTHSTEP = LightAttenuation { distance, maxDistance ->
             if (distance >= maxDistance) 0f
             else {
@@ -34,18 +34,19 @@ fun interface LightAttenuation {
             }
         }
 
-        /** 反比线性衰减: 近距离衰减快，远距离保持微弱光照 */
+        /** 反比线性衰减：近距离衰减快，远距离保留微弱光照。 */
         @JvmField val INVERSE_LINEAR = LightAttenuation { distance, maxDistance ->
             if (distance >= maxDistance) 0f
             else 1f / (1f + distance * 2f)
         }
 
         /**
-         * 使用贝塞尔曲线自定义衰减。
-         * @param x1 控制点1 X
-         * @param y1 控制点1 Y
-         * @param x2 控制点2 X
-         * @param y2 控制点2 Y
+         * 用贝塞尔曲线自定义衰减。
+         *
+         * @param x1 控制点 1 的 X
+         * @param y1 控制点 1 的 Y
+         * @param x2 控制点 2 的 X
+         * @param y2 控制点 2 的 Y
          * @return 自定义衰减函数
          */
         @JvmStatic

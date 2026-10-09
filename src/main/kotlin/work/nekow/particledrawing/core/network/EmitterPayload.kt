@@ -12,7 +12,7 @@ import work.nekow.particledrawing.api.ParticleVisual
 import java.util.UUID
 
 /**
- * 发射器的静态参数：**只在声明时下发一次**（改动走 [EmitterUpdatePayload]）。
+ * 发射器的静态参数：只在声明时下发一次，改动走 [EmitterUpdatePayload]。
  *
  * @param mode 按里程还是按时间发射
  * @param spacing 按里程口径：每多少格一颗
@@ -81,8 +81,7 @@ internal object EmitterParamsCodec {
 }
 
 /**
- * 声明一个运行时发射器：服务端只说一次「沿哪个锚点、按什么口径、发什么样的粒子」，
- * 客户端按渲染帧自己推进里程/时间并生成粒子（见 [EmitterHandle]）。
+ * 声明一个运行时发射器：服务端下发一次声明，客户端按渲染帧沿锚点推进时间或里程并生成粒子（见 [EmitterHandle]）。
  */
 data class EmitterSpawnPayload(
     val emitterId: UUID,
@@ -118,11 +117,9 @@ data class EmitterSpawnPayload(
 }
 
 /**
- * 发射器运行期变更：**按段更新**，每次只带改动的部分。
+ * 发射器运行期变更：按段更新，每次只带改动的部分。
  *
- * 分三段是有原因的：锚点每 tick 都在挪（[Anchor] 段，最便宜）、密度偶尔调（[EmitterCadence] 段）、
- * 寿命/曲线/外观这类只在真正改动时才发（[params] 段，整份替换）——
- * 三者混成一个整份参数包会让「每 tick 挪锚点」也背上曲线与外观的字节。
+ * 三段分别是 [Anchor]（锚点）、[EmitterCadence]（发射口径）与 [params]（整份替换的静态参数）。
  */
 data class EmitterUpdatePayload(
     val emitterId: UUID,
@@ -131,7 +128,7 @@ data class EmitterUpdatePayload(
     val params: EmitterParams? = null,
 ) : CustomPacketPayload {
 
-    /** 发射口径（密度旋钮）：按里程的格数 / 按时间的毫秒数。 */
+    /** 发射口径：按里程的格数或按时间的毫秒数。 */
     data class EmitterCadence(val mode: EmitMode, val spacing: Double, val intervalMs: Int)
 
     companion object {

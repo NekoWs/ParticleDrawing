@@ -7,13 +7,12 @@ import net.minecraft.resources.Identifier
 import java.util.UUID
 
 /**
- * 粒子实体锚点数据包：只在挂载时下发一次。之后客户端按实体 id 本地解析位置
- * （[local] 为 true 时连朝向一起），服务端不再为它广播位置——位置在客户端每 tick 本地求值，
- * 实体怎么动粒子就怎么动，也没有逐 tick 的带宽开销。
+ * 粒子实体锚点数据包：只在挂载时下发一次，之后客户端每 tick 按实体本地解析位置
+ * （[local] 为 true 时连朝向一起），服务端不再为它广播位置。
  *
  * @param particleId 粒子 ID
- * @param entityId 实体网络 id（解析兜底；按 uuid 挂载且当拍未解析到时为 -1）
- * @param entityUuid 实体 UUID；非 null 时客户端优先按它解析——网络 id 会随实体重载/换维度变化，UUID 不会
+ * @param entityId 实体网络 id；按 uuid 挂载且当拍未解析到时为 -1
+ * @param entityUuid 实体 UUID；非 null 时客户端优先按它解析，网络 id 会随实体重载或换维度变化
  * @param ox/oy/oz 相对实体位置的偏移
  * @param local true = 偏移按实体朝向旋转（实体局部空间）；false = 世界空间偏移
  */

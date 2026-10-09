@@ -8,12 +8,12 @@ import work.nekow.particledrawing.animation.ParticleAnimation
 import java.util.UUID
 
 /**
- * 服务端下发「代码生成的动画」：直接携带已构建的 [ParticleAnimation]（结构化二进制，不验签），
- * 客户端解析后与 .pdrawc 播放走同一条本地播放/渲染链路。
+ * 服务端下发「代码生成的动画」：携带已构建的 [ParticleAnimation]（结构化二进制，不验签），
+ * 客户端解析后与 .pdrawc 播放走同一条播放与渲染链路。
  *
- * @param animationId 本次播放的唯一 ID（用于后续变量更新/停止）
+ * @param animationId 该次播放的唯一 ID，变量更新与停止按它定位
  * @param originX/Y/Z 播放原点（世界坐标）
- * @param startGameTick 播放开始时刻的服务端维度 gameTime（服务端权威进度时钟起点）
+ * @param startGameTick 播放开始时刻的服务端维度 gameTime
  * @param animation 代码生成的动画定义
  */
 @Suppress("unused")

@@ -14,7 +14,7 @@ import java.nio.file.Path
  */
 object AnimationSyncService {
 
-    /** 需要同步的扩展名（相对 animations/ 根）。贴图已内嵌于 .pdrawc，不再单独同步 PNG。 */
+    /** 需要同步的扩展名（相对 animations/ 根）；贴图内嵌于 .pdrawc，不单独同步 PNG。 */
     private val SYNC_EXTENSIONS = setOf(".pdrawc")
 
     /** 待同步文件描述（相对文件名 + 文件字节）。 */
@@ -46,11 +46,11 @@ object AnimationSyncService {
         return diff
     }
 
-    /** 校验相对文件名，防止路径穿越（允许 Unicode 字符，禁止 .. 和控制字符）。 */
+    /** 校验相对文件名：允许 Unicode 字符，长度上限 512，禁止 .. 与控制字符。 */
     fun sanitizeRelativeName(name: String): Boolean {
         if (name.isEmpty() || name.length > 512) return false
         if (name.contains("..")) return false
-        // 禁止 ASCII 控制字符和文件系统非法字符（Windows: < > : " | ? *）
+        // 禁止 ASCII 控制字符与文件系统非法字符：< > : " | ? *
         for (c in name) {
             if (c.code < 0x20) return false
             if (c in "<>:\"|?*") return false
@@ -67,7 +67,7 @@ object AnimationSyncService {
         return result
     }
 
-    /** 遍历 root 下待同步文件，action 收到相对名与绝对 Path；遍历失败静默返回。 */
+    /** 遍历 root 下待同步文件，action 收到相对名与绝对 Path；遍历失败返回空结果。 */
     private fun forEachSyncFile(root: Path, action: (String, Path) -> Unit) {
         if (!Files.isDirectory(root)) return
         try {

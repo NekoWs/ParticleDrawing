@@ -8,15 +8,14 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * 程序化贴图登记表：**双端共用一份逻辑**，不依赖任何客户端/服务端类。
+ * 程序化贴图登记表：双端共用一份逻辑，不依赖任何客户端/服务端类。
  *
- * - **服务端**：`ParticleManager.registerTexture` 登记 PNG 字节并分配一个 id；贴图（连同 id）
- *   下发给客户端，逐粒子载荷只写 id（不写名字），所以给 5 万颗粒子挂同一张贴图也只多 1 字节/颗。
- * - **客户端**：收到下发后 [declare] 记下 id → 名字（字节由 `TextureCache` 解码）；本地登记的贴图
- *   也进同一张表。
- * - **内置形状**（[ParticleStyle]）两端各自生成同一份像素，占用固定 id（1..99），不需要下发。
+ * - 服务端：`ParticleManager.registerTexture` 登记 PNG 字节并分配 id；贴图连同 id 下发给客户端，
+ *   逐粒子载荷只写数值 id（协议字段是 id，不是名字）。
+ * - 客户端：收到下发后 [declare] 记下 id → 名字，字节由 `TextureCache` 解码；本地登记的贴图也进同一张表。
+ * - 内置形状（[ParticleStyle]）两端各自生成同一份像素，占用固定 id（1..99），不需要下发。
  *
- * 同名重复登记按**第一次**生效（贴图内容不热替换）；要换图请换名字。
+ * 同名重复登记以第一次为准，贴图内容不热替换。
  */
 object TextureRegistry {
 
@@ -25,13 +24,13 @@ object TextureRegistry {
     /** 贴图名长度上限。 */
     const val MAX_NAME_LENGTH = 256
 
-    /** 单张贴图字节上限：超过直接拒绝，避免脏数据打爆网络与显存。 */
+    /** 单张贴图字节上限；超过直接拒绝。 */
     const val MAX_BYTES = 1 shl 20
 
     /** 用户贴图的 id 起点（1..99 留给内置形状）。 */
     private const val FIRST_USER_ID = 100
 
-    /** 一条登记：名字 + 协议 id；字节可能缺失（内置形状两端自带，客户端从下发包只学到 id→名）。 */
+    /** 一条登记：名字 + 协议 id；内置形状两端自带，字节可能缺失。 */
     class Entry internal constructor(
         val name: String,
         val id: Int,
@@ -69,7 +68,7 @@ object TextureRegistry {
     @JvmStatic
     fun byName(name: String): Entry? = byName[name]
 
-    /** 按协议 id 取登记；客户端没收到对应下发包时返回 null（→ 调用方回落纯白方块）。 */
+    /** 按协议 id 取登记；客户端没收到对应下发包时返回 null（此时调用方回落纯白方块）。 */
     @JvmStatic
     fun byId(id: Int): Entry? = byId[id]
 
@@ -78,9 +77,9 @@ object TextureRegistry {
     fun nameOf(id: Int): String? = byId[id]?.name
 
     /**
-     * 登记一张贴图（服务端为主；客户端本地登记也走这里）。
+     * 登记一张贴图，服务端为主，客户端本地登记也走这里。
      *
-     * @return 登记项；名字/数据非法返回 null。同名重复登记返回已有项（忽略新字节，只记一条警告）。
+     * @return 登记项；名字或数据非法返回 null，同名重复登记返回已有项并只记一条警告
      */
     @JvmStatic
     fun register(name: String, pngBytes: ByteArray): Entry? {
@@ -108,7 +107,7 @@ object TextureRegistry {
     }
 
     /**
-     * 只登记「id → 名字」（客户端收到下发包时调用）：字节还没到齐也能先按 id 找到名字。
+     * 只登记「id → 名字」，客户端收到下发包时调用；字节还没到齐也能先按 id 找到名字。
      */
     @JvmStatic
     fun declare(id: Int, name: String): Entry? {
@@ -123,7 +122,7 @@ object TextureRegistry {
         return entry
     }
 
-    /** 记下已解码成功的字节（客户端用它支持 `/pdraw reload` 后重新加载，不必再等一次下发）。 */
+    /** 记下已解码成功的字节；客户端在 `/pdraw reload` 后可直接重载，无需等待重新下发。 */
     @JvmStatic
     fun storeBytes(id: Int, pngBytes: ByteArray) {
         byId[id]?.bytes = pngBytes
@@ -133,13 +132,12 @@ object TextureRegistry {
     @JvmStatic
     fun all(): List<Entry> = byId.values.toList()
 
-    /** 有字节可加载的项（内置形状没有字节，由客户端按需生成）。 */
+    /** 有字节可加载的项；内置形状没有字节，由客户端按需生成。 */
     @JvmStatic
     fun allWithBytes(): List<Entry> = byId.values.filter { it.bytes != null }
 
     /**
-     * 换连接时清掉「从服务器学来的」映射（不同服务器的 id 空间互相独立）；
-     * 本地登记的（有字节）保留。
+     * 换连接时清掉从服务器学来的映射（不同服务器的 id 空间互相独立），保留本地登记（有字节）的项。
      */
     @JvmStatic
     fun clearDeclared() {

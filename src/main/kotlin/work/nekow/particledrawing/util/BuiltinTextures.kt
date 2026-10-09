@@ -6,15 +6,15 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
- * 内置形状贴图的像素生成：白底 + alpha 掩码，纯函数（不碰渲染层），便于单测。
+ * 内置形状贴图的像素生成：白底加 alpha 掩码，纯函数，不碰渲染层，便于单测。
  *
- * 两端都生成同一份，所以内置形状不需要走网络下发——只传「用了哪个形状」。
+ * 两端生成同一份，内置形状不走网络下发，只传「用了哪个形状」。
  */
 object BuiltinTextures {
 
     /**
-     * 内置贴图边长。恒为 16：`BridgeParticle` 的贴图尺寸系数 = 最长边 / 16，
-     * 16 正好让系数为 1，`scale` 与实际尺寸的换算不被内置贴图改变。
+     * 内置贴图边长，恒为 16：`BridgeParticle` 的贴图尺寸系数 = 最长边 / 16，
+     * 16 让系数为 1，`scale` 与实际尺寸的换算不被内置贴图改变。
      */
     const val SIZE = 16
 
@@ -25,8 +25,8 @@ object BuiltinTextures {
     private const val LINE_END_FADE = 0.2
 
     /**
-     * 生成 [style] 的 ARGB 像素（行主序，长度 size × size，`0xAARRGGBB`，RGB 恒为白）。
-     * [ParticleStyle.SQUARE] 不生成贴图，返回空数组。
+     * 生成 [style] 的 ARGB 像素，行主序，长度 size × size，格式 `0xAARRGGBB`，RGB 恒为白。
+     * [ParticleStyle.SQUARE] 不生成贴图。
      */
     @JvmStatic
     @JvmOverloads
@@ -56,7 +56,7 @@ object BuiltinTextures {
 
     /**
      * 线段：长轴（X）两端渐隐，短轴（Y）中间实、上下柔边。
-     * 两个方向都按「贴图边到边 = 0..1」归一化，所以首末像素正好是 0（没有硬切）。
+     * 两个方向都按「贴图边到边 = 0..1」归一化，首末像素为 0。
      */
     private fun line(size: Int): IntArray {
         val px = IntArray(size * size)

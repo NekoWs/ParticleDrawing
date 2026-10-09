@@ -12,17 +12,17 @@ import java.util.Collections
 import java.util.WeakHashMap
 
 /**
- * 服务器端 payload 处理器：处理客户端 → 服务器的配置阶段请求（动画文件同步）。
+ * 服务器端载荷处理器：处理客户端上报的同步请求、特效字节请求与编排完成信号。
  */
 internal object ServerPayloadHandler {
 
-    /** 已处理过同步请求的连接；键为弱引用，连接断开后可被 GC，避免长驻内存泄漏。 */
+    /** 已处理过同步请求的连接；弱引用键，连接断开后可被回收。 */
     private val handledConnections = Collections.newSetFromMap(
         Collections.synchronizedMap(WeakHashMap<Connection, Boolean>())
     )
 
-    // 处理客户端「动画同步请求」：对比差异，分块下发缺失/变化文件，最后发完成信号并结束服务端配置任务。
-    // 内存连接（单机/LAN）与客户端共享目录，直接完成不下发；重复请求忽略。
+    // 客户端「动画同步请求」：比对差异，分块下发缺失或变化的文件，最后发完成信号并结束配置任务。
+    // 内存连接（单机 / LAN）与客户端共享目录，直接回完成信号；重复请求忽略。
     fun handleSyncRequest(payload: AnimationSyncRequestPayload, context: IPayloadContext) {
         context.enqueueWork {
             val connection = context.connection()
@@ -37,7 +37,7 @@ internal object ServerPayloadHandler {
                 sendFile(context, file.name, file.bytes)
             }
             context.reply(AnimationSyncDonePayload(diff.size))
-            // 服务端配置任务收尾：让连接进入下一阶段，避免「正在加载地形」卡死
+            // 配置任务收尾，让连接进入下一阶段
             context.finishCurrentTask(AnimationSyncConfigTask.TYPE)
         }
     }
@@ -54,8 +54,8 @@ internal object ServerPayloadHandler {
     }
 
     /**
-     * 处理客户端「编排动画跑完了」：触发注册的完成回调，并（若登记了 retire）在余量后销毁整组。
-     * 多个客户端各自上报，第一个到达即生效（同一段程序、同一套时钟，本来就在同一两个 tick 内）。
+     * 客户端「编排动画跑完了」：触发注册的完成回调，登记了 retire 时在余量后销毁整组。
+     * 多个客户端各自上报，第一个到达即生效。
      */
     fun handleProgramComplete(payload: ProgramCompletePayload, context: IPayloadContext) {
         context.enqueueWork {

@@ -5,12 +5,10 @@ import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.core.TextureRegistry
 
 /**
- * 逐粒子外观的协议编解码：**只写非默认字段**（全默认时 1 字节，与「无外观」同价）。
+ * 逐粒子外观的协议编解码：只写非默认字段，全默认时只占 1 字节。
  *
- * 贴图按 id 引用（登记时分配，见 [TextureRegistry]）：5 万颗粒子挂同一张贴图也只多 1 字节/颗。
- * 服务端没登记过这个名字时退回内联名字（客户端仍按名查本地缓存，查不到就回落纯白方块）。
- *
- * 约定：**生成时定死**——这些字段没有对应的更新载荷，不产生任何逐 tick 开销。
+ * 贴图按 id 引用（登记时分配，见 [TextureRegistry]），服务端未登记该名字时退回内联名字。
+ * 外观在生成时定死，没有对应的更新载荷。
  */
 internal object ParticleVisualCodec {
 
@@ -80,7 +78,7 @@ internal object ParticleVisualCodec {
             visual.texture = if (flags and FLAG_INLINE_NAME != 0) {
                 buf.readUtf()
             } else {
-                // 未知 id：贴图还没下发到本机 —— 按需求回落纯白方块，但不丢粒子
+                // 未知 id：贴图尚未下发到本机，回落纯白方块但不丢粒子
                 TextureRegistry.nameOf(buf.readVarInt())
             }
         }

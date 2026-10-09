@@ -20,7 +20,7 @@ import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
 import java.util.function.Consumer
 
-// 代码直接生成的粒子动画，构建后可播放或链式操作（Kotlin DSL 与 Java Builder 双入口）。
+// 代码构建的粒子动画，可播放或链式操作，Kotlin DSL 与 Java Builder 双入口。
 @Suppress("unused")
 class Animation internal constructor(
     private val model: ParticleAnimation,
@@ -29,7 +29,7 @@ class Animation internal constructor(
     private var level: ServerLevel? = null
 
     /**
-     * 把动画下发给指定玩家并开始播放（服务端权威进度，与 .pdrawc 播放同一条客户端渲染链路）。
+     * 把动画下发给指定玩家并开始播放。进度以服务端为准，客户端走与 .pdrawc 相同的渲染链路。
      * @param level 播放所在的服务端世界
      * @param players 接收播放的玩家
      * @param origin 播放原点（世界坐标）
@@ -52,7 +52,7 @@ class Animation internal constructor(
         return play(lvl, players, origin)
     }
 
-    /** 停止本次播放（若尚未播放则为 no-op）。 */
+    /** 停止播放（尚未播放时为 no-op）。 */
     fun stop(): Animation {
         val id = playbackId ?: return this
         val lvl = level ?: return this
@@ -61,7 +61,7 @@ class Animation internal constructor(
     }
 
     /**
-     * 运行时更新本次播放的函数对象变量（下一 tick 生效）。
+     * 运行时更新播放中的函数对象变量，下一 tick 生效。
      * @param name 变量名
      * @param value 变量值（数字字符串）
      */
@@ -72,7 +72,7 @@ class Animation internal constructor(
         return this
     }
 
-    /** 本次播放是否仍在进行。 */
+    /** 播放是否仍在进行。 */
     fun isActive(): Boolean = playbackId?.let { ServerAnimationManager.isActive(it) } ?: false
 
     /** 给测试/内部用：底层动画模型。 */
@@ -92,7 +92,7 @@ class Animation internal constructor(
     }
 }
 
-/** Java 流式 Builder（Kotlin DSL 亦在其上实现）。 */
+/** Java 流式 Builder，Kotlin DSL 亦在其上实现。 */
 @Suppress("unused")
 class Builder internal constructor() {
     private var loop = false
@@ -432,7 +432,7 @@ class FunctionBuilder internal constructor() {
      */
     fun rotLocal(local: Boolean): FunctionBuilder = apply { frotLocal = local }
     /**
-     * 设置派生粒子帧级同步：true=每渲染帧精确同步（无 50ms 延迟）；false=按 game tick 同步，与普通粒子渲染一致。
+     * 设置派生粒子帧级同步：true=每渲染帧同步；false=按 game tick 同步，与普通粒子渲染一致。
      * @param enabled 是否帧级同步
      */
     fun frameSync(enabled: Boolean): FunctionBuilder = apply { fframeSync = enabled }
@@ -544,7 +544,7 @@ class CameraBuilder internal constructor() {
     }
 }
 
-// —— Kotlin DSL 糖：把 Java Builder 包装成属性赋值风格 ——
+// Kotlin DSL：把 Java Builder 包装成属性赋值风格
 
 @Suppress("unused")
 class AnimationDsl internal constructor() {

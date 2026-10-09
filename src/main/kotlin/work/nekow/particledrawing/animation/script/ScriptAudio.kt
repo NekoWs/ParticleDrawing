@@ -4,9 +4,10 @@ import work.nekow.particledrawing.animation.AudioAsset
 import kotlin.math.floor
 
 /**
- * 音频特征查表（与编辑器 core/audio-assets.js 的 audioValueAt 逐位一致）。
- * 特征列是编辑器导入时烘焙的量化数据：rms/peak/centroid 为 u16（0..65535 映射 0..1 或 0..nyquist），
- * onset/rolloff/bands 为 u8（0..255）。查询时刻 localMs 落在两 hop 之间时线性插值。
+ * 音频特征查表，与编辑器的 audioValueAt 逐位一致。
+ *
+ * rms/peak/centroid 为 u16（0..65535 映射 0..1 或 0..nyquist），onset/rolloff/bands 为 u8（0..255）；
+ * 查询时刻 localMs 落在两 hop 之间时线性插值。
  */
 object ScriptAudio {
 

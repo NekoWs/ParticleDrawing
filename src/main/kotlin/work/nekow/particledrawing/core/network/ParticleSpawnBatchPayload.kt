@@ -6,10 +6,9 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
 
 /**
- * 批量粒子生成：一次包下发整批 [entries]（一条尾迹/一次爆发不必逐颗发包）。
+ * 批量粒子生成：一次包下发整批 [entries]。
  *
- * 每条记录与 [ParticleSpawnPayload] 布局一致（含寿命曲线与首帧插值端点），
- * 因此批量生成与逐颗生成在客户端落地完全同一条路径。
+ * 每条记录与 [ParticleSpawnPayload] 布局一致，客户端与逐颗生成走同一条路径。
  *
  * @param entries 生成记录；服务端按可见性逐玩家裁剪，单包条数不超过 [MAX_BATCH]
  */
@@ -23,7 +22,7 @@ data class ParticleSpawnBatchPayload(
     }
 
     companion object {
-        /** 单包条数上限（服务端超限时拆包发送）。 */
+        /** 单包条数上限，服务端超限时拆包发送。 */
         const val MAX_BATCH = 256
 
         @JvmField

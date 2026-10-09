@@ -11,10 +11,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * 编排动画的帧计算：组级倍率对「粒子到轴心的距离」的作用，以及多条旋转指令的累加。
- *
- * 两条都是使用方（球壳类特效）最在意的语义：`scale(3f)` 要把半径 3 的圆变成半径 9；
- * `spin` 与一次性 `rotate` 要能叠加，否则「补一段相位再继续自转」补不上去。
+ * 编排动画的帧计算：组级倍率对粒子到轴心距离的作用，以及多条旋转指令的累加。
  */
 class ProgramFrameTest {
 

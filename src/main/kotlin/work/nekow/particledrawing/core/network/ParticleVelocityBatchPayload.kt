@@ -10,8 +10,7 @@ import java.util.UUID
  * 批量设置速度数据包：一个包覆盖多颗粒子，语义与 [ParticleVelocityPayload] 相同
  * （速度驱动接管位置、解除实体锚点，之后两端按同一规则逐 tick 积分）。
  *
- * 「每颗粒子各自的速度」在每 tick 都要重算时（被吸入的粒子速度随距离变化）用它：
- * 一包全组，不必每颗粒子一个包。
+ * 用于每 tick 都要重算各粒子速度的场合，如被吸入的粒子速度随距离变化。
  *
  * @param updates 粒子 ID 与速度，按顺序一一对应
  */
@@ -21,7 +20,7 @@ data class ParticleVelocityBatchPayload(
 ) : CustomPacketPayload {
 
     init {
-        // 超限直接报错：发送端必须先用 BatchChunking 拆包（编码端不拆会当场断客户端）
+        // 超限直接报错，发送端按 BatchChunking 拆包后下发
         require(updates.size <= MAX_BATCH) { "粒子速度批量超限: ${updates.size} > $MAX_BATCH" }
     }
 
@@ -32,7 +31,7 @@ data class ParticleVelocityBatchPayload(
     )
 
     companion object {
-        /** 单包最大条数：畸形包显式拒绝，不静默截断。 */
+        /** 单包最大条数，超限显式拒绝。 */
         const val MAX_BATCH = 512
 
         @JvmField

@@ -3,14 +3,11 @@ package work.nekow.particledrawing.api
 /**
  * 程序化粒子的内置外观形状。
  *
- * 每个非 [SQUARE] 形状对应一张 PD 自带的小贴图（16×16，边缘柔化），由**客户端按需生成**，
- * 不占任何网络带宽（两端各自生成同一份，名字与 id 都写死在枚举里）。
+ * 每个非 [SQUARE] 形状对应一张自带的 16×16 柔边小贴图，由客户端按需生成，两端各自生成同一份，
+ * 名字与 id 写死在枚举里。也可先用 [ParticleManager.registerBuiltinTextures] 注册，
+ * 再按 [textureName] 当普通贴图引用。
  *
- * 用法：`manager.create().style(ParticleStyle.SOFT_DOT)`；也可以先用
- * [ParticleManager.registerBuiltinTextures] 注册，再按 [textureName] 当普通贴图引用。
- *
- * 内置贴图边长恰为 16，因此贴图尺寸系数 = 1（见 `doc/api-guide.md` 的尺寸口径一节）：
- * `scale` 与实际尺寸的换算不会被贴图放大。
+ * 贴图边长为 16，所以贴图尺寸系数 = 1，`scale` 与尺寸的换算不被贴图放大。
  */
 enum class ParticleStyle(
     /** 内置贴图名；[SQUARE] 没有贴图，为 null。 */
@@ -21,13 +18,12 @@ enum class ParticleStyle(
     /** 纯白方块（默认）：无贴图，整颗按颜色染色，边缘是硬的。 */
     SQUARE(null, 0),
 
-    /** 柔边圆点：中心实、边缘平滑过渡。黑核、能量球壳、薄雾这类「不能是方块」的粒子用它。 */
+    /** 柔边圆点：中心实、边缘平滑过渡，用于不该是方块的粒子。 */
     SOFT_DOT("particledrawing:builtin/soft_dot", 1),
 
     /**
-     * 线段：沿长轴（四边形局部 X）拉伸、两端渐隐、上下柔边。
-     * 配合各向异性尺寸（长 = 线段长、短 = 粗）+ 固定朝向（[ParticleVisual.alignTo]）画丝线；
-     * 单颗就是一条完整的丝，不必再用一排小方块拼。
+     * 线段：沿长轴（四边形局部 X）拉伸、两端渐隐、上下柔边，单颗就是一条完整的丝。
+     * 配合各向异性尺寸（长 = 线段长、短 = 粗）与固定朝向（[ParticleVisual.alignTo]）使用。
      */
     LINE("particledrawing:builtin/line", 2);
 

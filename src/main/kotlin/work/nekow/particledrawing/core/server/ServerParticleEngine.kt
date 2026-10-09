@@ -36,7 +36,8 @@ import org.apache.logging.log4j.Logger
 
 private val LOGGER: Logger = LogManager.getLogger("ParticleDrawing")
 
-// 服务端权威粒子引擎，每个维度一个实例（经 getOrCreate 获取），负责粒子与粒子组的生命周期与网络同步。
+// 服务端权威粒子引擎：每个维度一个实例（经 [ServerParticleEngine.getOrCreate] 获取），
+// 负责粒子与粒子组的生命周期与网络同步。
 @Suppress("unused")
 class ServerParticleEngine(
     val dimensionId: UUID
@@ -45,7 +46,7 @@ class ServerParticleEngine(
     private val particles: MutableMap<UUID, ParticleData> = ConcurrentHashMap()
     private val groups: MutableMap<UUID, ParticleGroupData> = ConcurrentHashMap()
 
-    // 粒子 -> 已同步的玩家集合；玩家 -> 已同步的粒子集合（用于每玩家粒子数限制与可见性重检）
+    // 粒子 -> 已同步的玩家集合，以及反查用的玩家 -> 已同步的粒子集合（每玩家粒子数限制与可见性重检）
     private val visibleTo: MutableMap<UUID, MutableSet<UUID>> = ConcurrentHashMap()
     private val playerParticles: MutableMap<UUID, MutableSet<UUID>> = ConcurrentHashMap()
     private var visibilityTickCounter = 0
@@ -54,7 +55,7 @@ class ServerParticleEngine(
     /**
      * 生成粒子并广播到视野内可见的玩家；达到维度上限时返回 null。
      *
-     * [id] 由调用方给（[work.nekow.particledrawing.api.ParticleHandle.Builder] 先分配再可能延迟生成）；
+     * [id] 由调用方给（[work.nekow.particledrawing.api.ParticleHandle.Builder] 先生成 id，可能延迟发射）；
      * [visual] 是生成时定死的外观规格，[lifeCurve] 是寿命曲线，[prev] 是首帧插值端点（可为 null）。
      */
     @Suppress("DataFlowIssue")
@@ -90,10 +91,10 @@ class ServerParticleEngine(
     }
 
     /**
-     * 批量生成：先逐条登记（超出维度上限的给 null），再**逐玩家按可见性裁剪成一包**下发。
+     * 批量生成：先逐条登记（超出维度上限的给 null），再逐玩家按可见性裁剪成一包下发。
+     * 每条记录的字段布局与 [spawnParticle] 一致，客户端落地走同一条路径。
      *
-     * 与逐颗 [spawnParticle] 的差别只在带宽：每条记录的字段布局完全一致，客户端落地走同一条路径。
-     * 返回与 [specs] 一一对应的粒子数据（被拒绝的为 null）。
+     * @return 与 [specs] 一一对应的粒子数据，被拒绝的为 null
      */
     fun spawnParticles(specs: List<ParticleSpawnSpec>,
                        playersInDimension: Collection<ServerPlayer>,
@@ -127,7 +128,7 @@ class ServerParticleEngine(
             )
         }
 
-        // 逐玩家裁剪：可见性与每玩家上限都和单发同一套判定，然后按 MAX_BATCH 拆包
+        // 逐玩家裁剪：可见性与每玩家上限都和单发同一套判定，再按 MAX_BATCH 拆包
         val maxPerPlayer = ParticleDrawingConfig.SERVER.maxParticlesPerPlayer.get()
         for (player in playersInDimension) {
             val batch = ArrayList<ParticleSpawnPayload>(payloads.size)
@@ -152,16 +153,11 @@ class ServerParticleEngine(
     /**
      * 更新粒子属性（位置、颜色、缩放）并广播。
      *
-     * @param id 粒子 ID
-     * @param position 新位置
-     * @param color 新颜色
-     * @param scale 新缩放
      * @param updatePos 是否更新位置
      * @param updateColor 是否更新颜色
      * @param updateScale 是否更新缩放
      * @param durationTicks 过渡持续 tick 数
-     * @param easing 缓动类型
-     * @param playersInDimension 维度内的玩家列表
+     * @param easing 过渡缓动类型
      */
     fun updateParticle(id: UUID, position: Vec3, color: Color, scale: Float,
                        updatePos: Boolean, updateColor: Boolean, updateScale: Boolean,
@@ -189,10 +185,8 @@ class ServerParticleEngine(
     }
 
     /**
-     * 设置粒子的速度向量并广播（速度驱动接管位置，实体锚点解除）。
-     * @param id 粒子 ID
+     * 设置粒子的速度向量并广播。
      * @param velocity 速度向量（blocks/tick）
-     * @param playersInDimension 维度内的玩家列表
      */
     fun setVelocity(id: UUID, velocity: Vec3, playersInDimension: Collection<ServerPlayer>) {
         val data = particles[id] ?: return
@@ -203,11 +197,9 @@ class ServerParticleEngine(
     }
 
     /**
-     * 批量设置速度并广播：一个包覆盖多颗粒子，语义与 [setVelocity] 相同
-     * （速度驱动接管位置、解除实体锚点、之后两端同规则逐 tick 积分）。
+     * 批量设置速度并广播：一个包覆盖多颗粒子，语义与 [setVelocity] 相同。
      * 逐玩家按可见性裁剪后再发，不因为合并成包就放松坐标可见性。
      *
-     * @param ids 粒子 ID 列表
      * @param velocities 与 [ids] 按顺序一一对应的速度（blocks/tick）
      * @return 服务端实际生效的粒子数
      */
@@ -228,11 +220,9 @@ class ServerParticleEngine(
     }
 
     /**
-     * 批量施力并广播：一个包覆盖多颗粒子，语义与 [applyForce] 相同（力驱动接管位置、
-     * 解除实体锚点、两端同规则逐 tick 积分），每颗粒子各自的加速度、共用一个 [ticks]。
+     * 批量施力并广播：一个包覆盖多颗粒子，语义与 [applyForce] 相同，每颗粒子各自的加速度共用一个 [ticks]。
      * 逐玩家按可见性裁剪后再发。
      *
-     * @param ids 粒子 ID 列表
      * @param accelerations 与 [ids] 按顺序一一对应的加速度（blocks/tick²）
      * @param ticks >0 = 施加这么多 tick；<0 = 无限；0 = 清除
      * @return 服务端实际生效的粒子数
@@ -255,10 +245,10 @@ class ServerParticleEngine(
 
     /**
      * 批量运动指令（速度/力）的下发：逐玩家按可见性裁剪后按 [maxBatch] 拆包。
-     * 与 [trackParticles] 同一口径——包里的坐标同样敏感，不可见的玩家一颗都不发。
+     * 与 [trackParticles] 同口径，包里的坐标同样敏感，不可见的玩家一颗都不发。
      *
-     * 拆包是硬要求：公开 API 对成员数没有上限（[work.nekow.particledrawing.api.ParticleBatch]
-     * 只是把全部存活成员交过来），而载荷的 `MAX_BATCH` 是协议上限，超限的包会让客户端解码失败掉线。
+     * 拆包是硬要求：载荷的 `MAX_BATCH` 是协议上限，超限的包会让客户端解码失败掉线，
+     * 而调用方交过来的成员数没有上限。
      */
     private fun sendMotionBatch(playersInDimension: Collection<ServerPlayer>,
                                 values: Map<UUID, Vec3>,
@@ -280,8 +270,7 @@ class ServerParticleEngine(
 
     /**
      * 直设粒子位置并广播（无缓动）：客户端每个 tick 消费一条，用 partialTick 在相邻两条之间插值。
-     * 位置指令接管运动，速度与力一并清零。
-     * 供「每 tick 跟随一个非实体点」的粒子（如投射物本体）使用。
+     * 位置指令接管运动，速度与力一并清零。用于每 tick 跟随非实体点的粒子，如投射物本体。
      */
     fun trackParticle(id: UUID, position: Vec3, playersInDimension: Collection<ServerPlayer>) {
         val data = particles[id] ?: return
@@ -293,7 +282,7 @@ class ServerParticleEngine(
 
     /**
      * 批量直设位置并广播：一个包覆盖多颗粒子，语义与 [trackParticle] 相同。
-     * 逐玩家按可见性裁剪后再发，不因为合并成包就放松坐标可见性。
+     * 逐玩家按可见性裁剪后再发。
      *
      * @return 服务端实际生效的粒子数
      */
@@ -320,7 +309,7 @@ class ServerParticleEngine(
                 val p = positions[i]
                 visible.add(ParticleTrackBatchPayload.Track(id, p.x, p.y, p.z))
             }
-            // 与速度/力同口径拆包：成员数由调用方决定，协议上限由这里兜住
+            // 与速度/力同口径拆包，协议上限由这里兜住
             for (chunk in BatchChunking.chunks(visible, ParticleTrackBatchPayload.MAX_BATCH)) {
                 PacketDistributor.sendToPlayer(player, ParticleTrackBatchPayload(chunk))
             }
@@ -330,7 +319,7 @@ class ServerParticleEngine(
 
     /**
      * 设置粒子的加速度（服务端权威力）并广播一次：之后两端按同一规则逐 tick 积分
-     * （速度 += 加速度，位置 += 速度），中途不再发包。适合大量粒子沿同一个力运动。
+     * （速度 += 加速度，位置 += 速度），中途不再发包。
      *
      * @param ticks >0 = 施加这么多 tick；<0 = 无限（直到被下一次力/速度/位置指令覆盖）；0 = 清除
      */
@@ -345,10 +334,10 @@ class ServerParticleEngine(
 
     /**
      * 把粒子挂到实体锚点上并广播一次：客户端按实体身份本地解析位置（[local] 为 true 时连朝向），
-     * 服务端只在这里更新锚点，之后不再为它发位置包。锚点接管位置，速度与力清零。
+     * 服务端只在这里更新锚点，之后不再为它发位置包。
      *
      * @param entityId 当拍解析到的网络 id；未解析到时给 [AttachMath.noEntity]
-     * @param entityUuid 实体 UUID（主身份；客户端优先按它解析，网络 id 只是兜底）
+     * @param entityUuid 实体 UUID（主身份）；客户端优先按它解析，网络 id 只是兜底
      */
     fun attachParticle(id: UUID, entityId: Int, entityUuid: UUID?, offset: Vec3, local: Boolean,
                        playersInDimension: Collection<ServerPlayer>) {
@@ -365,7 +354,7 @@ class ServerParticleEngine(
         attachParticle(id, entityId, null, offset, local, playersInDimension)
     }
 
-    /** 解析锚点实体：优先按 uuid（网络 id 会随实体重载/换维度变化），解析到就刷新 id 缓存。 */
+    /** 解析锚点实体：优先按 uuid（网络 id 会随实体重载、换维度变化），解析到就刷新 id 缓存。 */
     private fun resolveAttached(level: ServerLevel?, data: ParticleData): Entity? {
         if (level == null) return null
         val uuid = data.attachedUuid()
@@ -380,7 +369,7 @@ class ServerParticleEngine(
         return if (id == AttachMath.noEntity()) null else level.getEntity(id)
     }
 
-    /** 位置指令接管：解除实体锚点，清零速度与力（与服务端 tick、客户端渲染粒子的口径一致）。 */
+    /** 位置指令接管：解除实体锚点，清零速度与力，口径与服务端 tick、客户端渲染粒子一致。 */
     private fun takeOverPosition(data: ParticleData, position: Vec3) {
         data.setVelocity(Vec3.ZERO) // 速度指令接管位置，锚点随之解除
         data.setAcceleration(Vec3.ZERO, 0)
@@ -389,9 +378,7 @@ class ServerParticleEngine(
 
     /**
      * 设置粒子的旋转（绕轴心做圆弧运动）并广播。
-     * @param id 粒子 ID
      * @param pivot 旋转轴心（绝对世界坐标）
-     * @param offset 粒子相对轴心的偏移向量
      * @param rot 目标欧拉角（弧度，X→Y→Z）
      */
     fun rotateParticle(id: UUID, pivot: Vec3, offset: Vec3, rot: DoubleArray,
@@ -404,8 +391,7 @@ class ServerParticleEngine(
 
     /**
      * 设置粒子的平移（绕轴心叠加世界空间增量）并广播。
-     * @param id 粒子 ID
-     * @param pivot 旋转轴心（绝对世界坐标）
+     * @param pivot 轴心（绝对世界坐标）
      * @param offset 粒子相对轴心的偏移向量
      * @param delta 目标平移增量
      */
@@ -419,7 +405,6 @@ class ServerParticleEngine(
 
     /**
      * 设置粒子的位置（组 set 位置轨道）并广播：缓动未旋转偏移，保留旋转。
-     * @param id 粒子 ID
      * @param pivot 旋转轴心（绝对世界坐标）
      * @param offset 目标未旋转偏移（相对轴心）
      */
@@ -433,9 +418,7 @@ class ServerParticleEngine(
 
     /**
      * 动态修改粒子的发光光照等级并广播。
-     * @param id 粒子 ID
-     * @param lightLevel 目标光照等级 (0-15)
-     * @param playersInDimension 维度内的玩家列表
+     * @param lightLevel 目标光照等级（0-15）
      */
     fun setLightLevel(id: UUID, lightLevel: Int, playersInDimension: Collection<ServerPlayer>) {
         val data = particles[id] ?: return
@@ -447,15 +430,6 @@ class ServerParticleEngine(
 
     /**
      * 链式调用更新粒子属性。
-     *
-     * 用法:
-     * ```
-     * engine.update(particleId)
-     *     .position(x, y, z)
-     *     .color(Color.BLUE)
-     *     .easing(EasingType.EASE_OUT, 10)
-     *     .send(players)
-     * ```
      *
      * @param id 要更新的粒子 ID
      */
@@ -494,20 +468,10 @@ class ServerParticleEngine(
         }
     }
 
-    /**
-     * 创建粒子的链式更新构建器。
-     *
-     * @param id 要更新的粒子 ID
-     * @return 更新构建器实例
-     */
+    /** 创建粒子的链式更新构建器。 */
     fun update(id: UUID) = UpdateBuilder(id)
 
-    /**
-     * 销毁单个粒子并通知所有维度内玩家。
-     *
-     * @param id 粒子 ID
-     * @param playersInDimension 维度内的玩家列表
-     */
+    /** 销毁单个粒子并通知所有维度内玩家。 */
     fun destroyParticle(id: UUID, playersInDimension: Collection<ServerPlayer>) {
         val data = particles.remove(id) ?: return
 
@@ -521,12 +485,7 @@ class ServerParticleEngine(
         untrackParticle(id)
     }
 
-    /**
-     * 销毁整个粒子组及其所有成员。
-     *
-     * @param groupId 组 ID
-     * @param playersInDimension 维度内的玩家列表
-     */
+    /** 销毁整个粒子组及其所有成员。 */
     fun destroyGroup(groupId: UUID, playersInDimension: Collection<ServerPlayer>) {
         val group = groups.remove(groupId) ?: return
 
@@ -535,21 +494,17 @@ class ServerParticleEngine(
             particles.remove(id)
         }
 
-        // 大组按上限拆包：一个包塞几百上千个 id 会撞上协议上限
+        // 大组按上限拆包，一个包塞不下几百上千个 id
         for (payload in ParticleDestroyPayload.chunked(ids, groupId)) {
             sendToTracked(playersInDimension, payload.particleIds.toList(), payload)
         }
         untrackParticles(ids)
     }
 
-    /**
-     * 每 tick 更新：推进生命周期、移除过期粒子。
-     *
-     * @param playersInDimension 维度内的玩家列表
-     */
+    /** 每 tick 更新：推进生命周期、移除过期粒子。 */
     fun tick(playersInDimension: Collection<ServerPlayer>) {
-        // 实体锚点：位置每 tick 由锚点解析（不逐 tick 发包）。无玩家在线时没有关卡可查，
-        // 保持上次位置即可——没有玩家也就没有渲染。
+        // 实体锚点：位置每 tick 由锚点解析，不逐 tick 发包。无玩家在线时没有关卡可查，
+        // 保持上次位置即可，没有玩家也就没有渲染。
         val level = playersInDimension.firstOrNull()?.level()
         val it = particles.entries.iterator()
         while (it.hasNext()) {
@@ -579,7 +534,7 @@ class ServerParticleEngine(
 
         groups.entries.removeIf { it.value.isEmpty() }
 
-        // 周期性可见性重检：补发新进入范围的粒子、回收已越界的粒子
+        // 周期性可见性重检：补发新进入范围的粒子，回收已越界的粒子
         visibilityTickCounter++
         if (visibilityTickCounter >= ParticleDrawingConfig.SERVER.visibilityCheckInterval.get().coerceAtLeast(1)) {
             visibilityTickCounter = 0
@@ -598,13 +553,7 @@ class ServerParticleEngine(
     /** @return 指定 ID 的组，不存在则返回 null */
     fun getGroup(groupId: UUID): ParticleGroupData? = groups[groupId]
 
-    /**
-     * 创建粒子组。
-     *
-     * @param groupId 组 ID
-     * @param pivot 组轴心
-     * @return 创建的组数据
-     */
+    /** 创建粒子组。 */
     @Suppress("unused")
     fun createGroup(groupId: UUID, pivot: Vec3): ParticleGroupData {
         val group = ParticleGroupData.create(groupId, pivot)
@@ -615,12 +564,7 @@ class ServerParticleEngine(
     /** @return 指定 ID 的粒子数据，不存在则返回 null */
     fun getParticle(id: UUID): ParticleData? = particles[id]
 
-    /**
-     * 设置粒子相对轴心的偏移。
-     *
-     * @param id 粒子 ID
-     * @param offset 偏移向量
-     */
+    /** 设置粒子相对轴心的偏移。 */
     fun setOffsetFromPivot(id: UUID, offset: Vec3) {
         particles[id]?.setOffsetFromPivot(offset)
     }
@@ -628,7 +572,6 @@ class ServerParticleEngine(
     /**
      * 清除维度内所有粒子和组，按载荷上限分批发送销毁通知。
      *
-     * @param playersInDimension 维度内的玩家列表
      * @return 清除的粒子数量
      */
     fun clearAll(playersInDimension: Collection<ServerPlayer>): Int {
@@ -768,8 +711,8 @@ class ServerParticleEngine(
     /**
      * 仅向已追踪了指定粒子的玩家发送数据包。
      *
-     * 组变换与运动指令等数据包携带世界坐标（轴心），必须只发给实际拥有这些粒子的玩家，
-     * 否则会向不可见这些粒子的玩家泄露坐标信息（无政府服务器可利用此获取他人位置）。
+     * 组变换与运动指令携带世界坐标（轴心），只发给实际拥有这些粒子的玩家，
+     * 否则会向看不到这些粒子的玩家泄露坐标信息。
      */
     private fun sendToTracked(players: Collection<ServerPlayer>, particleIds: Collection<UUID>, payload: CustomPacketPayload) {
         val recipients = HashSet<UUID>()
@@ -786,15 +729,10 @@ class ServerParticleEngine(
     }
 
     companion object {
-        /** 全局维度引擎映射表 */
+        /** 全局维度引擎映射表。 */
         private val DIMENSION_ENGINES: MutableMap<UUID, ServerParticleEngine> = ConcurrentHashMap()
 
-        /**
-         * 获取或创建指定维度的引擎实例。
-         *
-         * @param dimensionId 维度 ID
-         * @return 引擎实例
-         */
+        /** 获取或创建指定维度的引擎实例。 */
         @JvmStatic
         fun getOrCreate(dimensionId: UUID): ServerParticleEngine {
             return DIMENSION_ENGINES.computeIfAbsent(dimensionId) { ServerParticleEngine(it) }

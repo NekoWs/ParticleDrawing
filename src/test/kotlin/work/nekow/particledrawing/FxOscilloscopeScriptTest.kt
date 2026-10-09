@@ -12,11 +12,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * 实机夹具：示波器工程（`cases/示波器（示波器音乐冠军）.pdraw`）里 fx1「X-Y 光束（主迹线）」的脚本原文。
- *
- * 这支脚本在游戏里跑炸过一次——`this.delta is not available here (line 97, col 20)`，整支 fx 求值失败。
- * 所以把源码整个搬进来当回归夹具：它同时钉住「this.delta 不报错」和「这支脚本用到的成员/内建一个都不少」。
- * 夹具是工程文件里的原文，脚本改一行就要连着一起更新。
+ * 实机夹具：示波器工程 fx1「X-Y 光束（主迹线）」的脚本原文，
+ * 钉住 `this.delta` 与这支脚本用到的成员、内建。
  */
 class FxOscilloscopeScriptTest {
 
@@ -50,7 +47,7 @@ class FxOscilloscopeScriptTest {
             javaClass.getResourceAsStream("/editor-fixture/oscilloscope-fx1.txt"),
             "缺少夹具 src/test/resources/editor-fixture/oscilloscope-fx1.txt",
         ).use { it.readBytes().toString(Charsets.UTF_8) }
-        // 夹具就是那支报错的脚本：第 97 行必须是 this.delta 的用法，否则这条测试已经失真
+        // 夹具第 97 行必须是 this.delta 的用法
         assertTrue(source.lines()[96].contains("this.delta"), "夹具第 97 行应当是 this.delta 的用法")
 
         val program = parseProgram(source)
@@ -76,17 +73,17 @@ class FxOscilloscopeScriptTest {
         )
 
         ScriptRuntime.runSpawnSetup(program, obj, ctx(0.0, 0.0))
-        // setup 按 segs = winMs/segMs ≈ 1152 铺满环形缓冲的粒子
+        // setup 按 segs = winMs/segMs 铺满环形缓冲的粒子
         assertTrue(particles.size > 100, "setup 应当铺出环上的粒子，实际 ${particles.size}")
 
-        // 连跑几帧：脚本第 97 行的 this.delta 就在这条路径上（修复前这里抛 "this.delta is not available here"）
+        // 连跑几帧：脚本第 97 行的 this.delta 就在这条路径上
         var t = 0.0
         repeat(5) {
             t += 16.7
             ScriptRuntime.runProcessFrame(program, obj, ctx(t, 16.7))
         }
 
-        // process 末尾按 vars.gain（8）× size（1）写视图变换，说明整支脚本真的跑到最后一行
+        // process 末尾按 vars.gain × size 写视图变换
         assertEquals(8.0, view.scale, 1e-12)
         // 末尾写粒子：段长/线宽写进 scale，取向写进 rotation
         assertTrue(particles.any { it.scaleDim != 0 }, "process 应当写出本帧新增的段")

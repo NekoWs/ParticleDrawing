@@ -3,14 +3,10 @@ package work.nekow.particledrawing.animation.script
 import kotlin.math.PI
 import kotlin.math.E
 
-// —— AST ——
-
 sealed class Node {
     abstract val line: Int
     abstract val col: Int
 }
-
-// —— 语句 ——
 
 class BlockNode(val body: List<Node>, override val line: Int, override val col: Int) : Node()
 class IfNode(val cond: Node, val then: Node, val els: Node?, override val line: Int, override val col: Int) : Node()
@@ -29,8 +25,6 @@ class DeclareNode(val kind: String, val decls: List<Declarator>, override val li
 class DestructureNode(val kind: String, val names: List<String>, val value: Node, override val line: Int, override val col: Int) : Node()
 class WhenStmtNode(val subject: Node, val cases: List<WhenStmtCase>, val els: Node?, override val line: Int, override val col: Int) : Node()
 class WhenStmtCase(val label: Node, val body: Node)
-
-// —— 表达式 ——
 
 class NumNode(val value: Double, override val line: Int, override val col: Int) : Node()
 class StrNode(val value: String, override val line: Int, override val col: Int) : Node()
@@ -53,8 +47,6 @@ class ObjNode(val fields: Map<String, Node>, override val line: Int, override va
 class ApplyNode(val target: Node, val body: LambdaNode, override val line: Int, override val col: Int) : Node()
 class WhenExprNode(val subject: Node, val cases: List<WhenExprCase>, val els: Node, override val line: Int, override val col: Int) : Node()
 class WhenExprCase(val label: Node, val expr: Node)
-
-// —— 赋值目标 ——
 
 sealed class AssignTarget {
     abstract val line: Int
@@ -81,8 +73,6 @@ class ScriptProgram(
     val functions: Map<String, FunctionNode>,
     val globals: List<Node> = emptyList(),
 )
-
-// —— Tokenizer ——
 
 enum class TokenType { NUM, STR, IDENT, PUNCT, EOF }
 
@@ -269,8 +259,6 @@ fun tokenize(sourceIn: String?): List<Token> {
     return tokens
 }
 
-// —— Parser ——
-
 private val KEYWORDS = setOf(
     "setup", "process", "tick", "func", "return", "if", "else", "while", "do", "for",
     "of", "const", "let", "undefined", "when", "break", "continue", "true", "false",
@@ -281,7 +269,7 @@ private val CONSTANT_NAMES = setOf("TAU", "HALF_PI", "QUARTER_PI", "DEG2RAD", "R
 private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w", "alpha" to "w")
 private val COMP_NAMES = setOf("x", "y", "z", "w", "r", "g", "b", "a", "alpha")
 
-// 内建函数保留名。全局 vec/color 变换函数已移除（改为实例方法）。
+// 内建函数保留名。
 private val BUILTIN_NAMES = setOf(
     "print", "assert",
     "vec2", "vec3", "vec4", "vec", "mat3", "mat4",
@@ -303,7 +291,7 @@ private val COMPOUND_ASSIGN = mapOf("+=" to "+", "-=" to "-", "*=" to "*", "/=" 
 
 private const val CTX_NAME = "this"
 
-// 表达式/语句嵌套深度上限：与编辑器 parser.js 一致，超深嵌套在解析期主动报错，避免 StackOverflowError。
+// 表达式/语句嵌套深度上限：超深嵌套在解析期报错，避免 StackOverflowError。
 private const val MAX_PARSE_DEPTH = 512
 
 class ScriptParser(private val source: String) {
@@ -1069,8 +1057,8 @@ class ScriptParser(private val source: String) {
     }
 }
 
-/** 解析脚本源码（等价 JS parseProgram）。 */
+/** 解析脚本源码。 */
 fun parseProgram(source: String): ScriptProgram = ScriptParser(source).parseProgram()
 
-/** 解析裸表达式（UV 字段表达式等，无 setup/process 包装）。 */
+/** 解析裸表达式（无 setup/process 包装，用于 UV 字段等）。 */
 fun parseExpression(source: String): Node = ScriptParser(source).parseBareExpression()

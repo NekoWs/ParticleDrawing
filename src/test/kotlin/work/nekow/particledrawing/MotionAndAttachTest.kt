@@ -19,10 +19,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 力驱动（applyForce）两端积分一致 + 实体锚点求解 + 新增载荷编解码。
+ * 力驱动（applyForce）两端积分一致 + 实体锚点求解 + 载荷编解码。
  *
- * 力只在开始施力时下发一次，之后两端各自异步积分，所以「服务端算出的位置」与
- * 「客户端算出的位置」必须逐 tick 相同，否则两边会越走越远。
+ * 力只在开始施力时下发一次，之后两端各自异步积分，服务端与客户端的位置必须逐 tick 相同。
  */
 class MotionAndAttachTest {
 

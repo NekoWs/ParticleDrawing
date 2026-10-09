@@ -12,8 +12,7 @@ import work.nekow.particledrawing.animation.ClientAnimationPlayer;
 import work.nekow.particledrawing.core.client.CameraController;
 
 // 摄像机预览（/pdraw camera）：在 alignWithEntity 返回处覆盖玩家相机的位置与旋转，
-// 之后 prepareCullFrustum / setupPerspective 都会用这个姿态。
-// FOV 由 ParticleRenderHandler#onComputeFov 走 ViewportEvent.ComputeFov 覆盖，不在这里处理。
+// 之后 prepareCullFrustum / setupPerspective 都会用这个姿态；FOV 由粒子渲染处理器在计算 FOV 时覆盖。
 @Mixin(Camera.class)
 public abstract class CameraMixin {
 
@@ -28,7 +27,7 @@ public abstract class CameraMixin {
     @Inject(method = "alignWithEntity", at = @At("RETURN"))
     private void particleDrawing$overrideCamera(float partialTicks, CallbackInfo ci) {
         // 渲染帧姿态：CameraController 在上一/当前 game tick 姿态间按 partialTicks 插值，
-        // 并已加上播放原点偏移（粒子以 origin + 局部坐标生成，摄像机也必须同处一个世界）。
+        // 并已加上播放原点偏移（粒子以 origin + 局部坐标生成，摄像机同处一个世界）。
         ClientAnimationPlayer.CameraPose pose = CameraController.currentPose((double) partialTicks);
         if (pose == null) {
             return;
@@ -76,8 +75,7 @@ public abstract class CameraMixin {
         double ypx = -xx * s + yx * c;
         double ypy = -xy * s + yy * c;
 
-        // 反解 rotationYXZ(π − yRot, −xRot, −roll)。
-        // 公式经 JOML 1.10.8 十万组随机朝向端到端验证（重建误差 < 1e-4），视向竖直时上面已退化处理。
+        // 反解 rotationYXZ(π − yRot, −xRot, −roll)，视向竖直时上面已退化处理。
         double a = Math.atan2(zx, zz);
         double b = Math.asin(Math.clamp(-zy, -1.0, 1.0));
         double cc = Math.atan2(xpy, ypy);

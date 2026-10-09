@@ -8,8 +8,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import work.nekow.particledrawing.lighting.DynamicLightManager;
 
-// 修正实体渲染的光照，避免实体在发光粒子附近显得过暗；
-// 与方块光照一致，把动态光照按小数精度合并进打包光坐标。
+// 实体渲染光照混入：与方块光照口径一致，把动态光照按小数精度合并进打包光坐标。
 @Mixin(EntityRenderer.class)
 public abstract class EntityRendererMixin<T extends Entity> {
 

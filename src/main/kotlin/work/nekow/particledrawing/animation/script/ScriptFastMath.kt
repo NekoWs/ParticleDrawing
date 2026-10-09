@@ -7,7 +7,7 @@ import kotlin.math.abs
 import kotlin.math.ln
 
 // 快速标量数学近似（仅 process 且 fx.fastMath 开启时使用）。
-// 与编辑器 fastmath.js 逐位一致；sin/cos/tan 最大绝对误差 ≤1e-4，其余相对误差 ≤1e-4。
+// 与编辑器逐位一致。
 object ScriptFastMath {
 
     private const val HALF_PI = PI / 2
@@ -18,8 +18,6 @@ object ScriptFastMath {
     private const val MIN_NORMAL = 2.2250738585072014e-308
     // 双精度位布局：保留符号位(63)与尾数位(0..51)，清除指数位(52..62)。
     private val SIGN_MANTISSA_MASK: Long = (1L shl 63) or ((1L shl 52) - 1L)
-
-    // —— sin / cos ——
 
     private fun reduceAngle(x: Double): Double = x - floor(x * INV_TWO_PI + 0.5) * TWO_PI
 
@@ -47,8 +45,6 @@ object ScriptFastMath {
     fun fastCos(x: Double): Double = fastSin(x + HALF_PI)
 
     fun fastTan(x: Double): Double = fastSin(x) / fastCos(x)
-
-    // —— exp ——
 
     private fun expTaylor(y: Double): Double {
         var p = 1.0 / 5040
@@ -84,8 +80,6 @@ object ScriptFastMath {
         return scalePow2(expTaylor(f), n)
     }
 
-    // —— log ——
-
     private fun logMantissa(m: Double): Double {
         val u = (m - 1) / (m + 1)
         val u2 = u * u
@@ -109,8 +103,6 @@ object ScriptFastMath {
         return e * LN2 + logMantissa(m)
     }
 
-    // —— pow ——
-
     fun fastPow(a: Double, b: Double): Double {
         if (a > 0 && a.isFinite() && b.isFinite()) {
             if (b == 0.0) return 1.0
@@ -118,8 +110,6 @@ object ScriptFastMath {
         }
         return Math.pow(a, b)
     }
-
-    // —— atan / atan2 / asin / acos ——
 
     private fun atanTaylor(u: Double): Double {
         val u2 = u * u
@@ -167,7 +157,7 @@ object ScriptFastMath {
 
     fun fastAcos(x: Double): Double = HALF_PI - fastAsin(x)
 
-    /** 内建名 → 快速实现；与编辑器 fastmath.js 的 FAST_MATH 表一致。 */
+    /** 内建名 → 快速实现。 */
     val FAST_MATH: Map<String, (List<Double>) -> Double> = mapOf(
         "sin" to { a -> fastSin(a[0]) },
         "cos" to { a -> fastCos(a[0]) },

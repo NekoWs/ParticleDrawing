@@ -5,14 +5,9 @@ package work.nekow.particledrawing.core.client
 /**
  * 外观插值的两端点账本（颜色 / 透明度 / 宽 / 高）。
  *
- * 两条纪律：
- *
- * 1. **出生状态只是占位**：生成包给的透明度与尺寸是「还没被任何动画接管」的样子，
- *    出生后**第一次**真正同步（表达式首帧、曲线首帧、即时改色改尺寸…）必须把两端**原子**写成新值。
- *    否则渲染帧会在「出生状态」与「首帧状态」之间插值——出生透明 + 首帧零尺寸的组会先闪出半尺寸再缩回，
- *    首帧尺寸大于出生尺寸时则会从小往大「倒缩」一次。
- * 2. **此后按相邻 tick 插值**：同一个引擎 tick 内多次同步只捕获一次上一帧端点，
- *    所以组动画与变量缓动那种 20Hz 求值的外观在高刷下仍是连续的（不是台阶）。
+ * 出生状态只是占位：出生后第一次同步（表达式首帧、曲线首帧、即时改色改尺寸）要把两端原子写成新值，
+ * 否则渲染帧会在出生状态与首帧状态之间插值。此后按相邻 tick 取端点，同一引擎 tick 内多次同步只捕获
+ * 一次上一帧端点。
  *
  * 显式 [snap]（轴心瞬移、断流恢复、即时指令）任何时刻都强制两端同值。
  */
@@ -38,11 +33,11 @@ internal class AppearanceBlend(
     /** 上一次捕获上一帧端点时的引擎 tick（同一 tick 内只捕获一次）。 */
     private var capturedTick = Long.MIN_VALUE
 
-    /** 颜色与尺寸各自是否已经历过「出生后第一次真正同步」（两条通道分别落地，见类注释）。 */
+    /** 颜色 / 尺寸两条通道是否已经历过出生后第一次同步，各自独立。 */
     private var colorSettled = false
     private var scaleSettled = false
 
-    /** 出生/重建：两端都落在给定状态，并保持「下一次同步要原子落地」。 */
+    /** 出生 / 重建：两端都落在给定状态，下一次同步仍原子落地。 */
     fun initialize(r: Float, g: Float, b: Float, a: Float, w: Float, h: Float) {
         prevR = r; prevG = g; prevB = b; prevA = a; prevW = w; prevH = h
         curR = r; curG = g; curB = b; curA = a; curW = w; curH = h
@@ -83,7 +78,7 @@ internal class AppearanceBlend(
 
     fun heightAt(f: Float): Float = lerp(prevH, curH, f)
 
-    /** 把当前值当作下一帧的「上一帧端点」（每 tick 一次）。 */
+    /** 把当前值当作下一帧的上一帧端点（每 tick 至多一次）。 */
     private fun capturePrev() {
         val tick = tickSource()
         if (capturedTick == tick) return

@@ -2,9 +2,8 @@ package work.nekow.particledrawing.animation.script
 
 import kotlin.math.*
 
-// 纯标量代码块的扁平字节码编译与执行。
-// 编辑器用 new Function 原生编译；JVM 端这里编译成栈式 double 指令序列，执行期只用 DoubleArray 寄存器+栈，避免查表与装箱。
-// 含向量/矩阵/分量/拆包的代码块不在快路径内，回退 ScriptRuntime 解释器。
+// 纯标量代码块的栈式字节码编译与执行：执行期只用 DoubleArray 寄存器与栈。
+// 含向量/矩阵/分量/拆包的代码块不在快路径内，回退解释器。
 
 /** 寄存器槽布局：0..2 内建 i/n/t，3..16 属性（含 maxAge），17.. 变量，之后临时变量。 */
 internal object Reg {
@@ -13,7 +12,7 @@ internal object Reg {
     const val R = 6; const val G = 7; const val B = 8; const val A = 9
     const val VX = 10; const val VY = 11; const val VZ = 12
     const val SC = 13; const val GLOW = 14; const val LIGHT = 15
-    /** 函数对象寿命输出：代码里 `maxAge = ...`（毫秒；<0=无限）。仅表达式模式消费。 */
+    /** maxAge 输出槽（毫秒；<0 表示无限）。仅表达式模式消费。 */
     const val MAXAGE = 16
     const val ATTR_COUNT = 14
     const val VAR_START = 17
@@ -32,7 +31,6 @@ private val ATTR_SLOTS = mapOf(
 
 /** 栈式指令集。pops 为该指令从求值栈弹出的操作数个数；数据搬运类恒为 -1。 */
 internal enum class ScalarOp(val pops: Int) {
-    // —— 数据搬运 ——
     /** arg = 常量池下标：压入 consts[arg]。 */
     PUSH_CONST(-1),
     /** arg = 寄存器槽：压入 regs[arg]。 */
@@ -42,11 +40,9 @@ internal enum class ScalarOp(val pops: Int) {
     /** arg = kfTable 下标：按当前 t 插值变量关键帧并压栈。 */
     VAR_KF(-1),
 
-    // —— 运算符（弹出 2 压回 1）——
     NEG(1),
     ADD(2), SUB(2), MUL(2), DIV(2), REM(2), POW(2),
 
-    // —— 标量函数（与编辑器 easing.js SCALAR_FUNC_GEN 对齐）——
     F_SIN(1), F_COS(1), F_TAN(1),
     F_ASIN(1), F_ACOS(1), F_ATAN(1),
     F_ATAN2(2), F_SQRT(1), F_ABS(1), F_SIGN(1),
@@ -172,9 +168,10 @@ internal class CompiledFunction(
     fun allocStack() = DoubleArray(stackSize)
 
     /**
-     * 求值单个粒子：写满属性寄存器（Reg.X..Reg.LIGHT），调用方读取。
-     * [external] 为外部输入通道值（顺序与编译期登记的 extNames 一致，长度 = [extCount]），
-     * 在变量程序求值**之前**注入寄存器——派生变量因此可引用实体坐标等运行时输入。
+     * 求值单个粒子，写满属性寄存器 Reg.X..Reg.LIGHT。
+     *
+     * [external] 是外部输入通道值，顺序与编译期登记的 extNames 一致，长度为 [extCount]；
+     * 在变量程序求值之前注入寄存器，派生变量因此可引用实体坐标等运行时输入。
      */
     fun eval(
         i: Double, n: Double, t: Double, regs: DoubleArray, stack: DoubleArray,
@@ -199,14 +196,13 @@ internal class CompiledFunction(
     }
 }
 
-/** 变量编译输入（数值基值 + 关键帧；编辑器变量不再使用表达式）。 */
+/** 变量编译输入：数值基值与关键帧。 */
 internal class VarDef(val name: String, val base: Double, val kf: List<Keyframe>)
 
 /**
- * 编译函数对象代码块 + 变量为纯标量快路径；任何非纯标量因素返回 null（回退通用解释器）。
+ * 编译函数对象代码块与变量为纯标量快路径；含非纯标量因素时返回 null，由调用方回退通用解释器。
  *
- * @param extNames 外部输入通道变量名（如实体坐标 e_x/e_y/e_z）：仅登记槽位、
- *   不生成求值程序，运行时经 [CompiledFunction.eval] 的 external 参数预注入。
+ * @param extNames 外部输入通道变量名（如实体坐标 e_x/e_y/e_z），只登记槽位、不生成求值程序
  */
 internal fun compileFunctionObject(code: String, varDefs: List<VarDef>, extNames: List<String> = emptyList()): CompiledFunction? {
     val extCount = extNames.size

@@ -2,14 +2,14 @@ package work.nekow.particledrawing.core.client
 
 import net.minecraft.world.phys.Vec3
 
-// 发射器的推进逻辑：纯数学，不碰渲染/网络，便于单测（与 TrackBuffer / ProcessClock 同一做法）。
-// 里程口径要把一颗正好落在段中间的位置算出来，所以按「段内插值」而不是「段终点」发射。
+// 发射器的推进逻辑：纯数学，不碰渲染与网络，便于单测。
+// 里程口径按段内插值发射，因为要的是一颗正好落在段中间的位置。
 
 /**
  * 按里程发射的推进器：喂进锚点每帧的插值位置，吐出这一帧该在哪些位置发射。
  *
- * 语义：锚点从 [from] 走到 [to]（一帧的位移），累计里程每满 [spacing] 格就发射一颗，
- * 位置严格落在段内的等距点上——所以「一跳一跳」不会出现，帧率高低也不改变粒子间距。
+ * 锚点从 [from] 走到 [to]，累计里程每满 [spacing] 格发射一颗，位置落在段内的等距点上，
+ * 所以粒子间距不受帧率影响。
  */
 internal class DistanceAdvance(private val spacing: Double) {
 
@@ -19,7 +19,7 @@ internal class DistanceAdvance(private val spacing: Double) {
 
     private var carry = 0.0
 
-    /** 未满一格攒下的里程（诊断/测试用）。 */
+    /** 未满一格攒下的里程，诊断与测试用。 */
     fun carry(): Double = carry
 
     /** 沿 [from] → [to] 推进，返回本帧要发射的位置（0..n 个，按先后顺序）。 */
@@ -44,7 +44,7 @@ internal class DistanceAdvance(private val spacing: Double) {
             emitted++
             offset += spacing
         }
-        // 余下的里程留到下一帧（恒 < spacing）
+        // 余下的里程留到下一帧，恒 < spacing
         carry = total - emitted * spacing
     }
 }
@@ -52,8 +52,7 @@ internal class DistanceAdvance(private val spacing: Double) {
 /**
  * 按时间发射的推进器：喂进两帧之间的毫秒数，吐出这一帧该发射几颗。
  *
- * 时间粒度与渲染帧一致（不是 tick），所以 120fps 下也是均匀的；
- * 单帧时长超过一颗间隔时补齐多颗（掉帧/卡顿时不让尾迹断档）。
+ * 时间粒度跟渲染帧走而不是 tick。单帧时长超过一个间隔时补齐多颗，掉帧或卡顿时尾迹不断档。
  */
 internal class TimeAdvance(private val intervalMs: Double, private val maxPerFrame: Int = 64) {
 
@@ -65,7 +64,7 @@ internal class TimeAdvance(private val intervalMs: Double, private val maxPerFra
 
     fun carry(): Double = carry
 
-    /** 推进 [deltaMs] 毫秒，返回本帧应发射的颗数（上限 [maxPerFrame]，超出部分舍弃而不是记账堆积）。 */
+    /** 推进 [deltaMs] 毫秒，返回本帧应发射的颗数；上限 [maxPerFrame]，超出部分舍弃而不记账堆积。 */
     fun advance(deltaMs: Double): Int {
         if (deltaMs <= 0.0) return 0
         carry += deltaMs

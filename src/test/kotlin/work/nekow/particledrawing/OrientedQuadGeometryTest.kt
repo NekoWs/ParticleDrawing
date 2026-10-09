@@ -14,14 +14,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * 定向细长线段（非等宽 + 平面内旋转）的几何契约。
+ * 定向细长线段（非等宽 + 平面内旋转）的几何契约，形状与编辑器一致：
+ * 位置取中点、四边形朝世界 +Z 再按 rotation 在平面内旋转、尺寸 [段长, 线宽]。
  *
- * 编辑器把「相邻两采样之间的一段」画成：位置取中点、四边形朝世界 +Z 再按 rotation 在平面内旋转、
- * 尺寸 [段长, 线宽]。播放端要出同样的形状，靠的是两件事：
- * 1. 四角先在四边形自己的坐标系按 (宽, 高) 各自缩放，再按朝向旋转——顺序反了斜线段会被切成平行四边形；
- * 2. 高度走原版的 quad 尺寸、宽度由渲染状态按粒子记着，两者相等时退回原版（均匀四边形不多算）。
- *
- * 顶点写入本身要 Minecraft 的 VertexConsumer，单测到不了；这里钉住的是喂给它的那份坐标数学。
+ * 四角先在四边形自己的坐标系按 (宽, 高) 各自缩放，再按朝向旋转。
+ * 顶点写入要 Minecraft 的 VertexConsumer，单测到不了，覆盖的是喂给它的坐标数学。
  */
 class OrientedQuadGeometryTest {
 
@@ -37,7 +34,7 @@ class OrientedQuadGeometryTest {
         val rot = spinZ(90.0)
         // 局部 (+宽, -高) 这个角：宽 = 段长 1.0（半宽），高 = 线宽一半 0.05
         OrientedQuadRenderState.cornerOffset(1f, -1f, 1.0f, 0.05f, rot, out)
-        // 长边转到 +Y（长 1.0），短边转到 +X（宽 0.05）；反序（先转再按世界轴缩放）会得到 (1.0, 0.05)，是斜的
+        // 长边转到 +Y（长 1.0），短边转到 +X（宽 0.05）
         assertClose(0.05, out.x, "长边旋转后应压在 X 上的只有线宽")
         assertClose(1.0, out.y, "长边应整段落在 Y 轴上")
         assertClose(0.0, out.z, "平面内旋转不该产生 Z 偏移")
@@ -85,9 +82,9 @@ class OrientedQuadGeometryTest {
         assertEquals(1.5f, rp.scaleArray()[0])
         assertEquals(0.02f, rp.scaleArray()[1])
         assertEquals(1f, rp.scaleArray()[2])
-        // 标量口读的是长边（与原实现一致，动画程序走标量口）
+        // 标量口读的是长边，动画程序走标量口
         assertEquals(1.5f, rp.scale())
-        // 传进来的数组被改不该影响粒子（原实现 copyOf，现在就地写自己的数组）
+        // 传进来的数组被改不该影响粒子
         editor[0] = 9f
         assertEquals(1.5f, rp.scaleArray()[0])
     }

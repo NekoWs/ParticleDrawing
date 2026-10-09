@@ -12,7 +12,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * 播放侧解码器回归（AudioStreamPlayer 里除 OpenAL 之外的那半，不需要声音设备）：
+ * 播放侧解码器（AudioStreamPlayer 里除 OpenAL 之外的那半，不需要声音设备）：
  * OGG 按采样帧精确 seek、解码器持有的输入内存在句柄存活期间不能被复用，WAV 直接读资产字节。
  * OGG 断言用夹具（10 秒 44.1kHz 立体声，左 440Hz/0.8、右 1000Hz/0.3）的解析正弦当基准。
  */

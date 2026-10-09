@@ -3,13 +3,12 @@ package work.nekow.particledrawing.animation.script
 import work.nekow.particledrawing.api.EntityProp
 import work.nekow.particledrawing.api.WorldProp
 
-// 被动输入 getter（get_*）共享层：编译前把调用点重写为合成外部变量，并产出实际需要的输入清单。
-// 纯标量快路径交给 compileFunctionObject 的 extNames 注入；解释器路径把合成变量值并入作用域。
-// 约束：实体 getter 参数必须是编译期常量；get_entity_pos 仅允许独占赋值形态；未知名/未登记句柄 fail-fast。
+// 被动输入 getter（get_*）重写：把调用点换成合成外部变量，并产出实际需要的输入清单。
+// 约束：实体 getter 参数必须是编译期常量；get_entity_pos 仅允许独占赋值形态；未知属性名与未登记句柄在编译期报错。
 
-/** 一条被发现的输入需求（与重写产出的合成变量一一对应）。 */
+/** 一条输入需求，与重写产出的合成变量一一对应。 */
 internal sealed class InputKey {
-    /** 实体属性：[handleIndex] 指向程序实体注册表（下发顺序即序号）。 */
+    /** 实体属性；[handleIndex] 指向程序实体注册表，序号即下发顺序。 */
     data class Entity(val handleIndex: Int, val prop: EntityProp) : InputKey()
 
     /** 世界属性。 */
@@ -103,10 +102,7 @@ internal object GetterRewriter {
         return GetterRewriteResult(text, extNames, keys)
     }
 
-    /**
-     * 服务端 best-effort 预警：只报「确定错误」（属性未知名、world 带参、pos 误用）；
-     * 句柄解析依赖运行时注册表，此处不判定。
-     */
+    /** 服务端预警：只报属性名与参数形态这类确定错误；句柄解析依赖运行时注册表，此处不判定。 */
     fun lint(code: String): List<String> {
         val problems = ArrayList<String>()
         for (m in CALL.findAll(POS_TRIPLE.replace(code) { "[x,y,z] = [__lint,__lint,__lint]" })) {

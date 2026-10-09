@@ -18,32 +18,17 @@ import net.neoforged.neoforge.network.PacketDistributor
 import java.util.UUID
 
 /**
- * 编排式动画的粒子组：一组可同时变换的粒子（经 Draw 工具或 [ParticleManager.createGroup] 创建）。
+ * 编排式动画的粒子组：一组可同时变换的粒子（由 Draw 工具或 [ParticleManager.createGroup] 创建）。
  *
- * **适用边界**：成员基本固定、变换是**组级统一**的编排式动画（旋转/缩放/脉冲/路径/淡入淡出）用它——
- * 链式调用录制 [AnimInstruction] 指令流一次下发，客户端本地求值直写渲染，持续动画零带宽。
- * 反过来，**成员逐 tick 增删、每颗粒子各自受力/轨迹/寿命、按位置条件回收**的粒子流
- * （黑洞吸入、重力场下落）请用 [ParticleBatch]：本类的成员变更会重发全量受控清单，
- * 组级变换也表达不了「每粒子沿各自轨迹运动」。
+ * 成员基本固定、变换为组级统一（旋转/缩放/脉冲/路径/淡入淡出）时用它：链式调用录制 [AnimInstruction]
+ * 指令流一次下发，客户端本地求值；成员逐 tick 增删、每颗粒子各自受力或按位置回收的粒子流用 [ParticleBatch]。
  *
- * delay 推进时间线游标（累积、不清零）；defineEntity/expression 提供实体句柄与表达式能力。
- * 程序下发之后录制的指令按「**从现在起**」读（见 [delay]），所以长寿组可以在运行期再追加一段动画。
+ * 轴心是程序级状态，由 [setPivot] / [followEntity] 绑定，绑定一次对其后的 [rotate] / [spin] / [scale] /
+ * [pulse] 生效；旋转与缩放类指令只认当前轴心，调用顺序即语义。轴心同时是 arm 基准，客户端按
+ * 「成员生成位置 − 轴心」反算相对偏移，[move] / [movePath] 不改它。
  *
- * **轴心语义（组级变换都绕它算）**：轴心是**程序级状态**，由 [setPivot] / [followEntity] 绑定，
- * 绑定一次就对**其后**的 [rotate] / [spin] / [scale] / [pulse] 全部生效，直到下一次绑定。
- * 旋转/缩放类指令**不接受轴心参数**，所以**调用顺序就是语义**：
- *
- * ```
- * group.followEntity(uuid)        // 轴心 = 实体（每 tick 本地解析，零带宽）
- *     .spin(Vec3(0.0, 1.0, 0.0), 0.02)   // 绕实体转；反过来先 spin 就只绕当时的固定点转
- * ```
- *
- * 轴心绑定到实体后是**活的**（跟随位置，`local = true` 时连朝向一起），组内各粒子保持相对轴心的偏移。
- * 这个轴心同时是 **arm 基准**：客户端按「成员生成位置 − 轴心」反算各粒子的相对偏移，
- * 所以 [move] / [movePath] **不会**改它——平移只作用于渲染位置，不参与相对偏移的换算。
- *
- * **旋转可叠加**：多条 [rotate] / [spin] 的角度是累加的（后一条不会覆盖前一条的相位），
- * 于是「先自转一阵、再补一段一次性旋转、继续自转」能接得上（见 [rotate]）。
+ * delay 推进时间线游标（累积、不清零），程序下发之后录制的指令按「从现在起」读（见 [delay]）；
+ * 多条 [rotate] / [spin] 的角度累加，后一条不覆盖前一条的相位。
  */
 @Suppress("unused")
 class ParticleGroup(
@@ -67,16 +52,10 @@ class ParticleGroup(
     /** 时间轴里最晚的「有限指令结束时刻」（程序相对毫秒）；-1 = 没有有限指令。 */
     private var timelineEndMs: Long = -1L
 
-    /**
-     * 变量缓动的截止 tick（服务端 tick，名字 → 到点时刻）。
-     * **重定向会替换同名旧终点**（新目标取消旧结束点），完成账本按它算。
-     */
+    /** 变量缓动的截止 tick（服务端 tick，名字 → 到点时刻）；重定向替换同名旧终点。 */
     private val varEaseEndTicks = HashMap<String, Long>()
 
-    /**
-     * 是否已经出现表达式指令：表达式组里糖指令一条都不会执行（解释权在表达式手里），
-     * 所以账本只认表达式自己的有限时长与变量缓动，不能拿一条不生效的有限糖指令当完成标记。
-     */
+    /** 是否已经出现表达式指令：糖指令一条都不执行，完成账本只认表达式的有限时长与变量缓动。 */
     private var expressionMode = false
 
     /** 表达式自己的到期时刻（程序相对毫秒）；-1 = 一直求值。 */
@@ -94,24 +73,23 @@ class ParticleGroup(
     private val RESERVED_NAMES = setOf("i", "n", "t", "PI", "E") +
         setOf("x", "y", "z", "r", "g", "b", "a", "vx", "vy", "vz", "sc", "glow", "light")
 
-    /** handle 在实体注册表中必须唯一，且不得与程序变量重名——同名会在公式环境里互相覆盖。 */
+    /** handle 在实体注册表中必须唯一，也不得与程序变量重名，同名会在公式环境里互相覆盖。 */
     private fun requireFreeHandle(handle: String) {
         require(entityBindings.none { it.handle == handle } && handle !in vars) { "实体句柄名 '$handle' 已被占用" }
     }
 
-    /** 服务端 best-effort 预警：扫描代码里的 get_* 调用，报「确定错误」（未知名/形态误用）。 */
+    /** 服务端预警：扫描代码里的 get_* 调用，报出未知名或形态误用一类确定错误。 */
     private fun lintGetters(code: String) {
         for (problem in GetterRewriter.lint(code)) {
             LOGGER.warn("[ParticleDrawing] group {} 公式预警: {}", id, problem)
         }
     }
 
-    // —— 基础 ——
+    // 轴心与成员
 
     /**
-     * 设置变换轴心（固定坐标），同时作为 **arm 基准**（客户端按「成员生成位置 − 轴心」反算相对偏移）。
-     * **粘性**：一直生效到下一次 [setPivot] / [followEntity]，之后所有 [rotate] / [spin] / [scale] / [pulse]
-     * 都绕它算。[move] / [movePath] 不会改它。
+     * 设置变换轴心（固定坐标），同时作为 arm 基准（客户端按「成员生成位置 − 轴心」反算相对偏移）。
+     * 一直生效到下一次 [setPivot] / [followEntity]，其后的 [rotate] / [spin] / [scale] / [pulse] 都绕它算。
      */
     fun setPivot(pivot: Vec3): ParticleGroup {
         this.pivot = pivot
@@ -125,15 +103,14 @@ class ParticleGroup(
     }
 
     /**
-     * 轴心切换为跟随实体：组随实体位置移动（+偏移），由客户端本地解析，零逐 tick 带宽。
+     * 轴心切换为跟随实体：组随实体位置移动（+偏移），由客户端本地解析。
      *
-     * 同样是**粘性**的：绑定之后的 [rotate] / [spin] / [scale] / [pulse] 都绕/相对它算，
-     * 「跟随持有者 + 持续自转」就是本方法 + [spin] 的顺序（顺序反了只会绕固定点转）。
-     * 绑定即改 arm 基准，所以**铺成员与绑定的先后**决定相对偏移的换算基准：先绑定再铺成员最直观。
+     * 绑定后对其后的 [rotate] / [spin] / [scale] / [pulse] 生效；绑定即改 arm 基准，
+     * 铺成员与绑定的先后决定相对偏移的基准，先绑定再铺成员最直观。
      *
      * @param uuid 目标实体 UUID
      * @param offset 相对实体位置（脚底）的偏移
-     * @param local true = 整组连偏移一起随实体朝向旋转（贴在身前/身侧）；false = 只跟随位置（世界朝向）
+     * @param local true = 整组连偏移一起随实体朝向旋转；false = 只跟随位置（世界朝向）
      */
     fun followEntity(uuid: UUID, offset: Vec3 = Vec3.ZERO, local: Boolean = false): ParticleGroup {
         pivot = offset.add(pivot)
@@ -152,14 +129,12 @@ class ParticleGroup(
     }
 
     /**
-     * 绑定一个**可移动轴心**（黑洞中心、重力场中心、跟随投射物的法阵）：绑定一次即可，
-     * 位置用 [updateAnchor] 逐 tick 更新（专用小包），客户端按相邻两个样本插值渲染。
+     * 绑定一个可移动轴心（黑洞中心、重力场中心、跟随投射物的法阵）：绑定一次即可，
+     * 位置用 [updateAnchor] 逐 tick 更新，客户端按相邻两个样本插值渲染。
      *
-     * 与 [setPivot] 的区别正在这里：固定轴心要挪就得每 tick 再 `setPivot` 一次
-     * （每 tick 一条绑定指令 + 立即替换，帧间是硬跳）；本方法只发位置。
-     *
-     * `Anchor.Movable` 的 [Orient.VELOCITY] 会让整组随运动方向转向（[Orient.WORLD] 只跟位置）；
-     * 实体锚点请用 [followEntity]（那里按 UUID 由客户端本地解析，比逐 tick 报位置更省）。
+     * 固定轴心要挪得每 tick 再 `setPivot` 一次（每 tick 一条绑定指令，帧间硬跳），本方法只发位置。
+     * `Anchor.Movable` 的 [Orient.VELOCITY] 让整组随运动方向转向，[Orient.WORLD] 只跟位置；
+     * 实体锚点用 [followEntity]，由客户端按 UUID 本地解析。
      *
      * @param anchor 只接受 `Anchor.Fixed`（等价 [setPivot]）与 `Anchor.Movable`
      */
@@ -175,7 +150,7 @@ class ParticleGroup(
                 emit(AnimInstruction.BindPivot(cursorNow(), PivotRef.Movable(anchor.pos, anchor.velocity, anchor.orient)))
             }
             is Anchor.Entity -> throw IllegalArgumentException(
-                "ParticleGroup.anchor 不接受实体锚点：请用 followEntity(uuid, offset, local)（客户端本地解析，零逐 tick 带宽）"
+                "ParticleGroup.anchor 不接受实体锚点：实体锚点用 followEntity(uuid, offset, local)"
             )
         }
         return this
@@ -184,12 +159,12 @@ class ParticleGroup(
     /**
      * 更新可移动轴心的位置（配合 [anchor] 使用）：[previous] / [current] 是服务端相邻的两个样本。
      *
-     * 客户端按这对样本插值渲染，相位与 `track` 粒子一致；两条样本离得太远（瞬移）或断流之后
-     * 第一条样本，都按跳变处理，不会在两点之间扫出一条假轨迹。
+     * 客户端按这对样本插值渲染，相位与 `track` 粒子一致；样本间距过大（瞬移）或断流后的
+     * 第一条样本都按跳变处理。
      *
      * @param previous 上一条样本（上一 tick 的位置）
      * @param current 本条样本（本 tick 的位置）
-     * @param velocity 本 tick 的速度：只在轴心朝向为 `Orient.VELOCITY` 时用于整组转向
+     * @param velocity 本 tick 的速度，只在轴心朝向为 `Orient.VELOCITY` 时用于整组转向
      */
     @JvmOverloads
     fun updateAnchor(previous: Vec3, current: Vec3, velocity: Vec3 = current.subtract(previous)): ParticleGroup {
@@ -225,19 +200,15 @@ class ParticleGroup(
      */
     fun size(): Int = manager.getEngine().getGroup(id)?.size() ?: 0
 
-    // —— 完成信号（客户端真正收尾的那一刻） ——
+    // 完成账本与销毁
 
     /**
-     * 这段编排的**账本走完**时回调（服务端主线程，误差不超过一两个 tick）。
+     * 这段编排的账本走完时回调（服务端主线程，误差一两个 tick）。
      *
-     * 账本 = 有限时长指令的终点 ∪ **变量缓动的终点**（[setVariableInterpolated]）∪ 表达式自己的有限时长：
-     * - `setVariableInterpolated("presence", "0", ticks = 7)` 就是「7 tick 后归零」，
-     *   最后一次有效缓动跑完即算完成——表达式组（没有可执行的糖指令）因此同样拿得到完成信号；
-     * - 表达式组另可给 `expression(code, durationTicks)` 的到期时刻；
-     * - 没有终点的东西不参与：`spin`、无限 `pulse`、无限时长的表达式、`setVariableLive`（立即赋值）；
-     * - 重定向会**替换同名旧终点**，所以「每 tick 重设新目标」期间不会提前触发旧回调。
-     *
-     * 账本上什么都没有时不会触发（控制台会提醒）——那种组本来就没有「跑完」可言。
+     * 账本 = 有限时长指令的终点 ∪ 变量缓动的终点（[setVariableInterpolated]）∪ 表达式自己的有限时长。
+     * `spin`、无限 `pulse`、无限时长的表达式、`setVariableLive` 立即赋值都没有终点，不参与；
+     * 重定向替换同名旧终点，每 tick 重设新目标期间不会提前触发旧回调。
+     * 账本上没有终点时不触发，只在控制台告警。
      */
     fun onAnimationComplete(action: (ParticleGroup) -> Unit): ParticleGroup {
         if (!hasCompletionSource()) {
@@ -249,12 +220,10 @@ class ParticleGroup(
     }
 
     /**
-     * 客户端把这段编排跑完之后（+[graceTicks]，默认 2 tick 给桥接插值收尾）**销毁整组**。
+     * 客户端把这段编排跑完之后（+[graceTicks]，默认 2 tick）销毁整组。
      *
-     * 与 [destroyAfter] 的区别：那个按服务端时钟掐表，客户端晚一点就会把还在收尾的画面切掉；
-     * 本方法等客户端的完成信号，销毁时刻与「视觉真正到零」对齐。
-     * 判定口径与 [onAnimationComplete] 相同（有限指令 ∪ 变量缓动）；客户端不在场/一直不上报时，
-     * 按账本末端 + 1 秒兜底销毁，不让组泄漏。
+     * 与 [destroyAfter] 不同：本方法等客户端的完成信号，销毁时刻对齐视觉到零；判定口径与
+     * [onAnimationComplete] 相同。客户端不在场或一直不上报时，按账本末端 + 1 秒兜底销毁。
      */
     @JvmOverloads
     fun retire(graceTicks: Int = 2): ParticleGroup {
@@ -267,10 +236,7 @@ class ParticleGroup(
         return this
     }
 
-    /**
-     * 账本动了（追加有限指令 / 变量缓动重定向 / 立即赋值取消缓动）：
-     * 兜底时刻跟着重排，旧兜底按版本失效（没登记完成信号的组什么都不做）。
-     */
+    /** 账本变动（追加有限指令、变量缓动重定向、立即赋值取消缓动）后重排兜底时刻，旧兜底按版本失效。 */
     private fun ledgerChanged() {
         ServerProgramCompletion.rescheduleFallback(id, fallbackTicks())
     }
@@ -295,8 +261,7 @@ class ParticleGroup(
     /**
      * 从此刻起多少 tick 后走到账本末端（兜底用）；账本为空时给 -1（不排兜底）。
      *
-     * 账本末端落在过去时钳到 0：那说明 `retire()` 是在编排早就跑完之后才登记的
-     * （客户端的完成信号已经发过、没人接），兜底必须照排，否则这个组再也等不到销毁。
+     * 账本末端落在过去时钳到 0：此时完成信号已经发过，兜底仍要排，否则这个组等不到销毁。
      */
     private fun fallbackTicks(): Int {
         val now = manager.level.gameTime
@@ -313,15 +278,14 @@ class ParticleGroup(
         return ticks
     }
 
-    // —— 时间线编排 ——
+    // 时间线编排
 
     /**
-     * 把时间线游标向前推进 [ticks]：之后链式调用的动画方法都在新游标时刻触发。
-     * 游标累积、不清零——连续两个动画共享同一时刻（如停转与淡出同刻）。
+     * 把时间线游标向前推进 [ticks]，之后链式调用的动画方法都在新游标时刻触发。
+     * 游标累积、不清零，连续两个动画可以共享同一时刻（如停转与淡出同刻）。
      *
-     * **增量追加时读作「从现在起」**：程序已下发之后再录制的指令，其时刻按「录制那一刻 + 本会话已 delay 的时长」
-     * 换算（见 [GroupClock]）。所以长寿组跑了一阵子之后 `delay(1).fadeOut(5)` 就是「1 tick 后开始、5 tick 淡完」，
-     * 而不是因为游标落在过去而瞬间完成。全量重发（成员变化触发）会把时间轴重新从那一刻起算。
+     * 增量追加时读作「从现在起」：程序已下发之后再录制的指令，时刻按录制那一刻 + 本会话已 delay
+     * 的时长换算（见 [GroupClock]），不会因为游标落在过去而瞬间完成。全量重发会把时间轴重新起算。
      */
     fun delay(ticks: Int): ParticleGroup {
         cursorMs += ticks.coerceAtLeast(0) * 50
@@ -332,14 +296,14 @@ class ParticleGroup(
 
     /**
      * 录制一条指令并立即下发，返回它在程序时刻轴上的位置（供定时销毁对齐）。
-     * 指令在发送时才按当前会话换算时刻，因此没发出去的指令（如组里还没有成员）不会被错误地提前换算。
+     * 时刻在发送时才按当前会话换算，尚未发送的指令不会被提前换算。
      */
     private fun emit(ins: AnimInstruction): Int {
         val now = manager.level.gameTime
         if (!armed) clock.onProgramStart(now)
         val at = clock.programTime(ins.startMs, now)
-        // 记下账本末端（完成信号与 retire 的兜底时刻都靠它）：
-        // 表达式走它自己的到期时刻（糖指令在表达式组里不执行），其它有限指令记进 timelineEndMs
+        // 记下账本末端（完成信号与 retire 的兜底时刻靠它）：
+        // 表达式走自己的到期时刻，其它有限指令记进 timelineEndMs
         if (ins is AnimInstruction.Expression) {
             expressionEndMs = if (ins.durationMs > 0) at.toLong() + ins.durationMs else -1L
         } else {
@@ -356,16 +320,16 @@ class ParticleGroup(
         return at
     }
 
-    /** 首次全量下发；其后增量追加。指令按单包上限拆段，成员数超限直接报错（见常量说明）。 */
+    /** 首次全量下发，其后增量追加。指令按单包上限拆段，成员数超限直接报错。 */
     private fun flush(nowTick: Long) {
         val players = manager.getPlayers()
-        // 锚点必须与 level.gameTime 同源：客户端用它对齐自己的 level.gameTime，
-        // 消除双端时钟漂移（勿用进程级计数器——与存档 gameTime 不同源会让时间线整体错位）
+        // 锚点必须与 level.gameTime 同源：客户端用它对齐自己的 level.gameTime，消除双端时钟漂移。
+        // 进程级计数器与存档 gameTime 不同源，会让时间线整体错位
         if (!armed) {
             val members = manager.getEngine().getGroup(id)?.memberIds()?.toList()
             if (members.isNullOrEmpty()) {
                 LOGGER.warn("[ParticleDrawing] group {} has no members; animation program not sent", id)
-                // 没有成员时指令发不出去：留一小段等成员到位，不许无限攒（否则是内存泄漏）
+                // 没有成员时指令发不出去：留一小段等成员到位，超过上限就丢弃，避免无限增长
                 if (instructions.size > MAX_PENDING_INSTRUCTIONS) {
                     LOGGER.warn(
                         "[ParticleDrawing] group {} 待发指令过多（{} 条）且没有成员，已丢弃；补上成员后请重录动画",
@@ -389,7 +353,7 @@ class ParticleGroup(
                 )
             }
             armed = true
-            // 指令多到一个包塞不下：剩下的按序补追加包（客户端按顺序应用）
+            // 一个包放不下全部指令：剩下的按序补追加包（客户端按顺序应用）
             val rest = batch.drop(MAX_INSTRUCTIONS_PER_PAYLOAD)
             if (rest.isNotEmpty()) sendAppends(rest, players)
         } else if (instructions.isNotEmpty()) {
@@ -400,7 +364,7 @@ class ParticleGroup(
         clock.onEmit(nowTick, cursorMs)
     }
 
-    /** 追加指令：按单包上限拆段后下发（长寿组反复追加也不会攒出超限的包）。 */
+    /** 追加指令：按单包上限拆段后下发。 */
     private fun sendAppends(batch: List<AnimInstruction>, players: Collection<net.minecraft.server.level.ServerPlayer>) {
         for (chunk in BatchChunking.chunks(batch, MAX_INSTRUCTIONS_PER_PAYLOAD)) {
             for (player in players) {
@@ -416,7 +380,7 @@ class ParticleGroup(
             stopProgramOnClient(destroyParticles = false)
         }
     }
-    // —— 生命周期 ——
+    // 生命周期
 
     /**
      * 淡入：整组透明度从 0 缓动到各自当前值。
@@ -428,7 +392,7 @@ class ParticleGroup(
 
     /**
      * 淡出：整组透明度缓动到 0；[removeAfter] 为 true 时淡出结束（+250ms 余量）由服务端销毁整组，
-     * 销毁时刻按「本指令的程序时刻 + 时长」从**当下**起算，与客户端口径一致。
+     * 销毁时刻按该指令的程序时刻 + 时长从当下起算，与客户端口径一致。
      */
     fun fadeOut(durationTicks: Int, removeAfter: Boolean = true, easing: EasingType = EasingType.EASE_IN): ParticleGroup {
         val at = emit(AnimInstruction.FadeOut(cursorMs, durationTicks * 50, easing))
@@ -470,11 +434,11 @@ class ParticleGroup(
         }
     }
 
-    // —— 一次性变换（有限时长指令） ——
+    // 一次性变换（有限时长指令）
 
     /**
-     * 组平移。[delta] 只影响渲染位置（客户端 `pathOffset`），**不改轴心绑定**——
-     * 轴心（arm 基准）只由 [setPivot] / [followEntity] 决定，所以「铺完成员先 move 一下」不会把成员的相对偏移算歪。
+     * 组平移。[delta] 只影响渲染位置（客户端 `pathOffset`），不改轴心绑定；轴心只由
+     * [setPivot] / [followEntity] 决定，铺完成员后再 move 不会改变成员的相对偏移基准。
      */
     fun move(delta: Vec3, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
         emit(AnimInstruction.Translate(cursorMs, delta, durationTicks * 50, easing))
@@ -487,14 +451,11 @@ class ParticleGroup(
     }
 
     /**
-     * **逐成员各自方向**的平移：每颗粒子沿自己「相对轴心的偏移」方向外移
-     * `scale × |偏移|`（整组一个包，成员各飞各的）。
+     * 逐成员各自方向的平移：每颗粒子沿自己相对轴心的偏移方向外移 `scale × |偏移|`。
+     * 用于球面或多面体碎裂后碎片各自沿法线向外飞，这种效果组级 [move] 表达不了。
      *
-     * 用于「球面/多面体碎裂时碎片各自沿自己的法线向外飞」：这种效果组级 [move] 表达不了
-     * （整组只有一个位移向量），只能一片一个组，而组数直接等于 arm 日志行数与 arm 开销。
-     *
-     * 方向取**当前**偏移（跟着 [spin]/[rotate] 一起转），所以「边转边炸开」也是对的；
-     * `scale = 1` 表示每颗沿自己的方向走到「偏移长度翻倍」的位置。
+     * 方向取当前偏移（跟着 [spin] / [rotate] 一起转），所以边转边炸开也是对的；
+     * `scale = 1` 表示每颗沿自己的方向移到「偏移长度翻倍」的位置。
      *
      * @param scale 沿各自偏移方向的位移倍率（1 = 移到 2 倍偏移处）
      */
@@ -504,11 +465,11 @@ class ParticleGroup(
     }
 
     /**
-     * 绕**当前轴心**一次性旋转（轴心见 [setPivot] / [followEntity]）。
-     * 想绕实体转就先 `followEntity(...)` 再调本方法——**调用顺序就是语义**，本方法不接受轴心参数。
+     * 绕当前轴心一次性旋转（轴心见 [setPivot] / [followEntity]）；本方法不接受轴心参数，
+     * 想绕实体转要先 `followEntity(...)` 再调本方法。
      *
-     * 与 [spin] **叠加**：多条旋转指令的角度累加，后一条不会把前一条的相位覆盖掉。
-     * 于是「已经自转了一阵 → 再补一段一次性旋转 → 继续自转」能接得上（`durationTicks = 0` 即瞬时补相位）。
+     * 与 [spin] 叠加：多条旋转指令的角度累加，后一条不覆盖前一条的相位；
+     * `durationTicks = 0` 即瞬时补相位。
      */
     fun rotate(axis: Vec3, radians: Double, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
         emit(AnimInstruction.RotateOnce(cursorMs, axis, radians, durationTicks * 50, easing))
@@ -527,33 +488,27 @@ class ParticleGroup(
     }
 
     /**
-     * 相对**当前轴心**等比缩放：粒子到轴心的距离与视觉大小同乘 [ratio]（倍率语义，2f = 放大两倍）。
-     * 半径 3 的圆 `scale(3f)` 之后半径就是 9 —— 组级「胀开 / 缩回」一个调用就够，客户端本地求值、零带宽。
-     * durationTicks=0 表示瞬时跳变。
+     * 相对当前轴心等比缩放：粒子到轴心的距离与视觉大小同乘 [ratio]（2f = 放大两倍），
+     * `durationTicks = 0` 表示瞬时跳变。
      *
-     * **倍率是累积的**：本指令的起点是**执行那一刻**的当前倍率（不是恒定的 1），所以
-     * `.scale(0.01f, 0).scale(100f, 3)` 会从 0.01 倍长回 1 倍；「先放大 1.5 倍、再缩回原尺寸」也接得上，
-     * 中途不会被重置回 1。要直接给绝对目标用 [scaleTo]。
+     * 倍率累积：起点是执行那一刻的当前倍率而非 1，所以 `.scale(0.01f, 0).scale(100f, 3)`
+     * 会从 0.01 倍长回 1 倍，中途不会重置回 1。要直接给绝对目标用 [scaleTo]。
      */
     fun scale(ratio: Float, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
         emit(AnimInstruction.ScaleBy(cursorMs, ratio, durationTicks * 50, easing))
         return this
     }
 
-    /**
-     * [scale] 的显式名字：**在当前倍率之上相乘**（`scaleBy(0.5f)` = 缩到一半，再来一次还是减半）。
-     * 与 [scaleTo] 配对使用，读代码时不用猜这条指令的终点怎么算。
-     */
+    /** [scale] 的显式名字：在当前倍率之上相乘（`scaleBy(0.5f)` = 缩到一半，再来一次还是减半）。 */
     fun scaleBy(ratio: Float, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup =
         scale(ratio, durationTicks, easing)
 
     /**
-     * 把组级倍率缓动到**绝对目标** [target]（1 = 原始尺寸）：与 [scale] 只差终点怎么算 ——
-     * 本方法的终点是写死的 [target]，起点同样是执行那一刻的当前倍率。
+     * 把组级倍率缓动到绝对目标 [target]（1 = 原始尺寸）：终点是写死的 [target]，
+     * 起点同样是执行那一刻的当前倍率。
      *
-     * 于是「固定结构从零尺寸展开」= 先 `scaleTo(0f, 0)` 铺成员、再 `scaleTo(1f, 6)` 长开；
-     * 「任意时刻退场」= 直接 `scaleTo(0f, 8)`，无论当时是 1 倍还是 3 倍都不会先跳回 1。
-     * `target = 0` 表示完全收起：客户端**不绘制**（不是缩到一个看不见但仍占用渲染的小尺寸）。
+     * 从零尺寸展开可先 `scaleTo(0f, 0)` 铺成员再 `scaleTo(1f, 6)` 长开；`target = 0`
+     * 表示完全收起，客户端不绘制。
      */
     fun scaleTo(target: Float, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
         require(target >= 0f) { "scaleTo 的目标倍率不能为负" }
@@ -561,12 +516,11 @@ class ParticleGroup(
         return this
     }
 
-    // —— 持续运动 ——
+    // 持续运动
 
     /**
-     * 无限匀速旋转（绕**当前轴心**，同 [rotate]，与其它旋转指令叠加）；用 [stopContinuous] 停止。
-     *
-     * 轴心是活的：先 [followEntity] 再本方法，就是「跟着实体转」——护盾一类「跟随持有者 + 自转」的写法。
+     * 无限匀速旋转（绕当前轴心，同 [rotate]，与其它旋转指令叠加）；用 [stopContinuous] 停止。
+     * 先 [followEntity] 再调本方法即为跟随实体转向。
      */
     fun spin(axis: Vec3, radiansPerTick: Double): ParticleGroup {
         emit(AnimInstruction.Spin(cursorMs, axis, radiansPerTick / 50))
@@ -588,15 +542,15 @@ class ParticleGroup(
         return this
     }
 
-    // —— 实体句柄 + 表达式指令（上限能力） ——
+    // 实体句柄与表达式指令
 
     /**
      * 定义实体句柄：把 [uuid] 以 [handle] 名写进程序的实体注册表（下发顺序 = 句柄序号）。
-     * 公式内通过 `get_entity_<prop>(<handle>)` 被动取值——用到什么取什么，
-     * 属性表见 `EntityProp` / `WorldProp` 枚举；世界属性无需登记，直接 `get_world_<prop>()`。
+     * 公式内用 `get_entity_<prop>(<handle>)` 被动取值，属性表见 `EntityProp` / `WorldProp` 枚举；
+     * 世界属性无需登记，直接 `get_world_<prop>()`。
      *
      * handle 必须是合法公式标识符，且不得与内建名（i/n/t/PI/E、x/y/z/r/g/b/a/vx/vy/vz/sc/glow/light）
-     * 或已有变量重名；违反立即抛异常。
+     * 或已有变量重名，违反立即抛异常。
      */
     fun defineEntity(handle: String, uuid: UUID): ParticleGroup {
         require(HANDLE_REGEX.matches(handle)) { "实体句柄名 '$handle' 不是合法标识符" }
@@ -615,31 +569,28 @@ class ParticleGroup(
     }
 
     /**
-     * 表达式指令：每粒子每 tick 求值 [code]（专用标量公式：i/n/t、[x,y,z]=... 等旧式语法，
-     * 与 .pdraw 函数对象的 this 脚本语言不同）。
-     * 输出 [x,y,z] 为世界绝对坐标；可用 i/n/t、全套标量数学函数、get_* 被动输入、程序变量。
-     * 一旦出现即接管位置/颜色/缩放的最终解释权；FADE 因子仍叠加其上。
+     * 表达式指令：每粒子每 tick 求值 [code]（专用标量公式，与 .pdraw 函数对象的 this 脚本语言不同）。
+     * 输出 [x,y,z] 为世界绝对坐标，可用 i/n/t、标量数学函数、get_* 被动输入与程序变量；
+     * 一旦出现即接管位置/颜色/缩放的最终解释权，FADE 因子仍叠加其上。
      *
-     * @param durationTicks 有限时长：>0 表示求值这么多 tick 后**停止求值**（粒子停在最后一帧的状态），
-     *   这个到期时刻同样进完成账本（[onAnimationComplete] / [retire] 认它）；
-     *   0（默认）= 一直求值，此时只能靠变量缓动给出终点。
+     * @param durationTicks >0 表示求值这么多 tick 后停止求值（粒子停在最后一帧的状态），
+     *   到期时刻进完成账本（[onAnimationComplete] / [retire] 认它）；0（默认）= 一直求值。
      */
     @JvmOverloads
     fun expression(code: String, durationTicks: Int = 0): ParticleGroup {
         require(durationTicks >= 0) { "expression 的时长不能为负" }
         lintGetters(code)
-        // 出现表达式即进入表达式模式：糖指令一条都不会执行，完成账本随之改看表达式与变量缓动
+        // 出现表达式即进入表达式模式：糖指令不执行，完成账本改看表达式与变量缓动
         expressionMode = true
         emit(AnimInstruction.Expression(cursorMs, code, durationTicks * 50))
         return this
     }
 
     /**
-     * 运行时热更程序变量（对已激活程序生效）：value 为标量公式字符串，
-     * 可引用其它程序变量（如 `group.setVariableLive("rad", "speed * 2")`）或直接给常量。
-     * 注：该路径不注入 t/i/n，公式不能引用它们。
+     * 运行时热更程序变量（对已激活程序生效）：value 为标量公式字符串，可引用其它程序变量
+     * 或直接给常量；该路径不注入 t/i/n，公式不能引用它们。
      *
-     * 立即赋值会**取消该变量正在进行的缓动**（连同它在完成账本上的终点）。
+     * 立即赋值会取消该变量正在进行的缓动（连同它在完成账本上的终点）。
      */
     fun setVariableLive(name: String, value: String) {
         lintGetters(value)
@@ -651,16 +602,13 @@ class ParticleGroup(
     }
 
     /**
-     * 运行时热更程序变量，并**在 [ticks] tick 内缓动**到目标值（不是立即赋常量）。
+     * 运行时热更程序变量，并在 [ticks] tick 内缓动到目标值。
      *
-     * 变量常被当作空间端点用（光束末端、场中心）：立即赋值会让整段几何瞬移，
-     * 本方法让客户端从当前值缓动过去——端点是「扫」过去的，与相邻样本插值同一个目标（高刷下连续）。
+     * 变量常被当作空间端点（光束末端、场中心）：立即赋值会让整段几何瞬移，本方法让客户端从
+     * 当前值缓动过去。这条缓动同时进完成账本，`setVariableInterpolated("presence", "0", 7).retire()`
+     * 即「7 tick 后归零、然后销毁」；重定向替换同名旧终点，每 tick 重设目标不会提前触发旧回调。
      *
-     * **这条缓动同时进完成账本**：`setVariableInterpolated("presence", "0", 7).retire()` 就是
-     * 「7 tick 后归零、然后销毁」——表达式组（没有糖指令）也照此收尾。重定向会替换同名旧终点，
-     * 所以每 tick 重设目标期间不会提前触发上一次的回调。
-     *
-     * [value] 仍是标量公式字符串（与 [setVariableLive] 同一套求值环境，不注入 t/i/n），
+     * [value] 是标量公式字符串（与 [setVariableLive] 同一套求值环境，不注入 t/i/n），
      * 在收到那一刻求出目标值；`ticks = 0` 等价于立即赋值（不进账本）。
      */
     @JvmOverloads
@@ -678,7 +626,7 @@ class ParticleGroup(
         } else {
             varEaseEndTicks.remove(name)
         }
-        // 重定向/取消都要重排兜底：旧任务按版本失效，否则它会按老时刻把这次登记的组提前收走
+        // 重定向与取消都要重排兜底，旧任务按版本失效，否则会按老时刻提前收走这个组
         ledgerChanged()
         val payload = work.nekow.particledrawing.core.network.SetProgramVarEasePayload(
             id, name, value, ticks * 50, easing,
@@ -695,7 +643,7 @@ class ParticleGroup(
         /** 单包指令条数上限：超出就拆成多个追加包（与载荷里的常量同源）。 */
         private const val MAX_INSTRUCTIONS_PER_PAYLOAD = AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD
 
-        /** 一个组的成员上限：受控清单要一次发完，超了请拆组（见 flush 的报错说明）。 */
+        /** 一个组的成员上限：受控清单要一次发完，超出会被拒绝。 */
         private const val MAX_MEMBERS_PER_PROGRAM = AnimationProgramCodecs.MAX_PROGRAM_MEMBERS
 
         /** 没有成员时最多缓存多少条待发指令（之后丢弃并告警，避免无限增长）。 */

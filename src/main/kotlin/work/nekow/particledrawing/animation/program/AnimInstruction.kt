@@ -6,7 +6,7 @@ import work.nekow.particledrawing.api.Orient
 import work.nekow.particledrawing.core.easing.EasingType
 import java.util.UUID
 
-// 客户端动画程序：编排式动画（ParticleGroup 链式调用）录制成的声明式指令流，服务端下发一次，客户端本地求值直写渲染——持续动画零带宽。
+// 客户端动画程序：编排式动画（ParticleGroup 链式调用）录制成的声明式指令流，服务端下发一次，客户端本地求值直写渲染，持续动画零带宽。
 // 指令全部为纯数据；startMs 是相对程序起点的毫秒，客户端用 payload 的 gameTime 锚点对齐时钟（1 game tick = 50ms）。
 
 /**
@@ -27,10 +27,9 @@ enum class InstructionType {
 }
 
 /**
- * 一条指令的**有限时长**（毫秒）；返回 null 表示它是无限持续的（`spin`、无限 `pulse`、表达式）。
+ * 一条指令的有限时长（毫秒）；返回 null 表示它是无限持续的（`spin`、无限 `pulse`、表达式）。
  *
- * 「这段编排什么时候跑完」由它算出来：服务端据此排定兜底收尾，客户端据此上报完成。
- * 无限持续的指令不参与判定——它不给出终点，也拦不住后面有限指令的终点。
+ * 服务端据此排定兜底收尾，客户端据此上报完成；无限持续的指令不参与判定。
  */
 internal fun AnimInstruction.finiteDurationMs(): Int? = when (this) {
     is AnimInstruction.Spin -> null
@@ -52,7 +51,7 @@ internal fun AnimInstruction.finiteDurationMs(): Int? = when (this) {
 /**
  * 变换基准点（轴心）引用：固定世界坐标，或跟随某个实体的位置（+偏移）。
  *
- * 只在 [AnimInstruction.BindPivot] 里下发——轴心是**程序级的状态**，绑定一次对之后所有旋转/缩放类指令生效；
+ * 只在 [AnimInstruction.BindPivot] 里下发。轴心是程序级的状态，绑定一次对之后所有旋转/缩放类指令生效；
  * 旋转类指令（[AnimInstruction.RotateOnce] / [AnimInstruction.Spin]）自己不带轴心，绕的就是当前绑定的那个。
  */
 sealed class PivotRef {
@@ -68,17 +67,17 @@ sealed class PivotRef {
 
     /**
      * 跟随实体：轴心 = 实体位置 + [offset]，由客户端本地解析实体。
-     * [local] 为 true 时整组连偏移一起按实体朝向旋转（组跟着实体转，用于「贴在身前/身侧」的编排）。
+     * [local] 为 true 时整组连偏移一起按实体朝向旋转。
      */
     data class FollowEntity(val uuid: UUID, val offset: Vec3, val local: Boolean = false) : PivotRef() {
         override val kind get() = Kind.FOLLOW_ENTITY
     }
 
     /**
-     * 可移动轴心：位置由服务端逐 tick 的样本更新（见 `ParticleGroup.updateAnchor`），
-     * 客户端按**相邻两个样本**插值渲染；[orient] 为 [Orient.VELOCITY] 时整组随运动方向转向。
+     * 可移动轴心：位置由服务端逐 tick 的样本更新，客户端按相邻两个样本插值渲染；
+     * [orient] 为 [Orient.VELOCITY] 时整组随运动方向转向。
      *
-     * 绑定一次即可（不像固定轴心那样每 tick 追加一条绑定指令），位置更新走专用小包。
+     * 绑定一次即可，位置更新走专用小包。
      */
     data class Movable(
         val pos: Vec3,
@@ -123,12 +122,12 @@ sealed class PivotRef {
 
 /**
  * 实体绑定记录：把一个实体以 [handle] 名登记进程序的实体注册表（下发顺序 = 句柄序号）。
- * 公式内通过 `get_entity_<prop>(<handle>)` 被动取值（见 expr/Getters）；
+ * 公式内通过 `get_entity_<prop>(<handle>)` 被动取值；
  * 客户端每 tick 本地解析实体，零带宽同步。亦用作轴心跟随的内部载体。
  */
 data class EntityBinding(val handle: String, val uuid: UUID)
 
-// FriendlyByteBuf 原生提供 writeUUID/readUUID；Vec3 与缓动的编解码见下方工具函数。
+// Vec3 与缓动的编解码工具（UUID 由 FriendlyByteBuf 原生提供）。
 
 internal fun writeVec(buf: FriendlyByteBuf, v: Vec3) {
     buf.writeDouble(v.x); buf.writeDouble(v.y); buf.writeDouble(v.z)
@@ -160,8 +159,7 @@ sealed class AnimInstruction {
     protected abstract fun writeBody(buf: FriendlyByteBuf)
 
     /**
-     * 平移时间线时刻：增量追加的指令由服务端按「从现在起」改写 startMs 时用
-     * （见 `ParticleGroup` 的时间轴换算）；[delta] 为 0 时原样返回。
+     * 平移时间线时刻，供服务端按「从现在起」改写增量追加指令的 [startMs]；[delta] 为 0 时原样返回。
      */
     fun shiftStartMs(delta: Int): AnimInstruction {
         if (delta == 0) return this
@@ -209,7 +207,7 @@ sealed class AnimInstruction {
         }
     }
 
-    // —— 外观 ——
+    // 外观
 
     /** 整组淡入：alpha 因子从 0 缓动到 1。 */
     data class FadeIn(
@@ -249,7 +247,7 @@ sealed class AnimInstruction {
         }
     }
 
-    /** 等比缩放：粒子大小与到轴心的距离 ×[ratio]，**在当前倍率之上相乘**（不会把已有倍率重置回 1）。 */
+    /** 等比缩放：粒子大小与到轴心的距离 ×[ratio]，在当前倍率之上相乘。 */
     data class ScaleBy(
         override val startMs: Int,
         val ratio: Float,
@@ -263,10 +261,9 @@ sealed class AnimInstruction {
     }
 
     /**
-     * 把组级倍率缓动到**绝对目标** [target]（1 = 原始尺寸，0 = 完全收起不绘制）。
+     * 把组级倍率缓动到绝对目标 [target]（1 = 原始尺寸，0 = 完全收起不绘制）。
      *
-     * 与 [ScaleBy] 的区别只在「终点怎么算」：本指令的终点是写死的 [target]，
-     * 起点则是**执行那一刻**的当前合成倍率——所以可以从任意倍率接退场、也可以从 0 展开，
+     * 起点是执行那一刻的当前合成倍率，因此可以从任意倍率接退场、也可以从 0 展开，
      * 中途追加的缩放不会把已经累积的倍率清掉。
      */
     data class ScaleTo(
@@ -281,7 +278,7 @@ sealed class AnimInstruction {
         }
     }
 
-    // —— 变换 ——
+    // 变换
 
     /** 组平移 [delta]（世界空间）。 */
     data class Translate(
@@ -296,7 +293,7 @@ sealed class AnimInstruction {
         }
     }
 
-    /** 绕**当前轴心绑定**一次性旋转（轴心只由 [BindPivot] 决定，见 `ParticleGroup.setPivot`/`followEntity`）。 */
+    /** 绕当前轴心绑定一次性旋转（轴心只由 [BindPivot] 决定）。 */
     data class RotateOnce(
         override val startMs: Int,
         val axis: Vec3,
@@ -326,12 +323,12 @@ sealed class AnimInstruction {
         }
     }
 
-    // —— 持续（客户端积分，零带宽） ——
+    // 持续（客户端积分，零带宽）
 
     /**
      * 无限匀速旋转，直到 [StopContinuous]。
      *
-     * 同 [RotateOnce]：绕**当前轴心绑定**转（只认 [BindPivot] 设的轴心），指令里不带轴心。
+     * 同 [RotateOnce]：绕当前轴心绑定转（只认 [BindPivot] 设的轴心），指令里不带轴心。
      */
     data class Spin(
         override val startMs: Int,
@@ -375,11 +372,9 @@ sealed class AnimInstruction {
     }
 
     /**
-     * 表达式指令：整段标量公式代码（专用旧式语法：i/n/t、[x,y,z]=...；
-     * 与 .pdraw 函数对象的 this 脚本语言不同）每粒子每 tick 求值。
-     * 输出 [x,y,z] 为世界绝对坐标，可用被动输入 getter（get_entity_* /get_world_*）、
-     * 内建 i/n/t、全套标量数学函数与程序变量；一旦出现即接管位置/颜色/缩放的最终解释权，
-     * FADE 因子仍叠加在输出的 alpha 之上。
+     * 表达式指令：整段标量公式代码（专用语法：i/n/t、[x,y,z]=...），每粒子每 tick 求值。
+     * 输出 [x,y,z] 为世界绝对坐标，可用被动输入 getter、内建 i/n/t、标量数学函数与程序变量；
+     * 一旦出现即接管位置/颜色/缩放的最终解释权，FADE 因子仍叠加在输出的 alpha 之上。
      */
     data class Expression(
         override val startMs: Int,
@@ -395,11 +390,10 @@ sealed class AnimInstruction {
     }
 
     /**
-     * **逐成员各自方向**的平移：每颗粒子沿自己「相对轴心的偏移」方向外移
-     * `offsetScale × |偏移|`（对「球面碎片向外飞」是现成语义）。
+     * 逐成员各自方向的平移：每颗粒子沿自己「相对轴心的偏移」方向外移
+     * `offsetScale × |偏移|`。
      *
-     * 与 [Translate] 的区别：[Translate] 整组一个位移向量，表达不了「各飞各的」——
-     * 那样只能一片一个组，组数直接等于 arm 日志行数与 arm 开销。本指令整组一个包就够。
+     * 与 [Translate] 的整组一个位移向量不同，本指令整组一个包即可表达「各飞各的」。
      */
     data class MoveEach(
         override val startMs: Int,

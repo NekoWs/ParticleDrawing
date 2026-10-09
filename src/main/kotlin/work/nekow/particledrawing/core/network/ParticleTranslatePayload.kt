@@ -10,8 +10,8 @@ import work.nekow.particledrawing.core.easing.EasingType
 import java.util.UUID
 
 /**
- * 粒子平移数据包：绕 [pivot] 轴心在 [offset] 基础上叠加一个平移增量 [tx/ty/tz]（世界空间）。
- * 与旋转独立缓动，客户端将其与旋转叠加，得到与编辑器一致的最终位置。
+ * 粒子平移数据包：绕 [pivot] 轴心在 [offset] 上叠加一个世界空间平移增量 [tx/ty/tz]，
+ * 与旋转独立缓动；客户端与旋转叠加后得到与编辑器一致的最终位置。
  *
  * @param particleId 粒子 ID
  * @param px/py/pz 旋转轴心（绝对世界坐标）

@@ -14,8 +14,8 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.sqrt
 
-// 动态光照管理器：用「光图坐标注入」实现平滑方块光照——不放置光源方块，在光图坐标写入带小数精度的光照值，靠 GPU 逐顶点插值平滑过渡。
-// 空间哈希（cell=16）加速邻近查询；光源移动超阈值才重建区块并按帧限流；读写锁保证线程安全。
+// 动态光照管理器：不放置光源方块，把带小数精度的光照值写进光图坐标，靠 GPU 逐顶点插值得到平滑过渡。
+// 空间哈希（cell=16 格）加速邻近查询；光源移动超过阈值才重建受影响的区块，并按帧限流；读写锁保证线程安全。
 @Suppress("unused")
 object DynamicLightManager {
 
@@ -26,10 +26,10 @@ object DynamicLightManager {
     /** 光源移动超过该距离平方后才会触发区块重建。 */
     private const val MOVE_THRESHOLD_SQUARED = 0.0625
 
-    /** 每帧最大区块重建数量，避免移动大量光源时卡顿。 */
+    /** 每帧最大区块重建数量。 */
     private const val MAX_REBUILDS_PER_FRAME = 1024
 
-    /** 光源最大照射半径（格），每帧由配置刷新，默认 16。 */
+    /** 光源最大照射半径（格），每帧从配置刷新，默认 16。 */
     @Volatile
     private var lightRadius = 16.0
 
@@ -52,10 +52,10 @@ object DynamicLightManager {
     private var hasLights = false
 
     /**
-     * 动态光照**版本号**：光源集合、位置、亮度或开关有任何变化就自增。
+     * 动态光照版本号：光源集合、位置、亮度或开关有任何变化就自增。
      *
-     * 桥接粒子的光照缓存按它失效——缓存的是「方块光叠加动态光之后」的结果，
-     * 光源挪走/销毁/关掉时若不失效，静止的非发光粒子会一直亮着旧值。
+     * 桥接粒子的光照缓存按它失效，缓存的是方块光叠加动态光之后的结果，
+     * 光源挪走、销毁或关掉时若不失效，静止的非发光粒子会一直亮着旧值。
      */
     @Volatile
     private var version: Int = 0
@@ -93,7 +93,7 @@ object DynamicLightManager {
             return
         }
 
-        // 每帧刷新照射半径（由配置驱动）。
+        // 每帧刷新照射半径，由配置驱动。
         val radius = ParticleDrawingConfig.CLIENT.dynamicLightMaxDistance.get().coerceAtLeast(1.0)
         lightRadius = radius
         lightRadiusSquared = radius * radius
@@ -103,7 +103,7 @@ object DynamicLightManager {
         val partialTick = mc.deltaTracker.getGameTimeDeltaPartialTick(false)
         val newSources = collectSources(engine, player.x, player.y, player.z, renderDistance, partialTick)
 
-        // 光场变了就抬版本号：位置/亮度/数量任一变化都算（桥接粒子的光照缓存据此失效）
+        // 光场变了就抬版本号：位置、亮度、数量任一变化都算
         val signature = signatureOf(newSources)
         if (signature != lastSignature || !lastEnabled) {
             lastSignature = signature
@@ -111,7 +111,7 @@ object DynamicLightManager {
             version++
         }
 
-        // 计算需要重建的区块（新增 / 移动 / 移除的光源）。
+        // 计算需要重建的区块：新增、移动、移除的光源。
         val dirtySections = HashSet<Long>()
         val newIds = HashSet<UUID>(newSources.size)
         for (src in newSources) {
@@ -135,7 +135,7 @@ object DynamicLightManager {
             }
         }
 
-        // 重建空间索引（写锁保护）。
+        // 重建空间索引，写锁保护。
         LOCK.writeLock().lock()
         try {
             sources.clear()
@@ -159,10 +159,10 @@ object DynamicLightManager {
     }
 
     /**
-     * 收集本帧活跃的动态光源（按渲染距离裁剪、按 cell 分区限制数量、位置用 partialTick 插值）。
+     * 收集本帧活跃的动态光源：按渲染距离裁剪、按 cell 分区限数，位置按 partialTick 插值。
      *
      * 每个 16×16×16 cell 内只保留亮度得分最高的 [maxDynamicLightsPerCell] 个光源，
-     * 避免某块区域的密集光源挤占其他区域的光照额度；再用全局上限兜底。
+     * 再用全局上限兜底。
      */
     private fun collectSources(engine: ClientParticleEngine, camX: Double, camY: Double, camZ: Double, renderDistance: Double, partialTick: Float): List<LightSource> {
         val glowing = engine.getGlowingParticles()
@@ -201,7 +201,7 @@ object DynamicLightManager {
         val out = ArrayList<LightSource>()
         for (heap in cellHeaps.values) for ((_, src) in heap) out.add(src)
 
-        // 全局上限兜底：若超出则按亮度得分裁剪
+        // 全局上限兜底：超出时按亮度得分裁剪
         val maxLights = ParticleDrawingConfig.CLIENT.maxDynamicLights.get()
         if (out.size > maxLights) {
             val heap = PriorityQueue<Pair<Double, LightSource>>(compareBy { it.first })
@@ -238,7 +238,7 @@ object DynamicLightManager {
             LOCK.writeLock().unlock()
         }
         lastBaked.clear()
-        // 光源全没了也是「光场变了」：桥接粒子必须重新采样，否则会亮着旧值
+        // 光源全没了也算光场变了：桥接粒子必须重新采样，否则会亮着旧值
         if (lastEnabled || lastSignature != 0L) {
             lastEnabled = false
             lastSignature = 0L
@@ -252,7 +252,7 @@ object DynamicLightManager {
     @JvmStatic
     fun version(): Int = version
 
-    /** 光源列表的轻量签名：数量、身份、位置与亮度都摊进来（移动与亮度变化都会改变签名）。 */
+    /** 光源列表的轻量签名：数量、身份、位置与亮度都计入，移动与亮度变化都会改变签名。 */
     private fun signatureOf(list: List<LightSource>): Long {
         var h = 1125899906842597L
         h = h * 31 + list.size
@@ -264,12 +264,12 @@ object DynamicLightManager {
         return h
     }
 
-    /** @return 动态光照功能是否启用 */
+    /** @return 动态光照是否启用 */
     @JvmStatic
     fun isEnabled(): Boolean = ParticleDrawingConfig.CLIENT.enableDynamicLights.get()
 
     /**
-     * 获取指定位置（小数坐标）的动态光照等级，返回带小数的 [Double]（0-15）。
+     * 查询指定位置（小数坐标）的动态光照等级，返回带小数的 [Double]（0-15）。
      */
     @JvmStatic
     fun getDynamicLightLevel(x: Double, y: Double, z: Double): Double {
@@ -311,7 +311,7 @@ object DynamicLightManager {
      * 原版光图坐标为 `block << 4 | sky << 20`，方块光照字段的低 4 bit（bit 0-3）
      * 通常为 0。此处用 `(dynamic * 16)` 写入该字段以保留小数精度，使原版平滑光照
      * 管线（`smoothBlock` 读取 bit 0-7）在顶点间插值时获得 16 倍平滑度。
-     * 仅当动态值高于原方块光照时覆盖，绝不压暗原版已照亮的区域。
+     * 仅当动态值高于原方块光照时覆盖，不压暗原版已照亮的区域。
      *
      * @param lightmap 原版光图坐标
      * @param x/y/z 查询位置（小数坐标）
@@ -331,7 +331,7 @@ object DynamicLightManager {
     }
 
     /**
-     * 供 BrightnessGetterMixin 调用：以方块位置查询并合并动态光照。
+     * 以方块位置查询并合并动态光照，供亮度获取器混入调用。
      */
     @JvmStatic
     fun getLightmapWithDynamicLight(level: BlockAndLightGetter, pos: BlockPos, lightmap: Int): Int {
@@ -340,12 +340,12 @@ object DynamicLightManager {
     }
 
     /**
-     * 将方块坐标映射为空间哈希 cell 坐标。
+     * 把方块坐标映射为空间哈希的 cell 坐标。
      */
     private fun cellCoord(coord: Double): Int = floor(coord).toInt() shr CELL_BITS
 
     /**
-     * 打包 cell 坐标为哈希键（各轴 21 bit，共 63 bit）。
+     * 把 cell 坐标打包成哈希键（各轴 21 bit，共 63 bit）。
      */
     private fun cellKey(cx: Int, cy: Int, cz: Int): Long =
         (cx.toLong() and CELL_MASK.toLong()) or
@@ -353,7 +353,7 @@ object DynamicLightManager {
             ((cz.toLong() and CELL_MASK.toLong()) shl 42)
 
     /**
-     * 收集指定位置周围受光照影响的区块 section 到集合中。
+     * 把指定位置周围受光照影响的区块 section 收进集合。
      */
     private fun markSectionsAround(out: MutableSet<Long>, x: Double, y: Double, z: Double) {
         val sx = SectionPos.blockToSectionCoord(floor(x).toInt())
@@ -370,7 +370,7 @@ object DynamicLightManager {
     }
 
     /**
-     * 将待重建 section 应用到渲染器，并按帧限制重建数量。
+     * 把待重建的 section 交给渲染器，并按帧限制重建数量。
      */
     private fun applyDirtySections(dirtySections: Set<Long>) {
         if (dirtySections.isEmpty()) return

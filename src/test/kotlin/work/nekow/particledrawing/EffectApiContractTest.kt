@@ -9,8 +9,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 阶段 5 API 契约测试（纯 JVM）：回调注册/触发/清理语义 + 变量覆盖记忆。
- * §5.4 的编辑器侧承诺在编辑器仓库 `test/player-api-contract.test.js`；这里验证播放端 API 自身的语义。
+ * 纯 JVM 契约测试：回调注册/触发/清理语义与变量覆盖记忆。
  */
 class EffectApiContractTest {
 
@@ -49,7 +48,7 @@ class EffectApiContractTest {
         store.set("speed", "4.0")
         assertEquals(4.0, store.getDouble("speed"))
         store.set("speed", "不是数字")
-        assertNull(store.getDouble("speed"))     // 诚实的失败：不是数字就 null
+        assertNull(store.getDouble("speed"))     // 不是数字就 null
         assertEquals(1, store.size())
         assertTrue(store.get("speed") == "不是数字")   // 字符串读回仍有
     }

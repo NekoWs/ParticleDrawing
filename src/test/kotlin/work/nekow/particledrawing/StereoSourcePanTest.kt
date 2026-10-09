@@ -12,15 +12,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * 立体声源的 `pan`。播放端原来把它塞进 `AL_POSITION`，而 OpenAL 对**立体声源**在立体声输出下
- * 走直通声道、位置分量不参与混音——实测三种 pan 电平差 0.0 dB，也就是完全无效。
- * 现在立体声素材改走 `AL_SOFT_source_panning` 的 `AL_PAN_SOFT`（真左右平衡），扩展不可用时
- * 退回 `AL_POSITION`（即改动前的无效行为，不报错）。
+ * 立体声源的 pan：立体声素材走 AL_SOFT_source_panning 的 AL_PAN_SOFT，扩展不可用时退回 AL_POSITION。
  *
- * 与编辑器仍有两处差别，写在 `doc/README.md` 的「已知限制」：
- * ① 中段曲线：OpenAL 线性 vs Web Audio `cos/sin` 等功率（pan=0 与 ±1 两端一致）；
- * ② 硬声像时 Web Audio 会把对侧声道折叠进近侧输出，OpenAL 不折叠。
- * 哪天这两条也对上了（或扩展行为变了），这个用例会失败，提醒去改那段文档。
+ * 中段曲线是线性的（编辑器用等功率，两端一致），硬声像不做对侧声道折叠。
  */
 class StereoSourcePanTest {
 
@@ -83,7 +77,7 @@ class StereoSourcePanTest {
                 "pan=-1 没把右声道压下去，立体声声像还是无效",
             )
             assertTrue(abs(lLeft - cLeft) < 1.0 && abs(lRight - cRight) < 1.0, "贴边时本侧也被改了，不是平衡")
-            // 居中：两侧都不动（两端一致，与编辑器的差别只在中段曲线）
+            // 居中：两侧都不动
             assertTrue(abs(cLeft - cRight) < 0.5, "pan=0 两侧不对称")
         }
     }
@@ -92,7 +86,7 @@ class StereoSourcePanTest {
     fun `the fallback path is the old AL_POSITION behaviour and does not error`() {
         OpenAlLoopback.withDevice(rate) { device ->
             val pcm = stereoPair()
-            // 强制「没有扩展」：退回 AL_POSITION（立体声下无效，即改动前的行为），且不能抛错
+            // 强制没有扩展：退回 AL_POSITION（立体声下无效），不能抛错
             fun measure(pan: Float): Pair<Double, Double> {
                 val y = OpenAlLoopback.renderPcm(device, pcm, rate, rate, stereoBuffer = true) { src ->
                     val sink = OpenAlSink(panningOverride = false)
@@ -127,7 +121,7 @@ class StereoSourcePanTest {
                     val sink = OpenAlSink()
                     sink.prepareSource(src, rate, 1)
                     sink.setPan(src, pan)
-                    // 单声道不该开平衡声像模式（保持改动前的行为）
+                    // 单声道不开平衡声像模式
                     if (AL10.alGetSourcei(src, panningEnabledSoft) != AL10.AL_TRUE) checkedFlag = true
                 }
                 return OpenAlLoopback.toneDb(y, leftFreq, 0, rate) to
@@ -157,7 +151,7 @@ class StereoSourcePanTest {
                 sink.prepareSource(src, rate, 2)
                 sink.setPan(src, 0f)
                 assertEquals(AL10.AL_TRUE, AL10.alGetSourcei(src, panningEnabledSoft), "没开平衡声像")
-                // 生产路径把位置钉在原点，免得留下与实际声像对不上的旧值
+                // 生产路径把位置钉在原点
                 MemoryStack.stackPush().use { stack ->
                     val f = stack.mallocFloat(3)
                     AL10.alGetSourcefv(src, AL10.AL_POSITION, f)
@@ -166,7 +160,7 @@ class StereoSourcePanTest {
                     assertEquals(0f, f.get(2))
                 }
             }
-            // 开了平衡声像后再把位置挪到右边、AL_PAN_SOFT 仍给 0：位置还认不认？
+            // 开了平衡声像后再把位置挪到右边、AL_PAN_SOFT 仍给 0
             val moved = OpenAlLoopback.renderPcm(device, pcm, rate, rate, stereoBuffer = true) { src ->
                 val sink = OpenAlSink()
                 sink.prepareSource(src, rate, 2)
@@ -182,8 +176,7 @@ class StereoSourcePanTest {
                 "[pan] 开平衡声像后：位置钉原点 左 %.1f / 右 %.1f；位置挪到右侧且 pan=0 左 %.1f / 右 %.1f"
                     .format(pinnedLeft, pinnedRight, movedLeft, movedRight)
             )
-            // 实测：开了这模式位置分量不再参与混音，所以两套声像不会叠加。
-            // 哪天 OpenAL 改成会叠加（左右不再对称），这里会失败，提醒改文档与注释。
+            // 开了这模式位置分量不再参与混音，两套声像不会叠加
             assertTrue(
                 abs(movedLeft - movedRight) < 1.0,
                 "开了平衡声像后位置声像又生效了（左 %.1f / 右 %.1f）——会两套叠加，请改文档与注释"

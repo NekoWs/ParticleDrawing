@@ -7,8 +7,8 @@ import work.nekow.particledrawing.api.ParticleCurve
 import work.nekow.particledrawing.api.ParticleLifeCurve
 import work.nekow.particledrawing.core.easing.EasingType
 
-// 寿命曲线的协议编解码：整段只在 spawn 包里出现一次，故按通道/关键帧紧凑写。
-// 缓动单独走紧凑编码（预设只占 1~2 字节），自定义三次贝塞尔才写 4 个 double。
+// 寿命曲线的协议编解码：整段只在 spawn 包里出现一次，按通道与关键帧紧凑写。
+// 缓动走紧凑编码：预设占 1~2 字节，自定义三次贝塞尔写 4 个 double。
 
 private const val EASE_PRESET = 0
 private const val EASE_CUSTOM = 1
@@ -38,7 +38,7 @@ internal fun readEasingCompact(buf: FriendlyByteBuf): EasingType = when (buf.rea
 }
 
 /**
- * 逐粒子寿命曲线：无曲线时只写一个 0（与「没有这套字段」同价）。
+ * 逐粒子寿命曲线：无曲线时只写一个 0。
  */
 internal object ParticleCurveCodec {
 

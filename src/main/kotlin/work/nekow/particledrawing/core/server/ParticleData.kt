@@ -26,7 +26,7 @@ class ParticleData(
 
     private var velocity: Vec3 = Vec3.ZERO
 
-    // 加速度（力）：>0 = 还有这么多 tick；<0 = 无限；0 = 无
+    // 加速度（力）：accelTicks >0 = 还有这么多 tick；<0 = 无限；0 = 无
     private var acceleration: Vec3 = Vec3.ZERO
     private var accelTicks: Int = 0
 
@@ -66,8 +66,7 @@ class ParticleData(
     fun setOffsetFromPivot(offset: Vec3) { this.offsetFromPivot = offset }
 
     /**
-     * 设置速度：速度驱动接管位置，实体锚点一并解除（与 [attach] 的「锚点接管位置」互为反面）。
-     * 留着锚点会让速度白设——位置每 tick 仍由锚点解析。
+     * 设置速度：速度驱动接管位置，实体锚点一并解除。
      */
     fun setVelocity(velocity: Vec3) {
         detach()
@@ -88,7 +87,7 @@ class ParticleData(
     /**
      * 挂到实体上：位置交给锚点解析，速度与力一并清零。
      * @param entityId 当拍解析到的网络 id；未解析到时给 [AttachMath.noEntity]，之后由引擎按 uuid 补
-     * @param uuid 实体 UUID，作为主身份（可为 null = 只按网络 id 跟踪）
+     * @param uuid 实体 UUID（主身份）；null = 只按网络 id 跟踪
      */
     fun attach(entityId: Int, uuid: UUID?, offset: Vec3, local: Boolean) {
         attachEntityId = entityId

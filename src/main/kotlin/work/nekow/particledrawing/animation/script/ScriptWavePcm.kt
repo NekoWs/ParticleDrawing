@@ -13,20 +13,16 @@ import kotlin.math.ceil
 import kotlin.math.floor
 
 /**
- * 脚本采样级 PCM：a.sampleAt(ms[, ch]) / a.peakAt(ms, win[, ch]) 取的真实波形，以及
- * a.sampleRate / a.channels / a.waveReady 三个状态字段。语义与编辑器 objects/wav-pcm.js +
- * objects/audio-pcm.js 逐条一致：ms 用资产本地毫秒、单点线性插值、peakAt 取半开区间
- * [ms, ms+win) 内 |sample| 最大、窗口不足一个采样取该点、时间/帧/声道越界与未就绪一律回 0。
+ * 脚本采样级 PCM：a.sampleAt(ms[, ch]) / a.peakAt(ms, win[, ch]) 取真实波形，
+ * a.sampleRate / a.channels / a.waveReady 为状态字段。ms 为资产本地毫秒，单点线性插值，
+ * peakAt 取半开区间 [ms, ms+win) 内 |sample| 最大，窗口不足一个采样取该点，越界与未就绪一律回 0。
  *
- * WAV（PCM）本身就是交错整数样本，直接按 data 偏移读原始字节——不解码、不建 Float32 数组，
- * 96kHz 无损整曲上百 MB 也不额外占内存。OGG 没有直接寻址的性质，按窗口解码（8 秒一个窗口，
- * 最多留 2 个），不整首常驻；播放侧仍走 AudioStreamPlayer 的流式队列，两者互不影响。
- *
- * 采样按资产对象弱引用缓存（动画卸载后随对象回收）；只在客户端主线程使用。
+ * WAV（PCM）按 data 偏移直读原始字节；OGG 按窗口解码（8 秒一个窗口，最多留 2 个）。
+ * 采样按资产对象弱引用缓存（动画卸载后随对象回收），只在客户端主线程使用。
  */
 object ScriptWavePcm {
 
-    /** OGG 解码窗口长度（毫秒）：挪一次窗口 = 一次 seek + 顺序解码，取大一点减少挪动。 */
+    /** OGG 解码窗口长度（毫秒）：挪一次窗口是一次 seek 加顺序解码。 */
     private const val OGG_WINDOW_MS = 8000
 
     /** 每个 OGG 资产最多留几个已解码窗口（LRU 淘汰）。 */
@@ -85,12 +81,7 @@ object ScriptWavePcm {
         return OggPcm(a.data, info)
     }
 
-    // —— 逐帧取样本的公共部分 ——
-
-    /**
-     * 帧时换算 + 插值 + 窗口峰值。子类只管「某一帧某声道」的取值，算式两边共用，
-     * 与编辑器 pcmSampleAt/pcmPeakAt 同一套。
-     */
+    /** 帧时换算、插值与窗口峰值；子类只实现某一帧某声道的取值。 */
     private abstract class Pcm(val rate: Int, val channels: Int, val frames: Int) {
 
         /** 某帧某声道的样本值（-1..1）；越界回 0。 */
@@ -111,7 +102,7 @@ object ScriptWavePcm {
             val to = (ms + maxOf(0.0, windowMs)) / 1000.0 * rate
             var a = floor(from)
             var b = ceil(to)
-            if (a.isNaN() || b.isNaN()) return 0.0            // 编辑器里 NaN 进不了循环，同样是 0
+            if (a.isNaN() || b.isNaN()) return 0.0            // NaN 进不了循环，同样是 0
             if (b <= a) b = a + 1                              // 窗口不足一个采样：取该点
             if (b <= 0.0 || a >= frames) return 0.0            // 窗口整个在音频之外
             if (a < 0.0) a = 0.0
@@ -135,9 +126,9 @@ object ScriptWavePcm {
         }
     }
 
-    // —— WAV：扫 RIFF 头，样本按索引读原始字节 ——
+    // WAV：扫 RIFF 头，样本按索引读原始字节
 
-    /** WAV 块解析结果（对应编辑器 parseWav 的返回值）。 */
+    /** WAV 块解析结果。 */
     internal class WavInfo(
         val channels: Int,
         val rate: Int,
@@ -164,7 +155,7 @@ object ScriptWavePcm {
 
     /**
      * 扫 RIFF/WAVE 的 fmt / data 块；不是可直读的 PCM WAV 时回 null。
-     * 只支持 16bit 整数与 32bit 浮点（编辑器同此口径；8bit/24bit 交给解码播放那条路）。
+     * 只支持 16bit 整数与 32bit 浮点，8bit/24bit 走解码播放那条路。
      */
     private fun parseWav(bytes: ByteArray): WavInfo? {
         if (bytes.size < 12) return null
@@ -207,12 +198,12 @@ object ScriptWavePcm {
     private fun tag(bytes: ByteArray, o: Int): String =
         String(byteArrayOf(bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]), Charsets.US_ASCII)
 
-    // —— OGG：按窗口解码（不整首常驻） ——
+    // OGG：按窗口解码，不整首常驻
 
     /** OGG 元数据：采样率、声道数、总帧数。 */
     internal class OggInfo(val rate: Int, val channels: Int, val frames: Int)
 
-    /** OGG 解码入口；测试里替换成合成样本，免得依赖本机 STB 原生库。 */
+    /** OGG 解码入口；测试里替换成合成样本，不依赖本机 STB 原生库。 */
     internal interface OggReader {
         fun info(data: ByteArray): OggInfo?
 
@@ -275,9 +266,8 @@ object ScriptWavePcm {
     }
 
     /**
-     * LWJGL STB Vorbis 解码：读元数据与解窗口都是「开内存句柄 → 用完关」，句柄与直接缓冲不常驻
-     * （解出来的窗口样本留在上层缓存里）。STB 要求输入缓冲在句柄生命周期内一直有效，所以这里
-     * 单独 memAlloc 并在关闭后释放；不解码文件的其余部分。
+     * LWJGL STB Vorbis 解码：每次取值开一次内存句柄、用完即关。
+     * STB 要求输入缓冲在句柄生命周期内一直有效，因此单独 memAlloc 并在关闭后释放。
      */
     private object StbOggReader : OggReader {
 
@@ -297,8 +287,7 @@ object ScriptWavePcm {
 
         override fun read(data: ByteArray, startFrame: Int, frameCount: Int, channels: Int): FloatArray? =
             withHandle(data) { handle ->
-                // 用 stb_vorbis_seek 而不是 seek_frame：后者只保证下一帧「包含」目标采样，
-                // 取样本会从帧边界开始，波形会整体偏移最多一个块。
+                // 用 seek 而非 seek_frame：后者取样本会从帧边界开始，波形整体偏移最多一个块。
                 if (frameCount <= 0) {
                     null
                 } else if (!STBVorbis.stb_vorbis_seek(handle, startFrame)) {

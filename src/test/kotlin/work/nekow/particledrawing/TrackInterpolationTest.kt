@@ -15,14 +15,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * track 的逐 tick 插值：端点必须始终是一对**相邻**的权威位置，缺包 tick 原地保持。
- *
- * 症状：端点只在收到包时才前进的话，缺包的 tick 会把同一段 xo→x 重扫一遍
- * （partialTick 在 tick 边界归零），粒子先退回段起点再追回来——目标越快退得越远，
- * 就是实机上的「前后瞬移」。这里先按老规则量出这个倒退，再钉新规则在同样的到达抖动下单调不减。
+ * track 的逐 tick 插值：端点始终是一对相邻的权威位置，缺包 tick 原地保持。
  *
  * 到达抖动按客户端与服务端 tick 相位漂移建模：每 7 个客户端 tick 收到 7 条位置，
- * 但分布是 0/2/1/…（有的 tick 一条没到、有的到了两条）。
+ * 分布为 0/2/1。
  */
 class TrackInterpolationTest {
 
@@ -161,7 +157,7 @@ class TrackInterpolationTest {
             Vec3(sin(phi) * cos(theta) * radius, cos(phi) * radius, sin(phi) * sin(theta) * radius)
         }
         val buffers = Array(count) { TrackBuffer() }
-        // 出生瞬间：xo = x = 自己的球面偏移（与服务端 spawn 后桥接粒子的初始状态一致）
+        // 出生瞬间：xo = x = 球面偏移（与服务端 spawn 后桥接粒子一致）
         val bridges = Array(count) { Bridge().also { b -> b.xo = offsets[it]; b.x = offsets[it] } }
 
         var spin = 0.0
@@ -185,8 +181,7 @@ class TrackInterpolationTest {
                 }
             }
         }
-        // 逐粒子线性插值本身会把旋转弦缩短一丝（0.03 rad 量级 → 相对偏差 1e-4 量级），
-        // 这不是塌陷；塌成环/排时这个偏差会到 0.1 以上。
+        // 逐粒子线性插值会把旋转弦缩短一丝，容差取 1e-3
         assertTrue(maxRelDev < 1e-3, "球壳形状偏差过大（塌陷）：$maxRelDev")
     }
 
@@ -197,10 +192,8 @@ class TrackInterpolationTest {
     }
 
     /**
-     * 把两条规则的插值轨迹画成图，落在 `build/verification/track-interpolation.png`。
-     * 纵轴是「渲染位置 − 平均步进 × 帧序号」的残差：老规则（红）在缺包 tick 上出现幅度约
-     * 一个 tick 位移的锯齿/回退，新规则（绿）只有一条平滑的小幅漂移。
-     * 这条不是断言测试，产物供人工复核（断言在其它用例里）。
+     * 把两条规则的插值轨迹画成图，写到 `build/verification/track-interpolation.png`；
+     * 纵轴是渲染位置减去平均步进的残差，产物供人工复核。
      */
     @Test
     fun `输出插值轨迹图供人工复核`() {
@@ -276,7 +269,7 @@ class TrackInterpolationTest {
         assertTrue(out.length() > 0, "轨迹图应当写出来")
     }
 
-    /** AWT 颜色别名（本文件里不带前缀的 Color 是导出用的 API 类型名）。 */
+    /** AWT 颜色别名。 */
 }
 
 private typealias AwtColor = java.awt.Color

@@ -15,11 +15,11 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 编排动画指令流的编解码，以及「旋转绕哪个轴心」这条语义在指令形状上的体现。
+ * 编排动画指令流的编解码，以及旋转轴心在指令形状上的体现。
  *
- * 轴心是**程序级状态**：只由 [AnimInstruction.BindPivot] 绑定一次，之后所有旋转/缩放类指令都绕它算。
- * 所以 [AnimInstruction.Spin] / [AnimInstruction.RotateOnce] 身上**没有**轴心字段——
- * `ParticleGroup.spin/rotate` 的参数里也没有，「先 `followEntity` 再 `spin`」的顺序即语义。
+ * 轴心是程序级状态：由 [AnimInstruction.BindPivot] 绑定一次，之后所有旋转/缩放类指令都绕它算，
+ * 所以 [AnimInstruction.Spin] / [AnimInstruction.RotateOnce] 没有轴心字段，
+ * 指令顺序（先绑定轴心再旋转）即语义。
  */
 class AnimationProgramInstructionTest {
 
@@ -59,7 +59,7 @@ class AnimationProgramInstructionTest {
             val fields = cls.declaredFields.map { it.name }
             assertTrue(
                 "pivot" !in fields,
-                "${cls.simpleName} 不该带逐指令轴心（现在有：$fields）——轴心由 BindPivot 绑定、对后续指令粘性生效"
+                "${cls.simpleName} 不该带逐指令轴心（现在有：$fields），轴心由 BindPivot 绑定、对后续指令粘性生效"
             )
         }
         assertTrue(

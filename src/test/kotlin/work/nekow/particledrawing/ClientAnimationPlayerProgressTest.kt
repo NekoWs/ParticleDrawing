@@ -15,9 +15,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 客户端播放器按服务端权威进度（gameTime 时钟）定位帧的回归测试：
- * 同一 startGameTick + gameTime 的所有客户端必然得到同一帧。
- * 时间轴单位为毫秒（1 game tick = 50ms）。
+ * 客户端播放器按服务端权威进度（gameTime 时钟）定位帧：同一 startGameTick +
+ * gameTime 的所有客户端必然得到同一帧；时间轴单位为毫秒（1 game tick = 50ms）。
  */
 class ClientAnimationPlayerProgressTest {
 
@@ -42,7 +41,7 @@ class ClientAnimationPlayerProgressTest {
 
     @Test
     fun seeksToProgressOnConstruction() {
-        // startGameTick=1000，收到播放包时 gameTime=1005 → 应从 250ms 开始
+        // startGameTick=1000，收到播放包时 gameTime=1005，应从 250ms 开始
         val player = ClientAnimationPlayer(animation(true), Vec3(100.0, 0.0, 0.0), startGameTick = 1000L, currentGameTick = 1005L)
         assertEquals(250, player.currentMsValue)
         assertEquals(102.5, posOf(player), 1e-6) // origin 100 + pos.x 插值 2.5

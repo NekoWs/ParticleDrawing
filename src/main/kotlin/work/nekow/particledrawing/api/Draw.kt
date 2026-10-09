@@ -17,7 +17,7 @@ fun interface ColorSource {
         @JvmStatic
         fun of(color: Color): ColorSource = ColorSource { color }
 
-        /** 彩虹渐变（HSB 色相随 t 扫过一圈的 2/3，饱和度/亮度 0.9）。 */
+        /** 彩虹渐变：色相随 t 扫过一圈的 2/3。 */
         @JvmStatic
         @JvmOverloads
         fun rainbow(alpha: Float = 1f): ColorSource =
@@ -31,8 +31,7 @@ fun interface ColorSource {
 
 // 创建粒子形状的绘图工具，每个方法返回 ParticleGroup，可立即链式动画（fadeIn / spin / movePath 等）。
 // 通用参数：colorFn 渐变着色、scale 缩放、stagger 逐粒子入场延迟、group 复用已有组、
-// visual 外观规格（贴图/柔边形状/各向异性/朝向/加色/免光照，见 ParticleVisual）、
-// lifeCurve 逐粒子寿命曲线（形状里的实色片元自己淡入淡出/收放，不必去缩整个组）。
+// visual 外观规格（见 ParticleVisual）、lifeCurve 逐粒子寿命曲线。
 @Suppress("unused")
 object Draw {
 
@@ -41,7 +40,7 @@ object Draw {
     /** 两端细/渐隐时的端部尺寸系数（1 = 不细）。 */
     private const val TAPER_MIN = 0.25
 
-    // —— 低级绘制：单粒子 / 自由曲线 ——
+    // 低级绘制：单粒子 / 自由曲线
 
     /**
      * 在指定位置放置单个粒子并加入 [group]（为 null 时自动创建新组）。
@@ -65,7 +64,6 @@ object Draw {
      * @param start   起点
      * @param end     终点
      * @param count   线段上的粒子数量
-     * @param taper   为 true 时沿线从细到粗（起点最细）
      */
     @JvmStatic
     @JvmOverloads
@@ -92,7 +90,6 @@ object Draw {
      *
      * @param posFunc 接收 t ∈ [0, 1] 并返回世界坐标的函数
      * @param steps   采样点数
-     * @param taper   为 true 时沿曲线从细到粗
      */
     @JvmStatic
     @JvmOverloads
@@ -114,17 +111,14 @@ object Draw {
     }
 
     /**
-     * 折线 / 光束：**每段一颗**沿线段躺好的贴图四边形，一条调用画完一条丝。
-     *
-     * 与「一排小方块」是两种画法：丝的观感来自贴图（默认用内置 [ParticleStyle.LINE]：两端渐隐、上下柔边），
-     * 所以 40 颗小方块能干的事这里 1 颗就够（也就不用往上堆密度）。
+     * 折线 / 光束：每段一颗沿线段躺好的贴图四边形，一条调用画完一条丝。
+     * 丝的观感来自贴图，默认用内置 [ParticleStyle.LINE]（两端渐隐、上下柔边）。
      *
      * 每段：长轴 = 段长（世界格）、短轴 = [thickness]（世界格），朝向由线段方向定（非广告牌）。
      *
      * @param points    折线顶点（至少 2 个；相邻重合的点自动跳过）
-     * @param thickness 线粗（世界格整宽；想更精细用 [ParticleVisual] 自己拼）
-     * @param taper     为 true 时整条线两端收细，且未指定 [texture] 时用内置线段贴图
-     * @param texture   贴图名（[ParticleManager.registerTexture] 登记过或 [ParticleStyle] 内置名）；null = 用内置线段贴图（taper 时）
+     * @param thickness 线粗（世界格整宽）
+     * @param texture   贴图名（[ParticleManager.registerTexture] 登记过或 [ParticleStyle] 内置名）；null = 按 [taper] 选用内置线段贴图
      * @param additive  加法混合（辉光溢出）
      * @param glowing   免光照（全亮）
      */
@@ -171,14 +165,13 @@ object Draw {
         return g
     }
 
-    // —— 2D 图形（axis 选择所在平面） ——
+    // 2D 图形（axis 选择所在平面）
 
     /**
      * 绘制一个由粒子组成的圆周。
      *
      * @param radius 圆半径
      * @param count  粒子数量
-     * @param axis   绘制平面 (XZ = 水平, XY = 朝 Z 方向的垂直面, YZ = 朝 X 方向的垂直面)
      */
     @JvmStatic
     @JvmOverloads
@@ -326,10 +319,10 @@ object Draw {
         return g
     }
 
-    // —— 3D 图形 ——
+    // 3D 图形
 
     /**
-     * 斐波那契球面分布的粒子球体，默认彩虹渐变（顶部到底部）。
+     * 斐波那契球面分布的粒子球体。
      *
      * @param count 粒子数量
      */
@@ -394,14 +387,14 @@ object Draw {
         return g
     }
 
-    // —— 内部工具 ——
+    // 内部工具
 
-    /** 端部收细系数：taper 时 [TAPER_MIN]（端部）→ 1（最粗处）。 */
+    /** 端部收细系数：taper 时取 `[TAPER_MIN], 1`。 */
     private fun taperFactor(taper: Boolean, shape: Double): Double =
         if (taper) TAPER_MIN + (1.0 - TAPER_MIN) * shape.coerceIn(0.0, 1.0) else 1.0
 
     /**
-     * 放置一个粒子；[index] × [stagger] 大于 0 时调度延迟出现（波浪入场）。
+     * 放置一个粒子；[index] × [stagger] 大于 0 时调度延迟出现。
      * [taper] 打开时按 [t] 从细到粗（同时作用于标量 scale 与外观里的各向异性尺寸）。
      */
     private fun place(
@@ -425,7 +418,7 @@ object Draw {
         }
     }
 
-    /** 不需要 taper 的图元走的简写（t 恒 1）。 */
+    /** 不需要 taper 的图元走的简写。 */
     private fun placeVisual(
         manager: ParticleManager, group: ParticleGroup, pos: Vec3,
         color: Color, visual: ParticleVisual, index: Int, stagger: Int,
@@ -455,7 +448,7 @@ object Draw {
         if (!visual.isPristine()) {
             builder.visual(visual).glowing(visual.glowing).lightLevel(visual.lightLevel)
         }
-        // 形状里的实色片元各自淡入淡出/收放：不必为了入场去缩整个组（那会把形状的间距一起缩）
+        // 入场淡入淡出走逐粒子寿命曲线，避免为了入场去缩整个组（那会把形状间距一起缩）
         if (lifeCurve != null) builder.lifeCurve(lifeCurve)
         builder.spawn()
     }
@@ -468,7 +461,7 @@ object Draw {
     }
 
     /**
-     * 描述 2D 图形所绘制的平面。
+     * 2D 图形所绘制的平面。
      */
     enum class Axis {
         /** 水平面（Y 为法线，图形铺在 XZ 平面） */

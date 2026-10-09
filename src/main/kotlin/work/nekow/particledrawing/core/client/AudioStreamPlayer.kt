@@ -14,22 +14,9 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * 游戏内音频播放（.pdrawc 音频资产）。复用 Minecraft 的 OpenAL context 自建 source：
- * 分块解码 + 4×250ms 队列缓冲，seek 用「停源 → 清队列 → 从目标偏移重灌」（AL_SEC_OFFSET 对
- * 队列 source 跨实现不可靠）；播放位置由「队列起始帧 + 已完成帧数 + AL_SAMPLE_OFFSET」计算（实测
- * AL_SAMPLE_OFFSET 相对当前队列计数、alSourceStop 会把它归零），动画 tick 侧对比期望毫秒做漂移校正；
- * 音量走 AL_GAIN、倍速走 AL_PITCH。声像：立体声素材走 `AL_PAN_SOFT`（`AL_SOFT_source_panning`，
- * 真左右平衡；`AL_POSITION` 对立体声源在立体声输出下不参与混音），拿不到扩展或单声道素材才退回
- * `AL_POSITION`。与编辑器仍有两点差别，见 doc/README.md 的「已知限制」。
- *
- * 素材采样率由 WAV/OGG 头决定（常见 44.1/48kHz，也有 192kHz 整曲），原样交给 `alBufferData`，
- * 由 OpenAL 重采样到设备率。OpenAL 默认重采样器是纯插值、没有抗混叠的，高采样率素材会把
- * 24kHz 以上的内容按原电平折回可听带（听感就是「电音」/金属声），所以建 source 时换成带限 sinc
- * （见 [pickAntiAliasedResampler]）。
- *
- * 所有 AL 调用在客户端主线程（update）执行——context 线程局部，换线程调用无效；
- * context 不可用（设备切换/音效重载）时静默跳过，下次可用时重建 source 续播。
- * AL 调用全部经 [AudioSink]，测试里换成假实现就能不接声音设备逐采样验证分块链路。
+ * 游戏内音频播放（.pdrawc 音频资产）：复用 Minecraft 的 OpenAL context 自建 source，
+ * 分块解码 + 4×250ms 队列缓冲；音量走 AL_GAIN、倍速走 AL_PITCH，立体声素材走 `AL_PAN_SOFT`。
+ * AL 调用只在客户端主线程有效（context 线程局部），context 不可用时静默跳过、下次可用时续播。
  */
 class AudioStreamPlayer internal constructor(
     private val asset: AudioAsset,
@@ -37,7 +24,7 @@ class AudioStreamPlayer internal constructor(
     private val sink: AudioSink,
 ) : AutoCloseable {
 
-    /** 生产构造：真实 OpenAL + 250ms 分块（[chunkMs]/[sink] 只在测试里换掉）。 */
+    /** 生产构造：真实 OpenAL + 250ms 分块。 */
     constructor(asset: AudioAsset) : this(asset, CHUNK_MS, OpenAlSink())
 
     companion object {
@@ -46,11 +33,8 @@ class AudioStreamPlayer internal constructor(
         private const val MAX_FRAMES = Int.MAX_VALUE - 100
 
         /**
-         * 带抗混叠的重采样器名字，按实测抑制能力从好到差排（192k→48k，25~85kHz 多音，
-         * 最差档位的抑制量）：23rd Sinc fast 87.8dB > 47th Sinc fast 64.7dB > 11th Sinc 51.6dB，
-         * 而 OpenAL 默认的 Cubic Spline 是 0dB（超声原电平折回可听带）。
-         * 同阶里 fast 变体在整数比降采样下更好：整数比能直接取表里的比例，非 fast 会在相邻比例间插值。
-         * 名字在 OpenAL Soft 各版本间稳定，因此按名字匹配而不按索引。
+         * 带抗混叠的重采样器名字，按抑制能力从好到差排：OpenAL 默认的 Cubic Spline 不做抗混叠，
+         * 高采样率素材的超声会按原电平折回可听带。OpenAL Soft 各版本名字稳定，因此按名字匹配。
          */
         private val RESAMPLER_PREFERENCE = listOf(
             "23rd order sinc (fast)",
@@ -63,7 +47,6 @@ class AudioStreamPlayer internal constructor(
 
         /**
          * 从 OpenAL 报出的重采样器名字里挑一个带抗混叠的，挑不到回 null。
-         * point/linear/spline/gaussian 都只是插值，降采样时不做抗混叠，不能用。
          */
         internal fun pickAntiAliasedResampler(names: List<String>): Int? {
             for (want in RESAMPLER_PREFERENCE) {
@@ -85,7 +68,7 @@ class AudioStreamPlayer internal constructor(
     private val buffers = IntArray(BUFFER_COUNT)
     private val bufferFrames = IntArray(BUFFER_COUNT)
     private var queuedFrames = 0
-    /** 当前队列头部对应的内容帧号（seek 目标；没 seek 过就是从内容起点续上的位置）。 */
+    /** 当前队列头部对应的内容帧号（seek 目标）。 */
     private var queueStartFrame = 0L
     /** 当前队列里已经播完、被取回的帧数。 */
     private var playedFrames = 0L
@@ -137,8 +120,7 @@ class AudioStreamPlayer internal constructor(
 
     /**
      * 当前内容播放位置（毫秒，相对音频内容起点；倍速下已是内容本地时间）。
-     * 必须给绝对值——调用方拿它跟播放头算漂移，(seek 之后从头计数) 会让漂移判据每 tick 都成立，
-     * source 被反复停掉重灌，听到的就是连续咔哒。
+     * 必须是绝对值：相对值会让漂移判据每 tick 都成立，source 被反复停掉重灌。
      */
     fun positionMs(): Double {
         if (source == 0 || sampleRate <= 0 || decoder == null) return 0.0
@@ -160,7 +142,7 @@ class AudioStreamPlayer internal constructor(
         if (source == 0) return
         sink.setGain(source, gain.coerceIn(0f, 2f))
         sink.setPitch(source, rate.coerceIn(0.25f, 4f))
-        // 声像：源坐标取相对听者（右为 +X、前方为 -Z），并把距离衰减关掉，效果与玩家朝向/位置无关
+        // 声像：源坐标取相对听者（右为 +X、前方为 -Z），并关掉距离衰减
         sink.setPan(source, pan.coerceIn(-1f, 1f))
     }
 
@@ -259,8 +241,8 @@ class AudioStreamPlayer internal constructor(
 }
 
 /**
- * OpenAL 侧的薄封装：抽出来是为了让「解码 → 分块 → 排队 → 取块」这条链路不带声音设备也能
- * 逐采样验证（测试里换成假实现）。真实实现 [OpenAlSink] 全部走 LWJGL OpenAL。
+ * OpenAL 侧的薄封装：测试里换成假实现即可不带声音设备验证「解码 → 分块 → 排队 → 取块」链路。
+ * 真实实现见 [OpenAlSink]。
  */
 internal interface AudioSink {
 
@@ -297,7 +279,7 @@ internal interface AudioSink {
     /** 队列里尚未取回的缓冲个数。 */
     fun queuedBuffers(source: Int): Int
 
-    /** 当前队列内已播的采样帧数（不含已取回的缓冲——取回时由调用方累加）。 */
+    /** 当前队列内已播的采样帧数；已取回的缓冲不计入，由调用方累加。 */
     fun sampleOffset(source: Int): Int
 
     fun isPlaying(source: Int): Boolean
@@ -410,16 +392,11 @@ internal class OpenAlSink(
     }
 
     /**
-     * 立体声素材改用平衡声像（`AL_SOFT_source_panning`，见 [useSourcePanning]）：它给的是
-     * 真正的左右平衡，而 `AL_POSITION` 对立体声源在立体声输出下根本不参与混音（声像完全无效）。
-     * 单声道素材不动（`AL_POSITION` 对单声道有效，行为不变）。
+     * 立体声素材改用平衡声像（`AL_SOFT_source_panning`）：它给的是真正的左右平衡，
+     * 而 `AL_POSITION` 对立体声源在立体声输出下不参与混音。单声道素材仍走 `AL_POSITION`。
      *
-     * 开了这模式之后 `AL_POSITION` 就不再参与混音（实测：位置留在右侧、`AL_PAN_SOFT` 给 0 时
-     * 左右仍完全对称），所以两套声像不会叠加；这里仍把位置钉在原点，免得留下一个和实际声像
-     * 对不上的旧值。
-     *
-     * 扩展还是草稿（本机报的是 `AL_SOFTX_source_panning`），所以设完读回确认；位被改过就退回
-     * `AL_POSITION`，顺手清掉可能挂起的 AL 错误，别把无效应答留在共享 context 里给 MC 看到。
+     * 扩展还是草稿（本机报的是 `AL_SOFTX_source_panning`），所以设完读回确认，位被改过就退回
+     * `AL_POSITION` 并清掉可能挂起的 AL 错误。
      */
     private fun applySourcePanning(source: Int, channels: Int) {
         if (!useSourcePanning(channels == 2, panningSupported())) return
@@ -461,9 +438,8 @@ internal class OpenAlSink(
     }
 
     /**
-     * 素材采样率与设备率不一致时 OpenAL 会自己重采样，方法由实现自选。默认那档是纯插值，
-     * 高采样率素材的超声会按原电平折回可听带；这里换成带限 sinc（AL_SOFT_source_resampler）。
-     * 采样率一致时 mixer 走 1:1 快路径，不动它。
+     * 素材采样率与设备率不一致时换成带限 sinc（AL_SOFT_source_resampler）；默认那档是纯插值，
+     * 高采样率素材的超声会按原电平折回可听带。采样率一致时不动它。
      */
     private fun useAntiAliasedResampler(source: Int, sampleRate: Int) {
         val rate = deviceFrequency()
@@ -472,10 +448,9 @@ internal class OpenAlSink(
         if (idx >= 0) AL10.alSourcei(source, SOFTSourceResampler.AL_SOURCE_RESAMPLER_SOFT, idx)
     }
 
-    /** 设备率（= mixer 率）；查询失败回 0（那就照旧按可能的设备率差异处理）。 */
+    /** 设备率（= mixer 率）；查询失败回 0。 */
     private fun deviceFrequency(): Int {
-        // 不缓存：设备切换会换掉设备率，而 sink 实例跨一次播放的设备重建还活着，
-        // 缓存住旧设备率会让「新设备率 == 素材率」误判成立、漏掉换重采样器。
+        // 不缓存：设备切换会换掉设备率，缓存住会让「新设备率 == 素材率」误判成立
         var rate = 0
         try {
             val ctx = ALC10.alcGetCurrentContext()
@@ -526,7 +501,7 @@ internal class OpenAlSink(
         /** 尚未查询过。 */
         const val UNPROBED = -2
 
-        /** `AL_SOFT_source_panning`（alc/inprogext.h；草稿期叫 AL_SOFTX_source_panning）。 */
+        /** 平衡声像扩展及其草稿期名字。 */
         const val EXT_PANNING = "AL_SOFT_source_panning"
         const val EXT_PANNING_DRAFT = "AL_SOFTX_source_panning"
 
@@ -535,8 +510,7 @@ internal class OpenAlSink(
         const val AL_PAN_SOFT = 0x19ED
 
         /**
-         * 是否走 AL_PAN_SOFT 这条平衡声像路径：只有立体声素材需要（`AL_POSITION` 对立体声源
-         * 在立体声输出下不参与混音），且扩展得在。单声道继续走 `AL_POSITION`（对它有效，行为不变）。
+         * 是否走 AL_PAN_SOFT 这条平衡声像路径：立体声素材且扩展在场。
          */
         internal fun useSourcePanning(stereo: Boolean, extensionPresent: Boolean): Boolean =
             stereo && extensionPresent
@@ -554,8 +528,8 @@ internal interface AudioDecoder : AutoCloseable {
 /** OGG Vorbis 解码（LWJGL STB，公版库）。 */
 internal class OggDecoder(bytes: ByteArray) : AudioDecoder {
 
-    // stb_vorbis 在句柄存活期间会一直读这块输入内存，必须堆分配并留到 close——
-    // 栈内存（MemoryStack）pop 之后随时会被后续分配覆盖。整份字节只此一份拷贝，close 时释放。
+    // stb_vorbis 在句柄存活期间一直读这块输入内存，必须堆分配并留到 close：
+    // 栈内存（MemoryStack）pop 之后会被后续分配覆盖。整份字节只此一份拷贝，close 时释放。
     private val mem: ByteBuffer = MemoryUtil.memAlloc(bytes.size)
     private var memFreed = false
     private var handle = 0L
@@ -592,8 +566,7 @@ internal class OggDecoder(bytes: ByteArray) : AudioDecoder {
     }
 
     override fun seekFrame(frame: Long) {
-        // stb_vorbis_seek 是采样级精确的；seek_frame 只保证下一帧「包含」目标采样，
-        // 取样本会从帧边界开始，最多偏移一个块，播放头与听到的位置就对不上了。
+        // stb_vorbis_seek 是采样级精确的，seek_frame 只保证下一帧包含目标采样，会偏移一个块
         STBVorbis.stb_vorbis_seek(handle, frame.toInt().coerceAtLeast(0))
     }
 
@@ -649,8 +622,7 @@ internal class WavDecoder(bytes: ByteArray) : AudioDecoder {
                     if (fmtFloat) fmtBits = 32
                 }
                 "data" -> {
-                    // remaining() 已经是「从 data 块正文到文件末尾」的字节数，body 是绝对位置，不能再减一次；
-                    // 减两次会把每首曲子尾部砍掉 body 字节，短 WAV 还会直接判成没有 data 块。
+                    // remaining() 已是「从 data 块正文到文件末尾」的字节数，body 是绝对位置，不能再减一次
                     dataOffset = body
                     dataLength = size.coerceAtMost(buf.remaining())
                 }
@@ -672,8 +644,7 @@ internal class WavDecoder(bytes: ByteArray) : AudioDecoder {
 
     override fun seekFrame(frame: Long) {
         val frameBytes = channels * (bits / 8)
-        // 先按 Long 钳到 data 区再转 Int：frame 很大时 frame*frameBytes 会溢出成负数，
-        // 位置跑到 data 块之前会让后面的 buf.position 直接抛异常。
+        // 先按 Long 钳到 data 区再转 Int：frame 很大时 frame*frameBytes 会溢出成负数
         val offset = (frame * frameBytes).coerceIn(0L, dataLength.toLong())
         dataPos = dataOffset + offset.toInt()
     }

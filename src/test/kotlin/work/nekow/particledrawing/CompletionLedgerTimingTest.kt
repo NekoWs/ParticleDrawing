@@ -10,10 +10,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * 完成账本的两条时效语义：
- * - **走完的缓动终点要留到上报那一次**（到点与上报之间隔着一 tick 桥接余量，
- *   不留这一笔、纯变量组会在该报的那一 tick 发现账本空了）；
- * - **兜底任务带登记版本**（缓动重定向把账本往后挪之后，旧任务不许按老时刻收走这个组）。
+ * 完成账本的两条时效语义：走完的缓动终点要留到上报那一次，纯变量组不会错过上报；
+ * 兜底任务带登记版本，缓动重定向把账本往后挪之后旧任务不再收走这个组。
  */
 class CompletionLedgerTimingTest {
 
@@ -34,12 +32,12 @@ class CompletionLedgerTimingTest {
 
     @Test
     fun `走完的缓动终点留账到上报，纯变量组不会错过信号`() {
-        // 缓动 20 tick 走完 → 账本终点 20；上报要等 +1 tick（桥接余量），那一 tick 缓动已经不在表里了
+        // 缓动 20 tick 走完，账本终点 20；上报要等 +1 tick（桥接余量），那一 tick 缓动已经不在表里
         val activeEases = emptyList<Long>()
         assertEquals(20L, completionLedgerEndMs(-1L, expressionMode = true, expressionEndMs = -1L,
             varEaseEnds = activeEases, completedVarEndMs = 20L), "缓动摘掉后终点仍在账本上")
         assertEquals(-1L, completionLedgerEndMs(-1L, expressionMode = true, expressionEndMs = -1L,
-            varEaseEnds = activeEases), "没有留账就会空（这就是原来错过的原因）")
+            varEaseEnds = activeEases), "没有留账就是空的")
     }
 
     @Test
@@ -60,7 +58,7 @@ class CompletionLedgerTimingTest {
         ServerProgramCompletion.rescheduleFallback(group, fallbackTicks = 44)
 
         repeat(20 + fallbackMargin + 1) { AnimationScheduler.tick() }   // 走过旧兜底时刻
-        assertEquals(0, fired, "旧兜底不能在重排后把这次登记吃掉（实机表现为回调提前到旧兜底时刻）")
+        assertEquals(0, fired, "旧兜底不能在重排后把这次登记吃掉")
 
         repeat(24 + 1) { AnimationScheduler.tick() }                    // 走到新兜底时刻
         assertEquals(1, fired, "最后一次登记照常兜底，且只触发一次")

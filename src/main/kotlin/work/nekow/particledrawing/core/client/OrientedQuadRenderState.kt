@@ -7,15 +7,12 @@ import org.joml.Quaternionf
 import org.joml.Vector3f
 
 /**
- * 支持「非等宽四边形」的 quad 渲染状态：原版每颗粒子只存一个 float 尺寸，四边形永远是正方形，
- * 画不出定向细长线段（示波器迹线那种等宽细实线）。
+ * 支持非等宽四边形的 quad 渲染状态：原版每颗粒子只存一个 float 尺寸，四边形永远是正方形，
+ * 画不出定向细长线段。
  *
- * 这里沿用原版全部存储与提交逻辑，只多做两件事：
- * 1. add() 时按「层 + 加入顺序」额外记一份宽度（高度仍走原版那个 float）；
- * 2. renderRotatedQuad() 里先在四边形自己的坐标系按 (宽, 高) 各自缩放，再按朝向四元数旋转。
- *    顺序不能反——先旋转、再按世界轴缩放，斜着的线段会被切成平行四边形，两端位置也是错的。
- *
- * 宽度缺失（均匀缩放）时原样交回原版，均匀四边形一点都不多算。
+ * add() 时按层与加入顺序额外记一份宽度（高度仍走原版那个 float）；
+ * renderRotatedQuad() 里先在四边形自己的坐标系按宽高各自缩放，再按朝向四元数旋转。
+ * 宽度缺失时交回原版，均匀四边形不多算。
  */
 class OrientedQuadRenderState : QuadParticleRenderState() {
 
@@ -30,17 +27,17 @@ class OrientedQuadRenderState : QuadParticleRenderState() {
         }
     }
 
-    // 按层排队：一次 buildLayer 只画一层，所以每层的加入顺序就是它顶点生成的顺序
+    // 按层排队：一次 buildLayer 只画一层，每层的加入顺序就是它顶点生成的顺序
     private val widths = HashMap<SingleQuadParticle.Layer, Widths>()
 
-    // 顶点生成用的临时对象（顶点生成只在渲染线程跑，复用即可，避免每颗粒子每帧分配）
+    // 顶点生成的临时对象，只在渲染线程用，复用以免每颗粒子每帧分配
     private val scratchQ = Quaternionf()
     private val scratchV = Vector3f()
 
     private var current: Widths? = null
     private var cursor = 0
 
-    /** 下一次 add() 要记的四边形宽度（<0 表示均匀）；由 BridgeParticle 提交前写入，add() 里消费掉。 */
+    /** 下一次 add() 要记的四边形宽度，小于 0 表示均匀；由 BridgeParticle 提交前写入，add() 里消费掉。 */
     var pendingWidth: Float = -1f
 
     override fun add(
@@ -63,7 +60,7 @@ class OrientedQuadRenderState : QuadParticleRenderState() {
         current = null
     }
 
-    /** 每帧开头原版会调用本方法清存储，宽度队列跟着一起清（没画到的层也不会留下陈旧数据）。 */
+    /** 每帧开头原版会调用本方法清存储，宽度队列跟着一起清，没画到的层也不留陈旧数据。 */
     override fun clear() {
         super.clear()
         for (w in widths.values) w.count = 0
@@ -109,7 +106,7 @@ class OrientedQuadRenderState : QuadParticleRenderState() {
 
     companion object {
         /**
-         * 一个角相对粒子中心的偏移：先在自己坐标系按 (宽, 高) 各自缩放，再按朝向四元数旋转。
+         * 一个角相对粒子中心的偏移：先在自己坐标系按宽高各自缩放，再按朝向四元数旋转。
          * 单独拆出来是为了能在不启动 Minecraft 的测试里钉住这个顺序。
          */
         @JvmStatic

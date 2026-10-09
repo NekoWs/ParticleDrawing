@@ -6,8 +6,7 @@ import work.nekow.particledrawing.animation.script.compileFunctionObject
 import kotlin.system.measureNanoTime
 
 /**
- * 纯 JVM 基准：模拟游戏内函数对象（派生粒子）求值。
- * 含性能计时、快/慢路径结果一致性对比、非纯标量代码块回退验证。
+ * 纯 JVM 基准：模拟游戏内函数对象（派生粒子）求值并计时。
  */
 fun main() {
     data class Preset(val name: String, val vars: List<Pair<String, String>>, val code: String)
@@ -39,7 +38,6 @@ fun main() {
     val n = count.toDouble()
     val t = 0.0
 
-    // —— 性能：快路径 5w ——
     var total = 0.0
     for (p in presets) {
         val varDefs = p.vars.map { (name, expr) -> VarDef(name, expr.toDouble(), emptyList()) }
@@ -61,7 +59,7 @@ fun main() {
     }
     println("快路径合计: %.2f ms".format(total))
 
-    // —— 回退验证：含向量/矩阵的代码块应返回 null ——
+    // 含向量/矩阵的代码块应返回 null
     println()
     println("=== 非纯标量代码块回退验证 ===")
     val nonScalar = listOf(

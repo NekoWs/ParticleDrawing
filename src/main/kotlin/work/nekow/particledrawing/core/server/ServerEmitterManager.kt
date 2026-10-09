@@ -15,8 +15,8 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 服务端发射器登记表：发射行为全部在客户端发生，这里只负责**声明一次 + 变更时更新**，
- * 并记住哪些玩家已经收到过，供「玩家后进服 / 走进范围」时补发（否则他们看不到这条尾迹）。
+ * 服务端发射器登记表：发射行为全部在客户端发生，这里只在声明时登记、变更时更新，
+ * 并记录哪些玩家已收到，供玩家后进服或走进范围时补发。
  *
  * 线程约定：与服务端粒子引擎一致，只在主线程调用。
  */
@@ -24,10 +24,10 @@ object ServerEmitterManager {
 
     private val LOGGER = org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing")
 
-    /** 补发扫描间隔（tick）：后进服/走进范围的玩家在这个周期内收到声明。 */
+    /** 补发扫描间隔（tick）：后进服或走进范围的玩家在该周期内收到声明。 */
     private const val CATCH_UP_INTERVAL = 20
 
-    /** 同时活跃的发射器上限（防「忘了 stop()」的声明泄漏）。 */
+    /** 同时活跃的发射器上限，用于限制声明泄漏。 */
     private const val MAX_ACTIVE_EMITTERS = 512
 
     private class Record(
@@ -36,7 +36,7 @@ object ServerEmitterManager {
         var anchor: Anchor,
         var params: EmitterParams,
     ) {
-        /** 已收到声明的玩家：没收过的不发「更新/停止」（也顺带不泄露坐标）。 */
+        /** 已收到声明的玩家；未收到的不发更新/停止，也顺带不泄露坐标。 */
         val sent: MutableSet<UUID> = HashSet()
 
         fun declaration(): EmitterSpawnPayload = EmitterSpawnPayload(emitterId, anchor, params)
@@ -64,14 +64,14 @@ object ServerEmitterManager {
     /**
      * 声明一个发射器：向维度内可见玩家下发，返回发射器 id；已达数量上限时返回 null。
      *
-     * 上限是防泄漏的：发射器不消失（服务端一直留着登记、客户端一直发），调用方忘了 `stop()`
-     * 就会越攒越多。到顶时打 ERROR 并拒绝登记（`EmitterHandle.isActive()` 会是 false，可检测）。
+     * 上限用于限制声明泄漏：发射器不消失（服务端一直留着登记、客户端一直发），
+     * 漏掉 `stop()` 就会越攒越多。到顶时打 ERROR 并拒绝登记，`EmitterHandle.isActive()` 会返回 false。
      */
     fun start(dimensionId: UUID, anchor: Anchor, params: EmitterParams,
               players: Collection<ServerPlayer>): UUID? {
         if (records.size >= MAX_ACTIVE_EMITTERS) {
             LOGGER.error(
-                "发射器数量已达上限（{}），本次声明被拒绝：用完请 stop()，别让声明泄漏",
+                "发射器数量已达上限（{}），声明被拒绝：发射器不会自动回收，用完要 stop()",
                 MAX_ACTIVE_EMITTERS,
             )
             return null
@@ -88,8 +88,7 @@ object ServerEmitterManager {
     }
 
     /**
-     * 锚点变更（投射物每 tick 挪动时调）：已收到声明的玩家收**只带锚点**的小包，
-     * 这一拍刚走进范围的玩家直接收整份声明（不必等补发扫描）。
+     * 锚点变更：已收到声明的玩家收只带锚点的小包，这一拍刚走进范围的玩家直接收整份声明。
      */
     fun updateAnchor(emitterId: UUID, anchor: Anchor, players: Collection<ServerPlayer>) {
         val record = records[emitterId] ?: return
@@ -116,8 +115,8 @@ object ServerEmitterManager {
     }
 
     /**
-     * 静态参数整份变更（寿命 / 缩放 / 曲线 / 外观 / 抖动…）：已经收到过声明的玩家收一份参数包，
-     * 客户端整份替换。**已生成的粒子不受影响**。
+     * 静态参数整份变更（寿命 / 缩放 / 曲线 / 外观 / 抖动等）：已收到声明的玩家收一份参数包，
+     * 客户端整份替换。已生成的粒子不受影响。
      */
     fun updateParams(emitterId: UUID, params: EmitterParams, players: Collection<ServerPlayer>) {
         val record = records[emitterId] ?: return
@@ -139,7 +138,7 @@ object ServerEmitterManager {
 
     fun isActive(emitterId: UUID): Boolean = records.containsKey(emitterId)
 
-    /** 玩家断线：忘掉他的「已收到」记录（重进时按当前维度补发）。 */
+    /** 玩家断线：清掉他的「已收到」记录，重进时按当前维度补发。 */
     fun forgetPlayer(playerUuid: UUID) {
         for (record in records.values) record.sent.remove(playerUuid)
     }
@@ -159,7 +158,7 @@ object ServerEmitterManager {
 
     /**
      * 玩家到达新维度（登录/切维度/重生）后补发该维度里范围内、他还没收到的声明。
-     * 客户端换维度会重建渲染层，旧的发射器随之消失，必须重发。
+     * 客户端换维度会重建渲染层，旧的发射器随之消失，需要重发。
      */
     fun syncToPlayer(player: ServerPlayer) {
         val level = player.level()
@@ -174,7 +173,7 @@ object ServerEmitterManager {
     }
 
     /**
-     * 每服务端 tick：定期把「已进入范围但还没收到声明」的玩家补上。
+     * 每服务端 tick：定期给已进入范围但还没收到声明的玩家补发。
      * 时间口径的发射器不会有锚点更新，只能靠这个扫描补发。
      */
     fun tick(server: MinecraftServer) {

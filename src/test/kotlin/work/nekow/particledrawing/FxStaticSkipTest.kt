@@ -15,17 +15,10 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * 「时间轴为空 + 函数对象 duration = 0」时整支 fx 被当成静态动画跳过的回归测试。
+ * 「时间轴为空 + 函数对象 duration = 0」时整支 fx 是否被当成静态动画跳过。
  *
- * 旧判据只数 maxMs / 粒子与函数对象的 st、ent / random()：时间轴为空、fx.duration = 0 时，
- * 播放端认定整支 fx 不随时间变化，`tick` 的 advanceTo、`advanceFrame`、帧级同步三处全部早退，
- * 脚本的 process（示波器的自动量程、AC 耦合、迹线写入）一次都不跑，编辑器里却在跑。
- * 现在判据连「脚本有没有 tick/process 阶段」一起看，另外空时间轴的播放头必须随时间前进：
- * 钉在 0 会让每帧传给脚本的时刻往回跳，运行时被反复重建、脚本状态每 tick 清零。
- *
- * 判据口径来自编辑器：`src/objects/generators.js` 的 evaluateFxFrame 不看 duration 就照跑
- * tick/process（只在 T < st 或超过 duration 时停在 setup），`duration <= 0` 表示「不限时长」
- * （`src/objects/animation-eval.js` 的 fxParticleVisible）。
+ * 判据看脚本有没有 tick/process 阶段：有阶段就每帧求值，空时间轴的播放头也随时间前进。
+ * duration <= 0 表示不限时长。
  */
 class FxStaticSkipTest {
 
@@ -34,8 +27,8 @@ class FxStaticSkipTest {
         "缺少夹具 src/test/resources/editor-fixture/oscilloscope-fx1.txt",
     ).use { it.readBytes().toString(Charsets.UTF_8) }
 
-    /** 示波器音频资产替身（真实音频字节不进测试）。[durMs] 给 0：整条时间轴为空（maxMs = 0），
-     *  正是旧判据跳过整支 fx 的条件；脚本只用它取句柄与采样，没有 PCM 时 sampleAt 回 0。 */
+    /** 示波器音频资产替身（真实音频字节不进测试）。[durMs] 给 0 时整条时间轴为空（maxMs = 0）；
+     *  脚本只用它取句柄与采样，没有 PCM 时 sampleAt 回 0。 */
     private fun primer(durMs: Int): AudioAsset = AudioAsset(
         id = "aud1", name = "Primer", fmt = 1, data = ByteArray(0), st = 0, durMs = durMs, hopCount = 2,
         bpm = 1.0, beatOffsetMs = 0.0, onsetMax = 1.0, beats = listOf(0, 1000),
@@ -43,7 +36,7 @@ class FxStaticSkipTest {
         onset = ByteArray(2), rolloff = ByteArray(2), bands = ByteArray(2 * 16),
     )
 
-    /** 示波器 fx1 整支脚本原文 + duration = 0 + 空时间轴（就是出问题的那份工程状态）。 */
+    /** 示波器 fx1 整支脚本原文 + duration = 0 + 空时间轴。 */
     private fun oscilloscopePlayer(audioDurMs: Int = 0): ClientAnimationPlayer {
         val fx = FunctionObject(
             id = "fx1", name = "X-Y 光束（主迹线）", center = doubleArrayOf(0.0, 0.0, 0.0),
@@ -90,7 +83,7 @@ class FxStaticSkipTest {
         assertFalse(player.isStatic(), "有 process 的 fx 不能被当成静态动画跳过")
         assertTrue(player.particleCount > 1000, "setup 应当铺出环上的粒子，实际 ${player.particleCount}")
 
-        // 构造期那一次 process 只补得起 maxApp 个采样（本例 19 个），要把整环写完得再跑一帧
+        // 构造期那一次 process 只补得起 maxApp 个采样，要把整环写完得再跑一帧
         player.advanceFrame(16.7)
         assertTrue(
             traced(player) > 1000,
@@ -106,7 +99,7 @@ class FxStaticSkipTest {
         )
         val player = playerOf(fx)
         assertTrue(player.isStatic(), "没有 tick/process 的 fx 保持静态判定（静态粒子云靠它省每刻重算）")
-        // setup 的粒子在构造期已经同步进渲染状态，跳过的是每帧重算而不是整支对象
+        // setup 的粒子在构造期已同步进渲染状态，跳过的是每帧重算
         assertEquals(listOf(0.0), spawnXs(player, "fx0"))
     }
 
@@ -136,7 +129,7 @@ class FxStaticSkipTest {
         frame()
 
         assertEquals(150, player.currentMsValue, "空时间轴的播放头也要跟着 gameTime 走")
-        // 每帧时刻一直往前：钉在 0 时帧内时刻在 20/40 之间来回跳，倒退那帧会把函数对象运行时重建、粒子清空
+        // 每帧时刻单调前进
         assertEquals(
             listOf(0.0, 20.0, 40.0, 70.0, 90.0, 120.0, 140.0, 170.0, 190.0),
             spawnXs(player, "fx"),
@@ -156,12 +149,7 @@ class FxStaticSkipTest {
     }
 
     /**
-     * 每帧开销实测（160fps 预算 = 6.25ms/帧）。只打印，不做性能断言——机器快慢差别太大，
-     * 断言只钉「静态跳过确实还是近乎零成本」这一条。
-     *
-     * 读数：静态动画（advanceFrame 直接返回）/ 只有 reconcile（setup 铺 1151 颗粒子 + 空转 process）/
-     * 小 fx（每帧 spawn 一颗）/ 示波器 fx1 空时间轴（时间轴为空，就是报障那份状态，环填满后就不再追加）/
-     * 示波器 fx1 真实音频（每帧把整环重写一遍，按 60fps 与 160fps 两种帧步长各测一次）。
+     * 每帧开销实测：只打印读数，断言只钉静态跳过的 advanceFrame 近乎零成本。
      */
     @Test
     fun `每帧开销实测`() {

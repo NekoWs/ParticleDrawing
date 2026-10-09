@@ -7,7 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 /**
- * UV 字段裸表达式执行器（ScriptRuntime.evalExpression / ExpressionRunner）回归测试。
+ * UV 字段裸表达式执行器：ScriptRuntime.evalExpression 与 ExpressionRunner 的取数与报错行为。
  */
 class ScriptRuntimeExpressionTest {
 
@@ -19,13 +19,11 @@ class ScriptRuntimeExpressionTest {
 
     @Test
     fun moduloOnIndex() {
-        // this.index % 4：index=6 → 2.0
         assertEquals(2.0, ScriptRuntime.evalExpression("this.index % 4", ctx(i = 6.0)), 1e-12)
     }
 
     @Test
     fun countAndArith() {
-        // this.count / 2 + this.index
         assertEquals(10.0, ScriptRuntime.evalExpression("this.count / 2 + this.index", ctx(n = 8.0, i = 6.0)), 1e-12)
     }
 

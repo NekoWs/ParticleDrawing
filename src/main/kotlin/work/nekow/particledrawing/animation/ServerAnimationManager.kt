@@ -13,7 +13,7 @@ import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-// 服务端动画管理器（权威播放/停止/变量）。只下发 .pdrawc 动画定义、停止命令与变量更新，播放与渲染全在客户端本地进行。
+// 服务端动画管理器（权威播放/停止/变量）：只下发动画定义、停止命令与变量更新，播放与渲染全在客户端本地进行。
 @Suppress("unused")
 object ServerAnimationManager {
 
@@ -38,7 +38,7 @@ object ServerAnimationManager {
     @JvmStatic
     fun play(dimensionId: UUID, players: Collection<ServerPlayer>, data: ByteArray, origin: Vec3): UUID {
         val id = UUID.randomUUID()
-        // 服务端解析时间轴参数（loop/长度）用于计算进度；解析失败仍照旧下发（客户端各自拒绝播放）
+        // 解析时间轴参数（loop/长度）用于算进度；解析失败仍然下发，由客户端各自拒绝播放
         val anim = try { AnimationLoader.parse(data) } catch (_: Exception) { null }
         val startGameTick = players.firstOrNull()?.level()?.gameTime ?: 0L
         val payload = PlayAnimationPayload(id, origin.x, origin.y, origin.z, startGameTick, data)
@@ -78,12 +78,9 @@ object ServerAnimationManager {
     }
 
     /**
-     * 把玩家所在维度内、且覆盖到该玩家的全部活跃播放重新下发。
-     * 客户端在切换维度/重生/重连时会重建 ClientLevel 与原版 ParticleEngine，
-     * 本地播放的桥接粒子随之销毁；此方法让玩家回来时重新收到播放包、重建粒子，
-     * 并按服务端权威进度（同一 startGameTick + gameTime 时钟）从当前帧继续，
-     * 与仍在观看的其他玩家画面一致。已播完的非循环播放不再下发。
-     * 三个触发点（维度切换 / 重生 / 登录）各只触发一次，不会重复下发。
+     * 把玩家所在维度内、覆盖到该玩家的活跃播放重新下发。
+     * 客户端切换维度/重生/重连时原版 ParticleEngine 会被重建、桥接粒子销毁，
+     * 重发后按服务端权威进度（同一 startGameTick + gameTime 时钟）从当前帧继续。已播完的非循环播放不再下发。
      */
     @JvmStatic
     fun syncPlaybacksToPlayer(player: ServerPlayer) {
@@ -117,7 +114,7 @@ object ServerAnimationManager {
     }
 
     /**
-     * 按名称播放 `<gameDir>/animations/<name>.pdrawc`（一行式入口，读取时做服务端验签）。
+     * 按名称播放 `<gameDir>/animations/<name>.pdrawc`（读取时做服务端验签）。
      * @param name 动画名（不含 .pdrawc 后缀）
      * @return 动画 ID；找不到文件或验签失败时为 null
      */

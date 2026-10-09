@@ -6,24 +6,24 @@ import kotlin.math.atan2
 import kotlin.math.sqrt
 
 /**
- * 尺寸口径与朝向换算：两端（服务端算载荷、客户端算尺寸）共用一份纯数学，便于单测。
+ * 尺寸口径与朝向换算：服务端算载荷、客户端算尺寸共用一份纯数学，便于单测。
  */
 object VisualMath {
 
     /**
      * 编辑器单位 → Minecraft 世界单位的系数。
      *
-     * 原版 quad 顶点把 scale 当「半宽」用（±scale），而编辑器里的尺寸是整宽，
-     * 所以取编辑器尺寸因子的**一半**：编辑器尺寸 1 = 世界整宽 0.2 格。
+     * 原版 quad 顶点把 scale 当半宽用（±scale），编辑器里的尺寸是整宽，
+     * 取编辑器尺寸因子的一半：编辑器尺寸 1 对应世界整宽 0.2 格。
      */
     const val EDITOR_TO_MC_SCALE: Float = 0.1f
 
-    /** 编辑器尺寸 → 世界整宽（格）：仅用于文档与断言，渲染路径不读它。 */
+    /** 编辑器尺寸 → 世界整宽（格）：仅用于文档与断言，渲染路径不读。 */
     const val EDITOR_UNIT_WIDTH: Float = 0.2f
 
     /**
-     * 世界格整宽 → 编辑器单位尺寸：给定贴图尺寸系数 [texScale]（贴图最长边 / 16，无贴图 1）时，
-     * 让渲染出来的整宽正好等于 [worldBlocks]。
+     * 世界格整宽 → 编辑器单位尺寸：给定贴图尺寸系数 [texScale]（贴图最长边 / 16，无贴图 1），
+     * 使渲染整宽等于 [worldBlocks]。
      */
     @JvmStatic
     fun editorUnitsForWorldWidth(worldBlocks: Float, texScale: Float): Float {
@@ -32,11 +32,10 @@ object VisualMath {
     }
 
     /**
-     * 求一组欧拉角（度；X→Y→Z **内旋**，与 `BridgeParticle.orientationQuaternion(spinLocal=true)` 同约定），
+     * 求一组欧拉角（度；X→Y→Z 内旋，与 `BridgeParticle.orientationQuaternion(spinLocal=true)` 一致），
      * 使四边形局部 X 轴（长轴）指向 [dx]/[dy]/[dz]，局部 Z（法线）尽量不含世界 Y 分量。
      *
-     * 用于「一条丝沿线段方向躺好」：给线段两端点之差即可。
-     * 方向为零向量时返回全 0（保持默认朝向）。
+     * 传入线段两端点之差即可让丝沿线段方向躺好；方向为零向量时返回全 0。
      */
     @JvmStatic
     fun longAxisEulerDegrees(dx: Double, dy: Double, dz: Double): DoubleArray {

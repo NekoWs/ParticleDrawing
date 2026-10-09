@@ -18,7 +18,7 @@ object ClientAnimationSyncManager {
     /** 正在累积的文件内容（相对名 → 字节流）。 */
     private val pendingFiles = LinkedHashMap<String, ByteArrayOutputStream>()
 
-    /** 本次连接同步到的服务器缓存根目录；内存连接或尚未开始时为 null。 */
+    /** 当前连接对应的服务器缓存根目录；内存连接或尚未开始时为 null。 */
     private var currentRoot: Path? = null
 
     /** 会话开始：识别连接并上报该服务器目录下已有文件哈希。 */
@@ -50,7 +50,7 @@ object ClientAnimationSyncManager {
     @JvmStatic
     fun onFileChunk(name: String, eof: Boolean, data: ByteArray) {
         val root = currentRoot ?: return
-        // 累积前先校验相对名，避免把非法路径/异常名缓存在 pendingFiles 里
+        // 累积前先校验相对名，非法路径不缓存进 pendingFiles
         if (!AnimationSyncService.sanitizeRelativeName(name.replace('\\', '/'))) return
         val out = pendingFiles.getOrPut(name) { ByteArrayOutputStream() }
         out.write(data)
@@ -64,14 +64,14 @@ object ClientAnimationSyncManager {
         }
     }
 
-    /** 同步完成：清理缓存，等待服务端结束配置任务（客户端禁止调用 finishCurrentTask）。 */
+    /** 同步完成：清理缓存，等待服务端结束配置任务；客户端不能调用 finishCurrentTask。 */
     @JvmStatic
     fun onDone(context: IPayloadContext) {
         pendingFiles.clear()
         currentRoot = null
     }
 
-    /** 从连接远端地址推导服务器目录名：可读 host，非默认端口追加 `_port`。 */
+    /** 从连接远端地址推导服务器目录名：用可读 host，非默认端口追加 `_port`。 */
     private fun serverKey(context: IPayloadContext): String? {
         val addr = context.connection().remoteAddress as? InetSocketAddress ?: return null
         val host = addr.hostString ?: addr.address?.hostAddress ?: return null
@@ -84,7 +84,7 @@ object ClientAnimationSyncManager {
         return if (addr.port == 25565) normalized else "${normalized}_${addr.port}"
     }
 
-    /** 把单个同步文件写入当前服务器缓存目录（覆盖；先建父目录）。 */
+    /** 把单个同步文件写进当前服务器缓存目录，覆盖已有文件。 */
     private fun writeFile(root: Path, name: String, bytes: ByteArray) {
         val rel = name.replace('\\', '/')
         if (!AnimationSyncService.sanitizeRelativeName(rel)) return
@@ -94,10 +94,10 @@ object ClientAnimationSyncManager {
             Files.createDirectories(target.parent)
             Files.write(target, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)
         } catch (_: Exception) {
-            // 写盘失败静默忽略（下次进服会重新同步）
+            // 写盘失败静默忽略，下次进服重新同步
         }
     }
 
-    // 注：禁止在此类调用 finishCurrentTask——客户端的 ClientPayloadContext 会直接抛异常。
+    // 本类不能调用 finishCurrentTask：客户端的 ClientPayloadContext 会直接抛异常。
     // 服务端完成由 ServerPayloadHandler 用 ServerPayloadContext.finishCurrentTask(TYPE) 触发。
 }

@@ -12,8 +12,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 派生粒子对象时长门控回归测试：函数对象整体时长结束后粒子应回收，
- * duration <= 0 视为无时长上限（兼容旧工程解析回退 0）。
+ * 派生粒子的对象时长门控：函数对象整体时长结束后粒子回收，
+ * duration <= 0 表示无时长上限。
  */
 class FxDurationGatingTest {
 
@@ -57,7 +57,7 @@ class FxDurationGatingTest {
 
     @Test
     fun zeroDurationTreatsAsNoDurationLimit() {
-        // duration=0：不因时长隐藏（仅 st 门控），兼容旧工程缺省 duration 0 的解析回退。
+        // duration=0：不因时长隐藏，仅 st 门控。
         val player = ClientAnimationPlayer(animation(0), Vec3.ZERO, startGameTick = 1000L, currentGameTick = 1015L)
         val state = player.currentStates().first { it.id == "fx0:p0" }
         assertTrue(state.visible)

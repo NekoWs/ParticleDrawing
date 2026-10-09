@@ -14,8 +14,7 @@ import kotlin.test.assertTrue
 /**
  * 尺寸口径与长轴朝向换算。
  *
- * 朝向用渲染层同一个四元数构造器验证（`BridgeParticle.orientationQuaternion`）：
- * 局部 X 轴（长轴，quad 宽度那根）转完必须落在请求的方向上——丝线「躺对方向」全靠它。
+ * 朝向用渲染层同一个四元数构造器验证：局部 X 轴（长轴）转完应落在请求的方向上。
  */
 class VisualMathTest {
 

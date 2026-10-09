@@ -4,13 +4,13 @@ import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.ParticleVisual
 
 // 外观规格的客户端解析：把协议侧的 ParticleVisual（贴图名 / 子矩形 / 各向异性 / 朝向 / 加色）
-// 翻成渲染层要的形态。网络来的 spawn 包与客户端本地发射器走同一段解析，避免两条路径对不齐。
+// 翻成渲染层要的形态。网络来的 spawn 包与客户端本地发射器共用这段解析。
 
 /**
  * 解析后的外观：[uv] 只在贴图有名字时非空（贴图没到货时按名回落，尺寸仍按请求的取景框算），
  * [scaleArray] 只在给了各向异性时非空。
  *
- * 各字段只读复用（同一份可发给多颗粒子；下游只读或就地拷贝）。
+ * 各字段只读复用：同一份可发给多颗粒子，下游只读或就地拷贝。
  */
 internal class ResolvedVisual(
     val uv: UvData?,

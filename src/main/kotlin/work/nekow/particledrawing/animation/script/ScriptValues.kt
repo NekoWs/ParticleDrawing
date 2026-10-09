@@ -6,7 +6,7 @@ import work.nekow.particledrawing.animation.AudioAsset
 import work.nekow.particledrawing.animation.TextChar
 import work.nekow.particledrawing.animation.TextObject
 
-/** 脚本运行时错误 / 解析错误。消息会按 JS 端习惯附加行列号。 */
+/** 脚本运行时错误 / 解析错误；有行列号时附加在消息末尾。 */
 class ScriptException(message: String, val line: Int? = null, val col: Int? = null) : RuntimeException(
     if (line != null && col != null) "$message (line $line, col $col)" else message
 )
@@ -26,10 +26,7 @@ data class Mat4(val m: List<List<Double>>)
 /** 用户函数值（闭包按顶层函数名查找）。 */
 data class FuncVal(val name: String)
 
-/**
- * lambda 字面量值。closure 捕获创建 lambda 时的作用域链（按 ScriptRuntime 的局部作用域机制形态），
- * 具体安装方式由下一单元接线时确定。
- */
+/** lambda 字面量值；[closure] 捕获创建时的作用域链。 */
 class LambdaVal(
     val params: List<String>,
     val body: BlockNode,
@@ -52,13 +49,13 @@ object Undefined
 
 fun isUndefined(v: Any?): Boolean = v === Undefined
 
-/** 宿主侧粒子存储接口：spawn 运行时把粒子句柄桥接到此接口（编辑器 w 对象）。 */
+/** 宿主侧粒子存储接口：粒子句柄桥接到此接口。 */
 interface ParticleHost {
     val index: Int
     val pos: DoubleArray
     val color: DoubleArray
     val vel: DoubleArray
-    /** 粒子尺寸三分量 [sx, sy, sz]：标量写 [s, s, 1]（编辑器粒子模型的 Z 恒为 1）、vec2 的 z 视为 1、vec3 原样。 */
+    /** 粒子尺寸三分量 [sx, sy, sz]；标量写 [s, s, 1]（Z 恒为 1），vec2 的 z 视为 1，vec3 原样。 */
     val scale: DoubleArray
     /** 最近一次写入 scale 的写法（0=标量、2=vec2、3=vec3）；读回时按写法返回 num 或 vec3。 */
     var scaleDim: Int
@@ -79,9 +76,8 @@ interface ParticleHost {
 class ParticleValue(val host: ParticleHost)
 
 /**
- * 函数对象级的「视图变换」（脚本 this.viewScale / this.viewOffset）：
- * 把整条迹线的全局增益与直流偏移做成一个不随粒子数变化的量，脚本改它就不必逐粒子重排。
- * 只作用于**该函数对象自己的派生粒子**，默认 1 / 0（即不做任何变换）。
+ * 函数对象级视图变换（脚本 this.viewScale / this.viewOffset）：整条迹线的全局增益与直流偏移。
+ * 只作用于该函数对象自己的派生粒子，默认 1 / 0。
  */
 class ViewTransform {
     /** 全局增益：位置与尺寸都乘它（均匀，不单独处理某个轴）。 */
@@ -108,10 +104,11 @@ class TextValue(val obj: TextObject)
 /** 字符句柄（text.chars 元素，只读）。 */
 class TextCharValue(val ch: TextChar)
 
-/** 音频资产句柄（this.get(名称) 返回，只读）。at = 取值基准（动画全局毫秒）；speed = 当刻倍速（内容位置 = (at - st) × speed）。 */
+/**
+ * 音频资产句柄（this.get(名称) 返回，只读）。[at] 是取值基准（动画全局毫秒），
+ * [speed] 是当刻倍速，内容位置 = (at - st) × speed。
+ */
 class AudioValue(val asset: AudioAsset, val at: Double, val playing: Boolean, val speed: Double = 1.0)
-
-// —— 值类型判定 ——
 
 fun isNum(v: Any?): Boolean = v is Double
 fun isBool(v: Any?): Boolean = v is Boolean
@@ -175,8 +172,6 @@ fun typeName(v: Any?): String = when {
     else -> "unknown"
 }
 
-// —— JS 数值语义辅助 ——
-
 /** JS Math.trunc：向零取整。 */
 fun jsTrunc(x: Double): Double = if (x < 0.0) ceil(x) else floor(x)
 
@@ -198,7 +193,7 @@ fun toInt32(x: Double): Int {
     return (if (u >= 2147483648L) u - 4294967296L else u).toInt()
 }
 
-// JS Math.max(0, Math.min(1, x))：NaN 原样透传（与编辑器一致）。
+// JS Math.max(0, Math.min(1, x))：NaN 原样透传。
 fun clamp01(x: Double): Double = when {
     x < 0.0 -> 0.0
     x > 1.0 -> 1.0

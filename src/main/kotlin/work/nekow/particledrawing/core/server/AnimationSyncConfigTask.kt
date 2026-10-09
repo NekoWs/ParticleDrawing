@@ -11,9 +11,9 @@ import java.util.function.Consumer
 /**
  * 服务器端配置阶段任务：动画文件同步。
  *
- * 注册于 [RegisterConfigurationTasksEvent]，在配置阶段向客户端发送「同步开始」信号，
- * 真正的结束由服务器收到客户端请求并下发完差异文件后在 [work.nekow.particledrawing.core.network.ServerPayloadHandler]
- * 中通过 `ServerPayloadContext.finishCurrentTask` 完成（客户端禁止调用）。
+ * 配置阶段向客户端发送「同步开始」信号；结束由服务端收到客户端请求、下发完差异文件后
+ * 在 [work.nekow.particledrawing.core.network.ServerPayloadHandler] 中调用
+ * `ServerPayloadContext.finishCurrentTask` 完成。
  */
 class AnimationSyncConfigTask(
     private val listener: ServerConfigurationPacketListener,

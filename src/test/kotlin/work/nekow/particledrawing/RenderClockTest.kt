@@ -14,10 +14,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 渲染粒子的时钟：寿命与缓动都按**引擎 tick** 推进，而不是墙钟。
+ * 渲染粒子的时钟：寿命与缓动按引擎 tick 推进，不按墙钟走。
  *
- * 关卡不 tick（单人按 Esc 暂停）时引擎不推进，墙钟却照走——原先寿命会一次性判死、
- * 缓动会直接跳到终点；而 `lifetime(40)` 本来就是「40 tick」的意思。
+ * 关卡不 tick 时（单人暂停）引擎时钟不推进。
  */
 class RenderClockTest {
 

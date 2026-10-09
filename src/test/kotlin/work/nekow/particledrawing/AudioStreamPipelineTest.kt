@@ -19,12 +19,10 @@ import kotlin.test.assertTrue
  * 假 sink 记下真正被消费掉的样本流，与源逐采样比对（位精确）。跳过/重复/错位一个采样、
  * 采样率被写成别的值、按毫秒逐块取整造成的累积漂移，都会立刻失败。
  *
- * 假 sink 按 OpenAL 的实测语义记账：AL_SAMPLE_OFFSET 相对「当前队列」计数（取回已播块后会减小），
+ * 假 sink 按 OpenAL 语义记账：AL_SAMPLE_OFFSET 相对当前队列计数（取回已播块后会减小），
  * alSourceStop 把采样偏移归零、再 play 从队列头开始。
  */
 class AudioStreamPipelineTest {
-
-    // —— 假 sink ——
 
     private class FakeSink(private val channels: Int) : AudioSink {
 
@@ -108,7 +106,7 @@ class AudioStreamPipelineTest {
             state[source] = PAUSED
         }
 
-        /** 与实测一致：stop 把采样偏移归零，再 play 从队列头开始。 */
+        /** stop 把采样偏移归零，再 play 从队列头开始。 */
         override fun stop(source: Int) {
             state[source] = STOPPED
             inHead[source] = 0
@@ -195,8 +193,6 @@ class AudioStreamPipelineTest {
         }
     }
 
-    // —— H1：采样率 ——
-
     @Test
     fun `sample rate from the file header reaches OpenAL verbatim`() {
         for (rate in listOf(192_000, 96_000, 48_000, 44_100)) {
@@ -219,8 +215,6 @@ class AudioStreamPipelineTest {
         assertTrue(h.sink.preparedChannels.all { it == 1 }, "建 source 时没报单声道")
         sameSamples(h.source, h.sink.playedSamples(), "单声道播放流")
     }
-
-    // —— H2：分块边界 ——
 
     @Test
     fun `192k chunk stream is reproduced sample for sample`() {
@@ -251,8 +245,6 @@ class AudioStreamPipelineTest {
         val chunkFrames = 22_050 * 250 / 1000
         assertTrue(h.sink.uploadedFrames.dropLast(1).all { it == chunkFrames })
     }
-
-    // —— H4：seek 之后不双重前进 ——
 
     @Test
     fun `seek restarts exactly at the requested frame and keeps advancing once`() {
@@ -295,8 +287,6 @@ class AudioStreamPipelineTest {
         )
     }
 
-    // —— H5：供给 ——
-
     @Test
     fun `the queue never runs dry at 192k under a 20Hz tick loop`() {
         val h = Harness(192_000, 2.9, 250).run(70)
@@ -326,8 +316,6 @@ class AudioStreamPipelineTest {
         }
     }
 
-    // —— H3：重采样器选择 ——
-
     @Test
     fun `anti aliased resampler is picked from the real OpenAL Soft name list`() {
         val real = listOf(
@@ -352,7 +340,7 @@ class AudioStreamPipelineTest {
     }
 }
 
-// —— 合成素材（供测试类与其内部 Harness 共用） ——
+// 合成素材（供测试类与其内部 Harness 共用）
 
 /** 左声道确定性伪随机、右声道 1900Hz 正弦：左右各一份独立判据。 */
 private fun sourceFrames(rate: Int, frames: Int, channels: Int = 2): ShortArray {
@@ -370,7 +358,7 @@ private fun sourceFrames(rate: Int, frames: Int, channels: Int = 2): ShortArray 
 
 /**
  * 按真实资产的头部形状造 WAV：WAVE_FORMAT_EXTENSIBLE（fmt 块 40 字节）+ fmt 与 data 之间
- * 夹一个 LIST 块。解码器的头部扫描路径因此也压进逐采样比对里。
+ * 夹一个 LIST 块，解码器的头部扫描路径也压进逐采样比对里。
  */
 private fun extensibleWav(rate: Int, channels: Int, pcm: ShortArray): ByteArray {
     val bytesPerFrame = channels * 2

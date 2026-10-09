@@ -4,13 +4,12 @@ import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.phys.Vec3
 
 /**
- * 粒子可见性判定，基于玩家当前的渲染距离判断粒子是否对玩家可见。
+ * 粒子可见性判定：按玩家当前的渲染距离判断粒子是否可见，渲染距离下限按 2 个区块（32 格）计。
  */
 object ParticleVisibilityManager {
 
     /**
-     * 判断玩家与粒子之间的欧氏距离是否在玩家渲染距离内。
-     * @param player 目标玩家
+     * 判断粒子与玩家的欧氏距离是否在玩家渲染距离内。
      * @param particlePos 粒子世界坐标
      * @return 在渲染距离内返回 true
      */

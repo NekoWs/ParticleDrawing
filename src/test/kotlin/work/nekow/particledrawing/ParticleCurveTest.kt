@@ -25,9 +25,8 @@ import kotlin.test.assertTrue
 
 /**
  * 逐粒子寿命曲线（`Builder.fadeOut/shrinkTo/curve`）与批量生成（`ParticleBatch.spawnAll`）的协议契约：
- * - 曲线是「乘数随寿命变化」的声明式外观，随 spawn 包一次带过去（零逐帧带宽）；
- * - fadeOut/shrinkTo 锚在寿命末尾，必须在寿命已知时才换算，无限寿命明确报错（不悄悄降级）；
- * - 批量生成与逐颗生成编码完全同构，客户端落地走同一条路径。
+ * 曲线是乘数随寿命变化的声明式外观，随 spawn 包一次带过去；fadeOut/shrinkTo 锚在寿命末尾，
+ * 需要寿命已知，无限寿命报错；批量生成与逐颗生成编码同构。
  */
 class ParticleCurveTest {
 
@@ -53,8 +52,6 @@ class ParticleCurveTest {
         ParticleSpawnPayload.STREAM_CODEC.encode(out, payload)
         return ParticleSpawnPayload.STREAM_CODEC.decode(out)
     }
-
-    // —— 取值语义 ——
 
     @Test
     fun `关键帧排序、端点外取端点值、段内用后一帧的缓动`() {
@@ -121,8 +118,6 @@ class ParticleCurveTest {
         }
     }
 
-    // —— 协议 ——
-
     @Test
     fun `未用到的可选字段只占标记字节，用到才付代价`() {
         val plain = encode(spawnPayload())
@@ -166,8 +161,6 @@ class ParticleCurveTest {
         assertEquals(Vec3(1.5, 2.5, 3.5), withPrev.prev)
         assertNull(spawnRoundTrip(spawnPayload()).prev)
     }
-
-    // —— 客户端渲染落地 ——
 
     @Test
     fun `渲染粒子按曲线给乘数；没有曲线时走原路径`() {

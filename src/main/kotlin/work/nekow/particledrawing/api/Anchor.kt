@@ -9,12 +9,12 @@ sealed class Anchor {
     /** 固定世界坐标锚点（一次性命中/施法特效）。 */
     class Fixed(val pos: Vec3) : Anchor()
 
-    /** 实体引用锚点：客户端按实体 id 本地解析位置与朝向（玩家/法杖等真实实体）。 */
+    /** 实体引用锚点：客户端按实体 id 本地解析位置与朝向。 */
     class Entity(val entityId: Int, val offset: Vec3 = Vec3.ZERO) : Anchor()
 
     /**
      * 可移动锚点：服务端每 tick 下发位置 + 速度，客户端按速度方向推导朝向。
-     * 用于「不是实体、只有 pos+velocity」的投射物（如魔法模组的追踪弹）。
+     * 用于没有实体、只有 pos 与 velocity 的投射物。
      */
     class Movable(
         val pos: Vec3,
@@ -25,9 +25,9 @@ sealed class Anchor {
 
 /** 可移动锚点的朝向模式。 */
 enum class Orient {
-    /** 朝向 = 速度方向（由 velocity 推 yaw/pitch，追踪转向时跟随运动方向）。 */
+    /** 朝向 = 速度方向（由 velocity 推 yaw/pitch）。 */
     VELOCITY,
 
-    /** 保持世界朝向（不随运动转向，如竖直魔法阵/光圈）。 */
+    /** 保持世界朝向（不随运动转向）。 */
     WORLD,
 }

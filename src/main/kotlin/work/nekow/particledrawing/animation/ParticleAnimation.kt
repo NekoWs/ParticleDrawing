@@ -54,7 +54,7 @@ class FunctionVar(
 data class Entrance(val preset: String, val dur: Int = 5)
 
 /** 动画中的单个粒子。scale=[长, 宽, sz]（四边形自己的两条边长，sz 不参与渲染）；st 之前隐藏；ent 入场预设；life 为寿命毫秒（-1 无限）。
- *  v17：billboard=false 时四边形静止朝世界 +Z 并按 spin 轨道旋转；spinLocal=自转空间（true=local）。 */
+ *  billboard=false 时四边形静止朝世界 +Z 并按 spin 轨道旋转；spinLocal=自转空间（true=local）。 */
 class AnimParticle(
     val id: String,
     val color: Color,
@@ -100,9 +100,9 @@ class AnimCamera(
     val rotLocal: Boolean = true
 )
 
-// 文字对象（.pdrawc texts section，v15）：编辑器像素文字生成器的源记录，粒子本体已按普通粒子烘焙，
+// 文字对象（.pdrawc texts section）：编辑器像素文字生成器的源记录，粒子本体已按普通粒子烘焙，
 // 播放端不做光栅化；脚本经 this.get(id) 只读访问（chars/每字符粒子列表）。
-// v17 起文字对象不建组：对象级轨道属主 "t:<id>"，成员 = chars[].particles 并集。
+// 文字对象不建组：对象级轨道属主 "t:<id>"，成员 = chars[].particles 并集。
 class TextObject(
     val id: String,
     val name: String,
@@ -142,9 +142,8 @@ class TextChar(
     val particles: List<String>
 )
 
-// 音频资产（.pdrawc audio section，v16；v18 起带可关键帧的播放属性）：原始音频字节（OGG/WAV）
-// + 量化特征列 + 拍点表 + 5 个播放属性基础值。列与编辑器 objects/audio-assets.js 逐位一致（u16/u8 小端）；
-// 帧时查表插值见 script/ScriptAudio.kt。fmt：0=ogg, 1=wav。
+// 音频资产：原始音频字节（OGG/WAV）+ 量化特征列 + 拍点表 + 5 个播放属性基础值。
+// 列与编辑器逐位一致（u16/u8 小端）；fmt：0=ogg, 1=wav。
 // vol/speed/pan/fadeIn/fadeOut 既作基础值（无轨道时用），也被 'a:<id>' 属主的同名分量轨道覆盖。
 class AudioAsset(
     val id: String,
@@ -193,7 +192,7 @@ fun ParticleAnimation.timelineLength(): Int {
     }
     for (a in audioAssets) {
         if (a.st > max) max = a.st.toDouble()
-        // v18：内容按倍速折算到时间轴长度（倍速越快，听完所需时间越短）
+        // 内容按倍速折算到时间轴长度（倍速越快，听完所需时间越短）
         val dur = a.durMs / maxOf(0.25, a.speed)
         if (a.st + dur > max) max = a.st + dur
     }

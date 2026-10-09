@@ -7,11 +7,9 @@ import net.minecraft.resources.Identifier
 import java.util.UUID
 
 /**
- * 粒子「直设位置」数据包：把粒子直接定位到目标位置，客户端用 partialTick
- * 在上一位置与本位置之间插值（无缓动滞后）。
+ * 粒子「直设位置」数据包：把粒子直接定位到目标位置，客户端用 partialTick 在上一位置与本位置之间插值。
  *
- * 供「每 tick 跟随一个非实体点」的粒子（如投射物本体）使用：位置精确且渲染丝滑，
- * 不会像缓动那样永远比真实位置慢一拍。
+ * 用于每 tick 跟随一个非实体点的粒子，如投射物本体。
  *
  * @param particleId 粒子唯一 ID
  * @param x/y/z 目标世界坐标

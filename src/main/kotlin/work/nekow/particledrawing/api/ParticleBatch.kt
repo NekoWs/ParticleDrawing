@@ -4,20 +4,17 @@ import net.minecraft.world.phys.Vec3
 import java.util.UUID
 
 /**
- * 程序化粒子集：成员逐 tick 增删、每颗粒子各自运动与寿命、按位置/速度条件回收的粒子流
- * （黑洞吸入、重力场下落、跟随实体的一圈粒子）。
+ * 程序化粒子集：成员逐 tick 增删、每颗粒子各自运动与寿命、按位置/速度条件回收的粒子流。
  *
- * 与 [ParticleGroup] 的分工：[ParticleGroup] 是**编排式动画**——成员基本固定、组级统一变换、
- * 指令流一次下发、客户端本地求值；本类相反：成员随时增删、每粒子独立受力或直设位置，
- * 位置按「服务端权威 + 批量直设」下发。要写组级编排动画就用 [ParticleGroup]，别用本类。
+ * 与 [ParticleGroup] 的分工：组是编排式动画，成员基本固定、组级统一变换、指令流一次下发、
+ * 客户端本地求值；本类成员随时增删，每颗粒子独立受力或直设位置，位置按服务端权威批量直设下发。
  *
  * 簿记规则：
- * - 位置与速度一律读 PD 的权威值（[ParticleHandle.position] / [ParticleHandle.velocity]），
- *   调用方不必自己维护 id ↔ 状态表；
- * - PD 侧已过期/已销毁的成员，在下次操作时自动出列（[evictDead]），对调用方透明；
- *   延迟生成（[ParticleHandle.Builder.delay]）的成员在到点前**不算已死**，不会被摘掉；
+ * - 位置与速度一律读 PD 的权威值（[ParticleHandle.position] / [ParticleHandle.velocity]）；
+ * - PD 侧已过期/已销毁的成员在下次操作时自动出列（[evictDead]）；
+ *   延迟生成（[ParticleHandle.Builder.delay]）的成员在到点前不算已死，不会被摘掉；
  * - [trackAll] / [setVelocityAll] / [applyForceAll] 都是一次网络包覆盖全组（每成员一个向量，
- *   按登记顺序对应）；每 tick 都要重算的力用 [applyForceAll] 一包发完，不必逐粒子发包。
+ *   按登记顺序对应）。
  *
  * @param manager 该粒子集所在维度的粒子管理器
  */
@@ -33,16 +30,14 @@ class ParticleBatch(private val manager: ParticleManager) {
         isPending = { it.isPending() },
     )
 
-    /** 登记一个已有粒子（`Builder.spawn()` 的返回值可直接传入；null 忽略）。 */
+    /** 登记一个已有粒子；`Builder.spawn()` 的返回值可直接传入，null 忽略。 */
     fun add(handle: ParticleHandle?): ParticleHandle? = handle?.let { core.add(it) }
 
     /**
-     * 批量生成：整批用**一个包**下发（[ParticleManager.spawnAll]），生成成功的成员就地登记进本集合。
+     * 批量生成：整批用一个包下发（[ParticleManager.spawnAll]），生成成功的成员就地登记进本集合。
+     * 每颗的字段由 [ParticleSpawnSpec] 给，含寿命曲线与首帧插值端点（[ParticleSpawnSpec.prevPosition]）。
      *
-     * 「一条尾迹」这类「每 tick 补一批同款粒子」的用法不必逐颗发包；每颗的字段由
-     * [ParticleSpawnSpec] 给（含寿命曲线与首帧插值端点，见 [ParticleSpawnSpec.prevPosition]）。
-     *
-     * @return 实际新增的成员数（被维度上限拒绝的那些不登记）
+     * @return 实际新增的成员数；被维度上限拒绝的那些不登记
      */
     fun spawnAll(specs: List<ParticleSpawnSpec>): Int {
         val handles = manager.spawnAll(specs)
@@ -71,7 +66,7 @@ class ParticleBatch(private val manager: ParticleManager) {
     /** 把一个成员移出集合（不销毁粒子本身）。 */
     fun remove(handle: ParticleHandle): Boolean = core.remove(handle)
 
-    /** 成员数（先把已过期/已销毁的成员摘掉）。 */
+    /** 成员数；先摘掉已过期/已销毁的成员。 */
     fun size(): Int = core.size()
 
     fun isEmpty(): Boolean = core.isEmpty()
@@ -91,7 +86,7 @@ class ParticleBatch(private val manager: ParticleManager) {
     /** 批量直设位置：一次网络包；[positions] 与 [handles] 顺序一一对应，长度不同按短的一方截断。 */
     fun trackAll(positions: List<Vec3>): Int = core.trackAll(positions)
 
-    /** 逐成员算一个新位置后一次包下发（省掉调用方维护 id 列表），返回实际下发数。 */
+    /** 逐成员算一个新位置后一次包下发，返回实际下发数。 */
     fun trackEach(offsetAt: (index: Int, handle: ParticleHandle) -> Vec3): Int {
         return core.trackEach { index, handle -> offsetAt(index, handle) }
     }
@@ -104,13 +99,13 @@ class ParticleBatch(private val manager: ParticleManager) {
 
     /**
      * 批量设置速度：一次网络包覆盖全组（成员顺序 = 登记顺序），[velocities] 与 [handles]
-     * 顺序一一对应，长度不同按短的一方截断。速度驱动接管位置——之后位置由两端按同一规则逐 tick 积分。
+     * 顺序一一对应，长度不同按短的一方截断。速度驱动接管位置，之后位置由两端按同一规则逐 tick 积分。
      *
      * @return 服务端实际生效的粒子数
      */
     fun setVelocityAll(velocities: List<Vec3>): Int = core.setVelocityAll(velocities)
 
-    /** 给某成员施力（只在开始施力时下发一次，两端按同一规则逐 tick 积分）。 */
+    /** 给某成员施力；只在开始施力时下发一次，两端按同一规则逐 tick 积分。 */
     fun applyForce(handle: ParticleHandle, acceleration: Vec3, ticks: Int = -1): ParticleBatch {
         handle.applyForce(acceleration, ticks)
         return this
@@ -120,8 +115,7 @@ class ParticleBatch(private val manager: ParticleManager) {
      * 批量施力：一次网络包覆盖全组，每颗粒子各自的加速度、共用一个 [ticks]。
      * [accelerations] 与 [handles] 顺序一一对应，长度不同按短的一方截断。
      *
-     * 默认 `ticks = 1`（只施这一 tick）：批量调用方本来就每 tick 重算一次力，
-     * 施力停在调用之后比「调用结束力还留着」更符合直觉。要长效施力显式给 `-1`。
+     * 默认 `ticks = 1`（只施这一 tick）；长效施力显式给 `-1`。
      *
      * @return 服务端实际生效的粒子数
      */
@@ -141,9 +135,9 @@ class ParticleBatch(private val manager: ParticleManager) {
 
     /**
      * 补齐到 [target] 个成员：反复调用 [spawner]（参数是当前下标），直到够了或 [spawner] 返回 null
-     * （通常是维度粒子上限拒绝了生成——此时立即停下，下次调用再补，不空转）。
+     * （维度粒子上限拒绝了生成，此时立即停下，下次调用再补）。
      *
-     * @return 本次实际新增的成员数
+     * @return 实际新增的成员数
      */
     fun ensureSize(target: Int, spawner: (index: Int) -> ParticleHandle?): Int {
         return core.ensureSize(target) { index -> spawner(index) }
@@ -154,8 +148,7 @@ class ParticleBatch(private val manager: ParticleManager) {
 }
 
 /**
- * 成员簿记的通用实现：只依赖「id / 权威状态 / 一次包下发位置·速度·力 / 销毁」几个访问器，
- * 所以能用假成员直接单测（[ParticleHandle] 要真实服务端关卡才构造得出来）。
+ * 成员簿记的通用实现：只依赖 id / 权威状态 / 一次包下发位置·速度·力 / 销毁 几个访问器。
  */
 internal class BatchCore<T>(
     private val idOf: (T) -> UUID,
@@ -229,7 +222,7 @@ internal class BatchCore<T>(
 
     /**
      * 摘掉过期成员后，把一列「每成员一个的向量」按成员下标对齐成「id 列表 + 值列表」；
-     * 成员或值为空时返回 null（调用方当作 0 处理，不发包）。
+     * 成员或值为空时返回 null，此时不发包。
      */
     private fun aligned(vectors: List<Vec3>): Pair<List<UUID>, List<Vec3>>? {
         evictDead()
@@ -291,9 +284,9 @@ internal class BatchCore<T>(
 
     /**
      * 补齐到 [target] 个成员：反复调用 [spawner]（参数是当前下标），直到够了或 [spawner] 返回 null
-     * （通常是维度粒子上限拒绝——立即停下，下次调用再补，不空转）。
+     * （维度粒子上限拒绝，此时立即停下，下次调用再补）。
      *
-     * @return 本次实际新增的成员数
+     * @return 实际新增的成员数
      */
     fun ensureSize(target: Int, spawner: (index: Int) -> T?): Int {
         evictDead()

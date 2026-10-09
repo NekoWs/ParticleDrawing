@@ -15,8 +15,8 @@ import java.io.ByteArrayOutputStream
 /**
  * 客户端程序化贴图接收：按 id 累积分块，收齐后解码注册进 [TextureCache]。
  *
- * 只学到「id → 名字」也算数——同 id 的粒子在字节到齐前渲染成纯白方块，不丢粒子；
- * 名字先登记是为了让本地按名登记的贴图（客户端侧调用）也能被 id 引用命中。
+ * 只学到「id → 名字」也算数：同 id 的粒子在字节到齐前渲染成纯白方块，不丢粒子；
+ * 名字先登记，是为了让本地按名登记的贴图也能被 id 引用命中。
  */
 object ClientTextureSyncManager {
 
@@ -41,7 +41,7 @@ object ClientTextureSyncManager {
         pending.remove(payload.id)
         val bytes = out.toByteArray()
         if (loadLocal(payload.name, bytes)) {
-            // 留一份字节：`/pdraw reload` 清空缓存后能就地重载，不必再等一次下发
+            // 留一份字节，`/pdraw reload` 清空缓存后能就地重载
             TextureRegistry.storeBytes(payload.id, bytes)
         } else {
             LOGGER.warn("ParticleDrawing: 贴图 {} 解码失败，引用它的粒子回落纯白方块", payload.name)
@@ -73,7 +73,7 @@ object ClientTextureSyncManager {
         return loaded
     }
 
-    /** 就地生成全部内置形状贴图（幂等）；返回本次可用的内置贴图数。 */
+    /** 就地生成全部内置形状贴图（幂等）；返回可用的内置贴图数。 */
     @JvmStatic
     fun ensureBuiltins(): Int {
         var count = 0
@@ -84,7 +84,7 @@ object ClientTextureSyncManager {
         return count
     }
 
-    /** 换连接：丢掉未收齐的块与「从服务器学来的」id → 名字映射（各服务器的 id 空间独立）。 */
+    /** 换连接：丢掉未收齐的块与从服务器学来的 id → 名字映射；各服务器的 id 空间独立。 */
     @JvmStatic
     fun clearRemote() {
         pending.clear()

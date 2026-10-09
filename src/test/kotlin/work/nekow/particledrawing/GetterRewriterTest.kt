@@ -13,12 +13,10 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * 被动输入 getter 的纯 JVM 回归测试：
- * 重写/发现语义（与客户端 ClientAnimationProgramManager 注入约定对齐）+ 纯标量快路径端到端求值。
+ * 被动输入 getter 的纯 JVM 测试：重写/发现语义与快路径端到端求值。
+ * 重写出的输入名与 ClientAnimationProgramManager 的注入约定对齐。
  */
 class GetterRewriterTest {
-
-    // —— 重写与发现 ——
 
     @Test
     fun discoversComponentGetters() {
@@ -83,8 +81,6 @@ class GetterRewriterTest {
         assertTrue(rw.extNames.isEmpty() && rw.keys.isEmpty())
     }
 
-    // —— lint（服务端 best-effort 预警） ——
-
     @Test
     fun lintReportsDefiniteErrorsOnly() {
         val problems = GetterRewriter.lint("x = get_entity_bogus(h); y = get_world_rain(1); z = get_entity_yaw(target)")
@@ -92,8 +88,6 @@ class GetterRewriterTest {
         assertTrue(problems.any { "bogus" in it })
         assertTrue(problems.any { "rain" in it })
     }
-
-    // —— 快路径端到端：重写 → 编译 → 外部注入求值 ——
 
     @Test
     fun compiledEvalInjectsDiscoveredInputs() {
@@ -122,8 +116,6 @@ class GetterRewriterTest {
         cf2.eval(0.0, 1.0, 0.0, regs2, cf2.allocStack(), doubleArrayOf(10.0, 3.0))
         assertEquals(30.0, regs2[Reg.X])
     }
-
-    // —— 解释器路径（setVariableLive 同款） ——
 
     @Test
     fun interpreterPathEvaluatesRewrittenExpr() {

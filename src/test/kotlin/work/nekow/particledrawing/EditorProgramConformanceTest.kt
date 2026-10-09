@@ -9,19 +9,15 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * 跨仓一致性：**编辑器生成的程序在播放端跑出的点，必须与编辑器预览的逐点相同**。
+ * 跨仓一致性：编辑器生成的程序在播放端跑出的点，必须与编辑器预览的逐点相同。
  *
- * 为什么需要这个测试：编辑器自己有一份 JS 运行时（是播放端的镜像实现），它能证明
- * 「导出程序在我这份镜像里算出的点 = 预览」，但那**是自己证明自己**——两份实现一旦分岔
- * （取整、hash、点数分配、多摆放的中心表……任何一处），编辑器那边仍然全绿，只有到了游戏里
- * 才看得出来。真正的证据是**播放端**跑同一份程序算出同一批点。
+ * 编辑器自己那份 JS 运行时是播放端的镜像实现，取整、hash、点数分配、多摆放的中心表任何一处
+ * 分岔都只有到游戏里才看得出来，所以证据取自播放端跑同一份程序。
  *
- * 夹具在 `src/test/resources/editor-fixture/`，由编辑器侧生成
- * （`particle-editor/test/editor-fixture.test.js`，那边同时检查夹具没过期）：
- * `index.txt` 是清单（classpath 目录不可枚举），每个夹具含 SOURCE 段（程序原文）与
- * POINTS 段（编辑器预览算出的坐标）。这里只读自己仓库的资源，**不依赖编辑器仓库路径**。
+ * 夹具在 `src/test/resources/editor-fixture/`，由编辑器侧生成：`index.txt` 是清单
+ * （classpath 目录不可枚举），每个夹具含 SOURCE 段（程序原文）与 POINTS 段（编辑器预览坐标）。
  *
- * 当前覆盖：表面采样 / 棱采样 / 顶点采样 / 体素填充 / 3 个同形物体合并成一份程序（多摆放）。
+ * 覆盖表面采样 / 棱采样 / 顶点采样 / 体素填充 / 3 个同形物体合并成一份程序（多摆放）。
  */
 class EditorProgramConformanceTest {
 
@@ -50,11 +46,11 @@ class EditorProgramConformanceTest {
 
     private fun resourceText(pathInJar: String): String {
         val stream = javaClass.getResourceAsStream(pathInJar)
-            ?: error("找不到夹具 $pathInJar —— 由编辑器侧 test/editor-fixture.test.js 生成")
+            ?: error("找不到夹具 $pathInJar（由编辑器侧生成）")
         return stream.bufferedReader(Charsets.UTF_8).readText()
     }
 
-    /** 已知缺口：夹具名 → 原因。跳过但打印，绝不静默。 */
+    /** 已知缺口：夹具名 → 原因。跳过但打印，不静默。 */
     private fun knownGaps(): Map<String, String> {
         val stream = javaClass.getResourceAsStream("/editor-fixture/known-gaps.txt") ?: return emptyMap()
         return stream.bufferedReader(Charsets.UTF_8).readText().lines()
@@ -138,7 +134,7 @@ class EditorProgramConformanceTest {
         for (name in names) {
             val gap = gaps[name]
             if (gap != null) {
-                println("SKIP $name —— 已知缺口：$gap")
+                println("SKIP $name 已知缺口：$gap")
                 continue
             }
             val fx = loadFixture(name)
@@ -146,8 +142,8 @@ class EditorProgramConformanceTest {
 
             val got = runPositions(fx.source, fx.steps)
             if (fx.points.size != got.size) {
-                // 点数都不同就没必要逐点比了，直接记下来继续跑下一个夹具——
-                // **一次跑完就知道所有分歧**，比在第一个夹具上抛异常有用得多。
+                // 点数都不同就没必要逐点比了，直接记下来继续跑下一个夹具，
+                // 一次跑完就知道所有分歧。
                 problems.add("$name 点数不一致：编辑器 ${fx.points.size}，播放端 ${got.size}")
                 continue
             }
@@ -160,8 +156,8 @@ class EditorProgramConformanceTest {
                     if (e > maxErr) { maxErr = e; worst = i }
                 }
             }
-            // 容差 1e-9：坐标是量化表（×64 的整数）算回来的，两条实现应当**精确**相同；
-            // 留一点余量只为浮点结合顺序，不是用来掩盖真实偏差。
+            // 容差 1e-9：坐标是量化表（×64 的整数）算回来的，两条实现应当精确相同，
+            // 留一点余量只为浮点结合顺序。
             if (maxErr > 1e-9) {
                 problems.add(
                     "$name 第 $worst 点偏差 $maxErr 超过 1e-9：编辑器 ${fx.points.getOrNull(worst)?.toList()}，" +

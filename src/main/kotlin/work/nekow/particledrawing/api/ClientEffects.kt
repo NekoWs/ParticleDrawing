@@ -6,7 +6,7 @@ import work.nekow.particledrawing.animation.AnimationLoader
 import work.nekow.particledrawing.core.client.ClientAnimationManager
 import java.util.UUID
 
-// 纯客户端本地特效播放入口（不经服务端、不占同步）。字节从客户端本地 EffectRegistry 读取；仅客户端代码调用。
+// 纯客户端本地特效播放入口：字节取自客户端本地 EffectRegistry；仅客户端代码调用。
 object ClientEffects {
 
     /** 播放一个客户端本地注册的特效；未注册/解析失败返回 null。 */

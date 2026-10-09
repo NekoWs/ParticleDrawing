@@ -22,7 +22,7 @@ class ParticleDrawing(bus: IEventBus, container: ModContainer) {
         container.registerConfig(ModConfig.Type.SERVER, ParticleDrawingConfig.SERVER_SPEC)
         container.registerConfig(ModConfig.Type.CLIENT, ParticleDrawingConfig.CLIENT_SPEC)
 
-        // 动画文件同步任务（配置阶段，服务器向客户端下发动画 + 贴图）
+        // 动画文件同步任务，配置阶段由服务端向客户端下发动画与贴图
         bus.addListener(::onRegisterConfigurationTasks)
     }
 

@@ -40,7 +40,7 @@ class ParticleVisualTest {
 
     @Test
     fun `子矩形 UV：取景框是子矩形本身，尺寸系数按子矩形算`() {
-        // 64×64 图集里取 16×16 的一格：应该按 16px 算系数（= 1），不是按整图 64px
+        // 64×64 图集里取 16×16 的一格，系数按子矩形算
         val v = ParticleVisual().texture("t:atlas").uv(16f, 32f, 32f, 48f)
         val uv = v.toUvData(64, 64)!!
         assertEquals(16, uv.uvStart[0])
@@ -80,7 +80,7 @@ class ParticleVisualTest {
         assertEquals(0.5f, editor[1], 1e-6f)
 
         val world = ParticleVisual().anisoWorld(3f, 0.1f).resolvedAniso(1f, 1f)!!
-        // 渲染半宽 = 编辑器尺寸 × 0.1 × 系数 → 应等于请求整宽的一半
+        // 渲染半宽 = 编辑器尺寸 × 0.1 × 系数
         assertEquals(1.5f, world[0] * VisualMath.EDITOR_TO_MC_SCALE, 1e-5f)
         assertEquals(0.05f, world[1] * VisualMath.EDITOR_TO_MC_SCALE, 1e-5f)
     }
@@ -135,7 +135,7 @@ class ParticleVisualTest {
         val v = ParticleVisual().style(ParticleStyle.SOFT_DOT).uv(0f, 0f, 8f, 8f)
         assertEquals(ParticleStyle.SOFT_DOT.textureName, v.texture)
         assertEquals(8f, v.uvRect!![2], 1e-6f)
-        // 换成别的贴图会清掉子矩形（否则会去新图上取旧矩形）
+        // 换成别的贴图会清掉子矩形
         v.texture("t:other")
         assertNull(v.uvRect)
         // 再设成「无贴图」形状

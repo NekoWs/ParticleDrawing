@@ -10,8 +10,8 @@ import work.nekow.particledrawing.core.easing.EasingType
 import java.util.UUID
 
 /**
- * 粒子设置位置数据包（组 set 位置轨道）：把未旋转偏移 [offset]（相对轴心）缓动到新值，
- * 保留旋转、清零平移增量，最终位置 = pivot + rotate(offset, rot)。
+ * 粒子设置位置数据包（组 set 位置轨道）：把未旋转偏移 [offset] 缓动到新值，保留旋转、清零平移增量，
+ * 最终位置 = pivot + rotate(offset, rot)。
  *
  * @param particleId 粒子 ID
  * @param px/py/pz 旋转轴心（绝对世界坐标）

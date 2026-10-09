@@ -10,16 +10,16 @@ import work.nekow.particledrawing.animation.program.EntityBinding
 import work.nekow.particledrawing.animation.program.PivotRef
 import java.util.UUID
 
-// 客户端动画程序协议族：AnimationProgramPayload 首次下发完整程序，Append 追加指令，SetProgramVar 热更变量，Stop 停止程序（可选销毁粒子）。
-// 指令全部为纯数据；客户端按服务端 gameTime 锚点对齐时钟后本地求值。
+// 客户端动画程序协议族：首次下发完整程序，Append 追加指令，SetProgramVar 热更变量，Stop 停止程序。
+// 指令为纯数据；客户端按服务端 gameTime 锚点对齐时钟后本地求值。
 
 /** 编排动画程序编解码工具。 */
 internal object AnimationProgramCodecs {
 
-    /** 单包指令条数上限（ParticleGroup 的拆段阈值就是它）。 */
+    /** 单包指令条数上限。 */
     const val MAX_INSTRUCTIONS_PER_PAYLOAD = 512
 
-    /** 一个组的成员上限：受控清单要一次发完，超了请拆组。 */
+    /** 一个组的成员上限：受控清单一次发完。 */
     const val MAX_PROGRAM_MEMBERS = 8192
     fun writeInstructionList(buf: FriendlyByteBuf, list: List<AnimInstruction>) {
         buf.writeVarInt(list.size)
@@ -149,7 +149,7 @@ data class AnimationProgramAppendPayload(
 ) : CustomPacketPayload {
 
     init {
-        // 超限直接报错：发送端已按 MAX_INSTRUCTIONS_PER_PAYLOAD 拆段，编码端不拆会撞上客户端最大载荷
+        // 超限直接报错，发送端按 MAX_INSTRUCTIONS_PER_PAYLOAD 拆段后下发
         require(instructions.size <= AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD) {
             "编排指令追加包超限: ${instructions.size} > ${AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD}"
         }

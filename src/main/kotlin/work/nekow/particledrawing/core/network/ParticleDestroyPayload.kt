@@ -18,12 +18,12 @@ data class ParticleDestroyPayload(
 ) : CustomPacketPayload {
 
     init {
-        // 解码端也按同一上限拒绝：不设上限时一个畸形条数就能让客户端分配一大片内存
+        // 解码端按同一上限拒绝，避免畸形条数触发大块内存分配
         require(particleIds.size <= MAX_BATCH) { "粒子销毁批量超限: ${particleIds.size} > $MAX_BATCH" }
     }
 
     companion object {
-        /** 单包最大条数：发送端用 [chunked] 拆包，畸形包显式拒绝、不静默截断。 */
+        /** 单包最大条数，超限显式拒绝。 */
         const val MAX_BATCH = 512
 
         @JvmField
@@ -63,8 +63,7 @@ data class ParticleDestroyPayload(
         }
 
         /**
-         * 按 [MAX_BATCH] 拆成若干可发的销毁包（组销毁/整维度清空这类「一次几百上千颗」的路径用它）。
-         * 单个包不超过上限，客户端一次解码不会因为条数越界而掉线。
+         * 按 [MAX_BATCH] 拆成若干不超过上限的销毁包，用于组销毁与整维度清空。
          */
         fun chunked(ids: Collection<UUID>, groupId: UUID? = null): List<ParticleDestroyPayload> {
             val list = ids.toList()

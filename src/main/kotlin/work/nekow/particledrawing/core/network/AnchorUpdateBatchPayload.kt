@@ -7,7 +7,7 @@ import net.minecraft.resources.Identifier
 import java.util.UUID
 
 /**
- * 服务端每 tick 批量下发的可移动锚点更新（一次一包，避免 N 个播放实例 N 个包）。
+ * 服务端每 tick 批量下发的可移动锚点更新，一次一包。
  */
 @Suppress("unused")
 data class AnchorUpdateBatchPayload(
@@ -15,7 +15,7 @@ data class AnchorUpdateBatchPayload(
 ) : CustomPacketPayload {
 
     init {
-        // 解码端也按同一上限拒绝：不设上限时一个畸形条数就能让客户端分配一大片内存
+        // 解码端按同一上限拒绝，避免畸形条数触发大块内存分配
         require(updates.size <= MAX_BATCH) { "锚点更新批量超限: ${updates.size} > $MAX_BATCH" }
     }
 
@@ -26,7 +26,7 @@ data class AnchorUpdateBatchPayload(
     )
 
     companion object {
-        /** 单包最大条数：发送端用 [BatchChunking] 拆包，畸形包显式拒绝、不静默截断。 */
+        /** 单包最大条数，发送端用 [BatchChunking] 拆包。 */
         const val MAX_BATCH = 512
 
         @JvmField

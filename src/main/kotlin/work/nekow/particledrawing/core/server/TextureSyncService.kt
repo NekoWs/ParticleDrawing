@@ -11,13 +11,13 @@ import work.nekow.particledrawing.core.network.ParticleTexturePayload
  *
  * 两条路径：
  * - 新登记时立即广播给在线玩家；
- * - 玩家进服时补发全部（登记发生在任何人进服之前是常态）。
+ * - 玩家进服时补发全部（登记通常发生在任何人进服之前）。
  *
  * 内置形状（[work.nekow.particledrawing.api.ParticleStyle]）不走网络：两端各自生成同一份像素。
  */
 object TextureSyncService {
 
-    /** 新登记的贴图推给当前在线玩家；服务器未运行时什么也不做。 */
+    /** 新登记的贴图推给当前在线玩家；服务器未运行时直接返回。 */
     @JvmStatic
     fun broadcast(entry: TextureRegistry.Entry) {
         val bytes = entry.bytes ?: return

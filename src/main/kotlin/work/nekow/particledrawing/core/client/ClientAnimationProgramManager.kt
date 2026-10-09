@@ -30,14 +30,12 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.floor
 
 // 客户端动画程序运行时：解释 AnimInstruction 指令流并直写渲染。
-// 组级状态（pivot/pathOffset/scaleMul/pulseMul/fade 因子）+ 粒子级相对轴心的偏移 rel。
-// 旋转按「每帧增量」累加到 rel 上，所以 spin 与 rotate 互相叠加（见 RotationSlot）；表达式模式每 tick×每粒子求值，输出世界绝对坐标。
+// 组级状态（pivot/pathOffset/scaleMul/pulseMul/fade 因子）+ 粒子级相对轴心的偏移 rel；
+// 旋转按每帧增量累加到 rel，表达式模式每 tick 每粒子求值并输出世界绝对坐标。
 @EventBusSubscriber(modid = ParticleDrawing.MODID, value = [Dist.CLIENT])
 internal object ClientAnimationProgramManager {
 
     private val LOGGER = com.mojang.logging.LogUtils.getLogger()
-
-    // —— 实体索引 ——
 
     private val entityByUuid = ConcurrentHashMap<UUID, Entity>()
 
@@ -53,8 +51,7 @@ internal object ClientAnimationProgramManager {
         if (ev.level.isClientSide) entityByUuid.remove(ev.entity.uuid, ev.entity)
     }
 
-    // 找实体：本地玩家 → 缓存（校验存活与维度，防冻结坐标）→ 全局注册表直查 → 渲染列表兜底。
-    // 原始粒子的实体锚点也走这里，保证两条路径对「实体身份」的解析完全一致。
+    // 找实体：本地玩家 → 缓存（校验存活与维度）→ 全局注册表直查 → 渲染列表兜底
     internal fun findEntity(uuid: UUID): Entity? {
         val mc = Minecraft.getInstance()
         mc.player?.let { if (it.uuid == uuid) return it }
@@ -64,15 +61,13 @@ internal object ClientAnimationProgramManager {
             entityByUuid.remove(uuid, cached)
         }
         val level = mc.level ?: return null
-        // 实体全局注册表 O(1) 直查（覆盖尚未进入渲染列表的实体，消除跟踪间隙）
+        // 实体全局注册表 O(1) 直查，覆盖尚未进入渲染列表的实体
         level.getEntity(uuid)?.let { entityByUuid[uuid] = it; return it }
         for (e in level.entitiesForRendering()) {
             if (e.uuid == uuid) { entityByUuid[uuid] = e; return e }
         }
         return null
     }
-
-    // —— 数据模型 ——
 
     /** 粒子静态基态。 */
     private class PState(
@@ -100,11 +95,11 @@ internal object ClientAnimationProgramManager {
     )
 
     private class Program(
-        /** 程序 id（= 粒子组 id）：上报完成时要用它。 */
+        /** 程序 id（= 粒子组 id）。 */
         val animationId: UUID,
         val particleIds: List<UUID>,
         val anchorOffset: Long,
-        /** 下发时刻的服务端 gameTime：把绝对时钟换算为「程序相对 tick」的原点。 */
+        /** 下发时刻的服务端 gameTime：程序相对 tick 的原点。 */
         val startAnchor: Long,
         val states: MutableMap<UUID, PState>,
     ) {
@@ -118,7 +113,7 @@ internal object ClientAnimationProgramManager {
         // 组级动画状态
         var pathOffset: Vec3 = Vec3.ZERO
         var pulseMul = 1f
-        var scaleMul = 1f                              // ScaleBy 当前倍率（作用于视觉尺寸与粒子到轴心的距离）
+        var scaleMul = 1f                              // ScaleBy 当前倍率
         var recolor: Recolor? = null
         var fadeInStart = -1L; var fadeInDur = 0; var fadeInEase = EasingType.EASE_OUT
         var fadeOutStart = -1L; var fadeOutDur = 0; var fadeOutEase = EasingType.EASE_IN
@@ -134,31 +129,29 @@ internal object ClientAnimationProgramManager {
         var expressionEndMs: Long = -1L
         var compiled: CompiledFunction? = null
 
-        // 可移动轴心（BindPivot(Movable) 绑定 + ProgramAnchorPayload 逐 tick 更新）
+        // 可移动轴心：BindPivot(Movable) 绑定，位置走 ProgramAnchorPayload 逐 tick 更新
         var movableAnchor = false
         var movableOrientLocal = true
         var anchorPos: Vec3 = Vec3.ZERO
         var anchorPrev: Vec3 = Vec3.ZERO
         var anchorVelocity: Vec3 = Vec3.ZERO
         var anchorSampleNanos: Long = 0L
-        /** 本 tick 是否让粒子位置跳变（瞬移/断流刚恢复）：避免在两个远点之间扫出一条假轨迹。 */
+        /** 本 tick 是否让粒子位置跳变（瞬移/断流刚恢复）。 */
         var anchorSnapPending = false
 
         /** 有限指令的最晚结束时刻（程序相对毫秒）；-1 = 没有有限指令。 */
         var instructionEndMs: Long = -1L
 
         /**
-         * 已经走完、但**还没上报**的变量缓动终点。
-         *
-         * 缓动一到达终点就从 [varEases] 里摘掉，而「到点」与「上报」之间隔着 [COMPLETION_MARGIN_MS]
-         * 的桥接余量：不留这一笔，纯变量组会在该上报的那一 tick 发现账本已经空了，永远错过完成信号。
+         * 已经走完、但还没上报的变量缓动终点：缓动到点即从 [varEases] 摘掉，
+         * 留这一笔是为了在 [COMPLETION_MARGIN_MS] 的桥接余量里仍能判到账本终点。
          */
         var completedVarEndMs: Long = -1L
 
         /** 上一次上报的账本终点：账本再往后延（追加指令 / 重定向缓动）就允许再报一次。 */
         var reportedEndMs: Long = -1L
 
-        /** 渐变中的变量：名字 → 目标与进度（见 `setVariableEased`）。 */
+        /** 渐变中的变量：名字 → 目标与进度。 */
         val varEases = HashMap<String, VarEase>()
 
         /** 名字 -> 注册序号（公式 getter 参数解析用）。 */
@@ -174,7 +167,7 @@ internal object ClientAnimationProgramManager {
         val prevPos = HashMap<UUID, Vec3>()
         var lastSampleGameTime = Long.MIN_VALUE
 
-        /** 输入实体连续解析失败的采样次数（诊断用，成功解析即清零）。 */
+        /** 输入实体连续解析失败的采样次数，成功解析即清零。 */
         var missStreak = 0
 
         // 求值缓冲
@@ -190,8 +183,6 @@ internal object ClientAnimationProgramManager {
     private var pruneCounter = 0
 
     private const val PRUNE_INTERVAL_TICKS = 40
-
-    // —— 协议入口 ——
 
     fun arm(
         programId: UUID,
@@ -231,8 +222,8 @@ internal object ClientAnimationProgramManager {
     }
 
     /**
-     * 热更程序变量：value 为公式，求值环境 = 其余变量 + 被动输入当前值。
-     * 公式里的 get_* 调用先重写为合成变量再求值；未知名在此处记日志并放弃本次热更。
+     * 热更程序变量：expr 为公式，求值环境 = 其余变量 + 被动输入当前值。
+     * 公式里的 get_* 调用先重写为合成变量再求值；求值失败则放弃热更。
      */
     fun setVariable(programId: UUID, name: String, expr: String) {
         val p = programs[programId] ?: return
@@ -247,8 +238,8 @@ internal object ClientAnimationProgramManager {
     }
 
     /**
-     * 求一条变量公式的值：公式里的 get_* 先重写为合成变量，环境 = 其余变量 + 被动输入当前值。
-     * 未知名/解析失败记日志并返回 null（本次热更放弃）。
+     * 求一条变量公式的值：get_* 先重写为合成变量，环境 = 其余变量 + 被动输入当前值。
+     * getter 解析失败时记日志；两种情况都以 null 表示放弃热更。
      */
     private fun evaluateVar(p: Program, expr: String): Double? {
         val rw = try {
@@ -278,7 +269,7 @@ internal object ClientAnimationProgramManager {
             val k = progress(now - ease.startMs, ease.durationMs)
             p.vars[name] = ease.from + (ease.to - ease.from) * eased(ease.easing, k).toDouble()
             if (k >= 1f) {
-                // 终点留账：上报那一 tick 才用得上（见 completedVarEndMs）
+                // 终点留账，上报那一 tick 才用得上
                 val end = ease.startMs + ease.durationMs
                 if (end > p.completedVarEndMs) p.completedVarEndMs = end
                 it.remove()
@@ -287,8 +278,7 @@ internal object ClientAnimationProgramManager {
     }
 
     /**
-     * 某个变量此刻的值：正在渐变就**按当前程序时钟求旧曲线的值**（不是上一 tick 的快照），
-     * 否则取静态快照。热更重定向时用它当新起点，连续重设目标才不会一轮比一轮落后。
+     * 某个变量此刻的值：正在渐变就按当前程序时钟求旧曲线的值，否则取静态快照。
      */
     private fun currentVarValue(p: Program, name: String, now: Long): Double? {
         val ease = p.varEases[name] ?: return p.vars[name]
@@ -314,9 +304,7 @@ internal object ClientAnimationProgramManager {
 
     /**
      * 巡检并收掉「粒子已经全没了」的程序（每 [PRUNE_INTERVAL_TICKS] tick 一次）。
-     *
-     * 成员的寿命由 spawn 包定死：它们自然到期、或被别的路径销毁之后，程序在客户端就只剩空转
-     * （服务端那边也未必知道该发停止包）。按 id 逐个探活，遇到第一个还在的就短路。
+     * 成员寿命由 spawn 包定死，按 id 逐个探活，遇到第一个还在的就短路。
      */
     private fun pruneDeadPrograms(engine: ClientParticleEngine) {
         if (programs.isEmpty()) return
@@ -352,7 +340,7 @@ internal object ClientAnimationProgramManager {
             p.anchorVelocity = ref.velocity
             p.anchorSampleNanos = System.nanoTime()
         }
-        // 时间轴被延长，账本自然跟着往后（上报判定用的就是账本本身）
+        // 时间轴被延长，账本跟着往后
         ins.finiteDurationMs()?.let { duration ->
             val end = ins.startMs.toLong() + duration
             if (end > p.instructionEndMs) p.instructionEndMs = end
@@ -365,9 +353,8 @@ internal object ClientAnimationProgramManager {
      * 账本走完时向服务端上报一次（多给 1 tick 余量，等桥接粒子的插值端点收尾）。
      *
      * 账本 = 指令终点 ∪ 变量缓动终点（见 [completionLedgerEndMs]）：表达式组没有可执行的糖指令，
-     * 但它照样会因为最后一条 `setVariableInterpolated` 缓动（或有限的表达式时长）而完成——
-     * 所以**两个分支都要走这里**。
-     * 账本再往后延（追加指令 / 重定向缓动）后允许再报一次；一本账只报一次，重复重定向不会提前触发。
+     * 但最后一条 `setVariableInterpolated` 缓动或有限的表达式时长同样会让它完成，两个分支都走这里。
+     * 账本再往后延（追加指令 / 重定向缓动）后允许再报一次。
      */
     private fun reportCompletionIfDue(p: Program, ledgerEndMs: Long, now: Long) {
         if (ledgerEndMs < 0L) return
@@ -378,8 +365,7 @@ internal object ClientAnimationProgramManager {
     }
 
     /**
-     * 本轮账本的终点（在 [applyVarEases] **之前**取）：这一 tick 恰好结束的那条缓动还在表里，
-     * 它的终点因此不会被漏掉（缓动结束即从表里摘掉，取晚了就什么都没了）。
+     * 本轮账本的终点：必须在 [applyVarEases] 之前取，这一 tick 恰好结束的缓动还在表里。
      */
     private fun ledgerEndMs(p: Program, now: Long): Long {
         val easeEnds = p.varEases.values.map { ease ->
@@ -395,9 +381,8 @@ internal object ClientAnimationProgramManager {
     }
 
     /**
-     * 移动轴心的相邻样本（服务端每 tick 一条）：
-     * 位置直接采用本 tick 的样本（渲染帧之间的插值由桥接粒子的 `xo/x` 完成，与 track 同相位）；
-     * [prev] 用来判断瞬移与断流恢复——那两种情况按跳变处理，不扫出一条假轨迹。
+     * 移动轴心的相邻样本（服务端每 tick 一条）：位置直接采用本 tick 的样本，
+     * 渲染帧之间的插值由桥接粒子的 `xo/x` 完成；[prev] 用于判断瞬移与断流恢复，两种情况按跳变处理。
      */
     fun applyAnchor(programId: UUID, prev: Vec3, current: Vec3, velocity: Vec3) {
         val p = programs[programId] ?: return
@@ -414,7 +399,7 @@ internal object ClientAnimationProgramManager {
 
     /**
      * 热更变量并渐变到目标值：先按与 [setVariable] 相同的环境求出目标，
-     * 再让客户端在 [durationMs] 内从**当前值**缓动过去（空间端点因此是扫过去的，不是瞬移）。
+     * 再在 [durationMs] 内从当前值缓动过去。
      */
     fun setVariableEased(programId: UUID, name: String, expr: String, durationMs: Int, easing: EasingType) {
         val p = programs[programId] ?: return
@@ -423,8 +408,7 @@ internal object ClientAnimationProgramManager {
             p.varEases.remove(name)
             p.vars[name] = target
         } else {
-            // 重定向：起点取「旧渐变按当前时钟的值」，不是上一 tick 的快照 ——
-            // 连续热更时每轮都从真正的位置接着走，不会越落越远。
+            // 重定向：起点取旧渐变按当前时钟的值，不是上一 tick 的快照
             val now = programNowMs(p)
             val from = if (now != null) currentVarValue(p, name, now) ?: target else p.vars[name] ?: target
             p.vars[name] = from
@@ -434,11 +418,9 @@ internal object ClientAnimationProgramManager {
         if (p.expressionCode != null) recompileExpression(p) else prepareExpressionBuffers(p)
     }
 
-    // —— 输入采样与编译缓冲 ——
-
     /**
      * 编译表达式：先把 get_* 调用重写为合成外部变量（同时发现输入需求），再走纯标量快路径。
-     * 未知名/未登记句柄在此抛错——程序不生效并记日志（服务端绑定处无法预知公式语义）。
+     * 未知名或未登记句柄在此抛错，表达式不生效并记日志。
      */
     private fun recompileExpression(p: Program) {
         val code = p.expressionCode ?: return
@@ -453,7 +435,7 @@ internal object ClientAnimationProgramManager {
             p.extNames = emptyArray()
             return
         }
-        // externals 布局 = 合成输入名 + 程序变量名（变量值随每 tick 快照注入，公式可直接引用）
+        // externals 布局 = 合成输入名 + 程序变量名，变量值随每 tick 快照注入
         val extAll = rw.extNames + p.vars.keys
         p.extNames = extAll.toTypedArray()
         p.requiredKeys = rw.keys
@@ -469,7 +451,9 @@ internal object ClientAnimationProgramManager {
         p.stack = cf.allocStack()
     }
 
-    /** 按 [extNames] 名字序注入当前输入值；缺失值落 0——槽位永不错位。 */
+    /**
+     * 按 [extNames] 名字序注入当前输入值；缺失值落 0，槽位不错位。
+     */
     private fun fillExternal(p: Program) {
         val src = p.latestInputs
         for ((i, name) in p.extNames.withIndex()) p.extVals[i] = src[name] ?: 0.0
@@ -560,7 +544,7 @@ internal object ClientAnimationProgramManager {
         EntityProp.SPRINTING -> if (e.isSprinting()) 1.0 else 0.0
     }
 
-    /** 世界属性取值（26.2 时钟 API：getOverworldClockTime 即旧 day time 域）。 */
+    /** 世界属性取值，时钟取自 level.overworldClockTime。 */
     private fun sampleWorldProp(level: net.minecraft.client.multiplayer.ClientLevel, prop: WorldProp): Double {
         val clock = level.overworldClockTime
         return when (prop) {
@@ -572,8 +556,6 @@ internal object ClientAnimationProgramManager {
         }
     }
 
-    // —— 每 tick 主循环 ——
-
     /** 由本地玩家 game tick 事件调用（真 20Hz、实体移动后）。 */
     @JvmStatic
     fun tick() {
@@ -581,19 +563,16 @@ internal object ClientAnimationProgramManager {
         val engine = ClientParticleEngine.instance() ?: return
         val nowClient = level.gameTime
 
-        // 巡检：程序控的粒子全没了（成员寿命到期、被别的路径销毁）就把程序也收掉，
-        // 否则它会一直按 20Hz 对不存在的粒子空转，还替一个死组上报完成
+        // 巡检：程序控的粒子全没了（成员寿命到期、被别的路径销毁）就把程序也收掉
         if (++pruneCounter % PRUNE_INTERVAL_TICKS == 0) pruneDeadPrograms(engine)
 
         for ((programId, p) in programs.toList()) {
-            // 统一到「程序相对毫秒」域：
-            // clientGameTime + anchorOffset ≈ 服务端绝对 gameTime；再减程序起点、×50 = 相对毫秒。
-            // 指令 startMs 与公式变量 t 均为该相对域，量纲一致、与存档时长无关。
+            // 统一到「程序相对毫秒」域：clientGameTime + anchorOffset ≈ 服务端绝对 gameTime，
+            // 再减程序起点、×50 得相对毫秒。指令 startMs 与公式变量 t 都落在该域。
             val now = (nowClient + p.anchorOffset - p.startAnchor) * 50
-            // 账本在推进缓动**之前**取：这一 tick 恰好结束的缓动还在表里，终点不会被漏掉
+            // 账本在推进缓动之前取：这一 tick 恰好结束的缓动还在表里
             val ledgerEnd = ledgerEndMs(p, now)
-            // 先推进变量渐变、再形成表达式输入快照：否则公式读到的是上一 tick 的旧值，
-            // 连续热更（每 tick 重设目标）会一直落后一拍，看起来「不收敛」。
+            // 先推进变量渐变、再形成表达式输入快照，否则公式读到的是上一 tick 的旧值
             applyVarEases(p, now)
             refreshInputs(p, nowClient)
 
@@ -602,16 +581,14 @@ internal object ClientAnimationProgramManager {
             } else {
                 sugarFrame(p, engine, now)
             }
-            // 两个分支都要走：表达式组没有可执行的糖指令，但它会因为最后一条变量缓动结束而完成
+            // 表达式组没有糖指令，照样按变量缓动终点完成上报
             reportCompletionIfDue(p, ledgerEnd, now)
         }
     }
 
-    // —— 表达式模式 ——
-
     private fun expressionFrame(p: Program, engine: ClientParticleEngine, now: Long) {
         val cf = p.compiled ?: return
-        // 有限时长的表达式到期后不再求值：粒子停在最后一帧的状态（收尾交给变量缓动或糖指令）
+        // 有限时长的表达式到期后不再求值，粒子停在最后一帧
         if (p.expressionEndMs >= 0L && now > p.expressionEndMs) return
         if (p.regs.size != cf.regCount) prepareExpressionBuffers(p)
         val local = (now - p.expressionStartMs).coerceAtLeast(0).toDouble()
@@ -643,14 +620,12 @@ internal object ClientAnimationProgramManager {
         out[5] = regs[6]; out[6] = regs[7]; out[7] = regs[8]   // r g b
     }
 
-    // —— 结构化糖指令模式 ——
-
     private fun sugarFrame(p: Program, engine: ClientParticleEngine, now: Long) {
         val pivot = resolvePivot(p) ?: return
 
         for (slot in p.slots) applySlot(p, slot, now)
 
-        // 逐成员各自方向的漂移倍率：多条 MoveEach 叠加（与旋转/缩放的累加口径一致）
+        // 逐成员各自方向的漂移倍率：多条 MoveEach 叠加
         var driftScale = 0f
         for (slot in p.slots) driftScale += slot.driftScale
 
@@ -659,7 +634,7 @@ internal object ClientAnimationProgramManager {
         val rc = p.recolor
         val kR = if (rc == null) 1f else eased(rc.ease, progress(now - rc.startMs, rc.durationMs))
 
-        // 轴心瞬移/断流恢复：这一帧让位置跳变，不在新旧两点之间扫出一条假轨迹
+        // 轴心瞬移/断流恢复：这一帧让位置跳变
         val anchorSnap = p.anchorSnapPending
         p.anchorSnapPending = false
 
@@ -674,10 +649,10 @@ internal object ClientAnimationProgramManager {
             } else { r = st.baseR; g = st.baseG; b = st.baseB; aBase = st.baseA }
 
             val alpha = (aBase * fadeIn * (1f - fadeOut)).coerceIn(0f, 1f)
-            // 倍率可以到 0：0 = 完全收起、什么都不画（不是钳到一个「很小但还看得见」的值）
+            // 倍率可以到 0：0 = 完全收起，不画
             val scale = (st.baseScale * p.scaleMul * p.pulseMul).coerceAtLeast(0f)
             val local = radialRel(st.rel, p.scaleMul, p.pulseMul)
-            // 沿各自偏移方向外移：方向用**当前**的 rel（跟着旋转一起转），幅度 = 倍率 × 偏移长度
+            // 沿各自偏移方向外移：方向用当前的 rel（跟着旋转一起转），幅度 = 倍率 × 偏移长度
             val shifted = if (driftScale == 0f) local else local.add(st.rel.scale(driftScale.toDouble()))
             engine.applyProgramFrame(
                 uuid, pivot.apply(p.pathOffset.add(shifted)),
@@ -695,7 +670,7 @@ internal object ClientAnimationProgramManager {
 
     /**
      * 轴心解算结果：固定轴心只给世界坐标；跟随实体时记下实体位置、偏移与朝向，
-     * local 模式下把组内相对坐标一起按实体朝向旋转（[AttachMath] 与实体锚点同一套约定）。
+     * local 模式下把组内相对坐标一起按实体朝向旋转（[AttachMath]）。
      */
     private class PivotFrame(
         val pos: Vec3,
@@ -818,8 +793,8 @@ internal object ClientAnimationProgramManager {
     }
 
     /**
-     * 旋转增量落地：每帧只把「本指令应达到的总角度」与「已写入角度」之差叠加到各粒子 rel 上。
-     * 于是多条旋转指令互相叠加（后一条不会把前一条的角度覆盖掉），一次性旋转的缓动按帧增量平滑推进。
+     * 旋转增量落地：每帧只把「本指令应达到的总角度」与「已写入角度」之差叠加到各粒子 rel 上，
+     * 多条旋转指令因此互相叠加。
      */
     private fun applyRotation(p: Program, slot: Slot, axis: Vec3, angleTotal: Double) {
         val delta = slot.rotation.take(angleTotal)

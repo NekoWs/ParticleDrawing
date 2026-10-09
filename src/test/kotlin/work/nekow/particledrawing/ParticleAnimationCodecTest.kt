@@ -29,7 +29,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 代码生成动画网络载荷编解码回归测试：完整模型往返后逐字段一致。
+ * 代码生成动画的网络载荷编解码：完整模型往返后逐字段一致。
  */
 class ParticleAnimationCodecTest {
 
@@ -293,7 +293,7 @@ class ParticleAnimationCodecTest {
 
     @Test
     fun audioTrackPrOrdinalsMatchEditorEnum() {
-        // 序数即二进制格式：新增的音频播放属性必须正好接在 fov/target 之后（与编辑器 PR_ENUM 一致）
+        // 序数即二进制格式：音频播放属性接在 fov/target 之后，与编辑器 PR_ENUM 一致
         assertEquals(26, TrackPr.VOL.ordinal)
         assertEquals(27, TrackPr.SPEED.ordinal)
         assertEquals(28, TrackPr.PAN.ordinal)

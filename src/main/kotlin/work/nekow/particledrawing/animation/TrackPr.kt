@@ -1,10 +1,10 @@
 package work.nekow.particledrawing.animation
 
 /**
- * 分量轨道标识（对应网页编辑器轨道的 `pr` 字符串与 `.pdrawc` 里的分量枚举序号）。
+ * 分量轨道标识，对应编辑器轨道的 `pr` 字符串与 `.pdrawc` 里的分量枚举序号。
  *
- * 声明顺序即 `.pdrawc` 二进制里的枚举序号（0..30），**只能追加、不能重排**；
- * 新增分量需与编辑器 `src/export/pdrawc.js` 的 `PR_ENUM` 保持逐位一致。
+ * 声明顺序即 `.pdrawc` 二进制里的枚举序号（0..30），只能追加、不能重排，
+ * 且需与编辑器 `PR_ENUM` 保持逐位一致。
  *
  * @param key 规范化字符串形式（如 "pos.x" / "col.a" / "fov"）
  */
@@ -18,7 +18,7 @@ enum class TrackPr(val key: String) {
     CENTER_X("center.x"), CENTER_Y("center.y"), CENTER_Z("center.z"),
     FOV("fov"),
     TARGET_X("target.x"), TARGET_Y("target.y"), TARGET_Z("target.z"),
-    // v18：音频对象的播放属性（标量，属主是 "a:<资产id>"，与编辑器 PR_ENUM 尾段一致）
+    // 音频对象的播放属性（标量，属主是 "a:<资产id>"，与编辑器 PR_ENUM 尾段一致）
     VOL("vol"), SPEED("speed"), PAN("pan"), FADE_IN("fadeIn"), FADE_OUT("fadeOut");
 
     /** 属性名（"pos" / "col" / "fov" ...）。 */

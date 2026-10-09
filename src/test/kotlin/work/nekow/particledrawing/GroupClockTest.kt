@@ -7,9 +7,7 @@ import kotlin.test.assertEquals
 /**
  * 组时间轴换算：作者游标（`delay` 累加的毫秒）→ 程序时刻（客户端 `now` 域）。
  *
- * 钉住两条使用方最在意的语义：**同一 tick 内连续录制算一次会话**（会话里 delay 依次排开，
- * 于是「逐块延迟」是阶梯），**跨 tick 追加则从追加那一刻重新起算**（长寿组运行期追加的
- * `delay(1).fadeOut(5)` 不会被已经跑过的时长吞成「瞬间完成」）。
+ * 同一 tick 内连续录制算一次会话，delay 依次排开；跨 tick 追加则从追加那一刻重新起算。
  */
 class GroupClockTest {
 

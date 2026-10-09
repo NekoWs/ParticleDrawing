@@ -7,9 +7,8 @@ import net.minecraft.resources.Identifier
 import java.util.UUID
 
 /**
- * 粒子发光光照等级更新数据包，用于运行时动态调整发光粒子的光照强度。
+ * 粒子发光光照等级更新，运行时调整发光粒子的光照强度。
  *
- * @param particleId 粒子 ID
  * @param lightLevel 目标光照等级 (0-15)
  */
 data class ParticleLightLevelPayload(

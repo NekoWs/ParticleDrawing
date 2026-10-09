@@ -9,8 +9,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
 /**
- * 函数对象向后 seek 会重建 objState；顶层 let/const 必须重新注册，
- * 否则 setup 引用全局名会报 unknown variable。
+ * 函数对象向后 seek：重建 objState 后顶层 let/const 仍然可用。
  */
 class FxBackwardSeekGlobalsTest {
 

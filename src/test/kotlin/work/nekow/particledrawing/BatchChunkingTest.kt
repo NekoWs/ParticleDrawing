@@ -28,19 +28,13 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 批量载荷的**单包上限**契约。
- *
- * 这里钉的是一条实机事故：`ParticleBatch.setVelocityAll` 把全部存活成员交给发送端，
- * 成员超过 `MAX_BATCH` 时旧的编码端照写、解码端却按上限拒绝 —— 客户端直接掉线。
- * 现在发送端一律拆包，载荷两端都按同一上限拒绝畸形包。
+ * 批量载荷的单包上限契约：发送端一律拆包，载荷两端都按同一上限拒绝畸形包。
  */
 class BatchChunkingTest {
 
     private fun buf() = FriendlyByteBuf(Unpooled.buffer())
 
     private fun uuid(n: Int) = UUID(0L, n.toLong())
-
-    // —— 拆包 ——
 
     @Test
     fun `拆包按原顺序切段，每段不超过上限`() {
@@ -64,8 +58,6 @@ class BatchChunkingTest {
         val chunks = BatchChunking.chunks(List(1024) { uuid(it) }, ParticleVelocityBatchPayload.MAX_BATCH)
         assertEquals(listOf(512, 512), chunks.map { it.size })
     }
-
-    // —— 载荷两端的同一上限 ——
 
     @Test
     fun `速度 位置 力 批量包：满包能往返，超限在构造时就报错`() {
@@ -138,8 +130,6 @@ class BatchChunkingTest {
         assertFailsWith<IllegalArgumentException> { AnchorUpdateBatchPayload.STREAM_CODEC.decode(anchors) }
     }
 
-    // —— 成员簿记：超过上限也不串位 ——
-
     private class Fake(val id: UUID = UUID.randomUUID()) {
         var pos: Vec3? = Vec3.ZERO
     }
@@ -171,8 +161,6 @@ class BatchChunkingTest {
         // 拆包后仍然逐段对齐：flatten 回来必须等于原序列
         assertEquals(sent[0].first, BatchChunking.chunks(sent[0].first, 512).flatten())
     }
-
-    // —— 发射器参数（含抖动）与分段更新的编解码 ——
 
     @Test
     fun `发射器参数（含抖动与前后偏移）逐字段往返`() {

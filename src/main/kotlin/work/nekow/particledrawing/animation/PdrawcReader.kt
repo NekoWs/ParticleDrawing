@@ -19,13 +19,13 @@ import java.util.zip.InflaterInputStream
 /**
  * .pdrawc 二进制播放文件读取器 + Ed25519 验签。
  *
- * 规范见编辑器 docs/pdrawc-format.md。布局：magic "PDC1" + version varint + 32 字节公钥
- * + body + 64 字节签名；签名为 Ed25519，覆盖除末尾 64 字节外的全部内容。
+ * 布局：magic "PDC1" + version varint + 32 字节公钥 + body + 64 字节签名；
+ * 签名为 Ed25519，覆盖除末尾 64 字节外的全部内容。
  */
 object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
-    private const val VERSION = 18    // v18：音频资产新增 5 个可关键帧的播放属性（vol/speed/pan/fadeIn/fadeOut）与音频对象轨道引用 kind=5
+    private const val VERSION = 18    // 音频资产含 5 个可关键帧的播放属性（vol/speed/pan/fadeIn/fadeOut）与轨道引用 kind=5
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 
@@ -97,12 +97,12 @@ object PdrawcReader {
             val life = if (flags and 8 != 0) br.varint() else -1
             val ent = if (flags and 4 != 0) readEnt(br) else null
             val uv = if (flags and 2 != 0) readUV(br, texNames) else null
-            val billboard = (flags and 16) == 0   // v17：bit4=非广告牌
-            val spinLocal = (flags and 32) == 0   // v17：bit5=自转空间 world
+            val billboard = (flags and 16) == 0   // bit4=非广告牌
+            val spinLocal = (flags and 32) == 0   // bit5=自转空间 world
             particles.add(AnimParticle("p$i", color, scale, flags and 1 != 0, lightLevel, pos, vel, uv, st, ent, life, billboard, spinLocal))
         }
 
-        // 组（合成名 g0..gN，成员用粒子索引；v5 增加组级自转空间）
+        // 组（合成名 g0..gN，成员用粒子索引）
         val groupCount = br.varint()
         val groups = LinkedHashMap<String, List<String>>()
         val groupNames = ArrayList<String>(groupCount)
@@ -144,11 +144,11 @@ object PdrawcReader {
             val ent = if (flags and 1 != 0) readEnt(br) else null
             val uv = if (flags and 2 != 0) readUV(br, texNames) else null
             val fastMath = (flags and 4) != 0
-            // v12 起 funcs 已并入 source；flags bit3 为旧 funcs 标志，按编辑器读取端一致地忽略（不再消费字节）。
+            // flags bit3 为废弃的 funcs 标志，与编辑器读取端一致地忽略（不消费字节）。
             val spinLocal = (flags and 16) != 0
             val rotLocal = (flags and 32) != 0
             val frameSync = (flags and 64) != 0
-            // v17 空闲位 bit7 现用于加法混合（编辑器不升版本、不加字节；旧播放端忽略该位显示普通混合）
+            // 空闲位 bit7 用于加法混合；不识别该位的播放端按普通混合显示
             val additive = (flags and 128) != 0
             val varCount = br.varint()
             val vars = LinkedHashMap<String, FunctionVar>()
@@ -161,8 +161,8 @@ object PdrawcReader {
             functions.add(FunctionObject("fx$fi", "fx$fi", center, source, seed, vars, duration, uv, st, ent, fastMath, spinLocal, rotLocal, frameSync, additive))
         }
 
-        // 摄像机对象（v6 新增；v7 起朝向 = target 目标点 + roll 翻滚角；v8 起旋转空间 flags：
-        // 关键帧走轨道 id "c:<id>"，rot 轨道 = 摄像机位置绕 target 公转）
+        // 摄像机对象：朝向 = target 目标点 + roll 翻滚角，旋转空间见 flags；
+        // 关键帧走轨道 id "c:<id>"，rot 轨道 = 摄像机位置绕 target 公转
         val camCount = br.varint()
         val cameras = ArrayList<AnimCamera>(camCount)
         for (i in 0 until camCount) {
@@ -176,7 +176,7 @@ object PdrawcReader {
             cameras.add(AnimCamera(id, name, pos, target, roll, fov, (flags and 1) != 0))
         }
 
-        // 文字对象（v15 新增）：生成器源记录，粒子本体已按普通粒子烘焙；chars 引用粒子索引。
+        // 文字对象：生成器源记录，粒子本体已按普通粒子烘焙；chars 引用粒子索引。
         val TEXT_ALIGNS = arrayOf("left", "center", "right")
         val textCount = br.varint()
         val texts = ArrayList<TextObject>(textCount)
@@ -222,16 +222,15 @@ object PdrawcReader {
                 TextObject(
                     id, name, text, font, fontSize, weight, italic, color, strokeColor, strokeWidth,
                     align, lineHeight, letterSpacing, st, life, chars,
-                    spinLocal = (flags and 8) == 0,   // v17：bit3=自转空间 world
-                    rotLocal = (flags and 16) == 0,   // v17：bit4=公转空间 world
-                    billboard = (flags and 32) == 0,  // v17：bit5=非广告牌
+                    spinLocal = (flags and 8) == 0,   // bit3=自转空间 world
+                    rotLocal = (flags and 16) == 0,   // bit4=公转空间 world
+                    billboard = (flags and 32) == 0,  // bit5=非广告牌
                 )
             )
         }
 
-        // 音频资产（v16 新增；v18 起 durMs 后带 5 个可关键帧的播放属性基础值）：
-        // 元数据 + 量化特征列（u16/u8 原始小端字节）+ 原始音频字节。
-        // 列布局与编辑器 src/export/pdrawc.js 一致；插值语义见 script/ScriptAudio.kt。
+        // 音频资产：元数据 + 量化特征列（u16/u8 原始小端字节）+ durMs 后的 5 个播放属性基础值 + 原始音频字节。
+        // 列布局与编辑器一致。
         val audioCount = br.varint()
         val audioAssets = ArrayList<AudioAsset>(audioCount)
         for (i in 0 until audioCount) {
@@ -345,7 +344,7 @@ object PdrawcReader {
         val fps = r.f32()
         val maxFrame = r.varint()
         val loop = r.u8() != 0
-        // v10：loop 后 1 字节 exprFlags，按位序读存在的表达式字符串（null=用数值字段）
+        // loop 后 1 字节 exprFlags，按位序读存在的表达式字符串（null=用数值字段）
         val exprFlags = r.u8()
         val uvStartExpr = arrayOfNulls<String>(2)
         val uvSizeExpr = arrayOfNulls<String>(2)

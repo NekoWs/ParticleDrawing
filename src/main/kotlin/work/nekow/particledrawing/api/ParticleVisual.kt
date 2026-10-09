@@ -9,23 +9,18 @@ import kotlin.math.roundToInt
 /**
  * 逐粒子外观规格：贴图 / 子矩形 UV / 各向异性尺寸 / 朝向 / 加法混合 / 免光照。
  *
- * **生成时定死**：PD 只在生成那一次把外观同步给客户端（不产生任何逐 tick 开销），
- * 之后改不了——要换外观就销毁重生成。
+ * 外观在生成时定死并同步给客户端，之后改不了，要换外观就销毁重生成。
  *
- * **尺寸口径**（两种二选一，不看贴图的调用方只需要知道第一条）：
- * - 编辑器单位（默认，与 `scale` 同一口径）：渲染整宽 = 值 × 0.2 × 贴图尺寸系数（系数 = 贴图最长边 / 16，
- *   无贴图时 1）。想反过来推「这条丝有多粗」就乘 0.2 再乘系数。
- * - 世界格（[anisoWorld] / [ParticleVisual.anisoWorld]）：直接给整宽/整高，单位是格，
- *   与贴图尺寸无关——`Draw.polyline` 这类几何图元用它。
+ * 尺寸口径二选一：编辑器单位（默认，渲染整宽 = 值 × 0.2 格 × 贴图尺寸系数）或世界格（[anisoWorld]）。
  *
- * 可变对象 + 链式方法：[copy] 一份改局部，避免多颗粒子共用同一个实例互相踩。
+ * 可变对象加链式方法：[copy] 一份改局部，避免多颗粒子共用同一个实例。
  */
 class ParticleVisual {
 
     /** 贴图名：`ParticleManager.registerTexture` 注册的名字，或 [ParticleStyle] 的内置名；null = 纯白方块。 */
     var texture: String? = null
 
-    /** 子矩形 UV（贴图像素，顺序 u0, v0, u1, v1）；null = 整图。UV 起点同时是尺寸系数的基准。 */
+    /** 子矩形 UV（贴图像素，顺序 u0, v0, u1, v1）；null = 整图。 */
     var uvRect: FloatArray? = null
 
     /** 各向异性长轴（四边形局部 X）尺寸；<=0 表示该轴沿用粒子的 `scale`。 */
@@ -40,7 +35,7 @@ class ParticleVisual {
     /** 广告牌：true = 永远面向相机；false = 朝向固定（世界 +Z 起算），此时下面的自转角生效。 */
     var billboard: Boolean = true
 
-    /** 自转角（度；X→Y→Z 内旋，与渲染层同一约定）。公开入口给的是弧度，见 [spin]。 */
+    /** 自转角（度；X→Y→Z 内旋，与渲染层同一约定）。链式入口收弧度，见 [spin]。 */
     var spinXDeg: Double = 0.0
     var spinYDeg: Double = 0.0
     var spinZDeg: Double = 0.0
@@ -48,7 +43,7 @@ class ParticleVisual {
     /** 自转轴系：true = 局部轴（内旋）；false = 世界轴（外旋）。 */
     var spinLocal: Boolean = true
 
-    /** 加法混合：亮部叠亮、有溢出感。与 [glowing] 不同——glowing 只免光照，加法才让颜色相加。 */
+    /** 加法混合：亮部叠亮、有溢出感。与 [glowing] 不同，后者只免光照。 */
     var additive: Boolean = false
 
     /** 免光照（全亮，不受世界光照影响）。 */
@@ -57,11 +52,9 @@ class ParticleVisual {
     /** 发光粒子向外发出的光照等级 (0-15)，仅当 [glowing] 为 true 时生效。 */
     var lightLevel: Int = 15
 
-    // —— 链式设置 ——
-
     /** 用整张贴图（[name] 见 [texture]）；会清掉之前设的子矩形 UV。 */
     fun texture(name: String): ParticleVisual {
-        // 名字随 spawn 包内联下发（未登记时），过长会把包撑大；登记名上限也是 256
+        // 贴图名随生成包内联下发，长度上限与 TextureRegistry 的登记上限一致
         require(name.length <= MAX_TEXTURE_NAME) { "贴图名过长（${name.length} > $MAX_TEXTURE_NAME）" }
         texture = name
         uvRect = null
@@ -89,7 +82,7 @@ class ParticleVisual {
         return this
     }
 
-    /** 各向异性尺寸（世界格整宽/整高）：与贴图尺寸无关。 */
+    /** 各向异性尺寸（世界格整宽/整高），与贴图尺寸无关。 */
     fun anisoWorld(w: Float, h: Float): ParticleVisual {
         scaleW = w
         scaleH = h
@@ -151,7 +144,7 @@ class ParticleVisual {
         return this
     }
 
-    /** 复制一份（含 [uvRect] 数组本身），供「同一份外观 + 局部微调」的场景用。 */
+    /** 复制一份（含 [uvRect] 数组本身），供同一份外观加局部微调的场景用。 */
     fun copy(): ParticleVisual {
         val c = ParticleVisual()
         c.texture = texture
@@ -173,13 +166,13 @@ class ParticleVisual {
     /** 是否给了各向异性尺寸（任一轴 > 0）。 */
     fun hasAniso(): Boolean = scaleW > 0f || scaleH > 0f
 
-    /** 是否一个字都没设过（默认外观，渲染成纯白方块）：[Draw] 靠它跳过无谓的对象拷贝。 */
+    /** 是否一个字都没设过（默认外观，渲染成纯白方块）。 */
     fun isPristine(): Boolean = texture == null && uvRect == null && !hasAniso() &&
         billboard && spinXDeg == 0.0 && spinYDeg == 0.0 && spinZDeg == 0.0 && spinLocal &&
         !additive && !glowing
 
     /**
-     * 解析成渲染用的 UV（客户端调用）：[texW]/[texH] 是已注册贴图的像素尺寸（未知时传 0）。
+     * 解析成渲染用的 UV，由客户端调用。[texW]/[texH] 是已注册贴图的像素尺寸，未知传 0。
      * 无贴图返回 null。
      */
     fun toUvData(texW: Int, texH: Int): UvData? {
@@ -210,9 +203,8 @@ class ParticleVisual {
     }
 
     /**
-     * 解析成渲染用的各向异性缩放三元组（客户端调用）：[fallbackScale] = 粒子自身的 `scale`，
-     * [texScale] = 贴图尺寸系数（[toUvData] 的 `texSize` 最长边 / 16）。
-     * 返回 [长轴, 短轴, 1]；未给各向异性时返回 null。
+     * 解析成渲染用的各向异性缩放三元组，由客户端调用。[fallbackScale] 是粒子自身的 `scale`，
+     * [texScale] 是贴图尺寸系数。返回 `[长轴, 短轴, 1]`；未给各向异性时返回 null。
      */
     fun resolvedAniso(fallbackScale: Float, texScale: Float): FloatArray? {
         if (!hasAniso()) return null
@@ -232,7 +224,7 @@ class ParticleVisual {
 
         /**
          * 贴图尺寸系数：UV 取景框（[UvData.texSize]）最长边 / 16，基准 16px 时为 1。
-         * 渲染整宽 = 编辑器尺寸 × 0.2 × 本系数；[worldUnits] 口径下换算时也用它。
+         * [worldUnits] 口径换算世界格时也用它。
          */
         @JvmStatic
         fun texScale(uv: UvData?): Float {

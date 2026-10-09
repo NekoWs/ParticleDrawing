@@ -7,11 +7,10 @@ import net.minecraft.resources.Identifier
 import java.util.UUID
 
 /**
- * 客户端 → 服务端：这段编排动画的**有限指令已经全部跑完**（渲染侧收尾完成）。
+ * 客户端 → 服务端：这段编排动画的有限指令已全部跑完，渲染侧收尾完成。
  *
- * 服务端据此触发 `ParticleGroup.onAnimationComplete` 与 `retire` 的销毁——
- * 销毁时刻因此与「客户端真正到零」对齐，而不是服务端按估计时间提前切掉。
- * 没有有限时长指令（只有 spin / 无限 pulse / 表达式）的程序不会发这个包。
+ * 服务端据此触发 `ParticleGroup.onAnimationComplete` 与 `retire` 的销毁，销毁时刻与客户端真正到零对齐。
+ * 只有 spin / 无限 pulse / 表达式这类没有有限时长指令的程序不发这个包。
  */
 data class ProgramCompletePayload(
     val programId: UUID,

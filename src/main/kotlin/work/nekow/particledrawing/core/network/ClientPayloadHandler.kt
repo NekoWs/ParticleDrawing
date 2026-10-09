@@ -10,7 +10,7 @@ import work.nekow.particledrawing.core.client.ClientTextureSyncManager
 import work.nekow.particledrawing.core.client.ResolvedVisual
 
 /**
- * 客户端数据包处理器，将各类数据包分发到 [ClientParticleEngine] 的对应方法。
+ * 客户端数据包处理器，把各类数据包分发到对应的客户端管理器。
  */
 internal object ClientPayloadHandler {
 
@@ -171,7 +171,7 @@ internal object ClientPayloadHandler {
         }
     }
 
-    // —— 运行时发射器（客户端按渲染帧自己发射） ——
+    // 运行时发射器：客户端按渲染帧自己发射
 
     fun handleEmitterSpawn(payload: EmitterSpawnPayload, context: IPayloadContext) {
         context.enqueueWork {
@@ -191,7 +191,7 @@ internal object ClientPayloadHandler {
         }
     }
 
-    // —— 编排动画程序（客户端自驱） ——
+    // 编排动画程序：客户端自驱
 
     fun handleProgram(payload: AnimationProgramPayload, context: IPayloadContext) {
         context.enqueueWork {
@@ -218,7 +218,7 @@ internal object ClientPayloadHandler {
         }
     }
 
-    /** 变量热更 + 渐变（空间端点扫过去，而不是瞬移）。 */
+    /** 变量热更并渐变到目标值。 */
     fun handleSetProgramVarEase(payload: SetProgramVarEasePayload, context: IPayloadContext) {
         context.enqueueWork {
             work.nekow.particledrawing.core.client.ClientAnimationProgramManager.setVariableEased(
@@ -281,7 +281,7 @@ internal object ClientPayloadHandler {
         }
     }
 
-    // —— 特效 API（按 key 播放 + 锚点 + 时钟 + 资源下发） ——
+    // 特效 API：按 key 播放 + 锚点 + 时钟 + 资源下发
 
     fun handlePlayEffect(payload: PlayEffectPayload, context: IPayloadContext) {
         context.enqueueWork {
@@ -313,7 +313,7 @@ internal object ClientPayloadHandler {
         }
     }
 
-    // —— 动画文件同步（配置阶段） ——
+    // 动画文件同步（配置阶段）
 
     fun handleSyncBegin(payload: AnimationSyncBeginPayload, context: IPayloadContext) {
         context.enqueueWork {

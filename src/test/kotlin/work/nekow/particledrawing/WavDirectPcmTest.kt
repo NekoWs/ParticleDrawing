@@ -17,12 +17,13 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 脚本采样级 PCM 回归：WAV 按字节直读、OGG 按窗口解码，两者共用编辑器 audio-pcm.js 的
- * 插值与窗口峰值语义。WAV 用例自己拼 RIFF 字节，OGG 用例注入合成样本（不依赖本机 STB 原生库）。
+ * 脚本采样级 PCM：WAV 按字节直读、OGG 按窗口解码，插值与窗口峰值口径与编辑器一致。
+ *
+ * WAV 用例自己拼 RIFF 字节，OGG 用例大多注入合成样本；真实 OGG 用例缺原生库或夹具时跳过。
  */
 class WavDirectPcmTest {
 
-    // —— WAV 直读 ——
+    // WAV 直读
 
     @Test
     fun `96kHz stereo wav reads header and both channels`() {
@@ -57,7 +58,7 @@ class WavDirectPcmTest {
 
         assertEquals(0.0, ScriptWavePcm.sampleAt(a, -0.001, 0), 0.0)
         assertEquals(0.0, ScriptWavePcm.sampleAt(a, -1000.0, 0), 0.0)
-        // 采样下标超出末帧下标（== 帧数或落在末帧与文件末尾之间）一律回 0，编辑器 sampleIndex 同此
+        // 采样下标超出末帧下标一律回 0
         assertEquals(0.0, ScriptWavePcm.sampleAt(a, msAt(3.5, 1000), 0), 0.0)
         assertEquals(0.0, ScriptWavePcm.sampleAt(a, msAt(4.0, 1000), 0), 0.0)
         assertEquals(0.0, ScriptWavePcm.sampleAt(a, Double.NaN, 0), 0.0)
@@ -97,7 +98,7 @@ class WavDirectPcmTest {
 
     @Test
     fun `sample and peak match the editor audio-pcm dataset`() {
-        // 编辑器 test/core/audio-pcm.test.js 的同一组数据（1kHz，1 采样 = 1ms）：
+        // 与编辑器同一组数据（1kHz，1 采样 = 1ms）：
         // L = 0 / 0.5 / -0.5 / 1 / -1，R = 0 / -1 / 0.25 / 0 / 0.75（±1 用 16bit 边界近似）
         val a = wavAsset(
             intArrayOf(0, 0, 16384, -32768, -16384, 8192, 32767, 0, -32768, 24576),
@@ -131,7 +132,7 @@ class WavDirectPcmTest {
 
     @Test
     fun `wav without readable pcm is not ready`() {
-        // 24bit 整数与 8bit 不在直读口径内（编辑器同样只认 16bit 整数与 32bit 浮点）
+        // 24bit 整数与 8bit 不在直读口径内
         val pcm24 = wav(1000, 1, 24, false, ByteArray(3))
         val pcm8 = wav(1000, 1, 8, false, ByteArray(1))
         val notRiff = ByteArray(64) { 7 }
@@ -146,7 +147,7 @@ class WavDirectPcmTest {
         }
     }
 
-    // —— OGG 窗口解码 ——
+    // OGG 窗口解码
 
     @Test
     fun `ogg windows serve samples and reuse decoded windows`() {
@@ -213,7 +214,7 @@ class WavDirectPcmTest {
         }
     }
 
-    // —— 脚本句柄 ——
+    // 脚本句柄
 
     @Test
     fun `script audio handle exposes wave members`() {
@@ -240,7 +241,7 @@ class WavDirectPcmTest {
         val a = audioAsset("bgm", fmt = 0, data = ByteArray(4), name = "bgm")
 
         withOggReader(NullOgg) {
-            // 未就绪时按静音回 0、不报错；声道号也就不做范围校验（编辑器同此）
+            // 未就绪时按静音回 0、不报错，声道号不做范围校验
             val out = runAudioScript(
                 "func process() { let a = this.get(\"bgm\"); " +
                     "out = [a.sampleRate, a.channels, a.waveReady, a.sampleAt(0), a.sampleAt(0, 5), a.peakAt(0, 10)]; }",
@@ -302,13 +303,12 @@ class WavDirectPcmTest {
 
     @Test
     fun `real ogg decodes through stb windows`() {
-        // 夹具是 ffmpeg 生成的 10 秒 44.1kHz 立体声正弦（左 440Hz/0.8，右 1000Hz/0.3），
-        // 解码结果与解析值逐采样比：窗口起始若落在帧边界而不是采样点上，误差会明显变大。
+        // 夹具是 10 秒 44.1kHz 立体声正弦（左 440Hz/0.8，右 1000Hz/0.3），逐采样与解析值比对
         val data = javaClass.getResourceAsStream("/audio/sine-10s.ogg")?.readBytes()
         org.junit.Assume.assumeTrue("缺少 OGG 夹具", data != null)
         val a = audioAsset("ogg-real", fmt = 0, data = data!!, name = "ogg-real")
 
-        // 本机/CI 没有 STB 原生库时跳过，别把环境问题当测试失败
+        // 没有 STB 原生库时跳过
         try {
             ScriptWavePcm.oggReader.info(a.data)
         } catch (e: LinkageError) {
@@ -320,7 +320,7 @@ class WavDirectPcmTest {
         assertEquals(2, ScriptWavePcm.channels(a))
         assertTrue(ScriptWavePcm.ready(a))
 
-        // 150.7ms / 2000ms 在第 0 个窗口，9000.3ms / 9950ms 在第二个窗口（必须重新 seek）
+        // 150.7 / 2000ms 落在第 0 个窗口，9000.3 / 9950ms 落在第二个窗口
         for (base in listOf(150.7, 2000.0, 9000.3, 9950.0)) {
             for (ch in 0..1) {
                 var err = 0.0
@@ -332,7 +332,7 @@ class WavDirectPcmTest {
             }
         }
 
-        // 对齐：1000Hz 声道最敏感，误差最小的整体位移必须是 0
+        // 对齐：误差最小的整体位移应为 0
         var best = 0
         var bestErr = Double.MAX_VALUE
         for (d in -2..2) {
@@ -358,7 +358,7 @@ class WavDirectPcmTest {
         if (ch == 0) 0.8 * sin(2 * Math.PI * 440.0 * ms / 1000.0)
         else 0.3 * sin(2 * Math.PI * 1000.0 * ms / 1000.0)
 
-    // —— 造数据与运行脚本的脚手架 ——
+    // 造数据与运行脚本的脚手架
 
     /** 帧号换算成本地毫秒（与脚本 a.progress 同一坐标）。 */
     private fun msAt(frame: Double, rate: Int) = frame * 1000.0 / rate

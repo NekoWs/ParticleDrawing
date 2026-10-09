@@ -18,8 +18,7 @@ import kotlin.test.assertTrue
  * 素材是 192kHz、只有一个 30kHz 单音：48kHz 输出下这个频率必须被彻底滤掉（奈奎斯特 24kHz），
  * 剩下的任何电平都是折回可听带的混叠。OpenAL 默认那档是纯插值，会把 30kHz 原电平搬到 18kHz。
  *
- * 同时把「什么情况才会去换重采样器」钉成矩阵：素材率 == 设备率时一个 AL 调用都不发（零开销、
- * 行为与改动前完全一致），不一致时才换。换素材/换设备前看这张矩阵就不会再踩。
+ * 素材率与设备率相同时不设重采样器，不一致时才换。
  */
 class AudioResamplerAliasingTest {
 
@@ -49,14 +48,14 @@ class AudioResamplerAliasingTest {
                 "[resampler] 30kHz 单音折回可听带的电平：默认(%s) %.1f dBFS，选中(%s) %.1f dBFS"
                     .format(names[OpenAlLoopback.defaultResamplerIndex()], dbDefault, names[picked], dbPicked)
             )
-            // 判据只压「我们挑的那档必须挡住超声」：默认档好坏由 OpenAL Soft 版本决定，只记录不断言
+            // 判据只压选中那档必须挡住超声：默认档好坏由 OpenAL Soft 版本决定，只记录不断言
             assertTrue(dbPicked < -60.0, "换成 %s 后超声仍折回 %.1f dBFS".format(names[picked], dbPicked))
         }
     }
 
     @Test
     fun `resampler is only touched when the buffer rate differs from the device rate`() {
-        // 素材率 == 设备率：mixer 走 1:1 快路径，不该发任何 AL_SOURCE_RESAMPLER_SOFT
+        // 素材率 == 设备率：mixer 走 1:1 快路径，不发 AL_SOURCE_RESAMPLER_SOFT
         OpenAlLoopback.withDevice(48_000) { _ ->
             val names = OpenAlLoopback.resamplerNames()
             assumeTrue("OpenAL 没报 AL_SOFT_source_resampler", names.isNotEmpty())
@@ -113,7 +112,7 @@ class AudioResamplerAliasingTest {
         val picked = pickedIdx!!
 
         // 同一个 sink 实例跨设备：先按 48k 设备判定，再换到 192k 设备。
-        // 48k 素材在 192k 设备上同样要重采样，若缓存了旧设备率就会漏掉这次换挡。
+        // 48k 素材在 192k 设备上同样要重采样，缓存旧设备率会漏掉这次换挡。
         val sink = OpenAlSink()
         OpenAlLoopback.withDevice(48_000) { _ ->
             val src = sink.createSource()

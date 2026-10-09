@@ -10,7 +10,7 @@ import work.nekow.particledrawing.core.easing.EasingType
 import java.util.UUID
 
 /**
- * 粒子旋转数据包：让客户端在圆弧上插值旋转，而不是线性插值位置（避免旋转失真）。
+ * 粒子旋转数据包：客户端沿圆弧插值旋转，而非线性插值位置。
  *
  * @param particleId 粒子 ID
  * @param px/py/pz 旋转轴心（绝对世界坐标）

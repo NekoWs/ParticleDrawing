@@ -12,13 +12,13 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * 编排动画的「跑完了」登记表。
  *
- * 服务端**不知道**客户端什么时候收尾（网络延迟、时钟锚点、渲染帧插值都会让它晚一点），
- * 所以凭估算时间去销毁就会提前切掉画面。这里改为等客户端上报（`ProgramCompletePayload`）：
+ * 服务端无法预知客户端何时收尾（网络延迟、时钟锚点、渲染帧插值都会让它晚一点），
+ * 凭估算时间去销毁会提前切掉画面，因此等客户端上报（`ProgramCompletePayload`）：
  * - [onComplete]：上报时回调（服务端主线程）；
  * - [retire]：上报后再等若干 tick 销毁组与粒子，销毁时刻因此与「客户端真正到零」对齐。
  *
- * 兜底：注册时按服务端自己的时间轴末端排一个**更晚**的销毁（+[FALLBACK_MARGIN_TICKS]），
- * 客户端不在场或一直不上报时不让组泄漏；它一定晚于合理的客户端完成时刻，不会切掉还在收尾的画面。
+ * 兜底：注册时按服务端自己的时间轴末端排一个更晚的销毁（+[FALLBACK_MARGIN_TICKS]），
+ * 客户端不在场或一直不上报时不至于让组泄漏；该时刻晚于合理的客户端完成时刻，不会切掉还在收尾的画面。
  *
  * 线程约定：与服务端粒子引擎一致，只在主线程调用。
  */
@@ -37,9 +37,8 @@ object ServerProgramCompletion {
         var done = false
 
         /**
-         * 登记版本：每次登记或账本重排都自增，**排好的兜底任务带上排它时的版本**。
-         * 过期任务因此在触发时什么都不做——否则「缓动重定向后账本往后挪」时，
-         * 旧兜底仍会按老时刻把最新登记吃掉（实机表现为回调提前到旧兜底的时刻）。
+         * 登记版本：每次登记或账本重排都自增，排好的兜底任务带上排它时的版本。
+         * 过期任务触发时什么都不做，否则账本往后挪时旧兜底会按老时刻把最新登记提前吃掉。
          */
         var version: Long = 0L
     }
@@ -100,7 +99,7 @@ object ServerProgramCompletion {
      * 排一次兜底：带上当前版本，只有「排它之后账本没再变过」的那个任务才作数。
      *
      * [fallbackTicks] < 0（账本空了，例如缓动被立即赋值取消）按 0 处理：
-     * 已经登记的组不能因为账本变空就再也不收尾。
+     * 已登记的组不能因为账本变空就不再收尾。
      */
     private fun scheduleFallback(groupId: UUID, entry: Entry, fallbackTicks: Int) {
         entry.version++
@@ -126,7 +125,7 @@ object ServerProgramCompletion {
         }
     }
 
-    /** 销毁整组粒子，并让客户端停掉这段程序（粒子已经没了，程序不必再跑）。 */
+    /** 销毁整组粒子，并让客户端停掉这段程序（粒子已经没了，程序继续跑没有意义）。 */
     private fun destroy(groupId: UUID, dimensionId: UUID) {
         val level = levelOf(ServerLifecycleHooks.getCurrentServer(), dimensionId) ?: return
         ServerParticleEngine.get(dimensionId)?.destroyGroup(groupId, level.players())

@@ -9,9 +9,7 @@ import kotlin.math.max
  * 一帧的顺序是：`advanceGameTime(Util.getMillis())` → 跑它返回的那么多个 game tick → 渲染。
  * `advanceGameTime` 把「整毫秒差 ÷ max(50, tickRateManager.millisecondsPerTick())」累进 residual，
  * 取整数部分当本帧的 tick 数，剩下的小数就是 `getGameTimeDeltaPartialTick` 的返回值。
- * 所以原版 partialTick 是「tick 残余小数」，播放头毫秒是「跑过几个 tick × 50 ms」，
- * 两者拼起来才是渲染帧的 process 时刻——测试用这个序列，而不是自己编一个 partialTick。
- * `frozen` 帧（关卡不按常速跑）原版直接返回 1.0F，见 [frameSchedule] 的 frozenFrames。
+ * frozen 帧（关卡不按常速跑）原版直接返回 1.0F，见 [frameSchedule] 的 frozenFrames。
  */
 class VanillaFrameTimer(private val fps: Double) {
 

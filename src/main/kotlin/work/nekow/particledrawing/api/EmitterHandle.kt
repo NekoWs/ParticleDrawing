@@ -5,18 +5,15 @@ import work.nekow.particledrawing.core.easing.EasingType
 import java.util.UUID
 
 /**
- * 已声明发射器的句柄：**运行期要改什么都在这里**，与 [ParticleEmitter] 同名同义。
+ * 已声明发射器的句柄：运行期改动都通过它下发，方法名与 [ParticleEmitter] 一致。
  *
- * 变更按三档下发，各自一个包、只带改动的那部分：
- * - [updateAnchor]：锚点（投射物每 tick 挪动时走这条，最便宜）；
- * - [spacing] / [interval] / [intervalMs]：发射口径（密度旋钮）；
+ * 变更按三档下发：
+ * - [updateAnchor]：锚点（投射物每 tick 挪动走这条）；
+ * - [spacing] / [interval] / [intervalMs]：发射口径；
  * - [life] / [scale] / [color] / 曲线 / 外观 / [jitter] 等：整份静态参数。
  *
- * **已生成的粒子不受影响**：它们带着生成那一刻的寿命与曲线走完自己的命。
- * 带阻力的投射物速度逐 tick 衰减时，直接 `handle.life(...)` 跟着改即可，不必销毁重挂——
- * 旧粒子照旧淡出、新粒子按新寿命出现，视觉上没有跳变。
- *
- * 声明链路的补发由 PD 负责：后进服、切维度、走进范围的玩家会自动收到当前声明与参数。
+ * 已生成的粒子不受影响，带着生成那一刻的寿命与曲线走完自己的命。
+ * 后进服、切维度、走进范围的玩家会自动收到当前声明与参数。
  */
 class EmitterHandle internal constructor(
     /** 发射器 id（服务端与客户端一致）。 */
@@ -35,11 +32,11 @@ class EmitterHandle internal constructor(
     /** 当前锚点。 */
     fun anchor(): Anchor = currentAnchor
 
-    // —— 锚点 ——
+    // 锚点
 
     /**
-     * 挪动锚点（投射物每 tick 更新一次即可）。变更时才发包：客户端按**相邻两个样本**插值推进里程，
-     * 所以「服务端 20Hz 报位置、客户端 120Hz 铺粒子」是对的用法。
+     * 挪动锚点，投射物每 tick 更新一次即可；变更时才发包。
+     * 客户端按相邻两个样本插值推进里程，位置更新频率与渲染帧率无关。
      */
     fun updateAnchor(anchor: Anchor): EmitterHandle {
         currentAnchor = anchor
@@ -47,36 +44,36 @@ class EmitterHandle internal constructor(
         return this
     }
 
-    /** [updateAnchor] 的分量重载（固定点锚点）。 */
+    /** [updateAnchor] 的分量重载，固定点锚点。 */
     fun updateAnchor(x: Number, y: Number, z: Number): EmitterHandle =
         updateAnchor(Anchor.Fixed(Vec3(x.toDouble(), y.toDouble(), z.toDouble())))
 
-    // —— 发射口径（密度） ——
+    // 发射口径
 
-    /** 改成按里程发射（每 [blocks] 格一颗）。 */
+    /** 改成按里程发射，每 [blocks] 格一颗。 */
     fun spacing(blocks: Double): EmitterHandle {
         emitter.spacing(blocks)
         pushCadence()
         return this
     }
 
-    /** 改成按时间发射（每 [ticks] tick 一颗）。 */
+    /** 改成按时间发射，每 [ticks] tick 一颗。 */
     fun interval(ticks: Int): EmitterHandle {
         emitter.interval(ticks)
         pushCadence()
         return this
     }
 
-    /** 改成按时间发射（每 [ms] 毫秒一颗）。 */
+    /** 改成按时间发射，每 [ms] 毫秒一颗。 */
     fun intervalMs(ms: Int): EmitterHandle {
         emitter.intervalMs(ms)
         pushCadence()
         return this
     }
 
-    // —— 逐粒子静态参数（改一次发一个包，只影响之后生成的粒子） ——
+    // 逐粒子静态参数；改一次发一个包，只影响之后生成的粒子
 
-    /** 每颗粒子的寿命（tick）；必须为正。带阻力的投射物靠它保持尾迹长度不变。 */
+    /** 每颗粒子的寿命（tick）；必须为正。 */
     fun life(ticks: Int): EmitterHandle = params { it.life(ticks) }
 
     /** 每颗粒子的缩放。 */
@@ -106,12 +103,12 @@ class EmitterHandle internal constructor(
     /** 沿运动方向的偏移（格，正 = 往前）。 */
     fun offsetAlong(blocks: Double): EmitterHandle = params { it.offsetAlong(blocks) }
 
-    // —— 曲线（与 [ParticleEmitter] 同名同义） ——
+    // 曲线，与 [ParticleEmitter] 同名同义
 
     /** 给某个通道的关键帧。 */
     fun curve(channel: CurveChannel, keys: List<CurveKey>): EmitterHandle = params { it.curve(channel, keys) }
 
-    /** 直接给一条曲线（叠加到现有曲线之上）。 */
+    /** 直接给一条曲线，叠加到现有曲线上。 */
     fun curve(curve: ParticleCurve): EmitterHandle = params { it.curve(curve) }
 
     /** 直接给整套寿命曲线（覆盖之前设的）。 */
@@ -135,7 +132,7 @@ class EmitterHandle internal constructor(
     fun shrinkTo(factor: Float, ticks: Int, easing: EasingType = EasingType.EASE_IN): EmitterHandle =
         params { it.shrinkTo(factor, ticks, easing) }
 
-    // —— 外观（只影响之后生成的粒子） ——
+    // 外观；只影响之后生成的粒子
 
     /** 直接给一整份外观规格。 */
     fun visual(visual: ParticleVisual): EmitterHandle = params { it.visual(visual) }
@@ -152,9 +149,9 @@ class EmitterHandle internal constructor(
     /** 加法混合开关。 */
     fun additive(enabled: Boolean): EmitterHandle = params { it.additive(enabled) }
 
-    // —— 生命周期 ——
+    // 生命周期
 
-    /** 停止发射（已生成的粒子各自走完寿命）。 */
+    /** 停止发射；已生成的粒子各自走完寿命。 */
     fun stop() {
         manager.stopEmitter(id)
     }
@@ -167,7 +164,7 @@ class EmitterHandle internal constructor(
         manager.updateEmitterCadence(id, c.mode, c.spacing, c.intervalMs)
     }
 
-    /** 改一处静态参数后整份下发（客户端整份替换，不做部分叠加）。 */
+    /** 改一处静态参数后整份下发；客户端整份替换，不做部分叠加。 */
     private inline fun params(change: (ParticleEmitter) -> Unit): EmitterHandle {
         change(emitter)
         manager.updateEmitterParams(id, emitter.toParams())

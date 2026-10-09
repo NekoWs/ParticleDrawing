@@ -9,8 +9,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * 运行时发射器的推进逻辑（纯数学）：里程口径必须**落在段内的等距点上**——
- * 这正是「服务端每 tick 采样、逐颗下发」做不到的部分（出现时刻被 tick 量化，高刷下一跳一跳地长）。
+ * 运行时发射器的推进逻辑（纯数学）：里程口径按段内等距点发射，时间口径按毫秒累积。
  */
 class EmitterAdvanceTest {
 

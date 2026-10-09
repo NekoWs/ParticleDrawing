@@ -8,8 +8,8 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import work.nekow.particledrawing.lighting.DynamicLightManager;
 
-// 给原版默认亮度获取器注入动态光照：烘焙区块 section 网格时用
-// {@link LightCoordsUtil.BrightnessGetter#DEFAULT} 查方块光图坐标，在返回前叠加动态光照值。
+// 动态光照混入：烘焙区块 section 网格时，在 {@link LightCoordsUtil.BrightnessGetter#DEFAULT}
+// 返回方块光图坐标前叠加动态光照值。
 @Mixin(value = LightCoordsUtil.BrightnessGetter.class, priority = 900)
 public interface BrightnessGetterMixin {
 

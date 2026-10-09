@@ -7,7 +7,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * UV 帧数推算逻辑的纯 JVM 回归测试（与编辑器 autoFramesFor/effMaxFrame 语义对齐）。
+ * UV 帧数推算：自动帧数与有效上限的计算口径与编辑器一致。
  */
 class UvDataTest {
 

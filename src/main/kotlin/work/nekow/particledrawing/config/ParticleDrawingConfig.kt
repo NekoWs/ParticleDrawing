@@ -22,7 +22,7 @@ object ParticleDrawingConfig {
     }
 
     /**
-     * Server configuration, controlling particle limits and visibility.
+     * 服务端配置：粒子上限与可见性。
      */
     class ServerConfig(builder: ModConfigSpec.Builder) {
         val maxParticlesPerDimension: ModConfigSpec.IntValue
@@ -48,7 +48,7 @@ object ParticleDrawingConfig {
     }
 
     /**
-     * Client configuration, controlling dynamic lighting and rendering parameters.
+     * 客户端配置：动态光照与渲染参数。
      */
     class ClientConfig(builder: ModConfigSpec.Builder) {
         val maxDynamicLights: ModConfigSpec.IntValue

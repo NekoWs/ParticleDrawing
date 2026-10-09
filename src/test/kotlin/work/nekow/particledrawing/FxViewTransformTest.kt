@@ -14,13 +14,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * 函数对象级视图变换（脚本 this.viewScale / this.viewOffset）的应用层契约。
+ * 函数对象级视图变换（脚本 this.viewScale / this.viewOffset）的应用层契约：
+ * `位置 = 位置 × viewScale + viewOffset`、`尺寸 = 尺寸 × viewScale`，只作用到该函数对象自己的派生粒子。
  *
- * 语义：`位置 = 位置 × viewScale + viewOffset`、`尺寸 = 尺寸 × viewScale`（均匀，不单独处理某一轴），
- * 只作用到**该函数对象自己的派生粒子**；未设置时（默认 1 / 0）与改动前完全一致。
- * 脚本会写 `width = lineW / viewScale` 来补偿线宽，所以尺寸必须真的被乘到。
- *
- * 这里测到的是播放端的粒子状态层（位置与三分量尺寸），顶点写入要活的 Minecraft，测不到。
+ * 覆盖播放端的粒子状态层（位置与三分量尺寸）；顶点写入需要活的 Minecraft，测不到。
  */
 class FxViewTransformTest {
 
@@ -102,7 +99,6 @@ class FxViewTransformTest {
     @Test
     fun `自转会把 viewOffset 一起带着转（与 p_position 同坐标系）`() {
         // viewOffset 加在粒子的局部坐标上、在自转之前：offset (1,0,0) 被绕 Z 的 90° 自转带到 +Y。
-        // 若把它套在自转之后（本实现先前那版），偏移会停在 (1,0,0) —— 这条就是那个语义的分界。
         val spinZ = AnimTrack(
             TrackPr.SPIN_Z, listOf("f:view"),
             listOf(AnimKeyframe(0, 90.0, EasingType.LINEAR)), AnimTrack.Mode.SET,

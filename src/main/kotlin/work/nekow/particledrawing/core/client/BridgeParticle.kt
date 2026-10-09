@@ -36,11 +36,11 @@ class BridgeParticle(
     @Volatile
     private var texEntry: TextureCache.Entry? = resolveTexture()
 
-    // flipbook 计时起点（墙钟，与编辑器 performance.now()/1000 语义一致）
+    // flipbook 计时起点（墙钟）
     private val animStartNanos: Long = System.nanoTime()
 
-    // 贴图大小缩放因子：使用用户设置的 texSize / 16（基准 16px），用于控制贴图粒子的显示尺寸。
-    // 贴图可能晚于粒子到货（运行时登记），到货后重解析时它要跟着更新，所以是 var。
+    // 贴图大小缩放因子：texSize / 16（基准 16px）。
+    // 贴图可能晚于粒子到货（运行时登记），重解析时要跟着更新，所以是 var。
     private var texScale: Float = ParticleVisual.texScale(uv)
 
     // 上次解析时的贴图表版本：版本一变（有新贴图注册/缓存被清）就重解析
@@ -50,11 +50,11 @@ class BridgeParticle(
     private var scaleW: Float = 0f
     private var scaleH: Float = 0f
 
-    // 外观插值端点（尺寸 / 颜色 / 透明度）：渲染帧按 partialTick 在「上一 tick → 本 tick」间插值，
-    // 于是「每 tick 算一次的组动画与变量缓动」在高刷下也是连续的；出生后第一次同步原子落地（见 AppearanceBlend）。
+    // 外观插值端点（尺寸 / 颜色 / 透明度）：渲染帧按 partialTick 在「上一 tick → 本 tick」间插值；
+    // 出生后第一次同步原子落地（见 AppearanceBlend）。
     private val blend = AppearanceBlend()
 
-    // v17 非广告牌朝向：billboard=false 时四边形静止朝世界 +Z，再按 spin 旋转（spinLocal=局部轴）
+    // 非广告牌朝向：billboard=false 时四边形静止朝世界 +Z，再按 spin 旋转（spinLocal=局部轴）
     private var billboard = true
     private var spinDeg = DoubleArray(3)
     private var spinLocal = true
@@ -85,8 +85,7 @@ class BridgeParticle(
     }
 
     /**
-     * 贴图晚于粒子到货（运行时登记的新贴图）时就地重解析：
-     * 错过这一步，生成时还没登记的粒子会永远停在纯白方块上。
+     * 贴图晚于粒子到货（运行时登记）时就地重解析。
      */
     private fun refreshTextureIfStale() {
         val version = TextureCache.version()
@@ -112,18 +111,18 @@ class BridgeParticle(
         gravity = 0f
         hasPhysics = false
 
-        // 出生状态两端同值，但**还没 settled**：出生后第一次真正同步会把两端原子写成新值
+        // 出生状态两端同值，出生后第一次同步会把两端原子写成新值
         blend.initialize(rCol, gCol, bCol, alpha, scaleW, scaleH)
     }
 
     fun isGlowing(): Boolean = isGlowing
 
-    // 世界坐标只读口：渲染分组做视锥剔除要用，而 Particle.x/y/z 是 protected，别的包读不到
+    // 世界坐标只读口：Particle.x/y/z 是 protected，渲染分组做视锥剔除读不到
     fun renderX(): Double = x
     fun renderY(): Double = y
     fun renderZ(): Double = z
 
-    /** 更新 UV 参数（动画粒子 UV 为静态属性，通常只在 spawn 时设置一次）。 */
+    /** 更新 UV 参数（动画粒子 UV 通常只在 spawn 时设置一次）。 */
     fun setUv(uv: UvData?) {
         this.uv = uv
         this.texEntry = resolveTexture()
@@ -146,10 +145,7 @@ class BridgeParticle(
 
     /**
      * 同步粒子位置。
-     * @param x 目标 X 坐标
-     * @param y 目标 Y 坐标
-     * @param z 目标 Z 坐标
-     * @param snap 若为 true 则跳变到目标位置，否则平滑过渡
+     * @param snap true = 跳变到目标位置，false = 保留上一 tick 位置作为插值起点
      */
     fun syncPosition(x: Double, y: Double, z: Double, snap: Boolean = false) {
         if (snap) {
@@ -169,13 +165,7 @@ class BridgeParticle(
     /**
      * 同步粒子颜色与透明度。
      *
-     * 写入的是**本 tick 的权威值**；渲染帧上的中间值由 [extract] 按 partialTick 在
-     * 上一 tick 与本 tick 之间插值（组动画与变量缓动的视觉通道因此不再有 20Hz 台阶）。
-     *
-     * @param r 红色分量
-     * @param g 绿色分量
-     * @param b 蓝色分量
-     * @param a 透明度分量
+     * 写入的是本 tick 的权威值；渲染帧上的中间值由 [extract] 按 partialTick 在上一 tick 与本 tick 之间插值。
      */
     fun syncColor(r: Float, g: Float, b: Float, a: Float, snap: Boolean = false) {
         blend.setColor(r, g, b, a, snap)
@@ -187,7 +177,6 @@ class BridgeParticle(
 
     /**
      * 同步粒子缩放（标量，均匀）。
-     * @param scale 目标缩放值（编辑器数据模型值）
      */
     fun syncScale(scale: Float, snap: Boolean = false) {
         val s = scale * EDITOR_TO_MC_SCALE * texScale
@@ -199,8 +188,7 @@ class BridgeParticle(
 
     /**
      * 同步粒子非均匀缩放（三分量数组 [sx, sy, sz]）。
-     * sx → quad 长边（四边形的局部 X 轴），sy → quad 短边（局部 Y 轴），sz 暂存数据不参与渲染。
-     * @param scaleArray 三分量缩放数组
+     * sx → quad 长边（局部 X 轴），sy → quad 短边（局部 Y 轴），sz 暂存不参与渲染。
      */
     fun syncScaleArray(scaleArray: FloatArray, snap: Boolean = false) {
         val w = scaleArray[0] * EDITOR_TO_MC_SCALE * texScale
@@ -215,11 +203,10 @@ class BridgeParticle(
     private fun frameFactor(partialTick: Float): Float = partialTick.coerceIn(0f, 1f)
 
     /**
-     * 返回 quad 高度（原版唯一的尺寸口，供 QuadParticleGroup 批量渲染使用）。
-     * 宽度由 OrientedQuadRenderState 单独记着，顶点生成时按 (长, 宽) 各自缩放。
+     * 返回 quad 高度（原版唯一的尺寸口）。宽度由 OrientedQuadRenderState 单独记着，
+     * 顶点生成时按 (长, 宽) 各自缩放。
      *
-     * 按 partialTick 在**上一 tick → 本 tick** 之间插值：组动画/变量缓动的尺寸因此在
-     * 60/144Hz 下也是连续变化的，而不是 20Hz 的阶梯（位置早就由 `xo/x` 这样处理了）。
+     * 按 partialTick 在上一 tick → 本 tick 之间插值。
      */
     override fun getQuadSize(partialTick: Float): Float = blend.heightAt(frameFactor(partialTick))
 
@@ -229,9 +216,8 @@ class BridgeParticle(
     private fun frameHeight(partialTick: Float): Float = blend.heightAt(frameFactor(partialTick))
 
     /**
-     * 顶点生成前的最后一站：把颜色/透明度换成**本帧插值后的值**再交给原版。
-     * MC 在 `extract` 里直接读 `rCol/alpha` 这些字段（没有 partialTick 口），所以只能临时替换、
-     * 读完还原——字段本身仍是本 tick 的权威值，供 [getLayer]、[getLightCoords] 等其它读取使用。
+     * 顶点生成前的最后一站：把颜色/透明度换成帧插值后的值再交给原版。
+     * MC 在 `extract` 里直接读 `rCol/alpha`，没有 partialTick 口，所以只能临时替换、读完还原。
      */
     override fun extract(
         state: QuadParticleRenderState,
@@ -263,7 +249,7 @@ class BridgeParticle(
 
     /**
      * 重写 extractRotatedQuad：非广告牌时把相机朝向换成自转朝向；非等宽时把宽度交给渲染状态，
-     * 顶点生成阶段再按 (长, 宽) 各自缩放。原版只认一个尺寸，走不出非等宽四边形。
+     * 顶点生成阶段再按 (长, 宽) 各自缩放。
      */
     override fun extractRotatedQuad(
         state: QuadParticleRenderState,
@@ -290,8 +276,7 @@ class BridgeParticle(
     }
 
     /**
-     * 渲染分组缓存：混合模式与贴图没变时复用同一个 Layer 实例。
-     * 顶点生成每帧每颗粒子都会取一次分组，原版实现每次都要新建 record 并重算哈希。
+     * 渲染分组缓存：混合模式与贴图没变时复用同一个 Layer 实例（顶点生成每帧都要取一次分组）。
      */
     private var layerCache: Layer? = null
     private var layerTranslucent = false
@@ -303,7 +288,7 @@ class BridgeParticle(
         if (cached != null && translucent == layerTranslucent) return cached
         val built = if (additive) {
             // 加法混合：始终走半透明通道 + ADDITIVE_PARTICLE 管线。
-            // texEntry 恒非空（resolveTexture 对无贴图回退 defaultWhite），取它的 atlas id。
+            // texEntry 恒非空（无贴图回退 defaultWhite），取它的 atlas id。
             Layer(true, texEntry!!.id, ADDITIVE_PARTICLE)
         } else {
             val entry = texEntry
@@ -323,9 +308,8 @@ class BridgeParticle(
     // 使用自定义分组（无 16384 上限），绕过原版 SINGLE_QUADS 的粒子数限制
     override fun getGroup(): ParticleRenderType = BATCHED_QUADS
 
-    // —— UV 采样（贴图像素坐标 → 归一化 [0,1]） ——
-    // 约定（与编辑器 scene.js flipY 一致）：GPU 纹理第 0 行 = PNG 顶部（NativeImage 自然顺序），
-    // v = 1 - y/height。quad 顶点 v0=底部、v1=顶部（SingleQuadParticle 顶点布局）。
+    // UV 采样：贴图像素坐标 → 归一化 [0,1]。GPU 纹理第 0 行 = PNG 顶部（NativeImage 自然顺序），
+    // quad 顶点 v0=底部、v1=顶部（SingleQuadParticle 顶点布局）。
 
     private fun currentFrameIndex(): Int {
         val u = uv ?: return 0
@@ -397,11 +381,10 @@ class BridgeParticle(
         return ((sy + h).toFloat() / entry.height).coerceIn(0f, 1f)
     }
 
-    // 光照查询缓存：原版 getLightCoords 每渲染帧都会查世界光照（含动态光照 mixin 的方块查询），
-    // 5w 粒子会放大成每秒数十万次查询。光照按方块坐标变化，粒子在同一方块内可复用缓存。
+    // 光照查询缓存：原版 getLightCoords 每渲染帧都要查世界光照，粒子在同一方块内可复用缓存。
     //
-    // 复用的是「方块光 + 动态光」合并后的结果，所以除坐标外还要跟动态光版本与一个分摊的兜底超时
-    // （见 LightCachePolicy）：否则光源挪走/销毁后，静止的非发光片元会一直亮着旧值。
+    // 缓存的是「方块光 + 动态光」合并结果，所以除坐标外还要跟动态光版本与分摊的兜底超时
+    // （见 LightCachePolicy）。
     private var cachedLight = -1
     private var cacheBX = Int.MIN_VALUE
     private var cacheBY = Int.MIN_VALUE
@@ -438,15 +421,13 @@ class BridgeParticle(
 
     companion object {
         /**
-         * 编辑器 → Minecraft 世界单位的缩放因子。
-         * 原版 quad 顶点把 scale 当「半宽」使用（±scale），而编辑器 aSize 是整宽，
-         * 因此这里取编辑器 PARTICLE_SIZE_FACTOR(0.2) 的一半，使最终整宽一致。
+         * 编辑器 → Minecraft 世界单位的缩放因子：原版 quad 顶点把 scale 当半宽用（±scale），
+         * 编辑器 aSize 是整宽，取 PARTICLE_SIZE_FACTOR 的一半。
          */
         const val EDITOR_TO_MC_SCALE: Float = VisualMath.EDITOR_TO_MC_SCALE
 
         /**
          * 自转欧拉（度）→ 四元数写入 [out]。local = intrinsic XYZ（Rx·Ry·Rz）；world = extrinsic（Rz·Ry·Rx）。
-         * 单独拆出来是为了能在不启动 Minecraft 的测试里验证朝向语义。
          */
         @JvmStatic
         fun orientationQuaternion(spinDeg: DoubleArray, spinLocal: Boolean, out: Quaternionf) {

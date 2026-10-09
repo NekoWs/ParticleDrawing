@@ -3,7 +3,7 @@ package work.nekow.particledrawing.core.easing
 import java.util.Objects
 import kotlin.math.abs
 
-// 三次贝塞尔缓动曲线，由四个控制点参数定义，用于粒子动画的平滑过渡。
+// 三次贝塞尔缓动曲线，由四个控制点参数定义。
 @Suppress("unused")
 class EasingCurve(
     val x1: Double,
@@ -12,7 +12,7 @@ class EasingCurve(
     val y2: Double
 ) {
 
-    // 线性曲线（默认缓动）：直接返回 t，避免贝塞尔反解迭代
+    // 线性曲线（默认缓动）：直接返回 t；曲线恒等，可跳过贝塞尔反解
     private val linear = x1 == 0.0 && y1 == 0.0 && x2 == 1.0 && y2 == 1.0
 
     /**
@@ -92,8 +92,7 @@ class EasingCurve(
 
         /**
          * 从 CSS 格式的字符串解析缓动曲线。
-         * @param css CSS cubic-bezier 格式字符串
-         * @return 解析后的 EasingCurve 实例
+         * @param css 形如 `cubic-bezier(x1, y1, x2, y2)` 的字符串
          */
         @JvmStatic
         fun fromCss(css: String): EasingCurve {

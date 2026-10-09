@@ -8,11 +8,9 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * 脚本 `this.delta` 的调度语义（编辑器 generators.js 的 runtime.lastPhaseMs 同一套）：
- * 距上一次真正跑过 process/tick 的毫秒数，上限 100ms，首次执行前是 0。
- * 生成程序里的速度积分/阻尼/追帧步数全靠它，所以「第一次给什么、间隔怎么算、封顶多少」都要钉住。
+ * 脚本 `this.delta` 的调度语义：距上一次跑过 process/tick 的毫秒数，上限 100ms，首次执行前是 0。
  *
- * 读数用粒子位置：每帧 spawn 一颗，x = 本次 delta、y = 累计 delta（把整条序列都留在场景里，可逐帧核）。
+ * 读数取自粒子位置：每帧 spawn 一颗，x = 本次 delta，y = 累计 delta。
  */
 class FxDeltaTest {
 
@@ -31,8 +29,8 @@ class FxDeltaTest {
             tracks = emptyList(),
             groups = emptyMap(),
             functions = listOf(
-                // duration 给 0（不限时长）+ 空时间轴：判据看脚本有没有 process 阶段，不看时长与时间轴长度，
-                // 所以这种动画照样每帧跑 process，this.delta 才有得算。
+                // duration=0（不限时长）+ 空时间轴：判据只看脚本有没有 process 阶段，
+                // 这种动画照样每帧跑 process
                 FunctionObject(id = "fx", name = "fx", center = doubleArrayOf(0.0, 0.0, 0.0), source = source, seed = 0, vars = emptyMap(), duration = 0),
             ),
         ),
@@ -59,7 +57,7 @@ class FxDeltaTest {
 
     @Test
     fun `首帧 delta 为 0，之后按帧间隔累加`() {
-        // 构造时就已经推进过一次 process（t=0，与编辑器「t=0 就有一帧」一致），那一帧的 delta 记 0。
+        // 构造时已推进过一次 process（t=0 就有一帧，与编辑器一致），那一帧的 delta 记 0。
         val player = player()
         player.advanceFrame(0.0)
         assertRows(player, listOf(0.0 to 0.0, 0.0 to 0.0))

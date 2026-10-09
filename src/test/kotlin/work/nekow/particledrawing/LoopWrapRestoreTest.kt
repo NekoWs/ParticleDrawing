@@ -11,8 +11,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * 循环回卷回归：loop 动画回卷到开头时，函数对象运行时不应漂移——
- * 恢复循环起点快照（而非带脏 objState 重新 setup），保证 rand/global 的确定性。
+ * 循环回卷：loop 动画回卷到开头时恢复循环起点快照，函数对象运行时的 rand/global 保持确定性。
  */
 class LoopWrapRestoreTest {
 
@@ -49,7 +48,7 @@ class LoopWrapRestoreTest {
         player.advanceFrame(0.0)
 
         assertEquals(0, player.currentMsValue)
-        // r 来自 setup 的 rand()；回卷后必须与首圈一致（确定性恢复，而非脏 PRNG 继续推进）。
+        // r 来自 setup 的 rand()，回卷后必须与首圈一致。
         assertEquals(first, player.currentStates().first { it.id == "fx0:p0" }.pos.x, 1e-12)
     }
 }

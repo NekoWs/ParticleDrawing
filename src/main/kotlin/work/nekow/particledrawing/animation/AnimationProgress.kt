@@ -1,7 +1,7 @@
 package work.nekow.particledrawing.animation
 
-// 服务端权威的播放进度计算（客户端与服务器共用，保证所有玩家帧一致）。
-// 进度 = wrap/clamp(elapsedMs = (gameTime - startGameTick) * 50)；客户端每 game tick 用同一公式推目标毫秒，不各自递增。
+// 服务端权威的播放进度计算，客户端与服务器共用同一公式。
+// 进度 = wrap/clamp((gameTime - startGameTick) * 50)；客户端每 game tick 用同一公式推目标毫秒。
 object AnimationProgress {
 
     /** elapsed game tick 对应的时间轴毫秒：maxMs<=0 恒 0；循环取余；非循环封顶 maxMs-50。 */

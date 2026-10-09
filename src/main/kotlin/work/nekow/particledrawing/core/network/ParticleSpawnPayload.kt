@@ -23,8 +23,8 @@ import java.util.UUID
  * @param lightLevel 发光粒子向外发出的光照等级 (0-15)
  * @param visual 生成时定死的外观（贴图 / UV / 各向异性 / 朝向 / 加色）；null = 默认外观
  * @param lifeCurve 逐粒子寿命曲线（寿命内的颜色/尺寸乘数）；null = 恒定外观
- * @param prev 上一 tick 的位置（与 [x]/[y]/[z] 组成一段插值）：客户端渲染第一帧就按 partialTick
- *   在 prev → 当前位置之间扫掠，与 `track` 粒子的段语义一致；null = 直接在当前位置出生（跳变）
+ * @param prev 上一 tick 的位置，与 [x]/[y]/[z] 组成一段插值；客户端首帧按 partialTick 在两点之间扫掠；
+ *   null = 直接在当前位置出生
  */
 @Suppress("unused")
 data class ParticleSpawnPayload(

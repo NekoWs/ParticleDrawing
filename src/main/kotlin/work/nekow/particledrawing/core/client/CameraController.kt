@@ -5,8 +5,8 @@ import work.nekow.particledrawing.animation.ClientAnimationPlayer
 import java.util.UUID
 
 // 客户端「切换到指定摄像机」预览状态（/pdraw camera 命令用）。
-// attach 绑定后，每 game tick 用 cameraPoseAt 写入最新姿态，渲染层按 partialTick 插值并覆盖玩家相机位置/旋转/FOV；动画停止时 detach 恢复。
-// 姿态是动画局部坐标，输出前统一加播放原点 origin 保证相机与粒子同处一个世界；播放端不自动改玩家相机。
+// attach 绑定后每 game tick 用 cameraPoseAt 写入最新姿态，渲染层按 partialTick 插值并覆盖玩家相机的位置/旋转/FOV，动画停止时 detach。
+// 姿态是动画局部坐标，输出前统一加播放原点 origin，保证相机与粒子同处一个世界；播放端不自动改玩家相机。
 object CameraController {
 
     /** 当前预览绑定的播放 id（null = 未激活）。 */
@@ -24,7 +24,7 @@ object CameraController {
     @Volatile
     private var currPose: ClientAnimationPlayer.CameraPose? = null
 
-    /** 绑定到某次播放的某个摄像机（含播放原点；下一 tick 开始逐刻刷新姿态）。 */
+    /** 绑定到某次播放的某个摄像机（含播放原点）；从下一 tick 起逐刻刷新姿态。 */
     @JvmStatic
     fun attach(animId: UUID, camId: String, playOrigin: Vec3) {
         animationId = animId
@@ -33,8 +33,8 @@ object CameraController {
     }
 
     /**
-     * 写入最新姿态快照（每个 game tick 由 ClientAnimationManager 调用）。
-     * [newPose] 为 null 表示姿态求值失败（摄像机不存在等），直接退出预览。
+     * 写入最新姿态快照，每个 game tick 由 ClientAnimationManager 调用。
+     * [newPose] 为 null 表示姿态求值失败（摄像机不存在等），此时退出预览。
      */
     @JvmStatic
     fun updatePose(newPose: ClientAnimationPlayer.CameraPose?) {
@@ -70,9 +70,8 @@ object CameraController {
 
     /**
      * 渲染帧姿态（世界坐标，含播放原点偏移）：在上一 tick 与当前 tick 姿态间按
-     * [partialTicks]（0..1，自上一 game tick 起经过的渲染进度）线性插值，
-     * 消除 20Hz 逐 tick 跳变造成的卡顿。
-     * 无上一 tick 姿态（刚绑定）时直接返回当前姿态。
+     * [partialTicks]（0..1，自上一 game tick 起经过的渲染进度）线性插值。
+     * 刚绑定、还没有上一 tick 姿态时直接返回当前姿态。
      */
     @JvmStatic
     fun currentPose(partialTicks: Double): ClientAnimationPlayer.CameraPose? {
@@ -93,7 +92,7 @@ object CameraController {
         return offset(out, o)
     }
 
-    /** 渲染帧 FOV（度）：与 [currentPose] 同规则插值；未激活返回 null（由 ComputeFov 事件决定是否覆盖）。 */
+    /** 渲染帧 FOV（度）：与 [currentPose] 同规则插值；未激活返回 null，是否覆盖由 ComputeFov 事件决定。 */
     @JvmStatic
     fun currentFov(partialTicks: Double): Float? {
         val from = prevPose
@@ -103,7 +102,7 @@ object CameraController {
         return (from.fov + (to.fov - from.fov) * f).toFloat()
     }
 
-    /** 动画局部姿态 + 播放原点 = 世界姿态（复制数组，避免污染缓存端点）。 */
+    /** 动画局部姿态 + 播放原点 = 世界姿态；数组就地复制，不动缓存端点。 */
     private fun offset(p: ClientAnimationPlayer.CameraPose, o: Vec3): ClientAnimationPlayer.CameraPose {
         return ClientAnimationPlayer.CameraPose(
             doubleArrayOf(p.pos[0] + o.x, p.pos[1] + o.y, p.pos[2] + o.z),

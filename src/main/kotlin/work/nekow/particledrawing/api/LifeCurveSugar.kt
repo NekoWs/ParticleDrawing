@@ -5,9 +5,8 @@ import work.nekow.particledrawing.core.easing.EasingType
 /**
  * `fadeOut` / `shrinkTo` 这两种糖的曲线换算。
  *
- * 它们锚在**寿命末尾**（「最后 N tick 淡出」），所以必须等寿命定下来才算得出关键帧时刻 ——
- * 生成路径（逐颗生成 / 批量规格 / 发射器）共用这一份，避免三处各算一套。
- * 无限寿命（lifetime <= 0）没有「末尾」可言：直接报错，要求改用显式的 [ParticleCurve]。
+ * 它们锚在寿命末尾，必须等寿命定下来才算得出关键帧时刻；逐颗生成、批量规格、发射器共用这一份。
+ * 无限寿命（lifetime <= 0）没有末尾可言，直接报错，要求改用显式的 [ParticleCurve]。
  */
 internal object LifeCurveSugar {
 

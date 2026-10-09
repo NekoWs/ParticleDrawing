@@ -9,12 +9,11 @@ import java.util.UUID
 
 /**
  * 粒子加速度（力）数据包：只在开始施力时下发一次，之后服务端与客户端按同一规则逐 tick 积分
- * （速度 += 加速度，位置 += 速度），中途不再发包。适合「大量粒子沿同一个力运动」的场合，
- * 不必每 tick 为每颗粒子广播速度或位置。
+ * （速度 += 加速度，位置 += 速度），中途不再发包。
  *
  * @param particleId 粒子 ID
  * @param ax/ay/az 加速度（blocks/tick²）
- * @param ticks 施力 tick 数：>0 = 这么多 tick；<0 = 无限（直到被下一次力/速度/位置指令覆盖）
+ * @param ticks 施力 tick 数：>0 为有限 tick；<0 为无限，直到被下一次力/速度/位置指令覆盖
  */
 @Suppress("unused")
 data class ParticleForcePayload(

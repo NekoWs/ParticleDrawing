@@ -4,13 +4,12 @@ import work.nekow.particledrawing.core.easing.EasingType
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.*
 
-// 标量表达式求值（旧 ExpressionEvaluator 的存活子集）。
-// 通用解释器已由 script-lang 的 ScriptRuntime / ScalarProgram 取代；这里只剩标量 RPN 编译与变量热更公式求值。
+// 标量表达式求值：标量 RPN 编译与变量关键帧公式求值。
 
-/** 变量关键帧（毫秒 / 值 / 缓动；`Double` 毫秒，给变量插值用）。 */
+/** 变量关键帧：毫秒时刻、值与缓动。 */
 data class Keyframe(val ms: Double, val value: Double, val easing: EasingType)
 
-/** 标量函数签名：名称 -> 参数个数（与编辑器 easing.js 的标量子集对齐）。 */
+/** 标量函数签名：名称 -> 参数个数。 */
 private val FUNCS = mapOf(
     "sin" to 1, "cos" to 1, "tan" to 1, "asin" to 1, "acos" to 1, "atan" to 1, "atan2" to 2,
     "sqrt" to 1, "abs" to 1, "sign" to 1, "exp" to 1, "log" to 1, "ln" to 1,
@@ -173,7 +172,7 @@ fun compile(expr: String): List<Any> {
     return output
 }
 
-/** 求值单个标量表达式。vars 为 Map<String, Double>（求值期已解析的变量）。 */
+/** 求值单个标量表达式；[vars] 为已解析的变量表。 */
 fun evaluate(expr: String, vars: Map<String, Any>): Double {
     val output = compile(expr)
     val s = mutableListOf<Any>()

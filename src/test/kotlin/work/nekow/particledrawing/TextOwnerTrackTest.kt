@@ -16,8 +16,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
 /**
- * v17 文字对象去组后的轨道属主（"t:<id>"）求值回归：
- * op 增量 / 成员解析 / 广告牌与自转状态传播。
+ * 文字对象轨道属主（"t:<id>"）的求值：op 增量、成员解析、广告牌与自转状态传播。
  */
 class TextOwnerTrackTest {
 

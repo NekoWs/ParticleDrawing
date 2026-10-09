@@ -2,9 +2,9 @@ package work.nekow.particledrawing.animation.script
 
 import kotlin.math.floor
 
-// mulberry32 PRNG 与 3D Simplex 噪声，逐行复刻编辑器 script-lang.js。
+// mulberry32 PRNG 与 3D Simplex 噪声；数值与编辑器逐位一致。
 
-/** mulberry32 随机数生成器状态（32 位有符号 Int）。暴露 a 以便循环回卷时快照/恢复，与编辑器确定性一致。 */
+/** mulberry32 状态（32 位有符号 Int）；[a] 公开以便循环回卷时快照恢复。 */
 class RandState(var a: Int) {
     fun next(): Double {
         a += 0x6D2B79F5
@@ -15,7 +15,7 @@ class RandState(var a: Int) {
     }
 }
 
-/** 标准 mulberry32：返回无参函数，每次推进并返回 [0,1)。state 为 32 位有符号 Int。 */
+/** 标准 mulberry32：返回一个每次推进并给出 [0,1) 的无参函数。 */
 fun mulberry32(seed: Int): () -> Double {
     val r = RandState(seed)
     return { r.next() }
@@ -30,7 +30,7 @@ private val GRAD3 = arrayOf(
 private const val SIMPLEX_F3 = 1.0 / 3.0
 private const val SIMPLEX_G3 = 1.0 / 6.0
 
-// 与编辑器 script-lang.js 一致：octaves 上限防止恶意脚本传超大值造成逐 octave 无限循环。
+// octaves 上限：防止脚本传入超大值造成逐 octave 长循环。
 private const val MAX_FBM_OCTAVES = 64
 
 private class Permutation(val perm: IntArray, val permMod12: IntArray)
@@ -58,7 +58,7 @@ private fun grad3Dot(gi: Int, x: Double, y: Double, z: Double): Double {
     return g[0] * x + g[1] * y + g[2] * z
 }
 
-/** 3D Simplex 噪声，结果 clamp 到 [-1,1]（与 JS noise3D 一致）。 */
+/** 3D Simplex 噪声，结果 clamp 到 [-1,1]。 */
 fun noise3D(xin: Double, yin: Double, zin: Double, seed: Int): Double {
     val p = makePermutation(seed)
     val perm = p.perm
@@ -133,7 +133,7 @@ fun noise3D(xin: Double, yin: Double, zin: Double, seed: Int): Double {
 /** JS `double & 255`：ToInt32 截断/回绕后取低 8 位。 */
 private fun doubleToLow8(x: Double): Int = toInt32(x) and 255
 
-/** 分形布朗运动：lacunarity=2.0、gain=0.5，归一化到 [-1,1]（与 JS fbm 一致）。 */
+/** 分形布朗运动：lacunarity=2.0、gain=0.5，归一化到 [-1,1]。 */
 fun fbm(x: Double, y: Double, z: Double, octaves: Int, seed: Int): Double {
     if (octaves < 1) throw ScriptException("fbm octaves must be at least 1")
     if (octaves > MAX_FBM_OCTAVES) throw ScriptException("fbm octaves must be at most $MAX_FBM_OCTAVES")

@@ -10,13 +10,12 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 两条「接管 / 缓存」语义的纯逻辑：
- * - **位置接管 ≠ 外观接管**：`track` 只接管位置，寿命曲线必须继续逐帧驱动外观；
- * - **光照缓存失效**：动态光变了立刻重查，世界光变化用分摊超时兜住。
+ * 接管与缓存的两条语义：track 只接管位置，外观仍由寿命曲线逐帧驱动；
+ * 动态光版本变化立刻重查，世界光变化用分摊超时兜住。
  */
 class VisualTakeoverAndCacheTest {
 
-    // —— 位置/外观接管 ——
+    // 位置 / 外观接管
 
     @Test
     fun `track 只接管位置：外观仍归寿命曲线管`() {
@@ -49,7 +48,7 @@ class VisualTakeoverAndCacheTest {
         assertFalse(takeover.hasAppearance(id))
     }
 
-    // —— 光照缓存 ——
+    // 光照缓存
 
     @Test
     fun `动态光版本一变就重查，与超时无关`() {
@@ -91,7 +90,7 @@ class VisualTakeoverAndCacheTest {
         assertTrue(nextDue >= now + span && nextDue < now + 2 * span, "下次重查落在 [周期, 2×周期) 内")
     }
 
-    // —— 完成账本 ——
+    // 完成账本
 
     @Test
     fun `账本取最晚终点：指令、表达式时长、变量缓动三者取大`() {
@@ -103,9 +102,9 @@ class VisualTakeoverAndCacheTest {
 
     @Test
     fun `表达式模式只看表达式自己的时长，不认不生效的糖指令`() {
-        // 表达式组里糖指令一条都不会执行：拿它当完成标记是假的
+        // 表达式组里糖指令不执行，不作为完成标记
         assertEquals(-1L, completionLedgerEndMs(400L, expressionMode = true, expressionEndMs = -1L, varEaseEnds = emptyList()))
-        // 表达式自己给了有限时长：那才是真的终点
+        // 表达式自己给了有限时长时取它
         assertEquals(600L, completionLedgerEndMs(400L, expressionMode = true, expressionEndMs = 600L, varEaseEnds = emptyList()))
         // 变量缓动照样并进来
         assertEquals(600L, completionLedgerEndMs(-1L, expressionMode = true, expressionEndMs = 350L, varEaseEnds = listOf(600L)))

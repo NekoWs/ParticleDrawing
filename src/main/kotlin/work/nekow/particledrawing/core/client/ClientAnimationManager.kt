@@ -31,11 +31,11 @@ object ClientAnimationManager {
         val animation: ParticleAnimation,
         // 播放原点（世界坐标）：摄像机预览姿态需加此偏移才与粒子同处一个世界
         val origin: Vec3,
-        // 当前已生成（在场）的状态 id 集合——st 门控的生成/回收以它为基准做差分
+        // 当前已生成（在场）的状态 id 集合：st 门控的生成/回收以它做差分
         val liveIds: HashSet<String> = HashSet(),
-        // 特效锚点解析器（null = 旧固定 origin 路径）
+        // 特效锚点解析器（null = 固定 origin 路径）
         val anchor: EffectAnchorResolver? = null,
-        // 特效播放时钟（null = 旧 gameTime 时钟路径）
+        // 特效播放时钟（null = 按 gameTime 推进）
         val clock: PlaybackClock? = null,
         // 生效的 loop（特效可覆盖动画自身 loop）
         val loop: Boolean = true,
@@ -132,20 +132,19 @@ object ClientAnimationManager {
     /** 开始本地播放一个代码生成的 [ParticleAnimation]（结构化载荷，不验签）。 */
     @JvmStatic
     fun play(animationId: UUID, animation: ParticleAnimation, origin: Vec3, startGameTick: Long) {
-        // 服务端在维度切换/重生/重连后会重发同一播放：先清理旧条目与其粒子，再重建，
-        // 避免旧条目残留（旧桥接粒子已随上一世界的 ParticleEngine 销毁，不可复用）。
+        // 服务端在维度切换/重生/重连后会重发同一播放：先清理旧条目与其粒子，再重建
         if (entries.containsKey(animationId)) stopInternal(animationId)
 
         // 播放前预加载内嵌贴图
         preloadTextures(animation)
 
-        // 服务端权威进度：以当前维度 gameTime 计算起始帧（重发/迟到加入时直接对齐其他玩家）
+        // 服务端权威进度：以当前维度 gameTime 计算起始帧
         val currentGameTick = Minecraft.getInstance().level?.gameTime ?: startGameTick
         val player = ClientAnimationPlayer(animation, origin, startGameTick, currentGameTick)
         val uuids = HashMap<String, UUID>()
         val liveIds = HashSet<String>()
         for (state in player.currentStates()) {
-            // st 门控：未出场粒子不生成（隐藏 = 渲染管线中不存在，与 alpha 无关）
+            // st 门控：未出场粒子不生成（隐藏 = 渲染管线中不存在）
             if (!state.visible) continue
             val uuid = UUID.randomUUID()
             uuids[state.id] = uuid
@@ -165,8 +164,6 @@ object ClientAnimationManager {
             else ap.close()
         }
     }
-
-    // —— 特效 API（按 key 播放 + 锚点 + 时钟） ——
 
     /** 收到 PlayEffectPayload：缓存命中直接开播，否则请求服务端下发字节并挂起。 */
     @JvmStatic
@@ -280,7 +277,7 @@ object ClientAnimationManager {
         val currentGameTick = Minecraft.getInstance().level?.gameTime ?: startGameTick
         val player = ClientAnimationPlayer(animation, Vec3.ZERO, startGameTick, currentGameTick, initialMs)
         val resolver = EffectAnchorResolver(anchor, options.scale())
-        // startTick 是 game tick、speed 是倍速，时钟内部统一按毫秒（与 ServerEffectManager 同口径）。
+        // startTick 是 game tick、speed 是倍速，时钟内部统一按毫秒。
         val clock = PlaybackClock(options.startTick() * 50, playing = true, speed = options.speed() * 50)
 
         val uuids = HashMap<String, UUID>()
@@ -297,9 +294,7 @@ object ClientAnimationManager {
     }
 
     /**
-     * 客户端世界卸载（切换维度/重生/退出世界）时清理全部本地播放。
-     * ClientLevel 重建会换掉原版 ParticleEngine，桥接粒子随之销毁；条目继续存在只会
-     * 对着不存在的桥接空转。清理后等待服务端重发 PlayAnimationPayload 重建播放。
+     * 客户端世界卸载（切换维度/重生/退出世界）时清理全部本地播放，之后等服务端重发重建。
      */
     @JvmStatic
     fun onClientLevelUnload() {
@@ -319,22 +314,20 @@ object ClientAnimationManager {
         for ((_, entry) in entries) {
             preloadTextures(entry.animation)
         }
-        // 程序化贴图（registerTexture 登记的）也一并重载，别让一次 reload 把它们清没了
+        // 程序化贴图（registerTexture 登记的）也一并重载
         ClientTextureSyncManager.reloadAll()
     }
 
     /** 每客户端 tick 推进所有动画并同步渲染。 */
     @JvmStatic
     fun tick() {
-        // 玩家死亡/重生阶段退出摄像机预览：预览会把相机固定到动画姿态，若远离重生点，
-        // 「正在加载地形」会一直等待相机所在区块编译（LevelLoadTracker 以相机位置为准），
-        // 直到 30s 超时才放行。死亡时立刻解除，让相机随玩家回到重生点。
+        // 玩家死亡/重生阶段退出摄像机预览，否则相机会固定在远离重生点的动画姿态上。
         if (CameraController.isActive()) {
             val mc = Minecraft.getInstance()
             val player = mc.player
             if (player == null || player.isDeadOrDying) CameraController.detach()
         }
-        // 服务端权威进度时钟：维度 gameTime（与所有客户端、服务器一致）
+        // 服务端权威进度时钟：维度 gameTime
         val level = Minecraft.getInstance().level ?: return
         val gameTick = level.gameTime
         val toStop = mutableListOf<UUID>()
@@ -359,12 +352,12 @@ object ClientAnimationManager {
     }
 
     /**
-     * 每渲染帧推进函数对象 process（渲染帧率）：以「当前权威毫秒 + 渲染帧 partialTick 的帧内毫秒」
-     * 作为目标时刻。process 每帧执行；frameSync=true 的派生粒子按帧同步；普通粒子与其余派生粒子由游戏 tick 推进。
+     * 每渲染帧推进函数对象 process：目标时刻 = 当前权威毫秒 + partialTick 的帧内毫秒，
+     * 经 [ProcessClock] 单调化。process 每帧执行；frameSync=true 的派生粒子按帧同步，
+     * 普通粒子与其余派生粒子由游戏 tick 推进。
      *
-     * 目标时刻经 [ProcessClock] 单调化：partialTick 与播放头不是同一套时钟（frozen 帧直接给 1.0、
-     * 暂停恢复回填残余量、tickrate 口径不一致），直接相加会让 process 来回倒帧；只有播放头本身回退
-     * （循环回卷 / seek）才跟着倒退。见 `ProcessClock` 与 `ProcessClockTest`。
+     * partialTick 与播放头不是同一套时钟，frozen 帧、暂停恢复、tickrate 变化都可能给出倒退值；
+     * 只有播放头本身回退（循环回卷 / seek）才跟着倒退。
      */
     @JvmStatic
     fun frameTick(partialTick: Float) {
@@ -383,22 +376,13 @@ object ClientAnimationManager {
     /**
      * 直写桥接粒子时是否关闭 tick 间插值（`xo/yo/zo` 与 `x/y/z` 写同值）。
      *
-     * 派生粒子（函数对象 spawn）的位置由脚本 process 逐渲染帧整体重写：一个 game tick 内它已经换了
-     * 整整一幅图形（示波器迹线这类环形缓冲每帧全量重写，实测每段每 tick 位移可达整个图形半径量级）。
-     * 交给原版在 xo（上一 tick 位置）与 x（本 tick 位置）之间按 partialTick 线性插值，画出来就是
-     * 相邻两条迹线的混合——重影，并且整条迹线在 tick 内沿弦滑动——抖动。所以派生粒子一律关掉插值，
-     * 渲染只显示 process 最后算出的那一幅（插值量恒 0，见 `DerivedParticleInterpolationTest`）。
-     *
-     * 普通粒子的位置来自 tick 量化的轨道求值（两次 tick 之间是同一批端点），保留插值才能按渲染帧率平滑。
-     *
-     * 代价：关插值后派生粒子只在 game tick 更新（20Hz 采样保持）——迹线不再被插值涂抹，但每 50ms 换一幅。
-     * 需要「无 50ms 延迟的逐帧精确同步」（与编辑器预览一致）时，用函数对象的 frameSync 开关，
-     * 那条路径整体走 [frameTick]，与本开关无关。
+     * 派生粒子的位置由脚本 process 逐渲染帧整体重写，插值会把相邻两幅图形混成重影，因此一律关闭；
+     * 普通粒子的位置来自 tick 量化的轨道求值，保留插值才能按渲染帧率平滑。
      */
     @JvmStatic
     fun snapDirectWrite(derived: Boolean): Boolean = derived
 
-    /** 每渲染帧同步「帧级同步（frameSync=true）」派生粒子；其余派生粒子与普通粒子由 [sync] 按游戏 tick 同步。 */
+    /** 每渲染帧同步 frameSync=true 的派生粒子；其余粒子由 [sync] 按游戏 tick 同步。 */
     private fun syncDerivedFrame(entry: Entry) {
         val engine = ClientParticleEngine.instance() ?: return
         val currentIds = HashSet<String>()
@@ -470,11 +454,9 @@ object ClientAnimationManager {
     }
 
     private fun sync(entry: Entry) {
-        // 回卷标记仅用于重置；普通粒子的连续可见状态不再跳变（xo 保留上一 tick 位置），
-        // 让原版渲染在 xo→x 间线性插值，自然穿过 360°≡0° 的闭合帧，循环无缝。
-        // 派生粒子例外：位置由 process 逐渲染帧整体重写，插值只会把相邻两幅迹线混成重影，一律 snap
-        // （见 [snapDirectWrite]）。
-        // 这里处理普通粒子 + 未开启帧级同步（frameSync=false）的派生粒子；帧级同步派生粒子由 syncDerivedFrame 按帧处理。
+        // 回卷标记仅用于重置；普通粒子的 xo 保留上一 tick 位置，原版渲染在 xo→x 间线性插值。
+        // 派生粒子例外：位置由 process 逐渲染帧整体重写，插值会把相邻两幅迹线混成重影，一律 snap
+        // （见 [snapDirectWrite]）；这里只处理未开启帧级同步的派生粒子。
         entry.player.consumeJustLooped()
         val engine = ClientParticleEngine.instance() ?: return
         val currentIds = HashSet<String>()
@@ -484,7 +466,7 @@ object ClientAnimationManager {
             var uuid = entry.particleUuids[state.id]
             val live = state.id in entry.liveIds
             when {
-                // 新出现的状态（spawn 运行时动态生成的派生粒子）：首次可见时创建 uuid 并生成桥接粒子
+                // 新出现的状态：首次可见时创建 uuid 并生成桥接粒子
                 uuid == null -> {
                     if (state.visible) {
                         uuid = UUID.randomUUID()
@@ -493,7 +475,7 @@ object ClientAnimationManager {
                         entry.liveIds.add(state.id)
                     }
                 }
-                // 出场窗口结束 → 回收（循环回卷后再次满足 st 时重新生成）
+                // 出场窗口结束 → 回收；循环回卷后再次满足 st 时重新生成
                 !state.visible && live -> {
                     engine.destroyParticles(arrayOf(uuid))
                     entry.liveIds.remove(state.id)
@@ -507,14 +489,14 @@ object ClientAnimationManager {
                     val pos = entry.anchor?.apply(state.pos) ?: state.pos
                     ClientParticleEngine.instance()?.updateParticleDirectArray(
                         uuid, pos, state.color, state.scale, state.glowing, state.lightLevel,
-                        // 派生粒子按帧重写的图形不做 tick 间插值（否则相邻两帧的迹线被插值混成重影）
+                        // 派生粒子按帧重写的图形不做 tick 间插值
                         snap = snapDirectWrite(state.derived),
                         billboard = state.billboard, spin = state.spin, spinLocal = state.spinLocal,
                     )
                 }
             }
         }
-        // 已不在当前状态中的粒子（被 kill / 运行时重建移除）：销毁桥接粒子并清理索引（帧级同步派生粒子除外）
+        // 已不在当前状态中的粒子：销毁桥接粒子并清理索引（帧级同步派生粒子除外）
         val deadIds = entry.particleUuids.keys.filter { !entry.player.isFrameSyncDerived(it) && it !in currentIds }
         if (deadIds.isNotEmpty()) {
             engine.destroyParticles(deadIds.map { entry.particleUuids[it]!! }.toTypedArray())
@@ -533,8 +515,8 @@ object ClientAnimationManager {
     }
 
     /**
-     * 每 tick 同步音频（公式与编辑器 objects/audio-props.js 一致）：按内容本地毫秒判断是否出声，
-     * 算出淡入淡出包络后的音量、声像与倍速交给播放器；漂移超阈值按内容位置 seek。
+     * 每 tick 同步音频：按内容本地毫秒判断是否出声，算出淡入淡出包络后的音量、声像与倍速；
+     * 漂移超阈值时按内容位置 seek。
      */
     private fun syncAudio(entry: Entry) {
         if (entry.audioPlayers.isEmpty()) return
@@ -564,7 +546,7 @@ object ClientAnimationManager {
         }
     }
 
-    /** 倍速兜底：非有限值/<=0 一律按 1（与编辑器 audioSpeedOf 一致）。 */
+    /** 倍速兜底：非有限值或 <=0 一律按 1。 */
     private fun audioSpeedOf(speed: Double): Double = if (speed.isFinite() && speed > 0.0) speed else 1.0
 
     private fun spawnState(

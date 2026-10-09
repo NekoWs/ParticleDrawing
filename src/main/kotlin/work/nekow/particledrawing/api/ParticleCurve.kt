@@ -5,8 +5,7 @@ import work.nekow.particledrawing.core.easing.EasingType
 /**
  * 寿命曲线通道。
  *
- * 各通道的取值一律是**乘数**（缺省 1.0），逐帧乘在粒子自身的颜色/缩放之上：
- * 想「随时间压暗」就给 0 → 1 的值，想「越飘越大」就给大于 1 的值。
+ * 各通道的取值是乘数（缺省 1.0），逐帧乘在粒子自身的颜色/缩放之上；
  * 多条曲线落在同一通道时相乘（见 [ParticleLifeCurve]）。
  */
 enum class CurveChannel {
@@ -22,9 +21,9 @@ enum class CurveChannel {
 /**
  * 曲线关键帧。
  *
- * @param tTicks 从**生成那一刻**算起的 tick 数（1 tick = 50ms）；不必从 0 开始
+ * @param tTicks 从生成那一刻算起的 tick 数（1 tick = 50ms），首个关键帧可以大于 0
  * @param value 该时刻的通道值（乘数）
- * @param easing 到**下一关键帧**的缓动（与变量关键帧、摄像机关键帧同一约定：段用后一帧的缓动）
+ * @param easing 到下一关键帧的缓动，段用后一帧的缓动
  */
 class CurveKey(
     @JvmField val tTicks: Float,
@@ -37,7 +36,7 @@ class CurveKey(
         fun at(tTicks: Number, value: Number): CurveKey =
             CurveKey(tTicks.toFloat(), value.toFloat(), EasingType.LINEAR)
 
-        /** 带缓动的关键帧（缓动作用于「本帧 → 下一帧」这一段）。 */
+        /** 带缓动的关键帧；缓动作用于本帧到下一帧这一段。 */
         @JvmStatic
         fun at(tTicks: Number, value: Number, easing: EasingType): CurveKey =
             CurveKey(tTicks.toFloat(), value.toFloat(), easing)
@@ -52,8 +51,7 @@ class CurveKey(
 /**
  * 一条寿命曲线：某个通道随时间（生成后 tick 数）的乘数。
  *
- * 与 [ParticleGroup] 的组级动画不同，它作用于**单颗粒子在其寿命内**的外观，
- * 生成时随 spawn 包下发一次即可，之后不需要任何逐 tick 带宽。
+ * 作用于单颗粒子在其寿命内的外观，生成时随 spawn 包下发一次即可。
  * 关键帧按 [CurveKey.tTicks] 升序存放（构造时排序）；取值时刻落在首尾之外时取端点值。
  */
 class ParticleCurve(
@@ -95,7 +93,7 @@ class ParticleCurve(
     fun copy(): ParticleCurve = ParticleCurve(channel, keys.toList())
 
     companion object {
-        /** 单条曲线的关键帧上限（协议与内存的边界，超出直接报错而不是截断）。 */
+        /** 单条曲线的关键帧上限（超出报错，不截断）。 */
         const val MAX_KEYS = 64
 
         @JvmStatic
@@ -120,12 +118,9 @@ class ParticleCurve(
 }
 
 /**
- * 一颗粒子的整套寿命曲线（各通道的乘数，可叠加）。
+ * 一颗粒子的整套寿命曲线：各通道的乘数，可叠加。
  *
- * 用法：`manager.create().lifetime(20).fadeOut(10).shrinkTo(0.2f, 10).spawn()`，
- * 或直接给通道关键帧 `.curve(ParticleCurve.alpha(CurveKey.at(0, 1f), CurveKey.at(20, 0f, EasingType.EASE_IN)))`。
- *
- * 不可变；用 [plus] 叠加新曲线（不修改原对象）。
+ * 不可变，用 [plus] 叠加新曲线（原对象不变）。
  */
 class ParticleLifeCurve(curves: List<ParticleCurve>) {
 
@@ -139,7 +134,7 @@ class ParticleLifeCurve(curves: List<ParticleCurve>) {
 
     fun isEmpty(): Boolean = curves.isEmpty()
 
-    /** 是否含某个通道（逐帧取值的快路径判断）。 */
+    /** 是否含某个通道（逐帧取值用）。 */
     fun has(channel: CurveChannel): Boolean {
         for (c in curves) if (c.channel == channel) return true
         return false

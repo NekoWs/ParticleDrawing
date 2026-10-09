@@ -1,7 +1,7 @@
 package work.nekow.particledrawing.animation
 
 /**
- * 编辑器的贴图 / UV 参数（对象级静态属性，不做关键帧），对应粒子 / 函数对象的
+ * 贴图 / UV 参数（对象级静态属性，不做关键帧），对应粒子 / 函数对象的
  * `uv` 与组 UV。继承覆盖顺序：粒子 p.uv > 组 guv[gname] > 函数对象 fx.uv。
  *
  * 所有 UV 坐标单位为贴图像素；`texture == null` 表示无贴图（渲染为纯色方块）。
@@ -29,7 +29,7 @@ class UvData(
         uvStartExpr.any { it != null } || uvSizeExpr.any { it != null } ||
         uvStepExpr.any { it != null } || fpsExpr != null || maxFrameExpr != null
 
-    /** 有效帧数上限（动画模式）。maxFrame 语义与编辑器一致：<=1 视为「自动」（不限制）。 */
+    /** 有效帧数上限（动画模式）。maxFrame <=1 视为「自动」（不限制）。 */
     fun effectiveMaxFrame(autoFrames: Int): Int {
         val mf = if (maxFrame > 1) maxFrame else autoFrames
         return maxOf(1, minOf(mf, autoFrames))

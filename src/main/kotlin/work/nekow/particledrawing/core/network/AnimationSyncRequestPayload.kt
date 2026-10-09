@@ -8,10 +8,9 @@ import net.minecraft.resources.Identifier
 /**
  * 客户端 → 服务器「动画文件同步请求」（playToServer）。
  *
- * 客户端在配置阶段携带本地已有动画文件（.pdrawc）的 SHA-1 哈希清单，
- * 服务器据此做增量同步：只下发客户端缺失或内容不同的文件。
+ * 携带本地已有 .pdrawc 文件的 SHA-1 清单，服务器据此只下发缺失或内容不同的文件。
  *
- * @param hashes 相对文件名（如 "foo.pdrawc"） -> SHA-1 hex（小写）
+ * @param hashes 相对文件名 -> SHA-1 hex（小写）
  */
 @Suppress("unused")
 data class AnimationSyncRequestPayload(
@@ -24,7 +23,7 @@ data class AnimationSyncRequestPayload(
             Identifier.fromNamespaceAndPath("particledrawing", "animation_sync_request")
         )
 
-        /** 单次上报的哈希条目上限，防恶意客户端用超大 varint 触发内存分配。 */
+        /** 单次上报的哈希条目上限，防超大 varint 触发内存分配。 */
         private const val MAX_HASHES = 100_000
 
         @JvmField

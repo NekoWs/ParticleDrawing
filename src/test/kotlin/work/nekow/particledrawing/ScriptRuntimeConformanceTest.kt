@@ -21,8 +21,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * spawn 模型运行时回归测试：setup/tick/process 入口 + ScriptCtx + 简单 ParticleHost。
- * 语义与编辑器 src/core/script-lang.js + generators.js 对齐。
+ * spawn 模型运行时的语义契约：setup / tick / process 三个入口，以及 ScriptCtx 与 ParticleHost 的行为。
  */
 class ScriptRuntimeConformanceTest {
 
@@ -121,7 +120,7 @@ class ScriptRuntimeConformanceTest {
         // 2 元数组与 vec2 同义
         assertEquals(listOf(3.0, 0.1, 1.0), (h.particles[1] as TestHost).scale.toList())
         assertEquals(listOf(4.0, 5.0, 6.0), (h.particles[2] as TestHost).scale.toList())
-        // 标量写法：X/Y 同值，Z 恒为 1（编辑器粒子模型的 Z 只有 1）
+        // 标量写法：X/Y 同值，Z 恒为 1
         assertEquals(listOf(0.5, 0.5, 1.0), (h.particles[3] as TestHost).scale.toList())
     }
 
@@ -143,7 +142,7 @@ class ScriptRuntimeConformanceTest {
                 "let b = this.spawn(); b.scale = 0.75; b.asIs = b.scale; }",
         )
         h.setup()
-        // 写向量读回 vec3（与编辑器一致：vec2 写入时 z 已是 1），写标量读回标量
+        // 写向量读回 vec3（vec2 写入时 z 已是 1），写标量读回标量
         assertEquals(work.nekow.particledrawing.animation.script.Vec3(2.0, 0.05, 1.0), (h.particles[0] as TestHost).fields["asIs"])
         assertEquals(0.75, (h.particles[1] as TestHost).fields["asIs"])
     }
@@ -169,7 +168,7 @@ class ScriptRuntimeConformanceTest {
         )
         h.setup()
         val host = h.particles[0] as TestHost
-        // 默认 1 / 0（未设置时与以前完全一致）
+        // 默认 1 / 0
         assertEquals(1.0, host.fields["d0"])
         assertEquals(work.nekow.particledrawing.animation.script.Vec3(0.0, 0.0, 0.0), host.fields["o0"])
         // 写后读回拿到自己设的值；vec2 的 z 视为 0
@@ -210,7 +209,7 @@ class ScriptRuntimeConformanceTest {
 
     @Test
     fun viewTransformRejectsBadShape() {
-        // viewScale 只收有限 num；viewOffset 只收 vec2/vec3/3 元数组（与编辑器 ctxWrite 一致）
+        // viewScale 只收有限 num；viewOffset 只收 vec2 / vec3 / 3 元数组
         assertFailsWith<ScriptException> {
             Harness("func setup() { this.viewScale = vec2(1, 2); }").setup()
         }
@@ -233,7 +232,7 @@ class ScriptRuntimeConformanceTest {
 
     @Test
     fun viewTransformReservedInsideApply() {
-        // 视图变换是对象自己的成员：写在 apply{} 里也指对象，不会变成粒子自定义字段
+        // apply{} 里的 view 成员仍指对象，不落成粒子自定义字段
         val h = Harness("func setup() { let p = this.spawn(); p.apply { this.viewScale = 3; } }")
         h.setup()
         val host = h.particles[0] as TestHost
@@ -345,7 +344,7 @@ class ScriptRuntimeConformanceTest {
 
     @Test
     fun particleListSizeAsProperty() {
-        // `.size` 属性与 `.size()` 方法等价（与编辑器同语义：少踩一次「忘了括号」的坑）；数组同理
+        // `.size` 属性与 `.size()` 方法等价，数组同理
         val h = Harness(
             "func setup() { this.spawn(); this.spawn(); }\n" +
                 "func process() { let p = this.spawn(); let a = [1, 2, 3, 4]; " +
@@ -555,7 +554,7 @@ class ScriptRuntimeConformanceTest {
         )
         h.process()
         val host = h.particles[0] as TestHost
-        // 期望值为编辑器 JS fastmath.js 逐位对拍生成的参考值。
+        // 与编辑器逐位一致：参考值固定，容差为 0
         assertEquals(0.479425538604203, host.pos[0], 0.0)
         assertEquals(2.71828182442294, host.pos[1], 0.0)
         assertEquals(0.7854079449038646, host.pos[2], 0.0)
@@ -591,8 +590,7 @@ class ScriptRuntimeConformanceTest {
 
     @Test
     fun deltaFieldReadableInAllPhases() {
-        // this.delta：调用方放进 ScriptCtx 的「距上一次跑 process/tick 的毫秒数」，三个阶段同名同义；
-        // 给 0（首次执行前、setup）就读 0。
+        // this.delta：距上一次跑 process/tick 的毫秒数，三个阶段同名同义，未给时读 0
         val h = Harness(
             "let d = -1.0\n" +
                 "func setup() { d = this.delta; }\n" +
@@ -606,13 +604,13 @@ class ScriptRuntimeConformanceTest {
         h.process(t = 0.0, deltaMs = 16.7)
         val host = h.particles[0] as TestHost
         assertEquals(16.7, host.pos[0], 1e-12)
-        // process 里读到的 delta 就是本次给的 16.7；d 是 tick（默认 0）时留下的
+        // process 里读到的是本次给的 16.7，d 是 tick（默认 0）时留下的
         assertEquals(16.7, host.pos[1], 1e-12)
     }
 
     @Test
     fun deltaDefaultsToZeroWithoutCallerValue() {
-        // 没给 delta（首帧、setup 阶段）时读 0，而不是报「not available here」。
+        // 没给 delta（首帧、setup 阶段）时读 0
         val h = Harness("func process() { let p = this.spawn(); p.position.x = this.delta; }")
         h.process()
         assertEquals(0.0, (h.particles[0] as TestHost).pos[0], 1e-12)
@@ -625,7 +623,7 @@ class ScriptRuntimeConformanceTest {
         val host = h.particles[0] as TestHost
         assertEquals(7.0, host.pos[0], 1e-12)
 
-        // process 不再接受任何参数
+        // process 不接受参数
         assertFailsWith<RuntimeException> { parseProgram("func process(dt) {}") }
     }
 
@@ -662,10 +660,7 @@ class ScriptRuntimeConformanceTest {
 
     @Test
     fun spawnConfigAcceptsCustomFields() {
-        // 契约变更（§10.5.2 A2「通用参数容器」）：spawn 配置里的**未知键不再是错误**，
-        // 而是作为粒子的命名标量存进 fields，脚本里用 p.键名 读写。
-        // 旧契约是「未知键抛 ScriptException」，但编辑器的发射器正是靠自定义字段传 dx/dy/dz/ix
-        // （跨仓夹具 emitter-* 实测：旧契约下带发射器的动画在游戏里直接抛 unknown spawn config field）。
+        // spawn 配置里的未知键作为粒子的命名标量存进 fields，脚本里用 p.键名 读写
         val h = Harness("func setup() { let p = this.spawn({ foo: 1, bar: [2,3,4] }); p.alpha = p.foo + 1 }")
         h.setup()
         val host = h.particles[0] as TestHost
@@ -791,9 +786,8 @@ class ScriptRuntimeConformanceTest {
         assertEquals(4000.0, out[2])
         assertEquals(50.0, out[3] as Double, 1e-9)
         assertEquals(false, out[4])
-        // t=150 → 本地 50ms，hop 宽 1000ms，pos=0.05：rms = 0*0.95 + 32768*0.05（/65535）
+        // t=150 → 本地 50ms，hop 宽 1000ms，插值权重 0.05
         assertEquals((32768 * 0.05) / 65535.0, out[5] as Double, 1e-9)
-        // band3 = (3*0.95 + 35*0.05)/255
         assertEquals((3 * 0.95 + 35 * 0.05) / 255.0, out[6] as Double, 1e-9)
         assertEquals(128.0, out[7])
         assertEquals(listOf(0.0, 469.0), out[8])
@@ -802,7 +796,7 @@ class ScriptRuntimeConformanceTest {
 
     @Test
     fun audioSpeedScalesContentPosition() {
-        // v18：内容位置 = (t - st) × speed；t=150、st=100、speed=2.5 → 本地 125ms（钳到 [0, durMs]）
+        // 内容位置 = (t - st) × speed，钳到 [0, durMs]
         val program = parseProgram(
             "let out = 0\nfunc process() { let a = this.get(\"bgm\"); out = [a.progress, a.loud]; }",
         )
@@ -817,13 +811,13 @@ class ScriptRuntimeConformanceTest {
         ScriptRuntime.runProcessFrame(program, obj, ctx)
         val out = obj.globals["out"] as MutableList<*>
         assertEquals(125.0, out[0] as Double, 1e-9)
-        // hop 宽 1000ms，pos = 0.125：rms = 0*0.875 + 32768*0.125（/65535）
+        // hop 宽 1000ms，插值权重 0.125
         assertEquals((32768 * 0.125) / 65535.0, out[1] as Double, 1e-9)
     }
 
     @Test
     fun scriptAudioInterpMatchesEditor() {
-        // 与编辑器 test/audio-asset.test.js 同一组数据：hop 宽 1000ms，t=500 → f=0.5
+        // 与编辑器逐位一致：hop 宽 1000ms，t=500 → f=0.5
         val v = ScriptAudio.valueAt(makeAudioAsset(), 500.0)
         assertEquals((0.0 + 32768.0) / 2 / 65535.0, v.rms, 1e-12)
         assertEquals(1.0, v.peak, 1e-12)
