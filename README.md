@@ -136,8 +136,9 @@ The build requires JDK 25. Runtime artifacts are written to `build/libs/`.
 
 `mod_version` in `gradle.properties` is the single source of truth. Whenever it changes, the same
 commit gets a matching tag (`v<mod_version>`). Pushing such a tag publishes the artifact to Maven
-Central through `publish.yml`, which fails if the tag name does not match `mod_version`; there is no
-release without a tag.
+Central through `publish.yml` and the version to [Modrinth](https://modrinth.com/mod/particledrawing)
+through `modrinth.yml`, which also syncs this README into the project body. Both workflows fail if the
+tag name does not match `mod_version`; there is no release without a tag.
 
 ## License
 

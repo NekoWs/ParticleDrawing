@@ -126,8 +126,9 @@ cd ParticleDrawing
 ## 发布
 
 `gradle.properties` 里的 `mod_version` 是唯一事实来源。它每次变化，同一个提交都会打上对应的标签
-（`v<mod_version>`）。推送这样的标签会通过 `publish.yml` 把产物发布到 Maven Central；标签名与
-`mod_version` 不一致时该工作流会直接失败，没有标签就没有发布。
+（`v<mod_version>`）。推送这样的标签会通过 `publish.yml` 把产物发布到 Maven Central，并通过
+`modrinth.yml` 发布到 [Modrinth](https://modrinth.com/mod/particledrawing)（同时把本 README 同步为项目
+正文）。两个工作流在标签名与 `mod_version` 不一致时都会直接失败，没有标签就没有发布。
 
 ## 许可
 
