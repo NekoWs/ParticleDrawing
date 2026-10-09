@@ -184,17 +184,6 @@ class ParticleManager private constructor(val level: ServerLevel) {
             return ParticleManager(level)
         }
 
-        /**
-         * 编排动画程序的 arm 日志开关（默认关：日志走 DEBUG）。
-         *
-         * 每次 arm 都打一行 INFO 会把生存模式实战的日志刷爆（护盾一次受击 arm 32 个组），
-         * 所以默认只在 DEBUG 里留：排查「程序到底有没有 arm、arm 了几颗粒子」时打开它，
-         * 或把客户端配置 `debugProgramLogging` 设为 true 常开。
-         */
-        @JvmStatic
-        fun setDebugLogging(enabled: Boolean) {
-            work.nekow.particledrawing.core.DebugFlags.verboseProgramLogging = enabled
-        }
 
         /**
          * 登记一张程序化粒子用的贴图（PNG 字节）。

@@ -10,7 +10,7 @@ ParticleDrawing 是一个面向 [NeoForge](https://neoforged.net/)（Minecraft 2
 
 | 类 | 作用 |
 | --- | --- |
-| `ParticleManager` | 维度级入口，创建粒子 / 粒子组 / **运行时发射器**；批量生成 `spawnAll`；批量指令 `trackAll` / `setVelocityAll` / `applyForceAll`；程序化贴图登记 `registerTexture` / `registerBuiltinTextures`；调试日志开关 `setDebugLogging` |
+| `ParticleManager` | 维度级入口，创建粒子 / 粒子组 / **运行时发射器**；批量生成 `spawnAll`；批量指令 `trackAll` / `setVelocityAll` / `applyForceAll`；程序化贴图登记 `registerTexture` / `registerBuiltinTextures` |
 | `ParticleHandle` | 单粒子句柄：移动 / 速度 / 力 / 实体锚点（`Entity`/`uuid`/`entityId` 三入口）/ 重着色 / 缩放 / 销毁，含流式 `Builder`（外观 + **寿命曲线** `fadeOut`/`shrinkTo`/`curve` + 首帧插值端点 `prevPosition`）与 `position()`/`velocity()` 只读查询 |
 | `ParticleGroup` | 粒子组：编排式动画（客户端自驱程序：delay/fadeIn/spin/movePath/pulse/实体通道/公式指令/**逐成员各自方向漂移** `moveAlongOffset`）；组级变换绕**当前轴心**（`setPivot` / `followEntity` / **可移动轴心** `anchor`+`updateAnchor`），缩放 **`scaleBy` 在当前倍率上相乘 / `scaleTo` 到绝对目标**（起点是执行那一刻的倍率、0 = 不绘制），旋转可叠加、增量追加按「从现在起」、`setVariableInterpolated` 变量渐变；**完成信号** `onAnimationComplete` / `retire`（账本 = 有限指令 ∪ 变量缓动 ∪ 表达式有限时长；销毁与客户端真正到零对齐） |
 | `ParticleBatch` | 程序化粒子集：成员逐 tick 增删、**批量生成 `spawnAll`**、一次包批量下发位置/速度/力（超过单包上限自动拆包）、按权威位置/速度条件回收、补齐到 N |

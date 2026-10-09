@@ -20,7 +20,6 @@ import work.nekow.particledrawing.animation.program.AnimInstruction
 import work.nekow.particledrawing.animation.program.EntityBinding
 import work.nekow.particledrawing.animation.program.PivotRef
 import work.nekow.particledrawing.animation.program.finiteDurationMs
-import work.nekow.particledrawing.core.DebugFlags
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.network.ProgramCompletePayload
 import work.nekow.particledrawing.util.AttachMath
@@ -220,29 +219,11 @@ internal object ClientAnimationProgramManager {
                 "[ParticleDrawing] program {} armed with zero known particles ({} ids); client spawn packets missing?",
                 programId, particleIds.size,
             )
-        } else if (verboseLogging()) {
-            LOGGER.info(
-                "[ParticleDrawing] program {} armed: {} particles, {} instructions, anchorOffset={}",
-                programId, p.states.size, p.slots.size + (if (p.expressionCode != null) 1 else 0), p.anchorOffset,
-            )
-        } else {
-            LOGGER.debug(
-                "[ParticleDrawing] program {} armed: {} particles, {} instructions, anchorOffset={}",
-                programId, p.states.size, p.slots.size + (if (p.expressionCode != null) 1 else 0), p.anchorOffset,
-            )
         }
         for (ins in instructions) addInstruction(p, ins)
         programs[programId] = p
     }
 
-    /**
-     * arm 日志是否走 INFO（默认 false = DEBUG）：
-     * 生存模式实战里一次受击会 arm 几十个组，INFO 会把日志刷爆；排查时用
-     * [work.nekow.particledrawing.api.ParticleManager.setDebugLogging] 或客户端配置打开。
-     */
-    private fun verboseLogging(): Boolean =
-        DebugFlags.verboseProgramLogging ||
-            work.nekow.particledrawing.config.ParticleDrawingConfig.CLIENT.debugProgramLogging.get()
 
     fun append(programId: UUID, instructions: List<AnimInstruction>) {
         val p = programs[programId] ?: return

@@ -267,7 +267,7 @@ group.moveAlongOffset(scale = 0.6f, durationTicks = 20)  // 每颗沿自己相�
 
 > `moveAlongOffset` 是**逐成员各自方向**的平移（`scale × |偏移|`，方向取当前偏移，跟着自转一起转）：
 > 「球面碎片各自沿法线炸开」这种效果组级 `move` 表达不了——那样只能一片一个组，
-> 而组数直接等于 arm 日志行数与 arm 开销；本方法整组一个包就够。
+> 而组数直接等于受控清单的重发量与 arm 开销；本方法整组一个包就够。
 
 > **缩放的起点是「执行那一刻」的合成倍率**，不是恒定的 1：
 > - `scaleBy(r)`（`scale` 是它的别名）：终点 = 起点 × r，`scaleBy(0.01f).scaleBy(100f)` 会回到 1 倍；
@@ -304,9 +304,6 @@ g.delay(1).fadeOut(durationTicks = 5) // 1 tick 后开始、5 tick 淡完（不�
 不会把销毁推后「已经跑过的时长」那么多 tick（旧的绝对游标口径会留下看不见但还活着的粒子）。
 成员变化触发的**全量重发**会把时间轴重新从那一刻起算。
 
-> **arm 日志**：每次 arm 一行 INFO 在实战里会刷屏（护盾一次受击 arm 32 个组），所以默认只进 DEBUG。
-> 排查「程序到底有没有 arm、arm 了几颗粒子」时用 `ParticleManager.setDebugLogging(true)` 临时打开，
-> 或者把客户端配置 `debugProgramLogging` 设为 `true` 常开。
 
 ### 生命周期
 
