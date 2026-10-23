@@ -1,33 +1,67 @@
 package work.nekow.particledrawing.lighting
 
 import net.minecraft.client.Minecraft
+import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.core.BlockPos
 import net.minecraft.core.SectionPos
 import net.minecraft.util.LightCoordsUtil
 import net.minecraft.world.level.BlockAndLightGetter
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.client.ClientParticleEngine
-import java.util.UUID
+import java.util.LinkedHashSet
 import java.util.PriorityQueue
+import java.util.UUID
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.max
 import kotlin.math.sqrt
 
 /** 光图写入精度是 1/16 级：签名、烘焙脏判与缓存失效都按这个粒度比较。 */
 private fun quantizeLuminance(luminance: Double): Int = (luminance * 16.0).toInt()
 
+/**
+ * 地形烘焙的脏判策略。
+ *
+ * [base*] 是「已请求/完成重建」的基准，[last*] 是上一渲染帧观察到的位置。小位移先累计在
+ * 基准上，超过阈值才重建；光源停住时即使只差一点也补一次，保证最终地形与当前光场一致。
+ */
+internal object LightBakePolicy {
+
+    /** 光源相对基准移动超过该距离平方才重建；0.25 格。 */
+    const val MOVE_THRESHOLD_SQUARED = 0.0625
+
+    /** 上一帧位移小于该距离平方视为已停住。 */
+    private const val SETTLE_EPSILON_SQUARED = 1e-12
+
+    fun shouldRebake(
+        baseX: Double, baseY: Double, baseZ: Double, baseLightQ: Int,
+        lastX: Double, lastY: Double, lastZ: Double,
+        x: Double, y: Double, z: Double, lightQ: Int,
+    ): Boolean {
+        val dx = x - baseX
+        val dy = y - baseY
+        val dz = z - baseZ
+        val movedSq = dx * dx + dy * dy + dz * dz
+        if (movedSq <= 0.0) return lightQ != baseLightQ
+
+        val lastDx = x - lastX
+        val lastDy = y - lastY
+        val lastDz = z - lastZ
+        val settled = lastDx * lastDx + lastDy * lastDy + lastDz * lastDz <= SETTLE_EPSILON_SQUARED
+        return movedSq > MOVE_THRESHOLD_SQUARED || lightQ != baseLightQ || settled
+    }
+}
+
 // 动态光照管理器：不放置光源方块，把带小数精度的光照值写进光图坐标，靠 GPU 逐顶点插值得到平滑过渡。
-// 空间哈希（cell=16 格）加速邻近查询；光源移动超过阈值才重建受影响的区块，并按帧限流；读写锁保证线程安全。
+// 空间哈希（cell=16 格）加速邻近查询；位移在「已请求重建」的基准上累计，脏 section 跨帧排队，
+// 预算用完不丢请求；读写锁保证线程安全。
 @Suppress("unused")
 object DynamicLightManager {
 
     /** 空间哈希网格边长（格），与区块 section 边长一致。 */
     private const val CELL_BITS = 4
     private const val CELL_MASK = 0x1FFFFF
-
-    /** 光源移动超过该距离平方后才会触发区块重建。 */
-    private const val MOVE_THRESHOLD_SQUARED = 0.0625
 
     /** 每帧最大区块重建数量。 */
     private const val MAX_REBUILDS_PER_FRAME = 1024
@@ -67,8 +101,19 @@ object DynamicLightManager {
     private var lastSignature: Long = 0L
     private var lastEnabled: Boolean = false
 
-    /** 每个光源上次烘焙时的位置（仅渲染线程访问），用于判断是否需要重建。 */
+    /**
+     * 每个光源「已请求/完成地形重建」的基准（仅渲染线程访问）。
+     *
+     * 不是上一帧位置：小位移先累计在这里，超过阈值或光源停住时才更新，
+     * 否则每帧重写基准会让 0.1 格/t 的慢移永远够不到重建阈值。
+     */
     private val lastBaked = HashMap<UUID, BakedState>()
+
+    /** 已排队、还没提交给渲染器的脏 section；跨帧保留，预算用完不丢。 */
+    private val pendingSections = LinkedHashSet<Long>()
+
+    /** [pendingSections] 所属的关卡；换维后旧 section 键不能带到新世界。 */
+    private var pendingLevel: ClientLevel? = null
 
     internal class LightSource(
         val id: UUID,
@@ -79,7 +124,10 @@ object DynamicLightManager {
         val lightQ: Int get() = quantizeLuminance(luminance)
     }
 
-    private class BakedState(val x: Double, val y: Double, val z: Double, val lightQ: Int)
+    private class BakedState(
+        val x: Double, val y: Double, val z: Double, val lightQ: Int,
+        var lastX: Double = x, var lastY: Double = y, var lastZ: Double = z,
+    )
 
     /**
      * 每帧根据发光粒子刷新动态光源，并请求受影响的区块重建。
@@ -93,27 +141,36 @@ object DynamicLightManager {
     fun renderDynamicLights(engine: ClientParticleEngine, partialTick: Float = 0f) {
         if (!isEnabled()) {
             clear()
+            applyPendingSections()
             return
         }
 
         val mc = Minecraft.getInstance()
         val player = mc.player
-        if (mc.level == null || player == null) {
+        val level = mc.level
+        if (level == null || player == null) {
             clear()
+            applyPendingSections()
             return
         }
+        // 先切 pending 的关卡归属，再产生本帧脏 section，避免刚入队就被换维清掉
+        ensurePendingLevel(level)
 
-        // 每帧刷新照射半径，由配置驱动。
+        // 每帧刷新照射半径，由配置驱动；半径变了要把旧、新影响范围都失效。
         val radius = ParticleDrawingConfig.CLIENT.dynamicLightMaxDistance.get().coerceAtLeast(1.0)
+        val newRange = ceil(radius / 16.0).toInt().coerceAtLeast(1)
+        val oldRange = cellRange
+        val radiusChanged = radius != lightRadius || newRange != oldRange
         lightRadius = radius
         lightRadiusSquared = radius * radius
-        cellRange = ceil(radius / 16.0).toInt().coerceAtLeast(1)
+        cellRange = newRange
 
         val renderDistance = mc.options.effectiveRenderDistance * 16.0
         val newSources = collectSources(engine, player.x, player.y, player.z, renderDistance, partialTick)
 
-        // 光场变了就抬版本号：位置、亮度、数量任一变化都算
-        val signature = signatureOf(newSources)
+        // 光场变了就抬版本号：位置、亮度、数量或照射半径任一变化都算
+        var signature = signatureOf(newSources)
+        signature = signature * 31 + java.lang.Double.doubleToLongBits(radius)
         if (signature != lastSignature || !lastEnabled) {
             lastSignature = signature
             lastEnabled = true
@@ -121,31 +178,54 @@ object DynamicLightManager {
         }
 
         // 计算需要重建的区块：新增、移动、移除的光源。
-        val dirtySections = HashSet<Long>()
+        val dirtySections = LinkedHashSet<Long>()
+        if (radiusChanged) {
+            val range = max(oldRange, newRange)
+            for (prev in lastBaked.values) {
+                markSectionsAround(dirtySections, prev.x, prev.y, prev.z, range)
+            }
+            for (src in newSources) {
+                markSectionsAround(dirtySections, src.x, src.y, src.z, range)
+            }
+        }
+
+        val nextBaked = HashMap<UUID, BakedState>(newSources.size)
         val newIds = HashSet<UUID>(newSources.size)
         for (src in newSources) {
             newIds.add(src.id)
             val prev = lastBaked[src.id]
             if (prev == null) {
                 markSectionsAround(dirtySections, src.x, src.y, src.z)
+                nextBaked[src.id] = BakedState(src.x, src.y, src.z, src.lightQ)
+                continue
+            }
+            if (LightBakePolicy.shouldRebake(
+                    prev.x, prev.y, prev.z, prev.lightQ,
+                    prev.lastX, prev.lastY, prev.lastZ,
+                    src.x, src.y, src.z, src.lightQ,
+                )
+            ) {
+                markSectionsAround(dirtySections, prev.x, prev.y, prev.z)
+                markSectionsAround(dirtySections, src.x, src.y, src.z)
+                nextBaked[src.id] = BakedState(src.x, src.y, src.z, src.lightQ)
             } else {
-                val dx = src.x - prev.x
-                val dy = src.y - prev.y
-                val dz = src.z - prev.z
-                if (dx * dx + dy * dy + dz * dz > MOVE_THRESHOLD_SQUARED) {
-                    markSectionsAround(dirtySections, prev.x, prev.y, prev.z)
-                    markSectionsAround(dirtySections, src.x, src.y, src.z)
-                } else if (src.lightQ != prev.lightQ) {
-                    // 光源没挪但亮度变了：静止区块里的烘焙光图同样要重建
-                    markSectionsAround(dirtySections, src.x, src.y, src.z)
-                }
+                // 小位移继续累计在基准上，只记下这一帧看到的位置
+                prev.lastX = src.x
+                prev.lastY = src.y
+                prev.lastZ = src.z
+                nextBaked[src.id] = prev
             }
         }
         for ((id, prev) in lastBaked) {
             if (id !in newIds) {
+                // 基准可能落后于最后看到的位置（小位移还没触发重建），两处都失效
                 markSectionsAround(dirtySections, prev.x, prev.y, prev.z)
+                markSectionsAround(dirtySections, prev.lastX, prev.lastY, prev.lastZ)
             }
         }
+
+        // 先排队再更新基准：预算不够时请求留在 pending 里，不会因基准提前更新而丢
+        pendingSections.addAll(dirtySections)
 
         // 重建空间索引，写锁保护。
         LOCK.writeLock().lock()
@@ -160,14 +240,12 @@ object DynamicLightManager {
             hasLights = newSources.isNotEmpty()
 
             lastBaked.clear()
-            for (src in newSources) {
-                lastBaked[src.id] = BakedState(src.x, src.y, src.z, src.lightQ)
-            }
+            lastBaked.putAll(nextBaked)
         } finally {
             LOCK.writeLock().unlock()
         }
 
-        applyDirtySections(dirtySections)
+        applyPendingSections()
     }
 
     /**
@@ -249,15 +327,26 @@ object DynamicLightManager {
      */
     @JvmStatic
     fun clear() {
+        val oldSources = ArrayList<LightSource>()
         LOCK.writeLock().lock()
         try {
+            oldSources.addAll(sources)
             sources.clear()
             cellIndex.clear()
             hasLights = false
         } finally {
             LOCK.writeLock().unlock()
         }
+
+        // 光源没了也要把旧受光地形排进重建队列，否则关掉动态光后地形还亮着
+        for (src in oldSources) {
+            markSectionsAround(pendingSections, src.x, src.y, src.z)
+        }
+        for (prev in lastBaked.values) {
+            markSectionsAround(pendingSections, prev.x, prev.y, prev.z)
+        }
         lastBaked.clear()
+
         // 光源全没了也算光场变了：桥接粒子必须重新采样，否则会亮着旧值
         if (lastEnabled || lastSignature != 0L) {
             lastEnabled = false
@@ -380,11 +469,14 @@ object DynamicLightManager {
     /**
      * 把指定位置周围受光照影响的区块 section 收进集合。
      */
-    private fun markSectionsAround(out: MutableSet<Long>, x: Double, y: Double, z: Double) {
+    private fun markSectionsAround(
+        out: MutableSet<Long>,
+        x: Double, y: Double, z: Double,
+        range: Int = cellRange,
+    ) {
         val sx = SectionPos.blockToSectionCoord(floor(x).toInt())
         val sy = SectionPos.blockToSectionCoord(floor(y).toInt())
         val sz = SectionPos.blockToSectionCoord(floor(z).toInt())
-        val range = cellRange
         for (dx in -range..range) {
             for (dy in -range..range) {
                 for (dz in -range..range) {
@@ -394,19 +486,46 @@ object DynamicLightManager {
         }
     }
 
+    /** 切关卡时丢掉上一关的 pending 键与基准；同一关则保留跨帧积压。 */
+    private fun ensurePendingLevel(level: ClientLevel) {
+        val previous = pendingLevel
+        if (previous != null && previous !== level) {
+            pendingSections.clear()
+            lastBaked.clear()
+        }
+        pendingLevel = level
+    }
+
     /**
-     * 把待重建的 section 交给渲染器，并按帧限制重建数量。
+     * 把排队的脏 section 交给渲染器，并按帧限流。
+     *
+     * 没提交的条目留在 [pendingSections] 里，下一帧继续；预算耗尽的帧不会把请求丢掉。
+     * 换关卡时旧 section 键作废，避免在新世界重建一批无关区块。
      */
-    private fun applyDirtySections(dirtySections: Set<Long>) {
-        if (dirtySections.isEmpty()) return
+    private fun applyPendingSections() {
+        if (pendingSections.isEmpty()) return
         val mc = Minecraft.getInstance()
-        if (mc.level == null) return
+        val level = mc.level
+        if (level == null) {
+            pendingSections.clear()
+            pendingLevel = null
+            return
+        }
+        val previous = pendingLevel
+        pendingLevel = level
+        if (previous != null && previous !== level) {
+            pendingSections.clear()
+            return
+        }
 
         val extractor = mc.levelExtractor
         var budget = MAX_REBUILDS_PER_FRAME
-        for (packed in dirtySections) {
-            if (budget-- <= 0) break
+        val it = pendingSections.iterator()
+        while (it.hasNext() && budget > 0) {
+            val packed = it.next()
             extractor.setSectionDirty(SectionPos.x(packed), SectionPos.y(packed), SectionPos.z(packed))
+            it.remove()
+            budget--
         }
     }
 }
