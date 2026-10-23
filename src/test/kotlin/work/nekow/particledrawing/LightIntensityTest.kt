@@ -153,6 +153,23 @@ class LightIntensityTest {
     }
 
     @Test
+    fun `只读观察的尺寸按分数年龄求值，接管外观时不叠乘曲线`() {
+        val curve = ParticleLifeCurve.of(
+            ParticleCurve.scale(CurveKey.at(0, 1f), CurveKey.at(10, 0.5f)),
+        )
+        val rp = particle(scale = 2f, curve = curve)
+        val out = FloatArray(3)
+        repeat(5) { rp.advanceEngine() }
+        rp.visualScaleAt(0f, out)
+        assertEquals(1.5f, out[0], 1e-5f)
+        assertEquals(1.5f, out[1], 1e-5f)
+        assertEquals(1f, out[2], 1e-5f, "Z 只存储，不参与广告牌渲染")
+
+        rp.visualScaleAt(0f, out, applyCurve = false)
+        assertEquals(2f, out[0], 1e-5f, "程序直写接管外观时曲线不再叠乘")
+    }
+
+    @Test
     fun `渲染帧内出生的粒子从出生 partialTick 起算 age`() {
         val curve = ParticleLifeCurve.of(
             ParticleCurve.alpha(CurveKey.at(0, 0f), CurveKey.at(1, 1f)),

@@ -627,6 +627,41 @@ class ClientParticleEngine {
     }
 
     /**
+     * 只读遍历当前全部粒子，按本帧的分数年龄给出实际外观，不构造整份列表。
+     *
+     * [ParticleSample] 会在回调之间复用，只在回调期间有效；观察方不得保存或修改它，
+     * 也不得在回调里增删粒子。这里只读引擎状态，不新增光源、不提交顶点、不影响寿命。
+     *
+     * @param partialTick 渲染帧在上一 tick 与本 tick 之间的进度
+     * @param action 每颗粒子调用一次；普通全亮（lightLevel = 0）粒子同样会返回
+     */
+    fun forEachParticleSample(partialTick: Float, action: (ParticleSample) -> Unit) {
+        if (particles.isEmpty()) return
+        val sample = ParticleSample()
+        val scale = FloatArray(3)
+        for (rp in particles.values) {
+            val id = rp.id()
+            val bridge = bridges[id]
+            val curveApplies = !takeover.hasAppearance(id)
+            sample.id = id
+            // 桥接粒子记着真实的相邻 tick 端点与跳变；没有桥接（离屏/测试）时退回渲染粒子求值
+            sample.x = bridge?.sampledX(partialTick) ?: rp.interpolatedX(partialTick)
+            sample.y = bridge?.sampledY(partialTick) ?: rp.interpolatedY(partialTick)
+            sample.z = bridge?.sampledZ(partialTick) ?: rp.interpolatedZ(partialTick)
+            sample.alpha = bridge?.sampledAlpha(partialTick)
+                ?: if (curveApplies) rp.effectiveAlpha(partialTick) else rp.a()
+            rp.visualScaleAt(partialTick, scale, curveApplies)
+            sample.scaleX = scale[0]
+            sample.scaleY = scale[1]
+            sample.scaleZ = scale[2]
+            sample.glowing = rp.glowing()
+            sample.lightLevel = rp.lightLevel()
+            sample.lightIntensity = rp.lightIntensity(partialTick)
+            action(sample)
+        }
+    }
+
+    /**
      * 应用动画程序的一帧输出（客户端自驱模式）：直写渲染粒子与桥接粒子，并标记为 direct 同步。
      *
      * 首次接管时桥接位置走跳变，避免出生布局到公式布局的迁移被拉长成整 tick 的交叉扫掠。
@@ -691,4 +726,45 @@ class ClientParticleEngine {
         @JvmStatic
         fun dispose() { INSTANCE = null }
     }
+}
+
+/**
+ * 一颗粒子的只读观察快照，由 [ClientParticleEngine.forEachParticleSample] 填充并在回调间复用。
+ *
+ * 字段都是本渲染帧的实际值：位置按 partialTick 插值，alpha 来自桥接粒子的当前端点，
+ * 尺寸已乘寿命曲线（动画/程序接管外观时不再叠乘）。观察方只读，不要保存这个对象。
+ */
+class ParticleSample internal constructor() {
+    var id: UUID = UUID(0L, 0L)
+        internal set
+    var x: Double = 0.0
+        internal set
+    var y: Double = 0.0
+        internal set
+    var z: Double = 0.0
+        internal set
+
+    /** 实际透明度（含相邻 tick 插值与曲线乘数）。 */
+    var alpha: Float = 1f
+        internal set
+
+    /** 视觉尺寸（编辑器单位；[scaleX]/[scaleY] 是四边形的两根渲染轴，Z 只存储）。 */
+    var scaleX: Float = 1f
+        internal set
+    var scaleY: Float = 1f
+        internal set
+    var scaleZ: Float = 1f
+        internal set
+
+    /** 是否免光照（全亮）。 */
+    var glowing: Boolean = false
+        internal set
+
+    /** 向外发出的光照等级（0-15）。 */
+    var lightLevel: Int = 0
+        internal set
+
+    /** 当前有效光强（0-15；含透明度、尺寸与曲线包络）。 */
+    var lightIntensity: Float = 0f
+        internal set
 }

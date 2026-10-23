@@ -209,6 +209,22 @@ class RenderParticle(
     /** 当前视觉尺寸（各向异性取两根渲染轴里较长的一根）。 */
     private fun currentSize(): Float = max(abs(sclArray[0]), abs(sclArray[1]))
 
+    /**
+     * 本帧实际视觉尺寸（编辑器单位，已乘寿命曲线）。
+     *
+     * [applyCurve] = false 时只给基态尺寸（动画/程序直写接管外观时，曲线不再叠乘）。
+     * 数组顺序 `[长轴, 短轴, Z]`；Z 只存储，不参与广告牌渲染。
+     */
+    fun visualScaleAt(partialTick: Float, out: FloatArray, applyCurve: Boolean = true) {
+        out[0] = sclArray[0]
+        out[1] = sclArray[1]
+        out[2] = sclArray[2]
+        if (!applyCurve || lifeCurve == null) return
+        refreshCurve(partialTick)
+        out[0] *= mulScale
+        out[1] *= mulScale
+    }
+
     /** 运行时热更的过渡偏移；没有过渡或已经走完时为 0。 */
     private fun lightTransitionOffset(partialTick: Float): Float {
         val ease = lightEase

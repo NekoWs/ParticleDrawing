@@ -68,7 +68,8 @@
 
 | 类 | 作用 |
 | --- | --- |
-| `ClientParticleEngine` | 客户端粒子引擎：网络包落地点、本地动画直写点、发射器落地点 |
+| `ClientParticleEngine` | 客户端粒子引擎：网络包落地点、本地动画直写点、发射器落地点、只读逐粒子观察 |
+| `ParticleSample` | `forEachParticleSample` 回调里的只读快照：id、位置、实际 alpha/尺寸、全亮与光照等级 |
 | `RenderParticle` | 渲染粒子状态：缓动、速度与力积分、欧拉旋转、寿命曲线乘数 |
 | `BridgeParticle` | 桥接原版粒子系统的渲染代理，按 partialTick 插值位置、尺寸与颜色 |
 | `BatchedQuadParticleGroup`、`ParticleGroupRegistrar` | 自定义粒子分组，绕过原版每组的四边形上限 |
@@ -130,7 +131,7 @@
 
 | 类 | 作用 |
 | --- | --- |
-| `DynamicLightManager` | 动态光照：向光图坐标注入粒子光照，按脏 section 重烘焙 |
+| `DynamicLightManager` | 动态光照：向光图坐标注入粒子光照，按「已请求重建」基准累计位移并排队重烘焙 |
 | `LightAttenuation` | 光照衰减函数：线性、反平方、平滑步进等预设 |
 | `ParticleDrawCommands` | `/pdraw` 命令：`list` / `play` / `stop` / `reload` / `camera` / `debug` / `var` |
 | `ParticleDrawingConfig` | 服务端与客户端配置项 |

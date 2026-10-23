@@ -225,6 +225,30 @@ class BridgeParticle(
     /** 本帧的插值权重（渲染帧在相邻两个 tick 之间的进度）。 */
     private fun frameFactor(partialTick: Float): Float = partialTick.coerceIn(0f, 1f)
 
+    /** 本帧实际渲染的世界坐标（含相邻 tick 插值与同步跳变），只读观察用。 */
+    fun sampledX(partialTick: Float): Double {
+        val f = frameFactor(partialTick).toDouble()
+        return xo + (x - xo) * f
+    }
+
+    fun sampledY(partialTick: Float): Double {
+        val f = frameFactor(partialTick).toDouble()
+        return yo + (y - yo) * f
+    }
+
+    fun sampledZ(partialTick: Float): Double {
+        val f = frameFactor(partialTick).toDouble()
+        return zo + (z - zo) * f
+    }
+
+    /** 本帧实际渲染的透明度（含相邻 tick 插值与曲线乘数），只读观察用。 */
+    fun sampledAlpha(partialTick: Float): Float = blend.alphaAt(frameFactor(partialTick))
+
+    /** 本帧实际渲染的宽/高（渲染半宽，已含贴图尺寸系数），只读观察用。 */
+    fun sampledWidth(partialTick: Float): Float = blend.widthAt(frameFactor(partialTick))
+
+    fun sampledHeight(partialTick: Float): Float = blend.heightAt(frameFactor(partialTick))
+
     /**
      * 返回 quad 高度（原版唯一的尺寸口）。宽度由 OrientedQuadRenderState 单独记着，
      * 顶点生成时按 (长, 宽) 各自缩放。
