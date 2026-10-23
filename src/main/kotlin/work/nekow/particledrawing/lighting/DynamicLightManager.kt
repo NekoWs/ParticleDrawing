@@ -14,6 +14,9 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.sqrt
 
+/** 光图写入精度是 1/16 级：签名、烘焙脏判与缓存失效都按这个粒度比较。 */
+private fun quantizeLuminance(luminance: Double): Int = (luminance * 16.0).toInt()
+
 // 动态光照管理器：不放置光源方块，把带小数精度的光照值写进光图坐标，靠 GPU 逐顶点插值得到平滑过渡。
 // 空间哈希（cell=16 格）加速邻近查询；光源移动超过阈值才重建受影响的区块，并按帧限流；读写锁保证线程安全。
 @Suppress("unused")
@@ -67,20 +70,27 @@ object DynamicLightManager {
     /** 每个光源上次烘焙时的位置（仅渲染线程访问），用于判断是否需要重建。 */
     private val lastBaked = HashMap<UUID, BakedState>()
 
-    private class LightSource(
+    internal class LightSource(
         val id: UUID,
         val x: Double, val y: Double, val z: Double,
         val luminance: Double
-    )
+    ) {
+        /** 光图写入精度是 1/16 级；签名与烘焙比较都按这个精度量化。 */
+        val lightQ: Int get() = quantizeLuminance(luminance)
+    }
 
-    private class BakedState(val x: Double, val y: Double, val z: Double)
+    private class BakedState(val x: Double, val y: Double, val z: Double, val lightQ: Int)
 
     /**
      * 每帧根据发光粒子刷新动态光源，并请求受影响的区块重建。
+     *
      * @param engine 客户端粒子引擎
+     * @param partialTick 渲染帧在本 tick 内的进度；0 = 取本 tick 的权威外观（客户端 tick 观察用）。
+     *   渲染路径要传当前 partialTick，让光源位置、光强与画面处在同一帧。
      */
     @JvmStatic
-    fun renderDynamicLights(engine: ClientParticleEngine) {
+    @JvmOverloads
+    fun renderDynamicLights(engine: ClientParticleEngine, partialTick: Float = 0f) {
         if (!isEnabled()) {
             clear()
             return
@@ -100,7 +110,6 @@ object DynamicLightManager {
         cellRange = ceil(radius / 16.0).toInt().coerceAtLeast(1)
 
         val renderDistance = mc.options.effectiveRenderDistance * 16.0
-        val partialTick = mc.deltaTracker.getGameTimeDeltaPartialTick(false)
         val newSources = collectSources(engine, player.x, player.y, player.z, renderDistance, partialTick)
 
         // 光场变了就抬版本号：位置、亮度、数量任一变化都算
@@ -126,6 +135,9 @@ object DynamicLightManager {
                 if (dx * dx + dy * dy + dz * dz > MOVE_THRESHOLD_SQUARED) {
                     markSectionsAround(dirtySections, prev.x, prev.y, prev.z)
                     markSectionsAround(dirtySections, src.x, src.y, src.z)
+                } else if (src.lightQ != prev.lightQ) {
+                    // 光源没挪但亮度变了：静止区块里的烘焙光图同样要重建
+                    markSectionsAround(dirtySections, src.x, src.y, src.z)
                 }
             }
         }
@@ -149,7 +161,7 @@ object DynamicLightManager {
 
             lastBaked.clear()
             for (src in newSources) {
-                lastBaked[src.id] = BakedState(src.x, src.y, src.z)
+                lastBaked[src.id] = BakedState(src.x, src.y, src.z, src.lightQ)
             }
         } finally {
             LOCK.writeLock().unlock()
@@ -185,11 +197,17 @@ object DynamicLightManager {
             val dz = z - camZ
             val distSq = dx * dx + dy * dy + dz * dz
             if (distSq > cullDistSq) continue
-            val luminance = p.lightLevel().toDouble()
+            // 光强按本帧的分数年龄采样：寿命曲线、透明度、尺寸包络与运行时目标都在这里合流。
+            // 光图最高 15 级，乘数大于 1 时只影响裁剪排序，最终仍封顶。
+            val luminance = p.lightIntensity(partialTick).toDouble().coerceAtMost(15.0)
+            if (luminance <= 0.0) continue
             val score = lightScore(dx, dy, dz, luminance)
             val src = LightSource(p.id(), x, y, z, luminance)
             val key = cellKey(cellCoord(x), cellCoord(y), cellCoord(z))
-            val heap = cellHeaps.getOrPut(key) { PriorityQueue(compareBy { it.first }) }
+            // 同分时按 id 定序：光源集合的遍历顺序抖动不应让预算裁剪在相邻帧换人
+            val heap = cellHeaps.getOrPut(key) {
+                PriorityQueue(compareBy<Pair<Double, LightSource>> { it.first }.thenBy { it.second.id })
+            }
             if (heap.size < perCell) {
                 heap.add(score to src)
             } else if (score > heap.peek().first) {
@@ -204,7 +222,9 @@ object DynamicLightManager {
         // 全局上限兜底：超出时按亮度得分裁剪
         val maxLights = ParticleDrawingConfig.CLIENT.maxDynamicLights.get()
         if (out.size > maxLights) {
-            val heap = PriorityQueue<Pair<Double, LightSource>>(compareBy { it.first })
+            val heap = PriorityQueue<Pair<Double, LightSource>>(
+                compareBy<Pair<Double, LightSource>> { it.first }.thenBy { it.second.id },
+            )
             for (src in out) {
                 val dx = src.x - camX
                 val dy = src.y - camY
@@ -252,14 +272,19 @@ object DynamicLightManager {
     @JvmStatic
     fun version(): Int = version
 
-    /** 光源列表的轻量签名：数量、身份、位置与亮度都计入，移动与亮度变化都会改变签名。 */
-    private fun signatureOf(list: List<LightSource>): Long {
-        var h = 1125899906842597L
-        h = h * 31 + list.size
+    /**
+     * 光源列表的轻量签名：数量、身份、位置与量化亮度都计入。
+     *
+     * 亮度按光图写入精度（1/16 级）量化，既不会把小数亮度截断成整数，也不会因为
+     * 低于可见精度的抖动每帧抬版本号。各元素贡献相加，与遍历顺序无关。
+     */
+    internal fun signatureOf(list: List<LightSource>): Long {
+        var h = 1125899906842597L + list.size
         for (src in list) {
-            h = h * 31 + src.id.hashCode()
-            h = h * 31 + java.lang.Double.hashCode(src.x + src.y * 3.0 + src.z * 7.0)
-            h = h * 31 + src.luminance.toLong()
+            var e = src.id.hashCode().toLong()
+            e = e * 31 + java.lang.Double.doubleToLongBits(src.x + src.y * 3.0 + src.z * 7.0)
+            e = e * 31 + src.lightQ
+            h += e * -7046029254386353131L
         }
         return h
     }

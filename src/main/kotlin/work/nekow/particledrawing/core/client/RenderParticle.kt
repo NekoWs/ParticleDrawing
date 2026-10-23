@@ -9,6 +9,8 @@ import work.nekow.particledrawing.core.easing.EasingCurve
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.util.rotateAround
 import java.util.UUID
+import kotlin.math.abs
+import kotlin.math.max
 
 private val LINEAR = EasingCurve(0.0, 0.0, 1.0, 1.0)
 
@@ -24,13 +26,27 @@ private class EaseState(
 )
 
 /**
+ * 光强目标的热更过渡：在原始亮度上叠加一段逐渐衰减到 0 的偏移。
+ *
+ * 起点偏移 = 当前实际亮度 − 新目标在当刻的原始亮度，于是更新那一刻画面亮度连续，
+ * 不会先跳回满光再开始淡。之后曲线、透明度、尺寸包络照常逐帧变化，偏移只负责平滑接续。
+ */
+private class LightEase(
+    var offset: Float = 0f,
+    var startMs: Long = -1L,
+    var durationMs: Long = 0L,
+    var easing: EasingCurve = LINEAR,
+)
+
+/**
  * 渲染粒子：保存可视化状态并支持缓动过渡与速度积分。
  *
  * @param lightLevel 发光粒子向外发出的光照等级 (0-15)，仅在 glowing 为 true 时生效
  * @param lifetimeTicks 存活 tick 数；<=0 表示永久。按引擎 tick 计（关卡暂停时不流逝）
  * @param uv 贴图取景框；null = 纯白方块
- * @param lifeCurve 逐粒子寿命曲线（寿命内的颜色/尺寸乘数）；null = 恒定外观
+ * @param lifeCurve 逐粒子寿命曲线（寿命内的颜色/尺寸/光强乘数）；null = 恒定外观
  * @param prev 上一 tick 的位置，与 [position] 组成插值段；null = 直接出生
+ * @param lightIntensity 出生时的对外光强静态乘数（>= 0；1 = 原始亮度）
  */
 @Suppress("unused")
 class RenderParticle(
@@ -44,6 +60,7 @@ class RenderParticle(
     var uv: UvData? = null,
     private val lifeCurve: ParticleLifeCurve? = null,
     prev: Vec3? = null,
+    lightIntensity: Float = 1f,
 ) {
 
     // 位置 / 颜色 / 缩放（直接缓动）
@@ -79,6 +96,12 @@ class RenderParticle(
     /** 已经活过的引擎 tick 数。 */
     private var ticksAlive: Int = 0
 
+    /** 出生时的引擎 tick 序号；Long.MIN_VALUE = 直接调用、不做出生 tick 过滤（测试用）。 */
+    private var bornSequence: Long = Long.MIN_VALUE
+
+    /** 出生在本 tick 的哪个渲染进度（0..1）；渲染帧内生成的粒子用它把起点对齐到出生那一刻。 */
+    private var spawnPartial: Float = 0f
+
     /** 引擎时钟（毫秒，每 tick +50）：缓动与寿命曲线都按它推进。 */
     private var engineMs: Long = 0L
 
@@ -94,6 +117,19 @@ class RenderParticle(
     private var mulB = 1f
     private var mulA = 1f
     private var mulScale = 1f
+    private var mulLight = 1f
+
+    /** 出生时的对外光强乘数；运行时热更改的是它。 */
+    private var baseLightIntensity: Float = lightIntensity.coerceAtLeast(0f)
+
+    /** 出生时的视觉尺寸（各向异性取长轴），光强包络用「当前尺寸 ÷ 出生尺寸」。 */
+    private var spawnSize: Float = max(abs(scale), 0f)
+
+    /** 运行时目标热更的过渡；startMs < 0 表示没有过渡。 */
+    private var lightEase = LightEase()
+
+    /** 寿命到点但仍留一帧画零末端（仅当曲线末端确实收到零）。 */
+    private var expiring = false
 
     init {
         pos.cur = position
@@ -114,38 +150,136 @@ class RenderParticle(
     fun glowing(): Boolean = glowing
     fun lightLevel(): Int = lightLevel
 
-    /** 生成后经过的 tick 数（引擎时钟：关卡暂停时不增长）。 */
-    fun ageTicks(): Float = engineMs / 50.0f
+    /**
+     * 生成后经过的 tick 数（引擎时钟：关卡暂停时不增长）。
+     *
+     * [partialTick] 是渲染帧在上一 tick 与本 tick 之间的进度；曲线与动态光照用分数年龄采样，
+     * 短寿命粒子才能在两 tick 之间走到中间值和零末端。
+     */
+    fun ageTicks(partialTick: Float = 0f): Float =
+        engineMs / 50.0f + partialTick.coerceIn(0f, 1f) - spawnPartial
 
     /**
-     * 当前寿命曲线的乘数，按 [CurveChannel] 顺序写进 [out] = `[r, g, b, a, scale]`；
-     * 没有曲线时返回 false 且不改动 [out]。
+     * 当前寿命曲线的乘数，按 [CurveChannel] 顺序写进 [out] = `[r, g, b, a, scale, light]`；
+     * 没有曲线时返回 false 且不改动 [out]。数组长度不足 6 时最后一项不写。
      */
-    fun curveMultipliers(out: FloatArray): Boolean {
+    fun curveMultipliers(out: FloatArray, partialTick: Float = 0f): Boolean {
         if (lifeCurve == null) return false
-        refreshCurve()
+        refreshCurve(partialTick)
         out[0] = mulR
         out[1] = mulG
         out[2] = mulB
         out[3] = mulA
         out[4] = mulScale
+        if (out.size > 5) out[5] = mulLight
         return true
     }
 
     /** 寿命曲线调制后的透明度（发光粒子的可见性判断用；无曲线时就是自身 alpha）。 */
-    fun effectiveAlpha(): Float {
+    fun effectiveAlpha(partialTick: Float = 0f): Float {
         if (lifeCurve == null) return col.cur.a
-        refreshCurve()
+        refreshCurve(partialTick)
         return col.cur.a * mulA
     }
 
+    /**
+     * 当前对外光照强度（0-15 的有效值）。
+     *
+     * 基础等级 × 静态乘数 × 光强曲线 × 透明度 × 尺寸包络，再加运行时热更的接续偏移。
+     * 透明度与尺寸来自同一帧的实际外观，所以出生、缩片、淡出与表达式 presence
+     * 都会连续收束；显式 remove 或死亡后光源不再被收集。
+     */
+    fun lightIntensity(partialTick: Float = 0f): Float {
+        if (!glowing || lightLevel <= 0) return 0f
+        val value = rawLightIntensity(partialTick) + lightTransitionOffset(partialTick)
+        return if (value.isFinite()) value.coerceAtLeast(0f) else 0f
+    }
+
+    /** 不含运行时热更过渡的亮度：静态乘数、曲线、透明度与尺寸包络。 */
+    private fun rawLightIntensity(partialTick: Float): Float {
+        if (lifeCurve != null) refreshCurve(partialTick)
+        val alpha = (col.cur.a * if (lifeCurve != null) mulA else 1f).coerceIn(0f, 1f)
+        val curveScale = if (lifeCurve != null) mulScale else 1f
+        val curveLight = if (lifeCurve != null) mulLight else 1f
+        val size = (currentSize() / max(spawnSize, 1e-6f)).coerceIn(0f, 1f)
+        val value = lightLevel * baseLightIntensity * curveLight * alpha * size * curveScale.coerceIn(0f, 1f)
+        return if (value.isFinite()) value.coerceAtLeast(0f) else 0f
+    }
+
+    /** 当前视觉尺寸（各向异性取两根渲染轴里较长的一根）。 */
+    private fun currentSize(): Float = max(abs(sclArray[0]), abs(sclArray[1]))
+
+    /** 运行时热更的过渡偏移；没有过渡或已经走完时为 0。 */
+    private fun lightTransitionOffset(partialTick: Float): Float {
+        val ease = lightEase
+        if (ease.startMs < 0L || ease.durationMs <= 0L) return 0f
+        val elapsed = (engineMs - ease.startMs) + partialTick.coerceIn(0f, 1f) * 50f
+        val k = (elapsed / ease.durationMs).coerceIn(0f, 1f)
+        return ease.offset * (1f - ease.easing.evaluate(k))
+    }
+
+    /**
+     * 把运行时目标乘数缓动到 [multiplier]。
+     *
+     * 过渡起点取「当前实际亮度 − 新目标在当刻的原始亮度」，所以更新那一刻画面亮度不跳，
+     * 目标为 0 时也能从当前亮度平滑淡出；时长 0 直接落地。
+     */
+    fun applyLightIntensity(multiplier: Float, durationMs: Long, easing: EasingType) {
+        require(multiplier.isFinite() && multiplier >= 0f) { "光强乘数必须是非负有限值" }
+        if (durationMs <= 0L) {
+            baseLightIntensity = multiplier
+            lightEase = LightEase()
+            return
+        }
+        val current = lightIntensity(0f)
+        baseLightIntensity = multiplier
+        val rawStart = rawLightIntensity(0f)
+        lightEase = LightEase(current - rawStart, engineMs, durationMs, easing.curve)
+    }
+
+    /** 出生后捕获尺寸基准（各向异性在设置三元组之后调用）。 */
+    fun captureSpawnSize() {
+        spawnSize = currentSize()
+    }
+
+    /** 曲线是否驱动颜色/透明度（ALPHA 与 RGB 都算颜色通道）。 */
+    fun hasColorCurve(): Boolean = lifeCurve?.curves?.any {
+        it.channel == CurveChannel.ALPHA || it.channel == CurveChannel.RED ||
+            it.channel == CurveChannel.GREEN || it.channel == CurveChannel.BLUE
+    } == true
+
+    /** 曲线是否驱动尺寸。 */
+    fun hasScaleCurve(): Boolean =
+        lifeCurve?.curves?.any { it.channel == CurveChannel.SCALE } == true
+
+    /** 这套曲线是否改外观；只有 LIGHT 通道时不必每帧重写桥接的颜色/尺寸。 */
+    fun hasAppearanceCurve(): Boolean = hasColorCurve() || hasScaleCurve()
+
+    /** 这条曲线在寿命末尾是否确实收到零：只有这种粒子值得多留一帧画零末端。 */
+    fun needsFinalFrame(): Boolean {
+        if (lifetimeTicks <= 0) return false
+        val curve = lifeCurve ?: return false
+        val end = lifetimeTicks.toFloat()
+        val alpha = curve.valueAt(CurveChannel.ALPHA, end)
+        val scale = curve.valueAt(CurveChannel.SCALE, end)
+        return alpha <= 1e-4f || scale <= 1e-4f
+    }
+
+    fun isExpiring(): Boolean = expiring
+
+    /** 标记为「已到寿命、还留一帧收尾」。 */
+    fun markExpiring() {
+        expiring = true
+        curveSampleTicks = Float.NaN
+    }
+
     /** 一帧内只按当前时刻采样一次曲线。 */
-    private fun refreshCurve() {
+    private fun refreshCurve(partialTick: Float) {
         val curve = lifeCurve ?: return
-        val t = ageTicks()
+        val t = ageTicks(partialTick)
         if (t == curveSampleTicks) return
         curveSampleTicks = t
-        var r = 1f; var g = 1f; var b = 1f; var a = 1f; var s = 1f
+        var r = 1f; var g = 1f; var b = 1f; var a = 1f; var s = 1f; var l = 1f
         for (c in curve.curves) {
             val v = c.valueAt(t)
             when (c.channel) {
@@ -154,9 +288,10 @@ class RenderParticle(
                 CurveChannel.RED -> r *= v
                 CurveChannel.GREEN -> g *= v
                 CurveChannel.BLUE -> b *= v
+                CurveChannel.LIGHT -> l *= v
             }
         }
-        mulR = r; mulG = g; mulB = b; mulA = a; mulScale = s
+        mulR = r; mulG = g; mulB = b; mulA = a; mulScale = s; mulLight = l
     }
 
     fun x(): Double = pos.cur.x
@@ -177,6 +312,23 @@ class RenderParticle(
 
     fun isAlive(): Boolean = lifetimeTicks <= 0 || ticksAlive < lifetimeTicks
     fun isDead(): Boolean = !isAlive()
+
+    /** 记下出生时的引擎 tick 序号：出生那一 tick 不推进年龄，先让渲染帧看到 age 0。 */
+    fun markBorn(sequence: Long) {
+        bornSequence = sequence
+    }
+
+    /** 渲染帧内出生：记下出生时的 partialTick，曲线与光照从 age 0 开始。 */
+    fun markSpawnedDuringRender(partialTick: Float) {
+        spawnPartial = partialTick.coerceIn(0f, 1f)
+    }
+
+    /**
+     * 这一帧是否该推进年龄。[previousSequence] 是推进前的引擎 tick 序号；
+     * 出生在同一序号里的粒子先跳过一帧，下一 tick 才开始计年龄。
+     */
+    fun shouldAdvance(previousSequence: Long): Boolean =
+        bornSequence == Long.MIN_VALUE || bornSequence < previousSequence
 
     /**
      * 推进一个引擎 tick：寿命与缓动时钟一起走。引擎时钟在关卡暂停时不推进，

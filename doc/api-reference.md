@@ -8,7 +8,7 @@
 | 类 | 作用 |
 | --- | --- |
 | `ParticleManager` | 维度级入口：创建粒子与粒子组、声明运行时发射器、批量生成 `spawnAll`、批量指令 `trackAll` / `setVelocityAll` / `applyForceAll`、程序化贴图登记 `registerTexture` / `registerBuiltinTextures` |
-| `ParticleHandle` | 单粒子句柄：移动、速度、力、实体锚点、重着色、缩放、销毁、只读查询 `position()` / `velocity()` |
+| `ParticleHandle` | 单粒子句柄：移动、速度、力、实体锚点、重着色、缩放、光强热更、销毁、只读查询 `position()` / `velocity()` |
 | `ParticleHandle.Builder` | 粒子生成参数：位置、颜色、缩放、寿命、外观规格、寿命曲线、首帧插值端点、逐粒子延迟 |
 | `ParticleGroup` | 粒子组与编排动画：轴心绑定、一次性变换、持续运动、变量热更、表达式指令、完成信号 |
 | `ParticleBatch` | 程序化粒子集：成员逐 tick 增删、批量位置/速度/力、条件回收、补齐到 N |
@@ -16,9 +16,9 @@
 | `ParticleEmitter` | 运行时发射器的构建器：口径（里程或间隔）、寿命、外观、曲线、抖动 |
 | `EmitterHandle` | 已声明发射器的句柄：改锚点、口径、参数与外观，停止与状态查询 |
 | `Anchor` | 发射与特效锚点：`Fixed` / `Entity` / `Movable`，`Orient` 决定整组是否随运动方向转向 |
-| `ParticleCurve`、`CurveKey`、`CurveChannel` | 逐粒子寿命曲线的单通道关键帧（透明度、尺寸、RGB），同一通道多条相乘 |
+| `ParticleCurve`、`CurveKey`、`CurveChannel` | 逐粒子寿命曲线的单通道关键帧（透明度、尺寸、RGB、对外光强），同一通道多条相乘 |
 | `ParticleLifeCurve` | 一条粒子的全部寿命曲线，随生成包下发 |
-| `ParticleVisual` | 逐粒子外观规格：贴图、子矩形 UV、各向异性尺寸、朝向、加法混合、免光照 |
+| `ParticleVisual` | 逐粒子外观规格：贴图、子矩形 UV、各向异性尺寸、朝向、加法混合、免光照、光强乘数 |
 | `ParticleStyle` | 内置外观形状：`SQUARE`、`SOFT_DOT`、`LINE`，客户端按需生成 16px 贴图 |
 | `Draw`、`ColorSource`、`Draw.Axis` | 静态形状库与形状参数化颜色来源（固定色、双色渐变、彩虹、lambda） |
 | `Color` | 不可变 RGBA 颜色与工厂方法 |

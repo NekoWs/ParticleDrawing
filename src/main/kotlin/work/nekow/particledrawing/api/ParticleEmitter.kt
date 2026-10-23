@@ -107,6 +107,9 @@ class ParticleEmitter internal constructor(
     /** 发光粒子向外发出的光照等级 (0-15)，仅当 [glowing] 为 true 时生效。 */
     fun lightLevel(level: Int): ParticleEmitter = apply { this.lightLevel = level.coerceIn(0, 15) }
 
+    /** 对外光强静态乘数（>= 0；1 = 原始亮度）。只影响动态光照，不改片元外观。 */
+    fun lightIntensity(multiplier: Float): ParticleEmitter = apply { spec().lightIntensity(multiplier) }
+
     /** 外观规格（贴图 / UV / 各向异性 / 朝向 / 加色）；给的是拷贝，之后改原对象不影响。 */
     fun visual(visual: ParticleVisual): ParticleEmitter = apply { this.visualSpec = visual.copy() }
 
@@ -160,6 +163,9 @@ class ParticleEmitter internal constructor(
 
     /** 尺寸曲线（乘数；>1 变大、<1 缩小）。 */
     fun sizeCurve(vararg keys: CurveKey): ParticleEmitter = curve(ParticleCurve.scale(*keys))
+
+    /** 对外光强曲线（乘数；只影响动态光照，不改片元外观）。 */
+    fun lightCurve(vararg keys: CurveKey): ParticleEmitter = curve(ParticleCurve.light(*keys))
 
     /** RGB 三条颜色曲线（乘数，逐通道给关键帧）。 */
     fun colorCurve(red: List<CurveKey>, green: List<CurveKey>, blue: List<CurveKey>): ParticleEmitter = apply {

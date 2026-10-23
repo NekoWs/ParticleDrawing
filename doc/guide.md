@@ -29,7 +29,7 @@
 | `scale` | `Float` | 粒子大小，编辑器单位，默认 1 |
 | `stagger` | `Int` | 逐粒子入场间隔（tick），第 i 个粒子延迟 i×N 出现，默认 0 |
 | `group` | `ParticleGroup?` | 复用已有组而不是新建，默认 null |
-| `visual` | `ParticleVisual` | 外观规格：贴图、柔边形状、各向异性、朝向、加色、免光照 |
+| `visual` | `ParticleVisual` | 外观规格：贴图、柔边形状、各向异性、朝向、加色、免光照、光强乘数 |
 | `taper` | `Boolean` | 仅 `line` / `curve`：沿线从细到粗、两端渐隐，默认 false |
 | `lifeCurve` | `ParticleLifeCurve?` | 逐粒子寿命曲线，片元自己淡入收放 |
 
@@ -113,6 +113,8 @@ Draw.sphere(m, center, 5.0, count = 200,
 ```
 
 配合 `stagger` 就是逐颗冒出来。曲线随生成包一次下发，运行期没有逐帧带宽。
+曲线按渲染帧的分数游戏年龄采样，1～2 tick 的短尾在高刷下也能走到中间值与零末端；
+`CurveChannel.LIGHT` 是独立的光强通道，不会改颜色、透明度或尺寸。
 
 ## 渐变着色
 
@@ -368,6 +370,7 @@ val handle = manager.create()
     .lifetime(-1)                  // -1 = 永存
     .glowing(true)
     .lightLevel(15)                // 向外发出光照
+    .lightIntensity(0.6f)          // 静态光强乘数（只影响动态光照）
     .offsetFromPivot(dx, dy, dz)   // 相对组轴心的偏移
     .spawn() ?: return             // 达到维度上限时为 null
 
@@ -376,8 +379,20 @@ handle.recolor(Color.WHITE, 10, EasingType.LINEAR)
 handle.resize(2f, 10, EasingType.LINEAR)
 handle.setVelocity(Vec3(0.0, 0.1, 0.0))
 handle.lightLevel(7)
+handle.lightIntensity(0.4f, 8, EasingType.EASE_IN_OUT) // 8t 内从当前实际亮度接续到 0.4
 handle.moveInstant(pos)
 handle.remove()
+```
+
+光强是动态光照的独立通道，不改变片元透明度与全亮标志。最终亮度会乘上透明度、尺寸与
+出生/退场包络：组 `fadeOut`、`scaleTo(0)`、表达式 `presence` 都会让照明连续收束，不需要
+为了控光把造型改成半透明。要让光强随时间走自己的曲线，用 `CurveChannel.LIGHT`：
+
+```kotlin
+manager.create().position(p).scale(3f).lifetime(20)
+    .glowing(true).lightLevel(15)
+    .curve(ParticleCurve.light(CurveKey.at(0, 1f), CurveKey.at(20, 0f)))
+    .spawn()
 ```
 
 ### 外观
@@ -622,8 +637,8 @@ trail.isActive()
   样本插值，与 `track` 粒子同相位。瞬移（单条样本跳超 8 格）与断流（超过 3 tick 没有样本）都按跳变处理，
   不会在两点之间扫出假轨迹；Esc 暂停时不推进。
 - 外观与曲线：`color` / `scale` / `style` / `texture` / `uv` / `aniso` / `billboard` / `spin` / `alignTo` /
-  `additive` / `glowing` / `lightLevel` 与 Builder 同一套语义，曲线同理。`velocity(...)` 给每颗粒子一个
-  出生速度，默认静止。
+  `additive` / `glowing` / `lightLevel` / `lightIntensity` 与 Builder 同一套语义，曲线同理。
+  `velocity(...)` 给每颗粒子一个出生速度，默认静止。
 - 运行期改参数：`spawn()` 返回的句柄上重新调同名方法即可，变更走分档小包，已生成的粒子不受影响。锚点
   变更只发锚点段，密度变更只发口径段，其余整份参数替换。
 - 上限：`maxAlive(n)`（默认 4096）限制单个发射器同时存活的粒子数，客户端另有全局
@@ -875,7 +890,8 @@ fun ripples(m: ParticleManager, c: Vec3, waves: Int) {
 5. `stagger > 0` 时粒子陆续出现，期间 `group.size()` 会逐步增长。
 6. Java 调用方：绘制形状与部分链式方法带 `@JvmOverloads` 重载，其余带默认参数的方法要写全参数；
    颜色来源用 `ColorSource` 接口或 lambda 实现。
-7. 外观在生成时定死，中途只能改颜色、缩放标量、位置与发光等级，要换外观就 `remove()` 后重新生成。
+7. 贴图、UV、各向异性、朝向与加色在生成时定死；中途能改颜色、缩放、位置、发光等级与光强乘数，
+   要换外观就 `remove()` 后重新生成。
 8. `delay(n)` 期间粒子在 PD 侧还不存在，句柄上的操作一律无效，position() 读不到权威位置；
    `ParticleBatch` 会把延迟成员留到到点。
 9. 发射器声明不随调用方消失，法术结束或投射物消亡时要 `stop()`，否则客户端会一直发下去。
@@ -884,8 +900,11 @@ fun ripples(m: ParticleManager, c: Vec3, waves: Int) {
 11. 光照结果按方块坐标、动态光版本与分摊超时缓存。动态光变化下一渲染帧刷新；插拆火把、昼夜变化、区块
     重载这类没有版本号的世界光变化由每颗粒子各自错开的 1 秒周期重采样兜住。
 12. `lifetime(n)` 是 n 个 game tick，关卡不 tick（单人按 Esc 暂停）时寿命与缓动都不流逝，恢复后从原处
-    继续。寿命曲线同样按引擎 tick 的年龄取值。
+    继续。寿命曲线与光强按分数游戏年龄采样；末端为零的曲线会在寿命到点后多留一帧画零末端。
 13. 一个组是一段编排而不是粒子场：受控清单要一次发完，成员上限 8192，超了明确报错；指令按单包 512 条
     拆段下发，组还没有成员时最多缓存 4096 条指令，超出丢弃并告警。
 14. 同时活跃的发射器上限 512，到顶时新声明被拒绝并打 ERROR，可用 `EmitterHandle.isActive()` 检测。
 15. 贴图名长度上限 256 字符，过长在调用点直接报错。
+16. 动态光照亮度 = `lightLevel × lightIntensity × LIGHT 曲线 × 透明度 × 尺寸包络`，因此出生、缩片、
+    淡出、表达式 `presence` 与正常退场都会连续收束；`lightIntensity(…, durationTicks)` 热更从当前
+    实际亮度接续。它不改变片元透明度、颜色或全亮标志。

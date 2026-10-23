@@ -17,6 +17,7 @@ import work.nekow.particledrawing.core.network.ParticleDestroyPayload
 import work.nekow.particledrawing.core.network.ParticleAttachPayload
 import work.nekow.particledrawing.core.network.ParticleForcePayload
 import work.nekow.particledrawing.core.network.ParticleForceBatchPayload
+import work.nekow.particledrawing.core.network.ParticleLightIntensityPayload
 import work.nekow.particledrawing.core.network.ParticleLightLevelPayload
 import work.nekow.particledrawing.core.network.ParticleRotationPayload
 import work.nekow.particledrawing.core.network.ParticleSetPositionPayload
@@ -429,6 +430,22 @@ class ServerParticleEngine(
     }
 
     /**
+     * 运行时改对外光强乘数并广播；[durationTicks] > 0 时客户端从当前实际亮度接续。
+     *
+     * @param multiplier 目标乘数（>= 0；1 = 原始亮度）
+     */
+    fun setLightIntensity(id: UUID, multiplier: Float, durationTicks: Int,
+                          easing: EasingType, playersInDimension: Collection<ServerPlayer>) {
+        require(multiplier.isFinite() && multiplier >= 0f) { "光强乘数必须是非负有限值" }
+        require(durationTicks >= 0) { "光强过渡时长不能为负" }
+        val data = particles[id] ?: return
+        data.setLightIntensity(multiplier)
+
+        val payload = ParticleLightIntensityPayload(id, multiplier, durationTicks, easing)
+        sendToVisible(playersInDimension, data.position(), payload)
+    }
+
+    /**
      * 链式调用更新粒子属性。
      *
      * @param id 要更新的粒子 ID
@@ -438,6 +455,7 @@ class ServerParticleEngine(
         private var col: Color? = null
         private var scl: Float? = null
         private var lvl: Int? = null
+        private var intensity: Float? = null
         private var dur: Int = 0
         private var ease: EasingType = EasingType.LINEAR
 
@@ -448,6 +466,7 @@ class ServerParticleEngine(
         fun color(c: Color): UpdateBuilder { col = c; return this }
         fun scale(s: Float): UpdateBuilder { scl = s; return this }
         fun lightLevel(level: Int): UpdateBuilder { lvl = level; return this }
+        fun lightIntensity(multiplier: Float): UpdateBuilder { intensity = multiplier; return this }
         fun easing(e: EasingType, durationTicks: Int): UpdateBuilder { ease = e; dur = durationTicks; return this }
         fun duration(ticks: Int): UpdateBuilder { dur = ticks; return this }
 
@@ -458,6 +477,9 @@ class ServerParticleEngine(
             val s = scl ?: data.scale()
             if (lvl != null) {
                 setLightLevel(id, lvl!!, players)
+            }
+            if (intensity != null) {
+                setLightIntensity(id, intensity!!, dur, ease, players)
             }
             updateParticle(id, p, c, s,
                 updatePos = pos != null,

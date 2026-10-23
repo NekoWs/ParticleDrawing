@@ -10,6 +10,7 @@ import kotlin.math.roundToInt
  * 逐粒子外观规格：贴图 / 子矩形 UV / 各向异性尺寸 / 朝向 / 加法混合 / 免光照。
  *
  * 外观在生成时定死并同步给客户端，之后改不了，要换外观就销毁重生成。
+ * 唯一例外是光强乘数：运行期可用 [ParticleHandle.lightIntensity] 热更。
  *
  * 尺寸口径二选一：编辑器单位（默认，渲染整宽 = 值 × 0.2 格 × 贴图尺寸系数）或世界格（[anisoWorld]）。
  *
@@ -51,6 +52,15 @@ class ParticleVisual {
 
     /** 发光粒子向外发出的光照等级 (0-15)，仅当 [glowing] 为 true 时生效。 */
     var lightLevel: Int = 15
+
+    /**
+     * 对外光强的静态乘数（缺省 1）。
+     *
+     * 与 [lightLevel] 分开：等级决定基础亮度，本值在生命周期包络之外再乘一次，
+     * 便于同一套发光外观按法术调暗或调亮。运行时改它用
+     * [ParticleHandle.lightIntensity]，不会改片元透明度或全亮标志。
+     */
+    var lightIntensity: Float = 1f
 
     /** 用整张贴图（[name] 见 [texture]）；会清掉之前设的子矩形 UV。 */
     fun texture(name: String): ParticleVisual {
@@ -144,6 +154,13 @@ class ParticleVisual {
         return this
     }
 
+    /** 对外光强乘数（>= 0；1 = 原始亮度）。只影响动态光照。 */
+    fun lightIntensity(multiplier: Float): ParticleVisual {
+        require(multiplier.isFinite() && multiplier >= 0f) { "光强乘数必须是非负有限值" }
+        lightIntensity = multiplier
+        return this
+    }
+
     /** 复制一份（含 [uvRect] 数组本身），供同一份外观加局部微调的场景用。 */
     fun copy(): ParticleVisual {
         val c = ParticleVisual()
@@ -160,6 +177,7 @@ class ParticleVisual {
         c.additive = additive
         c.glowing = glowing
         c.lightLevel = lightLevel
+        c.lightIntensity = lightIntensity
         return c
     }
 
@@ -172,7 +190,7 @@ class ParticleVisual {
      */
     fun isPristine(): Boolean = texture == null && uvRect == null && !hasAniso() &&
         billboard && spinXDeg == 0.0 && spinYDeg == 0.0 && spinZDeg == 0.0 && spinLocal &&
-        !additive && !glowing
+        !additive && !glowing && lightIntensity == 1f
 
     /**
      * 解析成渲染用的 UV，由客户端调用。[texW]/[texH] 是已注册贴图的像素尺寸，未知传 0。

@@ -17,7 +17,7 @@ object NetworkHandler {
     @JvmStatic
     fun register(event: RegisterPayloadHandlersEvent) {
         // 载荷集合或字段变化时提升版本号，避免新旧端误配
-        val registrar: PayloadRegistrar = event.registrar("10")
+        val registrar: PayloadRegistrar = event.registrar("11")
 
         registrar.playToClient(ParticleSpawnPayload.TYPE, ParticleSpawnPayload.STREAM_CODEC, ClientPayloadHandler::handleSpawn)
         registrar.playToClient(ParticleSpawnBatchPayload.TYPE, ParticleSpawnBatchPayload.STREAM_CODEC, ClientPayloadHandler::handleSpawnBatch)
@@ -40,6 +40,7 @@ object NetworkHandler {
         registrar.playToClient(ParticleTranslatePayload.TYPE, ParticleTranslatePayload.STREAM_CODEC, ClientPayloadHandler::handleTranslate)
         registrar.playToClient(ParticleSetPositionPayload.TYPE, ParticleSetPositionPayload.STREAM_CODEC, ClientPayloadHandler::handleSetPosition)
         registrar.playToClient(ParticleLightLevelPayload.TYPE, ParticleLightLevelPayload.STREAM_CODEC, ClientPayloadHandler::handleLightLevel)
+        registrar.playToClient(ParticleLightIntensityPayload.TYPE, ParticleLightIntensityPayload.STREAM_CODEC, ClientPayloadHandler::handleLightIntensity)
         registrar.playToClient(ParticleTexturePayload.TYPE, ParticleTexturePayload.STREAM_CODEC, ClientPayloadHandler::handleTexture)
         registrar.playToClient(PlayAnimationPayload.TYPE, PlayAnimationPayload.STREAM_CODEC, ClientPayloadHandler::handlePlayAnimation)
         registrar.playToClient(PlayAnimationDataPayload.TYPE, PlayAnimationDataPayload.STREAM_CODEC, ClientPayloadHandler::handlePlayAnimationData)

@@ -99,6 +99,9 @@ class EmitterHandle internal constructor(
     /** 发光等级 (0-15)。 */
     fun lightLevel(level: Int): EmitterHandle = params { it.lightLevel(level) }
 
+    /** 对外光强静态乘数（>= 0；1 = 原始亮度），只影响之后生成的粒子。 */
+    fun lightIntensity(multiplier: Float): EmitterHandle = params { it.lightIntensity(multiplier) }
+
     /** 同时存活的粒子上限。 */
     fun maxAlive(count: Int): EmitterHandle = params { it.maxAlive(count) }
 
@@ -124,6 +127,9 @@ class EmitterHandle internal constructor(
 
     /** 尺寸曲线（乘数）。 */
     fun sizeCurve(vararg keys: CurveKey): EmitterHandle = params { it.sizeCurve(*keys) }
+
+    /** 对外光强曲线（乘数；只影响动态光照，不改片元外观）。 */
+    fun lightCurve(vararg keys: CurveKey): EmitterHandle = params { it.lightCurve(*keys) }
 
     /** RGB 三条颜色曲线。 */
     fun colorCurve(red: List<CurveKey>, green: List<CurveKey>, blue: List<CurveKey>): EmitterHandle =

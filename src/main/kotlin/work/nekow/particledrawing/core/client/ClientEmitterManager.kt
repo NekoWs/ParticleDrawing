@@ -150,12 +150,12 @@ internal object ClientEmitterManager {
             active.scratch.clear()
             advance.advance(prev, pos, active.scratch)
             val count = minOf(active.scratch.size, MAX_EMIT_PER_FRAME)
-            for (i in 0 until count) emitOne(active, engine, active.scratch[i], dir)
+            for (i in 0 until count) emitOne(active, engine, active.scratch[i], dir, partialTick)
         } else {
             val advance = active.time
                 ?: TimeAdvance(active.params.intervalMs.toDouble(), MAX_EMIT_PER_FRAME).also { active.time = it }
             val count = advance.advance(deltaMs)
-            for (i in 0 until count) emitOne(active, engine, pos, dir)
+            for (i in 0 until count) emitOne(active, engine, pos, dir, partialTick)
         }
     }
 
@@ -183,7 +183,13 @@ internal object ClientEmitterManager {
             is Anchor.Movable -> active.samples.resolve(partialTick, now)
         }
 
-    private fun emitOne(active: Active, engine: ClientParticleEngine, pos: Vec3, dir: Vec3) {
+    private fun emitOne(
+        active: Active,
+        engine: ClientParticleEngine,
+        pos: Vec3,
+        dir: Vec3,
+        partialTick: Float,
+    ) {
         val p = active.params
         val nowTick = ClientParticleEngine.tickSequence()
         while (active.alive.isNotEmpty() && active.alive.first() <= nowTick) active.alive.removeFirst()
@@ -199,6 +205,8 @@ internal object ClientEmitterManager {
             p.r, p.g, p.b, p.a, p.scale, p.lifetimeTicks,
             null, p.glowing, p.lightLevel, active.visual, p.lifeCurve,
         )
+        // 本帧刚出生：下一 tick 就计年龄，曲线从出生那一刻的 partialTick 起算
+        engine.markSpawnedDuringRender(id, partialTick)
         active.alive.addLast(nowTick + p.lifetimeTicks)
         if (p.velocity.x != 0.0 || p.velocity.y != 0.0 || p.velocity.z != 0.0) {
             engine.setVelocity(id, p.velocity.x, p.velocity.y, p.velocity.z)

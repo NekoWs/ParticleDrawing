@@ -234,6 +234,27 @@ class ParticleHandle(
     }
 
     /**
+     * 运行时改对外光强的静态乘数，只影响动态光照。
+     *
+     * [durationTicks] > 0 时从当前实际亮度接续到新目标，不会先跳回满光；
+     * 0 = 立即生效。寿命曲线、透明度与尺寸包络仍照常叠加。
+     *
+     * @param multiplier 目标乘数（>= 0；1 = 原始亮度）
+     */
+    @JvmOverloads
+    fun lightIntensity(
+        multiplier: Float,
+        durationTicks: Int = 0,
+        easing: EasingType = EasingType.LINEAR,
+    ): ParticleHandle {
+        require(durationTicks >= 0) { "lightIntensity 的时长不能为负" }
+        manager.getEngine().setLightIntensity(
+            id, multiplier, durationTicks, easing, manager.getPlayers(),
+        )
+        return this
+    }
+
+    /**
      * 使用缓动改变粒子颜色。
      * @param color 目标颜色
      * @param durationTicks 持续 tick 数
@@ -367,6 +388,12 @@ class ParticleHandle(
          */
         fun lightLevel(level: Int) = apply { this.lightLevel = level.coerceIn(0, 15) }
 
+        /**
+         * 对外光强乘数（>= 0；1 = 原始亮度）。只影响动态光照，不改透明度或全亮标志。
+         * 需要随时间变化时用 [curve] 的 [CurveChannel.LIGHT] 通道。
+         */
+        fun lightIntensity(multiplier: Float) = apply { spec().lightIntensity(multiplier) }
+
         /** 设置相对组轴心的偏移。 */
         fun offsetFromPivot(offset: Vec3) = apply { this.offsetFromPivot = offset }
 
@@ -450,6 +477,9 @@ class ParticleHandle(
 
         /** 尺寸曲线（乘数；>1 变大、<1 缩小）。 */
         fun sizeCurve(vararg keys: CurveKey) = curve(ParticleCurve.scale(*keys))
+
+        /** 对外光强曲线（乘数；只影响动态光照，不改片元外观）。 */
+        fun lightCurve(vararg keys: CurveKey) = curve(ParticleCurve.light(*keys))
 
         /** RGB 三条颜色曲线（乘数，逐通道给关键帧）。 */
         fun colorCurve(red: List<CurveKey>, green: List<CurveKey>, blue: List<CurveKey>) = apply {

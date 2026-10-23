@@ -16,6 +16,14 @@ enum class CurveChannel {
     SCALE,
 
     RED, GREEN, BLUE,
+
+    /**
+     * 对外光强乘数。
+     *
+     * 只作用于动态光照，不改变片元颜色、透明度或全亮标志；最终光强还会跟随
+     * 透明度、尺寸、出生/退场包络与运行时 [ParticleHandle.lightIntensity] 一起收束。
+     */
+    LIGHT,
 }
 
 /**
@@ -114,6 +122,10 @@ class ParticleCurve(
 
         @JvmStatic
         fun blue(vararg keys: CurveKey): ParticleCurve = ParticleCurve(CurveChannel.BLUE, keys.toList())
+
+        /** 对外光强曲线（乘数）。只影响动态光照，不改片元外观。 */
+        @JvmStatic
+        fun light(vararg keys: CurveKey): ParticleCurve = ParticleCurve(CurveChannel.LIGHT, keys.toList())
     }
 }
 

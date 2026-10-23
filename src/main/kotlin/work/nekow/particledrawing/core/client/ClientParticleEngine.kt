@@ -60,7 +60,8 @@ class ClientParticleEngine {
                       uv: UvData? = null, billboard: Boolean = true,
                       spin: DoubleArray = ZERO_SPIN, spinLocal: Boolean = true,
                       additive: Boolean = false, scaleArray: FloatArray? = null,
-                      lifeCurve: ParticleLifeCurve? = null, prev: Vec3? = null) {
+                      lifeCurve: ParticleLifeCurve? = null, prev: Vec3? = null,
+                      lightIntensity: Float = 1f) {
         if (particles.size >= ParticleDrawingConfig.CLIENT.maxRenderParticles.get()) return
 
         // 同一个 id 重新 spawn（服务端重发、迟到同步）：先把旧的整条状态摘掉
@@ -70,8 +71,10 @@ class ClientParticleEngine {
         }
 
         val rp = RenderParticle(id, Vec3(x, y, z),
-            Color.of(r, g, b, a), scale, glowing, lightLevel, lifetimeTicks, uv, lifeCurve, prev)
+            Color.of(r, g, b, a), scale, glowing, lightLevel, lifetimeTicks, uv, lifeCurve, prev, lightIntensity)
         if (scaleArray != null) rp.setScaleArrayDirect(scaleArray)
+        rp.captureSpawnSize()
+        rp.markBorn(tickSequence)
         particles[id] = rp
         if (glowing && lightLevel > 0) glowingIds.add(id)
         if (lifeCurve != null && !lifeCurve.isEmpty()) curveIds.add(id)
@@ -96,6 +99,18 @@ class ClientParticleEngine {
         }
     }
 
+    /**
+     * 渲染帧内生成的粒子（发射器与 process 派生粒子）：下一次 frameUpdate 就计年龄。
+     *
+     * 它们已经在当前渲染帧里出生，不需要再跳过一整 tick；同时记下出生时的 partialTick，
+     * 曲线与光照从 age 0 起算，不会一出生就落在曲线中段。
+     */
+    fun markSpawnedDuringRender(id: UUID, partialTick: Float) {
+        val rp = particles[id] ?: return
+        rp.markBorn(tickSequence - 1)
+        rp.markSpawnedDuringRender(partialTick)
+    }
+
     /** [spawnParticle] 的外观规格版本：网络 spawn 包与客户端本地发射器都走这里。 */
     internal fun spawnParticle(id: UUID, x: Double, y: Double, z: Double,
                       r: Float, g: Float, b: Float, a: Float, scale: Float,
@@ -104,7 +119,7 @@ class ClientParticleEngine {
         spawnParticle(
             id, x, y, z, r, g, b, a, scale, lifetimeTicks, groupId, glowing, lightLevel,
             visual.uv, visual.billboard, visual.spin, visual.spinLocal, visual.additive,
-            visual.scaleArray, lifeCurve, prev,
+            visual.scaleArray, lifeCurve, prev, visual.lightIntensity,
         )
     }
 
@@ -323,7 +338,21 @@ class ClientParticleEngine {
      * @param level 目标等级，自动钳制到 [0, 15]
      */
     fun setLightLevel(id: UUID, level: Int) {
-        particles[id]?.setLightLevel(level)
+        val rp = particles[id] ?: return
+        val wasGlowing = rp.glowing() && rp.lightLevel() > 0
+        rp.setLightLevel(level)
+        val nowGlowing = rp.glowing() && rp.lightLevel() > 0
+        if (wasGlowing != nowGlowing) {
+            if (nowGlowing) glowingIds.add(id) else glowingIds.remove(id)
+        }
+    }
+
+    /**
+     * 运行时改对外光强乘数。时长 > 0 时从当前实际亮度接续，不重置成满光；
+     * 0 = 立即生效。只影响动态光照，不动片元透明度与全亮标志。
+     */
+    fun setLightIntensity(id: UUID, multiplier: Float, durationTicks: Int, easing: EasingType) {
+        particles[id]?.applyLightIntensity(multiplier, durationTicks.coerceAtLeast(0) * 50L, easing)
     }
 
     /**
@@ -359,6 +388,7 @@ class ClientParticleEngine {
      */
     fun frameUpdate() {
         // 抬 tick 序号：桥接粒子据此把「上一 tick 的外观端点」记下来，供渲染帧插值
+        val previousSequence = tickSequenceCounter
         tickSequenceCounter++
         tickSequence = tickSequenceCounter
         // 先推进 track 粒子的插值端点（每 tick 一段，没收到新位置就原地保持）
@@ -372,9 +402,18 @@ class ClientParticleEngine {
 
         val deadIds = ArrayList<UUID>()
         for ((id, rp) in particles) {
-            // 寿命与缓动都按引擎时钟（这里每 tick 推一次）：关卡暂停时不流逝
-            rp.advanceEngine()
-            if (rp.isDead()) deadIds.add(id)
+            // 寿命与缓动都按引擎时钟（这里每 tick 推一次）：关卡暂停时不流逝。
+            // 出生在本 tick 的粒子先跳过一帧，让渲染先看到 age 0；否则 1～2t 尾迹会在第一次
+            // frameUpdate 里直接到点，中间值和零末端都没机会出现。
+            if (rp.shouldAdvance(previousSequence)) rp.advanceEngine()
+            if (!rp.isDead()) continue
+            if (rp.needsFinalFrame() && !rp.isExpiring()) {
+                // 曲线末端确实收到零：多留一 tick，让下一帧按 age = lifetime 采到零末端。
+                // 只对末端为零的粒子这样做，普通粒子仍按原寿命移除。
+                rp.markExpiring()
+            } else {
+                deadIds.add(id)
+            }
         }
         for (id in deadIds) removeOne(id)
         if (deadIds.isNotEmpty()) {
@@ -477,7 +516,7 @@ class ClientParticleEngine {
     }
 
     /** 曲线乘数复用缓冲（客户端渲染单线程，无需每个粒子分配数组）。 */
-    private val curveMulBuf = FloatArray(5)
+    private val curveMulBuf = FloatArray(6)
     private val curveScaleBuf = FloatArray(3)
 
     /**
@@ -489,27 +528,48 @@ class ClientParticleEngine {
         syncAppearanceToBridge(rp, bp)
     }
 
-    /** 颜色/缩放同步（含寿命曲线乘数）；位置不动，所以渲染帧也能安全调用。 */
-    private fun syncAppearanceToBridge(rp: RenderParticle, bp: BridgeParticle) {
-        if (rp.curveMultipliers(curveMulBuf)) {
+    /**
+     * 颜色/缩放同步（含寿命曲线乘数）；位置不动，所以渲染帧也能安全调用。
+     *
+     * [partialTick] 用于曲线采样；[snap] = true 时两端写成同一个值，渲染帧直接拿到
+     * 按分数年龄算出的外观，不再在相邻 tick 端点之间线性猜测。
+     */
+    private fun syncAppearanceToBridge(
+        rp: RenderParticle,
+        bp: BridgeParticle,
+        partialTick: Float = 0f,
+        snap: Boolean = false,
+    ) {
+        if (rp.curveMultipliers(curveMulBuf, partialTick)) {
+            // 只对曲线真正驱动的通道做逐帧直写；没被驱动的通道仍走 tick 端点插值，
+            // 不然一条尺寸曲线会把同时在跑的变色缓动也按帧拍平。
+            val colorCurve = rp.hasColorCurve()
+            val scaleCurve = rp.hasScaleCurve()
             bp.syncColor(
                 rp.r() * curveMulBuf[0], rp.g() * curveMulBuf[1],
                 rp.b() * curveMulBuf[2], rp.a() * curveMulBuf[3],
+                snap && colorCurve,
             )
             val sa = rp.scaleArray()
             val m = curveMulBuf[4]
             curveScaleBuf[0] = sa[0] * m
             curveScaleBuf[1] = sa[1] * m
             curveScaleBuf[2] = sa[2]
-            bp.syncScaleArray(curveScaleBuf)
+            if (scaleCurve) {
+                bp.syncScaleArray(curveScaleBuf, snap)
+            } else if (sa[0] != sa[1] || sa[0] != sa[2]) {
+                bp.syncScaleArray(sa, snap)
+            } else {
+                bp.syncScale(rp.scale(), snap)
+            }
             return
         }
-        bp.syncColor(rp.r(), rp.g(), rp.b(), rp.a())
+        bp.syncColor(rp.r(), rp.g(), rp.b(), rp.a(), snap)
         val sa = rp.scaleArray()
         if (sa[0] != sa[1] || sa[0] != sa[2]) {
-            bp.syncScaleArray(sa)
+            bp.syncScaleArray(sa, snap)
         } else {
-            bp.syncScale(rp.scale())
+            bp.syncScale(rp.scale(), snap)
         }
     }
 
@@ -519,13 +579,15 @@ class ClientParticleEngine {
      * 只动颜色/缩放、不动位置：位置每帧改写会把桥接粒子的 xo/x 折叠成同值对，
      * 破坏原版按 partialTick 的扫掠。
      */
-    fun frameSyncCurves() {
+    fun frameSyncCurves(partialTick: Float) {
         if (curveIds.isEmpty()) return
         for (id in curveIds) {
             val rp = particles[id] ?: continue
+            if (!rp.hasAppearanceCurve()) continue // 只有光强曲线：外观仍由原 tick 路径管
             if (takeover.hasAppearance(id)) continue // 动画/程序直写路径自己管外观
             val bp = bridges[id] ?: continue
-            syncAppearanceToBridge(rp, bp)
+            // 曲线粒子按本帧的分数年龄直写外观，短寿命粒子才能在两个 tick 之间走完整条曲线
+            syncAppearanceToBridge(rp, bp, partialTick, snap = true)
         }
     }
 
@@ -598,7 +660,9 @@ class ClientParticleEngine {
         val glowing = ArrayList<RenderParticle>(glowingIds.size)
         for (id in glowingIds) {
             val p = particles[id] ?: continue
-            if (p.isAlive() && p.effectiveAlpha() > 0.01f) glowing.add(p)
+            // 收尾那一帧（expiring）仍要参与采样，直到曲线末端真正到零；
+            // 也不在这里按 alpha 预筛，出生淡入的中间值要在本帧按分数年龄算出来。
+            if (p.isAlive() || p.isExpiring()) glowing.add(p)
         }
         return glowing
     }

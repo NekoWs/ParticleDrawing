@@ -171,6 +171,14 @@ internal object ClientPayloadHandler {
         }
     }
 
+    fun handleLightIntensity(payload: ParticleLightIntensityPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientParticleEngine.instance()?.setLightIntensity(
+                payload.particleId, payload.multiplier, payload.durationTicks, payload.easing
+            )
+        }
+    }
+
     // 运行时发射器：客户端按渲染帧自己发射
 
     fun handleEmitterSpawn(payload: EmitterSpawnPayload, context: IPayloadContext) {

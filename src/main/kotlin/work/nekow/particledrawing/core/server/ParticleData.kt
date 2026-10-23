@@ -20,7 +20,7 @@ class ParticleData(
     private var glowing: Boolean,
     private var lightLevel: Int,
     private var offsetFromPivot: Vec3 = Vec3.ZERO,
-    private val visual: ParticleVisual? = null,
+    private var visual: ParticleVisual? = null,
     private val lifeCurve: ParticleLifeCurve? = null,
 ) {
 
@@ -46,6 +46,16 @@ class ParticleData(
 
     /** 生成时定死的外观规格（贴图 / UV / 各向异性 / 朝向 / 加色）；null = 默认外观。 */
     fun visual(): ParticleVisual? = visual
+
+    /**
+     * 运行时改对外光强乘数：写进外观快照，之后补发给迟到玩家时也带着新值。
+     * 其余外观字段原样保留。
+     */
+    fun setLightIntensity(multiplier: Float) {
+        val visual = this.visual?.copy() ?: ParticleVisual()
+        visual.lightIntensity(multiplier)
+        this.visual = visual
+    }
 
     /** 生成时定死的寿命曲线（颜色/尺寸随寿命的乘数）；null = 恒定外观。 */
     fun lifeCurve(): ParticleLifeCurve? = lifeCurve

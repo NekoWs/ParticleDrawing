@@ -22,6 +22,7 @@ internal object ParticleVisualCodec {
     private const val FLAG_SPIN_WORLD = 1 shl 6
     private const val FLAG_ADDITIVE = 1 shl 7
     private const val FLAG_INLINE_NAME = 1 shl 8
+    private const val FLAG_LIGHT_INTENSITY = 1 shl 9
 
     fun write(buf: FriendlyByteBuf, visual: ParticleVisual?) {
         if (visual == null) {
@@ -49,6 +50,7 @@ internal object ParticleVisualCodec {
             if (!visual.spinLocal) flags = flags or FLAG_SPIN_WORLD
         }
         if (visual.additive) flags = flags or FLAG_ADDITIVE
+        if (visual.lightIntensity != 1f) flags = flags or FLAG_LIGHT_INTENSITY
 
         buf.writeVarInt(flags)
         if (flags == 0) return
@@ -68,6 +70,7 @@ internal object ParticleVisualCodec {
             buf.writeFloat(visual.spinYDeg.toFloat())
             buf.writeFloat(visual.spinZDeg.toFloat())
         }
+        if (visual.lightIntensity != 1f) buf.writeFloat(visual.lightIntensity)
     }
 
     fun read(buf: FriendlyByteBuf): ParticleVisual? {
@@ -99,6 +102,10 @@ internal object ParticleVisualCodec {
             visual.spinLocal = flags and FLAG_SPIN_WORLD == 0
         }
         visual.additive = flags and FLAG_ADDITIVE != 0
+        if (flags and FLAG_LIGHT_INTENSITY != 0) {
+            val intensity = buf.readFloat()
+            visual.lightIntensity = if (intensity.isFinite() && intensity >= 0f) intensity else 1f
+        }
         return visual
     }
 }

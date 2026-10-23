@@ -43,6 +43,11 @@ class ParticleSpawnSpec {
 
     fun lightLevel(level: Int): ParticleSpawnSpec = apply { this.lightLevel = level.coerceIn(0, 15) }
 
+    /** 对外光强静态乘数（>= 0；1 = 原始亮度）。只影响动态光照，不改片元外观。 */
+    fun lightIntensity(multiplier: Float): ParticleSpawnSpec = apply {
+        (visual ?: ParticleVisual().also { visual = it }).lightIntensity(multiplier)
+    }
+
     /** 外观规格（贴图 / UV / 各向异性 / 朝向 / 加色）；按拷贝存。 */
     fun visual(visual: ParticleVisual): ParticleSpawnSpec = apply { this.visual = visual.copy() }
 
@@ -62,6 +67,9 @@ class ParticleSpawnSpec {
 
     /** 尺寸曲线（乘数；>1 变大、<1 缩小）。 */
     fun sizeCurve(vararg keys: CurveKey): ParticleSpawnSpec = curve(ParticleCurve.scale(*keys))
+
+    /** 对外光强曲线（乘数；只影响动态光照，不改片元外观）。 */
+    fun lightCurve(vararg keys: CurveKey): ParticleSpawnSpec = curve(ParticleCurve.light(*keys))
 
     /** RGB 三条颜色曲线（乘数，逐通道给关键帧）。 */
     fun colorCurve(red: List<CurveKey>, green: List<CurveKey>, blue: List<CurveKey>): ParticleSpawnSpec = apply {

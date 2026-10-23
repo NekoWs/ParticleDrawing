@@ -22,7 +22,7 @@ import java.util.UUID
  * @param glowing 是否发光
  * @param lightLevel 发光粒子向外发出的光照等级 (0-15)
  * @param visual 生成时定死的外观（贴图 / UV / 各向异性 / 朝向 / 加色）；null = 默认外观
- * @param lifeCurve 逐粒子寿命曲线（寿命内的颜色/尺寸乘数）；null = 恒定外观
+ * @param lifeCurve 逐粒子寿命曲线（寿命内的颜色/尺寸/光强乘数）；null = 恒定外观
  * @param prev 上一 tick 的位置，与 [x]/[y]/[z] 组成一段插值；客户端首帧按 partialTick 在两点之间扫掠；
  *   null = 直接在当前位置出生
  */

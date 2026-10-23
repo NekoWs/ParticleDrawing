@@ -19,10 +19,11 @@ internal class ResolvedVisual(
     val spinLocal: Boolean,
     val additive: Boolean,
     val scaleArray: FloatArray?,
+    val lightIntensity: Float,
 ) {
     companion object {
-        /** 无外观规格：纯白方块、广告牌、无自转。 */
-        val DEFAULT = ResolvedVisual(null, true, ClientParticleEngine.ZERO_SPIN, true, false, null)
+        /** 无外观规格：纯白方块、广告牌、无自转、原始光强。 */
+        val DEFAULT = ResolvedVisual(null, true, ClientParticleEngine.ZERO_SPIN, true, false, null, 1f)
 
         fun of(visual: ParticleVisual?, scale: Float): ResolvedVisual {
             if (visual == null) return DEFAULT
@@ -40,6 +41,7 @@ internal class ResolvedVisual(
                 visual.spinLocal,
                 visual.additive,
                 visual.resolvedAniso(scale, ParticleVisual.texScaleOf(uv, entry?.width ?: 0, entry?.height ?: 0)),
+                visual.lightIntensity,
             )
         }
     }

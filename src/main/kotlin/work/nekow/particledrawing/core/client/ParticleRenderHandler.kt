@@ -64,9 +64,9 @@ object ParticleRenderHandler {
         ClientEmitterManager.frameTick(partialTick)
 
         val engine = ClientParticleEngine.instance() ?: return
-        // 带寿命曲线的粒子：淡出与收缩逐帧刷新，只改颜色与缩放，不动插值端点
-        engine.frameSyncCurves()
-        DynamicLightManager.renderDynamicLights(engine)
+        // 带寿命曲线的粒子：按本帧分数年龄刷新颜色与缩放，只改外观，不动位置插值端点
+        engine.frameSyncCurves(partialTick)
+        DynamicLightManager.renderDynamicLights(engine, partialTick)
     }
 
     // 玩家 game tick 事件（约 20Hz）：只在本地玩家的 tick 里推进一次，PlayerTickEvent 对每个在场玩家各触发一次。
@@ -100,6 +100,8 @@ object ParticleRenderHandler {
             // 旧关卡的粒子桥接已随 ParticleEngine 销毁，编排程序留着只会空转
             ClientAnimationProgramManager.clearAll()
             ClientParticleEngine.instance()?.clearAll()
+            // 旧世界的光源表与受光缓存不能带到新维度
+            DynamicLightManager.clear()
         }
     }
 
