@@ -911,3 +911,5 @@ fun ripples(m: ParticleManager, c: Vec3, waves: Int) {
     实际亮度接续。它不改变片元透明度、颜色或全亮标志。
 17. 诊断/录像要逐颗看普通全亮粒子的 alpha 时用 `ClientParticleEngine.forEachParticleSample(partialTick)`，
     回调里的 `ParticleSample` 会在粒子间复用，只读且不要保存；它不新增光源、不提交顶点、不影响寿命。
+18. `resize(scale, durationTicks, easing)` 的目标只在缓动结束时落地；SCALE 寿命曲线乘的是当前缓动尺寸，
+    不是目标值。各向异性粒子按两轴比例收缩，缩放中只改颜色不会打断缩放。

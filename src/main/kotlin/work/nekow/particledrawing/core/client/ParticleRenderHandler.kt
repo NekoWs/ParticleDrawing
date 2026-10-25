@@ -66,6 +66,8 @@ object ParticleRenderHandler {
         val engine = ClientParticleEngine.instance() ?: return
         // 带寿命曲线的粒子：按本帧分数年龄刷新颜色与缩放，只改外观，不动位置插值端点
         engine.frameSyncCurves(partialTick)
+        // 正在 resize 的粒子：尺寸也按分数刻采样，Bridge 与观察入口保持一致
+        engine.frameSyncScaleEases(partialTick)
         DynamicLightManager.renderDynamicLights(engine, partialTick)
     }
 

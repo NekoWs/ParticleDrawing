@@ -38,6 +38,9 @@ class ClientParticleEngine {
     // 位置不在这里动：每帧改写 xo/x 会把插值端点折叠成同值对，破坏 partialTick 扫掠。
     private val curveIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
 
+    // 正在做缩放缓动的粒子：每渲染帧按分数刻重写桥接尺寸，和观察入口用同一套采样。
+    private val scaleEaseIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
+
     // 实体锚点：客户端每 tick 本地解析（服务端只在挂载时下发一次）
     private val attachments: MutableMap<UUID, Attachment> = ConcurrentHashMap()
 
@@ -148,18 +151,18 @@ class ClientParticleEngine {
         }
 
         if (hasColor || hasScale) {
-            val color = Color.of(
-                if (hasColor) r else rp.r(), if (hasColor) g else rp.g(),
-                if (hasColor) b else rp.b(), if (hasColor) a else rp.a())
-            val scl = if (hasScale) scale else rp.scale()
-            rp.setTargetColorScale(color, scl, easing, durationTicks * 50L)
+            val color = if (hasColor) Color.of(r, g, b, a) else null
+            rp.setTargetColorScale(color, if (hasScale) scale else null, easing, durationTicks * 50L)
+            if (hasScale) {
+                if (durationTicks > 0) scaleEaseIds.add(id) else scaleEaseIds.remove(id)
+            }
             if (durationTicks <= 0) {
                 // 零时长目标立即落地，不等分批轮转，否则紧随其后的缓动包会把起点读成旧值；
-                // 两端一起写：即时改色/改尺寸是跳变，不插值成一段渐变
-                rp.finishColorScale()
-                bridges[id]?.let {
-                    it.syncColor(rp.r(), rp.g(), rp.b(), rp.a(), snap = true)
-                    it.syncScale(rp.scale(), snap = true)
+                // 只写这次真正改了的通道，别把另一条正在跑的缓动打断
+                rp.finishColorScale(finishColor = hasColor, finishScale = hasScale)
+                bridges[id]?.let { bp ->
+                    if (hasColor) bp.syncColor(rp.r(), rp.g(), rp.b(), rp.a(), snap = true)
+                    if (hasScale) bp.syncScaleArray(rp.scaleArray(), snap = true)
                 }
             }
         }
@@ -202,6 +205,7 @@ class ClientParticleEngine {
                             spinLocal: Boolean = true) {
         val rp = particles[id] ?: return
         takeover.markAppearance(id)
+        scaleEaseIds.remove(id) // 直写尺寸接管缓动
         trackBuffers.remove(id) // 动画直写接管位置，丢开 track 缓冲
         attachments.remove(id)
         val wasGlowing = rp.glowing() && rp.lightLevel() > 0
@@ -377,6 +381,7 @@ class ClientParticleEngine {
         trackBuffers.remove(id)
         attachments.remove(id)
         curveIds.remove(id)
+        scaleEaseIds.remove(id)
     }
 
     /** 引擎 tick 序号，每次 [frameUpdate] 自增；桥接粒子据此记录外观端点。 */
@@ -541,35 +546,25 @@ class ClientParticleEngine {
         snap: Boolean = false,
     ) {
         if (rp.curveMultipliers(curveMulBuf, partialTick)) {
-            // 只对曲线真正驱动的通道做逐帧直写；没被驱动的通道仍走 tick 端点插值，
+            // 只对曲线真正驱动的颜色通道做逐帧直写；没被驱动的通道仍走 tick 端点插值，
             // 不然一条尺寸曲线会把同时在跑的变色缓动也按帧拍平。
             val colorCurve = rp.hasColorCurve()
-            val scaleCurve = rp.hasScaleCurve()
             bp.syncColor(
                 rp.r() * curveMulBuf[0], rp.g() * curveMulBuf[1],
                 rp.b() * curveMulBuf[2], rp.a() * curveMulBuf[3],
                 snap && colorCurve,
             )
-            val sa = rp.scaleArray()
-            val m = curveMulBuf[4]
-            curveScaleBuf[0] = sa[0] * m
-            curveScaleBuf[1] = sa[1] * m
-            curveScaleBuf[2] = sa[2]
-            if (scaleCurve) {
-                bp.syncScaleArray(curveScaleBuf, snap)
-            } else if (sa[0] != sa[1] || sa[0] != sa[2]) {
-                bp.syncScaleArray(sa, snap)
-            } else {
-                bp.syncScale(rp.scale(), snap)
-            }
+            // 尺寸 = 当前缓动基准（按分数刻） × SCALE 曲线；不能直接读 setTarget 时写下的目标值
+            rp.visualScaleAt(partialTick, curveScaleBuf, applyCurve = true)
+            bp.syncScaleArray(curveScaleBuf, snap)
             return
         }
         bp.syncColor(rp.r(), rp.g(), rp.b(), rp.a(), snap)
-        val sa = rp.scaleArray()
-        if (sa[0] != sa[1] || sa[0] != sa[2]) {
-            bp.syncScaleArray(sa, snap)
+        rp.visualScaleAt(partialTick, curveScaleBuf, applyCurve = false)
+        if (curveScaleBuf[0] != curveScaleBuf[1]) {
+            bp.syncScaleArray(curveScaleBuf, snap)
         } else {
-            bp.syncScale(rp.scale(), snap)
+            bp.syncScale(curveScaleBuf[0], snap)
         }
     }
 
@@ -592,6 +587,35 @@ class ClientParticleEngine {
     }
 
     /**
+     * 每渲染帧把正在缩放缓动的粒子尺寸按分数刻写进桥接粒子。
+     *
+     * 没有寿命曲线的粒子原本只在 tick 端点插值，EASE_IN_OUT 这类缓动在帧间会走形；
+     * 这里让 Bridge 上屏尺寸和 [forEachParticleSample] 的 `visualScaleAt` 用同一套采样。
+     */
+    fun frameSyncScaleEases(partialTick: Float) {
+        if (scaleEaseIds.isEmpty()) return
+        val it = scaleEaseIds.iterator()
+        while (it.hasNext()) {
+            val id = it.next()
+            val rp = particles[id]
+            if (rp == null) {
+                it.remove()
+                continue
+            }
+            val bp = bridges[id]
+            if (bp != null && !takeover.hasAppearance(id)) {
+                rp.visualScaleAt(partialTick, curveScaleBuf, applyCurve = true)
+                if (curveScaleBuf[0] != curveScaleBuf[1]) {
+                    bp.syncScaleArray(curveScaleBuf, snap = true)
+                } else {
+                    bp.syncScale(curveScaleBuf[0], snap = true)
+                }
+            }
+            if (!rp.isScaleEasing()) it.remove()
+        }
+    }
+
+    /**
      * 客户端世界卸载（切维度/重生/退出世界）时清空全部本地状态。
      */
     fun clearAll() {
@@ -604,6 +628,7 @@ class ClientParticleEngine {
         trackBuffers.clear()
         attachments.clear()
         curveIds.clear()
+        scaleEaseIds.clear()
         cachedIds = emptyArray()
         cachedSize = -1
         syncCursor = 0
@@ -674,6 +699,7 @@ class ClientParticleEngine {
         val rp = particles[id] ?: return
         val firstTakeover = !takeover.hasPosition(id)
         takeover.markAppearance(id)
+        scaleEaseIds.remove(id) // 程序直写尺寸接管缓动
         trackBuffers.remove(id) // 程序接管位置，丢开 track 缓冲
         rp.setPositionDirect(pos)
         rp.setColorDirect(Color.of(r, g, b, a))

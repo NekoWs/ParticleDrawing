@@ -71,6 +71,15 @@ class RenderParticle(
     // 非均匀缩放三分量 [sx, sy, sz]；标量路径写 [s, s, 1]（粒子模型的 Z 恒为 1）
     private var sclArray: FloatArray = floatArrayOf(0f, 0f, 0f)
 
+    // 缩放缓动的起止基准尺寸。每帧按分数刻从 from 插到 to，sclArray 只保存本 tick 的落地值。
+    private var scaleFromX: Float = 0f
+    private var scaleFromY: Float = 0f
+    private var scaleToX: Float = 0f
+    private var scaleToY: Float = 0f
+
+    /** 光照包络采样尺寸的复用缓冲，避免每颗每帧分配。 */
+    private val lightScaleBuf = FloatArray(3)
+
     // 旋转 / 平移 / 偏移（绕轴心独立缓动后叠加）
     private val rot = EaseVar(DoubleArray(3), DoubleArray(3), DoubleArray(3))
     private val trans = EaseVar(Vec3.ZERO, Vec3.ZERO, Vec3.ZERO)
@@ -78,6 +87,7 @@ class RenderParticle(
 
     private val posEase = EaseState()
     private val colEase = EaseState()
+    private val scaleEase = EaseState()
     private val rotEase = EaseState()
     private val transEase = EaseState()
     private val offEase = EaseState()
@@ -143,6 +153,10 @@ class RenderParticle(
         prevX = start.x
         prevY = start.y
         prevZ = start.z
+        scaleFromX = scale
+        scaleFromY = scale
+        scaleToX = scale
+        scaleToY = scale
         this.lightLevel = lightLevel.coerceIn(0, 15)
     }
 
@@ -201,7 +215,9 @@ class RenderParticle(
         val alpha = (col.cur.a * if (lifeCurve != null) mulA else 1f).coerceIn(0f, 1f)
         val curveScale = if (lifeCurve != null) mulScale else 1f
         val curveLight = if (lifeCurve != null) mulLight else 1f
-        val size = (currentSize() / max(spawnSize, 1e-6f)).coerceIn(0f, 1f)
+        visualScaleAt(partialTick, lightScaleBuf, applyCurve = false)
+        val baseSize = max(abs(lightScaleBuf[0]), abs(lightScaleBuf[1]))
+        val size = (baseSize / max(spawnSize, 1e-6f)).coerceIn(0f, 1f)
         val value = lightLevel * baseLightIntensity * curveLight * alpha * size * curveScale.coerceIn(0f, 1f)
         return if (value.isFinite()) value.coerceAtLeast(0f) else 0f
     }
@@ -216,13 +232,29 @@ class RenderParticle(
      * 数组顺序 `[长轴, 短轴, Z]`；Z 只存储，不参与广告牌渲染。
      */
     fun visualScaleAt(partialTick: Float, out: FloatArray, applyCurve: Boolean = true) {
-        out[0] = sclArray[0]
-        out[1] = sclArray[1]
+        out[0] = baseScaleXAt(partialTick)
+        out[1] = baseScaleYAt(partialTick)
         out[2] = sclArray[2]
         if (!applyCurve || lifeCurve == null) return
         refreshCurve(partialTick)
         out[0] *= mulScale
         out[1] *= mulScale
+    }
+
+    /** 本帧基准尺寸的 X 轴：缩放缓动按分数刻插值，未缓动时就是 [sclArray] 的当前值。 */
+    private fun baseScaleXAt(partialTick: Float): Float = baseScaleAt(partialTick, scaleFromX, scaleToX, sclArray[0])
+
+    private fun baseScaleYAt(partialTick: Float): Float = baseScaleAt(partialTick, scaleFromY, scaleToY, sclArray[1])
+
+    private fun baseScaleAt(partialTick: Float, from: Float, to: Float, current: Float): Float {
+        val ease = scaleEase
+        if (ease.startMs < 0L) return current
+        if (ease.durationMs <= 0L) return to
+        val elapsed = (engineMs - ease.startMs) + partialTick.coerceIn(0f, 1f) * 50f
+        val k = (elapsed / ease.durationMs).coerceIn(0f, 1f)
+        if (k >= 1f) return to
+        val e = ease.easing.evaluate(k)
+        return from + (to - from) * e
     }
 
     /** 运行时热更的过渡偏移；没有过渡或已经走完时为 0。 */
@@ -267,6 +299,9 @@ class RenderParticle(
     /** 曲线是否驱动尺寸。 */
     fun hasScaleCurve(): Boolean =
         lifeCurve?.curves?.any { it.channel == CurveChannel.SCALE } == true
+
+    /** 缩放缓动是否还在进行；渲染帧需要按分数刻重写桥接尺寸。 */
+    fun isScaleEasing(): Boolean = scaleEase.startMs >= 0L
 
     /** 这套曲线是否改外观；只有 LIGHT 通道时不必每帧重写桥接的颜色/尺寸。 */
     fun hasAppearanceCurve(): Boolean = hasColorCurve() || hasScaleCurve()
@@ -362,12 +397,10 @@ class RenderParticle(
         transEase.active = false
         offEase.active = false
         pos.start = pos.cur
-        col.start = col.cur
-        scl.start = scl.cur
         pos.tgt = position
+        col.start = col.cur
         col.tgt = color
-        scl.tgt = scale
-        setScaleScalar(scale)
+        beginScaleTarget(scale, durationMs, easingType)
         posEase.easing = easingType.curve
         colEase.easing = easingType.curve
         val now = engineMs
@@ -375,20 +408,63 @@ class RenderParticle(
         posEase.durationMs = durationMs
         colEase.startMs = now
         colEase.durationMs = durationMs
-        if (durationMs == 0L) snapNextSync = true
+        if (durationMs == 0L) {
+            snapNextSync = true
+            finishColorScale()
+        }
     }
 
-    /** 设置颜色与缩放的缓动目标（标量缩放）。 */
-    fun setTargetColorScale(color: Color, scale: Float, easingType: EasingType, durationMs: Long) {
-        col.start = col.cur
-        scl.start = scl.cur
-        col.tgt = color
-        scl.tgt = scale
-        setScaleScalar(scale)
-        colEase.easing = easingType.curve
-        colEase.startMs = engineMs
-        colEase.durationMs = durationMs
-        if (durationMs == 0L) snapNextSync = true
+    /**
+     * 设置颜色与缩放的缓动目标（标量缩放）。
+     *
+     * [color] = null 表示只改尺寸，[scale] = null 表示只改颜色；没给的通道保持当前缓动，
+     * 不会因为一条指令顺手重置另一条通道。缩放为各向异性时按当前两轴比例缩放到长轴目标。
+     */
+    fun setTargetColorScale(color: Color?, scale: Float?, easingType: EasingType, durationMs: Long) {
+        if (color != null) {
+            col.start = col.cur
+            col.tgt = color
+            colEase.easing = easingType.curve
+            colEase.startMs = engineMs
+            colEase.durationMs = durationMs
+        }
+        if (scale != null) beginScaleTarget(scale, durationMs, easingType)
+    }
+
+    /**
+     * 记录缩放缓动的起止基准。
+     *
+     * 各向异性粒子按当前两轴比例缩放到长轴目标，缩到 0 时两轴同时归零；
+     * 目标只写入 [scaleToX]/[scaleToY]，本 tick 的 [sclArray] 仍从当前值开始，
+     * 避免设置目标的那一刻就跳到目标尺寸。
+     */
+    private fun beginScaleTarget(scale: Float?, durationMs: Long, easingType: EasingType) {
+        val fromX = baseScaleXAt(0f)
+        val fromY = baseScaleYAt(0f)
+        scaleFromX = fromX
+        scaleFromY = fromY
+        if (scale == null) {
+            scaleToX = fromX
+            scaleToY = fromY
+        } else if (abs(fromX - fromY) <= 1e-6f) {
+            scaleToX = scale
+            scaleToY = scale
+        } else {
+            val maxFrom = max(abs(fromX), abs(fromY))
+            val factor = if (maxFrom > 1e-6f) scale / maxFrom else 1f
+            scaleToX = fromX * factor
+            scaleToY = fromY * factor
+        }
+        scl.start = fromX
+        scl.cur = fromX
+        scl.tgt = scaleToX
+        scaleEase.easing = easingType.curve
+        scaleEase.startMs = engineMs
+        scaleEase.durationMs = durationMs
+        if (durationMs <= 0L) {
+            applyScaleTarget()
+            scaleEase.startMs = -1L
+        }
     }
 
     /** 设置速度向量。 */
@@ -515,21 +591,28 @@ class RenderParticle(
 
     /** 直接设置缩放（标量）。 */
     fun setScaleDirect(scale: Float) {
+        scaleEase.startMs = -1L
+        scaleFromX = scale
+        scaleFromY = scale
+        scaleToX = scale
+        scaleToY = scale
+        setScaleTriple(scale, scale, 1f)
+        scl.start = scale
         scl.cur = scale
         scl.tgt = scale
-        setScaleScalar(scale)
     }
 
     /** 直接设置非均匀缩放（三分量数组 [sx, sy, sz]）；就地写入，避免每颗粒子每帧新分配数组。 */
     fun setScaleArrayDirect(scaleArray: FloatArray) {
+        scaleEase.startMs = -1L
         setScaleTriple(scaleArray[0], scaleArray[1], scaleArray[2])
+        scaleFromX = sclArray[0]
+        scaleFromY = sclArray[1]
+        scaleToX = sclArray[0]
+        scaleToY = sclArray[1]
+        scl.start = sclArray[0]
         scl.cur = sclArray[0]
         scl.tgt = sclArray[0]
-    }
-
-    /** 标量写法：X/Y 同值，Z 恒为 1。 */
-    private fun setScaleScalar(scale: Float) {
-        setScaleTriple(scale, scale, 1f)
     }
 
     /** 就地写三分量缩放，数组实例全程复用。 */
@@ -543,11 +626,14 @@ class RenderParticle(
      * 立即完成进行中的颜色/缩放缓动（cur = tgt 并停止计时）。
      * 零时长目标由 [ClientParticleEngine.updateParticle] 调用；等分批轮转落地会让后续缓动包读到旧起点。
      */
-    fun finishColorScale() {
-        if (colEase.startMs >= 0L) {
+    fun finishColorScale(finishColor: Boolean = true, finishScale: Boolean = true) {
+        if (finishColor && colEase.startMs >= 0L) {
             col.cur = col.tgt
-            scl.cur = scl.tgt
             colEase.startMs = -1L
+        }
+        if (finishScale && scaleEase.startMs >= 0L) {
+            applyScaleTarget()
+            scaleEase.startMs = -1L
         }
     }
 
@@ -655,14 +741,33 @@ class RenderParticle(
             val elapsed = now - colEase.startMs
             if (elapsed >= colEase.durationMs) {
                 col.cur = col.tgt
-                scl.cur = scl.tgt
                 colEase.startMs = -1L
             } else {
                 val e = colEase.easing.evaluate(elapsed.toFloat() / colEase.durationMs)
                 col.cur = col.start.lerp(col.tgt, e)
-                scl.cur = lerp(scl.start, scl.tgt, e)
             }
         }
+
+        if (scaleEase.startMs >= 0L) {
+            val elapsed = now - scaleEase.startMs
+            if (elapsed >= scaleEase.durationMs) {
+                applyScaleTarget()
+                scaleEase.startMs = -1L
+            } else {
+                val e = scaleEase.easing.evaluate(elapsed.toFloat() / scaleEase.durationMs)
+                val x = lerp(scaleFromX, scaleToX, e)
+                val y = lerp(scaleFromY, scaleToY, e)
+                setScaleTriple(x, y, sclArray[2])
+                scl.cur = x
+            }
+        }
+    }
+
+    /** 把缓动终点落到 [sclArray]，并让标量接口读到落地值。 */
+    private fun applyScaleTarget() {
+        setScaleTriple(scaleToX, scaleToY, sclArray[2])
+        scl.cur = scaleToX
+        scl.tgt = scaleToX
     }
 
     /** 按 X→Y→Z 顺序旋转偏移向量。 */
