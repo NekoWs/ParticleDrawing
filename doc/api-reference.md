@@ -10,7 +10,7 @@
 | `ParticleManager` | 维度级入口：创建粒子与粒子组、声明运行时发射器、批量生成 `spawnAll` / `spawnAllDetailed`、批量指令 `trackAll` / `setVelocityAll` / `applyForceAll`、程序化贴图登记 `registerTexture` / `registerBuiltinTextures`；贴图返回 true 只表示逻辑登记已接受，GPU 解码由客户端主线程排队完成 |
 | `ParticleHandle` | 单粒子句柄：移动、速度、力、实体锚点、重着色、缩放、光强热更、销毁、只读查询 `position()` / `velocity()` |
 | `ParticleHandle.Builder` | 粒子生成参数：位置、颜色、缩放、寿命、外观规格、寿命曲线、首帧插值端点、逐粒子延迟 |
-| `ParticleGroup` | 粒子组与编排动画：轴心绑定、一次性变换、持续运动、变量热更、表达式指令、可更新阶段 `phaseParameter`、完成信号；程序按玩家可见成员投递，迟到成员补挂到同一时间轴 |
+| `ParticleGroup` | 粒子组与编排动画：轴心绑定、一次性变换、持续运动、变量热更、表达式指令、可更新阶段 `phaseParameter`、完成信号；`add(existing)` 会改挂既有/延迟成员，程序按玩家可见成员投递，迟到成员补挂到同一原起点时间轴 |
 | `ParticleBatch` | 程序化粒子集：成员逐 tick 增删、批量位置/速度/力、条件回收、补齐到 N |
 | `ParticleSpawnSpec` | 批量生成的单颗粒子规格（纯数据，字段与 `Builder` 对应，含出生速度/加速度配对） |
 | `ParticleEmitter` | 运行时发射器的构建器：口径（里程或间隔）、寿命、外观、曲线、抖动 |

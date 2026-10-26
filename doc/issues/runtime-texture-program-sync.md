@@ -1,6 +1,6 @@
 # 程序化贴图线程与动画成员同步
 
-状态：部分实机通过。修复代码为`d4d79d4`，PrimalSpells构建源码基准`93ca1c4`；主/源码JAR已同步更新。贴图线程和原空程序WARN已消失，但既有粒子入组后的迟到接管、首次迟到程序的相位仍未通过。消费侧没有补enqueue、成员同步或时钟。
+状态：代码修复完成，待PrimalSpells复验。第一轮修复代码为`d4d79d4`；本轮既有粒子入组、迟到成员预挂与原程序起点同步为`bcd92dc`，待重新构建主/源码JAR后在PS跑8项原生检查。消费侧没有补enqueue、成员同步或时钟。
 
 ## 当前保证
 
@@ -44,6 +44,23 @@ PD内部维护既有成员加入/移除后的程序追踪与客户端绑定关�
 ### 修改要求
 
 PD内部明确原程序起点、当前服务端时刻和双端时钟差，或同步等价的原生elapsed；首次迟到、离开/重入、追加指令、变量阶段和完成账本必须一致。不能要求消费侧补本地时钟、负时间哨兵或手工扣掉网络延迟。
+
+## 本轮修复记录
+
+### PD-PROGRAM-VISIBILITY-ADD
+
+- `ParticleData.groupId` 改为运行时可更新；新增 `ServerParticleEngine.reassignGroup`，把既有粒子从旧组移除、加入新组，并同步所有当前追踪玩家的组计数。
+- 延迟生成尚未落地的成员由 `associatePending` 预挂组，出生时 `spawnParticle` 采用预挂组，出生包也带这个组。
+- `ParticleGroup.add` 不再只写成员清单：既有粒子改挂、延迟成员预挂后，若程序已下发，立即用当前完整成员和历史指令重发全量；未下发则等下一次 flush。
+- 客户端新程序接管粒子时，会从其他旧程序移除该粒子状态，避免旧组继续覆盖。
+- 部分可见、最初全不可见、重新进入视距、延迟出生四条路径现在都能通过服务端 `groupId` / `onTracked` 和客户端 `onParticleSpawned` 找到程序。
+
+### PD-PROGRAM-LATE-CLOCK
+
+- `AnimationProgramPayload` 新增原始起点 `programStartGameTime`；`anchorGameTime` 保留“本次下发时的服务端 gameTime”。
+- 客户端 `Program.startAnchor` 使用原始起点，`anchorOffset` 仍用下发时刻减接收时刻；迟到首次接收时程序时间等于“下发时刻 − 原起点”，不会再从零开始。
+- 首次下发、重新进入、成员加入后的全量重发、追加指令、变量阶段与完成账本都沿同一原起点推进。
+- 协议 registrar 升到 `14`。
 
 ## 复验与恢复条件
 
