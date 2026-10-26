@@ -17,6 +17,8 @@
 
 完整草案与验收见需求正文。
 
+消费迁移发现的待修复项见[可读API迁移缺口](issues/readable-api-migration.md)：单位常量减法、多边形边采样、退场完成语义，以及动态颜色/幂函数/共享阶段入口。消费方暂停这些入口的替换，不以改变原表现来完成迁移。
+
 ## 立体声声像与编辑器有两处差别
 
 编辑器把声像串在 Web Audio 的 `StereoPanner` 上（`source → gain → panner → destination`）。播放端原来
