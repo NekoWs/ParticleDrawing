@@ -219,6 +219,7 @@ internal object ClientPayloadHandler {
         context.enqueueWork {
             work.nekow.particledrawing.core.client.ClientAnimationProgramManager.arm(
                 payload.programId, payload.particleIds, payload.anchorGameTime,
+                payload.programStartGameTime,
                 payload.initialPivot, payload.entityBindings, payload.vars, payload.instructions,
             )
         }

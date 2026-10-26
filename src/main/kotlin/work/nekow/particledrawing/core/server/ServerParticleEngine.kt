@@ -52,6 +52,8 @@ class ServerParticleEngine(
     private val playerParticles: MutableMap<UUID, MutableSet<UUID>> = ConcurrentHashMap()
     /** playerId → groupId → 已追踪成员数；程序投递只靠计数判断，避免大组逐个扫集合。 */
     private val playerGroupCounts: MutableMap<UUID, MutableMap<UUID, Int>> = ConcurrentHashMap()
+    /** 延迟生成、尚未落到 [particles] 的成员 → 已通过 `ParticleGroup.add` 指定的组。 */
+    private val pendingGroups: MutableMap<UUID, UUID> = ConcurrentHashMap()
     private var visibilityTickCounter = 0
     private var lastCapacityWarnNanos = 0L
 
@@ -75,21 +77,23 @@ class ServerParticleEngine(
             return null
         }
 
+        // 延迟生成的 handle 可能在出生前已被 ParticleGroup.add 指定到某组。
+        val effectiveGroupId = pendingGroups.remove(id) ?: groupId
         val data = ParticleData.create(id, position, color, scale,
-            lifetime, groupId, glowing, lightLevel, offsetFromPivot, visual, lifeCurve)
+            lifetime, effectiveGroupId, glowing, lightLevel, offsetFromPivot, visual, lifeCurve)
         particles[id] = data
 
-        if (groupId != null) {
-            groups[groupId]?.addMember(id)
+        if (effectiveGroupId != null) {
+            groups[effectiveGroupId]?.addMember(id)
         }
 
         val payload = ParticleSpawnPayload(
             id, position.x, position.y, position.z,
             color.r, color.g, color.b, color.a,
-            scale, lifetime, groupId, glowing, lightLevel, visual, lifeCurve, prev,
+            scale, lifetime, effectiveGroupId, glowing, lightLevel, visual, lifeCurve, prev,
         )
 
-        broadcastSpawn(playersInDimension, position, id, payload, groupId)
+        broadcastSpawn(playersInDimension, position, id, payload, effectiveGroupId)
         return data
     }
 
@@ -533,6 +537,7 @@ class ServerParticleEngine(
             sendToTracked(playersInDimension, payload.particleIds.toList(), payload)
         }
         untrackParticles(ids, groupId)
+        clearPendingGroup(groupId)
         ServerProgramDelivery.clear(groupId)
     }
 
@@ -631,6 +636,7 @@ class ServerParticleEngine(
         playerParticles.clear()
         visibleTo.clear()
         playerGroupCounts.clear()
+        pendingGroups.clear()
         ServerProgramDelivery.clearDimension(dimensionId)
         return count
     }
@@ -652,13 +658,47 @@ class ServerParticleEngine(
         return recipients
     }
 
+    /**
+     * 延迟生成阶段把成员预挂到组：出生时 [spawnParticle] 会采用这里的组，
+     * 让 `ParticleGroup.add(existingHandle)` 对尚未落地的成员也生效。
+     */
+    fun associatePending(particleId: UUID, groupId: UUID) {
+        pendingGroups[particleId] = groupId
+        groups[groupId]?.addMember(particleId)
+    }
+
+    /** 既有粒子改挂到新组：同步组清单与每个玩家的组计数，后续出生/可见性钩子才能找到它。 */
+    fun reassignGroup(particleId: UUID, groupId: UUID): Boolean {
+        val data = particles[particleId] ?: return false
+        val oldGroupId = data.groupId
+        if (oldGroupId == groupId) {
+            groups[groupId]?.addMember(particleId)
+            return false
+        }
+        if (oldGroupId != null) groups[oldGroupId]?.removeMember(particleId)
+        data.groupId = groupId
+        groups[groupId]?.addMember(particleId)
+        visibleTo[particleId]?.forEach { playerId ->
+            if (oldGroupId != null) releaseGroupCount(playerId, oldGroupId)
+            addGroupCount(playerId, groupId)
+        }
+        return true
+    }
+
+    /** 组已移除：丢掉尚未出生成员的预挂关系。 */
+    fun clearPendingGroup(groupId: UUID) {
+        pendingGroups.entries.removeIf { it.value == groupId }
+    }
+
     private fun track(playerId: UUID, particleId: UUID, groupId: UUID? = null) {
         playerParticles.computeIfAbsent(playerId) { ConcurrentHashMap.newKeySet() }.add(particleId)
         visibleTo.computeIfAbsent(particleId) { ConcurrentHashMap.newKeySet() }.add(playerId)
-        if (groupId != null) {
-            playerGroupCounts.computeIfAbsent(playerId) { ConcurrentHashMap() }
-                .merge(groupId, 1, Int::plus)
-        }
+        if (groupId != null) addGroupCount(playerId, groupId)
+    }
+
+    private fun addGroupCount(playerId: UUID, groupId: UUID) {
+        playerGroupCounts.computeIfAbsent(playerId) { ConcurrentHashMap() }
+            .merge(groupId, 1, Int::plus)
     }
 
     private fun untrackParticle(particleId: UUID, groupId: UUID? = null) {
@@ -734,10 +774,11 @@ class ServerParticleEngine(
                     if (tracked.contains(particleId)) continue
                     if (!ParticleVisibilityManager.isWithinViewDistance(player, data.position())) continue
 
-                    val firstForGroup = data.groupId != null && !playerTracksGroup(player.uuid, data.groupId)
+                    val groupId = data.groupId
+                    val firstForGroup = groupId != null && !playerTracksGroup(player.uuid, groupId)
                     PacketDistributor.sendToPlayer(player, spawnPayload(data))
-                    track(player.uuid, particleId, data.groupId)
-                    data.groupId?.let { ServerProgramDelivery.onTracked(it, player, firstForGroup) }
+                    track(player.uuid, particleId, groupId)
+                    groupId?.let { ServerProgramDelivery.onTracked(it, player, firstForGroup) }
                     count++
                 }
             }

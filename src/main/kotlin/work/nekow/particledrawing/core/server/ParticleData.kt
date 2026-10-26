@@ -16,13 +16,17 @@ class ParticleData(
     private var scale: Float,
     private var lifetime: Int,
     val maxLifetime: Int,
-    val groupId: UUID?,
+    initialGroupId: UUID?,
     private var glowing: Boolean,
     private var lightLevel: Int,
     private var offsetFromPivot: Vec3 = Vec3.ZERO,
     private var visual: ParticleVisual? = null,
     private val lifeCurve: ParticleLifeCurve? = null,
 ) {
+
+    /** 当前所属组；`ParticleGroup.add(existing)` 可把它从无组/旧组改到新组。 */
+    var groupId: UUID? = initialGroupId
+        internal set
 
     private var velocity: Vec3 = Vec3.ZERO
 

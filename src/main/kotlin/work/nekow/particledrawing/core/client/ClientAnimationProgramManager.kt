@@ -103,7 +103,7 @@ internal object ClientAnimationProgramManager {
         /** 程序启动时的轴心；迟到成员的 rel 以它为基准。 */
         val initialPivot: Vec3,
         val anchorOffset: Long,
-        /** 下发时刻的服务端 gameTime：程序相对 tick 的原点。 */
+        /** 程序原始起点（服务端 gameTime）；迟到补发时仍保留它，不能用接收时刻替代。 */
         val startAnchor: Long,
         val states: MutableMap<UUID, PState>,
     ) {
@@ -195,6 +195,7 @@ internal object ClientAnimationProgramManager {
         programId: UUID,
         particleIds: List<UUID>,
         anchorGameTime: Long,
+        programStartGameTime: Long,
         initialPivot: Vec3,
         entitiesIn: List<EntityBinding>,
         varsIn: Map<String, Double>,
@@ -206,7 +207,7 @@ internal object ClientAnimationProgramManager {
             particleIds,
             initialPivot,
             anchorGameTime - (level?.gameTime ?: 0L),
-            anchorGameTime,
+            programStartGameTime,
             HashMap(),
         )
         p.pivotFixed = initialPivot
@@ -258,6 +259,10 @@ internal object ClientAnimationProgramManager {
             }
         }
         p.states[particleId] = st
+        // 既有粒子从旧组改挂到新组：新程序接管后，旧程序不再写这颗粒子。
+        for ((otherId, other) in programs) {
+            if (otherId != p.animationId) other.states.remove(particleId)
+        }
         // 组重着色进行到一半时补挂：从当前合成色继续到目标，不在出生帧硬跳满色。
         p.recolor?.let { rc ->
             val now = programNowMs(p)
@@ -349,10 +354,19 @@ internal object ClientAnimationProgramManager {
         return ease.from + (ease.to - ease.from) * eased(ease.easing, k).toDouble()
     }
 
+    /**
+     * 程序相对毫秒：锚点差补上「下发时刻 − 接收时刻」，再减原程序起点。
+     *
+     * 迟到补发时 `anchorOffset` 不代表程序起点，原起点由 [Program.startAnchor] 保留，
+     * 因此首次收到补发程序也会带着已 elapsed 的相位，而不是从零重播。
+     */
+    internal fun programElapsedMs(clientGameTime: Long, anchorOffset: Long, startAnchor: Long): Long =
+        (clientGameTime + anchorOffset - startAnchor) * 50L
+
     /** 程序相对毫秒的当前值（按客户端的 gameTime 与程序时钟锚点算）。 */
     private fun programNowMs(p: Program): Long? {
         val level = Minecraft.getInstance().level ?: return null
-        return (level.gameTime + p.anchorOffset - p.startAnchor) * 50
+        return programElapsedMs(level.gameTime, p.anchorOffset, p.startAnchor)
     }
 
     fun stop(programId: UUID, destroyParticles: Boolean) {
@@ -638,7 +652,7 @@ internal object ClientAnimationProgramManager {
         for ((programId, p) in programs.toList()) {
             // 统一到「程序相对毫秒」域：clientGameTime + anchorOffset ≈ 服务端绝对 gameTime，
             // 再减程序起点、×50 得相对毫秒。指令 startMs 与公式变量 t 都落在该域。
-            val now = (nowClient + p.anchorOffset - p.startAnchor) * 50
+            val now = programElapsedMs(nowClient, p.anchorOffset, p.startAnchor)
             // 账本在推进缓动之前取：这一 tick 恰好结束的缓动还在表里
             val ledgerEnd = ledgerEndMs(p, now)
             // 先推进变量渐变、再形成表达式输入快照，否则公式读到的是上一 tick 的旧值

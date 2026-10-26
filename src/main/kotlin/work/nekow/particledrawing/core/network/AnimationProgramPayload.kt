@@ -83,6 +83,7 @@ internal object AnimationProgramCodecs {
  * @param programId 程序 ID（= 粒子组 ID）
  * @param particleIds 受控粒子清单
  * @param anchorGameTime 下发时的服务端 gameTime：客户端据此对齐时钟消除漂移
+ * @param programStartGameTime 程序原始起点（服务端 gameTime）；迟到补发时与 anchorGameTime 不同
  * @param initialPivot 初始轴心（客户端据此把各粒子 spawn 位置换算为相对偏移）
  * @param entityBindings 实体注册表（下发顺序 = 句柄序号；公式经 get_entity_* 被动取值）
  * @param vars 程序初始变量
@@ -92,6 +93,7 @@ data class AnimationProgramPayload(
     val programId: UUID,
     val particleIds: List<UUID>,
     val anchorGameTime: Long,
+    val programStartGameTime: Long,
     val initialPivot: Vec3,
     val entityBindings: List<EntityBinding>,
     val vars: Map<String, Double>,
@@ -121,6 +123,7 @@ data class AnimationProgramPayload(
                         StreamCodecs.UUID_CODEC.decode(buf),
                         AnimationProgramCodecs.readUuidList(buf),
                         buf.readLong(),
+                        buf.readLong(),
                         AnimationProgramCodecs.readVec(buf),
                         AnimationProgramCodecs.readEntityBindings(buf),
                         AnimationProgramCodecs.readVars(buf),
@@ -131,6 +134,7 @@ data class AnimationProgramPayload(
                     StreamCodecs.UUID_CODEC.encode(buf, p.programId)
                     AnimationProgramCodecs.writeUuidList(buf, p.particleIds)
                     buf.writeLong(p.anchorGameTime)
+                    buf.writeLong(p.programStartGameTime)
                     AnimationProgramCodecs.writeVec(buf, p.initialPivot)
                     AnimationProgramCodecs.writeEntityBindings(buf, p.entityBindings)
                     AnimationProgramCodecs.writeVars(buf, p.vars)

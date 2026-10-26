@@ -32,6 +32,8 @@ object ServerProgramDelivery {
         deliveries[groupId] = Delivery(dimensionId, members, sendFull)
     }
 
+    fun isRegistered(groupId: UUID): Boolean = deliveries.containsKey(groupId)
+
     fun isSent(groupId: UUID, playerId: UUID): Boolean =
         sentPlayers[groupId]?.contains(playerId) == true
 

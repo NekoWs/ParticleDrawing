@@ -152,8 +152,42 @@ class ParticleGroup(
      */
     fun add(handle: ParticleHandle?) {
         if (handle == null) return
-        manager.getEngine().getGroup(id)?.addMember(handle.id)
-        armed = false // 成员变化后重发全量以刷新受控清单
+        val engine = manager.getEngine()
+        if (handle.data() != null) {
+            // 既有粒子：同步服务端 groupId 与玩家组计数，后续可见性/销毁才会按新组处理。
+            engine.reassignGroup(handle.id, id)
+        } else {
+            // 延迟生成/尚未落地：先记下预挂组，出生包直接带这个组。
+            engine.associatePending(handle.id, id)
+        }
+        refreshProgramAfterMemberChange()
+    }
+
+    /**
+     * 程序已经下发后成员清单变化：用当前成员重发全量。
+     *
+     * 不能走 [flush] 的首次分支，因为那会把已下发的指令历史清成待发指令；
+     * 这里只更新成员并让已投递玩家重新 arm，迟到者仍按原程序起点补挂。
+     */
+    private fun refreshProgramAfterMemberChange() {
+        val engine = manager.getEngine()
+        if (!ServerProgramDelivery.isRegistered(id)) {
+            armed = false
+            return
+        }
+        val members = engine.getGroup(id)?.memberIds()?.toList().orEmpty()
+        if (members.isEmpty()) {
+            armed = false
+            return
+        }
+        require(members.size <= MAX_MEMBERS_PER_PROGRAM) {
+            "group $id 成员过多（${members.size} > $MAX_MEMBERS_PER_PROGRAM）"
+        }
+        deliveryMembers = members
+        ServerProgramDelivery.register(id, manager.dimensionId, members) { player -> sendFullProgram(player) }
+        val candidates = engine.playersTrackingAny(members)
+        ServerProgramDelivery.sendToAny(id, manager.getPlayers(), candidates)
+        armed = true
     }
 
     /**
@@ -405,6 +439,7 @@ class ParticleGroup(
             AnimationProgramPayload(
                 id,
                 deliveryMembers,
+                manager.level.gameTime,
                 deliveryAnchorTick,
                 deliveryPivot,
                 entityBindings.toList(),
@@ -488,6 +523,7 @@ class ParticleGroup(
      */
     fun remove() {
         ServerExitCompletion.cancel(exitToken)
+        manager.getEngine().clearPendingGroup(id)
         manager.getEngine().destroyGroup(id, manager.getPlayers())
         stopProgramOnClient(destroyParticles = false)
     }
