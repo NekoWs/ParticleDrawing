@@ -1,8 +1,8 @@
 # 可读API消费迁移
 
-当前核对源码：`9ed62a0`。PD构建与59组403项测试通过；PrimalSpells使用匹配的主/源码JAR验证。以下3项仍未解决，不把接口编译通过当作表达式语义等价。
+状态：3项已修复，回归以真实表达式求值器、单位混用和阶段公式覆盖。以下保留修复前证据，当前实现以源码为准。
 
-## PD-EXPRESSION-NUMBERS：生成文本的科学计数法与求值器不兼容
+## PD-EXPRESSION-NUMBERS（已修复）：生成文本的科学计数法与求值器不兼容
 
 级别：语义错误，阻塞类型化动态法阵及大坐标局部表达式迁移。
 
@@ -20,7 +20,7 @@ PrimalSpells法阵新配方含0.00015、0.0018等频率；大坐标等价检查�
 
 要求：PD统一数值字面量的生成与解析契约，覆盖Scalar、Time/Length/Angle、局部轴心与输出常量；不能让合法有限值被解析成变量或Euler常量。以真实表达式后端测试正负指数、极小频率、大世界坐标及正负数，常量值与求值结果一致。修复后恢复法阵坐标、RGBA、尺寸逐点等价检查。
 
-## PD-ANGULAR-SPEED：角速度乘时间的文本多除1000
+## PD-ANGULAR-SPEED（已修复）：角速度乘时间的文本多除1000
 
 级别：单位语义错误；现有自转频率保留原参数，暂不迁移该入口。
 
@@ -34,7 +34,7 @@ val angle = 1.radiansPerSecond * 1.seconds
 
 要求：明确内部量纲并只换算一次；`radiansPerSecond`、`degreesPerSecond`及`Angle/Time`三条路径与tick/ms/sec混用逐点一致。覆盖常量/动态年龄两种时间，不能只检查`angle.radians`而不执行生成文本。复现输出同PS的`probe.txt`。
 
-## PD-PHASE-CONTROL：阶段仍只有固定时间偏移
+## PD-PHASE-CONTROL（已修复）：阶段仍只有固定时间偏移
 
 级别：能力缺口；动态双冷却保留原字符串后端。
 
@@ -50,3 +50,10 @@ val angle = 1.radiansPerSecond * 1.seconds
 - 正多边形沿边采样已修复；72点三角轮廓用于持杖法阵透明出生，后续动态动画仍为原配方。
 - 退场已走版本化客户端尺寸终点回报；PS锯片与通用碎片接入`exit`，保留八刻线性/原缓动、外散速度与受力，不再自行按时删除。暂停、多人追踪、离线兜底仍需专项复验。
 - 动态RGBA、pow和local入口已提供；受数值文本缺陷影响，动态法阵尚不能迁移。现有常量色施法短闪保持原类型化实现。
+
+## 本轮修复记录
+
+- 数值文本：新增统一`numberLiteral`，`Scalar.of`、单位工厂、参数句柄、颜色、局部轴心与阶段变量都不再输出科学计数法；同时让`ScriptExpr`词法接受`1.5E-4`/`1.677721725E7`，并用真实求值器覆盖正负指数、极小频率与大坐标。
+- 角速度：内部表达式统一为弧度/毫秒；`radiansPerSecond`、`degreesPerSecond`、`Angle/Time`与`times(Time)`只换算一次，常量和动态时间都按同一口径求值。
+- 阶段：新增组原生`ParticleGroup.phaseParameter(name)`与`PhaseParameter`，支持`start(duration)`、`restart`、`complete/finish`、`reset`；`progress/started/completed/active/remaining`由表达式`t`和状态变量计算，不引入独立时钟或逐 tick 服务端执行。
+- 退出验收仍需游戏内复验；本次只补了表达式/单位/阶段回归与既有全量测试。

@@ -1058,6 +1058,10 @@ val spin = 1.2.radiansPerSecond
 val life = Lifetime.ticks(20)   // 或 Lifetime.infinite()
 ```
 
+`AngularSpeed` 的表达式内部统一为弧度/毫秒：`1.radiansPerSecond * 1.seconds` 的常量与生成文本都等于
+1 弧度，`Angle / Time` 也走同一口径。所有生成数字字面量都展开成普通十进制，极小频率和大坐标不会
+变成 `E` 指数被求值器误读。
+
 外观、曲线与退场：
 
 ```kotlin
@@ -1137,6 +1141,25 @@ group.expression(duration = 8.ticks) {
 
 `start(duration)` / `phase(duration, offset)` 都读同一组表达式时间 `t`，两个阶段可在同一配方里共享相位；
 `local(name, value)` 会在生成文本开头赋值一次，后续复用变量名，调试导出会列出局部表达式。
+
+需要“施法后才开始、可提前结束、可重入”的阶段用组原生句柄：
+
+```kotlin
+val cooldown = group.phaseParameter("cooldown")
+group.expression(duration = 20.ticks) {
+    val glow = 1.0.toScalar() - cooldown.progress
+    position.world(vec3(0.blocks, 1.0.blocks, 0.blocks))
+    scale(pow(glow, 0.75))
+    color(glow, cooldown.completed, Scalar.of(0.5), Scalar.of(1.0))
+}
+cooldown.start(3.6.ticks)   // 施法触发；重复调用即重入
+// 需要提前收束时：cooldown.complete() / finish()
+// 回到未开始：cooldown.reset()
+```
+
+`phaseParameter` 的 `progress/started/completed/active/remaining` 仍只读组表达式时间 `t`；起点、时长和状态
+作为程序变量热更，不增加逐 tick 服务端执行或独立播放器。阶段句柄应在 `expression` 之前创建，才能编译进
+同一份表达式文本。
 
 ### 坐标基与命名部件
 
