@@ -14,6 +14,7 @@ ParticleDrawing 是面向 [NeoForge](https://neoforged.net/)（Minecraft 26.2）
 | [guide.md](guide.md) | 绘制形状、编排动画、单粒子、粒子集、发射器、缓动、播放动画、代码构建动画 |
 | [api-reference.md](api-reference.md) | 按包分类的类索引 |
 | [known-issues.md](known-issues.md) | 平台差异与已知限制 |
+| [issues/readable-effect-api.md](issues/readable-effect-api.md) | 待实现：带单位、命名参数与类型化表达式的特效编写接口 |
 
 ## 包结构
 
