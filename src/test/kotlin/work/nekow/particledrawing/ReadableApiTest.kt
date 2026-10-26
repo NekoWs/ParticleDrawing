@@ -39,9 +39,20 @@ import work.nekow.particledrawing.api.lerp
 import work.nekow.particledrawing.api.sin
 import work.nekow.particledrawing.api.square
 import work.nekow.particledrawing.api.vec3
+import work.nekow.particledrawing.api.Draw
+import work.nekow.particledrawing.api.directionParameter
+import work.nekow.particledrawing.api.exit
+import work.nekow.particledrawing.api.expression
 import work.nekow.particledrawing.api.ExpressionFrame
 import work.nekow.particledrawing.api.Frames
+import work.nekow.particledrawing.api.PartSelector
+import work.nekow.particledrawing.api.ParticleBatch
+import work.nekow.particledrawing.api.ParticleGroup
+import work.nekow.particledrawing.api.ParticleManager
 import work.nekow.particledrawing.api.TypedExpressionBuilder
+import work.nekow.particledrawing.api.cos
+import work.nekow.particledrawing.api.smoothstep
+import work.nekow.particledrawing.api.vectorParameter
 import work.nekow.particledrawing.core.client.RenderParticle
 import work.nekow.particledrawing.core.network.ParticleSpawnPayload
 import kotlin.math.PI
@@ -50,6 +61,56 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+
+/**
+ * 编译门禁：这段代码不执行，只验证文档里的 Kotlin DSL 形状能被解析。
+ */
+@Suppress("unused")
+private fun compileReadableDsl(
+    manager: ParticleManager,
+    group: ParticleGroup,
+    batch: ParticleBatch,
+    holder: net.minecraft.world.entity.Entity,
+    center: Vec3,
+    forward: Vec3,
+) {
+    val origin = group.vectorParameter("origin", center).value
+    val direction = group.directionParameter("direction", forward).value
+    group.expression(duration = 5.ticks) {
+        val progress = progress(5.ticks)
+        val random = member.random01(seed = 1234L, salt = "spread")
+        val angle = member.index * Angles.goldenAngle
+        val width = sin(progress * 180.degrees) * lerp(0.08.blocks, 0.24.blocks, random)
+        val distance = progress * lerp(0.25.blocks, 0.70.blocks, random)
+        position.world(origin + direction * distance + vec3(cos(angle) * width, 0.5.blocks, sin(angle) * width))
+        scale(smoothstep(0.0.toScalar(), 1.0.toScalar(), progress) * square(1.0.toScalar() - progress))
+        color(Color.WHITE)
+    }.retire()
+
+    val shape = Draw.polygon(manager) {
+        name = "saw"
+        coordinateFrame = Frames.ground(holder, followPosition = true, followYaw = false)
+        sides = 12
+        radius = 1.2.blocks
+        samplesPerEdge = 2
+        initialAngle = 15.degrees
+        angularSpeed = 1.1.radiansPerSecond
+        appearance = particleVisual {
+            style = ParticleStyle.SQUARE
+            worldSize(1.5.mcPixels, 1.mcPixels)
+            fullBright = true
+            light = Light.none()
+        }
+        part("teeth", PartSelector { index, edge, _ -> edge == 0 && index % 2 == 0 }, color = Color.ORANGE)
+    }
+    shape.part("teeth")?.resize(0.5f, 4, Ease.OUT)
+
+    batch.exit {
+        particleSize.to(0.0, 8.ticks, Ease.LINEAR)
+        preserveMotion()
+        removeWhenComplete()
+    }
+}
 
 /** 可读接口的第一层：显式单位、公开缓动、命名外观/曲线与全亮/光源分离。 */
 class ReadableApiTest {
