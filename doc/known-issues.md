@@ -1,5 +1,9 @@
 # 已知限制
 
+## 程序化贴图与程序成员同步
+
+单机服务端登记贴图会越线程触碰GPU；组程序也可能发给没有收到成员出生包的玩家，出现空程序警告和迟到成员接管缺口。两项尚未修复，原因、复现与验收见[线程和成员同步](issues/runtime-texture-program-sync.md)。
+
 ## 可读特效编写接口
 
 [PD-READABLE-API](issues/readable-effect-api.md) 已落地为编写门面，底层播放器与完成账本复用：
