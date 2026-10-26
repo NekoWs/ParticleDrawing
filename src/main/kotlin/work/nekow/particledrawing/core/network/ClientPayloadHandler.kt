@@ -3,6 +3,7 @@ package work.nekow.particledrawing.core.network
 import net.minecraft.world.phys.Vec3
 import net.neoforged.neoforge.network.handling.IPayloadContext
 import work.nekow.particledrawing.core.client.ClientAnimationManager
+import work.nekow.particledrawing.core.client.ClientAnimationProgramManager
 import work.nekow.particledrawing.core.client.ClientAnimationSyncManager
 import work.nekow.particledrawing.core.client.ClientEmitterManager
 import work.nekow.particledrawing.core.client.ClientParticleEngine
@@ -40,6 +41,7 @@ internal object ClientPayloadHandler {
             p.lifeCurve,
             p.prev,
         )
+        p.groupId?.let { ClientAnimationProgramManager.onParticleSpawned(it, p.particleId) }
     }
 
     /** 程序化贴图内容块：按 id 累积，收齐后解码注册。 */

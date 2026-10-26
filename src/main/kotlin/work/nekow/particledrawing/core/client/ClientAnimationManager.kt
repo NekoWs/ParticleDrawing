@@ -310,6 +310,11 @@ object ClientAnimationManager {
     /** 重载所有正在播放动画的内嵌贴图与已登记的程序化贴图（/pdraw reload 使用）。 */
     @JvmStatic
     fun reloadTextures() {
+        val mc = Minecraft.getInstance()
+        if (mc.isSameThread) reloadTexturesNow() else mc.execute { reloadTexturesNow() }
+    }
+
+    private fun reloadTexturesNow() {
         TextureCache.clear()
         for ((_, entry) in entries) {
             preloadTextures(entry.animation)
@@ -568,6 +573,11 @@ object ClientAnimationManager {
     }
 
     private fun preloadTextures(animation: ParticleAnimation) {
+        val mc = Minecraft.getInstance()
+        if (!mc.isSameThread) {
+            mc.execute { preloadTextures(animation) }
+            return
+        }
         for (texName in animation.textures) {
             val bytes = animation.texData[texName] ?: continue
             try { TextureCache.load(texName, bytes) } catch (_: Exception) {}

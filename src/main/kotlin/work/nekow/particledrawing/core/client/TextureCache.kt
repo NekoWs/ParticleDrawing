@@ -78,9 +78,20 @@ object TextureCache {
     private fun registerImage(textureName: String, img: NativeImage): Entry {
         val w = img.width
         val h = img.height
-        val dt = DynamicTexture({ "PD:$textureName" }, img)
+        val dt = try {
+            DynamicTexture({ "PD:$textureName" }, img)
+        } catch (e: Exception) {
+            img.close()
+            throw e
+        }
         val id = Identifier.fromNamespaceAndPath(NAMESPACE, PREFIX + "/" + sanitize(textureName))
-        Minecraft.getInstance().textureManager.register(id, dt)
+        try {
+            Minecraft.getInstance().textureManager.register(id, dt)
+        } catch (e: Exception) {
+            // register 抛出时纹理系统还没接管 NativeImage，必须由这里释放。
+            dt.close()
+            throw e
+        }
         val entry = Entry(id, w, h)
         entries[textureName] = entry
         versionCounter.incrementAndGet()
@@ -107,9 +118,19 @@ object TextureCache {
                 img.setPixel(x, y, -1) // ARGB 0xFFFFFFFF，不透明白
             }
         }
-        val dt = DynamicTexture({ "PD:$DEFAULT_WHITE" }, img)
+        val dt = try {
+            DynamicTexture({ "PD:$DEFAULT_WHITE" }, img)
+        } catch (e: Exception) {
+            img.close()
+            throw e
+        }
         val id = Identifier.fromNamespaceAndPath(NAMESPACE, PREFIX + "/" + DEFAULT_WHITE)
-        Minecraft.getInstance().textureManager.register(id, dt)
+        try {
+            Minecraft.getInstance().textureManager.register(id, dt)
+        } catch (e: Exception) {
+            dt.close()
+            throw e
+        }
         val entry = Entry(id, 8, 8)
         entries[DEFAULT_WHITE] = entry
         versionCounter.incrementAndGet()

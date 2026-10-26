@@ -50,6 +50,8 @@ class ServerParticleEngine(
     // 粒子 -> 已同步的玩家集合，以及反查用的玩家 -> 已同步的粒子集合（每玩家粒子数限制与可见性重检）
     private val visibleTo: MutableMap<UUID, MutableSet<UUID>> = ConcurrentHashMap()
     private val playerParticles: MutableMap<UUID, MutableSet<UUID>> = ConcurrentHashMap()
+    /** playerId → groupId → 已追踪成员数；程序投递只靠计数判断，避免大组逐个扫集合。 */
+    private val playerGroupCounts: MutableMap<UUID, MutableMap<UUID, Int>> = ConcurrentHashMap()
     private var visibilityTickCounter = 0
     private var lastCapacityWarnNanos = 0L
 
@@ -87,7 +89,7 @@ class ServerParticleEngine(
             scale, lifetime, groupId, glowing, lightLevel, visual, lifeCurve, prev,
         )
 
-        broadcastSpawn(playersInDimension, position, id, payload)
+        broadcastSpawn(playersInDimension, position, id, payload, groupId)
         return data
     }
 
@@ -132,6 +134,7 @@ class ServerParticleEngine(
         // 逐玩家裁剪：可见性与每玩家上限都和单发同一套判定，再按 MAX_BATCH 拆包
         val maxPerPlayer = ParticleDrawingConfig.SERVER.maxParticlesPerPlayer.get()
         for (player in playersInDimension) {
+            val firstForGroup = groupId != null && !playerTracksGroup(player.uuid, groupId)
             val batch = ArrayList<ParticleSpawnPayload>(payloads.size)
             for (payload in payloads) {
                 if (!ParticleVisibilityManager.isWithinViewDistance(player, payload.position())) continue
@@ -144,8 +147,11 @@ class ServerParticleEngine(
                 val end = minOf(index + ParticleSpawnBatchPayload.MAX_BATCH, batch.size)
                 val chunk = batch.subList(index, end)
                 PacketDistributor.sendToPlayer(player, ParticleSpawnBatchPayload(chunk.toList()))
-                for (payload in chunk) track(player.uuid, payload.particleId)
+                for (payload in chunk) track(player.uuid, payload.particleId, groupId)
                 index = end
+            }
+            if (groupId != null && batch.isNotEmpty()) {
+                ServerProgramDelivery.onTracked(groupId, player, firstForGroup)
             }
         }
         return created
@@ -504,7 +510,13 @@ class ServerParticleEngine(
 
         val payload = ParticleDestroyPayload.single(id)
         sendToTracked(playersInDimension, listOf(id), payload)
-        untrackParticle(id)
+        val previouslyTracking = visibleTo[id]?.toList() ?: emptyList()
+        untrackParticle(id, groupId)
+        if (groupId != null) {
+            for (playerId in previouslyTracking) {
+                if (!playerTracksGroup(playerId, groupId)) ServerProgramDelivery.onUntracked(groupId, playerId)
+            }
+        }
     }
 
     /** 销毁整个粒子组及其所有成员。 */
@@ -520,7 +532,8 @@ class ServerParticleEngine(
         for (payload in ParticleDestroyPayload.chunked(ids, groupId)) {
             sendToTracked(playersInDimension, payload.particleIds.toList(), payload)
         }
-        untrackParticles(ids)
+        untrackParticles(ids, groupId)
+        ServerProgramDelivery.clear(groupId)
     }
 
     /** 每 tick 更新：推进生命周期、移除过期粒子。 */
@@ -549,7 +562,15 @@ class ServerParticleEngine(
                 }
                 val payload = ParticleDestroyPayload.single(entry.key)
                 sendToTracked(playersInDimension, listOf(entry.key), payload)
-                untrackParticle(entry.key)
+                val previouslyTracking = visibleTo[entry.key]?.toList() ?: emptyList()
+                untrackParticle(entry.key, groupId)
+                if (groupId != null) {
+                    for (playerId in previouslyTracking) {
+                        if (!playerTracksGroup(playerId, groupId)) {
+                            ServerProgramDelivery.onUntracked(groupId, playerId)
+                        }
+                    }
+                }
                 it.remove()
             }
         }
@@ -609,6 +630,8 @@ class ServerParticleEngine(
         groups.clear()
         playerParticles.clear()
         visibleTo.clear()
+        playerGroupCounts.clear()
+        ServerProgramDelivery.clearDimension(dimensionId)
         return count
     }
 
@@ -622,24 +645,48 @@ class ServerParticleEngine(
         return first
     }
 
-    private fun track(playerId: UUID, particleId: UUID) {
-        playerParticles.computeIfAbsent(playerId) { ConcurrentHashMap.newKeySet() }.add(particleId)
-        visibleTo.computeIfAbsent(particleId) { ConcurrentHashMap.newKeySet() }.add(playerId)
+    /** 至少追踪 [ids] 中一个成员的玩家；程序只投递给这些玩家。 */
+    fun playersTrackingAny(ids: Collection<UUID>): Set<UUID> {
+        val recipients = HashSet<UUID>()
+        for (id in ids) visibleTo[id]?.let { recipients.addAll(it) }
+        return recipients
     }
 
-    private fun untrackParticle(particleId: UUID) {
-        val playerIds = visibleTo.remove(particleId) ?: return
-        for (playerId in playerIds) {
-            playerParticles[playerId]?.remove(particleId)
+    private fun track(playerId: UUID, particleId: UUID, groupId: UUID? = null) {
+        playerParticles.computeIfAbsent(playerId) { ConcurrentHashMap.newKeySet() }.add(particleId)
+        visibleTo.computeIfAbsent(particleId) { ConcurrentHashMap.newKeySet() }.add(playerId)
+        if (groupId != null) {
+            playerGroupCounts.computeIfAbsent(playerId) { ConcurrentHashMap() }
+                .merge(groupId, 1, Int::plus)
         }
     }
 
-    private fun untrackParticles(particleIds: Collection<UUID>) {
-        for (particleId in particleIds) untrackParticle(particleId)
+    private fun untrackParticle(particleId: UUID, groupId: UUID? = null) {
+        val playerIds = visibleTo.remove(particleId) ?: return
+        for (playerId in playerIds) {
+            playerParticles[playerId]?.remove(particleId)
+            if (groupId != null) releaseGroupCount(playerId, groupId)
+        }
+    }
+
+    private fun releaseGroupCount(playerId: UUID, groupId: UUID) {
+        val counts = playerGroupCounts[playerId] ?: return
+        val remaining = (counts[groupId] ?: 0) - 1
+        if (remaining <= 0) counts.remove(groupId) else counts[groupId] = remaining
+        if (counts.isEmpty()) playerGroupCounts.remove(playerId, counts)
+    }
+
+    /** 玩家是否还追踪该组的任一成员；用于决定程序是否需要在重新进入视距时补发。 */
+    private fun playerTracksGroup(playerId: UUID, groupId: UUID): Boolean =
+        (playerGroupCounts[playerId]?.get(groupId) ?: 0) > 0
+
+    private fun untrackParticles(particleIds: Collection<UUID>, groupId: UUID? = null) {
+        for (particleId in particleIds) untrackParticle(particleId, groupId)
     }
 
     private fun broadcastSpawn(players: Collection<ServerPlayer>, position: Vec3,
-                               particleId: UUID, payload: CustomPacketPayload) {
+                               particleId: UUID, payload: CustomPacketPayload,
+                               groupId: UUID? = null) {
         val maxPerPlayer = ParticleDrawingConfig.SERVER.maxParticlesPerPlayer.get()
 
         for (player in players) {
@@ -648,8 +695,10 @@ class ServerParticleEngine(
             val trackedCount = playerParticles[player.uuid]?.size ?: 0
             if (trackedCount >= maxPerPlayer) continue
 
+            val firstForGroup = groupId != null && !playerTracksGroup(player.uuid, groupId)
             PacketDistributor.sendToPlayer(player, payload)
-            track(player.uuid, particleId)
+            track(player.uuid, particleId, groupId)
+            if (groupId != null) ServerProgramDelivery.onTracked(groupId, player, firstForGroup)
         }
     }
 
@@ -668,9 +717,14 @@ class ServerParticleEngine(
                 }
             }
             for (particleId in toRemove) {
+                val groupId = particles[particleId]?.groupId
                 tracked.remove(particleId)
                 visibleTo[particleId]?.remove(player.uuid)
+                if (groupId != null) releaseGroupCount(player.uuid, groupId)
                 PacketDistributor.sendToPlayer(player, ParticleDestroyPayload.single(particleId))
+                if (groupId != null && !playerTracksGroup(player.uuid, groupId)) {
+                    ServerProgramDelivery.onUntracked(groupId, player.uuid)
+                }
             }
 
             var count = tracked.size
@@ -680,8 +734,10 @@ class ServerParticleEngine(
                     if (tracked.contains(particleId)) continue
                     if (!ParticleVisibilityManager.isWithinViewDistance(player, data.position())) continue
 
+                    val firstForGroup = data.groupId != null && !playerTracksGroup(player.uuid, data.groupId)
                     PacketDistributor.sendToPlayer(player, spawnPayload(data))
-                    track(player.uuid, particleId)
+                    track(player.uuid, particleId, data.groupId)
+                    data.groupId?.let { ServerProgramDelivery.onTracked(it, player, firstForGroup) }
                     count++
                 }
             }
@@ -711,6 +767,8 @@ class ServerParticleEngine(
         while (it.hasNext()) {
             val playerId = it.next()
             if (playerId !in active) {
+                ServerProgramDelivery.clearPlayer(playerId)
+                playerGroupCounts.remove(playerId)
                 val ids = playerParticles.remove(playerId)
                 if (ids != null) {
                     for (particleId in ids) {

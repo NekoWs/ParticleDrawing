@@ -128,6 +128,7 @@ object ServerProgramCompletion {
     /** 销毁整组粒子，并让客户端停掉这段程序（粒子已经没了，程序继续跑没有意义）。 */
     private fun destroy(groupId: UUID, dimensionId: UUID) {
         val level = levelOf(ServerLifecycleHooks.getCurrentServer(), dimensionId) ?: return
+        ServerProgramDelivery.clear(groupId)
         ServerParticleEngine.get(dimensionId)?.destroyGroup(groupId, level.players())
         val stop = StopAnimationProgramPayload(groupId, destroyParticles = false)
         for (player in level.players()) PacketDistributor.sendToPlayer(player, stop)

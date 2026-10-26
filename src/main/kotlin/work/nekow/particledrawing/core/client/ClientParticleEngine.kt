@@ -385,6 +385,7 @@ class ClientParticleEngine {
      */
     private fun removeOne(id: UUID) {
         particles.remove(id)
+        ClientAnimationProgramManager.onParticleRemoved(id)
         bridges.remove(id)?.remove()
         takeover.clear(id)
         glowingIds.remove(id)

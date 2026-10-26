@@ -12,6 +12,7 @@ import work.nekow.particledrawing.core.network.BatchChunking
 import work.nekow.particledrawing.core.network.AnimationProgramPayload
 import work.nekow.particledrawing.core.network.ProgramAnchorPayload
 import work.nekow.particledrawing.core.server.ServerExitCompletion
+import work.nekow.particledrawing.core.server.ServerProgramDelivery
 import work.nekow.particledrawing.core.server.ServerProgramCompletion
 import work.nekow.particledrawing.animation.program.finiteDurationMs
 import work.nekow.particledrawing.core.server.AnimationScheduler
@@ -46,6 +47,14 @@ class ParticleGroup(
 
     /** 已录制的指令流（未下发部分）。 */
     private val instructions = ArrayList<AnimInstruction>()
+
+    /** 已下发程序的完整指令快照，供迟到玩家补发全量。 */
+    private val deliveredInstructions = ArrayList<AnimInstruction>()
+
+    /** 迟到补发用的程序基准；全量下发时更新。 */
+    private var deliveryMembers: List<UUID> = emptyList()
+    private var deliveryAnchorTick: Long = 0L
+    private var deliveryPivot: Vec3 = Vec3.ZERO
 
     /** 程序是否已随粒子清单下发（后续走增量 append）。 */
     private var armed = false
@@ -369,23 +378,42 @@ class ParticleGroup(
             }
             val batch = instructions.map { it.shiftStartMs(clock.shiftMs) }
             instructions.clear()
-            val head = batch.take(MAX_INSTRUCTIONS_PER_PAYLOAD)
-            for (player in players) {
-                PacketDistributor.sendToPlayer(
-                    player,
-                    AnimationProgramPayload(id, members, nowTick, pivot, entityBindings.toList(), vars.toMap(), head),
-                )
-            }
+            deliveredInstructions.clear()
+            deliveredInstructions.addAll(batch)
+            deliveryMembers = members
+            deliveryAnchorTick = nowTick
+            deliveryPivot = pivot
+            ServerProgramDelivery.register(id, manager.dimensionId, members) { player -> sendFullProgram(player) }
+            val candidates = manager.getEngine().playersTrackingAny(members)
+            ServerProgramDelivery.sendToAny(id, players, candidates)
             armed = true
-            // 一个包放不下全部指令：剩下的按序补追加包（客户端按顺序应用）
-            val rest = batch.drop(MAX_INSTRUCTIONS_PER_PAYLOAD)
-            if (rest.isNotEmpty()) sendAppends(rest, players)
         } else if (instructions.isNotEmpty()) {
             val batch = instructions.map { it.shiftStartMs(clock.shiftMs) }
             instructions.clear()
-            sendAppends(batch, players)
+            deliveredInstructions.addAll(batch)
+            ServerProgramDelivery.update(id, manager.dimensionId, deliveryMembers) { player -> sendFullProgram(player) }
+            ServerProgramDelivery.sendAppendToSent(id, players) { player -> sendAppends(batch, listOf(player)) }
         }
         clock.onEmit(nowTick, cursorMs)
+    }
+
+    /** 给单个玩家补发完整程序（含已下发的追加段），用于迟到可见成员。 */
+    private fun sendFullProgram(player: net.minecraft.server.level.ServerPlayer) {
+        val head = deliveredInstructions.take(MAX_INSTRUCTIONS_PER_PAYLOAD)
+        PacketDistributor.sendToPlayer(
+            player,
+            AnimationProgramPayload(
+                id,
+                deliveryMembers,
+                deliveryAnchorTick,
+                deliveryPivot,
+                entityBindings.toList(),
+                vars.toMap(),
+                head,
+            ),
+        )
+        val rest = deliveredInstructions.drop(MAX_INSTRUCTIONS_PER_PAYLOAD)
+        if (rest.isNotEmpty()) sendAppends(rest, listOf(player))
     }
 
     /** 追加指令：按单包上限拆段后下发。 */
@@ -465,8 +493,9 @@ class ParticleGroup(
     }
 
     private fun stopProgramOnClient(destroyParticles: Boolean) {
-        // 组已经收尾：完成信号/兜底销毁的登记一并注销
+        // 组已经收尾：完成信号/兜底销毁与按玩家投递登记一并注销
         ServerProgramCompletion.cancel(id)
+        ServerProgramDelivery.clear(id)
         for (player in manager.getPlayers()) {
             PacketDistributor.sendToPlayer(player, work.nekow.particledrawing.core.network.StopAnimationProgramPayload(id, destroyParticles))
         }

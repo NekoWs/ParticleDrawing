@@ -81,6 +81,8 @@ internal object ClientAnimationProgramManager {
         var applied = false
         var snapPathOffset: Vec3 = Vec3.ZERO          // 平移类：应用前组位移
         val rotation = RotationSlot()                 // 旋转类：角度累加账本
+        var rotationAxis: Vec3? = null                // 最近一次已应用的旋转轴
+        var rotationTotal: Double = 0.0               // 最近一次已应用的总角度
         val scale = ScaleLedger()                     // 缩放类：执行起点倍率账本
         var driftScale = 0f                           // MoveEach：本帧的「沿各自偏移方向」倍率
     }
@@ -98,6 +100,8 @@ internal object ClientAnimationProgramManager {
         /** 程序 id（= 粒子组 id）。 */
         val animationId: UUID,
         val particleIds: List<UUID>,
+        /** 程序启动时的轴心；迟到成员的 rel 以它为基准。 */
+        val initialPivot: Vec3,
         val anchorOffset: Long,
         /** 下发时刻的服务端 gameTime：程序相对 tick 的原点。 */
         val startAnchor: Long,
@@ -197,20 +201,26 @@ internal object ClientAnimationProgramManager {
         instructions: List<AnimInstruction>,
     ) {
         val level = Minecraft.getInstance().level
-        val p = Program(programId, particleIds, anchorGameTime - (level?.gameTime ?: 0L), anchorGameTime, HashMap())
+        val p = Program(
+            programId,
+            particleIds,
+            initialPivot,
+            anchorGameTime - (level?.gameTime ?: 0L),
+            anchorGameTime,
+            HashMap(),
+        )
         p.pivotFixed = initialPivot
         p.entityBindings.addAll(entitiesIn)
         for ((k, v) in varsIn) p.vars[k] = v
 
         ClientParticleEngine.instance()?.let { engine ->
-            for (id in particleIds) {
-                val s = engine.snapshot(id) ?: continue
-                p.states[id] = PState(s.r, s.g, s.b, s.a, s.scale, s.position.subtract(initialPivot))
-            }
+            for (id in particleIds) addState(p, engine, id)
         }
+        // 程序按可见成员投递：这里允许只有部分成员有状态；其余成员出生时由
+        // onParticleSpawned 补挂，不重复入场也不改全局 i/n 顺序。
         if (p.states.isEmpty()) {
-            LOGGER.warn(
-                "[ParticleDrawing] program {} armed with zero known particles ({} ids); client spawn packets missing?",
+            LOGGER.debug(
+                "[ParticleDrawing] program {} armed before members are visible ({} ids); waiting for late spawns",
                 programId, particleIds.size,
             )
         }
@@ -218,6 +228,49 @@ internal object ClientAnimationProgramManager {
         programs[programId] = p
     }
 
+
+    /**
+     * 迟到/重新可见成员：按当前程序时间补挂状态。
+     *
+     * 已应用过的旋转一次性补到 rel；缩放、轴心和平移仍由下一帧的当前值统一施加，
+     * 因此不会重播入场、也不会回到满尺寸。表达式模式直接按当前 t 求值。
+     */
+    fun onParticleSpawned(programId: UUID, particleId: UUID) {
+        val p = programs[programId] ?: return
+        if (particleId !in p.particleIds || p.states.containsKey(particleId)) return
+        val engine = ClientParticleEngine.instance() ?: return
+        addState(p, engine, particleId)
+    }
+
+    /** 粒子离开视野/销毁：去掉它的状态；程序本身由 pruneDeadPrograms 收尾。 */
+    fun onParticleRemoved(particleId: UUID) {
+        if (programs.isEmpty()) return
+        for (p in programs.values) p.states.remove(particleId)
+    }
+
+    private fun addState(p: Program, engine: ClientParticleEngine, particleId: UUID): Boolean {
+        val s = engine.snapshot(particleId) ?: return false
+        val st = PState(s.r, s.g, s.b, s.a, s.scale, s.position.subtract(p.initialPivot))
+        for (slot in p.slots) {
+            val axis = slot.rotationAxis ?: continue
+            if (slot.rotationTotal != 0.0) {
+                st.rel = st.rel.rotateAround(axis, slot.rotationTotal)
+            }
+        }
+        p.states[particleId] = st
+        // 组重着色进行到一半时补挂：从当前合成色继续到目标，不在出生帧硬跳满色。
+        p.recolor?.let { rc ->
+            val now = programNowMs(p)
+            val k = if (now == null) 0f else eased(rc.ease, progress(now - rc.startMs, rc.durationMs))
+            rc.from[particleId] = floatArrayOf(
+                lerp(s.r, rc.r, k),
+                lerp(s.g, rc.g, k),
+                lerp(s.b, rc.b, k),
+                lerp(s.a, rc.a, k),
+            )
+        }
+        return true
+    }
 
     fun append(programId: UUID, instructions: List<AnimInstruction>) {
         val p = programs[programId] ?: return
@@ -366,6 +419,7 @@ internal object ClientAnimationProgramManager {
      * 账本再往后延（追加指令 / 重定向缓动）后允许再报一次。
      */
     private fun reportCompletionIfDue(p: Program, ledgerEndMs: Long, now: Long) {
+        if (p.states.isEmpty()) return
         if (ledgerEndMs < 0L) return
         if (now < ledgerEndMs + COMPLETION_MARGIN_MS) return
         if (ledgerEndMs <= p.reportedEndMs) return
@@ -680,7 +734,7 @@ internal object ClientAnimationProgramManager {
     private class Recolor(
         val startMs: Long, val durationMs: Int, val ease: EasingType,
         val r: Float, val g: Float, val b: Float, val a: Float,
-        val from: Map<UUID, FloatArray>,
+        val from: MutableMap<UUID, FloatArray>,
     )
 
     /**
@@ -751,7 +805,9 @@ internal object ClientAnimationProgramManager {
                 if (p.recolor == null) {
                     p.recolor = Recolor(start, ins.durationMs, ins.easing,
                         ins.r, ins.g, ins.b, ins.a,
-                        p.states.mapValues { floatArrayOf(it.value.baseR, it.value.baseG, it.value.baseB, it.value.baseA) })
+                        p.states.mapValuesTo(HashMap()) {
+                            floatArrayOf(it.value.baseR, it.value.baseG, it.value.baseB, it.value.baseA)
+                        })
                 }
             }
 
@@ -812,9 +868,11 @@ internal object ClientAnimationProgramManager {
      * 多条旋转指令因此互相叠加。
      */
     private fun applyRotation(p: Program, slot: Slot, axis: Vec3, angleTotal: Double) {
+        val nAxis = axis.normalize()
+        slot.rotationAxis = nAxis
+        slot.rotationTotal = angleTotal
         val delta = slot.rotation.take(angleTotal)
         if (delta == 0.0) return
-        val nAxis = axis.normalize()
         for (st in p.states.values) st.rel = st.rel.rotateAround(nAxis, delta)
     }
 

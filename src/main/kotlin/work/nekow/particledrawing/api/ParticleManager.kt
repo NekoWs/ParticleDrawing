@@ -215,22 +215,23 @@ class ParticleManager private constructor(val level: ServerLevel) {
          * 登记一张程序化粒子用的贴图（PNG 字节），可随时调用；幂等，同名重复登记按第一次的生效。
          * 登记后按名字引用（`manager.create().texture("mymod:glow")`），子矩形 UV 用 [ParticleHandle.Builder.uv]。
          *
-         * 字节会自动同步到客户端：单机与自带客户端就地解码，专用服务器在玩家进服时补发。
+         * 字节会自动同步到客户端：逻辑登记在主线程完成，单机的 GPU 解码排到客户端主线程，
+         * 专用服务器在玩家进服时补发。返回 true 只表示逻辑登记已接受，不表示客户端纹理已就绪。
          * 名字未知或没登记过的贴图，客户端渲染成纯白方块。
          *
          * @param name 贴图名，建议带自己的命名空间（≤256 字符）
          * @param pngBytes PNG 字节（≤1 MiB）
-         * @return 名字/数据合法且已登记为 true；重复登记同名也是 true
+         * @return 名字/数据合法且已接受登记为 true；重复登记同名也是 true
          */
         @JvmStatic
         fun registerTexture(name: String, pngBytes: ByteArray): Boolean {
             val duplicate = TextureRegistry.byName(name) != null
             val entry = TextureRegistry.register(name, pngBytes) ?: return false
-            // 本机就是客户端（单机 / 自带客户端）：就地解码
-            // 重复登记时解的也是注册表里第一次的字节，与广播出去的那份一致
+            // 本机就是客户端（单机 / 自带客户端）：服务端线程只入队，GPU 解码在主线程做。
+            // 重复登记时解的也是注册表里第一次的字节，与广播出去的那份一致。
             val bytes = entry.bytes
             if (bytes != null && FMLEnvironment.getDist() == Dist.CLIENT) {
-                ClientTextureSyncManager.loadLocal(entry.name, bytes)
+                ClientTextureSyncManager.enqueueLocal(entry.name, bytes)
             }
             // 服务端：推给在线玩家；还没进服的玩家由 TextureSyncService.sendAll 在进服时补
             // 重复登记的字节与第一次相同，不必重发
@@ -247,7 +248,7 @@ class ParticleManager private constructor(val level: ServerLevel) {
         @JvmStatic
         fun registerBuiltinTextures() {
             if (FMLEnvironment.getDist() != Dist.CLIENT) return
-            ClientTextureSyncManager.ensureBuiltins()
+            ClientTextureSyncManager.enqueueBuiltins()
         }
     }
 }

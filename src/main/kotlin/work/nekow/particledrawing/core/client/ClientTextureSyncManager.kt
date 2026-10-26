@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.core.client
 
+import net.minecraft.client.Minecraft
 import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent
@@ -49,11 +50,36 @@ object ClientTextureSyncManager {
     }
 
     /**
-     * 本机直接解码注册（客户端侧登记、以及收到完整贴图块时调用）。
-     * @return 解码并注册成功为 true
+     * 从任意线程登记本机贴图：GPU 解码/注册一律排到客户端主线程。
+     *
+     * 单机服务端线程也会走这里，不能直接碰 `TextureManager`。
      */
     @JvmStatic
-    fun loadLocal(name: String, bytes: ByteArray): Boolean {
+    fun enqueueLocal(name: String, bytes: ByteArray) {
+        val mc = Minecraft.getInstance()
+        if (mc.isSameThread) {
+            loadLocal(name, bytes)
+        } else {
+            mc.execute { loadLocal(name, bytes) }
+        }
+    }
+
+    /** 内置贴图的生成也必须落在客户端主线程。 */
+    @JvmStatic
+    fun enqueueBuiltins() {
+        val mc = Minecraft.getInstance()
+        if (mc.isSameThread) {
+            ensureBuiltins()
+        } else {
+            mc.execute { ensureBuiltins() }
+        }
+    }
+
+    /**
+     * 本机直接解码注册（只能从客户端主线程调用；网络块与主线程服务端登记都经 [enqueueLocal]）。
+     * @return 解码并注册成功为 true
+     */
+    private fun loadLocal(name: String, bytes: ByteArray): Boolean {
         return try {
             TextureCache.load(name, bytes) != null
         } catch (e: Exception) {
@@ -74,8 +100,7 @@ object ClientTextureSyncManager {
     }
 
     /** 就地生成全部内置形状贴图（幂等）；返回可用的内置贴图数。 */
-    @JvmStatic
-    fun ensureBuiltins(): Int {
+    private fun ensureBuiltins(): Int {
         var count = 0
         for (style in ParticleStyle.entries) {
             val name = style.textureName ?: continue
