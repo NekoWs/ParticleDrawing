@@ -491,7 +491,7 @@ class ClientParticleEngine {
                 }
             }
             if (!done) continue
-            it.remove()
+            exitWatches.remove(exitId)
             ClientPacketDistributor.sendToServer(ParticleExitCompletePayload(exitId, watch.version))
         }
     }
