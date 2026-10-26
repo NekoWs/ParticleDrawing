@@ -96,7 +96,7 @@ Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80)
 | --- | --- |
 | `/pdraw particle group ...` | 创建、列出或删除数据包与命令方块共用的命名粒子组。 |
 | `/pdraw particle add ...` | 向组内添加点、线、光束、螺旋、法阵、球体等图元。 |
-| `/pdraw particle program ...` | 用多条命令编排移动、旋转、脉冲、实体跟随、变量和逐粒子公式。 |
+| `/pdraw particle program ...` | 用多条命令编排锚点、实体跟随、移动、旋转、脉冲、变量和逐粒子公式。 |
 | `/pdraw animation list` | 列出 `animations/` 里可用的动画。 |
 | `/pdraw animation play <name> [pos]` | 在 `pos` 播放动画，缺省为玩家前方 3 格。 |
 | `/pdraw animation stop` | 停止当前维度里正在播放的全部动画与特效。 |

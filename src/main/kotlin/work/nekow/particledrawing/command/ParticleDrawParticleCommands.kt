@@ -131,6 +131,17 @@ internal object ParticleDrawParticleCommands {
                         .then(Commands.argument("z", DoubleArgumentType.doubleArg())
                             .executes(::programFollow)
                             .then(Commands.argument("local", BoolArgumentType.bool()).executes(::programFollow)))))))
+        group.then(Commands.literal("anchor")
+            .then(Commands.literal("fixed")
+                .then(Commands.argument("pos", Vec3Argument.vec3()).executes(::programPivot)))
+            .then(Commands.literal("entity")
+                .then(Commands.argument("entity", EntityArgument.entity())
+                    .executes(::programFollow)
+                    .then(Commands.argument("x", DoubleArgumentType.doubleArg())
+                        .then(Commands.argument("y", DoubleArgumentType.doubleArg())
+                            .then(Commands.argument("z", DoubleArgumentType.doubleArg())
+                                .executes(::programFollow)
+                                .then(Commands.argument("local", BoolArgumentType.bool()).executes(::programFollow))))))))
         group.then(Commands.literal("delay")
             .then(Commands.argument("ticks", IntegerArgumentType.integer(0)).executes(::programDelay)))
         group.then(timedEasing("fade_in", ::programFadeIn))
@@ -505,11 +516,11 @@ internal object ParticleDrawParticleCommands {
     }
 
     private fun programPivot(ctx: CommandContext<CommandSourceStack>) = program(ctx) { it.group.setPivot(Vec3Argument.getVec3(ctx, "pos")) }
-    private fun programFollow(ctx: CommandContext<CommandSourceStack>) = program(ctx) {
+    private fun programFollow(ctx: CommandContext<CommandSourceStack>): Int {
         val entity = EntityArgument.getEntity(ctx, "entity")
         val offset = try { Vec3(DoubleArgumentType.getDouble(ctx, "x"), DoubleArgumentType.getDouble(ctx, "y"), DoubleArgumentType.getDouble(ctx, "z")) } catch (_: IllegalArgumentException) { Vec3.ZERO }
         val local = try { BoolArgumentType.getBool(ctx, "local") } catch (_: IllegalArgumentException) { false }
-        it.group.followEntity(entity.uuid, offset, local)
+        return program(ctx) { it.group.followEntity(entity.uuid, offset, local) }
     }
     private fun programDelay(ctx: CommandContext<CommandSourceStack>) = program(ctx) { it.group.delay(IntegerArgumentType.getInteger(ctx, "ticks")) }
     private fun programFadeIn(ctx: CommandContext<CommandSourceStack>) = program(ctx) {
@@ -600,7 +611,7 @@ internal object ParticleDrawParticleCommands {
         return 1
     }
     private fun programHelp(ctx: CommandContext<CommandSourceStack>): Int {
-        ctx.source.sendSuccess({ Component.literal("program <组> pivot|follow|delay|fade_in|fade_out|move|move_path|rotate|recolor|scale_by|scale_to|spin|pulse|variable|entity|expression|retire ...") }, false)
+        ctx.source.sendSuccess({ Component.literal("program <组> anchor|pivot|follow|delay|fade_in|fade_out|move|move_path|rotate|recolor|scale_by|scale_to|spin|pulse|variable|entity|expression|retire ...") }, false)
         return 1
     }
 

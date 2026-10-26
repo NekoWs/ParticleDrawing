@@ -730,8 +730,9 @@ pdraw particle program demo fade_out 12 ease_in
 
 | 命令 | 作用 |
 | --- | --- |
-| `program <组> pivot <位置>` | 改固定轴心 |
-| `program <组> follow <实体> [x y z [local]]` | 让轴心跟随实体及偏移；`local=true` 时随实体朝向旋转 |
+| `program <组> anchor fixed <位置>` | 绑定固定坐标锚点，解除已有的实体跟随 |
+| `program <组> anchor entity <实体> [x y z [local]]` | 绑定实体锚点及偏移；`local=true` 时偏移和整组随实体朝向旋转 |
+| `program <组> pivot <位置>` / `follow <实体> ...` | 上面两条锚点命令的兼容简写 |
 | `program <组> delay <tick>` | 推进该组时间线，后续动作从新时刻开始 |
 | `program <组> fade_in\|fade_out\|fade_out_keep <tick> [缓动]` | 淡入、淡出并删除、淡出但保留 |
 | `program <组> move <x> <y> <z> <tick> [缓动]` | 整组平移 |
@@ -753,6 +754,23 @@ pdraw particle program demo fade_out 12 ease_in
 缓动名支持 `linear`、`ease_in`、`ease_out`、`ease_in_out`，以及 `_quad`、`_cubic`、`_bounce`、
 `_elastic` 变体。命令补全会列出全部名称。
 
+实体锚点在命令执行时把选择器解析为一个实体 UUID，之后会持续跟随当时选中的同一个实体。默认偏移是
+`0 0 0`，按世界坐标解释；最后一个参数写 `true` 时，偏移和组内图形都会随实体的 yaw/pitch 转动。客户端
+暂时找不到该实体时会隐藏该组，实体重新进入客户端后继续显示。锚点通常放在淡入、旋转等动画命令之前：
+
+```mcfunction
+# 组轴心放在实体脚下，图形画在头顶 1.8 格，再用相同偏移绑定到该实体
+pdraw particle group reset halo ~ ~ ~
+pdraw particle add halo circle ~ ~1.8 ~ 0.7 48 color=#ffe080 style=soft_dot additive glowing
+pdraw particle program halo anchor entity @s 0 1.8 0 false
+pdraw particle program halo spin 0 1 0 3
+
+# 随实体朝向的前方施法环：局部 Z 偏移 1.2 格
+pdraw particle group reset cast_ring ~ ~ ~
+pdraw particle add cast_ring circle ~ ~1.2 ~1.2 1 56 axis=xy color=#70c8ff style=soft_dot additive glowing
+pdraw particle program cast_ring anchor entity @s 0 1.2 1.2 true
+```
+
 ### 数据包法阵示例
 
 下面的效果把静态法阵和动态光点拆成两个组。静态组使用形状与组动画，动态组使用 192 颗同点粒子和
@@ -767,9 +785,10 @@ execute as @p at @s run function example:magic/start
 `data/example/function/magic/start.mcfunction`：
 
 ```mcfunction
-pdraw particle group reset spell_sigil ~ ~0.06 ~
+pdraw particle group reset spell_sigil ~ ~ ~
 pdraw particle add spell_sigil circle ~ ~0.06 ~ 3.2 112 color=#45d9ff style=soft_dot scale=0.32 additive glowing light=12 intensity=1.4
 pdraw particle add spell_sigil hexagram ~ ~0.06 ~ 2.55 22 gradient=#ffffff:#487dff style=soft_dot scale=0.28 additive glowing
+pdraw particle program spell_sigil anchor entity @s 0 0.06 0 false
 pdraw particle program spell_sigil fade_in 8 ease_out
 pdraw particle program spell_sigil spin 0 1 0 1.8
 pdraw particle program spell_sigil pulse 1.12 12 -1

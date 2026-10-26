@@ -134,7 +134,7 @@
 | `DynamicLightManager` | 动态光照：向光图坐标注入粒子光照，按「已请求重建」基准累计位移并排队重烘焙 |
 | `LightAttenuation` | 光照衰减函数：线性、反平方、平滑步进等预设 |
 | `ParticleDrawCommands` | `/pdraw` 根命令；动画集中在 `animation`，贴图重载在 `texture reload` |
-| `ParticleDrawParticleCommands` | `particle group/add/program`：命名组、多图元绘制、组动画、实体/变量与逐粒子表达式 |
+| `ParticleDrawParticleCommands` | `particle group/add/program`：命名组、多图元绘制、固定/实体锚点、组动画、变量与逐粒子表达式 |
 | `ParticleCommandOptionParser` | `particle add` 的严格 `key=value` 参数解析，覆盖颜色、外观、寿命曲线和物理参数 |
 | `CommandParticleGroups` | 按维度保存命令创建的运行期组，并协调错峰成员与后续编排命令 |
 | `ParticleDrawingConfig` | 服务端与客户端配置项 |

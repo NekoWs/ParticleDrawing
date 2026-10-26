@@ -105,7 +105,7 @@ More in the [getting started guide](doc/getting-started.md).
 | ---------------------------- | --------------------------------------------------------------- |
 | `/pdraw particle group ...`  | Create and manage named particle groups for data packs and command blocks. |
 | `/pdraw particle add ...`    | Add dots, beams, helices, magic circles, spheres and other primitives. |
-| `/pdraw particle program ...` | Choreograph movement, spin, pulses, entity following, variables and per-particle expressions. |
+| `/pdraw particle program ...` | Choreograph anchors, entity following, movement, spin, pulses, variables and per-particle expressions. |
 | `/pdraw animation list`      | List the animations available in `animations/`.                 |
 | `/pdraw animation play <name> [pos]` | Play an animation at `pos`, or 3 blocks in front of the player. |
 | `/pdraw animation stop`      | Stop every animation and effect playing in the current dimension. |
