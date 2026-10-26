@@ -1087,6 +1087,8 @@ batch.exit {
 
 `fullBright` 与 `light` 分开：`Light.level` 设置向外照明，`Light.none` 只保留全亮；
 `ParticleVisual` 的 `emitsLight` 随生成包同步，旧 API 的 `glowing` 行为不变。
+`exit` 的删除由客户端回报“每个成员的实际尺寸过渡已到端点”后触发；重复 `exit` 会递增版本，
+旧回报按版本丢弃，离线/无同时追踪全部成员的玩家时按退场时长 + 兜底余量清理。
 
 ### 类型化表达式
 
@@ -1118,8 +1120,23 @@ group.expression(duration = 5.ticks) {
   实体/可移动轴心会明确报错，`position.preserve()` 也会报错，不会偷偷补世界原点。
 - 复用的随机值由 `i + seed + salt` 决定，暂停、回绕和重复求值不跳变；固定种子可复现。
 - `group.buildExpression(...)` 返回 `TypedExpression`，`debugString()` 可查看生成文本、参数名与单位。
-- 该入口只覆盖组标量表达式的位置/颜色/缩放；`glow/light` 等其它通道继续用字符串 API。
+- 该入口覆盖组标量表达式的位置/颜色/缩放，另有 `pow`、`phase/start` 与 `local`；`glow/light` 等其它通道继续用字符串 API。
   Java 可用 `Expressions.builder(duration)` 生成位置/缩放/颜色文本，或直接调用 `group.expression(code, ticks)`。
+
+动态外观、阶段与共享局部值：
+
+```kotlin
+group.expression(duration = 8.ticks) {
+    val cooldown = start(8.ticks)
+    val presence = local("presence", 1.0.toScalar() - cooldown.progress)
+    position.world(vec3(0.blocks, 1.0.blocks, 0.blocks))
+    scale(pow(presence, 0.75))
+    color(presence, presence, Scalar.of(0.5), Scalar.of(1.0))
+}
+```
+
+`start(duration)` / `phase(duration, offset)` 都读同一组表达式时间 `t`，两个阶段可在同一配方里共享相位；
+`local(name, value)` 会在生成文本开头赋值一次，后续复用变量名，调试导出会列出局部表达式。
 
 ### 坐标基与命名部件
 
@@ -1144,6 +1161,8 @@ shape.part("teeth")?.resize(0.5f, 4, Ease.OUT)
 
 `Frames.ground` 默认只跟位置、不跟 yaw；`followYaw = true` 才连朝向一起跟随，均由 PD 的
 `followEntity` 完成，不需要每 tick 重建坐标基。`Frames.basis` 对零向量/平行 upHint 显式报错。
+`Draw.polygon` 沿边线性采样：每条边含起点、不含下一条边起点，总点数固定为
+`sides × samplesPerEdge`，所以边中点不会因为固定半径而鼓到圆周上。
 部件选择器返回的句柄保存成功成员，容量拒绝仍计入 `requested` 而不会串到别的部件。
 
 ### 批量生成配对
@@ -1200,8 +1219,8 @@ Shape s = Draw.polygon(manager, p);
 8. `delay(n)` 期间粒子在 PD 侧还不存在，句柄上的操作一律无效，position() 读不到权威位置；
    `ParticleBatch` 会把延迟成员留到到点。
 9. 发射器声明不随调用方消失，法术结束或投射物消亡时要 `stop()`，否则客户端会一直发下去。
-10. `ParticleManager.spawnAll` 单次最多 256 条，超出的规格不生成（返回值比入参短），服务端再按每玩家
-    上限裁剪；密集场景分批调用。
+10. `ParticleManager.spawnAll` 内部按单包上限自动分段，不再截断第 257 条；返回值仍与入参等长，
+    容量拒绝为 null。需要拒绝原因时用 `spawnAllDetailed`，服务端再按每玩家上限裁剪。
 11. 光照结果按方块坐标、动态光版本与分摊超时缓存。动态光变化在后续渲染帧刷新；区块重建有每帧预算，
     超出的部分排队分帧收敛。插拆火把、昼夜变化、区块重载这类没有版本号的世界光变化由每颗粒子各自
     错开的 1 秒周期重采样兜住。

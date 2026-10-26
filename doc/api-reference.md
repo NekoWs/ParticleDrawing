@@ -32,11 +32,11 @@
 | `Ease` | 公开缓动入口，映射既有 `EasingType` |
 | `particleVisual`、`ParticleVisualBuilder`、`ParticleAppearance`、`Light`、`Blend`、`Facing` | 命名外观 DSL/Builder：世界尺寸、全亮、对外照明、混合与朝向 |
 | `lifeCurve`、`ParticleLifeCurveBuilder`、`sizeEnvelope`、`fadeOut`、`LifeCurves` | 命名寿命曲线 DSL 与常用包络糖 |
-| `Scalar`、`ParameterInfo`、`ExpressionFrame`、`ExpressionMember`、`ExpressionPosition`、`TypedExpression` | 类型化组标量表达式、参数/实体输入、进度与确定性随机、调试导出 |
-| `Vector`、`Direction`、`vec3`、`Angles`、`Scalars` | 表达式向量/方向、黄金角与 Java 标量数学入口 |
+| `Scalar`、`ParameterInfo`、`ExpressionFrame`、`ExpressionMember`、`ExpressionPosition`、`Phase`、`TypedExpression` | 类型化组标量表达式、参数/实体输入、进度/阶段、确定性随机、命名局部表达式与调试导出 |
+| `Vector`、`Direction`、`vec3`、`Angles`、`Scalars` | 表达式向量/方向、黄金角、`pow` 与 Java 标量数学入口 |
 | `ExpressionTextBuilder`、`Expressions` | Java 友好的位置/缩放/颜色表达式文本构建器 |
 | `Frames`、`CoordinateFrame`、`PolygonSpec`、`Shape`、`ShapePart`、`PartSelector`、`Shapes` | 坐标基、正多边形轮廓、命名部件与形状结果 |
-| `ExitSpec`、`ParticleSizeExit`、`ExitState`、`Exits` | 逐成员片元尺寸退场、保留运动、完成清理与状态 |
+| `ExitSpec`、`ParticleSizeExit`、`ExitState`、`Exits` | 逐成员片元尺寸退场、保留运动、客户端尺寸端点回报、完成清理与状态 |
 | `SpawnResult`、`SpawnRejection`、`ParticleManager.spawnAllDetailed`、`ParticleBatch.spawnAllDetailed` | 批量生成的原始下标结果、拒绝原因与自动分段 |
 
 ## animation：动画文件与播放
@@ -117,10 +117,11 @@
 | `ProgramAnchorPayload`、`ProgramCompletePayload` | 移动轴心样本与完成信号 |
 | `PlayAnimationPayload`、`PlayAnimationDataPayload`、`StopAnimationPayload`、`VariableUpdatePayload` | 动画播放控制 |
 | `PlayEffectPayload`、`EffectDataPayload`、`EffectRequestPayload`、`AnchorUpdateBatchPayload`、`ClockSyncPayload` | 特效播放、锚点同步与时钟同步 |
+| `ParticleExitWatchPayload`、`ParticleExitCompletePayload` | 尺寸退场观察与客户端完成回报（版本化，支持重定向） |
 | `AnimationSyncBeginPayload`、`AnimationSyncRequestPayload`、`AnimationSyncFilePayload`、`AnimationSyncDonePayload` | 配置阶段动画文件同步 |
 | `BatchChunking`、`ParticleVisualCodec`、`ParticleCurveCodec`、`ParticleAnimationCodec`、`StreamCodecs` | 拆包与编解码工具 |
 
-批量载荷的单包上限由编解码两端共同约束，超限构造即报错：速度、位置、力、销毁与锚点更新为 512 条，
+批量载荷的单包上限由编解码两端共同约束，超限构造即报错：速度、位置、力、退场观察、销毁与锚点更新为 512 条，
 批量生成为 256 条；发送端先经 `BatchChunking` 拆段，公开 API 对成员数没有上限。
 
 ## core.server：服务端权威

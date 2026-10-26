@@ -1,23 +1,23 @@
 # 已知限制
 
-## 可读特效编写接口（初版）
+## 可读特效编写接口
 
-[PD-READABLE-API](issues/readable-effect-api.md) 已落地为编写门面，底层播放器、完成账本与网络协议不变：
+[PD-READABLE-API](issues/readable-effect-api.md) 已落地为编写门面，底层播放器与完成账本复用：
 `Time/Length/Angle/...` 单位、公开 `Ease`、`particleVisual` / `lifeCurve`、类型化组标量表达式、
 `Frames` + `Draw.polygon` 命名部件、`exit { particleSize.to(...) }` 与 `spawnAllDetailed` 已可用。
 
 当前边界：
 
-- 类型化表达式只生成现有组标量表达式后端，覆盖位置、颜色与缩放；`glow/light` 等其它输出继续用字符串 API。
+- 类型化表达式只生成现有组标量表达式后端，覆盖位置、颜色、缩放、`pow`、阶段与命名局部表达式；
+  `glow/light` 等其它输出继续用字符串 API。
 - `position.local` 只适用于固定轴心；实体/可移动轴心的局部坐标会显式拒绝，不偷偷按世界原点处理。
 - 标量表达式不能保留逐粒子初始位置，`position.preserve()` 明确报错。
-- Java 端有单位、外观、曲线、形状、退场与批量结果入口；类型化表达式的高级参数/实体输入以 Kotlin DSL 为主，
+- Java 端有单位、外观、曲线、形状、退场、`Scalars.pow` 与批量结果入口；类型化表达式的高级参数/实体输入以 Kotlin DSL 为主，
   Java 可用 `Expressions.builder` 生成位置/缩放/颜色文本或继续用字符串表达式。
 - 部件选择器在生成时执行，部件句柄只记录成功成员；容量拒绝仍返回 null/`SpawnRejection.CAPACITY`。
+- 退场完成使用客户端尺寸端点回报；协议新增观察/完成载荷，registrar 升到 `"13"`。没有同时追踪全部成员的玩家时走兜底清理。
 
-完整草案与验收见需求正文。
-
-消费迁移发现的待修复项见[可读API迁移缺口](issues/readable-api-migration.md)：单位常量减法、多边形边采样、退场完成语义，以及动态颜色/幂函数/共享阶段入口。消费方暂停这些入口的替换，不以改变原表现来完成迁移。
+完整草案与验收见需求正文，迁移差异见[可读API迁移缺口](issues/readable-api-migration.md)。
 
 ## 立体声声像与编辑器有两处差别
 
