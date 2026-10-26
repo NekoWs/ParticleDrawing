@@ -1,6 +1,7 @@
 package work.nekow.particledrawing.api
 
 import net.minecraft.world.phys.Vec3
+import java.math.BigDecimal
 
 // 显式单位值：时间、长度、角度、角速度、速度与加速度。
 // Kotlin 用扩展属性（6.ticks、1.2.blocks），Java 用同名静态工厂；两者落到同一个值。
@@ -9,6 +10,26 @@ import net.minecraft.world.phys.Vec3
 private fun finite(value: Double, what: String): Double {
     require(value.isFinite()) { "$what 必须是有限值" }
     return value
+}
+
+/**
+ * 生成表达式可解析的十进制字面量。
+ *
+ * `Double.toString` 在极小/极大值上会给出 `1.5E-4` 这类科学计数法，而 PD 的一元公式词法
+ * 不接受指数，`E` 还会被当成 Euler 常量。这里统一展开成普通十进制；[BigDecimal.valueOf]
+ * 保留与 Double 往返一致的十进制值，只去掉无意义的尾零。
+ */
+internal fun numberLiteral(value: Double): String {
+    require(value.isFinite()) { "数值字面量必须是有限值" }
+    if (value == 0.0) return "0"
+    return BigDecimal.valueOf(value).stripTrailingZeros().toPlainString()
+}
+
+/** Float 走最短十进制表示，避免 0.1f.toDouble() 的二进制尾数写进表达式。 */
+internal fun numberLiteral(value: Float): String {
+    require(value.isFinite()) { "数值字面量必须是有限值" }
+    if (value == 0.0f) return "0"
+    return BigDecimal(value.toString()).stripTrailingZeros().toPlainString()
 }
 
 /**
@@ -106,7 +127,7 @@ class Time internal constructor(
         fun ticks(ticks: Double): Time {
             finite(ticks, "时间")
             val millis = finite(ticks * 50.0, "时间")
-            return Time(millis, millis.toString(), true)
+            return Time(millis, numberLiteral(millis), true)
         }
 
         @JvmStatic
@@ -115,7 +136,7 @@ class Time internal constructor(
         @JvmStatic
         fun milliseconds(millis: Double): Time {
             finite(millis, "时间")
-            return Time(millis, millis.toString(), true)
+            return Time(millis, numberLiteral(millis), true)
         }
 
         @JvmStatic
@@ -195,7 +216,7 @@ class Length internal constructor(
         @JvmStatic
         fun blocks(blocks: Double): Length {
             finite(blocks, "长度")
-            return Length(blocks, blocks.toString(), true)
+            return Length(blocks, numberLiteral(blocks), true)
         }
 
         @JvmStatic
@@ -205,7 +226,7 @@ class Length internal constructor(
         fun mcPixels(pixels: Double): Length {
             finite(pixels, "长度")
             val blocks = pixels / 16.0
-            return Length(blocks, blocks.toString(), true)
+            return Length(blocks, numberLiteral(blocks), true)
         }
 
         @JvmStatic
@@ -251,9 +272,9 @@ class Angle internal constructor(
     )
 
     operator fun div(other: Time): AngularSpeed {
-        val result = if (constant && other.isConstant()) radians / (other.millis / 1000.0) else Double.NaN
-        if (constant && other.isConstant()) finite(result, "角度/时间")
-        return AngularSpeed(result, "($expr/(${other.expr}/1000.0))")
+        val const = constant && other.isConstant()
+        val result = if (const) finite(radians / other.millis * 1000.0, "角度/时间") else Double.NaN
+        return AngularSpeed(result, "($expr/${other.expr})", const)
     }
 
     internal fun isConstant(): Boolean = constant
@@ -272,14 +293,14 @@ class Angle internal constructor(
         @JvmStatic
         fun radians(radians: Double): Angle {
             finite(radians, "角度")
-            return Angle(radians, radians.toString(), true)
+            return Angle(radians, numberLiteral(radians), true)
         }
 
         @JvmStatic
         fun degrees(degrees: Double): Angle {
             finite(degrees, "角度")
             val radians = Math.toRadians(degrees)
-            return Angle(radians, radians.toString(), true)
+            return Angle(radians, numberLiteral(radians), true)
         }
 
         @JvmStatic
@@ -296,26 +317,31 @@ val Double.radians: Angle get() = Angle.radians(this)
 class AngularSpeed internal constructor(
     val radiansPerSecond: Double,
     internal val expr: String,
+    private val constant: Boolean,
 ) {
 
     val radiansPerTick: Double get() = radiansPerSecond / 20.0
 
     internal fun render(): String = expr
 
-    operator fun times(time: Time): Angle = Angle(
-        radiansPerSecond * (time.millis / 1000.0),
-        "($expr*${time.expr}/1000.0)",
-        false,
-    )
+    /** 内部 expr 统一为弧度/毫秒；乘以毫秒时间只换算一次。 */
+    operator fun times(time: Time): Angle {
+        val const = constant && time.isConstant()
+        val result = radiansPerSecond * (time.millis / 1000.0)
+        return Angle(if (const) finite(result, "角速度×时间") else Double.NaN, "($expr*${time.expr})", const)
+    }
 
-    override fun toString(): String = "${radiansPerSecond}rad/s"
+    internal fun isConstant(): Boolean = constant
+
+    override fun toString(): String =
+        if (constant) "${radiansPerSecond}rad/s" else "AngularSpeed($expr)"
 
     companion object {
         @JvmStatic
         fun radiansPerSecond(value: Double): AngularSpeed {
             finite(value, "角速度")
             val perMillis = value / 1000.0
-            return AngularSpeed(value, perMillis.toString())
+            return AngularSpeed(value, numberLiteral(perMillis), true)
         }
 
         @JvmStatic

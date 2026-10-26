@@ -21,7 +21,9 @@ import work.nekow.particledrawing.api.ParticleManager;
 import work.nekow.particledrawing.api.ParticleSpawnSpec;
 import work.nekow.particledrawing.api.ParticleStyle;
 import work.nekow.particledrawing.api.ParticleVisual;
+import work.nekow.particledrawing.api.PhaseParameter;
 import work.nekow.particledrawing.api.PolygonSpec;
+import work.nekow.particledrawing.api.Scalar;
 import work.nekow.particledrawing.api.Scalars;
 import work.nekow.particledrawing.api.Shape;
 import work.nekow.particledrawing.api.Shapes;
@@ -73,6 +75,11 @@ public final class ReadableApiJavaCompile {
                 .scale(Scalars.pow(Scalars.clamp01(Scalars.of(0.5)), 0.75))
                 .color(Scalars.of(0.5), Scalars.of(0.25), Scalars.of(0.1), Scalars.of(1.0));
         expression.apply(group);
+
+        PhaseParameter cooldown = group.phaseParameter("cooldown");
+        cooldown.start(Time.ticks(5));
+        Scalar phaseProgress = cooldown.getProgress();
+        cooldown.complete();
 
         ExitSpec exit = Exits.batch(batch);
         exit.getParticleSize().to(0.0, Time.ticks(8), Ease.LINEAR);

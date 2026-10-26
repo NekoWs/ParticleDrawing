@@ -65,6 +65,9 @@ class ParticleGroup(
     /** 表达式自己的到期时刻（程序相对毫秒）；-1 = 一直求值。 */
     private var expressionEndMs: Long = -1L
 
+    /** 表达式指令在程序时间轴上的起点（毫秒）；阶段句柄用它与当前程序时间求差。 */
+    private var expressionStartProgramMs: Int? = null
+
     /** 游标 → 程序时刻的换算（增量追加按「从现在起」读）。 */
     private val clock = GroupClock()
 
@@ -604,6 +607,26 @@ class ParticleGroup(
     }
 
     /**
+     * 当前表达式时刻（组表达式 `t` 的同一时间轴，毫秒）。
+     *
+     * 表达式尚未下发时为 0；只用于编写门面计算阶段起点，不是独立时钟。
+     */
+    internal fun currentExpressionTimeMs(): Int {
+        val start = expressionStartProgramMs ?: return 0
+        val elapsed = clock.elapsedMs(manager.level.gameTime)
+        return (elapsed - start).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+    }
+
+    /**
+     * 组原生可更新阶段：进度、开始/完成状态从表达式时间 `t` 直接计算，
+     * 不引入额外时钟或逐 tick 服务端执行。
+     *
+     * 同一组的多个输出可复用同一句柄；`start(duration)` 从当前表达式时刻重新计时。
+     */
+    fun phaseParameter(name: String): PhaseParameter =
+        PhaseParameter(this, name).also { it.register() }
+
+    /**
      * 表达式指令：每粒子每 tick 求值 [code]（专用标量公式，与 .pdraw 函数对象的 this 脚本语言不同）。
      * 输出 [x,y,z] 为世界绝对坐标，可用 i/n/t、标量数学函数、get_* 被动输入与程序变量；
      * 一旦出现即接管位置/颜色/缩放的最终解释权，FADE 因子仍叠加其上。
@@ -617,7 +640,8 @@ class ParticleGroup(
         lintGetters(code)
         // 出现表达式即进入表达式模式：糖指令不执行，完成账本改看表达式与变量缓动
         expressionMode = true
-        emit(AnimInstruction.Expression(cursorMs, code, durationTicks * 50))
+        val at = emit(AnimInstruction.Expression(cursorMs, code, durationTicks * 50))
+        expressionStartProgramMs = at
         return this
     }
 

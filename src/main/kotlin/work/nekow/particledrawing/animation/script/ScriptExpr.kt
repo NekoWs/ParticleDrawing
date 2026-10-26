@@ -96,7 +96,21 @@ private fun tokenizeExpr(expr: String): List<ExprToken> {
         if (c.isDigit() || c == '.') {
             var j = i
             while (j < expr.length && (expr[j].isDigit() || expr[j] == '.')) j++
-            tokens.add(ExprToken.Num(expr.substring(i, j).toDouble())); i = j; expectOperand = false; continue
+            // 科学计数法：Double.toString 会生成 1.5E-4；指数只在 e/E 后确有数字时消费，
+            // 单独的 E 仍是 Euler 常量。
+            if (j < expr.length && (expr[j] == 'e' || expr[j] == 'E')) {
+                var k = j + 1
+                if (k < expr.length && (expr[k] == '+' || expr[k] == '-')) k++
+                if (k < expr.length && expr[k].isDigit()) {
+                    while (k < expr.length && expr[k].isDigit()) k++
+                    j = k
+                }
+            }
+            val text = expr.substring(i, j)
+            val value = text.toDoubleOrNull()
+                ?: throw IllegalArgumentException("非法数字字面量: $text")
+            require(value.isFinite()) { "数字字面量必须是有限值: $text" }
+            tokens.add(ExprToken.Num(value)); i = j; expectOperand = false; continue
         }
         if (c.isLetter() || c == '_') {
             var j = i

@@ -23,6 +23,7 @@ import work.nekow.particledrawing.api.Velocity
 import work.nekow.particledrawing.api.AngularSpeed
 import work.nekow.particledrawing.api.blocks
 import work.nekow.particledrawing.api.degrees
+import work.nekow.particledrawing.api.degreesPerSecond
 import work.nekow.particledrawing.api.fadeOut
 import work.nekow.particledrawing.api.lifeCurve
 import work.nekow.particledrawing.api.mcPixels
@@ -30,6 +31,7 @@ import work.nekow.particledrawing.api.milliseconds
 import work.nekow.particledrawing.api.particleVisual
 import work.nekow.particledrawing.api.radians
 import work.nekow.particledrawing.api.radiansPerSecond
+import work.nekow.particledrawing.api.seconds
 import work.nekow.particledrawing.api.sizeEnvelope
 import work.nekow.particledrawing.api.ticks
 import work.nekow.particledrawing.api.toEasingType
@@ -56,6 +58,11 @@ import work.nekow.particledrawing.api.cos
 import work.nekow.particledrawing.api.smoothstep
 import work.nekow.particledrawing.api.vectorParameter
 import work.nekow.particledrawing.animation.script.compileFunctionObject
+import work.nekow.particledrawing.animation.script.evaluate
+import work.nekow.particledrawing.api.numberLiteral
+import work.nekow.particledrawing.api.phaseCompletedExpr
+import work.nekow.particledrawing.api.phaseProgressExpr
+import work.nekow.particledrawing.api.phaseStartedExpr
 import work.nekow.particledrawing.core.client.RenderParticle
 import work.nekow.particledrawing.core.server.ServerExitCompletion
 import work.nekow.particledrawing.core.network.ParticleExitCompletePayload
@@ -83,6 +90,7 @@ private fun compileReadableDsl(
 ) {
     val origin = group.vectorParameter("origin", center).value
     val direction = group.directionParameter("direction", forward).value
+    val cooldown = group.phaseParameter("cooldown")
     group.expression(duration = 5.ticks) {
         val progress = progress(5.ticks)
         val random = member.random01(seed = 1234L, salt = "spread")
@@ -91,8 +99,10 @@ private fun compileReadableDsl(
         val distance = progress * lerp(0.25.blocks, 0.70.blocks, random)
         position.world(origin + direction * distance + vec3(cos(angle) * width, 0.5.blocks, sin(angle) * width))
         scale(smoothstep(0.0.toScalar(), 1.0.toScalar(), progress) * square(1.0.toScalar() - progress))
-        color(Color.WHITE)
+        color(cooldown.progress, cooldown.progress, Scalar.of(0.5), Scalar.of(1.0))
     }.retire()
+    cooldown.start(5.ticks)
+    cooldown.complete()
 
     val shape = Draw.polygon(manager) {
         name = "saw"
@@ -352,9 +362,9 @@ class ReadableApiTest {
         assertTrue(code.startsWith("x="))
         assertTrue(code.contains("y=") && code.contains("z="))
         assertTrue(code.contains("sc="))
-        assertTrue(code.contains("r=1.0;g=1.0;b=1.0;a=1.0;"))
+        assertTrue(code.contains("r=1;g=1;b=1;a=1;"))
         assertTrue(code.contains("rand(i*12.9898+(1.0)+"))
-        assertTrue(code.contains("t/300.0"))
+        assertTrue(code.contains("t/300"))
 
         assertFailsWith<IllegalArgumentException> {
             val f = ExpressionFrame(null, TypedExpressionBuilder())
@@ -367,11 +377,83 @@ class ReadableApiTest {
     }
 
     @Test
+    fun `表达式数值字面量不使用科学计数法并能被真实求值器解析`() {
+        assertEquals("0.00015", numberLiteral(0.00015))
+        assertEquals("16777217.25", numberLiteral(16777217.25))
+        val samples = listOf(0.00015, 16777217.25, 0.000000001, -0.00015, 1.0, 1000.0)
+        for (value in samples) {
+            val literal = Scalar.of(value).expr
+            assertFalse(literal.contains('E') || literal.contains('e'), "字面量含指数: $literal")
+            assertEquals(value, evaluate(literal, emptyMap()), 1e-15, "literal=$literal")
+        }
+        assertEquals(0.00015, evaluate("1.5E-4", emptyMap()), 1e-15)
+        assertEquals(16777217.25, evaluate("1.677721725E7", emptyMap()), 1e-9)
+        assertEquals(-0.000000001, evaluate("-1.0e-9", emptyMap()), 1e-18)
+
+        assertEquals(1000.0, evaluate(Time.seconds(1.0).expr, emptyMap()), 1e-12)
+        assertEquals(0.00015, evaluate(Length.blocks(0.00015).expr, emptyMap()), 1e-15)
+        assertEquals(Math.toRadians(0.00015), evaluate(Angle.degrees(0.00015).expr, emptyMap()), 1e-18)
+    }
+
+    @Test
+    fun `角速度乘时间只换算一次`() {
+        val oneSecond = 1.radiansPerSecond * 1.seconds
+        assertEquals(1.0, oneSecond.radians, 1e-12)
+        assertEquals(1.0, evaluate(oneSecond.expr, emptyMap()), 1e-12)
+
+        val twoSeconds = 1.radiansPerSecond * 2.seconds
+        assertEquals(2.0, twoSeconds.radians, 1e-12)
+        assertEquals(2.0, evaluate(twoSeconds.expr, emptyMap()), 1e-12)
+
+        val oneTick = 1.radiansPerSecond * 1.ticks
+        assertEquals(0.05, oneTick.radians, 1e-12)
+        assertEquals(0.05, evaluate(oneTick.expr, emptyMap()), 1e-12)
+
+        val fromAngle = (90.degrees / 1.seconds) * 1.seconds
+        assertEquals(PI / 2.0, fromAngle.radians, 1e-12)
+        assertEquals(PI / 2.0, evaluate(fromAngle.expr, emptyMap()), 1e-12)
+        assertEquals(PI / 2.0, evaluate((90.degrees / 1.seconds).expr, emptyMap()) * 1000.0, 1e-12)
+
+        val degrees = 90.degreesPerSecond * 1.seconds
+        assertEquals(PI / 2.0, degrees.radians, 1e-12)
+        assertEquals(PI / 2.0, evaluate(degrees.expr, emptyMap()), 1e-12)
+    }
+
+    @Test
+    fun `颜色常量按最短浮点十进制写进表达式`() {
+        val builder = TypedExpressionBuilder()
+        val frame = ExpressionFrame(null, builder)
+        with(frame) {
+            position.world(vec3(0.blocks, 0.blocks, 0.blocks))
+            color(Color.of(0.1f, 0.2f, 0.3f, 0.4f))
+        }
+        assertTrue(builder.build().contains("r=0.1;g=0.2;b=0.3;a=0.4;"))
+    }
+
+    @Test
+    fun `阶段表达式在未开始、运行和完成状态可求值`() {
+        fun eval(value: Scalar, state: Double, start: Double = 0.0, duration: Double = 100.0, t: Double = 0.0): Double =
+            evaluate(value.expr, mapOf("t" to t, "p_start" to start, "p_duration" to duration, "p_state" to state))
+
+        assertEquals(0.0, eval(phaseProgressExpr("p"), 0.0, t = 50.0), 1e-12)
+        assertEquals(0.5, eval(phaseProgressExpr("p"), 1.0, t = 50.0), 1e-12)
+        assertEquals(1.0, eval(phaseProgressExpr("p"), 1.0, t = 150.0), 1e-12)
+        assertEquals(1.0, eval(phaseProgressExpr("p"), 2.0, t = 0.0), 1e-12)
+        assertEquals(0.0, eval(phaseStartedExpr("p"), 0.0, t = 50.0), 1e-12)
+        assertEquals(1.0, eval(phaseStartedExpr("p"), 1.0, t = 50.0), 1e-12)
+        assertEquals(0.0, eval(phaseCompletedExpr("p"), 1.0, t = 50.0), 1e-12)
+        assertEquals(1.0, eval(phaseCompletedExpr("p"), 2.0, t = 50.0), 1e-12)
+
+        val code = "x=${phaseProgressExpr("p").expr};y=0;z=0;sc=${phaseProgressExpr("p").expr};"
+        assertNotNull(compileFunctionObject(code, emptyList(), listOf("p_start", "p_duration", "p_state")))
+    }
+
+    @Test
     fun `表达式标量保留单位文本并支持常量折叠`() {
         val scalar = 2.0.toScalar() * 3.0.toScalar()
         assertEquals(6.0, scalar.constant()!!, 1e-9)
         val expr = (2.0.toScalar() * 3.blocks)
-        assertEquals("(2.0*3.0)", expr.expr)
+        assertEquals("(2*3)", expr.expr)
         assertEquals(2.399963229728653, Angles.goldenAngle.constant()!!, 1e-12)
         assertTrue(Scalar.of(1.0).plus(2.0).constant() == 3.0)
     }
@@ -447,7 +529,7 @@ class ReadableApiTest {
         assertTrue(code.startsWith("presence="))
         assertTrue(code.contains("pow(presence,0.75)"))
         assertTrue(code.contains("r=presence;g=presence;b=0.5;a="))
-        assertTrue(code.contains("step(100.0,(t-0.0))"))
+        assertTrue(code.contains("step(100,(t-0))"))
         assertNotNull(compileFunctionObject(code, emptyList()), "局部赋值/动态颜色必须能被现有编译器接受")
 
         assertFailsWith<IllegalArgumentException> {

@@ -55,7 +55,7 @@ class Scalar internal constructor(
         @JvmStatic
         fun of(value: Double): Scalar {
             require(value.isFinite()) { "标量必须是有限值" }
-            return Scalar(value.toString(), value)
+            return Scalar(numberLiteral(value), value)
         }
     }
 }
@@ -242,9 +242,9 @@ class VectorParameter internal constructor(
 
     fun set(value: Vec3): VectorParameter {
         require(value.x.isFinite() && value.y.isFinite() && value.z.isFinite()) { "向量参数必须是有限值" }
-        group.setVariableLive("${name}_x", value.x.toString())
-        group.setVariableLive("${name}_y", value.y.toString())
-        group.setVariableLive("${name}_z", value.z.toString())
+        group.setVariableLive("${name}_x", numberLiteral(value.x))
+        group.setVariableLive("${name}_y", numberLiteral(value.y))
+        group.setVariableLive("${name}_z", numberLiteral(value.z))
         return this
     }
 
@@ -252,9 +252,9 @@ class VectorParameter internal constructor(
         require(value.x.isFinite() && value.y.isFinite() && value.z.isFinite()) { "向量参数必须是有限值" }
         over.requirePositive("参数过渡时长")
         val ticks = over.requireWholeTicks("参数过渡时长")
-        group.setVariableInterpolated("${name}_x", value.x.toString(), ticks, easing.toEasingType())
-        group.setVariableInterpolated("${name}_y", value.y.toString(), ticks, easing.toEasingType())
-        group.setVariableInterpolated("${name}_z", value.z.toString(), ticks, easing.toEasingType())
+        group.setVariableInterpolated("${name}_x", numberLiteral(value.x), ticks, easing.toEasingType())
+        group.setVariableInterpolated("${name}_y", numberLiteral(value.y), ticks, easing.toEasingType())
+        group.setVariableInterpolated("${name}_z", numberLiteral(value.z), ticks, easing.toEasingType())
         return this
     }
 }
@@ -276,9 +276,9 @@ class DirectionParameter internal constructor(
 
     fun set(value: Vec3): DirectionParameter {
         val unit = normalize(value)
-        group.setVariableLive("${name}_x", unit.x.toString())
-        group.setVariableLive("${name}_y", unit.y.toString())
-        group.setVariableLive("${name}_z", unit.z.toString())
+        group.setVariableLive("${name}_x", numberLiteral(unit.x))
+        group.setVariableLive("${name}_y", numberLiteral(unit.y))
+        group.setVariableLive("${name}_z", numberLiteral(unit.z))
         return this
     }
 
@@ -286,9 +286,9 @@ class DirectionParameter internal constructor(
         val unit = normalize(value)
         over.requirePositive("方向过渡时长")
         val ticks = over.requireWholeTicks("方向过渡时长")
-        group.setVariableInterpolated("${name}_x", unit.x.toString(), ticks, easing.toEasingType())
-        group.setVariableInterpolated("${name}_y", unit.y.toString(), ticks, easing.toEasingType())
-        group.setVariableInterpolated("${name}_z", unit.z.toString(), ticks, easing.toEasingType())
+        group.setVariableInterpolated("${name}_x", numberLiteral(unit.x), ticks, easing.toEasingType())
+        group.setVariableInterpolated("${name}_y", numberLiteral(unit.y), ticks, easing.toEasingType())
+        group.setVariableInterpolated("${name}_z", numberLiteral(unit.z), ticks, easing.toEasingType())
         return this
     }
 
@@ -308,14 +308,14 @@ class ScalarParameter internal constructor(
 
     fun set(value: Double): ScalarParameter {
         require(value.isFinite()) { "标量参数必须是有限值" }
-        group.setVariableLive(name, value.toString())
+        group.setVariableLive(name, numberLiteral(value))
         return this
     }
 
     fun set(value: Double, over: Time, easing: Ease = Ease.LINEAR): ScalarParameter {
         require(value.isFinite()) { "标量参数必须是有限值" }
         over.requirePositive("参数过渡时长")
-        group.setVariableInterpolated(name, value.toString(), over.requireWholeTicks("参数过渡时长"), easing.toEasingType())
+        group.setVariableInterpolated(name, numberLiteral(value), over.requireWholeTicks("参数过渡时长"), easing.toEasingType())
         return this
     }
 }
@@ -339,6 +339,102 @@ fun ParticleGroup.scalarParameter(name: String, value: Double): ScalarParameter 
     readableParameters.add(ParameterInfo(name, "scalar", "-"))
     setVariable(name, value)
     return ScalarParameter(this, name)
+}
+
+/**
+ * 组原生可更新阶段句柄。
+ *
+ * 变量只保存起点、时长与状态，进度仍由表达式 `t` 逐帧计算；更新一次后暂停/插值都由现有后端处理。
+ * 状态 0 = 未开始，1 = 运行，2 = 完成。
+ */
+/** 阶段表达式片段；与句柄分离，便于用既有求值器逐点核对。 */
+internal fun phaseStartedExpr(name: String): Scalar =
+    step(Scalar.of(1.0), Scalar("${name}_state"))
+
+internal fun phaseCompletedExpr(name: String): Scalar =
+    step(Scalar.of(2.0), Scalar("${name}_state"))
+
+internal fun phaseProgressExpr(name: String): Scalar {
+    val active = phaseStartedExpr(name) - phaseCompletedExpr(name)
+    val progress = clamp01(Scalar("((t-${name}_start)/${name}_duration)"))
+    return progress * active + phaseCompletedExpr(name)
+}
+
+class PhaseParameter internal constructor(
+    private val group: ParticleGroup,
+    val name: String,
+) {
+
+    private val startName = "${name}_start"
+    private val durationName = "${name}_duration"
+    private val stateName = "${name}_state"
+    private var state = 0
+
+    /** 0..1；未开始为 0，完成后为 1。 */
+    val progress: Scalar = phaseProgressExpr(name)
+
+    val started: Scalar get() = phaseStartedExpr(name)
+    val completed: Scalar get() = phaseCompletedExpr(name)
+    val active: Scalar get() = started - completed
+    val remaining: Scalar get() = Scalar.of(1.0) - progress
+    val duration: Scalar get() = Scalar(durationName)
+
+    /** 是否正在运行（服务端句柄状态，不是表达式结果）。 */
+    val isActive: Boolean get() = state == 1
+
+    internal fun register() {
+        require(PARAM_NAME.matches(name)) { "阶段名 '$name' 不是合法标识符" }
+        require(name.length + "_duration".length <= 64) { "阶段名 '$name' 过长" }
+        require(name !in RESERVED_PARAM_NAMES) { "阶段名 '$name' 与内建名字冲突" }
+        for (variable in listOf(startName, durationName, stateName)) {
+            require(variable !in group.readableParameterNames) { "阶段变量 '$variable' 已经绑定过" }
+        }
+        group.readableParameterNames.add(startName)
+        group.readableParameterNames.add(durationName)
+        group.readableParameterNames.add(stateName)
+        group.readableParameters.add(ParameterInfo(name, "phase", "ms/state"))
+        group.setVariable(startName, 0.0)
+        group.setVariable(durationName, 1.0)
+        group.setVariable(stateName, 0.0)
+    }
+
+    /** 从当前表达式时刻开始计时；重复调用即重入。 */
+    fun start(duration: Time): PhaseParameter {
+        duration.requirePositive("阶段时长")
+        val ms = duration.millis
+        require(ms.isFinite() && ms > 0.0) { "阶段时长必须是正的有限值" }
+        val now = group.currentExpressionTimeMs()
+        set("_state", 0.0)
+        set("_start", now.toDouble())
+        set("_duration", ms)
+        set("_state", 1.0)
+        state = 1
+        return this
+    }
+
+    fun restart(duration: Time): PhaseParameter = start(duration)
+
+    /** 提前结束：进度直接落到 1，之后保持完成状态。 */
+    fun complete() {
+        set("_state", 2.0)
+        state = 2
+    }
+
+    fun finish() = complete()
+
+    fun reset() {
+        set("_state", 0.0)
+        set("_start", 0.0)
+        set("_duration", 1.0)
+        set("_state", 0.0)
+        state = 0
+    }
+
+    private fun set(suffix: String, value: Double) {
+        val variable = "$name$suffix"
+        group.setVariable(variable, value)
+        group.setVariableLive(variable, numberLiteral(value))
+    }
 }
 
 /** 表达式里的成员信息：索引、数量与确定性随机。 */
@@ -418,7 +514,9 @@ class ExpressionPosition internal constructor(private val frame: ExpressionFrame
         }
         val pivot = group.pivot
         frame.builder.positionCode =
-            "x=(${pivot.x}+${value.x.render()});y=(${pivot.y}+${value.y.render()});z=(${pivot.z}+${value.z.render()});"
+            "x=(${numberLiteral(pivot.x)}+${value.x.render()});" +
+                "y=(${numberLiteral(pivot.y)}+${value.y.render()});" +
+                "z=(${numberLiteral(pivot.z)}+${value.z.render()});"
     }
 
     /** 当前后端不能保留逐粒子初始位置；显式拒绝，不偷偷补世界原点。 */
@@ -480,7 +578,9 @@ class ExpressionFrame internal constructor(
     }
 
     fun color(color: Color) {
-        builder.colorCode = "r=${color.r};g=${color.g};b=${color.b};a=${color.a};"
+        builder.colorCode =
+            "r=${numberLiteral(color.r)};g=${numberLiteral(color.g)};" +
+                "b=${numberLiteral(color.b)};a=${numberLiteral(color.a)};"
     }
 
     /** 动态颜色通道；各分量直接写进现有表达式的 r/g/b/a。 */
@@ -590,7 +690,9 @@ class ExpressionTextBuilder internal constructor(duration: Time) {
     }
 
     fun color(color: Color): ExpressionTextBuilder {
-        builder.colorCode = "r=${color.r};g=${color.g};b=${color.b};a=${color.a};"
+        builder.colorCode =
+            "r=${numberLiteral(color.r)};g=${numberLiteral(color.g)};" +
+                "b=${numberLiteral(color.b)};a=${numberLiteral(color.a)};"
         return this
     }
 
@@ -608,6 +710,10 @@ class ExpressionTextBuilder internal constructor(duration: Time) {
 object Expressions {
     @JvmStatic
     fun builder(duration: Time): ExpressionTextBuilder = ExpressionTextBuilder(duration)
+
+    @JvmStatic
+    fun phaseParameter(group: ParticleGroup, name: String): PhaseParameter =
+        group.phaseParameter(name)
 }
 
 /**
