@@ -3,11 +3,13 @@ package work.nekow.particledrawing.core.client
 import net.minecraft.client.Minecraft
 import net.minecraft.client.particle.ParticleEngine
 import net.minecraft.world.phys.Vec3
+import net.neoforged.neoforge.client.network.ClientPacketDistributor
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleLifeCurve
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.network.ParticleExitCompletePayload
 import work.nekow.particledrawing.util.AttachMath
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
@@ -33,6 +35,14 @@ class ClientParticleEngine {
 
     // track 的逐 tick 插值缓冲（网络线程写、客户端主线程每 tick 消费一条）
     private val trackBuffers: MutableMap<UUID, TrackBuffer> = ConcurrentHashMap()
+
+    /** 尺寸退场观察：同一 exitId 的新 version 覆盖旧观察。 */
+    private class ExitWatch(val version: Int, val durationTicks: Int) {
+        val ids = LinkedHashSet<UUID>()
+        var ready = false
+    }
+
+    private val exitWatches: MutableMap<UUID, ExitWatch> = ConcurrentHashMap()
 
     // 带寿命曲线的粒子：每渲染帧刷新颜色/缩放（淡出/收缩逐帧才连续）。
     // 位置不在这里动：每帧改写 xo/x 会把插值端点折叠成同值对，破坏 partialTick 扫掠。
@@ -429,6 +439,61 @@ class ClientParticleEngine {
         }
 
         groups.values.removeIf { it.isEmpty() }
+        checkExitWatches()
+    }
+
+    /** 接收一段退场观察；同一版本的分段合并，[last] 到达后才开始判定。 */
+    fun handleExitWatch(
+        exitId: UUID,
+        version: Int,
+        durationTicks: Int,
+        ids: Collection<UUID>,
+        last: Boolean,
+    ) {
+        val existing = exitWatches[exitId]
+        val watch = when {
+            existing == null || version > existing.version ->
+                ExitWatch(version, durationTicks).also { exitWatches[exitId] = it }
+            version == existing.version -> existing
+            else -> return
+        }
+        watch.ids.addAll(ids)
+        if (last) watch.ready = true
+        if (watch.ready) checkExitWatch(exitId, watch)
+    }
+
+    private fun checkExitWatch(exitId: UUID, watch: ExitWatch) {
+        if (!watch.ready || exitWatches[exitId] !== watch) return
+        val now = particles.values.maxOfOrNull { it.engineTimeMs() } ?: 0L
+        for (id in watch.ids) {
+            val rp = particles[id] ?: continue
+            val end = rp.scaleCompletionAtMs() ?: return
+            if (now < end) return
+        }
+        exitWatches.remove(exitId)
+        ClientPacketDistributor.sendToServer(ParticleExitCompletePayload(exitId, watch.version))
+    }
+
+    private fun checkExitWatches() {
+        if (exitWatches.isEmpty()) return
+        val now = particles.values.maxOfOrNull { it.engineTimeMs() } ?: 0L
+        val it = exitWatches.entries.iterator()
+        while (it.hasNext()) {
+            val (exitId, watch) = it.next()
+            if (!watch.ready) continue
+            var done = true
+            for (id in watch.ids) {
+                val rp = particles[id] ?: continue
+                val end = rp.scaleCompletionAtMs()
+                if (end == null || now < end) {
+                    done = false
+                    break
+                }
+            }
+            if (!done) continue
+            it.remove()
+            ClientPacketDistributor.sendToServer(ParticleExitCompletePayload(exitId, watch.version))
+        }
     }
 
     /**
@@ -630,6 +695,7 @@ class ClientParticleEngine {
         attachments.clear()
         curveIds.clear()
         scaleEaseIds.clear()
+        exitWatches.clear()
         cachedIds = emptyArray()
         cachedSize = -1
         syncCursor = 0

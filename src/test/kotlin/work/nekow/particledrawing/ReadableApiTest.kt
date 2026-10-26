@@ -36,6 +36,8 @@ import work.nekow.particledrawing.api.toEasingType
 import work.nekow.particledrawing.api.toScalar
 import work.nekow.particledrawing.api.times
 import work.nekow.particledrawing.api.lerp
+import work.nekow.particledrawing.api.pow
+import work.nekow.particledrawing.api.polygonPoint
 import work.nekow.particledrawing.api.sin
 import work.nekow.particledrawing.api.square
 import work.nekow.particledrawing.api.vec3
@@ -53,13 +55,18 @@ import work.nekow.particledrawing.api.TypedExpressionBuilder
 import work.nekow.particledrawing.api.cos
 import work.nekow.particledrawing.api.smoothstep
 import work.nekow.particledrawing.api.vectorParameter
+import work.nekow.particledrawing.animation.script.compileFunctionObject
 import work.nekow.particledrawing.core.client.RenderParticle
+import work.nekow.particledrawing.core.server.ServerExitCompletion
+import work.nekow.particledrawing.core.network.ParticleExitCompletePayload
+import work.nekow.particledrawing.core.network.ParticleExitWatchPayload
 import work.nekow.particledrawing.core.network.ParticleSpawnPayload
 import kotlin.math.PI
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -122,6 +129,10 @@ class ReadableApiTest {
         assertEquals(75.0, 1.5.ticks.millis, 1e-9)
         assertEquals(1.5, 75.milliseconds.ticks, 1e-9)
         assertEquals(6, 6.ticks.requireWholeTicks())
+        assertEquals(11.0, (16.ticks - 5.ticks).ticks, 1e-9)
+        assertEquals(21.0, (16.ticks + 5.ticks).ticks, 1e-9)
+        assertTrue((16.ticks - 5.ticks).isConstant())
+        assertEquals(3.0, (6.ticks / 2.0.toScalar()).ticks, 1e-9)
 
         assertFailsWith<IllegalArgumentException> { 75.milliseconds.requireWholeTicks() }
         assertEquals(2, 75.milliseconds.roundedTicks())
@@ -129,6 +140,9 @@ class ReadableApiTest {
         assertEquals(2, 75.milliseconds.ceilTicks())
         assertFailsWith<IllegalArgumentException> { Time.ticks(Double.NaN) }
         assertFailsWith<IllegalArgumentException> { (-1).ticks.requireNonNegative() }
+        assertFailsWith<IllegalArgumentException> { Time.milliseconds(1e308).plus(Time.milliseconds(1e308)) }
+        assertFailsWith<IllegalArgumentException> { Time.ticks(1e12).requireWholeTicks() }
+        assertFailsWith<IllegalArgumentException> { Time.milliseconds(1e12).roundedTicks() }
     }
 
     @Test
@@ -136,15 +150,25 @@ class ReadableApiTest {
         assertEquals(19.2, 1.2.blocks.mcPixels, 1e-9)
         assertEquals(0.09375, 1.5.mcPixels.blocks, 1e-9)
         assertEquals(6.0, (2.0.toScalar() * 3.blocks).blocks, 1e-9)
+        assertEquals(2.0, (3.blocks - 1.blocks).blocks, 1e-9)
+        assertEquals(4.0, (3.blocks + 1.blocks).blocks, 1e-9)
+        assertEquals(6.0, (3.blocks * 2.0.toScalar()).blocks, 1e-9)
+        assertEquals(1.5, (3.blocks / 2.0.toScalar()).blocks, 1e-9)
+        assertTrue((3.blocks - 1.blocks).isConstant())
         assertEquals(PI / 2.0, 90.degrees.radians, 1e-9)
+        assertEquals(60.0, (90.degrees - 30.degrees).degrees, 1e-9)
+        assertEquals(120.0, (90.degrees + 30.degrees).degrees, 1e-9)
         assertEquals(180.0, PI.radians.degrees, 1e-9)
         assertEquals(2.0, (1.blocks / 0.5.blocks).constant()!!, 1e-9)
         assertEquals(0.15, 3.0.radiansPerSecond.radiansPerTick, 1e-9)
+        assertTrue((90.degrees - 30.degrees).isConstant())
 
         assertEquals(Vec3(1.0, 2.0, 3.0), Velocity.blocksPerSecond(20.0, 40.0, 60.0).toVec3())
         assertEquals(Vec3(1.0, 2.0, 3.0), Acceleration.blocksPerSecondSquared(400.0, 800.0, 1200.0).toVec3())
         assertFailsWith<IllegalArgumentException> { Length.blocks(Double.POSITIVE_INFINITY) }
         assertFailsWith<IllegalArgumentException> { Angle.degrees(Double.NaN) }
+        assertFailsWith<IllegalArgumentException> { Length.blocks(Double.MAX_VALUE).mcPixels }
+        assertFailsWith<IllegalArgumentException> { Angle.radians(Double.MAX_VALUE).degrees }
     }
 
     @Test
@@ -218,6 +242,14 @@ class ReadableApiTest {
             true, 0, -1, emitsLight = false,
         )
         assertEquals(0f, fullOnly.lightIntensity(0f), 1e-6f)
+
+        val resizing = RenderParticle(
+            java.util.UUID.randomUUID(), position, Color.WHITE, 1f,
+            false, 0, -1,
+        )
+        assertEquals(null, resizing.scaleCompletionAtMs())
+        resizing.setTargetColorScale(null, 0f, work.nekow.particledrawing.core.easing.EasingType.LINEAR, 400L)
+        assertEquals(400L, resizing.scaleCompletionAtMs())
 
         val visual = ParticleVisual().emitsLight(true).lightLevel(9)
         val out = FriendlyByteBuf(Unpooled.buffer())
@@ -342,5 +374,88 @@ class ReadableApiTest {
         assertEquals("(2.0*3.0)", expr.expr)
         assertEquals(2.399963229728653, Angles.goldenAngle.constant()!!, 1e-12)
         assertTrue(Scalar.of(1.0).plus(2.0).constant() == 3.0)
+    }
+
+    @Test
+    fun `空成员退场立即完成并注销账本`() {
+        val token = java.util.UUID.randomUUID()
+        var removed = false
+        ServerExitCompletion.start(
+            token,
+            java.util.UUID.randomUUID(),
+            emptyList(),
+            8,
+            emptyList(),
+        ) { removed = true }
+        assertTrue(removed)
+        assertFalse(ServerExitCompletion.isPending(token))
+    }
+
+    @Test
+    fun `退场观察与完成载荷按版本编解码`() {
+        val exitId = java.util.UUID.randomUUID()
+        val ids = listOf(java.util.UUID.randomUUID(), java.util.UUID.randomUUID())
+        val watch = ParticleExitWatchPayload(exitId, 3, 8, ids, true)
+        val watchBuf = FriendlyByteBuf(Unpooled.buffer())
+        ParticleExitWatchPayload.STREAM_CODEC.encode(watchBuf, watch)
+        val decodedWatch = ParticleExitWatchPayload.STREAM_CODEC.decode(watchBuf)
+        assertEquals(watch, decodedWatch)
+
+        val complete = ParticleExitCompletePayload(exitId, 3)
+        val completeBuf = FriendlyByteBuf(Unpooled.buffer())
+        ParticleExitCompletePayload.STREAM_CODEC.encode(completeBuf, complete)
+        assertEquals(complete, ParticleExitCompletePayload.STREAM_CODEC.decode(completeBuf))
+    }
+
+    @Test
+    fun `多边形沿边采样而不是沿圆周采样`() {
+        val mid = polygonPoint(
+            sides = 3,
+            radius = 1.0,
+            initialAngle = 0.0,
+            edge = 0,
+            edgeT = 0.5,
+        )
+        assertEquals(0.25, mid.x, 1e-9)
+        assertEquals(0.0, mid.y, 1e-9)
+        assertEquals(0.4330127018922193, mid.z, 1e-9)
+
+        val start = polygonPoint(3, 1.0, 0.0, 0, 0.0)
+        val nextStart = polygonPoint(3, 1.0, 0.0, 1, 0.0)
+        assertEquals(1.0, start.x, 1e-9)
+        assertEquals(0.0, start.z, 1e-9)
+        assertEquals(-0.5, nextStart.x, 1e-9)
+        assertEquals(0.8660254037844386, nextStart.z, 1e-9)
+
+        val quarter = polygonPoint(4, 2.0, 0.0, 0, 0.25)
+        assertEquals(1.5, quarter.x, 1e-9)
+        assertEquals(0.5, quarter.z, 1e-9)
+    }
+
+    @Test
+    fun `动态颜色、pow、阶段与命名局部表达式`() {
+        val builder = TypedExpressionBuilder()
+        val frame = ExpressionFrame(null, builder)
+        with(frame) {
+            val phase = start(2.ticks)
+            val presence = local("presence", phase.progress)
+            position.world(vec3(0.blocks, 0.blocks, 0.blocks))
+            scale(pow(presence, 0.75))
+            color(presence, presence, Scalar.of(0.5), phase.completed)
+        }
+        val code = builder.build()
+        assertTrue(code.startsWith("presence="))
+        assertTrue(code.contains("pow(presence,0.75)"))
+        assertTrue(code.contains("r=presence;g=presence;b=0.5;a="))
+        assertTrue(code.contains("step(100.0,(t-0.0))"))
+        assertNotNull(compileFunctionObject(code, emptyList()), "局部赋值/动态颜色必须能被现有编译器接受")
+
+        assertFailsWith<IllegalArgumentException> {
+            val f = ExpressionFrame(null, TypedExpressionBuilder())
+            with(f) {
+                local("presence", Scalar.of(1.0))
+                local("presence", Scalar.of(2.0))
+            }
+        }
     }
 }

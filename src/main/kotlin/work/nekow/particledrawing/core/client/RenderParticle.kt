@@ -89,6 +89,9 @@ class RenderParticle(
     private val posEase = EaseState()
     private val colEase = EaseState()
     private val scaleEase = EaseState()
+
+    /** 最近一次尺寸缓动的名义终点（引擎毫秒）；Long.MIN_VALUE = 从未有尺寸过渡。 */
+    private var lastScaleCompletionMs: Long = Long.MIN_VALUE
     private val rotEase = EaseState()
     private val transEase = EaseState()
     private val offEase = EaseState()
@@ -308,6 +311,13 @@ class RenderParticle(
     /** 缩放缓动是否还在进行；渲染帧需要按分数刻重写桥接尺寸。 */
     fun isScaleEasing(): Boolean = scaleEase.startMs >= 0L
 
+    /** 当前引擎时钟（毫秒，按 tick 推进）；退场完成判定与尺寸缓动同一时钟。 */
+    fun engineTimeMs(): Long = engineMs
+
+    /** 最近一次尺寸过渡的名义终点；没有尺寸过渡时为 null。 */
+    fun scaleCompletionAtMs(): Long? =
+        if (lastScaleCompletionMs == Long.MIN_VALUE) null else lastScaleCompletionMs
+
     /** 这套曲线是否改外观；只有 LIGHT 通道时不必每帧重写桥接的颜色/尺寸。 */
     fun hasAppearanceCurve(): Boolean = hasColorCurve() || hasScaleCurve()
 
@@ -466,6 +476,7 @@ class RenderParticle(
         scaleEase.easing = easingType.curve
         scaleEase.startMs = engineMs
         scaleEase.durationMs = durationMs
+        lastScaleCompletionMs = engineMs + durationMs.coerceAtLeast(0L)
         if (durationMs <= 0L) {
             applyScaleTarget()
             scaleEase.startMs = -1L
@@ -597,6 +608,7 @@ class RenderParticle(
     /** 直接设置缩放（标量）。 */
     fun setScaleDirect(scale: Float) {
         scaleEase.startMs = -1L
+        lastScaleCompletionMs = engineMs
         scaleFromX = scale
         scaleFromY = scale
         scaleToX = scale
@@ -610,6 +622,7 @@ class RenderParticle(
     /** 直接设置非均匀缩放（三分量数组 [sx, sy, sz]）；就地写入，避免每颗粒子每帧新分配数组。 */
     fun setScaleArrayDirect(scaleArray: FloatArray) {
         scaleEase.startMs = -1L
+        lastScaleCompletionMs = engineMs
         setScaleTriple(scaleArray[0], scaleArray[1], scaleArray[2])
         scaleFromX = sclArray[0]
         scaleFromY = sclArray[1]
@@ -639,6 +652,7 @@ class RenderParticle(
         if (finishScale && scaleEase.startMs >= 0L) {
             applyScaleTarget()
             scaleEase.startMs = -1L
+            lastScaleCompletionMs = engineMs
         }
     }
 

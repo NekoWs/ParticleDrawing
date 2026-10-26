@@ -7,6 +7,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext
 import work.nekow.particledrawing.api.EffectRegistry
 import work.nekow.particledrawing.core.server.AnimationSyncConfigTask
 import work.nekow.particledrawing.core.server.AnimationSyncService
+import work.nekow.particledrawing.core.server.ServerExitCompletion
 import work.nekow.particledrawing.core.server.ServerProgramCompletion
 import java.util.Collections
 import java.util.WeakHashMap
@@ -60,6 +61,13 @@ internal object ServerPayloadHandler {
     fun handleProgramComplete(payload: ProgramCompletePayload, context: IPayloadContext) {
         context.enqueueWork {
             ServerProgramCompletion.complete(payload.programId)
+        }
+    }
+
+    fun handleExitComplete(payload: ParticleExitCompletePayload, context: IPayloadContext) {
+        context.enqueueWork {
+            val player = context.player() as? ServerPlayer ?: return@enqueueWork
+            ServerExitCompletion.complete(payload.exitId, payload.version, player.uuid)
         }
     }
 

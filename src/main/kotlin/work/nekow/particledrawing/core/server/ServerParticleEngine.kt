@@ -612,6 +612,16 @@ class ServerParticleEngine(
         return count
     }
 
+    /** 同时追踪 [ids] 全部成员的玩家；退场完成账本只让这些玩家参与判定。 */
+    fun playersTrackingAll(ids: Collection<UUID>): Set<UUID> {
+        if (ids.isEmpty()) return emptySet()
+        val first = visibleTo[ids.first()]?.toMutableSet() ?: return emptySet()
+        first.retainAll { playerId ->
+            ids.all { visibleTo[it]?.contains(playerId) == true }
+        }
+        return first
+    }
+
     private fun track(playerId: UUID, particleId: UUID) {
         playerParticles.computeIfAbsent(playerId) { ConcurrentHashMap.newKeySet() }.add(particleId)
         visibleTo.computeIfAbsent(particleId) { ConcurrentHashMap.newKeySet() }.add(playerId)

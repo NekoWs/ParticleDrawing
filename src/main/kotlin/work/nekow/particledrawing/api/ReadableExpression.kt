@@ -12,6 +12,10 @@ class Scalar internal constructor(
     private val constantValue: Double? = null,
 ) {
 
+    init {
+        require(constantValue == null || constantValue.isFinite()) { "标量常量必须是有限值" }
+    }
+
     val isConstant: Boolean get() = constantValue != null
 
     internal fun constantOrNaN(): Double = constantValue ?: Double.NaN
@@ -64,26 +68,26 @@ operator fun Double.minus(value: Scalar): Scalar = Scalar.of(this) - value
 operator fun Double.times(value: Scalar): Scalar = Scalar.of(this) * value
 operator fun Double.div(value: Scalar): Scalar = Scalar.of(this) / value
 
-operator fun Scalar.plus(length: Length): Length = length(length, "+")
-operator fun Scalar.minus(length: Length): Length = length(length, "-")
-operator fun Scalar.times(length: Length): Length = Length(
-    (constantOrNaN() * length.blocks),
-    "($expr*${length.expr})",
-    false,
-)
-operator fun Scalar.times(time: Time): Time = Time(
-    (constantOrNaN() * time.millis),
-    "($expr*${time.expr})",
-    false,
-)
-operator fun Scalar.times(angle: Angle): Angle = Angle(
-    (constantOrNaN() * angle.radians),
-    "($expr*${angle.expr})",
-    false,
-)
+operator fun Scalar.times(length: Length): Length {
+    val const = isConstant && length.isConstant()
+    val result = constantOrNaN() * length.blocks
+    require(!const || result.isFinite()) { "长度乘法溢出或非有限" }
+    return Length(if (const) result else Double.NaN, "($expr*${length.expr})", const)
+}
 
-private fun Scalar.length(length: Length, op: String): Length =
-    Length(Double.NaN, "($expr$op${length.expr})", false)
+operator fun Scalar.times(time: Time): Time {
+    val const = isConstant && time.isConstant()
+    val result = constantOrNaN() * time.millis
+    require(!const || result.isFinite()) { "时间乘法溢出或非有限" }
+    return Time(if (const) result else Double.NaN, "($expr*${time.expr})", const)
+}
+
+operator fun Scalar.times(angle: Angle): Angle {
+    val const = isConstant && angle.isConstant()
+    val result = constantOrNaN() * angle.radians
+    require(!const || result.isFinite()) { "角度乘法溢出或非有限" }
+    return Angle(if (const) result else Double.NaN, "($expr*${angle.expr})", const)
+}
 
 fun sin(value: Scalar): Scalar = Scalar("sin(${value.expr})")
 fun cos(value: Scalar): Scalar = Scalar("cos(${value.expr})")
@@ -101,6 +105,15 @@ fun exp(value: Scalar): Scalar = Scalar("exp(${value.expr})")
 fun log(value: Scalar): Scalar = Scalar("log(${value.expr})")
 fun sign(value: Scalar): Scalar = Scalar("sign(${value.expr})")
 fun fract(value: Scalar): Scalar = Scalar("fract(${value.expr})")
+fun pow(base: Scalar, exponent: Scalar): Scalar {
+    val value = if (base.isConstant && exponent.isConstant) {
+        Math.pow(base.constant()!!, exponent.constant()!!)
+    } else null
+    return Scalar("pow(${base.expr},${exponent.expr})", value)
+}
+
+fun pow(base: Scalar, exponent: Number): Scalar = pow(base, Scalar.of(exponent.toDouble()))
+
 fun min(a: Scalar, b: Scalar): Scalar = Scalar("min(${a.expr},${b.expr})")
 fun max(a: Scalar, b: Scalar): Scalar = Scalar("max(${a.expr},${b.expr})")
 fun clamp(value: Scalar, minValue: Scalar, maxValue: Scalar): Scalar =
@@ -135,6 +148,10 @@ object Scalars {
     @JvmStatic fun cos(value: Scalar): Scalar = work.nekow.particledrawing.api.cos(value)
     @JvmStatic fun cos(value: Angle): Scalar = work.nekow.particledrawing.api.cos(value)
     @JvmStatic fun square(value: Scalar): Scalar = work.nekow.particledrawing.api.square(value)
+    @JvmStatic fun pow(base: Scalar, exponent: Scalar): Scalar =
+        work.nekow.particledrawing.api.pow(base, exponent)
+    @JvmStatic fun pow(base: Scalar, exponent: Number): Scalar =
+        work.nekow.particledrawing.api.pow(base, exponent)
     @JvmStatic fun clamp01(value: Scalar): Scalar = work.nekow.particledrawing.api.clamp01(value)
     @JvmStatic fun smoothstep(edge0: Scalar, edge1: Scalar, value: Scalar): Scalar =
         work.nekow.particledrawing.api.smoothstep(edge0, edge1, value)
@@ -410,6 +427,33 @@ class ExpressionPosition internal constructor(private val frame: ExpressionFrame
     )
 }
 
+/**
+ * 组时间轴上的命名阶段：进度、已开始、已完成都直接读表达式时间 `t`。
+ *
+ * 不引入独立时钟；同一表达式里的多个阶段共享同一 `t`，因此无需手工 `clockOffset`。
+ */
+class Phase internal constructor(
+    val duration: Time,
+    val offset: Time,
+) {
+
+    val progress: Scalar = clamp01(
+        Scalar("((t-${offset.render()})/${duration.render()})")
+    )
+
+    val started: Scalar = step(
+        Scalar.of(0.0),
+        Scalar("(t-${offset.render()})"),
+    )
+
+    val completed: Scalar = step(
+        Scalar(duration.render()),
+        Scalar("(t-${offset.render()})"),
+    )
+
+    val remaining: Scalar = Scalar.of(1.0) - progress
+}
+
 /** 表达式构建帧。 */
 class ExpressionFrame internal constructor(
     internal val group: ParticleGroup?,
@@ -439,6 +483,39 @@ class ExpressionFrame internal constructor(
         builder.colorCode = "r=${color.r};g=${color.g};b=${color.b};a=${color.a};"
     }
 
+    /** 动态颜色通道；各分量直接写进现有表达式的 r/g/b/a。 */
+    @JvmOverloads
+    fun color(red: Scalar, green: Scalar, blue: Scalar, alpha: Scalar = Scalar.of(1.0)) {
+        builder.colorCode =
+            "r=${red.expr};g=${green.expr};b=${blue.expr};a=${alpha.expr};"
+    }
+
+    /**
+     * 命名局部表达式：在生成文本开头赋一次值，后续复用变量名。
+     *
+     * 同名重复绑定、保留名冲突都在构建时拒绝；调试导出会列出局部表达式。
+     */
+    fun local(name: String, value: Scalar): Scalar {
+        require(PARAM_NAME.matches(name)) { "局部表达式名 '$name' 不是合法标识符" }
+        require(name !in RESERVED_PARAM_NAMES) { "局部表达式名 '$name' 与内建名字冲突" }
+        require(name !in builder.locals) { "局部表达式名 '$name' 重复绑定" }
+        group?.let { require(name !in it.readableParameterNames) { "局部表达式名 '$name' 与参数冲突" } }
+        builder.locals[name] = value
+        return Scalar(name)
+    }
+
+    /** 从组年龄 0 起的阶段；[offset] 用于同一时间轴上的延后阶段。 */
+    @JvmOverloads
+    fun phase(duration: Time, offset: Time = Time.milliseconds(0.0)): Phase {
+        duration.requirePositive("阶段时长")
+        offset.requireNonNegative("阶段偏移")
+        return Phase(duration, offset)
+    }
+
+    /** [phase] 的别名，表达“这个阶段从何时开始”。 */
+    @JvmOverloads
+    fun start(duration: Time, offset: Time = Time.milliseconds(0.0)): Phase = phase(duration, offset)
+
     fun entity(handle: String): ExpressionEntity {
         require(PARAM_NAME.matches(handle)) { "实体句柄 '$handle' 不是合法标识符" }
         group?.let { require(it.hasEntityHandle(handle)) { "实体句柄 '$handle' 尚未在组上 defineEntity" } }
@@ -452,11 +529,15 @@ internal class TypedExpressionBuilder {
     var positionCode: String? = null
     var scaleCode: String? = null
     var colorCode: String? = null
+    val locals = LinkedHashMap<String, Scalar>()
 
     fun build(): String {
         val position = positionCode
             ?: throw IllegalArgumentException("类型化表达式必须显式设置 position.world 或 position.local")
-        return position + (scaleCode ?: "") + (colorCode ?: "")
+        val prelude = buildString {
+            for ((name, value) in locals) append("$name=${value.expr};")
+        }
+        return prelude + position + (scaleCode ?: "") + (colorCode ?: "")
     }
 }
 
@@ -466,6 +547,7 @@ class TypedExpression internal constructor(
     val code: String,
     val durationTicks: Int,
     val parameters: List<ParameterInfo>,
+    val locals: Map<String, String>,
 ) {
 
     fun apply(): ParticleGroup {
@@ -477,6 +559,7 @@ class TypedExpression internal constructor(
         appendLine("backend=group-scalar")
         appendLine("durationTicks=$durationTicks")
         for (p in parameters) appendLine("parameter ${p.name}: ${p.kind} (${p.unit})")
+        for ((name, value) in locals) appendLine("local $name = $value")
         append(code)
     }
 
@@ -511,6 +594,12 @@ class ExpressionTextBuilder internal constructor(duration: Time) {
         return this
     }
 
+    @JvmOverloads
+    fun color(red: Scalar, green: Scalar, blue: Scalar, alpha: Scalar = Scalar.of(1.0)): ExpressionTextBuilder {
+        builder.colorCode = "r=${red.expr};g=${green.expr};b=${blue.expr};a=${alpha.expr};"
+        return this
+    }
+
     fun buildCode(): String = builder.build()
 
     fun apply(group: ParticleGroup): ParticleGroup = group.expression(buildCode(), durationTicks)
@@ -532,7 +621,13 @@ fun ParticleGroup.buildExpression(
     val builder = TypedExpressionBuilder()
     val frame = ExpressionFrame(this, builder)
     frame.block()
-    return TypedExpression(this, builder.build(), ticks, readableParameters.toList())
+    return TypedExpression(
+        this,
+        builder.build(),
+        ticks,
+        readableParameters.toList(),
+        builder.locals.mapValues { it.value.expr },
+    )
 }
 
 /**

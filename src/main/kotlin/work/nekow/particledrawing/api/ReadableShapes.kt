@@ -152,6 +152,16 @@ class Shape internal constructor(
     fun remove() = group.remove()
 }
 
+/** 正多边形边上的一点：先取两端顶点，再按 [edgeT] 在边内线性插值。 */
+internal fun polygonPoint(sides: Int, radius: Double, initialAngle: Double, edge: Int, edgeT: Double): Vec3 {
+    val step = 2.0 * PI / sides
+    val startAngle = initialAngle + edge * step
+    val endAngle = startAngle + step
+    val start = Vec3(cos(startAngle) * radius, 0.0, sin(startAngle) * radius)
+    val end = Vec3(cos(endAngle) * radius, 0.0, sin(endAngle) * radius)
+    return start.add(end.subtract(start).scale(edgeT))
+}
+
 /**
  * 正多边形轮廓规格。Java 可直接 new 后调用 setter；Kotlin 用 `Draw.polygon(manager) { ... }`。
  */
@@ -162,6 +172,12 @@ class PolygonSpec {
     var coordinateFrame: CoordinateFrame? = null
     var sides: Int = 3
     var radius: Length = Length.blocks(1.0)
+
+    /**
+     * 每条边的采样点数，含该边起点、不含下一条边起点。
+     *
+     * 总粒子数 = [sides] × [samplesPerEdge]；顶点只由一条边的起点表示，不会重复。
+     */
     var samplesPerEdge: Int = 1
     var initialAngle: Angle = Angle.radians(0.0)
     var angularSpeed: AngularSpeed? = null
@@ -199,14 +215,14 @@ class PolygonSpec {
         }
         var requested = 0
         var spawned = 0
-        var globalIndex = 0
 
         for (edge in 0 until sides) {
             for (j in 0 until samplesPerEdge) {
-                val edgeT = if (samplesPerEdge == 1) 0.0 else j.toDouble() / (samplesPerEdge - 1)
+                // 采样沿边线性插值；每条边含起点、不含下一条边的起点，避免顶点重复。
+                val edgeT = j.toDouble() / samplesPerEdge
+                val local = polygonPoint(sides, radius.blocks, initialAngle.radians, edge, edgeT)
+                val globalIndex = edge * samplesPerEdge + j
                 val u = (edge + edgeT) / sides
-                val angle = initialAngle.radians + u * 2.0 * PI
-                val local = Vec3(cos(angle) * radius.blocks, 0.0, sin(angle) * radius.blocks)
                 val world = frame.apply(local)
                 val part = partSpecs.firstOrNull { it.selector.select(globalIndex, edge, edgeT) }
                 val visual = part?.appearance ?: appearance
@@ -231,7 +247,6 @@ class PolygonSpec {
                     // builder.group 已把成员登记进服务端组，这里只记录部件句柄
                     part?.let { created[it.name]?.add(handle) }
                 }
-                globalIndex++
             }
         }
 

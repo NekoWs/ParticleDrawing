@@ -1,8 +1,9 @@
 package work.nekow.particledrawing.api
 
-import work.nekow.particledrawing.core.server.AnimationScheduler
+import work.nekow.particledrawing.core.server.ServerExitCompletion
+import java.util.UUID
 
-// 语义化退场：逐个成员做片元尺寸收束，不缩组、不改变运动；可选完成后清理。
+// 语义化退场：逐个成员做片元尺寸收束，不缩组、不改变运动；完成由客户端尺寸端点回报。
 
 /** 退场状态，供调试/状态门面使用。 */
 enum class ExitState {
@@ -35,12 +36,13 @@ class ParticleSizeExit internal constructor(private val exit: ExitSpec) {
  * 批量/组退场声明。
  *
  * 同一入口只改片元尺寸；`preserveMotion` 是显式意图（resize 本身不动速度/位置），
- * `removeWhenComplete` 才在退场时长结束后清理成员。
+ * `removeWhenComplete` 才在客户端实际收束后清理成员。重定向复用目标的稳定令牌。
  */
 class ExitSpec internal constructor(
     private val manager: ParticleManager,
     internal val handles: List<ParticleHandle>,
     private val group: ParticleGroup?,
+    internal val token: UUID,
 ) {
 
     val particleSize: ParticleSizeExit = ParticleSizeExit(this)
@@ -49,7 +51,6 @@ class ExitSpec internal constructor(
     private var removeAfter = false
     private var preserve = false
     private var applied = false
-    private var completed = false
 
     /** 保留成员当前的运动（位置、速度、力）；只缩片元。 */
     fun preserveMotion(): ExitSpec = apply { preserve = true }
@@ -57,11 +58,12 @@ class ExitSpec internal constructor(
     /** 退场结束后移除成员；不调用则只做尺寸收束。 */
     fun removeWhenComplete(): ExitSpec = apply { removeAfter = true }
 
+    /** 由 PD 完成账本回报，而不是本地定时器。 */
     val state: ExitState
         get() = when {
             !applied -> ExitState.NOT_STARTED
-            completed -> ExitState.COMPLETED
-            else -> ExitState.RUNNING
+            ServerExitCompletion.isPending(token) -> ExitState.RUNNING
+            else -> ExitState.COMPLETED
         }
 
     val preservesMotion: Boolean get() = preserve
@@ -74,23 +76,29 @@ class ExitSpec internal constructor(
         if (applied) return
         applied = true
         if (maxTicks <= 0) {
-            completed = true
-            if (removeAfter) removeNow()
+            ServerExitCompletion.cancel(token)
+            if (removeAfter) {
+                val target = group
+                if (target != null) target.remove() else for (handle in handles) handle.remove()
+            }
             return
         }
-        AnimationScheduler.schedule(manager.dimensionId, maxTicks) {
-            completed = true
-            if (removeAfter) removeNow()
-        }
-    }
-
-    private fun removeNow() {
-        val target = group
-        if (target != null) {
-            target.remove()
+        val removeAction: (() -> Unit)? = if (removeAfter) {
+            {
+                val target = group
+                if (target != null) target.remove() else for (handle in handles) handle.remove()
+            }
         } else {
-            for (handle in handles) handle.remove()
+            null
         }
+        ServerExitCompletion.start(
+            token,
+            manager.dimensionId,
+            handles.map { it.id },
+            maxTicks,
+            manager.getPlayers(),
+            removeAction,
+        )
     }
 }
 
@@ -100,12 +108,12 @@ object Exits {
     fun group(group: ParticleGroup): ExitSpec {
         val engine = group.manager.getEngine()
         val ids = engine.getGroup(group.id)?.memberIds() ?: emptyList()
-        return ExitSpec(group.manager, ids.map { ParticleHandle(it, group.manager) }, group)
+        return ExitSpec(group.manager, ids.map { ParticleHandle(it, group.manager) }, group, group.exitToken)
     }
 
     @JvmStatic
     fun batch(batch: ParticleBatch): ExitSpec =
-        ExitSpec(batch.manager, batch.handles(), null)
+        ExitSpec(batch.manager, batch.handles(), null, batch.exitToken)
 
     @JvmStatic
     fun apply(spec: ExitSpec) {

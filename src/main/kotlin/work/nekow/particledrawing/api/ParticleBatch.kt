@@ -20,6 +20,9 @@ import java.util.UUID
  */
 class ParticleBatch(internal val manager: ParticleManager) {
 
+    /** 可读退场的稳定令牌；重复 exit 用同一令牌重定向。 */
+    internal val exitToken: UUID = UUID.randomUUID()
+
     private val core = BatchCore<ParticleHandle>(
         idOf = { it.id },
         stateOf = { it.state() },
@@ -149,7 +152,10 @@ class ParticleBatch(internal val manager: ParticleManager) {
     }
 
     /** 销毁全部成员并清空（已不存在的成员直接出列）。 */
-    fun clear() = core.clear()
+    fun clear() {
+        work.nekow.particledrawing.core.server.ServerExitCompletion.cancel(exitToken)
+        core.clear()
+    }
 }
 
 /**

@@ -17,12 +17,13 @@ object NetworkHandler {
     @JvmStatic
     fun register(event: RegisterPayloadHandlersEvent) {
         // 载荷集合或字段变化时提升版本号，避免新旧端误配
-        val registrar: PayloadRegistrar = event.registrar("12")
+        val registrar: PayloadRegistrar = event.registrar("13")
 
         registrar.playToClient(ParticleSpawnPayload.TYPE, ParticleSpawnPayload.STREAM_CODEC, ClientPayloadHandler::handleSpawn)
         registrar.playToClient(ParticleSpawnBatchPayload.TYPE, ParticleSpawnBatchPayload.STREAM_CODEC, ClientPayloadHandler::handleSpawnBatch)
         registrar.playToClient(ParticleUpdatePayload.TYPE, ParticleUpdatePayload.STREAM_CODEC, ClientPayloadHandler::handleUpdate)
         registrar.playToClient(ParticleDestroyPayload.TYPE, ParticleDestroyPayload.STREAM_CODEC, ClientPayloadHandler::handleDestroy)
+        registrar.playToClient(ParticleExitWatchPayload.TYPE, ParticleExitWatchPayload.STREAM_CODEC, ClientPayloadHandler::handleExitWatch)
         registrar.playToClient(AnimationProgramPayload.TYPE, AnimationProgramPayload.STREAM_CODEC, ClientPayloadHandler::handleProgram)
         registrar.playToClient(AnimationProgramAppendPayload.TYPE, AnimationProgramAppendPayload.STREAM_CODEC, ClientPayloadHandler::handleProgramAppend)
         registrar.playToClient(SetProgramVarPayload.TYPE, SetProgramVarPayload.STREAM_CODEC, ClientPayloadHandler::handleSetProgramVar)
@@ -55,6 +56,7 @@ object NetworkHandler {
         registrar.playToServer(EffectRequestPayload.TYPE, EffectRequestPayload.STREAM_CODEC, ServerPayloadHandler::handleEffectRequest)
         // 编排动画的完成信号（客户端 → 服务端）：销毁与「视觉真正到零」对齐
         registrar.playToServer(ProgramCompletePayload.TYPE, ProgramCompletePayload.STREAM_CODEC, ServerPayloadHandler::handleProgramComplete)
+        registrar.playToServer(ParticleExitCompletePayload.TYPE, ParticleExitCompletePayload.STREAM_CODEC, ServerPayloadHandler::handleExitComplete)
 
         // 运行时发射器：声明一次 + 变更时更新（发射在客户端逐渲染帧发生）
         registrar.playToClient(EmitterSpawnPayload.TYPE, EmitterSpawnPayload.STREAM_CODEC, ClientPayloadHandler::handleEmitterSpawn)

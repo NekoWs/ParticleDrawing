@@ -70,8 +70,8 @@ public final class ReadableApiJavaCompile {
 
         ExpressionTextBuilder expression = Expressions.builder(Time.ticks(5))
                 .positionWorld(Scalars.of(0.0), Scalars.of(1.0), Scalars.of(2.0))
-                .scale(Scalars.clamp01(Scalars.of(0.5)))
-                .color(Color.WHITE);
+                .scale(Scalars.pow(Scalars.clamp01(Scalars.of(0.5)), 0.75))
+                .color(Scalars.of(0.5), Scalars.of(0.25), Scalars.of(0.1), Scalars.of(1.0));
         expression.apply(group);
 
         ExitSpec exit = Exits.batch(batch);

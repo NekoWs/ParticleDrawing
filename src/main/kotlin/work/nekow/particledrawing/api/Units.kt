@@ -28,17 +28,32 @@ class Time internal constructor(
 
     /** 必须是整数 tick；小数刻调用方要显式选一种取整方式。 */
     fun requireWholeTicks(field: String = "时间"): Int {
+        require(constant) { "$field 是表达式值，不能在这里做常量校验" }
         val ticks = ticks
+        require(ticks.isFinite()) { "$field 不是有限值" }
         require(ticks >= 0.0) { "$field 不能为负" }
+        require(ticks <= Int.MAX_VALUE.toDouble()) { "$field 超出 Int tick 范围" }
         require(kotlin.math.abs(ticks - kotlin.math.round(ticks)) <= 1e-6) {
             "$field 需要整数 tick，当前是 ${ticks}t；请显式 roundedTicks/floorTicks/ceilTicks"
         }
         return kotlin.math.round(ticks).toInt()
     }
 
-    fun roundedTicks(): Int = kotlin.math.round(ticks).toInt()
-    fun floorTicks(): Int = kotlin.math.floor(ticks).toInt()
-    fun ceilTicks(): Int = kotlin.math.ceil(ticks).toInt()
+    fun roundedTicks(): Int = kotlin.math.round(checkedTicks("时间")).toInt()
+    fun floorTicks(): Int = kotlin.math.floor(checkedTicks("时间")).toInt()
+    fun ceilTicks(): Int = kotlin.math.ceil(checkedTicks("时间")).toInt()
+
+    internal fun isConstant(): Boolean = constant
+
+    private fun checkedTicks(field: String): Double {
+        require(constant) { "$field 是表达式值，不能在这里做常量校验" }
+        val value = ticks
+        require(value.isFinite()) { "$field 不是有限值" }
+        require(value >= Int.MIN_VALUE.toDouble() && value <= Int.MAX_VALUE.toDouble()) {
+            "$field 超出 Int tick 范围"
+        }
+        return value
+    }
 
     /** 非负校验，返回自身便于链式。 */
     fun requireNonNegative(field: String = "时间"): Time {
@@ -58,15 +73,29 @@ class Time internal constructor(
 
     operator fun plus(other: Time): Time = binary(this, other, "+")
     operator fun minus(other: Time): Time = binary(this, other, "-")
-    operator fun times(value: Scalar): Time = Time(millis * value.constantOrNaN(), "($expr*${value.expr})", false)
-    operator fun div(value: Scalar): Time = Time(millis / value.constantOrNaN(), "($expr/${value.expr})", false)
+
+    operator fun times(value: Scalar): Time {
+        val const = constant && value.isConstant
+        val result = millis * value.constantOrNaN()
+        return Time(if (const) finite(result, "时间乘法") else Double.NaN, "($expr*${value.expr})", const)
+    }
+
+    operator fun div(value: Scalar): Time {
+        val const = constant && value.isConstant
+        val result = millis / value.constantOrNaN()
+        return Time(if (const) finite(result, "时间除法") else Double.NaN, "($expr/${value.expr})", const)
+    }
+
     operator fun div(other: Time): Scalar = Scalar(
         "($expr/${other.expr})",
         if (constant && other.constant) millis / other.millis else null,
     )
 
-    private fun binary(a: Time, b: Time, op: String): Time =
-        Time(a.millis + b.millis, "(${a.expr}$op${b.expr})", a.constant && b.constant)
+    private fun binary(a: Time, b: Time, op: String): Time {
+        val const = a.constant && b.constant
+        val result = if (op == "-") a.millis - b.millis else a.millis + b.millis
+        return Time(if (const) finite(result, "时间运算") else Double.NaN, "(${a.expr}$op${b.expr})", const)
+    }
 
     override fun equals(other: Any?): Boolean = other is Time && constant && other.constant && millis == other.millis
     override fun hashCode(): Int = millis.hashCode()
@@ -76,7 +105,8 @@ class Time internal constructor(
         @JvmStatic
         fun ticks(ticks: Double): Time {
             finite(ticks, "时间")
-            return Time(ticks * 50.0, (ticks * 50.0).toString(), true)
+            val millis = finite(ticks * 50.0, "时间")
+            return Time(millis, millis.toString(), true)
         }
 
         @JvmStatic
@@ -112,7 +142,7 @@ class Length internal constructor(
     private val constant: Boolean,
 ) {
 
-    val mcPixels: Double get() = blocks * 16.0
+    val mcPixels: Double get() = finite(blocks * 16.0, "长度换算")
 
     fun requireNonNegative(field: String = "长度"): Length {
         require(constant) { "$field 是表达式值，不能在这里做常量校验" }
@@ -131,15 +161,31 @@ class Length internal constructor(
     operator fun plus(other: Length): Length = binary(this, other, "+")
     operator fun minus(other: Length): Length = binary(this, other, "-")
     operator fun unaryMinus(): Length = Length(-blocks, "(-$expr)", constant)
-    operator fun times(value: Scalar): Length = Length(blocks * value.constantOrNaN(), "($expr*${value.expr})", false)
-    operator fun div(value: Scalar): Length = Length(blocks / value.constantOrNaN(), "($expr/${value.expr})", false)
+
+    operator fun times(value: Scalar): Length {
+        val const = constant && value.isConstant
+        val result = blocks * value.constantOrNaN()
+        return Length(if (const) finite(result, "长度乘法") else Double.NaN, "($expr*${value.expr})", const)
+    }
+
+    operator fun div(value: Scalar): Length {
+        val const = constant && value.isConstant
+        val result = blocks / value.constantOrNaN()
+        return Length(if (const) finite(result, "长度除法") else Double.NaN, "($expr/${value.expr})", const)
+    }
+
     operator fun div(other: Length): Scalar = Scalar(
         "($expr/${other.expr})",
         if (constant && other.constant) blocks / other.blocks else null,
     )
 
-    private fun binary(a: Length, b: Length, op: String): Length =
-        Length(a.blocks + b.blocks, "(${a.expr}$op${b.expr})", a.constant && b.constant)
+    internal fun isConstant(): Boolean = constant
+
+    private fun binary(a: Length, b: Length, op: String): Length {
+        val const = a.constant && b.constant
+        val result = if (op == "-") a.blocks - b.blocks else a.blocks + b.blocks
+        return Length(if (const) finite(result, "长度运算") else Double.NaN, "(${a.expr}$op${b.expr})", const)
+    }
 
     override fun equals(other: Any?): Boolean = other is Length && constant && other.constant && blocks == other.blocks
     override fun hashCode(): Int = blocks.hashCode()
@@ -179,22 +225,44 @@ class Angle internal constructor(
     private val constant: Boolean,
 ) {
 
-    val degrees: Double get() = Math.toDegrees(radians)
+    val degrees: Double get() = finite(Math.toDegrees(radians), "角度换算")
 
     internal fun render(): String = expr
 
     operator fun plus(other: Angle): Angle = binary(this, other, "+")
     operator fun minus(other: Angle): Angle = binary(this, other, "-")
     operator fun unaryMinus(): Angle = Angle(-radians, "(-$expr)", constant)
-    operator fun times(value: Scalar): Angle = Angle(radians * value.constantOrNaN(), "($expr*${value.expr})", false)
-    operator fun div(value: Scalar): Angle = Angle(radians / value.constantOrNaN(), "($expr/${value.expr})", false)
-    operator fun div(other: Time): AngularSpeed = AngularSpeed(
-        radians / (other.millis / 1000.0),
-        "($expr/(${other.expr}/1000.0))",
+
+    operator fun times(value: Scalar): Angle {
+        val const = constant && value.isConstant
+        val result = radians * value.constantOrNaN()
+        return Angle(if (const) finite(result, "角度乘法") else Double.NaN, "($expr*${value.expr})", const)
+    }
+
+    operator fun div(value: Scalar): Angle {
+        val const = constant && value.isConstant
+        val result = radians / value.constantOrNaN()
+        return Angle(if (const) finite(result, "角度除法") else Double.NaN, "($expr/${value.expr})", const)
+    }
+
+    operator fun div(other: Angle): Scalar = Scalar(
+        "($expr/${other.expr})",
+        if (constant && other.constant) radians / other.radians else null,
     )
 
-    private fun binary(a: Angle, b: Angle, op: String): Angle =
-        Angle(a.radians + b.radians, "(${a.expr}$op${b.expr})", a.constant && b.constant)
+    operator fun div(other: Time): AngularSpeed {
+        val result = if (constant && other.isConstant()) radians / (other.millis / 1000.0) else Double.NaN
+        if (constant && other.isConstant()) finite(result, "角度/时间")
+        return AngularSpeed(result, "($expr/(${other.expr}/1000.0))")
+    }
+
+    internal fun isConstant(): Boolean = constant
+
+    private fun binary(a: Angle, b: Angle, op: String): Angle {
+        val const = a.constant && b.constant
+        val result = if (op == "-") a.radians - b.radians else a.radians + b.radians
+        return Angle(if (const) finite(result, "角度运算") else Double.NaN, "(${a.expr}$op${b.expr})", const)
+    }
 
     override fun equals(other: Any?): Boolean = other is Angle && constant && other.constant && radians == other.radians
     override fun hashCode(): Int = radians.hashCode()

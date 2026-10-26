@@ -11,6 +11,7 @@ import work.nekow.particledrawing.core.network.AnimationProgramCodecs
 import work.nekow.particledrawing.core.network.BatchChunking
 import work.nekow.particledrawing.core.network.AnimationProgramPayload
 import work.nekow.particledrawing.core.network.ProgramAnchorPayload
+import work.nekow.particledrawing.core.server.ServerExitCompletion
 import work.nekow.particledrawing.core.server.ServerProgramCompletion
 import work.nekow.particledrawing.animation.program.finiteDurationMs
 import work.nekow.particledrawing.core.server.AnimationScheduler
@@ -36,6 +37,9 @@ class ParticleGroup(
     var pivot: Vec3,
     internal val manager: ParticleManager
 ) {
+
+    /** 可读退场的稳定令牌；重复 exit 用同一令牌重定向，旧完成信号按版本丢弃。 */
+    internal val exitToken: UUID = UUID.randomUUID()
 
     /** 时间线游标（毫秒）：delay 累积推进（1 game tick = 50ms）。 */
     private var cursorMs = 0
@@ -452,6 +456,7 @@ class ParticleGroup(
      * 销毁整个粒子组及其所有粒子。
      */
     fun remove() {
+        ServerExitCompletion.cancel(exitToken)
         manager.getEngine().destroyGroup(id, manager.getPlayers())
         stopProgramOnClient(destroyParticles = false)
     }

@@ -51,6 +51,7 @@ object ServerParticleHandler {
             ServerEmitterManager.clearDimension(dim, (event.level as ServerLevel).players())
             // 完成信号登记随关卡作废；关卡没了，客户端不会再上报
             ServerProgramCompletion.clearDimension(dim)
+            ServerExitCompletion.clearDimension(dim)
             ServerParticleEngine.clearDimension(dim)
             CommandParticleGroups.discard(dim)
             // 只清这个维度排的任务：别的维度还有刚排的编排要跑
@@ -62,6 +63,7 @@ object ServerParticleHandler {
     @SubscribeEvent
     @JvmStatic
     fun onServerStopping(event: ServerStoppingEvent) {
+        ServerExitCompletion.clearAll()
         AnimationScheduler.clearAll()
         CommandParticleGroups.discardAll()
     }

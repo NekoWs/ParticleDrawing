@@ -62,6 +62,18 @@ internal object ClientPayloadHandler {
         }
     }
 
+    fun handleExitWatch(payload: ParticleExitWatchPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientParticleEngine.instance()?.handleExitWatch(
+                payload.exitId,
+                payload.version,
+                payload.durationTicks,
+                payload.particleIds,
+                payload.last,
+            )
+        }
+    }
+
     fun handleDestroy(payload: ParticleDestroyPayload, context: IPayloadContext) {
         context.enqueueWork {
             ClientParticleEngine.instance()?.destroyParticles(payload.particleIds)
