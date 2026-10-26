@@ -43,6 +43,17 @@ object Draw {
     // 低级绘制：单粒子 / 自由曲线
 
     /**
+     * 正多边形轮廓编写入口；形状、部件与坐标基见 [PolygonSpec]。
+     */
+    @JvmStatic
+    fun polygon(manager: ParticleManager, spec: PolygonSpec): Shape = spec.build(manager)
+
+    /** Kotlin DSL 版本。 */
+    @JvmStatic
+    fun polygon(manager: ParticleManager, block: PolygonSpec.() -> Unit): Shape =
+        PolygonSpec().apply(block).build(manager)
+
+    /**
      * 在指定位置放置单个粒子并加入 [group]（为 null 时自动创建新组）。
      */
     @JvmStatic

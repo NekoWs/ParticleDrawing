@@ -50,8 +50,16 @@ class ParticleVisual {
     /** 免光照（全亮，不受世界光照影响）。 */
     var glowing: Boolean = false
 
-    /** 发光粒子向外发出的光照等级 (0-15)，仅当 [glowing] 为 true 时生效。 */
+    /** 向外发出的光照等级 (0-15)。 */
     var lightLevel: Int = 15
+
+    /**
+     * 是否作为动态光源向外照明。
+     *
+     * 与 [glowing]（片元免光照/全亮）分开：旧 API 用 `glowing = true` 同时承担两件事，
+     * 新外观门面可以让片元不透明但仍向世界投光。旧路径默认仍按 `glowing` 兼容。
+     */
+    var emitsLight: Boolean = false
 
     /**
      * 对外光强的静态乘数（缺省 1）。
@@ -148,9 +156,15 @@ class ParticleVisual {
         return this
     }
 
-    /** 发光等级 (0-15)。 */
+    /** 向外照明等级 (0-15)。 */
     fun lightLevel(level: Int): ParticleVisual {
         lightLevel = level.coerceIn(0, 15)
+        return this
+    }
+
+    /** 是否作为动态光源向外照明；与 [glowing] 独立。 */
+    fun emitsLight(enabled: Boolean): ParticleVisual {
+        emitsLight = enabled
         return this
     }
 
@@ -177,6 +191,7 @@ class ParticleVisual {
         c.additive = additive
         c.glowing = glowing
         c.lightLevel = lightLevel
+        c.emitsLight = emitsLight
         c.lightIntensity = lightIntensity
         return c
     }
@@ -186,11 +201,11 @@ class ParticleVisual {
 
     /**
      * 是否一个字都没设过（默认外观，渲染成纯白方块）。
-     * [lightLevel] 只在 [glowing] 为 true 时生效，已由 [glowing] 覆盖，这里不再单独判。
+     * [lightLevel] 只在 [emitsLight] 为 true 时生效，已由 [emitsLight] 覆盖，这里不再单独判。
      */
     fun isPristine(): Boolean = texture == null && uvRect == null && !hasAniso() &&
         billboard && spinXDeg == 0.0 && spinYDeg == 0.0 && spinZDeg == 0.0 && spinLocal &&
-        !additive && !glowing && lightIntensity == 1f
+        !additive && !glowing && !emitsLight && lightIntensity == 1f
 
     /**
      * 解析成渲染用的 UV，由客户端调用。[texW]/[texH] 是已注册贴图的像素尺寸，未知传 0。

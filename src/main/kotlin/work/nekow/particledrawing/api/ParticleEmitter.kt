@@ -85,6 +85,13 @@ class ParticleEmitter internal constructor(
         return this
     }
 
+    /** 带显式时间的寿命；小数刻必须显式取整。 */
+    fun life(time: Time): ParticleEmitter = life(time.requireWholeTicks("发射器寿命"))
+
+    /** 发射器粒子必须是有限寿命。 */
+    fun life(lifetime: Lifetime): ParticleEmitter =
+        life(lifetime.requireFinite("发射器寿命"))
+
     /** 每颗粒子的颜色。 */
     fun color(color: Color): ParticleEmitter = apply { this.color = color }
 
@@ -110,8 +117,12 @@ class ParticleEmitter internal constructor(
     /** 对外光强静态乘数（>= 0；1 = 原始亮度）。只影响动态光照，不改片元外观。 */
     fun lightIntensity(multiplier: Float): ParticleEmitter = apply { spec().lightIntensity(multiplier) }
 
-    /** 外观规格（贴图 / UV / 各向异性 / 朝向 / 加色）；给的是拷贝，之后改原对象不影响。 */
-    fun visual(visual: ParticleVisual): ParticleEmitter = apply { this.visualSpec = visual.copy() }
+    /** 外观规格；给的是拷贝，全亮/照明标记也一并采用，之后改原对象不影响。 */
+    fun visual(visual: ParticleVisual): ParticleEmitter = apply {
+        this.visualSpec = visual.copy()
+        this.glowing = visual.glowing
+        this.lightLevel = visual.lightLevel
+    }
 
     // 外观的链式转发，语义与 ParticleHandle.Builder 一致；规格对象按需创建
 

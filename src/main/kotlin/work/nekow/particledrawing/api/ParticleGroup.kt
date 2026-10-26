@@ -68,6 +68,13 @@ class ParticleGroup(
     private val entityBindings = ArrayList<EntityBinding>()
     private val vars = LinkedHashMap<String, Double>()
 
+    /** 可读表达式 DSL 登记过的参数名与调试元数据，防止重复绑定/命名冲突。 */
+    internal val readableParameterNames = HashSet<String>()
+    internal val readableParameters = ArrayList<ParameterInfo>()
+
+    /** 轴心是否由实体/可移动锚点驱动；局部坐标表达式不能隐式假设它固定。 */
+    internal var dynamicPivot = false
+
     /** handle 合法性：公式标识符 + 不得与内建常量/属性寄存器撞名。 */
     private val HANDLE_REGEX = Regex("""^[A-Za-z_][A-Za-z0-9_]*$""")
     private val RESERVED_NAMES = setOf("i", "n", "t", "PI", "E") +
@@ -77,6 +84,9 @@ class ParticleGroup(
     private fun requireFreeHandle(handle: String) {
         require(entityBindings.none { it.handle == handle } && handle !in vars) { "实体句柄名 '$handle' 已被占用" }
     }
+
+    /** 可读表达式构建时检查实体句柄是否已登记。 */
+    internal fun hasEntityHandle(handle: String): Boolean = entityBindings.any { it.handle == handle }
 
     /** 服务端预警：扫描代码里的 get_* 调用，报出未知名或形态误用一类确定错误。 */
     private fun lintGetters(code: String) {
@@ -93,6 +103,7 @@ class ParticleGroup(
      */
     fun setPivot(pivot: Vec3): ParticleGroup {
         this.pivot = pivot
+        dynamicPivot = false
         emit(AnimInstruction.BindPivot(cursorNow(), PivotRef.Fixed(pivot)))
         return this
     }
@@ -114,6 +125,7 @@ class ParticleGroup(
      */
     fun followEntity(uuid: UUID, offset: Vec3 = Vec3.ZERO, local: Boolean = false): ParticleGroup {
         pivot = offset.add(pivot)
+        dynamicPivot = true
         emit(AnimInstruction.BindPivot(cursorNow(), PivotRef.FollowEntity(uuid, offset, local)))
         return this
     }
@@ -142,11 +154,13 @@ class ParticleGroup(
         when (anchor) {
             is Anchor.Fixed -> {
                 pivot = anchor.pos
+                dynamicPivot = false
                 emit(AnimInstruction.BindPivot(cursorNow(), PivotRef.Fixed(anchor.pos)))
             }
             is Anchor.Movable -> {
                 pivot = anchor.pos
                 movableAnchor = true
+                dynamicPivot = true
                 emit(AnimInstruction.BindPivot(cursorNow(), PivotRef.Movable(anchor.pos, anchor.velocity, anchor.orient)))
             }
             is Anchor.Entity -> throw IllegalArgumentException(
@@ -292,6 +306,9 @@ class ParticleGroup(
         return this
     }
 
+    /** 带显式时间的延迟；小数刻必须显式取整。 */
+    fun delay(time: Time): ParticleGroup = delay(time.requireWholeTicks("delay"))
+
     private fun cursorNow(): Int = cursorMs
 
     /**
@@ -390,6 +407,11 @@ class ParticleGroup(
         return this
     }
 
+    /** 带显式时间的淡入。 */
+    @JvmOverloads
+    fun fadeIn(over: Time, easing: Ease = Ease.OUT): ParticleGroup =
+        fadeIn(over.requireWholeTicks("淡入时长"), easing.toEasingType())
+
     /**
      * 淡出：整组透明度缓动到 0；[removeAfter] 为 true 时淡出结束（+250ms 余量）由服务端销毁整组，
      * 销毁时刻按该指令的程序时刻 + 时长从当下起算，与客户端口径一致。
@@ -400,6 +422,11 @@ class ParticleGroup(
         return this
     }
 
+    /** 带显式时间的淡出。 */
+    @JvmOverloads
+    fun fadeOut(over: Time, removeAfter: Boolean = true, easing: Ease = Ease.IN): ParticleGroup =
+        fadeOut(over.requireWholeTicks("淡出时长"), removeAfter, easing.toEasingType())
+
     /**
      * 定时销毁整组（含所有粒子）。
      * @param ticks 从当前时刻起再等多少 tick 销毁（增量追加时同 [delay]，读作「从现在起」）
@@ -408,6 +435,9 @@ class ParticleGroup(
         scheduleDestroy(clock.programTime(cursorMs, manager.level.gameTime) + ticks * 50)
         return this
     }
+
+    /** 带显式时间的定时销毁。 */
+    fun destroyAfter(time: Time): ParticleGroup = destroyAfter(time.requireWholeTicks("销毁延时"))
 
     /**
      * 停止本组全部持续型动画（无限模式的 spin / pulse）。

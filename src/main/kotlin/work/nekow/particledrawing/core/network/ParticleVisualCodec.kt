@@ -23,6 +23,7 @@ internal object ParticleVisualCodec {
     private const val FLAG_ADDITIVE = 1 shl 7
     private const val FLAG_INLINE_NAME = 1 shl 8
     private const val FLAG_LIGHT_INTENSITY = 1 shl 9
+    private const val FLAG_EMITS_LIGHT = 1 shl 10
 
     fun write(buf: FriendlyByteBuf, visual: ParticleVisual?) {
         if (visual == null) {
@@ -51,6 +52,7 @@ internal object ParticleVisualCodec {
         }
         if (visual.additive) flags = flags or FLAG_ADDITIVE
         if (visual.lightIntensity != 1f) flags = flags or FLAG_LIGHT_INTENSITY
+        if (visual.emitsLight) flags = flags or FLAG_EMITS_LIGHT
 
         buf.writeVarInt(flags)
         if (flags == 0) return
@@ -106,6 +108,7 @@ internal object ParticleVisualCodec {
             val intensity = buf.readFloat()
             visual.lightIntensity = if (intensity.isFinite() && intensity >= 0f) intensity else 1f
         }
+        visual.emitsLight = flags and FLAG_EMITS_LIGHT != 0
         return visual
     }
 }

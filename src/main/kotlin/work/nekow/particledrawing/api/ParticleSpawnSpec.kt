@@ -20,6 +20,15 @@ class ParticleSpawnSpec {
     var visual: ParticleVisual? = null
     var lifeCurve: ParticleLifeCurve? = null
 
+    /** 出生速度（blocks/tick）；null = 静止。由 [velocity] 设置。 */
+    var velocityPerTick: Vec3? = null
+
+    /** 出生加速度（blocks/tick²）；null = 不受力。由 [acceleration] 设置。 */
+    var accelerationPerTickSquared: Vec3? = null
+
+    /** 加速度施加 tick 数；-1 = 无限（既有运动规则）。 */
+    var accelerationTicks: Int = -1
+
     /** 上一 tick 的位置（与 [position] 组成首帧插值段）；null = 直接在当前位置出生。 */
     var prev: Vec3? = null
 
@@ -39,6 +48,34 @@ class ParticleSpawnSpec {
     /** 寿命（tick）；-1 = 永存。 */
     fun lifetime(ticks: Int): ParticleSpawnSpec = apply { this.lifetime = ticks }
 
+    /** 寿命；无限寿命映射到既有 -1。 */
+    fun lifetime(lifetime: Lifetime): ParticleSpawnSpec = apply { this.lifetime = lifetime.toTicksOrInfinite() }
+
+    /** 出生速度（blocks/tick）。 */
+    fun velocity(velocity: Velocity): ParticleSpawnSpec = apply { this.velocityPerTick = velocity.toVec3() }
+
+    fun velocity(x: Number, y: Number, z: Number): ParticleSpawnSpec =
+        velocity(Velocity.blocksPerTick(x.toDouble(), y.toDouble(), z.toDouble()))
+
+    /** 出生速度向量（blocks/tick）。 */
+    fun velocity(velocity: Vec3): ParticleSpawnSpec = apply { this.velocityPerTick = velocity }
+
+    /** 出生加速度（blocks/tick²）；[ticks] <0 = 无限，0 = 不受力。 */
+    fun acceleration(acceleration: Acceleration, ticks: Int = -1): ParticleSpawnSpec = apply {
+        require(ticks >= -1) { "加速度 tick 数不能小于 -1" }
+        this.accelerationPerTickSquared = acceleration.toVec3()
+        this.accelerationTicks = ticks
+    }
+
+    fun acceleration(x: Number, y: Number, z: Number, ticks: Int = -1): ParticleSpawnSpec =
+        acceleration(Acceleration.blocksPerTickSquared(x.toDouble(), y.toDouble(), z.toDouble()), ticks)
+
+    fun acceleration(acceleration: Vec3, ticks: Int = -1): ParticleSpawnSpec = apply {
+        require(ticks >= -1) { "加速度 tick 数不能小于 -1" }
+        this.accelerationPerTickSquared = acceleration
+        this.accelerationTicks = ticks
+    }
+
     fun glowing(glowing: Boolean): ParticleSpawnSpec = apply { this.glowing = glowing }
 
     fun lightLevel(level: Int): ParticleSpawnSpec = apply { this.lightLevel = level.coerceIn(0, 15) }
@@ -49,7 +86,11 @@ class ParticleSpawnSpec {
     }
 
     /** 外观规格（贴图 / UV / 各向异性 / 朝向 / 加色）；按拷贝存。 */
-    fun visual(visual: ParticleVisual): ParticleSpawnSpec = apply { this.visual = visual.copy() }
+    fun visual(visual: ParticleVisual): ParticleSpawnSpec = apply {
+        this.visual = visual.copy()
+        this.glowing = visual.glowing
+        this.lightLevel = visual.lightLevel
+    }
 
     /** 直接给一条寿命曲线。 */
     fun curve(curve: ParticleCurve): ParticleSpawnSpec =
@@ -122,6 +163,9 @@ class ParticleSpawnSpec {
         c.lightLevel = lightLevel
         c.visual = visual?.copy()
         c.lifeCurve = lifeCurve
+        c.velocityPerTick = velocityPerTick
+        c.accelerationPerTickSquared = accelerationPerTickSquared
+        c.accelerationTicks = accelerationTicks
         c.prev = prev
         c.fadeOutTicks = fadeOutTicks
         c.fadeOutEasing = fadeOutEasing

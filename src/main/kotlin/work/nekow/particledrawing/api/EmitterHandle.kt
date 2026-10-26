@@ -81,6 +81,12 @@ class EmitterHandle internal constructor(
     /** 每颗粒子的寿命（tick）；必须为正。 */
     fun life(ticks: Int): EmitterHandle = params { it.life(ticks) }
 
+    /** 带显式时间的寿命。 */
+    fun life(time: Time): EmitterHandle = params { it.life(time) }
+
+    /** 有限寿命值。 */
+    fun life(lifetime: Lifetime): EmitterHandle = params { it.life(lifetime) }
+
     /** 每颗粒子的缩放。 */
     fun scale(scale: Float): EmitterHandle = params { it.scale(scale) }
 

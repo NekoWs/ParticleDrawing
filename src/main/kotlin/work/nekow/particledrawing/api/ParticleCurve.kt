@@ -31,7 +31,7 @@ enum class CurveChannel {
  *
  * @param tTicks 从生成那一刻算起的 tick 数（1 tick = 50ms），首个关键帧可以大于 0
  * @param value 该时刻的通道值（乘数）
- * @param easing 到下一关键帧的缓动，段用后一帧的缓动
+ * @param easing 从上一关键帧到本帧的缓动（本帧是目标帧）
  */
 class CurveKey(
     @JvmField val tTicks: Float,
@@ -53,6 +53,19 @@ class CurveKey(
         @JvmStatic
         fun step(tTicks: Number, value: Number): CurveKey =
             CurveKey(tTicks.toFloat(), value.toFloat(), EasingType.NONE)
+
+        /** 显式时间入口；曲线保留小数刻。 */
+        @JvmStatic
+        fun at(time: Time, value: Number): CurveKey = at(time.ticks, value)
+
+        /** 显式时间与公开缓动入口。 */
+        @JvmStatic
+        fun at(time: Time, value: Number, easing: Ease): CurveKey =
+            at(time.ticks, value, easing.toEasingType())
+
+        /** 显式时间的阶跃关键帧。 */
+        @JvmStatic
+        fun step(time: Time, value: Number): CurveKey = step(time.ticks, value)
     }
 }
 

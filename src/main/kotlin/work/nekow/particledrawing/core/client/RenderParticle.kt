@@ -61,6 +61,7 @@ class RenderParticle(
     private val lifeCurve: ParticleLifeCurve? = null,
     prev: Vec3? = null,
     lightIntensity: Float = 1f,
+    emitsLight: Boolean = glowing,
 ) {
 
     // 位置 / 颜色 / 缩放（直接缓动）
@@ -135,6 +136,9 @@ class RenderParticle(
     /** 出生时的视觉尺寸（各向异性取长轴），光强包络用「当前尺寸 ÷ 出生尺寸」。 */
     private var spawnSize: Float = max(abs(scale), 0f)
 
+    /** 是否作为动态光源向外照明；与全亮 [glowing] 分开。 */
+    private var emitsLightSource: Boolean = emitsLight
+
     /** 运行时目标热更的过渡；startMs < 0 表示没有过渡。 */
     private var lightEase = LightEase()
 
@@ -162,6 +166,7 @@ class RenderParticle(
 
     fun id(): UUID = id
     fun glowing(): Boolean = glowing
+    fun emitsLight(): Boolean = emitsLightSource
     fun lightLevel(): Int = lightLevel
 
     /**
@@ -204,7 +209,7 @@ class RenderParticle(
      * 都会连续收束；显式 remove 或死亡后光源不再被收集。
      */
     fun lightIntensity(partialTick: Float = 0f): Float {
-        if (!glowing || lightLevel <= 0) return 0f
+        if ((!glowing && !emitsLightSource) || lightLevel <= 0) return 0f
         val value = rawLightIntensity(partialTick) + lightTransitionOffset(partialTick)
         return if (value.isFinite()) value.coerceAtLeast(0f) else 0f
     }

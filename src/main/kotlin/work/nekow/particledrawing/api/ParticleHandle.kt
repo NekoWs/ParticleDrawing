@@ -53,6 +53,11 @@ class ParticleHandle(
         return move(Vec3(x.toDouble(), y.toDouble(), z.toDouble()), durationTicks, easing)
     }
 
+    /** 带显式时间的移动。 */
+    @JvmOverloads
+    fun move(target: Vec3, over: Time, easing: Ease = Ease.LINEAR): ParticleHandle =
+        move(target, over.requireWholeTicks("移动时长"), easing.toEasingType())
+
     /**
      * 立即移动粒子（无缓动）。
      * @return 自身，支持链式调用
@@ -134,6 +139,14 @@ class ParticleHandle(
         manager.getEngine().applyForce(id, acceleration, ticks, manager.getPlayers())
         return this
     }
+
+    /** 显式速度单位入口。 */
+    fun setVelocity(velocity: Velocity): ParticleHandle = setVelocity(velocity.toVec3())
+
+    /** 显式加速度单位入口；[ticks] <0 = 无限。 */
+    @JvmOverloads
+    fun applyForce(acceleration: Acceleration, ticks: Int = -1): ParticleHandle =
+        applyForce(acceleration.toVec3(), ticks)
 
     /** [applyForce] 的分量重载。 */
     fun applyForce(ax: Number, ay: Number, az: Number, ticks: Int = -1): ParticleHandle {
@@ -261,6 +274,10 @@ class ParticleHandle(
      * @param easing 缓动类型
      * @return 自身，支持链式调用
      */
+    @JvmOverloads
+    fun recolor(color: Color, over: Time, easing: Ease = Ease.LINEAR): ParticleHandle =
+        recolor(color, over.requireWholeTicks("改色时长"), easing.toEasingType())
+
     fun recolor(color: Color, durationTicks: Int, easing: EasingType): ParticleHandle {
         val engine = manager.getEngine()
         val data = engine.getParticle(id) ?: return this
@@ -280,6 +297,10 @@ class ParticleHandle(
      * @param easing 缓动类型
      * @return 自身，支持链式调用
      */
+    @JvmOverloads
+    fun resize(scale: Float, over: Time, easing: Ease = Ease.LINEAR): ParticleHandle =
+        resize(scale, over.requireWholeTicks("缩放时长"), easing.toEasingType())
+
     fun resize(scale: Float, durationTicks: Int, easing: EasingType): ParticleHandle {
         val engine = manager.getEngine()
         val data = engine.getParticle(id) ?: return this
@@ -377,6 +398,9 @@ class ParticleHandle(
          */
         fun lifetime(ticks: Int) = apply { this.lifetime = ticks }
 
+        /** 寿命；无限寿命映射到旧 -1。 */
+        fun lifetime(lifetime: Lifetime) = apply { this.lifetime = lifetime.toTicksOrInfinite() }
+
         /** 关联到指定粒子组。 */
         fun group(groupId: UUID) = apply { this.groupId = groupId }
 
@@ -435,8 +459,12 @@ class ParticleHandle(
         /** 加法混合开关：亮部叠亮，有溢出感。 */
         fun additive(enabled: Boolean) = apply { spec().additive(enabled) }
 
-        /** 直接给一整份外观规格（会拷贝一份，之后改原对象不影响这颗粒子）。 */
-        fun visual(visual: ParticleVisual) = apply { this.visualSpec = visual.copy() }
+        /** 直接给一整份外观规格；外观里的全亮/照明标记一并采用（之后改原对象不影响这颗粒子）。 */
+        fun visual(visual: ParticleVisual) = apply {
+            this.visualSpec = visual.copy()
+            this.glowing = visual.glowing
+            this.lightLevel = visual.lightLevel
+        }
 
         /**
          * 逐粒子生成延迟（tick）：生成请求推迟这么多 tick 才真正发出去。
@@ -445,6 +473,9 @@ class ParticleHandle(
          * 延迟生成没有上一 tick，与 [prevPosition] 同用时后者不生效。
          */
         fun delay(ticks: Int) = apply { this.delayTicks = ticks }
+
+        /** 延迟；小数刻必须显式取整，不静默截断。 */
+        fun delay(time: Time) = apply { this.delayTicks = time.requireWholeTicks("delay") }
 
         /**
          * 首帧插值端点：客户端渲染的第一帧从 [prev] 扫到 [position]，按 partialTick 在两点之间插值。

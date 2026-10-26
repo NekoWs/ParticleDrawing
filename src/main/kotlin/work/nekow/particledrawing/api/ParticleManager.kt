@@ -44,16 +44,53 @@ class ParticleManager private constructor(val level: ServerLevel) {
         emitter(Anchor.Fixed(Vec3(x.toDouble(), y.toDouble(), z.toDouble())))
 
     /**
-     * 批量生成一批粒子：整批用一个包下发，每颗的字段由 [ParticleSpawnSpec] 给。
-     * 服务端按玩家可见性裁剪后下发，返回与 [specs] 一一对应的句柄；被维度上限拒绝的为 null。
+     * 批量生成一批粒子：内部按现有单包上限自动分段，处理全部输入，不再静默截断。
+     * 返回与 [specs] 一一对应的句柄；被维度上限拒绝的为 null。
      *
-     * 长度按 [MAX_SPAWN_BATCH] 截断，返回值能看出哪些没生成。
+     * 出生速度/加速度在生成后用现有批量运动载荷补齐，保持与原始下标配对；
+     * 需要拒绝原因时用 [spawnAllDetailed]。
      */
-    fun spawnAll(specs: List<ParticleSpawnSpec>): List<ParticleHandle?> {
+    fun spawnAll(specs: List<ParticleSpawnSpec>): List<ParticleHandle?> =
+        spawnAllDetailed(specs).map { it.handle }
+
+    /**
+     * 批量生成并返回原始下标对应的结果（成功句柄或拒绝原因）。
+     *
+     * 第 257 条及以后也会处理，不会因为单包上限丢失；速度/加速度只应用到成功生成的成员。
+     */
+    fun spawnAllDetailed(specs: List<ParticleSpawnSpec>): List<SpawnResult> {
         if (specs.isEmpty()) return emptyList()
-        val effective = if (specs.size > MAX_SPAWN_BATCH) specs.subList(0, MAX_SPAWN_BATCH) else specs
-        return getEngine().spawnParticles(effective, getPlayers()).map { data ->
-            data?.let { ParticleHandle(it.id, this) }
+        val players = getPlayers()
+        val created = getEngine().spawnParticles(specs, players)
+        val handles = created.map { data -> data?.let { ParticleHandle(it.id, this) } }
+
+        // 出生运动与原始规格按成功项配对；每次只发一个批量载荷，不逐颗发。
+        val velocityIds = ArrayList<UUID>(specs.size)
+        val velocities = ArrayList<Vec3>(specs.size)
+        val accelerationByTicks = LinkedHashMap<Int, Pair<MutableList<UUID>, MutableList<Vec3>>>()
+        for (i in specs.indices) {
+            val data = created[i] ?: continue
+            val spec = specs[i]
+            spec.velocityPerTick?.let {
+                velocityIds.add(data.id)
+                velocities.add(it)
+            }
+            spec.accelerationPerTickSquared?.let {
+                val bucket = accelerationByTicks.getOrPut(spec.accelerationTicks) {
+                    ArrayList<UUID>() to ArrayList<Vec3>()
+                }
+                bucket.first.add(data.id)
+                bucket.second.add(it)
+            }
+        }
+        if (velocityIds.isNotEmpty()) getEngine().setVelocities(velocityIds, velocities, players)
+        for ((ticks, pair) in accelerationByTicks) {
+            getEngine().applyForces(pair.first, pair.second, ticks, players)
+        }
+
+        return specs.indices.map { i ->
+            val handle = handles[i]
+            SpawnResult(i, handle, if (handle == null) SpawnRejection.CAPACITY else null)
         }
     }
 
@@ -156,7 +193,11 @@ class ParticleManager private constructor(val level: ServerLevel) {
     internal fun getPlayers(): Collection<ServerPlayer> = level.players()
 
     companion object {
-        /** 单次 [spawnAll] 的条数上限；超出的规格不生成。 */
+        /**
+         * 单包协议上限，保留给旧的参考代码。
+         *
+         * [spawnAll] 现在会自动分段处理全部输入，不再按这个常量截断。
+         */
         const val MAX_SPAWN_BATCH = 256
 
         @JvmStatic

@@ -18,7 +18,7 @@ import java.util.UUID
  *
  * @param manager 该粒子集所在维度的粒子管理器
  */
-class ParticleBatch(private val manager: ParticleManager) {
+class ParticleBatch(internal val manager: ParticleManager) {
 
     private val core = BatchCore<ParticleHandle>(
         idOf = { it.id },
@@ -34,21 +34,26 @@ class ParticleBatch(private val manager: ParticleManager) {
     fun add(handle: ParticleHandle?): ParticleHandle? = handle?.let { core.add(it) }
 
     /**
-     * 批量生成：整批用一个包下发（[ParticleManager.spawnAll]），生成成功的成员就地登记进本集合。
-     * 每颗的字段由 [ParticleSpawnSpec] 给，含寿命曲线与首帧插值端点（[ParticleSpawnSpec.prevPosition]）。
+     * 批量生成：内部按单包上限自动分段（[ParticleManager.spawnAllDetailed]），生成成功的成员登记进本集合。
+     * 每颗的字段由 [ParticleSpawnSpec] 给，含寿命曲线、出生运动与首帧插值端点（[ParticleSpawnSpec.prevPosition]）。
      *
      * @return 实际新增的成员数；被维度上限拒绝的那些不登记
      */
-    fun spawnAll(specs: List<ParticleSpawnSpec>): Int {
-        val handles = manager.spawnAll(specs)
-        var added = 0
-        for (handle in handles) {
-            if (handle != null) {
-                core.add(handle)
-                added++
-            }
+    fun spawnAll(specs: List<ParticleSpawnSpec>): Int =
+        spawnAllDetailed(specs).count { it.success }
+
+    /**
+     * 批量生成并返回原始下标对应的结果；成功成员同时登记进本集合。
+     *
+     * 第 257 条及以后会自动分段处理；容量拒绝在 [SpawnResult.rejection] 里，
+     * 不会把后面的规格错位配对到速度/加速度。
+     */
+    fun spawnAllDetailed(specs: List<ParticleSpawnSpec>): List<SpawnResult> {
+        val results = manager.spawnAllDetailed(specs)
+        for (result in results) {
+            result.handle?.let { core.add(it) }
         }
-        return added
+        return results
     }
 
     /** 批量登记；返回实际登记数（null 元素忽略）。 */

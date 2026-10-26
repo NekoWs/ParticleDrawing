@@ -64,7 +64,7 @@ class ClientParticleEngine {
                       spin: DoubleArray = ZERO_SPIN, spinLocal: Boolean = true,
                       additive: Boolean = false, scaleArray: FloatArray? = null,
                       lifeCurve: ParticleLifeCurve? = null, prev: Vec3? = null,
-                      lightIntensity: Float = 1f) {
+                      lightIntensity: Float = 1f, emitsLight: Boolean = glowing) {
         if (particles.size >= ParticleDrawingConfig.CLIENT.maxRenderParticles.get()) return
 
         // 同一个 id 重新 spawn（服务端重发、迟到同步）：先把旧的整条状态摘掉
@@ -74,12 +74,13 @@ class ClientParticleEngine {
         }
 
         val rp = RenderParticle(id, Vec3(x, y, z),
-            Color.of(r, g, b, a), scale, glowing, lightLevel, lifetimeTicks, uv, lifeCurve, prev, lightIntensity)
+            Color.of(r, g, b, a), scale, glowing, lightLevel, lifetimeTicks, uv, lifeCurve, prev, lightIntensity,
+            emitsLight)
         if (scaleArray != null) rp.setScaleArrayDirect(scaleArray)
         rp.captureSpawnSize()
         rp.markBorn(tickSequence)
         particles[id] = rp
-        if (glowing && lightLevel > 0) glowingIds.add(id)
+        if ((glowing || emitsLight) && lightLevel > 0) glowingIds.add(id)
         if (lifeCurve != null && !lifeCurve.isEmpty()) curveIds.add(id)
 
         val pe: ParticleEngine = Minecraft.getInstance().particleEngine
@@ -122,7 +123,7 @@ class ClientParticleEngine {
         spawnParticle(
             id, x, y, z, r, g, b, a, scale, lifetimeTicks, groupId, glowing, lightLevel,
             visual.uv, visual.billboard, visual.spin, visual.spinLocal, visual.additive,
-            visual.scaleArray, lifeCurve, prev, visual.lightIntensity,
+            visual.scaleArray, lifeCurve, prev, visual.lightIntensity, visual.emitsLight || glowing,
         )
     }
 
@@ -208,13 +209,13 @@ class ClientParticleEngine {
         scaleEaseIds.remove(id) // 直写尺寸接管缓动
         trackBuffers.remove(id) // 动画直写接管位置，丢开 track 缓冲
         attachments.remove(id)
-        val wasGlowing = rp.glowing() && rp.lightLevel() > 0
+        val wasGlowing = (rp.glowing() || rp.emitsLight()) && rp.lightLevel() > 0
         rp.setPositionDirect(pos)
         rp.setColorDirect(color)
         if (scaleArray != null) rp.setScaleArrayDirect(scaleArray) else rp.setScaleDirect(scale)
         rp.setGlowing(glowing)
         rp.setLightLevel(lightLevel)
-        val nowGlowing = glowing && lightLevel > 0
+        val nowGlowing = (glowing || rp.emitsLight()) && lightLevel > 0
         if (wasGlowing != nowGlowing) {
             if (nowGlowing) glowingIds.add(id) else glowingIds.remove(id)
         }
@@ -343,9 +344,9 @@ class ClientParticleEngine {
      */
     fun setLightLevel(id: UUID, level: Int) {
         val rp = particles[id] ?: return
-        val wasGlowing = rp.glowing() && rp.lightLevel() > 0
+        val wasGlowing = (rp.glowing() || rp.emitsLight()) && rp.lightLevel() > 0
         rp.setLightLevel(level)
-        val nowGlowing = rp.glowing() && rp.lightLevel() > 0
+        val nowGlowing = (rp.glowing() || rp.emitsLight()) && rp.lightLevel() > 0
         if (wasGlowing != nowGlowing) {
             if (nowGlowing) glowingIds.add(id) else glowingIds.remove(id)
         }
