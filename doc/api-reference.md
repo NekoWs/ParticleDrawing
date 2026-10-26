@@ -84,7 +84,7 @@
 | `ClientEmitterManager` | 客户端发射器运行时：按渲染帧推进并按需生成粒子 |
 | `EmitterAdvance`、`EmitterSampling` | 发射推进的纯逻辑与逐颗抖动的确定性采样 |
 | `AudioStreamPlayer` | 游戏内音频播放：OpenAL 队列流式、OGG/WAV 解码、采样级 seek、漂移校正 |
-| `CameraController` | `/pdraw camera` 的摄像机预览状态 |
+| `CameraController` | `/pdraw animation camera` 的摄像机预览状态 |
 | `EffectAnchorResolver` | 客户端锚点解析：位置、旋转四元数与整体缩放 |
 | `ParticleRenderHandler` | 客户端 tick 与渲染帧事件处理 |
 | `ClientAnimationSyncManager`、`ClientTextureSyncManager` | 配置阶段文件接收与程序化贴图接收 |
@@ -133,7 +133,10 @@
 | --- | --- |
 | `DynamicLightManager` | 动态光照：向光图坐标注入粒子光照，按「已请求重建」基准累计位移并排队重烘焙 |
 | `LightAttenuation` | 光照衰减函数：线性、反平方、平滑步进等预设 |
-| `ParticleDrawCommands` | `/pdraw` 命令：`list` / `play` / `stop` / `reload` / `camera` / `debug` / `var` |
+| `ParticleDrawCommands` | `/pdraw` 根命令；动画集中在 `animation`，贴图重载在 `texture reload` |
+| `ParticleDrawParticleCommands` | `particle group/add/program`：命名组、多图元绘制、组动画、实体/变量与逐粒子表达式 |
+| `ParticleCommandOptionParser` | `particle add` 的严格 `key=value` 参数解析，覆盖颜色、外观、寿命曲线和物理参数 |
+| `CommandParticleGroups` | 按维度保存命令创建的运行期组，并协调错峰成员与后续编排命令 |
 | `ParticleDrawingConfig` | 服务端与客户端配置项 |
 | `ParticleUtils`、`HashUtils`、`Vec3Math`、`VisualMath`、`AttachMath`、`BuiltinTextures` | 维度 UUID、哈希、向量与视觉数学、实体锚点数学、内置形状贴图 |
 | `BrightnessGetterMixin`、`CameraMixin`、`EntityRendererMixin` | 方块亮度合并动态光、摄像机预览覆盖、实体光照计入动态光 |

@@ -94,13 +94,19 @@ Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80)
 
 | 命令 | 说明 |
 | --- | --- |
-| `/pdraw list` | 列出 `animations/` 里可用的动画。 |
-| `/pdraw play <name> [pos]` | 在 `pos` 播放动画，缺省为玩家前方 3 格。 |
-| `/pdraw stop` | 停止当前维度里正在播放的全部动画与特效。 |
-| `/pdraw reload` | 从磁盘重新加载粒子贴图（仅客户端）。 |
-| `/pdraw camera <name\|stop>` | 通过正在播放动画的摄像机预览。 |
-| `/pdraw var <name> <value>` | 更新正在播放动画的函数对象变量。 |
-| `/pdraw debug` | 打印求值耗时、粒子数量与播放时间线。 |
+| `/pdraw particle group ...` | 创建、列出或删除数据包与命令方块共用的命名粒子组。 |
+| `/pdraw particle add ...` | 向组内添加点、线、光束、螺旋、法阵、球体等图元。 |
+| `/pdraw particle program ...` | 用多条命令编排移动、旋转、脉冲、实体跟随、变量和逐粒子公式。 |
+| `/pdraw animation list` | 列出 `animations/` 里可用的动画。 |
+| `/pdraw animation play <name> [pos]` | 在 `pos` 播放动画，缺省为玩家前方 3 格。 |
+| `/pdraw animation stop` | 停止当前维度里正在播放的全部动画与特效。 |
+| `/pdraw animation camera <name\|stop>` | 通过正在播放动画的摄像机预览。 |
+| `/pdraw animation var <name> <value>` | 更新正在播放动画的函数对象变量。 |
+| `/pdraw animation debug` | 打印求值耗时、粒子数量与播放时间线。 |
+| `/pdraw texture reload` | 从磁盘重新加载粒子贴图（仅客户端）。 |
+
+`particle` 命令按“建组 → 添加全部图元 → 逐条编排”工作，不需要把法术逻辑塞进一条命令。完整语法、
+参数表和可直接放进数据包的法阵示例见[使用指南](doc/guide.md#命令绘制与数据包)。
 
 ## 文档
 

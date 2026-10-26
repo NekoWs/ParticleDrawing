@@ -12,6 +12,7 @@
 - [批量生成与粒子集](#批量生成与粒子集)
 - [运行时发射器](#运行时发射器)
 - [缓动](#缓动)
+- [命令绘制与数据包](#命令绘制与数据包)
 - [播放动画文件](#播放动画文件)
 - [代码构建动画](#代码构建动画)
 - [示例](#示例)
@@ -655,6 +656,150 @@ trail.isActive()
 ```kotlin
 val custom = EasingType.custom(0.68, -0.55, 0.265, 1.55)   // (x1, y1, x2, y2)
 ```
+
+## 命令绘制与数据包
+
+`/pdraw particle` 把公开绘图与 `ParticleGroup` 编排能力拆成可组合的命令，适合 `.mcfunction`、连锁
+命令方块和聊天调试。一个效果按三步构建：
+
+1. `group create` 或 `group reset` 建一个有名字的组；
+2. 用多条 `add` 把图元加全；
+3. 用多条 `program` 录制组动画，或用逐粒子表达式接管粒子状态。
+
+组名在当前维度内唯一，允许字母、数字、下划线、短横线、点和冒号，最长 64 字符。`reset` 会先移除
+同名旧组再创建，适合可重复触发的数据包函数。命名组只存在于本次服务器运行期，关卡卸载或服务器关闭时
+自动清理。
+
+```mcfunction
+# 建组并添加两个图元；~ 和 ^ 都按原版命令源解析
+pdraw particle group reset demo ~ ~1 ~
+pdraw particle add demo circle ~ ~1 ~ 3 96 color=#55ddff style=soft_dot additive glowing
+pdraw particle add demo hexagram ~ ~1 ~ 2.4 24 gradient=#ffffff:#5588ff style=soft_dot scale=0.35
+
+# 每条 program 只负责一个动作，按调用顺序接到同一时间线
+pdraw particle program demo fade_in 8 ease_out
+pdraw particle program demo spin 0 1 0 2
+pdraw particle program demo pulse 1.2 10 -1
+pdraw particle program demo delay 80
+pdraw particle program demo stop_continuous
+pdraw particle program demo fade_out 12 ease_in
+```
+
+### 组与图元语法
+
+| 命令 | 作用 |
+| --- | --- |
+| `group create <组> <轴心>` | 新建组；同名已存在时报错 |
+| `group reset <组> <轴心>` | 移除同名旧组并重建，适合重复触发 |
+| `group list` | 列出当前维度的命名组 |
+| `group remove <组>` / `group clear` | 删除一个组或清空当前维度 |
+| `add <组> dot <位置>` | 单颗粒子 |
+| `add <组> field <位置> <数量>` | 同点粒子场，通常交给 `expression` 展开 |
+| `add <组> line <起点> <终点> <数量>` | 粒子线段 |
+| `add <组> beam <起点> <终点>` | 一颗带方向和世界尺寸的贴图光束 |
+| `add <组> helix <中心> <半径> <高度> <圈数> <数量>` | 螺旋曲线 |
+| `add <组> circle <中心> <半径> <数量>` | 圆周 |
+| `add <组> disc <中心> <半径> <外圈数量> <层数>` | 实心圆盘 |
+| `add <组> triangle <中心> <半径> <每边数量>` | 三角形轮廓 |
+| `add <组> hexagram <中心> <半径> <每边数量>` | 六芒星轮廓 |
+| `add <组> rect <中心> <宽> <高> <密度>` | 矩形网格或边框 |
+| `add <组> sphere <中心> <半径> <数量>` | 斐波那契球面 |
+| `add <组> cuboid <中心> <宽> <高> <深> <密度>` | 长方体网格或外壳 |
+
+每条 `add` 后面可继续写空格分隔的 `key=value`。布尔项也可只写键名，例如 `additive` 等价于
+`additive=true`。颜色写 `#RRGGBB` 或 `#RRGGBBAA`，向量写 `x,y,z`，含空格的贴图名用双引号包住。
+不适用于当前图元的参数会直接报错。
+
+| 参数 | 说明 |
+| --- | --- |
+| `color=#RRGGBB` / `gradient=颜色:颜色` / `rainbow[=透明度]` | 三选一的着色方式 |
+| `scale=N`、`stagger=tick`、`taper` | 标量尺寸、逐颗错峰生成、线条收细 |
+| `axis=xz\|xy\|yz`、`hollow`、`thickness=N` | 平面、空心网格、光束宽度 |
+| `style=square\|soft_dot\|line`、`texture=名称`、`uv=u,v,w,h` | 内置形状、自定义贴图与 UV |
+| `size=w,h` / `size_world=w,h`、`billboard=true\|false` | 编辑器单位或世界格尺寸、是否面向摄像机 |
+| `spin=x,y,z`、`spin_space=local\|world` | 贴图欧拉角（度）及旋转空间 |
+| `additive`、`glowing`、`light=0..15`、`intensity=N` | 混合、全亮和动态光参数 |
+| `alpha_curve` / `size_curve` / `red_curve` 等 | `tick:value[:easing]`，多关键帧以逗号分隔 |
+| `lifetime=tick`、`velocity=x,y,z`、`force=x,y,z`、`force_ticks=tick` | 仅 `field`：寿命、初速度和持续受力 |
+
+`stagger` 会让 `Draw` 逐颗生成成员。命令层会把紧随其后的 `program` 暂存到最后一颗成员入组之后，并
+保持多条编排命令的顺序，不需要数据包自行估算等待时间。一个命名组最多编排 8192 颗粒子，超过时应拆成
+多个组；开始执行第一条 `program` 后不能再追加图元。
+
+### 编排命令
+
+| 命令 | 作用 |
+| --- | --- |
+| `program <组> pivot <位置>` | 改固定轴心 |
+| `program <组> follow <实体> [x y z [local]]` | 让轴心跟随实体及偏移；`local=true` 时随实体朝向旋转 |
+| `program <组> delay <tick>` | 推进该组时间线，后续动作从新时刻开始 |
+| `program <组> fade_in\|fade_out\|fade_out_keep <tick> [缓动]` | 淡入、淡出并删除、淡出但保留 |
+| `program <组> move <x> <y> <z> <tick> [缓动]` | 整组平移 |
+| `program <组> move_offset <倍率> <tick> [缓动]` | 每颗沿自身相对轴心方向散开 |
+| `program <组> move_path <tick> <x,y,z;x,y,z...> [缓动]` | 沿一组相对位移途经点移动 |
+| `program <组> rotate <轴x> <轴y> <轴z> <角度> <tick> [缓动]` | 绕轴心旋转一次，角度单位为度 |
+| `program <组> recolor <颜色> <tick> [缓动]` | 变色 |
+| `program <组> scale_by\|scale_to <倍率> <tick> [缓动]` | 相对缩放或缓动到绝对倍率 |
+| `program <组> spin <轴x> <轴y> <轴z> <每tick角度>` | 持续旋转 |
+| `program <组> pulse <峰值倍率> <半周期> [次数]` | 往复缩放，次数 `-1` 表示持续 |
+| `program <组> stop_continuous` | 在当前时间线时刻停止持续旋转和脉冲 |
+| `program <组> destroy_after <tick>` / `retire [余量]` | 定时销毁，或等有限程序完成后销毁 |
+| `program <组> entity <句柄> <实体>` | 在程序启动前注册公式实体句柄 |
+| `program <组> variable set <名称> <数字>` | 在程序启动前声明静态变量 |
+| `program <组> variable live <名称> <公式>` | 程序启动后立即更新变量 |
+| `program <组> variable ease <名称> <公式> <tick> [缓动]` | 程序启动后把变量缓动到公式结果 |
+| `program <组> expression <tick> <代码>` | 每颗每 tick 求值；`0` 表示持续 |
+
+缓动名支持 `linear`、`ease_in`、`ease_out`、`ease_in_out`，以及 `_quad`、`_cubic`、`_bounce`、
+`_elastic` 变体。命令补全会列出全部名称。
+
+### 数据包法阵示例
+
+下面的效果把静态法阵和动态光点拆成两个组。静态组使用形状与组动画，动态组使用 192 颗同点粒子和
+逐粒子公式，运行时只下发声明，旋转、实体跟随、颜色和退场由客户端执行。
+
+入口需要保留实体与位置上下文：
+
+```mcfunction
+execute as @p at @s run function example:magic/start
+```
+
+`data/example/function/magic/start.mcfunction`：
+
+```mcfunction
+pdraw particle group reset spell_sigil ~ ~0.06 ~
+pdraw particle add spell_sigil circle ~ ~0.06 ~ 3.2 112 color=#45d9ff style=soft_dot scale=0.32 additive glowing light=12 intensity=1.4
+pdraw particle add spell_sigil hexagram ~ ~0.06 ~ 2.55 22 gradient=#ffffff:#487dff style=soft_dot scale=0.28 additive glowing
+pdraw particle program spell_sigil fade_in 8 ease_out
+pdraw particle program spell_sigil spin 0 1 0 1.8
+pdraw particle program spell_sigil pulse 1.12 12 -1
+pdraw particle program spell_sigil delay 80
+pdraw particle program spell_sigil stop_continuous
+pdraw particle program spell_sigil fade_out 12 ease_in
+
+pdraw particle group reset spell_motes ~ ~1 ~
+pdraw particle add spell_motes field ~ ~1 ~ 192 color=#56dfff00 style=soft_dot size_world=0.07,0.07 additive glowing light=13 intensity=1.6
+pdraw particle program spell_motes entity caster @s
+pdraw particle program spell_motes variable set radius 3
+pdraw particle program spell_motes variable set presence 1
+pdraw particle program spell_motes expression 0 q=(i%64)/64;layer=floor(i/64);ang=q*2*PI+t*0.002*(1-2*(layer%2));rad=radius*(0.55+layer*0.2);x=get_entity_x(caster)+cos(ang)*rad;y=get_entity_y(caster)+0.08+sin(ang*3+t*0.004)*0.08;z=get_entity_z(caster)+sin(ang)*rad;sc=presence*(0.65+0.25*sin(t*0.006+i));a=presence;r=0.2;g=0.78;b=1;glow=1;light=13;
+schedule function example:magic/end 4s replace
+```
+
+`data/example/function/magic/end.mcfunction`：
+
+```mcfunction
+pdraw particle program spell_motes variable ease presence 0 12 ease_in
+pdraw particle program spell_motes retire 2
+```
+
+表达式里的 `i` 是成员序号，`n` 是成员总数，`t` 是毫秒时间；`x/y/z` 是世界绝对坐标，
+`r/g/b/a`、`sc`、`glow`、`light` 控制外观。公式可以读取已注册实体和世界状态，完整 getter 表见
+[编排式动画](#编排式动画)。一个组用了 `expression` 后，公式会接管该组所有成员的位置和外观；需要同时
+保留静态图形时，应像示例一样拆组。
+
+命令方块也使用同一套命令。连锁方块各自有不同的 `~` 原点时，用原版 `execute positioned ... run`，或统一
+用 `execute as <实体> at @s run ...` 固定命令上下文。这样多块命令方块与数据包函数得到相同坐标结果。
 
 ## 播放动画文件
 

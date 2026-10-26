@@ -19,8 +19,6 @@ import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.animation.AnimationLoader
 import work.nekow.particledrawing.animation.ServerAnimationManager
 import work.nekow.particledrawing.animation.ServerEffectManager
-import work.nekow.particledrawing.api.Draw
-import work.nekow.particledrawing.api.ParticleManager
 import work.nekow.particledrawing.core.client.CameraController
 import work.nekow.particledrawing.core.client.ClientAnimationManager
 import work.nekow.particledrawing.core.client.ClientParticleEngine
@@ -29,7 +27,7 @@ import java.util.Locale
 import java.util.concurrent.CompletableFuture
 
 /**
- * 命令注册：/pdraw 及其子命令，用于加载播放网页编辑器导出的动画。
+ * 命令注册：/pdraw 及粒子绘制、动画播放、贴图管理子命令。
  */
 @EventBusSubscriber(modid = ParticleDrawing.MODID)
 @Suppress("unused")
@@ -45,9 +43,8 @@ object ParticleDrawCommands {
     fun onRegisterCommands(event: RegisterCommandsEvent) {
         val dispatcher = event.dispatcher
 
-        dispatcher.register(
-            Commands.literal("pdraw")
-                .executes(::runTest)
+        val animation = Commands.literal("animation")
+                .executes(::animationUsage)
                 .then(Commands.literal("list").executes(::listAnimations))
                 .then(Commands.literal("play")
                     .then(Commands.argument("name", StringArgumentType.string())
@@ -55,7 +52,6 @@ object ParticleDrawCommands {
                         .executes(::playAnimation)
                         .then(Commands.argument("pos", Vec3Argument.vec3()).executes(::playAnimation))))
                 .then(Commands.literal("stop").executes(::stopAnimations))
-                .then(Commands.literal("reload").executes(::reloadTextures))
                 .then(Commands.literal("camera")
                     .executes(::cameraUsage)
                     .then(Commands.literal("stop").executes(::stopCamera))
@@ -66,6 +62,14 @@ object ParticleDrawCommands {
                 .then(Commands.literal("var")
                     .then(Commands.argument("name", StringArgumentType.string())
                         .then(Commands.argument("value", StringArgumentType.greedyString()).executes(::updateVariable))))
+
+        dispatcher.register(
+            Commands.literal("pdraw")
+                .executes(::rootUsage)
+                .then(ParticleDrawParticleCommands.tree())
+                .then(animation)
+                .then(Commands.literal("texture")
+                    .then(Commands.literal("reload").executes(::reloadTextures)))
         )
     }
 
@@ -75,13 +79,24 @@ object ParticleDrawCommands {
      * @param ctx 命令上下文
      * @return 命令执行结果
      */
-    private fun runTest(ctx: CommandContext<CommandSourceStack>): Int {
-        // pass
+    private fun rootUsage(ctx: CommandContext<CommandSourceStack>): Int {
+        ctx.source.sendSuccess(
+            { Component.literal("用法: /pdraw particle ... 绘制粒子；/pdraw animation ... 播放动画；/pdraw texture reload 重载贴图") },
+            false,
+        )
+        return 1
+    }
+
+    private fun animationUsage(ctx: CommandContext<CommandSourceStack>): Int {
+        ctx.source.sendSuccess(
+            { Component.literal("动画命令: list | play <name> [pos] | stop | camera | debug | var") },
+            false,
+        )
         return 1
     }
 
     /**
-     * /pdraw list：列出可用的动画。
+     * /pdraw animation list：列出可用的动画。
      */
     private fun listAnimations(ctx: CommandContext<CommandSourceStack>): Int {
         val names = AnimationLoader.list()
@@ -94,7 +109,7 @@ object ParticleDrawCommands {
         return names.size
     }
 
-    /** /pdraw play <name> 的参数补全：animations/ 下可播放的 .pdrawc 名称。 */
+    /** /pdraw animation play <name> 的参数补全：animations/ 下可播放的 .pdrawc 名称。 */
     private fun suggestAnimations(
         ctx: CommandContext<CommandSourceStack>,
         builder: SuggestionsBuilder,
@@ -102,7 +117,7 @@ object ParticleDrawCommands {
         SharedSuggestionProvider.suggest(AnimationLoader.list(), builder)
 
     /**
-     * /pdraw play <name> [pos]：播放动画（客户端本地播放）。
+     * /pdraw animation play <name> [pos]：播放动画（客户端本地播放）。
      * pos 省略时取执行者面前 3 格，支持绝对坐标与 ~ 相对坐标（相对命令执行者）；
      * 命令方块没有执行者，必须显式给出 pos。
      */
@@ -123,7 +138,7 @@ object ParticleDrawCommands {
             // 命令方块、告示牌一类非玩家执行者拿不到朝向，回退不了就明确报错，别抛原始异常
             val player = ctx.source.player
             if (player == null) {
-                ctx.source.sendFailure(Component.literal("命令方块执行 /pdraw play 时必须给出 pos"))
+                ctx.source.sendFailure(Component.literal("命令方块执行 /pdraw animation play 时必须给出 pos"))
                 return 0
             }
             player.position().add(player.lookAngle.scale(3.0))
@@ -138,7 +153,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * /pdraw stop：停止当前维度的全部动画与特效播放。
+     * /pdraw animation stop：停止当前维度的全部动画与特效播放。
      */
     private fun stopAnimations(ctx: CommandContext<CommandSourceStack>): Int {
         val level = ctx.source.level
@@ -151,12 +166,12 @@ object ParticleDrawCommands {
     }
 
     /**
-     * /pdraw reload：清空 TextureCache 并从 textures/ 重新加载全部贴图，供贴图 PNG 在磁盘上被外部修改后热重载。
+     * /pdraw texture reload：清空 TextureCache 并从 textures/ 重新加载全部贴图，供贴图 PNG 在磁盘上被外部修改后热重载。
      * 贴图渲染仅在客户端，服务端执行时返回提示。
      */
     private fun reloadTextures(ctx: CommandContext<CommandSourceStack>): Int {
         if (FMLEnvironment.getDist() != Dist.CLIENT) {
-            ctx.source.sendFailure(Component.literal("贴图渲染仅在客户端，/pdraw reload 仅客户端可用"))
+            ctx.source.sendFailure(Component.literal("贴图渲染仅在客户端，/pdraw texture reload 仅客户端可用"))
             return 0
         }
         ClientAnimationManager.reloadTextures()
@@ -168,23 +183,23 @@ object ParticleDrawCommands {
     }
 
     /**
-     * /pdraw camera：显示摄像机子命令用法。
+     * /pdraw animation camera：显示摄像机子命令用法。
      */
     private fun cameraUsage(ctx: CommandContext<CommandSourceStack>): Int {
         ctx.source.sendSuccess(
-            { Component.literal("用法: /pdraw camera <名称|id> 切换到指定摄像机；/pdraw camera stop 退出预览") },
+            { Component.literal("用法: /pdraw animation camera <名称|id> 切换摄像机；/pdraw animation camera stop 退出") },
             false
         )
         return 1
     }
 
     /**
-     * /pdraw camera <name>：把玩家视角切到当前播放动画的某个摄像机（客户端本地预览）。
+     * /pdraw animation camera <name>：把玩家视角切到当前播放动画的某个摄像机（客户端本地预览）。
      * 只改客户端相机的位置、旋转与 FOV，不动玩家实体；动画播完或停止时自动退出。
      */
     private fun switchCamera(ctx: CommandContext<CommandSourceStack>): Int {
         if (FMLEnvironment.getDist() != Dist.CLIENT) {
-            ctx.source.sendFailure(Component.literal("/pdraw camera 仅客户端可用"))
+            ctx.source.sendFailure(Component.literal("/pdraw animation camera 仅客户端可用"))
             return 0
         }
         val name = StringArgumentType.getString(ctx, "name")
@@ -200,11 +215,11 @@ object ParticleDrawCommands {
     }
 
     /**
-     * /pdraw camera stop：退出摄像机预览，恢复正常视角。
+     * /pdraw animation camera stop：退出摄像机预览，恢复正常视角。
      */
     private fun stopCamera(ctx: CommandContext<CommandSourceStack>): Int {
         if (FMLEnvironment.getDist() != Dist.CLIENT) {
-            ctx.source.sendFailure(Component.literal("/pdraw camera 仅客户端可用"))
+            ctx.source.sendFailure(Component.literal("/pdraw animation camera 仅客户端可用"))
             return 0
         }
         CameraController.detach()
@@ -212,7 +227,7 @@ object ParticleDrawCommands {
         return 1
     }
 
-    /** /pdraw camera <name> 的参数补全：所有播放中动画的摄像机 id/name。 */
+    /** /pdraw animation camera <name> 的参数补全：所有播放中动画的摄像机 id/name。 */
     private fun suggestCameras(
         ctx: CommandContext<CommandSourceStack>,
         builder: SuggestionsBuilder,
@@ -220,7 +235,7 @@ object ParticleDrawCommands {
         SharedSuggestionProvider.suggest(ClientAnimationManager.listCameras(), builder)
 
     /**
-     * /pdraw debug：显示所有播放中动画的调试信息，含每刻求值用时、帧数、粒子数与时间轴。
+     * /pdraw animation debug：显示所有播放中动画的调试信息，含每刻求值用时、帧数、粒子数与时间轴。
      */
     private fun debugAnimations(ctx: CommandContext<CommandSourceStack>): Int {
         val infos = ClientAnimationManager.debugInfo()
@@ -253,7 +268,7 @@ object ParticleDrawCommands {
     }
 
     /**
-     * /pdraw var <name> <value>：更新当前维度全部播放中动画的函数对象变量，由服务端权威下发。
+     * /pdraw animation var <name> <value>：更新当前维度全部播放中动画的函数对象变量，由服务端权威下发。
      */
     private fun updateVariable(ctx: CommandContext<CommandSourceStack>): Int {
         val name = StringArgumentType.getString(ctx, "name")

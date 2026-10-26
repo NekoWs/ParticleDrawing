@@ -103,13 +103,20 @@ More in the [getting started guide](doc/getting-started.md).
 
 | Command                      | Description                                                     |
 | ---------------------------- | --------------------------------------------------------------- |
-| `/pdraw list`                | List the animations available in `animations/`.                 |
-| `/pdraw play <name> [pos]`   | Play an animation at `pos`, or 3 blocks in front of the player. |
-| `/pdraw stop`                | Stop every animation and effect playing in the current dimension. |
-| `/pdraw reload`              | Reload particle textures from disk (client side only).          |
-| `/pdraw camera <name\|stop>` | Preview through a camera of a playing animation.                |
-| `/pdraw var <name> <value>`  | Update a function object variable of the playing animations.    |
-| `/pdraw debug`               | Print evaluation time, particle count and timeline of playback. |
+| `/pdraw particle group ...`  | Create and manage named particle groups for data packs and command blocks. |
+| `/pdraw particle add ...`    | Add dots, beams, helices, magic circles, spheres and other primitives. |
+| `/pdraw particle program ...` | Choreograph movement, spin, pulses, entity following, variables and per-particle expressions. |
+| `/pdraw animation list`      | List the animations available in `animations/`.                 |
+| `/pdraw animation play <name> [pos]` | Play an animation at `pos`, or 3 blocks in front of the player. |
+| `/pdraw animation stop`      | Stop every animation and effect playing in the current dimension. |
+| `/pdraw animation camera <name\|stop>` | Preview through a camera of a playing animation.        |
+| `/pdraw animation var <name> <value>` | Update a function object variable of the playing animations. |
+| `/pdraw animation debug`     | Print evaluation time, particle count and timeline of playback. |
+| `/pdraw texture reload`      | Reload particle textures from disk (client side only).          |
+
+Particle commands follow a create group → add primitives → program sequence, so a complex effect can be split across
+readable data pack functions or command blocks. See the [command guide](doc/guide.md#命令绘制与数据包) for the full
+syntax and a ready-to-use magic circle example.
 
 ## Documentation
 
