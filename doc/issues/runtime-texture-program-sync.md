@@ -1,59 +1,51 @@
 # 程序化贴图线程与动画成员同步
 
-状态：代码修复完成，待PrimalSpells实机复验。消费侧源码基准为`1d1ace5`；修复集中在PD运行时，消费侧没有新增enqueue、替代同步或时钟。
+状态：部分实机通过。修复代码为`d4d79d4`，PrimalSpells构建源码基准`93ca1c4`；主/源码JAR已同步更新。贴图线程和原空程序WARN已消失，但既有粒子入组后的迟到接管、首次迟到程序的相位仍未通过。消费侧没有补enqueue、成员同步或时钟。
 
-## PD-TEXTURE-THREAD：服务端登记触碰GPU
+## 当前保证
 
-### 证据与调用契约
+- `registerTexture(name, pngBytes): Boolean`保留逻辑登记接受语义，GPU加载通过PD客户端主线程调度；同名第一次生效、在线广播和进服补发保留。异常路径关闭尚未移交的纹理/图像。
+- 新名字PNG在服务端tick登记后，客户端实际得到64×16纹理，引用16×16子UV的白芯/金边正确上屏；错误线程警告为零。
+- 组程序只投递给至少有一个可见成员的玩家；最初视距外成员收尾不再产生原空程序WARN。
+- 四个常规场景70项机制检查、670帧零丢帧，视觉与日志门禁通过。不能据此宣称迟到成员路径全部正常。
 
-PrimalSpells当前client日志18:20:31、90行：`primalspells:concentrated_beam 注册失败：Rendersystem called from wrong thread`，线程为Server thread。`ParticleManager.registerTexture`公开契约允许随时登记，返回值表示逻辑名字/字节合法，不表示GPU资源已就绪。
+## PD-PROGRAM-VISIBILITY-ADD：既有粒子入组后未接管
 
-该方法按物理Dist.CLIENT直接调用`ClientTextureSyncManager.loadLocal`，没有检查当前线程；后者同步进入`TextureCache.load → registerImage → DynamicTexture`。单机服务端线程同样处于CLIENT分发，因而越线程调用GPU。API仍返回true；进服贴图同步可能稍后成功，不能据最终上屏断言首次登记没有失败。
+### 原因
 
-### 修改需求
+`ParticleGroup.add(existingHandle)`只写`ParticleGroupData.memberIds`；`ParticleData.groupId`仍为出生时的值。`ServerParticleEngine.recheckVisibility`只按该groupId通知`ServerProgramDelivery`，客户端出生处理也只按包内groupId调用`onParticleSpawned`。既有成员虽然列在程序清单中，但进入视距时无法补挂；最初全部不可见的组也不会首次补发程序。
 
-- 保留公开签名`registerTexture(name, pngBytes): Boolean`与同名首次生效语义。逻辑登记、在线广播与晚加入补发保持服务端权威。
-- 将本地GPU解码/登记交给PD内部客户端/渲染线程调度；专服不能加载客户端类。不得要求消费侧自行enqueue或实现贴图同步。
-- 排队后重复登记、断线/资源重载与同名更新均需明确所有权；异常路径释放尚未移交给纹理系统的NativeImage。
-- 文档区分“已接受登记”与“客户端资源就绪”；如需就绪回报，提供公开完成信号，而非让消费侧调用TextureCache。
+### 原生证据
 
-## PD-PROGRAM-VISIBILITY：程序引用了未发送的成员
+PrimalSpells `PdWarningScene`在20t创建程序，24t将1024格外成员track到近处，44～48t观察同一UUID：
 
-### 证据与原因
+| 路径 | 应有位置 | 48t原生输出 |
+|---|---|---|
+| 部分可见，add(existing)的第1颗按全局i/n接管 | x=0 | x=-0.25、scale=1.25，仍是track输入和完整出生尺寸 |
+| 最初全不可见，add(existing)后首次进入 | x=2 | x=2.25、scale=1.25，未收到/接管程序 |
+| 出生时Builder.group(group.id) | x=4 | x=4，位置能接管；相位另有下述缺口 |
 
-当前client日志18:20:51～18:22:40共35条`armed with zero known particles (1 ids)`。最小复现证明：视距外粒子在服务端创建成功，客户端按预期没有收到出生包；对该成员执行组缩放/retire后，客户端仍收到了程序并警告。
+### 修改要求
 
-`ServerParticleEngine.broadcastSpawn`按视距和玩家预算裁剪出生包；`ParticleGroup.flush`却向`manager.getPlayers()`全部发送完整成员清单。`ClientAnimationProgramManager.arm`仅在初次接收时snapshot，未命中成员不建立PState；之后可见性补发也没有相应回补路径。因此既可能刷出本不应收到的空程序，也存在部分/迟到成员无法接管动画的缺口。
+PD内部维护既有成员加入/移除后的程序追踪与客户端绑定关系，覆盖部分、全迟到和重新进入。保留全局成员顺序与`i/n`、变量、实体绑定、原生运动和完成账本。不能要求消费侧改另一种出生方式掩盖add入口的缺陷；不能无条件强发远处成员或只隐藏诊断。
 
-### 修改需求
+## PD-PROGRAM-LATE-CLOCK：首次迟到从零计时
 
-- 程序下发与原生成员追踪保持一致；没有可见成员的玩家不应收到无意义程序或警告，不绕过客户端/服务端预算。
-- 保留布局的全局成员顺序及`i/n`语义，不能简单裁剪成员列表后重新编号，导致不同玩家看见不同造型。
-- 对合法迟到、部分可见、跨入视距与重新追踪成员补齐状态，按同一原生程序时间轴接入；不重播入场或回到满尺寸。
-- 真正缺失/损坏的出生数据仍应诊断；不能仅删除/降级警告掩盖漏播。
-- 完成/retire账本继续遵守实际可见参与者与离线兜底，避免空程序误完成、无法回收或远处成员泄漏。
+### 原因
 
-## 修复记录
+客户端arm计算`anchorOffset = anchorGameTime - receiveGameTime`、`startAnchor = anchorGameTime`；随后`programNowMs = (clientGameTime + anchorOffset - startAnchor) * 50`使原起点被消掉。收到补发程序时经过的时间被当成时钟差，导致首次接收从零推进；服务端保留deliveryAnchorTick仍不足以维持原相位。
 
-### PD-TEXTURE-THREAD
+### 原生证据
 
-- `ParticleManager.registerTexture` 仍保留原签名与首次同名生效语义；逻辑登记、在线广播和进服补发仍在服务端完成。
-- 单机服务端线程不再直接调用 `TextureCache`；新增 `ClientTextureSyncManager.enqueueLocal`，只把 GPU 解码/注册排到客户端主线程。`registerBuiltinTextures` 同样走 `enqueueBuiltins`。
-- 客户端网络块仍在主线程收齐后解码；`loadLocal` 已收回为内部同步实现，避免消费侧或服务端线程直接触碰纹理系统。
-- `TextureCache.registerImage` 在注册抛异常时关闭尚未移交的 `DynamicTexture`/`NativeImage`；同名重复登记由缓存表先判重，排队重复任务不会重复解码。
-- API 文档现在明确：`registerTexture` 返回 true 只表示逻辑登记已接受，不表示客户端纹理已就绪；本轮没有为了就绪回报新增公开轮询/回调，仍以名字被引用后正确取 UV 为验收。
+两个程序同在20t创建，同尺寸、同配方，尺寸输出为`0.3 + clamp01(age/100t)*0.3`。近处组立即收到，远处组出生带groupId、24t进入视距。48t远处成员x=4正确，但客户端scale=0.45000002，近处同配方基准=0.47625002；差约7t。44～48t均不能在一刻误差内对齐。
 
-### PD-PROGRAM-VISIBILITY
+尺寸直接比较同帧客户端原生snapshot，消除世界单位、编辑器倍率与初始尺寸换算差异；不拿服务端scale直接当客户端倍率。
 
-- 新增 `ServerProgramDelivery` 按玩家投递账本：全量程序只发给至少追踪到一个组成员的玩家；没有可见成员的玩家不再收到空程序。
-- 程序仍携带完整成员清单与原始顺序，客户端只为当前已出生成员建状态，`i/n` 不因裁剪改变。
-- 成员迟到、跨入视距或重新追踪时，服务端在出生包之后补发完整程序；客户端 `onParticleSpawned` 用当前快照补挂状态，已应用旋转一次性补到相对位移，缩放/轴心/平移按当前帧统一施加，不重播入场、不回到满尺寸。
-- 组重着色进行中补挂时，新成员从当前合成色继续到目标色；变量、实体绑定、追加指令和原始程序起点都在迟到全量里保留。
-- 玩家不再追踪该组任何成员时清掉投递记录，重新进入视距可再次补发；断线、清场、组移除、完成销毁和服务端停止都会清账。
-- 空状态程序不再上报完成，避免零成员程序误完成；实际有可见成员的程序继续走原完成/retire账本与离线兜底。
-- 真正缺失的出生数据仍会通过程序/出生日志暴露，不靠删除警告掩盖。
+### 修改要求
 
-## 原生复现与验收
+PD内部明确原程序起点、当前服务端时刻和双端时钟差，或同步等价的原生elapsed；首次迟到、离开/重入、追加指令、变量阶段和完成账本必须一致。不能要求消费侧补本地时钟、负时间哨兵或手工扣掉网络延迟。
+
+## 复验与恢复条件
 
 在PrimalSpells运行：
 
@@ -61,6 +53,6 @@ PrimalSpells当前client日志18:20:31、90行：`primalspells:concentrated_beam
 pwsh -File tools/capture/capture.ps1 -Offline -SkipBuild -NoVideo -Scene pd_warnings -TimeoutSec 240 -FinishTimeoutSec 45
 ```
 
-`PdWarningScene`在服务端tick登记一张全新名称的现有PNG，再对1024格外的存活粒子执行正式组收尾；近处对照片元通过PD尺寸退场。没有替代渲染、计时器或同步实现。修复后同一场景应由日志门禁直接判定两类警告是否消失，不能把4项造景/可见性/清理检查通过当作缺陷修好。
+最终证据在PS `build/capture/pd-runtime-late-membership-reproduced`：64帧零丢帧、5/8项检查通过，画面/清理通过且日志错误与原两类WARN为零；三项成员接管/相位检查失败，整体仍为FAIL。常规回归在`pd-runtime-sync-upgrade-audit`，其中四场70项检查、670帧零丢帧通过，最初探针失败不混作通过。
 
-验收要求：两类警告均消失；贴图可被真正引用并正确取UV，单机首次进入/再次进入/资源重载及专服晚加入均正常。视距外、部分成员、迟到出生、预算拒绝/恢复、两名玩家不同视距均验证；保留`i/n`布局、当前相位与有限回收。升级后在PS复验`pd_warnings,concentrated_light_first_person,homing_light,wand_casting,pd_api`，不更改门禁阈值。原生证据基线在PS `build/capture/pd-warning-reproduced`：64帧零丢帧、4项造景/可见性/清理检查和画面门禁通过，日志门禁在修复前失败（两条错误线程和一条空程序警告）；修复后的同场景日志与画面尚未在本轮实机生成。
+修复后上述8项原生检查全部通过；再运行`pd_warnings,concentrated_light_first_person,homing_light,wand_casting,pd_api`，不更改门禁阈值。补充专服、多玩家不同视距、预算恢复、重入、资源重载和完成清理。PS登记与精确产物哈希见其`docs/issues/pd-api-requests.md`及`docs/build-and-run.md`。
