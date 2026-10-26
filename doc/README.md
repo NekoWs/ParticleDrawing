@@ -16,6 +16,7 @@ ParticleDrawing 是面向 [NeoForge](https://neoforged.net/)（Minecraft 26.2）
 | [known-issues.md](known-issues.md) | 平台差异与已知限制 |
 | [issues/readable-effect-api.md](issues/readable-effect-api.md) | 可读特效编写接口的设计与验收目标 |
 | [issues/readable-api-migration.md](issues/readable-api-migration.md) | 消费迁移验收：类型化法阵、运行时阶段与已覆盖边界 |
+| [issues/runtime-texture-program-sync.md](issues/runtime-texture-program-sync.md) | 贴图线程与组程序成员可见性修复、复现与验收 |
 
 ## 包结构
 

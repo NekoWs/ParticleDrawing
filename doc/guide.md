@@ -444,13 +444,14 @@ manager.create().position(p).delay(20).spawn()
 ParticleManager.registerTexture("mymod:glow", pngBytes)   // 幂等，字节上限 1 MiB，名字上限 256 字符
 ```
 
-登记后字节自动同步到客户端：单机与自带客户端就地解码，专用服务器在玩家进服时补发、运行中新登记的
-立即广播。逐粒子载荷只写贴图 id，5 万颗粒子共用一张贴图也只多 1 字节每颗。没登记过的名字不会丢粒子，
+登记后字节自动同步到客户端：单机服务端线程只做逻辑登记，GPU 解码由客户端主线程排队完成；专用服务器在
+玩家进服时补发、运行中新登记的立即广播。`registerTexture` 返回 true 只表示登记已接受，不保证当前客户端
+纹理已经可用。逐粒子载荷只写贴图 id，5 万颗粒子共用一张贴图也只多 1 字节每颗。没登记过的名字不会丢粒子，
 只是渲染成纯白方块。贴图比粒子晚到货时先按 16px 计尺寸系数，到货后按贴图实际尺寸重算（只影响非 16px
 的贴图）。
 
 内置形状不必登记，`ParticleStyle.SOFT_DOT` / `LINE` 在两端各自生成同一份像素；需要提前确认可用时调
-`ParticleManager.registerBuiltinTextures()`。两张内置贴图的可见尺寸比标称略小：
+`ParticleManager.registerBuiltinTextures()`，它同样把生成排到客户端主线程，返回后不保证当帧已可用。两张内置贴图的可见尺寸比标称略小：
 
 | 形状 | 可见比例 | 用途 |
 | --- | --- | --- |
@@ -1231,7 +1232,8 @@ Shape s = Draw.polygon(manager, p);
 
 1. 所有 API 在服务端主线程调用，内部调度任务也在主线程执行。
 2. 粒子数量受 `maxParticlesPerDimension` 与 `maxParticlesPerPlayer` 约束，达到上限时 `spawn()` 返回 null。
-3. 引擎按视距自动增减同步给客户端的粒子，持续动画只对已追踪该组的玩家广播。
+3. 引擎按视距自动增减同步给客户端的粒子，持续动画只对已追踪该组任一成员的玩家广播；程序保留完整成员顺序与
+   `i/n`，迟到/部分可见成员出生后按当前程序时间补挂，不重播入场。
 4. 无限动画（`durationTicks = -1`、`cycles = -1`）会一直占用 tick 与带宽，用 `stopContinuous()` 或让组
    `fadeOut()` / `destroyAfter()` 收尾。
 5. `stagger > 0` 时粒子陆续出现，期间 `group.size()` 会逐步增长。

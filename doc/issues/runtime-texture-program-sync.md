@@ -1,6 +1,6 @@
 # 程序化贴图线程与动画成员同步
 
-状态：未解决。消费侧源码基准为`1d1ace5`，仅登记缺陷；没有修改PD运行时或在PrimalSpells实现替代同步。
+状态：代码修复完成，待PrimalSpells实机复验。消费侧源码基准为`1d1ace5`；修复集中在PD运行时，消费侧没有新增enqueue、替代同步或时钟。
 
 ## PD-TEXTURE-THREAD：服务端登记触碰GPU
 
@@ -33,6 +33,26 @@ PrimalSpells当前client日志18:20:31、90行：`primalspells:concentrated_beam
 - 真正缺失/损坏的出生数据仍应诊断；不能仅删除/降级警告掩盖漏播。
 - 完成/retire账本继续遵守实际可见参与者与离线兜底，避免空程序误完成、无法回收或远处成员泄漏。
 
+## 修复记录
+
+### PD-TEXTURE-THREAD
+
+- `ParticleManager.registerTexture` 仍保留原签名与首次同名生效语义；逻辑登记、在线广播和进服补发仍在服务端完成。
+- 单机服务端线程不再直接调用 `TextureCache`；新增 `ClientTextureSyncManager.enqueueLocal`，只把 GPU 解码/注册排到客户端主线程。`registerBuiltinTextures` 同样走 `enqueueBuiltins`。
+- 客户端网络块仍在主线程收齐后解码；`loadLocal` 已收回为内部同步实现，避免消费侧或服务端线程直接触碰纹理系统。
+- `TextureCache.registerImage` 在注册抛异常时关闭尚未移交的 `DynamicTexture`/`NativeImage`；同名重复登记由缓存表先判重，排队重复任务不会重复解码。
+- API 文档现在明确：`registerTexture` 返回 true 只表示逻辑登记已接受，不表示客户端纹理已就绪；本轮没有为了就绪回报新增公开轮询/回调，仍以名字被引用后正确取 UV 为验收。
+
+### PD-PROGRAM-VISIBILITY
+
+- 新增 `ServerProgramDelivery` 按玩家投递账本：全量程序只发给至少追踪到一个组成员的玩家；没有可见成员的玩家不再收到空程序。
+- 程序仍携带完整成员清单与原始顺序，客户端只为当前已出生成员建状态，`i/n` 不因裁剪改变。
+- 成员迟到、跨入视距或重新追踪时，服务端在出生包之后补发完整程序；客户端 `onParticleSpawned` 用当前快照补挂状态，已应用旋转一次性补到相对位移，缩放/轴心/平移按当前帧统一施加，不重播入场、不回到满尺寸。
+- 组重着色进行中补挂时，新成员从当前合成色继续到目标色；变量、实体绑定、追加指令和原始程序起点都在迟到全量里保留。
+- 玩家不再追踪该组任何成员时清掉投递记录，重新进入视距可再次补发；断线、清场、组移除、完成销毁和服务端停止都会清账。
+- 空状态程序不再上报完成，避免零成员程序误完成；实际有可见成员的程序继续走原完成/retire账本与离线兜底。
+- 真正缺失的出生数据仍会通过程序/出生日志暴露，不靠删除警告掩盖。
+
 ## 原生复现与验收
 
 在PrimalSpells运行：
@@ -41,6 +61,6 @@ PrimalSpells当前client日志18:20:31、90行：`primalspells:concentrated_beam
 pwsh -File tools/capture/capture.ps1 -Offline -SkipBuild -NoVideo -Scene pd_warnings -TimeoutSec 240 -FinishTimeoutSec 45
 ```
 
-`PdWarningScene`在服务端tick登记一张全新名称的现有PNG，再对1024格外的存活粒子执行正式组收尾；近处对照片元通过PD尺寸退场。没有替代渲染、计时器或同步实现。当前依赖应由日志门禁明确报失败，不能把4项造景/可见性/清理检查通过当作缺陷修好。
+`PdWarningScene`在服务端tick登记一张全新名称的现有PNG，再对1024格外的存活粒子执行正式组收尾；近处对照片元通过PD尺寸退场。没有替代渲染、计时器或同步实现。修复后同一场景应由日志门禁直接判定两类警告是否消失，不能把4项造景/可见性/清理检查通过当作缺陷修好。
 
-验收要求：两类警告均消失；贴图可被真正引用并正确取UV，单机首次进入/再次进入/资源重载及专服晚加入均正常。视距外、部分成员、迟到出生、预算拒绝/恢复、两名玩家不同视距均验证；保留`i/n`布局、当前相位与有限回收。升级后在PS复验`pd_warnings,concentrated_light_first_person,homing_light,wand_casting,pd_api`，不更改门禁阈值。原生证据在PS `build/capture/pd-warning-reproduced`：64帧零丢帧、4项造景/可见性/清理检查和画面门禁通过，日志门禁正确失败（两条错误线程和一条空程序警告）。用户原日志快照和完整恢复要求见PS的`docs/issues/pd-api-requests.md`。
+验收要求：两类警告均消失；贴图可被真正引用并正确取UV，单机首次进入/再次进入/资源重载及专服晚加入均正常。视距外、部分成员、迟到出生、预算拒绝/恢复、两名玩家不同视距均验证；保留`i/n`布局、当前相位与有限回收。升级后在PS复验`pd_warnings,concentrated_light_first_person,homing_light,wand_casting,pd_api`，不更改门禁阈值。原生证据基线在PS `build/capture/pd-warning-reproduced`：64帧零丢帧、4项造景/可见性/清理检查和画面门禁通过，日志门禁在修复前失败（两条错误线程和一条空程序警告）；修复后的同场景日志与画面尚未在本轮实机生成。
