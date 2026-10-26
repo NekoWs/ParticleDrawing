@@ -15,7 +15,7 @@ ParticleDrawing 是面向 [NeoForge](https://neoforged.net/)（Minecraft 26.2）
 | [api-reference.md](api-reference.md) | 按包分类的类索引 |
 | [known-issues.md](known-issues.md) | 平台差异与已知限制 |
 | [issues/readable-effect-api.md](issues/readable-effect-api.md) | 可读特效编写接口的设计与验收目标 |
-| [issues/readable-api-migration.md](issues/readable-api-migration.md) | 消费迁移待修复：单位算术、多边形边采样、完成退场与动态表达式 |
+| [issues/readable-api-migration.md](issues/readable-api-migration.md) | 消费迁移：数值文本、角速度、动态阶段及已接入能力 |
 
 ## 包结构
 

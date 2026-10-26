@@ -1,62 +1,52 @@
-# 可读API的消费迁移缺口
+# 可读API消费迁移
 
-状态：已修复。源码基准为`e49025f`，修复后重新跑PD构建与测试；下文保留原始缺口作为迁移对照。
-PrimalSpells仍按匹配的主/源码JAR核对，没有修改PD运行代码。
+当前核对源码：`9ed62a0`。PD构建与59组403项测试通过；PrimalSpells使用匹配的主/源码JAR验证。以下3项仍未解决，不把接口编译通过当作表达式语义等价。
 
-## PD-READABLE-UNITS：常量单位减法与表达式文本不一致（已修复）
+## PD-EXPRESSION-NUMBERS：生成文本的科学计数法与求值器不兼容
 
-`api/Units.kt`的`Time.binary`、`Length.binary`、`Angle.binary`对加减都计算常量`a+b`，但生成的文本使用实际操作符。因此常量校验/曲线API与表达式API会得到不同的值。
+级别：语义错误，阻塞类型化动态法阵及大坐标局部表达式迁移。
+
+`Scalar.of`、单位工厂以及`ExpressionPosition.local`直接使用`Double.toString()`。`ScriptExpr.evaluate`的词法处理不接受其中的指数格式，有时抛错，有时把`E`当内建常量而静默算错。
+
+对真实JAR运行`ScriptExprKt.evaluate(Scalar.of(value).getExpr(), Map.of())`：
+
+| 输入 | 生成文本 | 实际结果 | 应有结果 |
+|---|---|---|---|
+| 0.00015 | `1.5E-4` | -1.281718171540955 | 0.00015 |
+| 16777217.25 | `1.677721725E7` | 未知变量E7 | 16777217.25 |
+| 0.000000001 | `1.0E-9` | -6.281718171540955 | 0.000000001 |
+
+PrimalSpells法阵新配方含0.00015、0.0018等频率；大坐标等价检查在原生`new_spells`场景触发E7异常。候选表达式迁移已撤回，没有在消费侧格式化/正则改写生成文本。原始证据保存在PS的`build/capture/readable-api-new-backend-audit/`及`build/verify/readable-api-audit/probe.txt`。
+
+要求：PD统一数值字面量的生成与解析契约，覆盖Scalar、Time/Length/Angle、局部轴心与输出常量；不能让合法有限值被解析成变量或Euler常量。以真实表达式后端测试正负指数、极小频率、大世界坐标及正负数，常量值与求值结果一致。修复后恢复法阵坐标、RGBA、尺寸逐点等价检查。
+
+## PD-ANGULAR-SPEED：角速度乘时间的文本多除1000
+
+级别：单位语义错误；现有自转频率保留原参数，暂不迁移该入口。
 
 ```kotlin
-(16.ticks - 5.ticks).ticks          // 当前21，预期11
-(3.blocks - 1.blocks).blocks       // 当前4，预期2
-(90.degrees - 30.degrees).degrees  // 当前120，预期60
+val angle = 1.radiansPerSecond * 1.seconds
+// angle.radians == 1.0
+// 实际生成文本为 (0.001*1000.0/1000.0)，求值为0.001
 ```
 
-影响：无法直接把“寿命−退场时长”迁移为单位算术。`times/div`对常量Scalar也始终标记非常量，后续`requirePositive`会拒绝；大数换算与`requireWholeTicks`还需覆盖溢出，不能通过Int饱和转换接受超范围时长。
+`AngularSpeed.radiansPerSecond`先把`expr`转为弧度/毫秒，`AngularSpeed.times(Time)`再次除1000；常量属性和表达式相差1000倍。由`Angle / Time`生成的角速度又采用另一种口径，必须一起统一。
 
-期望：常量值与表达式语义一致，有限运算保留常量性，不同量纲不能经`Scalar + Length`等入口隐式相加。覆盖减法、零/负结果、混合单位、常量乘除、溢出及常量/表达式等价测试。
+要求：明确内部量纲并只换算一次；`radiansPerSecond`、`degreesPerSecond`及`Angle/Time`三条路径与tick/ms/sec混用逐点一致。覆盖常量/动态年龄两种时间，不能只检查`angle.radians`而不执行生成文本。复现输出同PS的`probe.txt`。
 
-## PD-POLYGON-EDGES（已修复）：多边形轮廓实际在圆周采样
+## PD-PHASE-CONTROL：阶段仍只有固定时间偏移
 
-`api/ReadableShapes.kt`的`PolygonSpec.build`按`u=(edge+edgeT)/sides`插值角度，再取固定半径的sin/cos；边中点仍在圆周上，没有沿两顶点连线采样。
+级别：能力缺口；动态双冷却保留原字符串后端。
 
-复现：`sides=3, radius=1.blocks, samplesPerEdge=3, initialAngle=0.degrees`。第一边中点当前为局部`(0.5,0,0.866...)`，预期两顶点中点`(0.25,0,0.433...)`。
+新增`ExpressionFrame.phase/start`只接受构建时的正常量时长与非负常量偏移，没有可更新阶段句柄。它可以描述装备后固定3.6t开始的阶段，不能表达施法后才确定的双冷却开始、提早结束、重入和共用装备相位。因此仍无法移除`delayStart`、`delayEnd`、`clockOffset`等手动时间字段及±1e12哨兵。
 
-影响：替换脚下三角形或蓄能菱框会改变轮廓。
+期望提供组原生`phaseParameter(name)`一类句柄，由PD管理`start(duration)`、结束/重启、progress/started/completed；同一组时间轴可被多个输出复用，保留暂停、客户端插值与完成账本，不另建播放器。具体命名由PD决定。
 
-期望：先生成边端点再线性采样，明确端点去重与部件索引。需支持原“每边24点、不重复下一条边首点”的模式。验证三角形/四边形边中点、指定采样数、跟随位置但不跟yaw、部件选择和容量拒绝。
+验收：法阵持续自转不回跳；任意时刻施法可立即展开双冷却，重复施法时旧提示连贯退场；卸下法杖、虚空、死亡及维度变化不残留。消费侧无需时钟缓存或特殊时间数值。
 
-## PD-EXIT-COMPLETION（已修复）：退场仍按固定服务端时长删除
+## 已验证与已接入
 
-`api/ReadableExit.kt`的`ExitSpec.apply`在`AnimationScheduler.schedule(maxTicks)`后直接删除成员，没有接入客户端完成信号；`state`也按定时器到期，而不是实际合成外观结束。
-
-复现：已有出生尺寸曲线的批次执行`exit { particleSize.to(0.0,over=8.ticks); preserveMotion(); removeWhenComplete() }`，对照删除任务和客户端零尺寸采样，并在延迟、暂停、中途重定向与重复退出时复验。
-
-影响：无法直接替换已有清理余量的锯片/碎片退场；删除时刻变化，也不满足原需求“不要把Deferred.after搬进门面”的语义。
-
-期望：接入现有完成账本/客户端回报，成员级尺寸端点参与账本，重定向更新终点，从当前合成值接续，停止幂等并保留速度/力。明确离线/卸载兜底及清理余量，不新增独立播放器或计时缓存。
-
-验收：真实片元95%→5%连续下降，删除前已收束；延迟/暂停不截断，重定向不按旧终点删，重复停止不重复回调，场景收尾零残留。
-
-## PD-EXPRESSION-OUTPUTS（已修复）：动态外观和共享阶段缺少可读入口
-
-`api/ReadableExpression.kt`的`ExpressionFrame.color`只接收常量Color，标量函数没有`pow`，也没有共享时钟/阶段句柄。`ExitState`仅描述退场任务，不能表示独立冷却阶段。
-
-影响：脚下阵列包含动态RGB巡光、`pow(presence,0.75)`及两个共享相位的冷却进度，不能完整迁移。消费方保留旧字符串后端，没有用`Scalar.expr`拼回一套生成器。常量色的施法短闪已接入新入口，984个子帧与原配方的坐标/尺寸误差均为0。
-
-建议提供：
-
-- `color(red:Scalar,green:Scalar,blue:Scalar,alpha:Scalar)`。
-- `pow(base:Scalar,exponent:Scalar/Number)`，映射现有标量后端。
-- PD原生时间参考与阶段句柄：`start(duration)`、进度、出现/完成状态，不要求`±1e12`时间哨兵。
-- 命名局部表达式/公共子表达式绑定，保留调试导出与错误来源。
-
-验收：固定成员与时间样本下，三角法阵坐标、RGB、尺寸与双冷却逐点等价；保留出生隐藏、实时跟随、慢速自转、切杖交接和连续退场门禁。
-
-## 修复记录
-
-- 单位：`Time/Length/Angle` 的加减按实际操作符计算；常量乘除保留常量性；`requireWholeTicks` 与取整方法拒绝超出 Int 范围的值；移除 `Scalar + Length` 这类跨量纲入口，保留显式倍率乘法。
-- 多边形：先生成边端点，再按 `edgeT` 沿边线性插值；每条边含起点、不含下一边起点，`samplesPerEdge` 固定总点数为 `sides × samplesPerEdge`。
-- 退场：`ExitSpec` 不再用固定服务端时长删除；新增观察/完成载荷与版本化完成账本，客户端按每个成员的尺寸缓动终点回报，重定向、重复停止、暂停和兜底分别处理。
-- 表达式：新增 `color(red, green, blue, alpha)`、`pow`、`phase/start` 阶段句柄与 `local` 命名局部表达式；阶段和局部量复用同一组表达式时间轴。
+- Time/Length/Angle加减和常量倍率已修复；PS保留固定结果与原尺寸包络检查。
+- 正多边形沿边采样已修复；72点三角轮廓用于持杖法阵透明出生，后续动态动画仍为原配方。
+- 退场已走版本化客户端尺寸终点回报；PS锯片与通用碎片接入`exit`，保留八刻线性/原缓动、外散速度与受力，不再自行按时删除。暂停、多人追踪、离线兜底仍需专项复验。
+- 动态RGBA、pow和local入口已提供；受数值文本缺陷影响，动态法阵尚不能迁移。现有常量色施法短闪保持原类型化实现。
