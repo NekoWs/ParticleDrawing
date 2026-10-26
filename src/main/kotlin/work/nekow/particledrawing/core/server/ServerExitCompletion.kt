@@ -2,7 +2,9 @@ package work.nekow.particledrawing.core.server
 
 import net.minecraft.server.level.ServerPlayer
 import net.neoforged.neoforge.network.PacketDistributor
+import net.neoforged.neoforge.server.ServerLifecycleHooks
 import work.nekow.particledrawing.core.network.ParticleExitWatchPayload
+import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -12,17 +14,19 @@ import java.util.concurrent.ConcurrentHashMap
  * 服务端只负责登记与兜底，真正的“收束完成”由客户端按每个成员的实际缩放缓动回报；
  * 删除因此不按固定 `duration + 2` 估算。重定向会递增版本，旧回报与旧兜底都作废。
  *
- * 线程约定：主线程。
+ * 兜底只在参与玩家全部离线、换维度、不再追踪全部成员或维度卸载后清理；
+ * 客户端在线但暂停时不按固定时长删除。线程约定：主线程。
  */
 object ServerExitCompletion {
 
-    /** 客户端不可用/未回报时的兜底；比正常完成晚，给网络与暂停留余量。 */
+    /** 到期后先复查参与玩家是否仍在线，再决定清理还是继续等。 */
     private const val FALLBACK_MARGIN_TICKS = 40
 
     private class Entry(val dimensionId: UUID) {
         var version: Int = 0
         var done: Boolean = false
         var removeAction: (() -> Unit)? = null
+        var ids: List<UUID> = emptyList()
 
         /** 需要回报的玩家：只包含同时追踪全部成员的玩家。 */
         val pendingPlayers: MutableSet<UUID> = HashSet()
@@ -48,6 +52,7 @@ object ServerExitCompletion {
         entry.version++
         entry.done = false
         entry.removeAction = removeAction
+        entry.ids = ids
         entry.pendingPlayers.clear()
         val version = entry.version
 
@@ -107,8 +112,24 @@ object ServerExitCompletion {
         AnimationScheduler.schedule(entry.dimensionId, delay) {
             val current = entries[exitId] ?: return@schedule
             if (current !== entry || current.done || current.version != version) return@schedule
+
+            // 还有参与玩家在线且仍追踪全部成员时不能按固定时长删；暂停/卡顿只会让完成信号晚到。
+            // 玩家离线、换维度或批量成员被移出视野后，才从待回报集合移除并走兜底。
+            val tracking = ServerParticleEngine.get(current.dimensionId)
+                ?.playersTrackingAll(current.ids) ?: emptySet()
+            current.pendingPlayers.retainAll(tracking)
+            current.pendingPlayers.removeIf { !isOnline(it, current.dimensionId) }
+            if (current.pendingPlayers.isNotEmpty()) {
+                scheduleFallback(exitId, current, version, 0)
+                return@schedule
+            }
             finish(exitId, current)
         }
+    }
+
+    private fun isOnline(playerId: UUID, dimensionId: UUID): Boolean {
+        val player = ServerLifecycleHooks.getCurrentServer()?.playerList?.getPlayer(playerId) ?: return false
+        return ParticleUtils.dimensionUUID(player.level()) == dimensionId
     }
 
     private fun finish(exitId: UUID, entry: Entry) {
