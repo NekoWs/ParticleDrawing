@@ -1044,6 +1044,147 @@ fun ripples(m: ParticleManager, c: Vec3, waves: Int) {
 }
 ```
 
+## 可读编写接口
+
+新代码可以完全不碰毫秒、裸索引和字符串拼接，旧 API 保持可用。单位值在 Kotlin 用扩展属性，
+Java 用同名静态工厂：
+
+```kotlin
+val wait = 6.ticks              // 300ms
+val same = 300.milliseconds     // 6t
+val width = 1.5.mcPixels        // 1.5/16 格
+val turn = 90.degrees
+val spin = 1.2.radiansPerSecond
+val life = Lifetime.ticks(20)   // 或 Lifetime.infinite()
+```
+
+外观、曲线与退场：
+
+```kotlin
+val appearance = particleVisual {
+    style = ParticleStyle.SQUARE
+    worldSize(1.5.mcPixels, 1.mcPixels)
+    fullBright = true                 // 片元免光照
+    light = Light.none()              // 不向世界照明；Light.level(14) 才投光
+    blend = Blend.ALPHA
+}
+
+val envelope = lifeCurve {
+    scale {
+        start(0.0)
+        to(1.0, 1.5.ticks, Ease.OUT)
+        hold(8.ticks)
+        to(0.0, 12.ticks, Ease.IN_OUT)
+    }
+}
+
+batch.exit {
+    particleSize.to(0.0, 8.ticks, Ease.LINEAR)   // 逐成员收片元，不缩组
+    preserveMotion()                             // 保留径向速度/位置
+    removeWhenComplete()
+}
+```
+
+`fullBright` 与 `light` 分开：`Light.level` 设置向外照明，`Light.none` 只保留全亮；
+`ParticleVisual` 的 `emitsLight` 随生成包同步，旧 API 的 `glowing` 行为不变。
+
+### 类型化表达式
+
+先在组上登记向量/方向参数，再用接收者 DSL 写公式；生成的是现有组标量表达式，不新增播放器：
+
+```kotlin
+val origin = group.vectorParameter("origin", center).value
+val direction = group.directionParameter("direction", forward).value
+
+group.expression(duration = 5.ticks) {
+    val progress = progress(5.ticks)
+    val random = member.random01(seed = 1234L, salt = "spread")
+    val angle = member.index * Angles.goldenAngle
+    val width = sin(progress * 180.degrees) * lerp(0.08.blocks, 0.24.blocks, random)
+    val distance = progress * lerp(0.25.blocks, 0.70.blocks, random)
+
+    position.world(origin + direction * distance +
+        vec3(cos(angle) * width, 0.5.blocks, sin(angle) * width))
+    scale(smoothstep(0.0.toScalar(), 1.0.toScalar(), progress) * square(1.0.toScalar() - progress))
+    color(Color.WHITE)
+}.retire()
+```
+
+- 参数句柄用 `.set(Vec3)` / `.set(Vec3, over = 4.ticks, easing = Ease.IN_OUT)` 更新；
+  `directionParameter` 自动归一化。
+- `member.index` / `count` / `random01`、`progress`、`entity("holder")`、`world(WorldProp...)`
+  都是类型入口；实体属性需要先 `group.defineEntity("holder", uuid)`。
+- 必须显式调用 `position.world` 或 `position.local`。`position.local` 只支持固定轴心；
+  实体/可移动轴心会明确报错，`position.preserve()` 也会报错，不会偷偷补世界原点。
+- 复用的随机值由 `i + seed + salt` 决定，暂停、回绕和重复求值不跳变；固定种子可复现。
+- `group.buildExpression(...)` 返回 `TypedExpression`，`debugString()` 可查看生成文本、参数名与单位。
+- 该入口只覆盖组标量表达式的位置/颜色/缩放；`glow/light` 等其它通道继续用字符串 API。
+  Java 可用 `Expressions.builder(duration)` 生成位置/缩放/颜色文本，或直接调用 `group.expression(code, ticks)`。
+
+### 坐标基与命名部件
+
+```kotlin
+val shape = Draw.polygon(manager) {
+    name = "saw"
+    coordinateFrame = Frames.ground(holder, followPosition = true, followYaw = false)
+    sides = 12
+    radius = 1.2.blocks
+    samplesPerEdge = 2
+    initialAngle = 15.degrees
+    angularSpeed = 1.1.radiansPerSecond
+    appearance = appearance
+
+    part("teeth", PartSelector { index, edge, _ -> edge == 0 && index % 2 == 0 },
+        color = Color.ORANGE)
+}
+
+shape.group.spin(Vec3(0.0, 1.0, 0.0), 0.02)   // 继续用普通组编排
+shape.part("teeth")?.resize(0.5f, 4, Ease.OUT)
+```
+
+`Frames.ground` 默认只跟位置、不跟 yaw；`followYaw = true` 才连朝向一起跟随，均由 PD 的
+`followEntity` 完成，不需要每 tick 重建坐标基。`Frames.basis` 对零向量/平行 upHint 显式报错。
+部件选择器返回的句柄保存成功成员，容量拒绝仍计入 `requested` 而不会串到别的部件。
+
+### 批量生成配对
+
+`spawnAll` 不再截断第 257 条及以后；每颗规格可带出生速度和加速度，PD 在生成后用现有批量运动包
+按成功项配对：
+
+```kotlin
+val specs = ... // ParticleSpawnSpec().velocity(...).acceleration(...)
+val results = manager.spawnAllDetailed(specs)
+for (r in results) {
+    if (r.handle == null) log("index ${r.index} rejected: ${r.rejection}")
+}
+```
+
+`SpawnResult.index` 始终是原始输入下标；容量拒绝是 `SpawnRejection.CAPACITY`，不会让后面的速度
+错配到另一颗粒子上。
+
+### Java
+
+`Time` / `Length` / `Angle` / `AngularSpeed` / `Velocity` / `Acceleration` / `Lifetime` 都有静态工厂；
+外观用 `ParticleAppearance.builder()`，曲线用 `LifeCurves`，形状用 `Shapes` / `Draw.polygon(manager, spec)`，
+退场用 `Exits`：
+
+```java
+ParticleVisual v = ParticleAppearance.builder()
+    .style(ParticleStyle.SQUARE)
+    .worldSize(Length.mcPixels(1.5), Length.mcPixels(1.0))
+    .fullBright(true)
+    .light(Light.none())
+    .build();
+
+ParticleLifeCurve c = LifeCurves.sizeEnvelope(
+    Time.ticks(12), Time.ticks(2), Time.ticks(3));
+
+PolygonSpec p = Shapes.builder();
+p.setSides(6);
+p.setRadius(Length.blocks(1.0));
+Shape s = Draw.polygon(manager, p);
+```
+
 ## 注意事项
 
 1. 所有 API 在服务端主线程调用，内部调度任务也在主线程执行。

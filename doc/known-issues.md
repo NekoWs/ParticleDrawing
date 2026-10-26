@@ -1,8 +1,21 @@
 # 已知限制
 
-## 特效编写接口可读性
+## 可读特效编写接口（初版）
 
-待实现：[PD-READABLE-API](issues/readable-effect-api.md)。单位混用、长位置参数、字符串公式与索引分区使消费方难以维护特效。方案覆盖显式单位、命名外观/曲线、类型化表达式、形状与部件、状态/退场及生成运动配对，复用现有播放器与完成账本。接口草案尚不可调用，详细证据和验收见需求正文。
+[PD-READABLE-API](issues/readable-effect-api.md) 已落地为编写门面，底层播放器、完成账本与网络协议不变：
+`Time/Length/Angle/...` 单位、公开 `Ease`、`particleVisual` / `lifeCurve`、类型化组标量表达式、
+`Frames` + `Draw.polygon` 命名部件、`exit { particleSize.to(...) }` 与 `spawnAllDetailed` 已可用。
+
+当前边界：
+
+- 类型化表达式只生成现有组标量表达式后端，覆盖位置、颜色与缩放；`glow/light` 等其它输出继续用字符串 API。
+- `position.local` 只适用于固定轴心；实体/可移动轴心的局部坐标会显式拒绝，不偷偷按世界原点处理。
+- 标量表达式不能保留逐粒子初始位置，`position.preserve()` 明确报错。
+- Java 端有单位、外观、曲线、形状、退场与批量结果入口；类型化表达式的高级参数/实体输入以 Kotlin DSL 为主，
+  Java 可用 `Expressions.builder` 生成位置/缩放/颜色文本或继续用字符串表达式。
+- 部件选择器在生成时执行，部件句柄只记录成功成员；容量拒绝仍返回 null/`SpawnRejection.CAPACITY`。
+
+完整草案与验收见需求正文。
 
 ## 立体声声像与编辑器有两处差别
 
