@@ -1,6 +1,20 @@
 package work.nekow.particledrawing.core.client
 
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.util.AttachMath
+
+/** 公式与组动画共用的锚点坐标基。 */
+internal data class PivotFrame(
+    val pos: Vec3,
+    val offset: Vec3 = Vec3.ZERO,
+    val yawDeg: Float = 0f,
+    val pitchDeg: Float = 0f,
+    val local: Boolean = false,
+) {
+    fun apply(localVec: Vec3): Vec3 =
+        if (local) AttachMath.resolve(pos, yawDeg, pitchDeg, offset.add(localVec), true)
+        else pos.add(offset).add(localVec)
+}
 
 // 结构化糖指令的帧计算：组级倍率对粒子到轴心距离的作用、旋转与缩放的记账。
 // 都是纯函数或纯状态，与渲染引擎解耦，便于单测。
@@ -64,7 +78,7 @@ internal class ScaleLedger {
  * 组动画可以只用变量缓动（表达式组的 `presence` 归零），也可以只用有限指令（`scaleTo` 退场），
  * 两者都没有终点时这段编排就没有跑完可言。
  *
- * 表达式模式下只认表达式自己的有限时长：那时糖指令一条都不会执行，
+ * 表达式模式下只认表达式自己的有限时长：几何糖指令不参与，
  * 而 `expression(code, durationTicks)` 给的到期时刻才是真正会发生的终点。
  *
  * @param instructionEndMs 糖指令的最晚终点；-1 = 没有

@@ -22,7 +22,6 @@ import work.nekow.particledrawing.animation.program.PivotRef
 import work.nekow.particledrawing.animation.program.finiteDurationMs
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.network.ProgramCompletePayload
-import work.nekow.particledrawing.util.AttachMath
 import work.nekow.particledrawing.util.rotateAround
 import net.neoforged.neoforge.client.network.ClientPacketDistributor
 import java.util.UUID
@@ -31,7 +30,7 @@ import kotlin.math.floor
 
 // 客户端动画程序运行时：解释 AnimInstruction 指令流并直写渲染。
 // 组级状态（pivot/pathOffset/scaleMul/pulseMul/fade 因子）+ 粒子级相对轴心的偏移 rel；
-// 旋转按每帧增量累加到 rel，表达式模式每 tick 每粒子求值并输出世界绝对坐标。
+// 旋转按每帧增量累加到 rel，表达式每 tick 求值，再按世界坐标或组锚点局部坐标落地。
 @EventBusSubscriber(modid = ParticleDrawing.MODID, value = [Dist.CLIENT])
 internal object ClientAnimationProgramManager {
 
@@ -127,6 +126,8 @@ internal object ClientAnimationProgramManager {
         val entityBindings = ArrayList<EntityBinding>()
         val vars = LinkedHashMap<String, Double>()
         var expressionCode: String? = null
+        var expressionLocal = false
+        var anchorHidden = false
         var expressionStartMs = 0L
 
         /** 表达式自己的有限时长终点（程序相对毫秒）；-1 = 一直求值。 */
@@ -400,6 +401,7 @@ internal object ClientAnimationProgramManager {
         if (ins is AnimInstruction.Expression) {
             // 表达式唯一化：后到覆盖先到
             p.expressionCode = ins.code
+            p.expressionLocal = ins.local
             p.expressionStartMs = ins.startMs.toLong()
             // 有限时长的表达式也算一笔账（到期即完成）；0 = 一直求值
             p.expressionEndMs = if (ins.durationMs > 0) ins.startMs.toLong() + ins.durationMs else -1L
@@ -671,6 +673,20 @@ internal object ClientAnimationProgramManager {
 
     private fun expressionFrame(p: Program, engine: ClientParticleEngine, now: Long) {
         val cf = p.compiled ?: return
+        // 公式接管几何输出，锚点和透明度仍按组时间线执行。
+        for (slot in p.slots) {
+            if (slot.ins is AnimInstruction.BindPivot || slot.ins is AnimInstruction.FadeIn || slot.ins is AnimInstruction.FadeOut) {
+                applySlot(p, slot, now)
+            }
+        }
+        val pivot = if (p.expressionLocal) resolvePivot(p) else null
+        if (p.expressionLocal && pivot == null) {
+            if (!p.anchorHidden) {
+                for (uuid in p.particleIds) engine.applyProgramFrame(uuid, p.initialPivot, 1f, 1f, 1f, 0f, 0f, true)
+            }
+            p.anchorHidden = true
+            return
+        }
         // 有限时长的表达式到期后不再求值，粒子停在最后一帧
         if (p.expressionEndMs >= 0L && now > p.expressionEndMs) return
         if (p.regs.size != cf.regCount) prepareExpressionBuffers(p)
@@ -680,6 +696,7 @@ internal object ClientAnimationProgramManager {
         val n = p.particleIds.size.toDouble()
         val fadeIn = fadeFactor(p.fadeInStart, p.fadeInDur, p.fadeInEase, now, default = 1f)
         val fadeOut = fadeFactor(p.fadeOutStart, p.fadeOutDur, p.fadeOutEase, now, default = 0f)
+        val snap = p.anchorHidden || p.anchorSnapPending
 
         for ((index, uuid) in p.particleIds.withIndex()) {
             val st = p.states[uuid] ?: continue
@@ -688,12 +705,15 @@ internal object ClientAnimationProgramManager {
             readAttrs(p.regs, o)
             val alpha = (o[3].toFloat() * fadeIn * (1f - fadeOut)).coerceIn(0f, 1f)
             val scl = (o[4].toFloat() * st.baseScale).coerceAtLeast(0f)
+            val outputPosition = Vec3(o[0], o[1], o[2])
             engine.applyProgramFrame(
-                uuid, Vec3(o[0], o[1], o[2]),
+                uuid, pivot?.apply(outputPosition) ?: outputPosition,
                 o[5].toFloat(), o[6].toFloat(), o[7].toFloat(),
-                alpha, scl,
+                alpha, scl, snap,
             )
         }
+        p.anchorHidden = false
+        p.anchorSnapPending = false
     }
 
     private fun readAttrs(regs: DoubleArray, out: DoubleArray) {
@@ -704,9 +724,8 @@ internal object ClientAnimationProgramManager {
     }
 
     private fun sugarFrame(p: Program, engine: ClientParticleEngine, now: Long) {
-        val pivot = resolvePivot(p) ?: return
-
         for (slot in p.slots) applySlot(p, slot, now)
+        val pivot = resolvePivot(p) ?: return
 
         // 逐成员各自方向的漂移倍率：多条 MoveEach 叠加
         var driftScale = 0f
@@ -750,23 +769,6 @@ internal object ClientAnimationProgramManager {
         val r: Float, val g: Float, val b: Float, val a: Float,
         val from: MutableMap<UUID, FloatArray>,
     )
-
-    /**
-     * 轴心解算结果：固定轴心只给世界坐标；跟随实体时记下实体位置、偏移与朝向，
-     * local 模式下把组内相对坐标一起按实体朝向旋转（[AttachMath]）。
-     */
-    private class PivotFrame(
-        val pos: Vec3,
-        val offset: Vec3,
-        val yawDeg: Float,
-        val pitchDeg: Float,
-        val local: Boolean,
-    ) {
-        /** 把组内相对坐标（pathOffset + rel）映射为世界坐标。 */
-        fun apply(localVec: Vec3): Vec3 =
-            if (local) AttachMath.resolve(pos, yawDeg, pitchDeg, offset.add(localVec), true)
-            else pos.add(offset).add(localVec)
-    }
 
     private fun resolvePivot(p: Program): PivotFrame? {
         // 可移动轴心：位置来自逐 tick 的样本；orient=VELOCITY 时整组随运动方向转向

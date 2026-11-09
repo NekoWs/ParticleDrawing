@@ -75,6 +75,9 @@ public final class ReadableApiJavaCompile {
                 .scale(Scalars.pow(Scalars.clamp01(Scalars.of(0.5)), 0.75))
                 .color(Scalars.of(0.5), Scalars.of(0.25), Scalars.of(0.1), Scalars.of(1.0));
         expression.apply(group);
+        Expressions.builder(Time.ticks(5))
+                .positionLocal(Scalars.of(0.0), Scalars.of(1.0), Scalars.of(2.0))
+                .apply(group);
 
         PhaseParameter cooldown = group.phaseParameter("cooldown");
         cooldown.start(Time.ticks(5));

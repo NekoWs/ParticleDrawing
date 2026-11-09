@@ -24,7 +24,7 @@ object TextureCache {
     private const val DEFAULT_WHITE = "default_white"
 
     /** 已成功注册的贴图 → Identifier 与原始尺寸，供 UV 归一化。 */
-    data class Entry(val id: Identifier, val width: Int, val height: Int)
+    data class Entry(val id: Identifier, val width: Int, val height: Int, val animation: ParticleSpriteAnimation? = null)
 
     private val entries = ConcurrentHashMap<String, Entry>()
 
@@ -42,11 +42,32 @@ object TextureCache {
         try {
             ParticleTextures.parse(textureName)?.let { reference ->
                 val resources = Minecraft.getInstance().resourceManager
-                val sprite = ParticleTextures.resolve(reference) { id ->
+                val sprites = ParticleTextures.resolveFrames(reference) { id ->
                     resources.openAsReader(id).use { it.readText() }
                 }
-                val image = resources.open(sprite).use { NativeImage.read(it) }
-                return registerImage(textureName, image)
+                val images = ArrayList<NativeImage>()
+                try {
+                    for (sprite in sprites) images += resources.open(sprite).use { NativeImage.read(it) }
+                    if (images.size == 1) return registerImage(textureName, images.removeAt(0))
+                    val width = images.first().width
+                    val height = images.first().height
+                    require(images.all { it.width == width && it.height == height }) { "粒子贴图序列的帧尺寸必须一致" }
+                    require(width.toLong() * height * images.size <= 16_777_216L) { "粒子贴图序列超过像素上限" }
+                    val atlas = NativeImage(width, height * images.size, false)
+                    try {
+                        for ((index, image) in images.withIndex()) {
+                            for (y in 0 until height) for (x in 0 until width) {
+                                atlas.setPixel(x, index * height + y, image.getPixel(x, y))
+                            }
+                        }
+                    } catch (error: Exception) {
+                        atlas.close()
+                        throw error
+                    }
+                    return registerImage(textureName, atlas, ParticleSpriteAnimation(height, images.size, reference.fps))
+                } finally {
+                    images.forEach { it.close() }
+                }
             }
         } catch (error: Exception) {
             // 缓存错误贴图，避免每颗粒子反复读缺失资源；重载资源包后可重新解析。
@@ -96,7 +117,7 @@ object TextureCache {
         return registerImage(textureName, img)
     }
 
-    private fun registerImage(textureName: String, img: NativeImage): Entry {
+    private fun registerImage(textureName: String, img: NativeImage, animation: ParticleSpriteAnimation? = null): Entry {
         val w = img.width
         val h = img.height
         val dt = try {
@@ -113,7 +134,7 @@ object TextureCache {
             dt.close()
             throw e
         }
-        val entry = Entry(id, w, h)
+        val entry = Entry(id, w, h, animation)
         entries[textureName] = entry
         versionCounter.incrementAndGet()
         return entry

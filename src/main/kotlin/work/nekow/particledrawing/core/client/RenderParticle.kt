@@ -377,6 +377,7 @@ class RenderParticle(
     fun interpolatedZ(partialTick: Float): Double = prevZ + (pos.cur.z - prevZ) * partialTick
 
     fun isAlive(): Boolean = lifetimeTicks <= 0 || ticksAlive < lifetimeTicks
+    fun lifetimeTicks(): Int = lifetimeTicks
     fun isDead(): Boolean = !isAlive()
 
     /** 记下出生时的引擎 tick 序号：出生那一 tick 不推进年龄，先让渲染帧看到 age 0。 */

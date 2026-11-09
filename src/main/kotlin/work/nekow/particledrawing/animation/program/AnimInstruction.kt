@@ -200,7 +200,7 @@ sealed class AnimInstruction {
                 InstructionType.PULSE -> Pulse(startMs, buf.readFloat(), buf.readVarInt(), buf.readVarInt())
                 InstructionType.STOP_CONTINUOUS -> StopContinuous(startMs)
                 InstructionType.BIND_PIVOT -> BindPivot(startMs, PivotRef.read(buf))
-                InstructionType.EXPRESSION -> Expression(startMs, buf.readUtf(), buf.readVarInt())
+                InstructionType.EXPRESSION -> Expression(startMs, buf.readUtf(), buf.readVarInt(), buf.readBoolean())
                 InstructionType.MOVE_EACH -> MoveEach(startMs, buf.readFloat(), buf.readVarInt(), readEasing(buf))
                 InstructionType.SCALE_TO -> ScaleTo(startMs, buf.readFloat(), buf.readVarInt(), readEasing(buf))
             }
@@ -373,7 +373,7 @@ sealed class AnimInstruction {
 
     /**
      * 表达式指令：整段标量公式代码（专用语法：i/n/t、[x,y,z]=...），每粒子每 tick 求值。
-     * 输出 [x,y,z] 为世界绝对坐标，可用被动输入 getter、内建 i/n/t、标量数学函数与程序变量；
+     * 输出 [x,y,z] 默认是世界坐标，local=true 时为当前锚点的偏移；支持 getter、i/n/t、标量函数与程序变量。
      * 一旦出现即接管位置/颜色/缩放的最终解释权，FADE 因子仍叠加在输出的 alpha 之上。
      */
     data class Expression(
@@ -381,11 +381,14 @@ sealed class AnimInstruction {
         val code: String,
         /** 有限时长（毫秒）；<=0 = 一直求值（默认）。到期后不再求值，粒子停在最后一帧的状态。 */
         val durationMs: Int = 0,
+        /** true = 输出相对组当前锚点，实体锚点的 local 朝向同样生效。 */
+        val local: Boolean = false,
     ) : AnimInstruction() {
         override val type get() = InstructionType.EXPRESSION
         override fun writeBody(buf: FriendlyByteBuf) {
             buf.writeUtf(code)
             buf.writeVarInt(durationMs)
+            buf.writeBoolean(local)
         }
     }
 

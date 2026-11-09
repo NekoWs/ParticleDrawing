@@ -119,6 +119,8 @@ readable data pack functions or command blocks. See the [command guide](doc/guid
 syntax and a ready-to-use magic circle example.
 For a short command block example, see the [sin curve with the end rod texture](doc/guide.md#命令方块简单用法sin-曲线).
 Use `texture=particle:minecraft:end_rod` to reuse a vanilla texture while retaining PD animation controls.
+Frames follow particle age and lifetime. Use `field anchor` with `expression local` to share the group anchor,
+and `lifetime=80` for a four-second lifetime.
 
 ## Documentation
 

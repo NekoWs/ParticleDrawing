@@ -34,7 +34,7 @@ class ParticleTexturesTest {
     }
 
     @Test
-    fun `命令方块示例的81颗粒子落在完整一周期的sin曲线上`() {
+    fun `原有世界坐标公式仍保持完整一周期的sin曲线`() {
         val code = "u=i/(n-1);x=100+8*u;y=65+sin(2*PI*u);z=100;"
         val compiled = assertNotNull(compileFunctionObject(code, emptyList()))
         val regs = compiled.allocRegs()
@@ -57,7 +57,20 @@ class ParticleTexturesTest {
         assertEquals(expected, particleVisual { particleTexture("end_rod") }.texture)
         assertEquals(expected, ParticleCommandOptionParser.parse("texture=$expected").visual.texture)
         assertEquals("particle:example:magic#2", ParticleTextures.of("example:magic", 2))
+        assertEquals("particle:minecraft:end_rod#0", ParticleTextures.of("end_rod", 0))
+        assertEquals("particle:minecraft:end_rod@8", ParticleTextures.animated("end_rod", 8.0))
         assertNull(ParticleTextures.parse("custom:ring"))
+    }
+
+    @Test
+    fun `动态引用按定义顺序读取全部帧且静态引用只取指定帧`() {
+        val reference = assertNotNull(ParticleTextures.parse("particle:minecraft:end_rod"))
+        val sprites = ParticleTextures.resolveFrames(reference) { """{"textures":["minecraft:glitter_7","minecraft:glitter_6","minecraft:glitter_5"]}""" }
+        assertEquals(listOf("glitter_7", "glitter_6", "glitter_5"), sprites.map { it.path.substringAfterLast('/').removeSuffix(".png") })
+        assertEquals(8.0, ParticleTextures.parse("particle:end_rod@8")?.fps)
+        for (name in listOf("particle:end_rod@0", "particle:end_rod@NaN", "particle:end_rod#0@8")) {
+            assertFailsWith<IllegalArgumentException> { ParticleTextures.parse(name) }
+        }
     }
 
     @Test

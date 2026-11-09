@@ -109,6 +109,7 @@ Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80)
 参数表和可直接放进数据包的法阵示例见[使用指南](doc/guide.md#命令绘制与数据包)。
 命令方块入门可从[末地烛贴图的 sin 曲线](doc/guide.md#命令方块简单用法sin-曲线)开始；
 `texture=particle:minecraft:end_rod` 可在 PD 粒子上直接复用原版贴图。
+贴图默认按粒子年龄与寿命换帧；`field anchor` 与 `expression local` 可共用组锚点，`lifetime=80` 指定 4 秒寿命。
 
 ## 文档
 

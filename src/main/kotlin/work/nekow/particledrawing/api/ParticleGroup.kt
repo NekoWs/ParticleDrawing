@@ -88,9 +88,6 @@ class ParticleGroup(
     internal val readableParameterNames = HashSet<String>()
     internal val readableParameters = ArrayList<ParameterInfo>()
 
-    /** 轴心是否由实体/可移动锚点驱动；局部坐标表达式不能隐式假设它固定。 */
-    internal var dynamicPivot = false
-
     /** handle 合法性：公式标识符 + 不得与内建常量/属性寄存器撞名。 */
     private val HANDLE_REGEX = Regex("""^[A-Za-z_][A-Za-z0-9_]*$""")
     private val RESERVED_NAMES = setOf("i", "n", "t", "PI", "E") +
@@ -119,7 +116,6 @@ class ParticleGroup(
      */
     fun setPivot(pivot: Vec3): ParticleGroup {
         this.pivot = pivot
-        dynamicPivot = false
         emit(AnimInstruction.BindPivot(cursorNow(), PivotRef.Fixed(pivot)))
         return this
     }
@@ -141,7 +137,6 @@ class ParticleGroup(
      */
     fun followEntity(uuid: UUID, offset: Vec3 = Vec3.ZERO, local: Boolean = false): ParticleGroup {
         pivot = offset.add(pivot)
-        dynamicPivot = true
         emit(AnimInstruction.BindPivot(cursorNow(), PivotRef.FollowEntity(uuid, offset, local)))
         return this
     }
@@ -204,13 +199,11 @@ class ParticleGroup(
         when (anchor) {
             is Anchor.Fixed -> {
                 pivot = anchor.pos
-                dynamicPivot = false
                 emit(AnimInstruction.BindPivot(cursorNow(), PivotRef.Fixed(anchor.pos)))
             }
             is Anchor.Movable -> {
                 pivot = anchor.pos
                 movableAnchor = true
-                dynamicPivot = true
                 emit(AnimInstruction.BindPivot(cursorNow(), PivotRef.Movable(anchor.pos, anchor.velocity, anchor.orient)))
             }
             is Anchor.Entity -> throw IllegalArgumentException(
@@ -700,12 +693,18 @@ class ParticleGroup(
      *   到期时刻进完成账本（[onAnimationComplete] / [retire] 认它）；0（默认）= 一直求值。
      */
     @JvmOverloads
-    fun expression(code: String, durationTicks: Int = 0): ParticleGroup {
+    fun expression(code: String, durationTicks: Int = 0): ParticleGroup = expressionInSpace(code, durationTicks, false)
+
+    /** 公式输出相对当前组锚点，自动跟随实体的位置与可选局部朝向。 */
+    @JvmOverloads
+    fun expressionLocal(code: String, durationTicks: Int = 0): ParticleGroup = expressionInSpace(code, durationTicks, true)
+
+    private fun expressionInSpace(code: String, durationTicks: Int, local: Boolean): ParticleGroup {
         require(durationTicks >= 0) { "expression 的时长不能为负" }
         lintGetters(code)
-        // 出现表达式即进入表达式模式：糖指令不执行，完成账本改看表达式与变量缓动
+        // 表达式接管几何，完成账本改看表达式与变量缓动。
         expressionMode = true
-        val at = emit(AnimInstruction.Expression(cursorMs, code, durationTicks * 50))
+        val at = emit(AnimInstruction.Expression(cursorMs, code, durationTicks * 50, local))
         expressionStartProgramMs = at
         return this
     }

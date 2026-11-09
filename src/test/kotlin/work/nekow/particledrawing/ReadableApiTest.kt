@@ -104,6 +104,10 @@ private fun compileReadableDsl(
     cooldown.start(5.ticks)
     cooldown.complete()
 
+    group.followEntity(holder.uuid).expression(duration = 5.ticks) {
+        position.local(vec3(1.blocks, 2.blocks, 0.blocks))
+    }
+
     val shape = Draw.polygon(manager) {
         name = "saw"
         coordinateFrame = Frames.ground(holder, followPosition = true, followYaw = false)

@@ -77,7 +77,9 @@ internal object ParticleDrawParticleCommands {
             Commands.argument("pos", Vec3Argument.vec3()), ::addDot,
         )))
         group.then(Commands.literal("field").then(Commands.argument("pos", Vec3Argument.vec3())
-            .then(withOptions(Commands.argument("count", IntegerArgumentType.integer(1, MAX_FIELD_PARTICLES)), ::addField))))
+            .then(withOptions(Commands.argument("count", IntegerArgumentType.integer(1, MAX_FIELD_PARTICLES)), ::addField)))
+            .then(Commands.literal("anchor")
+                .then(withOptions(Commands.argument("count", IntegerArgumentType.integer(1, MAX_FIELD_PARTICLES)), ::addAnchoredField))))
         group.then(Commands.literal("line").then(Commands.argument("start", Vec3Argument.vec3())
             .then(Commands.argument("end", Vec3Argument.vec3())
                 .then(withOptions(Commands.argument("count", IntegerArgumentType.integer(1, MAX_FIELD_PARTICLES)), ::addLine)))))
@@ -211,7 +213,10 @@ internal object ParticleDrawParticleCommands {
                                 .suggests(::suggestEasings).executes(::programVariableEase)))))))
         group.then(Commands.literal("expression")
             .then(Commands.argument("ticks", IntegerArgumentType.integer(0))
-                .then(Commands.argument("code", StringArgumentType.greedyString()).executes(::programExpression))))
+                .then(Commands.argument("code", StringArgumentType.greedyString()).executes(::programExpression)))
+            .then(Commands.literal("local")
+                .then(Commands.argument("ticks", IntegerArgumentType.integer(0))
+                    .then(Commands.argument("code", StringArgumentType.greedyString()).executes(::programExpressionLocal)))))
         root.then(group)
         return root
     }
@@ -342,11 +347,14 @@ internal object ParticleDrawParticleCommands {
         added(ctx, before, e)
     }
 
-    private fun addField(ctx: CommandContext<CommandSourceStack>, raw: String): Int = safe(ctx) {
+    private fun addField(ctx: CommandContext<CommandSourceStack>, raw: String) = spawnField(ctx, raw, false)
+    private fun addAnchoredField(ctx: CommandContext<CommandSourceStack>, raw: String) = spawnField(ctx, raw, true)
+
+    private fun spawnField(ctx: CommandContext<CommandSourceStack>, raw: String, atAnchor: Boolean): Int = safe(ctx) {
         val e = entry(ctx, false); val before = e.group.size(); val o = options(raw)
         requireOptions(o, FIELD_OPTIONS)
         val manager = ParticleManager.of(ctx.source.level)
-        val pos = Vec3Argument.getVec3(ctx, "pos")
+        val pos = if (atAnchor) e.group.pivot else Vec3Argument.getVec3(ctx, "pos")
         val count = IntegerArgumentType.getInteger(ctx, "count")
         reserveMembers(e, count)
         val batch = ParticleBatch(manager)
@@ -573,6 +581,9 @@ internal object ParticleDrawParticleCommands {
     private fun programExpression(ctx: CommandContext<CommandSourceStack>) = program(ctx) {
         it.group.expression(StringArgumentType.getString(ctx, "code"), IntegerArgumentType.getInteger(ctx, "ticks"))
     }
+    private fun programExpressionLocal(ctx: CommandContext<CommandSourceStack>) = program(ctx) {
+        it.group.expressionLocal(StringArgumentType.getString(ctx, "code"), IntegerArgumentType.getInteger(ctx, "ticks"))
+    }
 
     private fun vec3(ctx: CommandContext<CommandSourceStack>) = Vec3(
         DoubleArgumentType.getDouble(ctx, "x"), DoubleArgumentType.getDouble(ctx, "y"), DoubleArgumentType.getDouble(ctx, "z"),
@@ -600,6 +611,7 @@ internal object ParticleDrawParticleCommands {
     private fun help(ctx: CommandContext<CommandSourceStack>): Int {
         ctx.source.sendSuccess({ Component.literal("/pdraw particle group|add|program；先建命名组，再添加图元，最后逐条编排") }, false)
         ctx.source.sendSuccess({ Component.literal("add 参数: color/gradient/rainbow, scale/stagger, style/texture/uv/size, additive/glowing/light, *_curve；输入子命令可看补全") }, false)
+        ctx.source.sendSuccess({ Component.literal("field anchor <数量> 可复用组锚点；field 的 lifetime=80 表示 4 秒，未写时永存；expression local 使用锚点相对坐标") }, false)
         return 1
     }
     private fun groupHelp(ctx: CommandContext<CommandSourceStack>): Int {

@@ -75,9 +75,12 @@ class ParticleVisualBuilder {
         return this
     }
 
-    /** 复用资源包中粒子的指定帧贴图。 */
-    @JvmOverloads
-    fun particleTexture(particle: String, frame: Int = 0): ParticleVisualBuilder = texture(ParticleTextures.of(particle, frame))
+    /** 按年龄与寿命播放资源包中的粒子贴图序列。 */
+    fun particleTexture(particle: String): ParticleVisualBuilder = texture(ParticleTextures.of(particle))
+
+    fun particleTexture(particle: String, frame: Int): ParticleVisualBuilder = texture(ParticleTextures.of(particle, frame))
+
+    fun animatedParticleTexture(particle: String, fps: Double): ParticleVisualBuilder = texture(ParticleTextures.animated(particle, fps))
 
     fun uv(u0: Float, v0: Float, u1: Float, v1: Float): ParticleVisualBuilder {
         uv = floatArrayOf(u0, v0, u1, v1)

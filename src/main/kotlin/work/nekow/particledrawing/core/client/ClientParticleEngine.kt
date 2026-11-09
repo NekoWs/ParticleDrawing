@@ -100,7 +100,7 @@ class ClientParticleEngine {
             // 于是 xo/x 是一对「上一 tick → 本 tick」的端点，原版渲染按 partialTick 扫掠
             val start = prev ?: Vec3(x, y, z)
             val bp = BridgeParticle(id, level, start.x, start.y, start.z,
-                Color.of(r, g, b, a), scale, glowing, uv, additive)
+                Color.of(r, g, b, a), scale, glowing, uv, additive, rp)
             if (scaleArray != null) bp.syncScaleArray(scaleArray)
             bp.syncOrientation(billboard, spin, spinLocal)
             if (prev != null) bp.syncPosition(x, y, z, snap = false)

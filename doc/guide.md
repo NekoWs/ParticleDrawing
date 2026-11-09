@@ -700,34 +700,50 @@ pdraw particle program demo fade_out 12 ease_in
 准备一个脉冲命令方块，接两个“无条件、始终活动”的连锁命令方块，箭头按顺序相连。每块各填一行：
 
 ```mcfunction
-pdraw particle group reset sine 100 65 100
-pdraw particle add sine field 100 65 100 81 texture=particle:minecraft:end_rod size_world=0.12,0.12 glowing light=0
-pdraw particle program sine expression 0 u=i/(n-1);x=100+8*u;y=65+sin(2*PI*u);z=100;
+pdraw particle group reset sine 40.0 -58.0 20.5
+pdraw particle add sine field anchor 81 texture=particle:minecraft:end_rod size_world=0.12,0.12 glowing light=0 lifetime=80
+pdraw particle program sine expression local 0 u=i/(n-1);x=8*u;y=sin(2*PI*u-t*0.002);z=0;
 ```
 
-触发第一块，即可在 `(100,65,100)` 起点画出一条长 8 格、振幅 1 格、完整一周期的 sin 曲线。
+触发第一块，即可在 `(40,-58,20.5)` 起点画出一条长 8 格、振幅 1 格、随时间起伏的 sin 曲线。
 `field` 提供 81 颗粒子，`i` 是从 0 开始的序号，`n` 是总数，`u` 把序号映射到 0..1。
-移动曲线时，要同时修改第三条公式中 `x/y/z` 的起点；公式输出为世界坐标，只修改前两条命令的坐标，
-粒子仍会被公式移回旧位置。曲线会向下延伸 1 格，建议把起点高度设在地面上方 2 格。清除时执行：
+`field anchor` 在组锚点生成成员，`expression local` 把公式输出视为相对该锚点的偏移；移动效果只改
+第一条命令的坐标。曲线会向下延伸 1 格，建议把起点高度设在地面上方 2 格。清除时执行：
 
 ```mcfunction
 pdraw particle group remove sine
 ```
 
-`texture=particle:minecraft:end_rod` 复用原版末地烛粒子的第一帧贴图，位置、寿命和动画仍归 PD 管理。
-不需要重复命令方块每 tick 重画；也可以把公式中的 `sin(2*PI*u)` 改成 `sin(2*PI*u-t*0.002)`，
-让波形随时间移动，再次触发整条链即可替换效果。这里 `t` 的单位是毫秒。
+`lifetime=80` 表示粒子存在 80 tick（4 秒），到点自动消失；默认未写寿命时永存。末地烛贴图会在这
+4 秒里按粒子年龄播放完整个帧序列。公式中的 `t` 是毫秒时间，控制波形运动；去掉 `-t*0.002` 可固定
+曲线形状，贴图仍会换帧。不需要重复命令方块每 tick 重画。
+
+要跟随实体，在最后一块公式命令之前插入一个连锁命令方块：
+
+```mcfunction
+pdraw particle program sine anchor entity @p 0 2 0 false
+```
+
+此时曲线相对目标实体脚下上方 2 格绘制。`false` 只跟随位置，改成 `true` 也会随实体朝向旋转；
+`@p` 也可换成玩家名或只选一个目标的实体选择器。
+
+`field` 的 `lifetime` 是粒子存在时间；`expression local 80 ...` 中的 80 只控制公式求值时长，不负责
+删除粒子。其它 Draw 图元默认永存，可用 `program <组> destroy_after 80` 在 4 秒后销毁整组。
 
 ### 复用原版粒子贴图
 
-`texture=particle:命名空间:粒子名称[#帧号]` 从客户端当前资源包的 `particles/<名称>.json` 中查找
-贴图列表，再把选中的 PNG 交给 PD 的纹理缓存。默认帧号是 0；例如
-`texture=particle:minecraft:end_rod#3` 使用列表的第 4 帧。资源包替换与 F3+T 重载会自动更新贴图。
+`texture=particle:命名空间:粒子名称` 从客户端当前资源包的 `particles/<名称>.json` 中读取全部帧，
+合成为 PD 的帧图集。有限寿命按 `floor(年龄/寿命 × (帧数-1))` 选帧，和原版的年龄选帧口径一致；无限寿命默认
+每 60 tick 循环一次。时钟来自粒子的游戏年龄，暂停游戏会暂停换帧。
+
+可选后缀：`texture=particle:minecraft:end_rod#3` 固定使用第 4 帧（从 0 开始），
+`texture=particle:minecraft:end_rod@8` 则按 8 FPS 循环。显式帧率模式按经过时间选帧，寿命到点仍会销毁。
+资源包替换与 F3+T 重载会自动更新贴图。
 有贴图列表的其它模组粒子也使用同样的语法。
 整张资源贴图按标准图标尺寸计算，资源包的像素密度不会改变粒子大小；显式给 `uv` 时仍按像素取子矩形。
 
-这只选择一张静态贴图，不继承原版的运动、寿命或逐龄换帧行为；颜色、尺寸、发光和淡入淡出继续使用
-PD 的参数与编排。`end_rod` 的明亮外观配合 `glowing` 使用，`light=0` 则避免向世界投光。
+这复用原版贴图序列与年龄选帧方式，不执行原版粒子工厂的随机漂移、颜色渐变或物理逻辑；颜色、尺寸、
+发光和淡入淡出继续使用 PD 的参数与编排。`end_rod` 的明亮外观配合 `glowing`，`light=0` 则避免向世界投光。
 没有贴图列表、帧号越界或客户端缺资源时，会显示紫黑错误贴图并记录具体原因。
 
 代码 API 使用同一份贴图引用，无需登记 PNG 或访问服务端资源：
@@ -751,6 +767,7 @@ val look = particleVisual { particleTexture("minecraft:end_rod"); fullBright = t
 | `group remove <组>` / `group clear` | 删除一个组或清空当前维度 |
 | `add <组> dot <位置>` | 单颗粒子 |
 | `add <组> field <位置> <数量>` | 同点粒子场，通常交给 `expression` 展开 |
+| `add <组> field anchor <数量>` | 在组当前锚点生成粒子场，无需重复写坐标 |
 | `add <组> line <起点> <终点> <数量>` | 粒子线段 |
 | `add <组> beam <起点> <终点>` | 一颗带方向和世界尺寸的贴图光束 |
 | `add <组> helix <中心> <半径> <高度> <圈数> <数量>` | 螺旋曲线 |
@@ -806,6 +823,7 @@ val look = particleVisual { particleTexture("minecraft:end_rod"); fullBright = t
 | `program <组> variable live <名称> <公式>` | 程序启动后立即更新变量 |
 | `program <组> variable ease <名称> <公式> <tick> [缓动]` | 程序启动后把变量缓动到公式结果 |
 | `program <组> expression <tick> <代码>` | 每颗每 tick 求值；`0` 表示持续 |
+| `program <组> expression local <tick> <代码>` | 输出相对组当前锚点，可直接跟随实体与局部朝向；`0` 表示持续 |
 
 缓动名支持 `linear`、`ease_in`、`ease_out`、`ease_in_out`，以及 `_quad`、`_cubic`、`_bounce`、
 `_elastic` 变体。命令补全会列出全部名称。
@@ -868,7 +886,8 @@ pdraw particle program spell_motes variable ease presence 0 12 ease_in
 pdraw particle program spell_motes retire 2
 ```
 
-表达式里的 `i` 是成员序号，`n` 是成员总数，`t` 是毫秒时间；`x/y/z` 是世界绝对坐标，
+表达式里的 `i` 是成员序号，`n` 是成员总数，`t` 是毫秒时间；旧式 `expression <tick>` 的 `x/y/z`
+是世界绝对坐标，`expression local <tick>` 则是相对当前组锚点的偏移，
 `r/g/b/a`、`sc`、`glow`、`light` 控制外观。公式可以读取已注册实体和世界状态，完整 getter 表见
 [编排式动画](#编排式动画)。一个组用了 `expression` 后，公式会接管该组所有成员的位置和外观；需要同时
 保留静态图形时，应像示例一样拆组。
@@ -1175,8 +1194,8 @@ group.expression(duration = 5.ticks) {
   `directionParameter` 自动归一化。
 - `member.index` / `count` / `random01`、`progress`、`entity("holder")`、`world(WorldProp...)`
   都是类型入口；实体属性需要先 `group.defineEntity("holder", uuid)`。
-- 必须显式调用 `position.world` 或 `position.local`。`position.local` 只支持固定轴心；
-  实体/可移动轴心会明确报错，`position.preserve()` 也会报错，不会偷偷补世界原点。
+- 必须显式调用 `position.world` 或 `position.local`。`position.local` 使用当前组锚点，支持固定、实体和可移动锚点；
+  `position.preserve()` 仍会报错，不会偷偷补世界原点。
 - 复用的随机值由 `i + seed + salt` 决定，暂停、回绕和重复求值不跳变；固定种子可复现。
 - `group.buildExpression(...)` 返回 `TypedExpression`，`debugString()` 可查看生成文本、参数名与单位。
 - 该入口覆盖组标量表达式的位置/颜色/缩放，另有 `pow`、`phase/start` 与 `local`；`glow/light` 等其它通道继续用字符串 API。

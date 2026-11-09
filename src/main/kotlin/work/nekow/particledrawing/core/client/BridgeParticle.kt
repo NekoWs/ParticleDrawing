@@ -29,7 +29,8 @@ class BridgeParticle(
     scale: Float,
     private var isGlowing: Boolean,
     private var uv: UvData? = null,
-    private val additive: Boolean = false
+    private val additive: Boolean = false,
+    private val textureClock: RenderParticle? = null,
 ) : SingleQuadParticle(level, x, y, z, defaultSprite()) {
 
     // 贴图解析结果（贴图已注册时才非 null）：Identifier + 尺寸
@@ -38,6 +39,7 @@ class BridgeParticle(
 
     // flipbook 计时起点（墙钟）
     private val animStartNanos: Long = System.nanoTime()
+    private var texturePartialTick = 0f
 
     // 贴图大小缩放因子：取景框最长边 / 16（基准 16px）。
     // 贴图可能晚于粒子到货（运行时登记），重解析时要跟着更新，所以是 var。
@@ -272,6 +274,7 @@ class BridgeParticle(
         partialTick: Float
     ) {
         val f = frameFactor(partialTick)
+        texturePartialTick = f
         if (f <= 0f) {
             super.extract(state, camera, partialTick)
             return
@@ -390,6 +393,10 @@ class BridgeParticle(
                 }
             }
         }
+        texEntry?.animation?.let { animation ->
+            val ageTicks = textureClock?.ageTicks(texturePartialTick)?.toDouble() ?: (age + texturePartialTick).toDouble()
+            sy += animation.frameAt(ageTicks, textureClock?.lifetimeTicks() ?: -1) * animation.frameHeight
+        }
         return intArrayOf(sx, sy)
     }
 
@@ -415,7 +422,6 @@ class BridgeParticle(
         val u = uv ?: return 0f // 默认全白纹理：整图 UV
         if (u.mode == UvData.Mode.FILL) return 0f
         val sy = currentUvStart(entry.width, entry.height)[1]
-        val h = if (u.uvSize[1] > 0) u.uvSize[1] else entry.height
         // v 坐标直接取 sy/H：MC 纹理 v=0 对应图顶（行 0），无需再翻转
         return (sy.toFloat() / entry.height).coerceIn(0f, 1f)
     }
@@ -425,7 +431,7 @@ class BridgeParticle(
         val u = uv ?: return 1f // 默认全白纹理：整图 UV
         if (u.mode == UvData.Mode.FILL) return 1f
         val sy = currentUvStart(entry.width, entry.height)[1]
-        val h = if (u.uvSize[1] > 0) u.uvSize[1] else entry.height
+        val h = if (u.uvSize[1] > 0) u.uvSize[1] else entry.animation?.frameHeight ?: entry.height
         return ((sy + h).toFloat() / entry.height).coerceIn(0f, 1f)
     }
 

@@ -499,24 +499,20 @@ class ExpressionEntity internal constructor(private val handle: String) {
     val sprinting: Scalar get() = value(EntityProp.SPRINTING)
 }
 
-/** 表达式输出位置：必须显式选择世界坐标或固定轴心的局部坐标。 */
+/** 表达式输出位置：显式选择世界坐标或当前组锚点的局部坐标。 */
 class ExpressionPosition internal constructor(private val frame: ExpressionFrame) {
 
     fun world(value: Vector) {
+        frame.builder.localPosition = false
         frame.builder.positionCode =
             "x=${value.x.render()};y=${value.y.render()};z=${value.z.render()};"
     }
 
     fun local(value: Vector) {
-        val group = requireNotNull(frame.group) { "没有粒子组时不能构建局部坐标" }
-        require(!group.dynamicPivot) {
-            "动态轴心（实体/可移动锚点）的局部坐标还不能由标量表达式保留；请改用世界坐标或固定轴心"
-        }
-        val pivot = group.pivot
+        requireNotNull(frame.group) { "没有粒子组时不能构建局部坐标" }
+        frame.builder.localPosition = true
         frame.builder.positionCode =
-            "x=(${numberLiteral(pivot.x)}+${value.x.render()});" +
-                "y=(${numberLiteral(pivot.y)}+${value.y.render()});" +
-                "z=(${numberLiteral(pivot.z)}+${value.z.render()});"
+            "x=${value.x.render()};y=${value.y.render()};z=${value.z.render()};"
     }
 
     /** 当前后端不能保留逐粒子初始位置；显式拒绝，不偷偷补世界原点。 */
@@ -626,6 +622,7 @@ class ExpressionFrame internal constructor(
 }
 
 internal class TypedExpressionBuilder {
+    var localPosition = false
     var positionCode: String? = null
     var scaleCode: String? = null
     var colorCode: String? = null
@@ -648,16 +645,18 @@ class TypedExpression internal constructor(
     val durationTicks: Int,
     val parameters: List<ParameterInfo>,
     val locals: Map<String, String>,
+    val localPosition: Boolean = false,
 ) {
 
     fun apply(): ParticleGroup {
-        group.expression(code, durationTicks)
+        if (localPosition) group.expressionLocal(code, durationTicks) else group.expression(code, durationTicks)
         return group
     }
 
     fun debugString(): String = buildString {
         appendLine("backend=group-scalar")
         appendLine("durationTicks=$durationTicks")
+        appendLine("positionSpace=${if (localPosition) "anchor" else "world"}")
         for (p in parameters) appendLine("parameter ${p.name}: ${p.kind} (${p.unit})")
         for ((name, value) in locals) appendLine("local $name = $value")
         append(code)
@@ -677,12 +676,19 @@ class ExpressionTextBuilder internal constructor(duration: Time) {
     val durationTicks: Int = duration.requireWholeTicks("表达式时长")
 
     fun positionWorld(x: Scalar, y: Scalar, z: Scalar): ExpressionTextBuilder {
+        builder.localPosition = false
         builder.positionCode = "x=${x.expr};y=${y.expr};z=${z.expr};"
         return this
     }
 
     fun positionWorld(x: Length, y: Length, z: Length): ExpressionTextBuilder =
         positionWorld(x.toScalar(), y.toScalar(), z.toScalar())
+
+    fun positionLocal(x: Scalar, y: Scalar, z: Scalar): ExpressionTextBuilder {
+        builder.positionCode = "x=${x.expr};y=${y.expr};z=${z.expr};"
+        builder.localPosition = true
+        return this
+    }
 
     fun scale(value: Scalar): ExpressionTextBuilder {
         builder.scaleCode = "sc=${value.expr};"
@@ -704,7 +710,8 @@ class ExpressionTextBuilder internal constructor(duration: Time) {
 
     fun buildCode(): String = builder.build()
 
-    fun apply(group: ParticleGroup): ParticleGroup = group.expression(buildCode(), durationTicks)
+    fun apply(group: ParticleGroup): ParticleGroup =
+        if (builder.localPosition) group.expressionLocal(buildCode(), durationTicks) else group.expression(buildCode(), durationTicks)
 }
 
 object Expressions {
@@ -733,6 +740,7 @@ fun ParticleGroup.buildExpression(
         ticks,
         readableParameters.toList(),
         builder.locals.mapValues { it.value.expr },
+        builder.localPosition,
     )
 }
 

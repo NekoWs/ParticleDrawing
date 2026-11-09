@@ -2,18 +2,56 @@ package work.nekow.particledrawing
 
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.core.client.RotationSlot
+import work.nekow.particledrawing.core.client.PivotFrame
 import work.nekow.particledrawing.core.client.radialRel
 import work.nekow.particledrawing.util.rotateAround
+import work.nekow.particledrawing.animation.script.Reg
+import work.nekow.particledrawing.animation.script.compileFunctionObject
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.test.assertNotNull
 
 /**
  * 编排动画的帧计算：组级倍率对粒子到轴心距离的作用，以及多条旋转指令的累加。
  */
 class ProgramFrameTest {
+    @Test
+    fun `局部sin公式无需世界坐标并随游戏时间产生运动`() {
+        val expression = assertNotNull(compileFunctionObject("u=i/(n-1);x=8*u;y=sin(2*PI*u-t*0.002);z=0;", emptyList()))
+        val regs = expression.allocRegs()
+        val stack = expression.allocStack()
+        val pivot = PivotFrame(Vec3(40.0, -58.0, 20.5))
+        expression.eval(20.0, 81.0, 0.0, regs, stack)
+        val first = pivot.apply(Vec3(regs[Reg.X], regs[Reg.Y], regs[Reg.Z]))
+        assertEquals(Vec3(42.0, -57.0, 20.5), first)
+        expression.eval(20.0, 81.0, 500.0, regs, stack)
+        val next = pivot.apply(Vec3(regs[Reg.X], regs[Reg.Y], regs[Reg.Z]))
+        assertEquals(42.0, next.x, 1e-9)
+        assertEquals(-58.0 + kotlin.math.cos(1.0), next.y, 1e-9)
+    }
+
+    @Test
+    fun `相同公式输出会随固定或移动锚点整体平移`() {
+        val offset = Vec3(4.0, 1.0, 0.0)
+        assertEquals(Vec3(44.0, -57.0, 20.0), PivotFrame(Vec3(40.0, -58.0, 20.0)).apply(offset))
+        assertEquals(Vec3(54.0, -57.0, 25.0), PivotFrame(Vec3(50.0, -58.0, 25.0)).apply(offset))
+    }
+
+    @Test
+    fun `实体锚点的世界偏移与局部朝向都会映射公式坐标`() {
+        val center = Vec3(40.0, -60.0, 20.0)
+        val offset = Vec3(0.0, 2.0, 0.0)
+        val point = Vec3(0.0, 0.0, 3.0)
+        assertEquals(Vec3(40.0, -58.0, 23.0), PivotFrame(center, offset, 90f, 0f, false).apply(point))
+        val rotated = PivotFrame(center, offset, 90f, 0f, true).apply(point)
+        assertEquals(37.0, rotated.x, 1e-5)
+        assertEquals(-58.0, rotated.y, 1e-5)
+        assertEquals(20.0, rotated.z, 1e-5)
+    }
+
 
     @Test
     fun `组级倍率同时缩放粒子到轴心的距离与视觉尺寸`() {

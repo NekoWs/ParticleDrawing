@@ -80,9 +80,13 @@ class ParticleVisual {
         return this
     }
 
-    /** 复用原版或模组粒子的某一帧贴图，仍使用 PD 的全部编排能力。 */
-    @JvmOverloads
-    fun particleTexture(particle: String, frame: Int = 0): ParticleVisual = texture(ParticleTextures.of(particle, frame))
+    /** 复用原版或模组粒子的动态贴图，按粒子的年龄与寿命换帧。 */
+    fun particleTexture(particle: String): ParticleVisual = texture(ParticleTextures.of(particle))
+
+    /** 显式选择静态帧。 */
+    fun particleTexture(particle: String, frame: Int): ParticleVisual = texture(ParticleTextures.of(particle, frame))
+
+    fun animatedParticleTexture(particle: String, fps: Double): ParticleVisual = texture(ParticleTextures.animated(particle, fps))
 
     /** 用内置形状（[ParticleStyle.SQUARE] 等价于「无贴图」）。 */
     fun style(style: ParticleStyle): ParticleVisual {
