@@ -117,6 +117,8 @@ More in the [getting started guide](doc/getting-started.md).
 Particle commands follow a create group → add primitives → program sequence, so a complex effect can be split across
 readable data pack functions or command blocks. See the [command guide](doc/guide.md#命令绘制与数据包) for the full
 syntax and a ready-to-use magic circle example.
+For a short command block example, see the [sin curve with the end rod texture](doc/guide.md#命令方块简单用法sin-曲线).
+Use `texture=particle:minecraft:end_rod` to reuse a vanilla texture while retaining PD animation controls.
 
 ## Documentation
 

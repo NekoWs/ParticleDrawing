@@ -74,10 +74,15 @@ class ParticleVisual {
     fun texture(name: String): ParticleVisual {
         // 贴图名随生成包内联下发，长度上限与 TextureRegistry 的登记上限一致
         require(name.length <= MAX_TEXTURE_NAME) { "贴图名过长（${name.length} > $MAX_TEXTURE_NAME）" }
+        ParticleTextures.parse(name)
         texture = name
         uvRect = null
         return this
     }
+
+    /** 复用原版或模组粒子的某一帧贴图，仍使用 PD 的全部编排能力。 */
+    @JvmOverloads
+    fun particleTexture(particle: String, frame: Int = 0): ParticleVisual = texture(ParticleTextures.of(particle, frame))
 
     /** 用内置形状（[ParticleStyle.SQUARE] 等价于「无贴图」）。 */
     fun style(style: ParticleStyle): ParticleVisual {
@@ -229,8 +234,10 @@ class ParticleVisual {
         } else {
             x0 = 0
             y0 = 0
-            w = if (texW > 0) texW else 0
-            h = if (texH > 0) texH else 0
+            // 资源引用始终取当前整图，资源包换分辨率后不沿用旧像素取景框。
+            val resourceTexture = name.startsWith("particle:")
+            w = if (texW > 0 && !resourceTexture) texW else 0
+            h = if (texH > 0 && !resourceTexture) texH else 0
         }
         // STATIC：始终取 (x0, y0) 起的 w×h 像素；texSize 决定渲染尺寸系数
         return UvData(
@@ -271,6 +278,8 @@ class ParticleVisual {
             val size = uv?.texSize
             val box = if (size != null) max(size[0], size[1]) else 0
             if (box > 0) return box / 16f
+            // 整张资源贴图按一张标准图标计，资源包像素密度不改变粒子的世界尺寸。
+            if (uv?.texture?.startsWith("particle:") == true) return 1f
             val dim = max(texW, texH)
             return if (dim > 0) dim / 16f else 1f
         }

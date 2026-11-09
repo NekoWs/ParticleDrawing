@@ -678,7 +678,7 @@ val custom = EasingType.custom(0.68, -0.55, 0.265, 1.55)   // (x1, y1, x2, y2)
 
 下面的简写示例放在同一个 `.mcfunction` 中执行时，共用函数入口的坐标。拆到多个命令方块时，每个方块的
 `~` 都相对该方块自身；连锁执行不会继承前一个方块的执行位置。同组只共享编排，不会把不同 `add` 命令
-生成的图形自动移到同一个中心。命令方块用法见下方的[命令方块链](#命令方块链)。
+生成的图形自动移到同一个中心。简单示例见下方的[命令方块 sin 曲线](#命令方块简单用法sin-曲线)。
 
 ```mcfunction
 # 建组并添加两个图元；~ 和 ^ 都按原版命令源解析
@@ -695,30 +695,50 @@ pdraw particle program demo stop_continuous
 pdraw particle program demo fade_out 12 ease_in
 ```
 
-### 命令方块链
+### 命令方块简单用法：sin 曲线
 
-各方块使用相同的 `execute positioned` 坐标，才能让组轴心、圆周和六芒星同心。下面每行放进一个方块，
-按顺序连接；把三处 `100 65 100` 一起替换为效果中心的实际坐标：
+准备一个脉冲命令方块，接两个“无条件、始终活动”的连锁命令方块，箭头按顺序相连。每块各填一行：
 
 ```mcfunction
-execute positioned 100 65 100 run pdraw particle group reset demo ~ ~ ~
-execute positioned 100 65 100 run pdraw particle add demo circle ~ ~ ~ 3 96 color=#55ddff style=soft_dot additive glowing
-execute positioned 100 65 100 run pdraw particle add demo hexagram ~ ~ ~ 2.4 24 gradient=#ffffff:#5588ff style=soft_dot scale=0.35
-pdraw particle program demo fade_in 8 ease_out
-pdraw particle program demo spin 0 1 0 2
-pdraw particle program demo pulse 1.2 10 -1
-pdraw particle program demo delay 80
-pdraw particle program demo stop_continuous
-pdraw particle program demo fade_out 12 ease_in
+pdraw particle group reset sine 100 65 100
+pdraw particle add sine field 100 65 100 81 texture=particle:minecraft:end_rod size_world=0.12,0.12 glowing light=0
+pdraw particle program sine expression 0 u=i/(n-1);x=100+8*u;y=65+sin(2*PI*u);z=100;
 ```
 
-第一块设为脉冲，后续设为连锁、无条件、始终活动，整条链每次触发执行一遍。只设置组轴心或补一条
-`anchor fixed` 无法纠正已经分别画在不同中心的图形；修改命令后重新触发 `group reset` 重建。
+触发第一块，即可在 `(100,65,100)` 起点画出一条长 8 格、振幅 1 格、完整一周期的 sin 曲线。
+`field` 提供 81 颗粒子，`i` 是从 0 开始的序号，`n` 是总数，`u` 把序号映射到 0..1。
+修改示例里的 `100/65/100` 可移动曲线；公式输出为世界坐标。清除时执行：
 
-需要跟随玩家时，推荐把完整效果放进一个函数，由命令方块执行
-`execute as @p at @s run function example:magic/start`。函数里的 `@s` 是选中的玩家；命令方块直接执行
-`anchor entity @s` 时没有实体执行者。拆成多块时，每条需要玩家坐标或 `@s` 的命令都应写上
-`execute as @p at @s run ...`，多人场景用明确的玩家名或带标签、限制为一个实体的选择器锁定同一目标。
+```mcfunction
+pdraw particle group remove sine
+```
+
+`texture=particle:minecraft:end_rod` 复用原版末地烛粒子的第一帧贴图，位置、寿命和动画仍归 PD 管理。
+不需要重复命令方块每 tick 重画；也可以把公式中的 `sin(2*PI*u)` 改成 `sin(2*PI*u-t*0.002)`，
+让波形随时间移动，再次触发整条链即可替换效果。这里 `t` 的单位是毫秒。
+
+### 复用原版粒子贴图
+
+`texture=particle:命名空间:粒子名称[#帧号]` 从客户端当前资源包的 `particles/<名称>.json` 中查找
+贴图列表，再把选中的 PNG 交给 PD 的纹理缓存。默认帧号是 0；例如
+`texture=particle:minecraft:end_rod#3` 使用列表的第 4 帧。资源包替换与 F3+T 重载会自动更新贴图。
+有贴图列表的其它模组粒子也使用同样的语法。
+整张资源贴图按标准图标尺寸计算，资源包的像素密度不会改变粒子大小；显式给 `uv` 时仍按像素取子矩形。
+
+这只选择一张静态贴图，不继承原版的运动、寿命或逐龄换帧行为；颜色、尺寸、发光和淡入淡出继续使用
+PD 的参数与编排。`end_rod` 的明亮外观配合 `glowing` 使用，`light=0` 则避免向世界投光。
+没有贴图列表、帧号越界或客户端缺资源时，会显示紫黑错误贴图并记录具体原因。
+
+代码 API 使用同一份贴图引用，无需登记 PNG 或访问服务端资源：
+
+```kotlin
+val visual = ParticleVisual().particleTexture("minecraft:end_rod").anisoWorld(0.12f, 0.12f).glowing(true).lightLevel(0)
+Draw.circle(manager, center, 2.0, 80, visual = visual)
+
+// 同样适用于粒子构建器、发射器，以及可读外观 DSL
+val textureName = ParticleTextures.of("minecraft:end_rod", 3)
+val look = particleVisual { particleTexture("minecraft:end_rod"); fullBright = true }
+```
 
 ### 组与图元语法
 
@@ -852,7 +872,7 @@ pdraw particle program spell_motes retire 2
 [编排式动画](#编排式动画)。一个组用了 `expression` 后，公式会接管该组所有成员的位置和外观；需要同时
 保留静态图形时，应像示例一样拆组。
 
-拆成命令方块链时，按[命令方块链](#命令方块链)统一每条命令的执行位置和实体上下文。
+拆成命令方块链时，统一每条命令的执行位置和实体上下文；入门见[命令方块 sin 曲线](#命令方块简单用法sin-曲线)。
 
 ## 播放动画文件
 

@@ -4,7 +4,9 @@ import com.mojang.blaze3d.platform.NativeImage
 import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.texture.DynamicTexture
 import net.minecraft.resources.Identifier
+import org.apache.logging.log4j.LogManager
 import work.nekow.particledrawing.api.ParticleStyle
+import work.nekow.particledrawing.api.ParticleTextures
 import work.nekow.particledrawing.util.BuiltinTextures
 import work.nekow.particledrawing.util.HashUtils
 import java.security.MessageDigest
@@ -14,6 +16,8 @@ import java.util.concurrent.atomic.AtomicInteger
 // 自定义贴图缓存：把 PNG 字节（.pdrawc 内嵌或程序化 registerTexture 下发）解码为 DynamicTexture 并注册进 TextureManager。
 // 贴图名映射到 particledrawing:custom/<md5-hex>，同名同图。
 object TextureCache {
+
+    private val LOGGER = LogManager.getLogger("ParticleDrawing")
 
     private const val NAMESPACE = "particledrawing"
     private const val PREFIX = "custom"
@@ -31,10 +35,27 @@ object TextureCache {
     @JvmStatic
     fun version(): Int = versionCounter.get()
 
-    /** 贴图名 → 已注册的纹理信息；未注册返回 null。内置形状名会就地生成。 */
+    /** 内置形状按需生成，particle: 引用按当前客户端资源包读取，其余名字查登记表。 */
     @JvmStatic
     fun get(textureName: String): Entry? {
         entries[textureName]?.let { return it }
+        try {
+            ParticleTextures.parse(textureName)?.let { reference ->
+                val resources = Minecraft.getInstance().resourceManager
+                val sprite = ParticleTextures.resolve(reference) { id ->
+                    resources.openAsReader(id).use { it.readText() }
+                }
+                val image = resources.open(sprite).use { NativeImage.read(it) }
+                return registerImage(textureName, image)
+            }
+        } catch (error: Exception) {
+            // 缓存错误贴图，避免每颗粒子反复读缺失资源；重载资源包后可重新解析。
+            LOGGER.error("ParticleDrawing: 粒子贴图 {} 加载失败：{}", textureName, error.message)
+            val pixels = IntArray(16 * 16) { i ->
+                if (((i % 16) / 8 + (i / 16) / 8) % 2 == 0) 0xFFFF00FF.toInt() else 0xFF000000.toInt()
+            }
+            return registerPixels(textureName, 16, 16, pixels)
+        }
         val style = ParticleStyle.fromTextureName(textureName) ?: return null
         val pixels = BuiltinTextures.pixels(style, BuiltinTextures.SIZE)
         if (pixels.isEmpty()) return null
@@ -102,6 +123,17 @@ object TextureCache {
     @JvmStatic
     fun clear() {
         entries.clear()
+        versionCounter.incrementAndGet()
+    }
+
+    /** 资源包重载时只失效资源引用，内嵌与服务端下发的 PNG 保持可用。客户端主线程调用。 */
+    @JvmStatic
+    fun clearParticleResources() {
+        val textures = Minecraft.getInstance().textureManager
+        for ((name, entry) in entries) {
+            if (!name.startsWith("particle:")) continue
+            if (entries.remove(name, entry)) textures.release(entry.id)
+        }
         versionCounter.incrementAndGet()
     }
 

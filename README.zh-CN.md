@@ -107,6 +107,8 @@ Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80)
 
 `particle` 命令按“建组 → 添加全部图元 → 逐条编排”工作，不需要把法术逻辑塞进一条命令。完整语法、
 参数表和可直接放进数据包的法阵示例见[使用指南](doc/guide.md#命令绘制与数据包)。
+命令方块入门可从[末地烛贴图的 sin 曲线](doc/guide.md#命令方块简单用法sin-曲线)开始；
+`texture=particle:minecraft:end_rod` 可在 PD 粒子上直接复用原版贴图。
 
 ## 文档
 

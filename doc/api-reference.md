@@ -20,6 +20,7 @@
 | `ParticleLifeCurve` | 一条粒子的全部寿命曲线，随生成包下发 |
 | `ParticleVisual` | 逐粒子外观规格：贴图、子矩形 UV、各向异性尺寸、朝向、加法混合、免光照、向外照明、光强乘数 |
 | `ParticleStyle` | 内置外观形状：`SQUARE`、`SOFT_DOT`、`LINE`，客户端按需生成 16px 贴图 |
+| `ParticleTextures` | `of(粒子名称, 帧号)` 构造资源贴图引用；读取客户端粒子贴图列表的指定帧，兼容资源包和其它模组；`ParticleVisual.particleTexture` 与可读外观 Builder 共用 |
 | `Draw`、`ColorSource`、`Draw.Axis` | 静态形状库与形状参数化颜色来源（固定色、双色渐变、彩虹、lambda） |
 | `Color` | 不可变 RGBA 颜色与工厂方法 |
 | `Animation` | 代码构建的动画：`create`（Kotlin DSL）/ `builder`（Java Builder）构建，`play` / `stop` / `updateVariable` / `isActive` 控制播放 |
@@ -137,6 +138,7 @@
 | `AnimationSyncService`、`AnimationSyncConfigTask` | 动画文件同步的纯逻辑与配置阶段任务 |
 | `ServerParticleHandler` | 服务端 tick、卸载、切维度、重生与登录事件 |
 | `TextureSyncService`、`TextureRegistry` | 程序化贴图的登记、广播与进服补发 |
+| `ParticleTextureReloadListener` | 资源包重载后失效 `particle:` 引用缓存，既有粒子按新资源重新解析 |
 
 ## lighting、command、config、util、mixin
 

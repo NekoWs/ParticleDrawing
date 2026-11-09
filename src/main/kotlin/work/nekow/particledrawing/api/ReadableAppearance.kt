@@ -75,6 +75,10 @@ class ParticleVisualBuilder {
         return this
     }
 
+    /** 复用资源包中粒子的指定帧贴图。 */
+    @JvmOverloads
+    fun particleTexture(particle: String, frame: Int = 0): ParticleVisualBuilder = texture(ParticleTextures.of(particle, frame))
+
     fun uv(u0: Float, v0: Float, u1: Float, v1: Float): ParticleVisualBuilder {
         uv = floatArrayOf(u0, v0, u1, v1)
         return this
