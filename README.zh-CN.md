@@ -136,8 +136,14 @@ cd ParticleDrawing
 
 `gradle.properties` 里的 `mod_version` 是唯一事实来源。它每次变化，同一个提交都会打上对应的标签
 （`v<mod_version>`）。推送这样的标签会通过 `publish.yml` 把产物发布到 Maven Central，并通过
-`modrinth.yml` 发布到 [Modrinth](https://modrinth.com/mod/particledrawing)（同时把本 README 同步为项目
-正文）。两个工作流在标签名与 `mod_version` 不一致时都会直接失败，没有标签就没有发布。
+`modrinth.yml` 发布到 [Modrinth](https://modrinth.com/mod/particledrawing)（同时把 `README.md` 同步为项目
+正文）。`release.yml` 会构建 GitHub Release，附上主 JAR、源码 JAR、SHA-256 校验文件，以及从上一个
+标签以来的提交标题生成的发布说明。ALPHA、BETA、RC 标为预发布。三个工作流在标签名与
+`mod_version` 不一致时都会直接失败，没有标签就没有发布。
+
+给已有标签补发 GitHub Release 时，进入 **Actions → Publish GitHub Release → Run workflow**，
+填写 `v<version>`。它会检出该标签源码，只运行 GitHub Release 工作流。使用内置的 `GITHUB_TOKEN`
+和 `contents: write` 权限，无需新增 secret。重跑会替换同名附件，保留已有的发布说明。
 
 ## 许可
 

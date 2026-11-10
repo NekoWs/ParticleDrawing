@@ -148,8 +148,15 @@ The build requires JDK 25. Runtime artifacts are written to `build/libs/`.
 `mod_version` in `gradle.properties` is the single source of truth. Whenever it changes, the same
 commit gets a matching tag (`v<mod_version>`). Pushing such a tag publishes the artifact to Maven
 Central through `publish.yml` and the version to [Modrinth](https://modrinth.com/mod/particledrawing)
-through `modrinth.yml`, which also syncs this README into the project body. Both workflows fail if the
-tag name does not match `mod_version`; there is no release without a tag.
+through `modrinth.yml`, which also syncs this README into the project body. `release.yml` builds a
+GitHub Release with the runtime JAR, sources JAR, SHA-256 checksums, and notes from commit titles since
+the previous tag. ALPHA, BETA, and RC versions are marked as prereleases. All three workflows fail if
+the tag name does not match `mod_version`; there is no release without a tag.
+
+To publish a GitHub Release for an existing tag, open **Actions → Publish GitHub Release → Run workflow**
+and enter `v<version>`. This checks out the tagged source and runs only the GitHub Release workflow.
+It uses the built-in `GITHUB_TOKEN` with `contents: write`; no extra secret is required. Rerunning
+replaces same-named attachments while preserving existing release notes.
 
 ## License
 
