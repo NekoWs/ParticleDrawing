@@ -50,7 +50,12 @@ internal object ParticleRecipeCommands {
                 "apply" -> { require(d.changes.isNotEmpty()) { "请先用 change 配置要修改的属性" }; d.handles().forEach { it.changeWhere(d.selector, d.changes) } }
                 "remove_selected" -> d.handles().forEach { it.removeWhere(d.selector) }
             }
-            success(ctx, "生成器 '${word(ctx, "name")}' 已执行 $verb")
+            val counts = if (verb == "start" || verb == "burst") {
+                val r = d.recipe
+                "；样本 ${r.seeds.size}，同时存活上限 ${r.maxAlive}" +
+                    if (r.seeds.size > r.maxAlive) "；超过上限的样本会等待空位。若需同时显示完整图形，请提高 max_alive" else ""
+            } else ""
+            success(ctx, "生成器 '${word(ctx, "name")}' 已执行 $verb$counts")
         } })
         name.then(Commands.literal("delete").executes { ctx -> safe(ctx) { CommandParticleRecipes.remove(dim(ctx), word(ctx, "name")); success(ctx, "已删除生成器与配置") } })
         name.then(anchorTree())

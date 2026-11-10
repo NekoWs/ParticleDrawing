@@ -15,7 +15,7 @@
 | `ParticleSpawnSpec` | 批量生成的单颗粒子规格（纯数据，字段与 `Builder` 对应，含出生速度/加速度配对） |
 | `ParticleEmitter` | 运行时发射器的构建器：口径（里程或间隔）、寿命、外观、曲线、抖动 |
 | `EmitterHandle` | 已声明发射器的句柄：改锚点、口径、参数与外观，停止与状态查询 |
-| `ParticleRecipe`、`ParticleSeed` | 可组合的出生样本、出生/运动公式、条件、状态、寿命和外观声明；t 为毫秒，age/life 为刻 |
+| `ParticleRecipe`、`ParticleSeed` | 可组合的出生样本、出生/运动公式、条件、状态、寿命和外观声明；t 为毫秒，age/life 为刻。maxAlive 默认 4096，满额时等待空位；完整点阵需足够容量和寿命 |
 | `ParticleSampling` | 参数数量、参数范围与空间网格采样；只提供样本，不预设效果 |
 | `ParticleImageSampler` | CPU 读取单帧图片并采样为独立粒子，保留颜色/透明度；可配置像素步幅、世界间距、平面与 alpha 阈值 |
 | `RecipeAnchor` | 固定或实体 UUID 锚点，偏移与局部坐标系可配置 |

@@ -55,7 +55,8 @@ pdraw particle emitter sigil appearance size_world 0.06,0.06
 pdraw particle emitter sigil appearance glowing true
 pdraw particle emitter sigil appearance light 0
 pdraw particle emitter sigil lifetime 100
-pdraw particle emitter sigil rate 512
+pdraw particle emitter sigil max_alive 8192
+pdraw particle emitter sigil rate 1024
 pdraw particle emitter sigil motion vy 0.015
 pdraw particle emitter sigil motion a 1-progress
 pdraw particle emitter sigil burst
@@ -64,6 +65,13 @@ pdraw particle emitter sigil burst
 每个有效像素是一颗独立粒子，保留 RGB 和透明度；图片几何中心位于锚点，默认 XY 平面的图片顶部对应正 Y。
 `plane xz` 将图像放在水平面。`spacing` 是相邻原始像素的世界间距；`stride` 只减少采样数量，不缩小图片。
 透明度不大于 `image alpha` 的像素跳过，默认阈值为 0。支持 ImageIO 能识别的单帧图片；多帧图明确拒绝。
+
+图片要完整出现，`max_alive` 必须容得下全部有效样本，寿命也要长于画完一轮所需时间。
+默认容量 4096 适合持续发射，但 680×680 的不透明图片以 stride=8 采样时共有 7225 点，会在第 4096 点
+等待空位，看起来像只画了一半。这不是图片裁剪。上面的配置允许 8192 颗同时存在，每刻生成 1024 颗，
+7225 点在 8 刻内画完；每颗保留 100 刻。`start/burst` 的反馈会显示实际样本数和容量。
+未筛选时，一轮至少需要 `ceil(样本数/rate)` 个发射批次，批次间隔由 interval 决定；
+where 筛选可能减少存活量，kill 和运动也会改变最终显示。
 
 数据包可以携带图片：把文件放在 `data/demo/images/ring.png`，改用：
 
@@ -74,6 +82,43 @@ pdraw particle emitter sigil image resource demo:images/ring.png
 每次启动时读取当前图片；数据包资源修改后先 `/reload`。文件路径必须留在 `particleImages/` 内，
 不支持网络 URL。图片最多 8 MiB、边长 4096、总像素 1048576；有效样本最多 8192，超限会报错，
 请显式调整 `stride`，不会自动丢点或改变密度。
+
+## 参数曲线与动态曲面示例
+
+[ColorBlock 作者网站的案例](https://mc.ecylt.top/#resource)使用参数方程、极坐标转换、空间条件筛选和
+逐粒子运动。它们可以用相同的底层步骤表达，不需要给每一种效果增加一个命令子项：
+
+| 案例类型 | PD 的组合方式 |
+| --- | --- |
+| 正方体棱线 | grid 采样，where 保留至少两个分量位于边界的点 |
+| 球、围圈、竖直圆、菊型球 | range/count 采样，let 计算角度和半径，birth 写入转换后的 xyz |
+| 锐角星型、桃心、七芒星、V 字 | 参数曲线分别写入 birth x/y/z；多条 let 拆解计算 |
+| 旋转球、缠绕、触手 | motion 用初始位置或参数计算旋转、弯曲，并更新颜色 |
+| 向外散开的圆、上升粒子 | birth 定义形状，motion 定义速度或加速度，lifetime 限制拖尾长度 |
+| 逐步画出的曲线与循环 | rate/interval 控制绘制速度；burst 画一轮，start 持续发射 |
+
+提供三个可修改的函数，均使用现有命令，不注册固定效果：
+
+| 文件 | 行为 |
+| --- | --- |
+| [heart.mcfunction](../examples/commands/heart.mcfunction) | 逐步画出桃心，按发射器时间脉动，寿命末尾淡出 |
+| [rotating-sphere.mcfunction](../examples/commands/rotating-sphere.mcfunction) | 768 点球面，旋转并逐颗变色；speed 可热更新 |
+| [tentacles.mcfunction](../examples/commands/tentacles.mcfunction) | 九条动态曲臂；let 拆出分臂、沿臂参数、角度与半径 |
+
+这些示例展示对应的几何与运动，不复现网站截图的光影、镜头和全部参数。触手示例采用有界波形，
+不照搬案例里接近正切极点的超远坐标。球面是表面点阵，体积填充可另用空间网格与球内条件。
+ColorBlock 的参数 t 在 PD 中对应采样参数 u；PD 的 t 专指发射器毫秒，不能直接整段复制原公式。
+
+例如运行球面函数后，单独改变转速，或者把整个球跟随玩家：
+
+```mcfunction
+pdraw particle emitter sphere variable speed 0.08
+pdraw particle emitter sphere anchor entity @p 0 3 0 false
+```
+
+三个示例都设置 follow=true，已有成员会一起移动。要持续播放，可把函数末尾的 burst 改为 start；
+start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长期只保留同一批成员时，使用 lifetime=-1
+配合 burst，并按需删除淡出公式；用 remove 清除。
 
 ## 采样和公式
 
