@@ -4,7 +4,7 @@ import work.nekow.particledrawing.animation.AnimationProgress
 import kotlin.math.max
 
 /**
- * 原版计时器与渲染帧表的测试替身（逐行对照 MC 26.2 的 `DeltaTracker.Timer` 与 `Minecraft.runTick`）。
+ * 原版计时器与渲染帧表的测试替身（逐行对照 MC 26.3 的 `DeltaTracker.Timer` 与 `Minecraft.runTick`）。
  *
  * 一帧的顺序是：`advanceGameTime(Util.getMillis())` → 跑它返回的那么多个 game tick → 渲染。
  * `advanceGameTime` 把「整毫秒差 ÷ max(50, tickRateManager.millisecondsPerTick())」累进 residual，

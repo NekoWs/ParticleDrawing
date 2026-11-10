@@ -19,7 +19,7 @@ class ParticleDrawing(bus: IEventBus, container: ModContainer) {
     }
 
     init {
-        container.registerConfig(ModConfig.Type.SERVER, ParticleDrawingConfig.SERVER_SPEC)
+        container.registerConfig(ModConfig.Type.SYNCED, ParticleDrawingConfig.SERVER_SPEC, "$MODID-server.toml")
         container.registerConfig(ModConfig.Type.CLIENT, ParticleDrawingConfig.CLIENT_SPEC)
 
         // 动画文件同步任务，配置阶段由服务端向客户端下发动画与贴图

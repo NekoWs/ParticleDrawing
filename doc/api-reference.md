@@ -88,7 +88,7 @@
 | `ClientParticleEngine` | 客户端粒子引擎：网络包落地点、本地动画直写点、发射器落地点、只读逐粒子观察、缩放缓动逐帧采样 |
 | `ParticleSample` | `forEachParticleSample` 回调里的只读快照：id、位置、实际 alpha/尺寸、全亮与光照等级 |
 | `RenderParticle` | 渲染粒子状态：缓动、速度与力积分、欧拉旋转、寿命曲线乘数、resize 基准尺寸 |
-| `BridgeParticle` | 桥接原版粒子系统的渲染代理，按 partialTick 插值位置、尺寸与颜色 |
+| `BridgeParticle` | 桥接原版粒子系统的渲染代理，按 partialTick 插值位置、尺寸与颜色；26.3 的透明贴图与加色粒子分别提供对应 OIT 管线 |
 | `BatchedQuadParticleGroup`、`ParticleGroupRegistrar` | 自定义粒子分组，绕过原版每组的四边形上限 |
 | `TrackBuffer` | track 指令的逐 tick 插值缓冲，缺包时保持端点 |
 | `ParticleTakeover` | 粒子的位置接管与外观接管标记 |

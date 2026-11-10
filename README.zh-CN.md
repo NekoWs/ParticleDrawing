@@ -6,8 +6,8 @@
 [![Maven Central](https://img.shields.io/maven-central/v/work.nekow/particledrawing?label=Maven%20Central)](https://central.sonatype.com/artifact/work.nekow/particledrawing)
 [![Modrinth](https://img.shields.io/modrinth/dt/particledrawing?label=Modrinth&logo=modrinth)](https://modrinth.com/mod/particledrawing)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-![Minecraft](https://img.shields.io/badge/Minecraft-26.2-informational)
-![NeoForge](https://img.shields.io/badge/NeoForge-26.2.0.59-informational)
+![Minecraft](https://img.shields.io/badge/Minecraft-26.3-informational)
+![NeoForge](https://img.shields.io/badge/NeoForge-26.3.0.102-informational)
 
 面向 NeoForge 的服务端权威粒子效果库，播放 [ParticleDrawing 编辑器](https://viewer.nekow.work/)导出的动画，
 并提供 Kotlin / Java API，在代码里直接绘制与编排粒子。
@@ -33,15 +33,15 @@
 
 | 组件 | 版本 |
 | --- | --- |
-| Minecraft | 26.2 |
-| NeoForge | 26.2.0.59+ |
+| Minecraft | 26.3 |
+| NeoForge | 26.3.0.102+ |
 | Java | 25 |
 
 ## 安装
 
 ### 玩家
 
-1. 安装适用于 Minecraft 26.2 的 NeoForge。
+1. 安装适用于 Minecraft 26.3 的 NeoForge。
 2. 把模组 jar 放进 `mods/` 目录，或从 [Modrinth](https://modrinth.com/mod/particledrawing) 安装。
 3. 从[编辑器](https://viewer.nekow.work/)导出动画，把 `.pdrawc` 文件放进 `<gameDir>/animations/`。
 4. 在游戏里使用 `/pdraw` 命令。动画按需加载，新增或替换动画后不需要重启游戏。

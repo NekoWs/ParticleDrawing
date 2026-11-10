@@ -6,8 +6,8 @@
 
 | 组件 | 版本 |
 | --- | --- |
-| Minecraft | 26.2 |
-| NeoForge | 26.2.0.59+ |
+| Minecraft | 26.3 |
+| NeoForge | 26.3.0.102+ |
 | Java | 25 |
 
 ## 引入依赖

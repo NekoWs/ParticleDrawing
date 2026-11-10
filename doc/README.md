@@ -1,6 +1,6 @@
 # ParticleDrawing 文档
 
-ParticleDrawing 是面向 [NeoForge](https://neoforged.net/)（Minecraft 26.2）的粒子效果库：播放网页编辑器
+ParticleDrawing 是面向 [NeoForge](https://neoforged.net/)（Minecraft 26.3）的粒子效果库：播放网页编辑器
 导出的 `.pdrawc` 动画，同时提供 Kotlin / Java API 在代码里绘制与编排粒子。
 
 粒子由服务端创建与持有，客户端本地求值、逐渲染帧渲染。编排动画、寿命曲线、发射器这类声明式能力

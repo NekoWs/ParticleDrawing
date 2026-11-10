@@ -1,5 +1,30 @@
 # 已知限制
 
+## Minecraft 26.3
+
+此分支面向 Minecraft 26.3，最低 NeoForge 为 26.3.0.102。Java 工具链仍为 25。
+NeoGradle 使用 7.1.39，修复 26.3 开发环境重编译 HolderSet 时的访问权限问题，见
+[上游问题](https://github.com/neoforged/NeoGradle/issues/327)。
+
+FML 的服务端同步配置改为 SYNCED，文件名保留 `particledrawing-server.toml`。
+默认文件位于游戏或服务端的 `config/`，世界内的 `syncedconfig/` 可覆盖它。
+升级旧世界时，把 `serverconfig/particledrawing-server.toml` 迁移到该世界的
+`syncedconfig/particledrawing-server.toml`，以继续使用原来的粒子限额和可见性设置。
+
+渲染管线改用 Renderpearl API。普通透明贴图使用原版 OIT 粒子管线，加色粒子单独提供深度范围、
+透射率、颜色累积三个阶段；OIT_ADDITIVE 保留按 alpha 加权的加色，避免把加色层当作遮挡层。
+原版计时器、摄像机注入点和动态光照注入点按 26.3 源码核对。
+迁移接口参考 [26.2 → 26.3 官方说明](https://docs.neoforged.net/primer/docs/26.3/)。
+
+26.3 的数据包格式为 121.0，资源包格式为 97.1；旧的命令函数数据包需要更新 pack.mcmeta 中的格式范围。
+`.pdrawc` 布局、脚本语义和命令语法不随游戏版本迁移改变。
+
+编译、JVM 回归与独立目录的 GameTestServer 启动已验证；客户端 GPU 画面和多人效果仍需游戏内验收。
+开发启动器在非交互终端会提示终端能力受限，NeoForge 的 MixinExtras 依赖选择也会打印 JarJar 提示；
+两者来自开发环境，服务端加载与 GameTest 可正常完成。
+JVM 回归中的 LWJGL 3.4.3 内存后端会触发 JDK 25 的 Unsafe 弃用提示；这是原版提供的原生依赖，
+测试保留其默认后端，与游戏的内存访问路径一致。
+
 ## 命令生成器的验证范围
 
 贴图、资源路径和 bounds 使用完整字符串参数，避免冒号或逗号被单词参数截断，导致整个 mcfunction 加载失败。

@@ -339,11 +339,15 @@ class BridgeParticle(
         val built = if (additive) {
             // 加法混合：始终走半透明通道 + ADDITIVE_PARTICLE 管线。
             // texEntry 恒非空（无贴图回退 defaultWhite），取它的 atlas id。
-            Layer(true, texEntry!!.id, ADDITIVE_PARTICLE)
+            Layer(true, texEntry!!.id, ADDITIVE_PARTICLE, ADDITIVE_OIT_PARTICLE)
         } else {
             val entry = texEntry
             if (entry != null) {
-                Layer(translucent, entry.id, if (translucent) RenderPipelines.TRANSLUCENT_PARTICLE else RenderPipelines.OPAQUE_PARTICLE)
+                Layer(
+                    translucent, entry.id,
+                    if (translucent) RenderPipelines.TRANSLUCENT_PARTICLE else RenderPipelines.OPAQUE_PARTICLE,
+                    if (translucent) RenderPipelines.OIT_PARTICLE else null,
+                )
             } else if (translucent) {
                 Layer.TRANSLUCENT
             } else {
