@@ -3,6 +3,10 @@
 按包分类的类索引。`work.nekow.particledrawing.api` 是公开 API；其余包属于内部实现，可能随版本改动。
 字段、参数与边界语义写在对应类的 KDoc 里，用法与示例见 [guide.md](guide.md)。
 
+核心模型使用 `work.nekow.particledrawing.math.Vec3` 与 `ResourceId`，游戏入口仍接受原生类型。
+模型构造器和位置字段的 JVM 类型已变化，依赖方需要重新编译；转换方法与兼容范围见
+[多版本架构](multiversion.md#类型与原生服务)。命令语法、文件格式与网络字段布局不变。
+
 ## api：公开 API
 
 | 类 | 作用 |

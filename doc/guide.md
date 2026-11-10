@@ -3,8 +3,10 @@
 从绘制形状到播放动画文件的完整用法。类索引见 [api-reference.md](api-reference.md)，依赖引入与第一个
 效果见 [getting-started.md](getting-started.md)。
 
-此分支适用于 Minecraft 26.3 / NeoForge 26.3.0.102+。命令和动画文件的用法沿用原有接口，
+当前适配器覆盖 Minecraft 26.2 / NeoForge 26.2.0.59+ 和 Minecraft 26.3 / NeoForge 26.3.0.102+。命令和动画文件的用法沿用原有接口，
 开发环境与旧数据包的迁移说明见[已知限制](known-issues.md#minecraft-263)。
+
+共享核心、运行目录和目标构建见[多版本架构](multiversion.md)。
 
 ## 目录
 

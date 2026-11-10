@@ -3,11 +3,11 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 [![Build](https://github.com/NekoWs/ParticleDrawing/actions/workflows/build.yml/badge.svg)](https://github.com/NekoWs/ParticleDrawing/actions/workflows/build.yml)
-[![Maven Central](https://img.shields.io/maven-central/v/work.nekow/particledrawing?label=Maven%20Central)](https://central.sonatype.com/artifact/work.nekow/particledrawing)
+[![Maven Central](https://img.shields.io/maven-central/v/work.nekow/particledrawing-neoforge-26.3?label=Maven%20Central)](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3)
 [![Modrinth](https://img.shields.io/modrinth/dt/particledrawing?label=Modrinth&logo=modrinth)](https://modrinth.com/mod/particledrawing)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-![Minecraft](https://img.shields.io/badge/Minecraft-26.3-informational)
-![NeoForge](https://img.shields.io/badge/NeoForge-26.3.0.102-informational)
+![Minecraft](https://img.shields.io/badge/Minecraft-26.2%20%2F%2026.3-informational)
+![NeoForge](https://img.shields.io/badge/NeoForge-26.2%20%2F%2026.3-informational)
 
 A server-authoritative particle effects library for NeoForge. It plays the animations exported by the
 [ParticleDrawing editor](https://viewer.nekow.work/) and exposes a Kotlin/Java API for drawing and
@@ -39,15 +39,15 @@ evaluated on the client, so a running effect costs little to no per-tick bandwid
 
 | Component | Version    |
 | --------- | ---------- |
-| Minecraft | 26.3       |
-| NeoForge  | 26.3.0.102+ |
+| Minecraft | 26.2 / 26.3 |
+| NeoForge | 26.2.0.59+ / 26.3.0.102+ |
 | Java      | 25         |
 
 ## Installation
 
 ### Players
 
-1. Install NeoForge for Minecraft 26.3.
+1. Install NeoForge for Minecraft 26.2 or 26.3.
 2. Put the mod jar into the `mods/` folder, or install it from [Modrinth](https://modrinth.com/mod/particledrawing).
 3. Export an animation from the [editor](https://viewer.nekow.work/) and place the `.pdrawc` file into
    `<gameDir>/animations/`.
@@ -56,20 +56,24 @@ evaluated on the client, so a running effect costs little to no per-tick bandwid
 
 ### Developers
 
-The library is published to Maven Central:
+The refactored releases use a separate Maven Central coordinate for each game version:
 
 ```kotlin
 // build.gradle.kts
 dependencies {
-    compileOnly("work.nekow:particledrawing:<version>")
-    localRuntime("work.nekow:particledrawing:<version>")
+    compileOnly("work.nekow:particledrawing-neoforge-26.3:<version>")
+    localRuntime("work.nekow:particledrawing-neoforge-26.3:<version>")
 }
 ```
 
+The target-specific coordinates above apply to releases built from the multi-version layout.
+Existing older releases retain `work.nekow:particledrawing:<version>`.
+For Minecraft 26.2, replace `neoforge-26.3` with `neoforge-26.2`.
+
 Replace `<version>` with the newest release, shown by the Maven Central badge above or on
-[Maven Central](https://central.sonatype.com/artifact/work.nekow/particledrawing). To ship the library
+[Maven Central](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3). To ship the library
 inside your own jar instead of requiring players to install it, use
-`jarJar(implementation("work.nekow:particledrawing:<version>"))`.
+`jarJar(implementation("work.nekow:particledrawing-neoforge-26.3:<version>"))`.
 
 Declare the dependency in `META-INF/neoforge.mods.toml` as well:
 
@@ -130,6 +134,7 @@ and `lifetime=80` for a four-second lifetime.
 | [guide.md](doc/guide.md)                     | Drawing, choreographed groups, handles, batches, emitters, animations. |
 | [api-reference.md](doc/api-reference.md)     | Class index grouped by package.                                       |
 | [known-issues.md](doc/known-issues.md)       | Known limitations and behavior differences against the editor.        |
+| [multiversion.md](doc/multiversion.md)       | Core boundaries, platform builds, coordinates and migration.           |
 
 ## Building from source
 
@@ -141,15 +146,17 @@ cd ParticleDrawing
 ./gradlew runServer      # start a development server
 ```
 
-The build requires JDK 25. Runtime artifacts are written to `build/libs/`.
+The build requires JDK 25. The root build targets 26.3. Build either adapter with `./gradlew -p platforms/neoforge-26.2 build` or
+`./gradlew -p platforms/neoforge-26.3 build`. The shared core targets Java 21. Architecture, artifact
+coordinates, run directories, and migration notes are in [the multi-version guide](doc/multiversion.md).
 
 ## Releasing
 
 `mod_version` in `gradle.properties` is the single source of truth. Whenever it changes, the same
 commit gets a matching tag (`v<mod_version>`). Pushing such a tag publishes the artifact to Maven
 Central through `publish.yml` and the version to [Modrinth](https://modrinth.com/mod/particledrawing)
-through `modrinth.yml`, which also syncs this README into the project body. `release.yml` builds a
-GitHub Release with the runtime JAR, sources JAR, SHA-256 checksums, and notes from commit titles since
+through `modrinth.yml`, which also syncs this README into the project body. `release.yml` builds both game targets and creates a
+GitHub Release with their runtime JARs, sources JARs, SHA-256 checksums, and notes from commit titles since
 the previous tag. ALPHA, BETA, and RC versions are marked as prereleases. All three workflows fail if
 the tag name does not match `mod_version`; there is no release without a tag.
 

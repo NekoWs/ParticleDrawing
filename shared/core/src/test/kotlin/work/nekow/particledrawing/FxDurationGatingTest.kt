@@ -1,0 +1,65 @@
+package work.nekow.particledrawing
+
+import work.nekow.particledrawing.math.Vec3
+import work.nekow.particledrawing.animation.ClientAnimationPlayer
+import work.nekow.particledrawing.animation.FunctionObject
+import work.nekow.particledrawing.animation.FunctionVar
+import work.nekow.particledrawing.animation.ParticleAnimation
+import work.nekow.particledrawing.animation.script.Keyframe
+import work.nekow.particledrawing.core.easing.EasingType
+import kotlin.test.Test
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+/**
+ * 派生粒子的对象时长门控：函数对象整体时长结束后粒子回收，
+ * duration <= 0 表示无时长上限。
+ */
+class FxDurationGatingTest {
+
+    private fun animation(duration: Int): ParticleAnimation {
+        val fx = FunctionObject(
+            id = "fx0",
+            name = "fx0",
+            center = doubleArrayOf(0.0, 0.0, 0.0),
+            source = "func setup() { this.spawn(); }\nfunc process() { for (const p of this.particles) { p.position = [p.index, 0, 0]; } }",
+            seed = 0,
+            // 变量关键帧把 maxMs 撑到 5000，避免动画在 duration 处提前结束，便于观测时长门控。
+            vars = mapOf("k" to FunctionVar(0.0, listOf(Keyframe(5000.0, 0.0, EasingType.LINEAR)))),
+            duration = duration,
+        )
+        return ParticleAnimation(
+            loop = true,
+            particles = emptyList(),
+            tracks = emptyList(),
+            groups = emptyMap(),
+            functions = listOf(fx),
+        )
+    }
+
+    @Test
+    fun derivedParticlesHideAfterDuration() {
+        // 初始定位到 250ms（< st+duration=500）：可见
+        val player = ClientAnimationPlayer(animation(500), Vec3.ZERO, startGameTick = 1000L, currentGameTick = 1005L)
+        val state = player.currentStates().first { it.id == "fx0:p0" }
+        assertTrue(state.visible)
+
+        // elapsed=15 tick → 750ms，超过对象时长 500：回收
+        player.tick(1015L)
+        player.advanceFrame(750.0)
+        assertFalse(state.visible)
+
+        // elapsed=105 tick → 5250ms，循环回卷到 250ms：重新入场
+        player.tick(1105L)
+        player.advanceFrame(250.0)
+        assertTrue(state.visible)
+    }
+
+    @Test
+    fun zeroDurationTreatsAsNoDurationLimit() {
+        // duration=0：不因时长隐藏，仅 st 门控。
+        val player = ClientAnimationPlayer(animation(0), Vec3.ZERO, startGameTick = 1000L, currentGameTick = 1015L)
+        val state = player.currentStates().first { it.id == "fx0:p0" }
+        assertTrue(state.visible)
+    }
+}

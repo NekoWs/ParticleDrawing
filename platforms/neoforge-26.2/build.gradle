@@ -1,0 +1,14 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'signing'
+    id 'com.vanniktech.maven.publish' version '0.30.0'
+    id 'net.neoforged.gradle.userdev' version '7.1.39'
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+ext.pdrawRepositoryRoot = file('../..')
+ext.pdrawTarget = 'neoforge-26.2'
+apply from: '../../gradle/neoforge-platform.gradle'
+
+mavenPublishing { publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL) }

@@ -41,7 +41,7 @@ pdraw particle emitter sine burst
 ## 图片转粒子
 
 把静态 PNG 放进游戏或服务端工作目录的 `particleImages/`，例如 `particleImages/ring.png`。
-单人开发环境对应 `run/client/particleImages/`。客户端不需要另放一份文件：服务端采样后同步坐标与颜色。
+单人开发环境对应 `run/neoforge-26.3/client/particleImages/`（26.2 则为 `run/neoforge-26.2/client/particleImages/`）。客户端不需要另放一份文件：服务端采样后同步坐标与颜色。
 
 ```mcfunction
 pdraw particle emitter reset sigil

@@ -1,0 +1,57 @@
+plugins {
+    id 'java-library'
+    id 'java-test-fixtures'
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+group = 'work.nekow'
+def modProperties = new Properties()
+file('../../gradle.properties').withInputStream { modProperties.load(it) }
+version = modProperties.getProperty('mod_version')
+
+repositories { mavenCentral() }
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+    withSourcesJar()
+}
+kotlin { jvmToolchain(21) }
+
+dependencies {
+    implementation 'com.google.code.gson:gson:2.10.1'
+    testImplementation 'org.jetbrains.kotlin:kotlin-test'
+}
+
+// 每个宿主构建使用自己的输出目录，两个 Minecraft 版本可以分别构建。
+if (project != rootProject) layout.buildDirectory = rootProject.layout.buildDirectory.dir('pdraw-core')
+tasks.withType(Test).configureEach { workingDir file('../..') }
+
+tasks.register('verifyPlatformIndependence') {
+    dependsOn tasks.named('jar')
+    inputs.files(fileTree('src/main'))
+    inputs.file(tasks.named('jar', Jar).flatMap { it.archiveFile })
+    doLast {
+        def forbidden = ~/(?m)^\s*import\s+(net\.minecraft\.|net\.minecraftforge\.|net\.neoforged\.|com\.mojang\.|org\.lwjgl\.)/
+        fileTree('src/main').matching { include '**/*.kt', '**/*.java' }.each { source ->
+            if (source.getText('UTF-8') =~ forbidden) {
+                throw new GradleException("平台依赖不能进入 pdraw-core: $source")
+            }
+        }
+        configurations.compileClasspath.resolvedConfiguration.resolvedArtifacts.each { artifact ->
+            def group = artifact.moduleVersion.id.group
+            if (group.startsWith('net.neoforged') || group.startsWith('net.minecraftforge') || group.startsWith('org.lwjgl')) {
+                throw new GradleException("平台依赖不能进入 pdraw-core classpath: ${artifact.moduleVersion.id}")
+            }
+        }
+        zipTree(tasks.named('jar', Jar).get().archiveFile.get().asFile).matching { include '**/*.class' }.each { entry ->
+            byte[] bytes = entry.bytes
+            def major = ((bytes[6] & 255) << 8) | (bytes[7] & 255)
+            if (major > 65) throw new GradleException("核心字节码高于 Java 21: $entry")
+            def constants = new String(bytes, java.nio.charset.StandardCharsets.ISO_8859_1)
+            if (['net/minecraft/', 'net/minecraftforge/', 'net/neoforged/', 'com/mojang/', 'org/lwjgl/'].any { constants.contains(it) }) {
+                throw new GradleException("核心字节码包含平台类型: $entry")
+            }
+        }
+    }
+}
+tasks.named('check') { dependsOn 'verifyPlatformIndependence' }

@@ -3,11 +3,11 @@
 [English](README.md) | **简体中文**
 
 [![Build](https://github.com/NekoWs/ParticleDrawing/actions/workflows/build.yml/badge.svg)](https://github.com/NekoWs/ParticleDrawing/actions/workflows/build.yml)
-[![Maven Central](https://img.shields.io/maven-central/v/work.nekow/particledrawing?label=Maven%20Central)](https://central.sonatype.com/artifact/work.nekow/particledrawing)
+[![Maven Central](https://img.shields.io/maven-central/v/work.nekow/particledrawing-neoforge-26.3?label=Maven%20Central)](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3)
 [![Modrinth](https://img.shields.io/modrinth/dt/particledrawing?label=Modrinth&logo=modrinth)](https://modrinth.com/mod/particledrawing)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-![Minecraft](https://img.shields.io/badge/Minecraft-26.3-informational)
-![NeoForge](https://img.shields.io/badge/NeoForge-26.3.0.102-informational)
+![Minecraft](https://img.shields.io/badge/Minecraft-26.2%20%2F%2026.3-informational)
+![NeoForge](https://img.shields.io/badge/NeoForge-26.2%20%2F%2026.3-informational)
 
 面向 NeoForge 的服务端权威粒子效果库，播放 [ParticleDrawing 编辑器](https://viewer.nekow.work/)导出的动画，
 并提供 Kotlin / Java API，在代码里直接绘制与编排粒子。
@@ -33,34 +33,38 @@
 
 | 组件 | 版本 |
 | --- | --- |
-| Minecraft | 26.3 |
-| NeoForge | 26.3.0.102+ |
+| Minecraft | 26.2 / 26.3 |
+| NeoForge | 26.2.0.59+ / 26.3.0.102+ |
 | Java | 25 |
 
 ## 安装
 
 ### 玩家
 
-1. 安装适用于 Minecraft 26.3 的 NeoForge。
+1. 安装适用于 Minecraft 26.2 或 26.3 的 NeoForge。
 2. 把模组 jar 放进 `mods/` 目录，或从 [Modrinth](https://modrinth.com/mod/particledrawing) 安装。
 3. 从[编辑器](https://viewer.nekow.work/)导出动画，把 `.pdrawc` 文件放进 `<gameDir>/animations/`。
 4. 在游戏里使用 `/pdraw` 命令。动画按需加载，新增或替换动画后不需要重启游戏。
 
 ### 开发者
 
-库已发布到 Maven Central：
+重构后的发行版在 Maven Central 按游戏版本区分坐标：
 
 ```kotlin
 // build.gradle.kts
 dependencies {
-    compileOnly("work.nekow:particledrawing:<version>")
-    localRuntime("work.nekow:particledrawing:<version>")
+    compileOnly("work.nekow:particledrawing-neoforge-26.3:<version>")
+    localRuntime("work.nekow:particledrawing-neoforge-26.3:<version>")
 }
 ```
 
+上述按游戏版本区分的坐标用于重构后的发行版；已发布旧版本继续使用
+`work.nekow:particledrawing:<version>`。
+使用 Minecraft 26.2 时，把坐标里的 `neoforge-26.3` 改为 `neoforge-26.2`。
+
 `<version>` 取最新发布版，见顶部的 Maven Central 徽章或
-[Maven Central](https://central.sonatype.com/artifact/work.nekow/particledrawing)。要把库打进自己的 jar、
-不要求玩家单独安装，用 `jarJar(implementation("work.nekow:particledrawing:<version>"))`。
+[Maven Central](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3)。要把库打进自己的 jar、
+不要求玩家单独安装，用 `jarJar(implementation("work.nekow:particledrawing-neoforge-26.3:<version>"))`。
 
 还要在 `META-INF/neoforge.mods.toml` 里声明依赖：
 
@@ -119,6 +123,7 @@ Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80)
 | [guide.md](doc/guide.md) | 绘制形状、编排式动画、句柄、粒子集、发射器、动画。 |
 | [api-reference.md](doc/api-reference.md) | 按包分类的类索引。 |
 | [known-issues.md](doc/known-issues.md) | 已知限制，以及与编辑器之间的行为差异。 |
+| [multiversion.md](doc/multiversion.md) | 核心边界、平台构建、发布坐标与类型迁移。 |
 
 ## 从源码构建
 
@@ -130,14 +135,16 @@ cd ParticleDrawing
 ./gradlew runServer      # start a development server
 ```
 
-构建需要 JDK 25，运行期产物输出到 `build/libs/`。
+游戏适配器构建需要 JDK 25，根入口默认构建 26.3。两个目标可分别执行
+`gradlew -p platforms/neoforge-26.2 build` 和 `gradlew -p platforms/neoforge-26.3 build`。
+共享核心使用 Java 21，目录、坐标与迁移说明见[多版本架构](doc/multiversion.md)。
 
 ## 发布
 
 `gradle.properties` 里的 `mod_version` 是唯一事实来源。它每次变化，同一个提交都会打上对应的标签
 （`v<mod_version>`）。推送这样的标签会通过 `publish.yml` 把产物发布到 Maven Central，并通过
 `modrinth.yml` 发布到 [Modrinth](https://modrinth.com/mod/particledrawing)（同时把 `README.md` 同步为项目
-正文）。`release.yml` 会构建 GitHub Release，附上主 JAR、源码 JAR、SHA-256 校验文件，以及从上一个
+正文）。`release.yml` 会构建两个游戏目标并创建 GitHub Release，附上各自的主 JAR、源码 JAR、SHA-256 校验文件，以及从上一个
 标签以来的提交标题生成的发布说明。ALPHA、BETA、RC 标为预发布。三个工作流在标签名与
 `mod_version` 不一致时都会直接失败，没有标签就没有发布。
 

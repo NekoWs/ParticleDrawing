@@ -6,29 +6,32 @@
 
 | 组件 | 版本 |
 | --- | --- |
-| Minecraft | 26.3 |
-| NeoForge | 26.3.0.102+ |
+| Minecraft | 26.2 / 26.3 |
+| NeoForge | 26.2.0.59+ / 26.3.0.102+ |
 | Java | 25 |
+
+目标坐标从重构后的发行版开始使用，旧版坐标与开发构建见[多版本说明](multiversion.md)。
 
 ## 引入依赖
 
-模组已发布到 Maven Central，包根为 `work.nekow.particledrawing`，坐标 `work.nekow:particledrawing`：
+包根为 `work.nekow.particledrawing`。重构后的 Maven Central 坐标按游戏版本区分，以下以 26.3 为例；
+使用 26.2 时将坐标末尾的 `26.3` 改成 `26.2`：
 
 ```kotlin
 // build.gradle.kts
 dependencies {
-    compileOnly("work.nekow:particledrawing:<version>")
-    localRuntime("work.nekow:particledrawing:<version>")
+    compileOnly("work.nekow:particledrawing-neoforge-26.3:<version>")
+    localRuntime("work.nekow:particledrawing-neoforge-26.3:<version>")
 }
 ```
 
 `<version>` 取最新发布版，见
-[Maven Central](https://central.sonatype.com/artifact/work.nekow/particledrawing)。也可以把库打进自己的 jar，
+[Maven Central](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3)。也可以把库打进自己的 jar，
 让玩家不必单独安装：
 
 ```kotlin
 dependencies {
-    jarJar(implementation("work.nekow:particledrawing:<version>"))
+    jarJar(implementation("work.nekow:particledrawing-neoforge-26.3:<version>"))
 }
 ```
 

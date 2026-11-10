@@ -42,7 +42,7 @@ speed 使用弧度/毫秒，tilt 使用弧度；这些示例的公式每刻读�
 
 ## 图片示例
 
-image 示例需要把项目的 `src/main/resources/icon.png` 复制为游戏工作目录的
+image 示例需要把项目的 `platforms/neoforge-common/src/main/resources/icon.png` 复制为游戏工作目录的
 `particleImages/pd-icon.png`。680×680 图标、stride=8 共 7225 点，max_alive=8192 可容纳完整图片，
 rate=1024 在 8 刻内画完。替换图片后按有效像素数调整 stride、spacing、容量与寿命；
 采样超过 8192 点会报错。

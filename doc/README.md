@@ -1,6 +1,6 @@
 # ParticleDrawing 文档
 
-ParticleDrawing 是面向 [NeoForge](https://neoforged.net/)（Minecraft 26.3）的粒子效果库：播放网页编辑器
+ParticleDrawing 是面向 [NeoForge](https://neoforged.net/)（Minecraft 26.2 / 26.3）的粒子效果库：播放网页编辑器
 导出的 `.pdrawc` 动画，同时提供 Kotlin / Java API 在代码里绘制与编排粒子。
 
 粒子由服务端创建与持有，客户端本地求值、逐渲染帧渲染。编排动画、寿命曲线、发射器这类声明式能力
@@ -14,6 +14,7 @@ ParticleDrawing 是面向 [NeoForge](https://neoforged.net/)（Minecraft 26.3）
 | [guide.md](guide.md) | 绘制形状、编排动画、单粒子、粒子集、发射器、缓动、播放动画、代码构建动画 |
 | [api-reference.md](api-reference.md) | 按包分类的类索引 |
 | [particle-commands.md](particle-commands.md) | 分步配置采样、图片转粒子、出生/运动公式与条件筛选 |
+| [multiversion.md](multiversion.md) | Java 21 核心、平台构建、类型转换与版本扩展 |
 | [known-issues.md](known-issues.md) | 平台差异与已知限制 |
 | [issues/readable-effect-api.md](issues/readable-effect-api.md) | 可读特效编写接口的设计与验收目标 |
 | [issues/readable-api-migration.md](issues/readable-api-migration.md) | 消费迁移验收：类型化法阵、运行时阶段与已覆盖边界 |
@@ -32,4 +33,4 @@ ParticleDrawing 是面向 [NeoForge](https://neoforged.net/)（Minecraft 26.3）
 | `work.nekow.particledrawing.lighting` | 动态光照注入与衰减函数 |
 | `work.nekow.particledrawing.command`、`.config`、`.util` | `/pdraw` 命令、配置、工具函数 |
 
-原版渲染注入（Mixin）在 `src/main/java/work/nekow/particledrawing/mixin`。
+原版渲染注入（Mixin）在 `platforms/neoforge-common/src/main/java/work/nekow/particledrawing/mixin`。

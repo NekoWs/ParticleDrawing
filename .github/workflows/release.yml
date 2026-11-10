@@ -64,7 +64,6 @@ jobs:
           echo >> changelog.md
           {
             echo "version=$VERSION"
-            echo "artifact=$MOD_ID-$VERSION"
             echo "prerelease=$PRERELEASE"
           } >> "$GITHUB_OUTPUT"
 
@@ -78,9 +77,32 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build release artifacts
+        id: artifacts
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
+          set -euo pipefail
           chmod +x ./gradlew
-          ./gradlew build --console=plain
+          ASSET_DIR="$(mktemp -d "$RUNNER_TEMP/pdraw-release.XXXXXX")"
+          MOD_ID="$(sed -n 's/^mod_id=//p' gradle.properties | tr -d '[:space:]')"
+          if [ -d platforms/neoforge-26.3 ]; then
+            for TARGET in neoforge-26.2 neoforge-26.3; do
+              ./gradlew -p "platforms/$TARGET" build --console=plain
+              MC_VERSION="$(sed -n 's/^minecraft_version=//p' "platforms/$TARGET/target.properties" | tr -d '[:space:]')"
+              ARTIFACT="$MOD_ID-$MC_VERSION-neoforge-$VERSION"
+              test -s "platforms/$TARGET/build/libs/$ARTIFACT.jar"
+              test -s "platforms/$TARGET/build/libs/$ARTIFACT-sources.jar"
+              cp "platforms/$TARGET/build/libs/$ARTIFACT.jar" "platforms/$TARGET/build/libs/$ARTIFACT-sources.jar" "$ASSET_DIR/"
+            done
+          else
+            ./gradlew build --console=plain
+            test -s "build/libs/$MOD_ID-$VERSION.jar"
+            test -s "build/libs/$MOD_ID-$VERSION-sources.jar"
+            cp "build/libs/$MOD_ID-$VERSION.jar" "build/libs/$MOD_ID-$VERSION-sources.jar" "$ASSET_DIR/"
+          fi
+          (cd "$ASSET_DIR" && sha256sum -- *.jar > SHA256SUMS)
+          echo "directory=$ASSET_DIR" >> "$GITHUB_OUTPUT"
 
       - name: Publish release and attach artifacts
         shell: bash
@@ -88,17 +110,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ steps.meta.outputs.version }}
-          ARTIFACT: ${{ steps.meta.outputs.artifact }}
+          ASSET_DIR: ${{ steps.artifacts.outputs.directory }}
           PRERELEASE: ${{ steps.meta.outputs.prerelease }}
         run: |
           set -euo pipefail
-          test -s "build/libs/$ARTIFACT.jar"
-          test -s "build/libs/$ARTIFACT-sources.jar"
-          (
-            cd build/libs
-            sha256sum "$ARTIFACT.jar" "$ARTIFACT-sources.jar" > SHA256SUMS
-          )
-          ASSETS=("build/libs/$ARTIFACT.jar" "build/libs/$ARTIFACT-sources.jar" "build/libs/SHA256SUMS")
+          test -s "$ASSET_DIR/SHA256SUMS"
+          ASSETS=("$ASSET_DIR"/*.jar "$ASSET_DIR/SHA256SUMS")
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" "${ASSETS[@]}" --clobber
           else

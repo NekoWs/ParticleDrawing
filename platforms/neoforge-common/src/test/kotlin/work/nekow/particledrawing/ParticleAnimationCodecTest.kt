@@ -1,0 +1,361 @@
+package work.nekow.particledrawing
+
+import work.nekow.particledrawing.platform.toMinecraft
+
+
+import io.netty.buffer.Unpooled
+import net.minecraft.network.FriendlyByteBuf
+import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.animation.AnimCamera
+import work.nekow.particledrawing.animation.AnimKeyframe
+import work.nekow.particledrawing.animation.AnimParticle
+import work.nekow.particledrawing.animation.AnimTrack
+import work.nekow.particledrawing.animation.AudioAsset
+import work.nekow.particledrawing.animation.Entrance
+import work.nekow.particledrawing.animation.FunctionObject
+import work.nekow.particledrawing.animation.FunctionVar
+import work.nekow.particledrawing.animation.ParticleAnimation
+import work.nekow.particledrawing.animation.TextChar
+import work.nekow.particledrawing.animation.TextObject
+import work.nekow.particledrawing.animation.TrackPr
+import work.nekow.particledrawing.animation.UvData
+import work.nekow.particledrawing.animation.script.Keyframe
+import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.network.ParticleAnimationCodec
+import kotlin.test.Test
+import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+/**
+ * 代码生成动画的网络载荷编解码：完整模型往返后逐字段一致。
+ */
+class ParticleAnimationCodecTest {
+
+    private fun sample(): ParticleAnimation {
+        val particle = AnimParticle(
+            id = "p0",
+            color = Color.of(0.1f, 0.2f, 0.3f, 0.4f),
+            scale = floatArrayOf(1f, 2f, 3f),
+            glowing = true,
+            lightLevel = 12,
+            pos = Vec3(1.0, 2.0, 3.0),
+            vel = Vec3(0.1, 0.2, 0.3),
+            uv = UvData(
+                "tex", UvData.Mode.ANIMATED,
+                intArrayOf(16, 16), intArrayOf(0, 0), intArrayOf(8, 8), intArrayOf(8, 8),
+                4f, 2, true,
+            ),
+            st = 3,
+            ent = Entrance("fade", 5),
+            life = 20,
+            billboard = false,     // v8
+            spinLocal = false,     // v8
+        )
+        val track = AnimTrack(
+            pr = TrackPr.POS_X, ids = listOf("p0"),
+            keyframes = listOf(
+                AnimKeyframe(0, 0.0, EasingType.LINEAR),
+                AnimKeyframe(10, 5.0, EasingType.custom(0.1, 0.2, 0.3, 0.4)),
+                AnimKeyframe(20, 10.0, EasingType.NONE),
+            ),
+            mode = AnimTrack.Mode.SET,
+        )
+        val fx = FunctionObject(
+            id = "fx0", name = "fx0",
+            center = doubleArrayOf(0.0, 1.0, 2.0),
+            source = "func setup() { global a = []; }\nfunc process(delta) { p = this.spawn(); p.position = vec3(0,0,0); }\nfunc f(n) { return n; }",
+            seed = 7,
+            vars = linkedMapOf("rad" to FunctionVar(3.0, listOf(Keyframe(0.0, 1.0, EasingType.LINEAR)))),
+            duration = 100,
+            uv = UvData(
+                "tex", UvData.Mode.FILL,
+                intArrayOf(4, 4), intArrayOf(0, 0), intArrayOf(4, 4), intArrayOf(0, 0),
+                1f, 1, false,
+            ),
+            st = 5,
+            ent = Entrance("fade", 2),
+            fastMath = true,
+            spinLocal = true,
+            rotLocal = false,
+            frameSync = true,
+        )
+        val cam = AnimCamera("cam1", "Cam", doubleArrayOf(0.0, 10.0, 0.0), doubleArrayOf(0.0, 0.0, 0.0), 0.0, 70.0, true)
+        val text = TextObject(
+            id = "txt1", name = "标题", text = "AB\n中", font = "\"Press Start 2P\", monospace",
+            fontSize = 24, weight = "bold", italic = true,
+            color = Color.of(1f, 0.5f, 0f, 0.8f),
+            strokeColor = Color.of(0f, 0f, 0f, 1f), strokeWidth = 2,
+            align = "center", lineHeight = 1.2, letterSpacing = 1.0,
+            st = 5, life = 40,
+            chars = listOf(
+                TextChar(0, 65, Vec3(0.1, 0.0, -0.2), doubleArrayOf(0.4, 0.4), listOf("p0")),
+                TextChar(1, 66, Vec3(0.5, 0.0, -0.2), doubleArrayOf(0.4, 0.4), emptyList()),
+            ),
+            spinLocal = false,    // v8
+            rotLocal = false,     // v8
+            billboard = false,    // v8
+        )
+        val audio = AudioAsset(
+            id = "aud1", name = "bgm", fmt = 0, data = byteArrayOf(1, 2, 3, 4),
+            st = 100, durMs = 4000, hopCount = 4,
+            bpm = 128.0, beatOffsetMs = 0.0, onsetMax = 0.5,
+            beats = listOf(0, 469),
+            rms = shortArrayOf(0, 32767, -1, 32767),   // u16：-1 = 65535
+            peak = shortArrayOf(-1, -1, -1, -1),
+            centroid = shortArrayOf(0, 16384, 32767, 16384),
+            onset = byteArrayOf(0, -128, -1, -128),    // u8：-1 = 255
+            rolloff = byteArrayOf(0, 64, -128, 64),
+            bands = ByteArray(4 * 16) { (it / 16 * 32 + it % 16).toByte() },
+            vol = 1.75, speed = 2.5, pan = -0.5, fadeIn = 300, fadeOut = 450,   // v9
+        )
+        return ParticleAnimation(
+            loop = true,
+            particles = listOf(particle),
+            tracks = listOf(track),
+            groups = linkedMapOf("g0" to listOf("p0")),
+            functions = listOf(fx),
+            textures = listOf("tex"),
+            groupUV = linkedMapOf(
+                "g0" to UvData("tex", UvData.Mode.STATIC, intArrayOf(8, 8), intArrayOf(0, 0), intArrayOf(8, 8), intArrayOf(0, 0), 1f, 1, false),
+            ),
+            texData = linkedMapOf("tex" to byteArrayOf(1, 2, 3, 4)),
+            groupSpinSpace = linkedMapOf("g0" to true),
+            groupRotSpace = linkedMapOf("g0" to false),
+            cameras = listOf(cam),
+            texts = listOf(text),
+            audioAssets = listOf(audio),
+        )
+    }
+
+    @Test
+    fun roundTripPreservesFullModel() {
+        val original = sample()
+        val buf = FriendlyByteBuf(Unpooled.buffer())
+        ParticleAnimationCodec.write(buf, original)
+        val decoded = ParticleAnimationCodec.read(buf)
+
+        assertTrue(decoded.loop)
+        assertEquals(1, decoded.particles.size)
+        assertEquals(1, decoded.tracks.size)
+        assertEquals(linkedMapOf("g0" to listOf("p0")), decoded.groups)
+        assertEquals(1, decoded.functions.size)
+        assertEquals(listOf("tex"), decoded.textures)
+        assertEquals(1, decoded.groupUV.size)
+        assertEquals(1, decoded.texData.size)
+        assertEquals(linkedMapOf("g0" to true), decoded.groupSpinSpace)
+        assertEquals(linkedMapOf("g0" to false), decoded.groupRotSpace)
+        assertEquals(1, decoded.cameras.size)
+
+        val p = decoded.particles[0]
+        assertEquals("p0", p.id)
+        assertEquals(0.1f, p.color.r, 1e-6f)
+        assertEquals(0.2f, p.color.g, 1e-6f)
+        assertEquals(0.3f, p.color.b, 1e-6f)
+        assertEquals(0.4f, p.color.a, 1e-6f)
+        assertEquals(listOf(1f, 2f, 3f), p.scale.toList())
+        assertTrue(p.glowing)
+        assertEquals(12, p.lightLevel)
+        assertEquals(Vec3(1.0, 2.0, 3.0), p.pos.toMinecraft())
+        assertEquals(Vec3(0.1, 0.2, 0.3), p.vel.toMinecraft())
+        assertEquals("tex", p.uv?.texture)
+        assertEquals(UvData.Mode.ANIMATED, p.uv?.mode)
+        assertEquals(3, p.st)
+        assertEquals(Entrance("fade", 5), p.ent)
+        assertEquals(20, p.life)
+        assertFalse(p.billboard)   // v8
+        assertFalse(p.spinLocal)   // v8
+
+        val tr = decoded.tracks[0]
+        assertEquals(TrackPr.POS_X, tr.pr)
+        assertEquals(AnimTrack.Mode.SET, tr.mode)
+        assertEquals(listOf("p0"), tr.ids)
+        assertEquals(3, tr.keyframes.size)
+        assertEquals(EasingType.LINEAR, tr.keyframes[0].easing)
+        assertEquals(EasingType.custom(0.1, 0.2, 0.3, 0.4), tr.keyframes[1].easing)
+        assertEquals(EasingType.NONE, tr.keyframes[2].easing)
+
+        val fx = decoded.functions[0]
+        assertEquals("fx0", fx.id)
+        assertEquals(listOf(0.0, 1.0, 2.0), fx.center.toList())
+        assertTrue(fx.source.contains("func setup()"))
+        assertTrue(fx.source.contains("func process(delta)"))
+        assertTrue(fx.source.contains("func f(n)"))
+        assertEquals(7, fx.seed)
+        assertEquals(3.0, fx.vars["rad"]?.base ?: -1.0)
+        assertEquals(1, fx.vars["rad"]?.kf?.size)
+        assertEquals(100, fx.duration)
+        assertEquals("tex", fx.uv?.texture)
+        assertEquals(5, fx.st)
+        assertEquals(Entrance("fade", 2), fx.ent)
+        assertTrue(fx.fastMath)
+        assertTrue(fx.spinLocal)
+        assertFalse(fx.rotLocal)
+        assertTrue(fx.frameSync)
+
+        val cam = decoded.cameras[0]
+        assertEquals("cam1", cam.id)
+        assertEquals("Cam", cam.name)
+        assertEquals(listOf(0.0, 10.0, 0.0), cam.pos.toList())
+        assertEquals(listOf(0.0, 0.0, 0.0), cam.target.toList())
+        assertEquals(0.0, cam.roll)
+        assertEquals(70.0, cam.fov)
+        assertTrue(cam.rotLocal)
+
+        assertContentEquals(byteArrayOf(1, 2, 3, 4), decoded.texData["tex"] ?: ByteArray(0))
+
+        assertEquals(1, decoded.texts.size)
+        val tx = decoded.texts[0]
+        assertEquals("txt1", tx.id)
+        assertEquals("标题", tx.name)
+        assertEquals("AB\n中", tx.text)
+        assertEquals(24, tx.fontSize)
+        assertEquals("bold", tx.weight)
+        assertTrue(tx.italic)
+        assertEquals(1f, tx.color.r, 1e-6f)
+        assertEquals(2, tx.strokeWidth)
+        assertEquals("center", tx.align)
+        assertEquals(5, tx.st)
+        assertEquals(40, tx.life)
+        assertFalse(tx.spinLocal)  // v8
+        assertFalse(tx.rotLocal)   // v8
+        assertFalse(tx.billboard)  // v8
+        assertEquals(2, tx.chars.size)
+        assertEquals(65, tx.chars[0].code)
+        assertEquals(Vec3(0.1, 0.0, -0.2), tx.chars[0].pos.toMinecraft())
+        assertEquals(listOf("p0"), tx.chars[0].particles)
+        assertTrue(tx.chars[1].particles.isEmpty())
+
+        assertEquals(1, decoded.audioAssets.size)
+        val au = decoded.audioAssets[0]
+        assertEquals("aud1", au.id)
+        assertEquals("bgm", au.name)
+        assertEquals(0, au.fmt)
+        assertContentEquals(byteArrayOf(1, 2, 3, 4), au.data)
+        assertEquals(100, au.st)
+        assertEquals(4000, au.durMs)
+        assertEquals(4, au.hopCount)
+        assertEquals(128.0, au.bpm)
+        assertEquals(0.5, au.onsetMax)
+        assertEquals(listOf(0, 469), au.beats)
+        assertContentEquals(shortArrayOf(0, 32767, -1, 32767), au.rms)
+        assertContentEquals(byteArrayOf(0, -128, -1, -128), au.onset)
+        assertContentEquals(ByteArray(4 * 16) { (it / 16 * 32 + it % 16).toByte() }, au.bands)
+        // v9：音频播放属性（vol/speed/pan/fadeIn/fadeOut）往返保留
+        assertEquals(1.75, au.vol)
+        assertEquals(2.5, au.speed)
+        assertEquals(-0.5, au.pan)
+        assertEquals(300, au.fadeIn)
+        assertEquals(450, au.fadeOut)
+    }
+
+    @Test
+    fun nullFieldsRoundTrip() {
+        val original = ParticleAnimation(
+            loop = false,
+            particles = listOf(
+                AnimParticle("p0", Color.WHITE, floatArrayOf(1f, 1f, 1f), false, 0, Vec3.ZERO, Vec3.ZERO),
+            ),
+            tracks = emptyList(),
+            groups = emptyMap(),
+            functions = emptyList(),
+            textures = emptyList(),
+            groupUV = emptyMap(),
+            texData = emptyMap(),
+            groupSpinSpace = emptyMap(),
+            groupRotSpace = emptyMap(),
+            cameras = emptyList(),
+        )
+        val buf = FriendlyByteBuf(Unpooled.buffer())
+        ParticleAnimationCodec.write(buf, original)
+        val decoded = ParticleAnimationCodec.read(buf)
+
+        assertFalse(decoded.loop)
+        assertEquals(1, decoded.particles.size)
+        assertNull(decoded.particles[0].uv)
+        assertNull(decoded.particles[0].ent)
+        assertTrue(decoded.tracks.isEmpty())
+        assertTrue(decoded.functions.isEmpty())
+        assertTrue(decoded.cameras.isEmpty())
+        assertTrue(decoded.texts.isEmpty())
+        assertTrue(decoded.audioAssets.isEmpty())
+    }
+
+    @Test
+    fun versionMismatchRejected() {
+        val buf = FriendlyByteBuf(Unpooled.buffer())
+        buf.writeVarInt(ParticleAnimationCodec.VERSION + 999)
+        assertFailsWith<IllegalArgumentException> {
+            ParticleAnimationCodec.read(buf)
+        }
+    }
+
+    @Test
+    fun audioTrackPrOrdinalsMatchEditorEnum() {
+        // 序数即二进制格式：音频播放属性接在 fov/target 之后，与编辑器 PR_ENUM 一致
+        assertEquals(26, TrackPr.VOL.ordinal)
+        assertEquals(27, TrackPr.SPEED.ordinal)
+        assertEquals(28, TrackPr.PAN.ordinal)
+        assertEquals(29, TrackPr.FADE_IN.ordinal)
+        assertEquals(30, TrackPr.FADE_OUT.ordinal)
+        assertEquals("vol", TrackPr.VOL.key)
+        assertEquals("speed", TrackPr.SPEED.key)
+        assertEquals("pan", TrackPr.PAN.key)
+        assertEquals("fadeIn", TrackPr.FADE_IN.key)
+        assertEquals("fadeOut", TrackPr.FADE_OUT.key)
+    }
+
+    @Test
+    fun uvExpressionsRoundTrip() {
+        val exprUv = UvData(
+            "tex", UvData.Mode.ANIMATED,
+            intArrayOf(16, 16), intArrayOf(0, 0), intArrayOf(8, 8), intArrayOf(8, 8),
+            4f, 2, true,
+            uvStartExpr = arrayOf("this.index % 4", null),
+            uvSizeExpr = arrayOfNulls(2),
+            uvStepExpr = arrayOf("this.index % 2", "this.count % 3"),
+            fpsExpr = "this.time / 2",
+            maxFrameExpr = null,
+        )
+        val particle = AnimParticle(
+            id = "p0", color = Color.WHITE, scale = floatArrayOf(1f, 1f, 1f),
+            glowing = false, lightLevel = 0, pos = Vec3.ZERO, vel = Vec3.ZERO,
+            uv = exprUv, st = 0, ent = null, life = -1,
+        )
+        val original = ParticleAnimation(
+            loop = false,
+            particles = listOf(particle),
+            tracks = emptyList(),
+            groups = emptyMap(),
+            functions = emptyList(),
+            textures = listOf("tex"),
+            groupUV = emptyMap(),
+            texData = emptyMap(),
+            groupSpinSpace = emptyMap(),
+            groupRotSpace = emptyMap(),
+            cameras = emptyList(),
+        )
+        val buf = FriendlyByteBuf(Unpooled.buffer())
+        ParticleAnimationCodec.write(buf, original)
+        val decoded = ParticleAnimationCodec.read(buf)
+        val u = decoded.particles[0].uv ?: error("uv null")
+
+        assertEquals("this.index % 4", u.uvStartExpr[0])
+        assertNull(u.uvStartExpr[1])
+        assertEquals("this.index % 2", u.uvStepExpr[0])
+        assertEquals("this.count % 3", u.uvStepExpr[1])
+        assertNull(u.uvSizeExpr[0])
+        assertNull(u.uvSizeExpr[1])
+        assertEquals("this.time / 2", u.fpsExpr)
+        assertNull(u.maxFrameExpr)
+        // 数值字段仍应保留
+        assertEquals(0, u.uvStart[0])
+        assertEquals(4f, u.fps)
+        assertEquals(2, u.maxFrame)
+        assertTrue(u.loop)
+    }
+}

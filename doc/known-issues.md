@@ -2,11 +2,12 @@
 
 ## Minecraft 26.3
 
-此分支面向 Minecraft 26.3，最低 NeoForge 为 26.3.0.102。Java 工具链仍为 25。
+当前提供独立的 26.2 和 26.3 适配器。26.3 最低 NeoForge 为 26.3.0.102，26.2 为 26.2.0.59。
+游戏适配器使用 Java 25，共享核心使用 Java 21；见[多版本架构](multiversion.md)。
 NeoGradle 使用 7.1.39，修复 26.3 开发环境重编译 HolderSet 时的访问权限问题，见
 [上游问题](https://github.com/neoforged/NeoGradle/issues/327)。
 
-FML 的服务端同步配置改为 SYNCED，文件名保留 `particledrawing-server.toml`。
+26.3 的 FML 服务端同步配置改为 SYNCED，文件名保留 `particledrawing-server.toml`。
 默认文件位于游戏或服务端的 `config/`，世界内的 `syncedconfig/` 可覆盖它。
 升级旧世界时，把 `serverconfig/particledrawing-server.toml` 迁移到该世界的
 `syncedconfig/particledrawing-server.toml`，以继续使用原来的粒子限额和可见性设置。
@@ -24,6 +25,8 @@ FML 的服务端同步配置改为 SYNCED，文件名保留 `particledrawing-ser
 两者来自开发环境，服务端加载与 GameTest 可正常完成。
 JVM 回归中的 LWJGL 3.4.3 内存后端会触发 JDK 25 的 Unsafe 弃用提示；这是原版提供的原生依赖，
 测试保留其默认后端，与游戏的内存访问路径一致。
+
+26.2 适配器继续使用 SERVER 配置和原有 serverconfig 目录。
 
 ## 命令生成器的验证范围
 

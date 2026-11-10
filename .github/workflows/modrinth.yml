@@ -11,6 +11,10 @@ permissions:
 jobs:
   modrinth:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [neoforge-26.2, neoforge-26.3]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -32,6 +36,8 @@ jobs:
       # tag 名就是发布版本号；与 publish.yml 用同一条守卫，写错就别发
       - name: Read version metadata
         id: meta
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
           set -e
           VERSION="${GITHUB_REF_NAME#v}"
@@ -55,24 +61,28 @@ jobs:
           {
             echo "version=$VERSION"
             echo "type=$TYPE"
-            echo "game_version=$(sed -n 's/^minecraft_version=//p' gradle.properties | tr -d '[:space:]')"
+            MC_VERSION="$(sed -n 's/^minecraft_version=//p' "platforms/$TARGET/target.properties" | tr -d '[:space:]')"
+            MOD_ID="$(sed -n 's/^mod_id=//p' gradle.properties | tr -d '[:space:]')"
+            echo "game_version=$MC_VERSION"
+            echo "artifact=$MOD_ID-$MC_VERSION-neoforge-$VERSION"
           } >> "$GITHUB_OUTPUT"
 
       - name: Build jar
-        run: ./gradlew build
+        run: ./gradlew -p platforms/${{ matrix.target }} build --console=plain
 
       - name: Publish to Modrinth
         uses: Kira-NT/mc-publish@v3
         with:
-          files: build/libs/!(*-@(dev|sources|javadoc)).jar
-          name: ParticleDrawing ${{ steps.meta.outputs.version }}
-          version: ${{ steps.meta.outputs.version }}
+          files: platforms/${{ matrix.target }}/build/libs/${{ steps.meta.outputs.artifact }}.jar
+          name: ParticleDrawing ${{ steps.meta.outputs.version }} (Minecraft ${{ steps.meta.outputs.game_version }})
+          version: ${{ steps.meta.outputs.version }}+mc${{ steps.meta.outputs.game_version }}-neoforge
           version-type: ${{ steps.meta.outputs.type }}
           changelog-file: changelog.md
           loaders: neoforge
           game-versions: ${{ steps.meta.outputs.game_version }}
           modrinth-id: particledrawing
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          modrinth-unfeature-mode: none
           fail-mode: fail
 
       # mc-publish 只管版本，项目正文要另外 PATCH；正文以 README 为准
