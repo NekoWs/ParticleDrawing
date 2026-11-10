@@ -183,6 +183,8 @@ tasks.named('jar', Jar) {
     }
 }
 tasks.named('sourcesJar') { from(project(':pdraw-core').file('src/main/kotlin')) }
+tasks.named('test') { dependsOn ':pdraw-core:test' }
+tasks.named('cleanTest') { dependsOn ':pdraw-core:cleanTest' }
 tasks.named('check') { dependsOn ':pdraw-core:check' }
 
 tasks.register('verifyPackagedCore') {
