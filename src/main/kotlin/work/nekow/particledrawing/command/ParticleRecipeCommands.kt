@@ -24,19 +24,19 @@ internal object ParticleRecipeCommands {
         val root = Commands.literal("emitter").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)).executes(::help)
         root.then(Commands.literal("help").executes(::help))
         for (verb in listOf("create", "reset")) root.then(Commands.literal(verb)
-            .then(Commands.argument("name", StringArgumentType.word()).executes { ctx -> safe(ctx) {
+            .then(Commands.argument("name", StringArgumentType.string()).executes { ctx -> safe(ctx) {
                 val name = word(ctx, "name")
                 if (verb == "reset") CommandParticleRecipes.reset(dim(ctx), name, RecipeAnchor(ctx.source.position))
                 else CommandParticleRecipes.create(dim(ctx), name, RecipeAnchor(ctx.source.position))
                 success(ctx, "已创建生成器 '$name'；配置完成后 start 或 burst")
             } }))
         root.then(Commands.literal("list").executes { ctx -> safe(ctx) { success(ctx, "生成器: ${CommandParticleRecipes.names(dim(ctx)).joinToString(", ")}") } })
-        root.then(Commands.literal("copy").then(Commands.argument("from", StringArgumentType.word())
-            .then(Commands.argument("to", StringArgumentType.word()).executes { ctx -> safe(ctx) {
+        root.then(Commands.literal("copy").then(Commands.argument("from", StringArgumentType.string())
+            .then(Commands.argument("to", StringArgumentType.string()).executes { ctx -> safe(ctx) {
                 CommandParticleRecipes.copy(dim(ctx), word(ctx, "from"), word(ctx, "to")); success(ctx, "已复制生成器配置")
             } })))
 
-        val name = Commands.argument("name", StringArgumentType.word()).suggests { ctx, b -> SharedSuggestionProvider.suggest(CommandParticleRecipes.names(dim(ctx)), b) }
+        val name = Commands.argument("name", StringArgumentType.string()).suggests { ctx, b -> SharedSuggestionProvider.suggest(CommandParticleRecipes.names(dim(ctx)).map(StringArgumentType::escapeIfRequired), b) }
         name.then(Commands.literal("inspect").executes { ctx -> safe(ctx) {
             val d = draft(ctx); val r = d.recipe
             success(ctx, "${word(ctx, "name")}: sample=${d.sampling.name.lowercase()}, rate=${r.rate}/${r.interval}t, lifetime=${r.lifetime}t, max_alive=${r.maxAlive}, follow=${r.follow}, running=${d.handle != null}; birth=${r.birth}; motion=${r.motion}; variables=${r.variables}; let=${r.lets}; where=${r.where}; kill=${r.kill}")
@@ -100,7 +100,7 @@ internal object ParticleRecipeCommands {
                 }
             } })))
 
-        name.then(Commands.literal("texture").then(Commands.argument("value", StringArgumentType.word()).executes { ctx -> configure(ctx) { appearance(it, "texture", word(ctx, "value")) } }))
+        name.then(Commands.literal("texture").then(Commands.argument("value", ParticleCommandArguments.textType()).executes { ctx -> configure(ctx) { appearance(it, "texture", ParticleCommandArguments.text(word(ctx, "value"))) } }))
         name.then(Commands.literal("appearance").then(Commands.argument("key", StringArgumentType.word())
             .suggests { _, b -> SharedSuggestionProvider.suggest(APPEARANCE, b) }
             .then(Commands.argument("value", StringArgumentType.greedyString()).executes { ctx -> configure(ctx) { appearance(it, word(ctx, "key"), word(ctx, "value")) } })))
@@ -118,7 +118,7 @@ internal object ParticleRecipeCommands {
                 .then(Commands.argument("offset_y", DoubleArgumentType.doubleArg())
                     .then(Commands.argument("offset_z", DoubleArgumentType.doubleArg())
                         .then(Commands.argument("local", BoolArgumentType.bool()).executes(::entityAnchor)))))))
-        root.then(Commands.literal("emitter").then(Commands.argument("target", StringArgumentType.word()).executes { ctx -> configure(ctx) {
+        root.then(Commands.literal("emitter").then(Commands.argument("target", StringArgumentType.string()).executes { ctx -> configure(ctx) {
             CommandParticleRecipes.linkAnchor(dim(ctx), word(ctx, "name"), word(ctx, "target"))
         } }))
         return root
@@ -144,11 +144,10 @@ internal object ParticleRecipeCommands {
                 d.sampling = CommandParticleRecipes.Sampling.PARAMETER; d.range = Triple(begin, end, step)
             } }))))
         root.then(Commands.literal("grid").executes { ctx -> sampleConfig(ctx) { it.sampling = CommandParticleRecipes.Sampling.GRID } })
-        root.then(Commands.literal("bounds").then(Commands.argument("min", StringArgumentType.word())
-            .then(Commands.argument("max", StringArgumentType.word()).executes { ctx -> sampleConfig(ctx) { d ->
-                val min = vector(word(ctx, "min")); val max = vector(word(ctx, "max")); ParticleSampling.grid(min, max, d.step)
+        root.then(Commands.literal("bounds").then(Commands.argument("bounds", ParticleCommandArguments.textType()).executes { ctx -> sampleConfig(ctx) { d ->
+                val (min, max) = ParticleCommandArguments.bounds(word(ctx, "bounds")); ParticleSampling.grid(min, max, d.step)
                 d.min = min; d.max = max
-            } })))
+            } }))
         root.then(Commands.literal("step").then(Commands.argument("step", DoubleArgumentType.doubleArg(0.000001)).executes { ctx -> sampleConfig(ctx) { d ->
             val step = DoubleArgumentType.getDouble(ctx, "step"); ParticleSampling.grid(d.min, d.max, step); d.step = step
         } }))
@@ -157,8 +156,8 @@ internal object ParticleRecipeCommands {
 
     private fun imageTree(): LiteralArgumentBuilder<CommandSourceStack> {
         val root = Commands.literal("image")
-        for (kind in listOf("file", "resource")) root.then(Commands.literal(kind).then(Commands.argument("path", StringArgumentType.string()).executes { ctx -> sampleConfig(ctx) { d ->
-            d.sampling = CommandParticleRecipes.Sampling.IMAGE; d.image = word(ctx, "path"); d.imageResource = kind == "resource"
+        for (kind in listOf("file", "resource")) root.then(Commands.literal(kind).then(Commands.argument("path", ParticleCommandArguments.textType()).executes { ctx -> sampleConfig(ctx) { d ->
+            d.sampling = CommandParticleRecipes.Sampling.IMAGE; d.image = ParticleCommandArguments.text(word(ctx, "path")); d.imageResource = kind == "resource"
         } }))
         root.then(Commands.literal("stride").then(Commands.argument("stride", IntegerArgumentType.integer(1, 256)).executes { ctx -> sampleConfig(ctx) { d -> d.imageOptions = d.imageOptions.copy(stride = IntegerArgumentType.getInteger(ctx, "stride")) } }))
         for (key in listOf("spacing", "alpha")) root.then(Commands.literal(key).then(Commands.argument("value", DoubleArgumentType.doubleArg()).executes { ctx -> sampleConfig(ctx) { d ->
@@ -173,12 +172,15 @@ internal object ParticleRecipeCommands {
 
     private fun appearance(d: CommandParticleRecipes.Draft, key: String, value: String) {
         require(key in APPEARANCE) { "未知外观参数 '$key'" }
-        val values = LinkedHashMap(d.appearance).apply { put(key, value) }
-        val parsed = ParticleCommandOptionParser.parse(values.entries.joinToString(" ") { "${it.key}=${it.value}" })
+        val text = ParticleCommandArguments.text(value)
+        val values = LinkedHashMap(d.appearance).apply { put(key, text) }
+        val parsed = ParticleCommandOptionParser.parse(values.entries.joinToString(" ") {
+            "${it.key}=\"${it.value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        })
         require(parsed.provided == values.keys) { "每条 appearance 命令只设置一个参数" }
         var birth = d.recipe.birth
         if (key == "color") {
-            val c = ParticleCommandOptionParser.parseColor(value)
+            val c = ParticleCommandOptionParser.parseColor(text)
             birth = birth + mapOf("r" to c.r.toString(), "g" to c.g.toString(), "b" to c.b.toString(), "a" to c.a.toString())
         }
         if (key == "scale") birth = birth + ("sc" to parsed.scale.toString())
@@ -197,11 +199,6 @@ internal object ParticleRecipeCommands {
     private fun draft(ctx: CommandContext<CommandSourceStack>) = CommandParticleRecipes.get(dim(ctx), word(ctx, "name"))
     private fun dim(ctx: CommandContext<CommandSourceStack>) = ParticleUtils.dimensionUUID(ctx.source.level)
     private fun word(ctx: CommandContext<CommandSourceStack>, name: String) = StringArgumentType.getString(ctx, name)
-    private fun vector(raw: String): Vec3 {
-        val n = raw.split(',').map { it.toDoubleOrNull() ?: throw IllegalArgumentException("坐标格式为 x,y,z") }
-        require(n.size == 3 && n.all(Double::isFinite)) { "坐标格式为 x,y,z，分量必须有限" }
-        return Vec3(n[0], n[1], n[2])
-    }
     private fun success(ctx: CommandContext<CommandSourceStack>, message: String): Int { ctx.source.sendSuccess({ Component.literal(message) }, false); return 1 }
     private inline fun safe(ctx: CommandContext<CommandSourceStack>, action: () -> Int): Int = try { action() } catch (e: Exception) {
         ctx.source.sendFailure(Component.literal(e.message ?: "粒子生成配置错误")); 0
