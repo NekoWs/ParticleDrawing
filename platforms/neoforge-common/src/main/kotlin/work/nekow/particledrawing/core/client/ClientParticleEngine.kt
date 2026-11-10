@@ -209,6 +209,14 @@ class ClientParticleEngine {
         applyDirect(id, pos, color, glowing, lightLevel, snap, 0f, scaleArray, billboard, spin, spinLocal)
     }
 
+    /** 动画求值后的 UV 同步到已有粒子，保留当前的出生与换帧时钟。 */
+    fun updateParticleUv(id: UUID, uv: UvData?) {
+        val particle = particles[id] ?: return
+        if (particle.uv === uv) return
+        particle.uv = uv
+        bridges[id]?.setUv(uv)
+    }
+
     private fun applyDirect(id: UUID, pos: Vec3, color: Color,
                             glowing: Boolean, lightLevel: Int, snap: Boolean,
                             scale: Float, scaleArray: FloatArray?,

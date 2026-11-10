@@ -18,12 +18,18 @@ java {
 kotlin { jvmToolchain(21) }
 
 dependencies {
-    implementation 'com.google.code.gson:gson:2.10.1'
+    // 游戏宿主提供自己的 Gson，核心只按较低 API 基线编译，避免覆盖宿主版本。
+    compileOnly 'com.google.code.gson:gson:2.10.1'
+    testImplementation 'com.google.code.gson:gson:2.10.1'
     testImplementation 'org.jetbrains.kotlin:kotlin-test'
 }
 
 // 每个宿主构建使用自己的输出目录，两个 Minecraft 版本可以分别构建。
-if (project != rootProject) layout.buildDirectory = rootProject.layout.buildDirectory.dir('pdraw-core')
+if (project != rootProject) {
+    layout.buildDirectory = rootProject.layout.buildDirectory.dir('pdraw-core')
+    // NeoGradle 在运行任务内读取其他 sourceSet；提前解析，避免 Gradle 9 跨项目无锁解析。
+    configurations.runtimeClasspath.resolve()
+}
 tasks.withType(Test).configureEach { workingDir file('../..') }
 
 tasks.register('verifyPlatformIndependence') {

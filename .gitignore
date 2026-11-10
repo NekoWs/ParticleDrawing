@@ -50,7 +50,7 @@ repo/
 /particle-editor/test/zz-*
 /.freebuff/
 /opencode.json
-/.kotlin/
+.kotlin/
 
 # 本地交接文档（不纳入版本库）
 /HANDOFF.md

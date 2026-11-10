@@ -634,6 +634,7 @@ class ClientAnimationPlayer(
         currentMs = initial
         advanceTo(initial.toDouble())
         advanceFunctions(initial.toDouble())
+        advanceUv(initial.toDouble())
     }
 
     /**

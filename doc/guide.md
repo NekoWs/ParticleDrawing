@@ -1,5 +1,8 @@
 # 使用指南
 
+动画文件的函数对象 UV 会在派生粒子出生帧继承，运行中的 UV 公式也会同步到已有粒子。
+换帧继续使用原有时钟，更新 UV 不会重新生成粒子。
+
 从绘制形状到播放动画文件的完整用法。类索引见 [api-reference.md](api-reference.md)，依赖引入与第一个
 效果见 [getting-started.md](getting-started.md)。
 

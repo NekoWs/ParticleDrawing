@@ -15,6 +15,7 @@ file("$repositoryRoot/platforms/$targetName/target.properties").withInputStream 
 def commonSource = new File(repositoryRoot, 'platforms/neoforge-common/src')
 def targetSource = new File(repositoryRoot, "platforms/$targetName/src")
 def generatedResources = new File(targetSource, 'generated/resources')
+evaluationDependsOn(':pdraw-core')
 sourceSets {
     main {
         kotlin.setSrcDirs([new File(commonSource, 'main/kotlin'), new File(targetSource, 'main/kotlin')])
@@ -68,7 +69,11 @@ runs {
 
         workingDirectory project.layout.dir(providers.provider { new File(repositoryRoot, "run/$targetName/$name") })
 
-        modSource project.sourceSets.main
+        // 核心与平台共用包，开发运行时也必须归入同一个模组，避免模块加载隔离。
+        modSources {
+            add(project.mod_id, project.sourceSets.main)
+            add(project.mod_id, project(':pdraw-core').sourceSets.main)
+        }
     }
 
     client {

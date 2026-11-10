@@ -422,6 +422,7 @@ object ClientAnimationManager {
                         uuid, pos, state.color, state.scale, state.glowing, state.lightLevel, snap = true,
                         billboard = state.billboard, spin = state.spin, spinLocal = state.spinLocal,
                     )
+                    engine.updateParticleUv(uuid, state.uv)
                 }
             }
         }
@@ -495,12 +496,13 @@ object ClientAnimationManager {
                 }
                 state.visible && live -> {
                     val pos = entry.anchor?.apply(state.pos.toMinecraft()) ?: state.pos.toMinecraft()
-                    ClientParticleEngine.instance()?.updateParticleDirectArray(
+                    engine.updateParticleDirectArray(
                         uuid, pos, state.color, state.scale, state.glowing, state.lightLevel,
                         // 派生粒子按帧重写的图形不做 tick 间插值
                         snap = snapDirectWrite(state.derived),
                         billboard = state.billboard, spin = state.spin, spinLocal = state.spinLocal,
                     )
+                    engine.updateParticleUv(uuid, state.uv)
                 }
             }
         }

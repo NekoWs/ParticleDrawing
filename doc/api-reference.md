@@ -66,7 +66,7 @@
 | `AnimationProgress` | 服务端权威播放进度公式，两端共用 |
 | `PlaybackClock` | 特效播放时钟，支持 seek、暂停与变速 |
 | `ProcessClock` | 渲染帧 process 时刻的单调游标 |
-| `ClientAnimationPlayer` | 客户端逐 tick 求值器：轨道插值、函数对象 `setup` / `tick` / `process`、循环回卷 |
+| `ClientAnimationPlayer` | 客户端逐 tick 求值器：轨道插值、函数对象 `setup` / `tick` / `process`、循环回卷；派生粒子出生帧即具备继承的 UV |
 | `ServerAnimationManager` | 服务端动画播放管理：按名或字节播放、停止、变量更新、活跃查询 |
 | `ServerEffectManager` | 服务端特效播放管理：可移动锚点、播放时钟、参数与完成回调 |
 
