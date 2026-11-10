@@ -9,10 +9,11 @@ import kotlin.test.*
 
 class ParticleCommandExamplesTest {
     /** 读取实际函数的数据和公式部分；服务器锚点与贴图由游戏解析。 */
-    private fun example(name: String): ParticleRecipe {
+    private fun example(name: String, emitterName: String? = null): ParticleRecipe {
         val declarations = Files.readAllLines(Path.of("examples/commands/$name.mcfunction"))
             .filter { it.isNotBlank() && !it.startsWith("#") }
             .map { it.split(' ', limit = 5) }
+            .filter { emitterName == null || it[3] == emitterName || (it[3] == "reset" && it[4] == emitterName) }
         val emitter = declarations.first().also { assertEquals("reset", it[3]) }[4]
         val commands = declarations.drop(1).map {
             assertEquals(listOf("pdraw", "particle", "emitter", emitter), it.take(4))
@@ -43,6 +44,7 @@ class ParticleCommandExamplesTest {
         }
         return ParticleRecipe(seeds, rate = value("rate").toInt(), lifetime = value("lifetime").toInt(),
             maxAlive = value("max_alive").toInt(), variables = fields("variable").mapValues { it.value.toDouble() },
+            follow = commands["follow"]?.single()?.toBooleanStrict() ?: false,
             lets = fields("let"), birth = fields("birth"), motion = fields("motion")).also { it.validate() }
     }
 
@@ -96,5 +98,50 @@ class ParticleCommandExamplesTest {
             assertTrue(abs(it.position.y) <= 0.25)
             assertTrue(it.position.horizontalDistance() <= 4.3 + 1e-9)
         }
+    }
+
+    @Test fun `环面结闭合且旋转倾斜不改变到中心的距离`() {
+        val recipe = example("torus-knot")
+        val runtime = RecipeRuntime(recipe, true)
+        runtime.tick()
+        val before = runtime.particles.map { it.position }
+        assertEquals(960, before.size)
+        assertTrue(before.first().distanceTo(before.last()) < 1e-8)
+        assertTrue(before.zipWithNext().all { (a, b) -> a.distanceTo(b) < 0.1 })
+        repeat(60) { runtime.tick() }
+        runtime.particles.forEachIndexed { i, p -> assertEquals(before[i].length(), p.position.length(), 1e-8) }
+        assertTrue(runtime.particles.indices.any { before[it].distanceTo(runtime.particles[it].position) > 0.5 })
+    }
+
+    @Test fun `莫比乌斯带首尾反向衔接且扭转曲面旋转时不散开`() {
+        val runtime = RecipeRuntime(example("mobius"), true)
+        runtime.tick()
+        val before = runtime.particles.map { it.position }
+        assertEquals(144 * 7, before.size)
+        for (j in 0..6) assertTrue(before[j].distanceTo(before[143 * 7 + 6 - j]) < 0.2)
+        assertTrue(before.first().distanceTo(before[143 * 7]) > 1.0)
+        repeat(60) { runtime.tick() }
+        runtime.particles.forEachIndexed { i, p -> assertEquals(before[i].length(), p.position.length(), 1e-8) }
+        assertTrue(runtime.particles.indices.any { before[it].distanceTo(runtime.particles[it].position) > 0.5 })
+    }
+
+    @Test fun `曼陀罗三层始终完整居中且外环保持三种半径`() {
+        val runtimes = listOf("mandala", "mandala-star", "mandala-ring").associateWith { name ->
+            val recipe = example("mandala", name)
+            assertTrue(recipe.follow)
+            assertTrue(recipe.maxAlive >= recipe.seeds.size)
+            RecipeRuntime(recipe, true).also { it.tick() }
+        }
+        assertEquals(2040, runtimes.values.sumOf { it.particles.size })
+        repeat(60) { runtimes.values.forEach { it.tick() } }
+        for (runtime in runtimes.values) {
+            assertFalse(runtime.emitting)
+            assertEquals(runtime.recipe.seeds.size, runtime.particles.size)
+            assertTrue(abs(runtime.particles.map { it.position.x }.average()) < 0.03)
+            assertTrue(abs(runtime.particles.map { it.position.z }.average()) < 0.03)
+            runtime.particles.forEach { assertTrue(abs(it.position.y) <= 0.12) }
+        }
+        val rings = runtimes.getValue("mandala-ring").particles
+        rings.forEachIndexed { i, p -> assertEquals(3.2 + (i / 240) * 0.18, p.position.horizontalDistance(), 1e-8) }
     }
 }

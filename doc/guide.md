@@ -669,6 +669,7 @@ val custom = EasingType.custom(0.68, -0.55, 0.265, 1.55)   // (x1, y1, x2, y2)
 它按名称分步配置，支持状态、变量热更新、筛选修改和共享实体锚点，见[分步配置粒子生成器](particle-commands.md)。
 图片与完整曲面需要显式配置足够的 `max_alive` 和寿命；默认容量为 4096。该文档还提供桃心、旋转球面
 和动态曲臂的分步函数，可以复制后修改公式，或绑定同一实体锚点。
+几何动态例子还包括分层曼陀罗、三叶环面结和莫比乌斯带，见[命令函数示例](../examples/commands/README.md)。
 下方的 `group/add/program` 用于固定成员的组级编排。
 
 `/pdraw particle` 把公开绘图与 `ParticleGroup` 编排能力拆成可组合的命令，适合 `.mcfunction`、连锁

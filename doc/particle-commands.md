@@ -97,13 +97,16 @@ pdraw particle emitter sigil image resource demo:images/ring.png
 | 向外散开的圆、上升粒子 | birth 定义形状，motion 定义速度或加速度，lifetime 限制拖尾长度 |
 | 逐步画出的曲线与循环 | rate/interval 控制绘制速度；burst 画一轮，start 持续发射 |
 
-提供三个可修改的函数，均使用现有命令，不注册固定效果：
+提供以下可修改的函数，均使用现有命令，不注册固定效果：
 
 | 文件 | 行为 |
 | --- | --- |
 | [heart.mcfunction](../examples/commands/heart.mcfunction) | 逐步画出桃心，按发射器时间脉动，寿命末尾淡出 |
 | [rotating-sphere.mcfunction](../examples/commands/rotating-sphere.mcfunction) | 768 点球面，旋转并逐颗变色；speed 可热更新 |
 | [tentacles.mcfunction](../examples/commands/tentacles.mcfunction) | 九条动态曲臂；let 拆出分臂、沿臂参数、角度与半径 |
+| [mandala.mcfunction](../examples/commands/mandala.mcfunction) | 十二瓣玫瑰、双三角星和三重外环，共享锚点并分层反向旋转 |
+| [torus-knot.mcfunction](../examples/commands/torus-knot.mcfunction) | 三叶环面结，立体旋转、倾斜及沿曲线流动的渐变 |
+| [mobius.mcfunction](../examples/commands/mobius.mcfunction) | 双参数点阵组成莫比乌斯带，一圈后横向次序反转 |
 
 这些示例展示对应的几何与运动，不复现网站截图的光影、镜头和全部参数。触手示例采用有界波形，
 不照搬案例里接近正切极点的超远坐标。球面是表面点阵，体积填充可另用空间网格与球内条件。
@@ -116,7 +119,9 @@ pdraw particle emitter sphere variable speed 0.08
 pdraw particle emitter sphere anchor entity @p 0 3 0 false
 ```
 
-三个示例都设置 follow=true，已有成员会一起移动。要持续播放，可把函数末尾的 burst 改为 start；
+这些动态示例都设置 follow=true，已有成员会一起移动。曼陀罗的三个配置共用主层锚点，
+只需更新 mandala 的 anchor。几何示例的粒子数、变量和重播方式见[函数说明](../examples/commands/README.md)。
+要持续播放，可把函数末尾的 burst 改为 start；
 start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长期只保留同一批成员时，使用 lifetime=-1
 配合 burst，并按需删除淡出公式；用 remove 清除。
 
