@@ -15,6 +15,10 @@ import work.nekow.particledrawing.core.client.ResolvedVisual
  */
 internal object ClientPayloadHandler {
 
+    fun handleRecipe(payload: ParticleRecipePayload, context: IPayloadContext) {
+        context.enqueueWork { work.nekow.particledrawing.core.client.ClientParticleSources.handle(payload) }
+    }
+
     fun handleSpawn(payload: ParticleSpawnPayload, context: IPayloadContext) {
         context.enqueueWork {
             val engine = ClientParticleEngine.instance() ?: return@enqueueWork

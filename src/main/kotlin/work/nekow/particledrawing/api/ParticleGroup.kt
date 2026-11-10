@@ -701,6 +701,7 @@ class ParticleGroup(
 
     private fun expressionInSpace(code: String, durationTicks: Int, local: Boolean): ParticleGroup {
         require(durationTicks >= 0) { "expression 的时长不能为负" }
+        work.nekow.particledrawing.animation.recipe.GroupExpressionOutputs.validate(code)
         lintGetters(code)
         // 表达式接管几何，完成账本改看表达式与变量缓动。
         expressionMode = true

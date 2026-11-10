@@ -39,10 +39,10 @@ internal object ParticleDrawParticleCommands {
         "style", "texture", "uv", "size", "size_world", "billboard", "spin", "spin_space",
         "additive", "glowing", "light", "intensity",
     )
-    private val SHAPE_OPTIONS = COLOR_OPTIONS + CURVE_OPTIONS + VISUAL_OPTIONS + setOf("scale", "stagger")
+    private val SHAPE_OPTIONS = COLOR_OPTIONS + CURVE_OPTIONS + VISUAL_OPTIONS + setOf("scale", "stagger", "lifetime")
     private val FIELD_OPTIONS = (SHAPE_OPTIONS - "stagger") + setOf("lifetime", "velocity", "force", "force_ticks")
     private val BEAM_OPTIONS = COLOR_OPTIONS + CURVE_OPTIONS + setOf(
-        "stagger", "taper", "thickness", "texture", "additive", "glowing",
+        "stagger", "taper", "thickness", "texture", "additive", "glowing", "lifetime",
     )
     private val FORMULA_NAME = Regex("^[A-Za-z_][A-Za-z0-9_]*$")
     private val RESERVED_FORMULA_NAMES = setOf(
@@ -55,6 +55,7 @@ internal object ParticleDrawParticleCommands {
         .then(groupTree())
         .then(addTree())
         .then(programTree())
+        .then(ParticleRecipeCommands.tree())
 
     private fun groupTree(): LiteralArgumentBuilder<CommandSourceStack> = Commands.literal("group")
         .executes(::groupHelp)
@@ -343,7 +344,7 @@ internal object ParticleDrawParticleCommands {
         val e = entry(ctx, false); val before = e.group.size(); val o = options(raw)
         requireOptions(o, SHAPE_OPTIONS - "stagger")
         reserveMembers(e, 1)
-        Draw.dot(ParticleManager.of(ctx.source.level), Vec3Argument.getVec3(ctx, "pos"), o.color, o.scale, e.group, o.visual, o.lifeCurve)
+        Draw.dot(ParticleManager.of(ctx.source.level), Vec3Argument.getVec3(ctx, "pos"), o.color, o.scale, e.group, o.visual, o.lifeCurve, o.lifetime)
         added(ctx, before, e)
     }
 
@@ -376,7 +377,7 @@ internal object ParticleDrawParticleCommands {
         requireOptions(o, SHAPE_OPTIONS + "taper")
         reserveMembers(e, IntegerArgumentType.getInteger(ctx, "count"), o.stagger)
         Draw.line(ParticleManager.of(ctx.source.level), Vec3Argument.getVec3(ctx, "start"), Vec3Argument.getVec3(ctx, "end"),
-            IntegerArgumentType.getInteger(ctx, "count"), o.color, o.scale, o.stagger, e.group, o.visual, o.taper, o.lifeCurve)
+            IntegerArgumentType.getInteger(ctx, "count"), o.color, o.scale, o.stagger, e.group, o.visual, o.taper, o.lifeCurve, o.lifetime)
         added(ctx, before, e)
     }
 
@@ -385,7 +386,7 @@ internal object ParticleDrawParticleCommands {
         requireOptions(o, BEAM_OPTIONS)
         reserveMembers(e, 1)
         Draw.polyline(ParticleManager.of(ctx.source.level), listOf(Vec3Argument.getVec3(ctx, "start"), Vec3Argument.getVec3(ctx, "end")),
-            o.thickness, o.taper, o.visual.texture, o.visual.additive, o.visual.glowing, o.color, o.stagger, e.group, o.lifeCurve)
+            o.thickness, o.taper, o.visual.texture, o.visual.additive, o.visual.glowing, o.color, o.stagger, e.group, o.lifeCurve, o.lifetime)
         added(ctx, before, e)
     }
 
@@ -400,7 +401,7 @@ internal object ParticleDrawParticleCommands {
         Draw.curve(ParticleManager.of(ctx.source.level), { t ->
             val a = t * turns * PI * 2.0
             center.add(cos(a) * radius, (t - 0.5) * height, sin(a) * radius)
-        }, IntegerArgumentType.getInteger(ctx, "count"), o.color, o.scale, o.stagger, e.group, o.visual, o.taper, o.lifeCurve)
+        }, IntegerArgumentType.getInteger(ctx, "count"), o.color, o.scale, o.stagger, e.group, o.visual, o.taper, o.lifeCurve, o.lifetime)
         added(ctx, before, e)
     }
 
@@ -409,7 +410,7 @@ internal object ParticleDrawParticleCommands {
         requireOptions(o, SHAPE_OPTIONS + "axis")
         reserveMembers(e, IntegerArgumentType.getInteger(ctx, "count"), o.stagger)
         Draw.circle(ParticleManager.of(ctx.source.level), Vec3Argument.getVec3(ctx, "center"), DoubleArgumentType.getDouble(ctx, "radius"),
-            IntegerArgumentType.getInteger(ctx, "count"), o.axis, o.color, o.scale, o.stagger, e.group, o.visual, o.lifeCurve)
+            IntegerArgumentType.getInteger(ctx, "count"), o.axis, o.color, o.scale, o.stagger, e.group, o.visual, o.lifeCurve, o.lifetime)
         added(ctx, before, e)
     }
 
@@ -421,7 +422,7 @@ internal object ParticleDrawParticleCommands {
         reserveMembers(e, perimeter * (layers + 1), o.stagger)
         Draw.disc(ParticleManager.of(ctx.source.level), Vec3Argument.getVec3(ctx, "center"), DoubleArgumentType.getDouble(ctx, "radius"),
             perimeter, layers, o.axis,
-            o.color, o.scale, o.stagger, e.group, o.visual, o.lifeCurve)
+            o.color, o.scale, o.stagger, e.group, o.visual, o.lifeCurve, o.lifetime)
         added(ctx, before, e)
     }
 
@@ -430,7 +431,7 @@ internal object ParticleDrawParticleCommands {
         requireOptions(o, SHAPE_OPTIONS + "axis")
         reserveMembers(e, IntegerArgumentType.getInteger(ctx, "segments") * 3, o.stagger)
         Draw.triangle(ParticleManager.of(ctx.source.level), Vec3Argument.getVec3(ctx, "center"), DoubleArgumentType.getDouble(ctx, "radius"),
-            IntegerArgumentType.getInteger(ctx, "segments"), 0.0, o.axis, o.color, o.scale, o.stagger, e.group, o.visual, o.lifeCurve)
+            IntegerArgumentType.getInteger(ctx, "segments"), 0.0, o.axis, o.color, o.scale, o.stagger, e.group, o.visual, o.lifeCurve, o.lifetime)
         added(ctx, before, e)
     }
 
@@ -439,7 +440,7 @@ internal object ParticleDrawParticleCommands {
         requireOptions(o, SHAPE_OPTIONS + "axis")
         reserveMembers(e, IntegerArgumentType.getInteger(ctx, "segments") * 6, o.stagger)
         Draw.hexagram(ParticleManager.of(ctx.source.level), Vec3Argument.getVec3(ctx, "center"), DoubleArgumentType.getDouble(ctx, "radius"),
-            IntegerArgumentType.getInteger(ctx, "segments"), o.axis, o.color, o.color, o.scale, o.stagger, e.group, o.visual, o.lifeCurve)
+            IntegerArgumentType.getInteger(ctx, "segments"), o.axis, o.color, o.color, o.scale, o.stagger, e.group, o.visual, o.lifeCurve, o.lifetime)
         added(ctx, before, e)
     }
 
@@ -450,7 +451,7 @@ internal object ParticleDrawParticleCommands {
         reserveMembers(e, (density + 1) * (density + 1), o.stagger)
         Draw.rect(ParticleManager.of(ctx.source.level), Vec3Argument.getVec3(ctx, "center"), DoubleArgumentType.getDouble(ctx, "width"),
             DoubleArgumentType.getDouble(ctx, "height"), density, o.hollow, o.axis,
-            o.color, o.scale, o.stagger, e.group, o.visual, o.lifeCurve)
+            o.color, o.scale, o.stagger, e.group, o.visual, o.lifeCurve, o.lifetime)
         added(ctx, before, e)
     }
 
@@ -459,7 +460,7 @@ internal object ParticleDrawParticleCommands {
         requireOptions(o, SHAPE_OPTIONS)
         reserveMembers(e, IntegerArgumentType.getInteger(ctx, "count"), o.stagger)
         Draw.sphere(ParticleManager.of(ctx.source.level), Vec3Argument.getVec3(ctx, "center"), DoubleArgumentType.getDouble(ctx, "radius"),
-            IntegerArgumentType.getInteger(ctx, "count"), o.color, o.scale, o.stagger, e.group, o.visual, o.lifeCurve)
+            IntegerArgumentType.getInteger(ctx, "count"), o.color, o.scale, o.stagger, e.group, o.visual, o.lifeCurve, o.lifetime)
         added(ctx, before, e)
     }
 
@@ -470,7 +471,7 @@ internal object ParticleDrawParticleCommands {
         reserveMembers(e, (density + 1) * (density + 1) * (density + 1), o.stagger)
         Draw.cuboid(ParticleManager.of(ctx.source.level), Vec3Argument.getVec3(ctx, "center"), DoubleArgumentType.getDouble(ctx, "width"),
             DoubleArgumentType.getDouble(ctx, "height"), DoubleArgumentType.getDouble(ctx, "depth"),
-            density, o.hollow, o.color, o.scale, o.stagger, e.group, o.visual, o.lifeCurve)
+            density, o.hollow, o.color, o.scale, o.stagger, e.group, o.visual, o.lifeCurve, o.lifetime)
         added(ctx, before, e)
     }
 
@@ -609,7 +610,7 @@ internal object ParticleDrawParticleCommands {
     }
 
     private fun help(ctx: CommandContext<CommandSourceStack>): Int {
-        ctx.source.sendSuccess({ Component.literal("/pdraw particle group|add|program；先建命名组，再添加图元，最后逐条编排") }, false)
+        ctx.source.sendSuccess({ Component.literal("/pdraw particle emitter：分步配置采样、图片与粒子行为；group|add|program：固定成员组的绘制与编排") }, false)
         ctx.source.sendSuccess({ Component.literal("add 参数: color/gradient/rainbow, scale/stagger, style/texture/uv/size, additive/glowing/light, *_curve；输入子命令可看补全") }, false)
         ctx.source.sendSuccess({ Component.literal("field anchor <数量> 可复用组锚点；field 的 lifetime=80 表示 4 秒，未写时永存；expression local 使用锚点相对坐标") }, false)
         return 1

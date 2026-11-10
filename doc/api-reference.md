@@ -15,6 +15,11 @@
 | `ParticleSpawnSpec` | 批量生成的单颗粒子规格（纯数据，字段与 `Builder` 对应，含出生速度/加速度配对） |
 | `ParticleEmitter` | 运行时发射器的构建器：口径（里程或间隔）、寿命、外观、曲线、抖动 |
 | `EmitterHandle` | 已声明发射器的句柄：改锚点、口径、参数与外观，停止与状态查询 |
+| `ParticleRecipe`、`ParticleSeed` | 可组合的出生样本、出生/运动公式、条件、状态、寿命和外观声明；t 为毫秒，age/life 为刻 |
+| `ParticleSampling` | 参数数量、参数范围与空间网格采样；只提供样本，不预设效果 |
+| `ParticleImageSampler` | CPU 读取单帧图片并采样为独立粒子，保留颜色/透明度；可配置像素步幅、世界间距、平面与 alpha 阈值 |
+| `RecipeAnchor` | 固定或实体 UUID 锚点，偏移与局部坐标系可配置 |
+| `ParticleSources`、`ParticleSourceHandle` | 以声明启动循环或单轮生成；更新声明、锚点、条件修改/删除、停止出生或立即移除 |
 | `Anchor` | 发射与特效锚点：`Fixed` / `Entity` / `Movable`，`Orient` 决定整组是否随运动方向转向 |
 | `ParticleCurve`、`CurveKey`、`CurveChannel` | 逐粒子寿命曲线的单通道关键帧（透明度、尺寸、RGB、对外光强），同一通道多条相乘 |
 | `ParticleLifeCurve` | 一条粒子的全部寿命曲线，随生成包下发 |

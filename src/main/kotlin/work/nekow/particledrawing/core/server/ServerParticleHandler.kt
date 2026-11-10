@@ -32,6 +32,7 @@ object ServerParticleHandler {
         ServerEffectManager.flushAnchorUpdates(server)
         // 发射器：定期给刚进范围或后进服的玩家补发声明
         ServerEmitterManager.tick(server)
+        ServerParticleSources.tick(server)
         for (level in server.allLevels) {
             val dim = ParticleUtils.dimensionUUID(level)
             // 清掉该维度已播完（非循环）的播放记录，避免迟到玩家收到已结束的播放
@@ -55,6 +56,8 @@ object ServerParticleHandler {
             ServerProgramDelivery.clearDimension(dim)
             ServerParticleEngine.clearDimension(dim)
             CommandParticleGroups.discard(dim)
+            work.nekow.particledrawing.command.CommandParticleRecipes.discard(dim)
+            ServerParticleSources.discard(dim)
             // 只清这个维度排的任务：别的维度还有刚排的编排要跑
             AnimationScheduler.clearDimension(dim)
         }
@@ -68,6 +71,8 @@ object ServerParticleHandler {
         ServerProgramDelivery.clearAll()
         AnimationScheduler.clearAll()
         CommandParticleGroups.discardAll()
+        work.nekow.particledrawing.command.CommandParticleRecipes.clear()
+        ServerParticleSources.clear()
     }
 
     // 维度切换 / 重生 / 登录后，客户端会重建 ClientLevel 与原版 ParticleEngine，
@@ -108,5 +113,6 @@ object ServerParticleHandler {
     @JvmStatic
     fun onPlayerLoggedOut(event: PlayerEvent.PlayerLoggedOutEvent) {
         ServerEmitterManager.forgetPlayer(event.entity.uuid)
+        ServerParticleSources.forget(event.entity.uuid)
     }
 }

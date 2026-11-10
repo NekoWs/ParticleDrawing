@@ -62,10 +62,10 @@ object Draw {
         manager: ParticleManager, pos: Vec3,
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
         group: ParticleGroup? = null, visual: ParticleVisual = ParticleVisual(),
-        lifeCurve: ParticleLifeCurve? = null
+        lifeCurve: ParticleLifeCurve? = null, lifetime: Int = -1
     ): ParticleGroup {
         val g = group ?: manager.createGroup(pos)
-        spawnInto(manager, g, pos, colorFn.colorAt(0.0), scale, visual, lifeCurve)
+        spawnInto(manager, g, pos, colorFn.colorAt(0.0), scale, visual, lifeCurve, lifetime)
         return g
     }
 
@@ -83,7 +83,7 @@ object Draw {
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
         stagger: Int = 0, group: ParticleGroup? = null,
         visual: ParticleVisual = ParticleVisual(), taper: Boolean = false,
-        lifeCurve: ParticleLifeCurve? = null
+        lifeCurve: ParticleLifeCurve? = null, lifetime: Int = -1
     ): ParticleGroup {
         val g = group ?: manager.createGroup(start.add(end).scale(0.5))
         val dir = end.subtract(start)
@@ -91,7 +91,7 @@ object Draw {
 
         for (i in 0 until count) {
             val t = if (count > 1) i.toDouble() / (count - 1) else 0.5
-            place(manager, g, start.add(dir.scale(t)), colorFn.colorAt(t), scale, t, visual, taper, i, stagger, lifeCurve)
+            place(manager, g, start.add(dir.scale(t)), colorFn.colorAt(t), scale, t, visual, taper, i, stagger, lifeCurve, lifetime)
         }
         return g
     }
@@ -109,14 +109,14 @@ object Draw {
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
         stagger: Int = 0, group: ParticleGroup? = null,
         visual: ParticleVisual = ParticleVisual(), taper: Boolean = false,
-        lifeCurve: ParticleLifeCurve? = null
+        lifeCurve: ParticleLifeCurve? = null, lifetime: Int = -1
     ): ParticleGroup {
         val first = posFunc(0.0)
         val last = posFunc(1.0)
         val g = group ?: manager.createGroup(first.add(last).scale(0.5))
         for (i in 0 until steps) {
             val t = i.toDouble() / steps.coerceAtLeast(1)
-            place(manager, g, posFunc(t), colorFn.colorAt(t), scale, t, visual, taper, i, stagger, lifeCurve)
+            place(manager, g, posFunc(t), colorFn.colorAt(t), scale, t, visual, taper, i, stagger, lifeCurve, lifetime)
         }
         return g
     }
@@ -141,7 +141,7 @@ object Draw {
         additive: Boolean = false, glowing: Boolean = false,
         colorFn: ColorSource = ColorSource.of(Color.WHITE),
         stagger: Int = 0, group: ParticleGroup? = null,
-        lifeCurve: ParticleLifeCurve? = null
+        lifeCurve: ParticleLifeCurve? = null, lifetime: Int = -1
     ): ParticleGroup {
         val first = points.firstOrNull() ?: return manager.createGroup(Vec3.ZERO)
         val last = points.last()
@@ -171,7 +171,7 @@ object Draw {
             look.additive(additive)
             look.glowing(glowing)
 
-            placeVisual(manager, g, a.add(b).scale(0.5), colorFn.colorAt(t), look, index++, stagger, lifeCurve)
+            placeVisual(manager, g, a.add(b).scale(0.5), colorFn.colorAt(t), look, index++, stagger, lifeCurve, lifetime)
         }
         return g
     }
@@ -191,7 +191,7 @@ object Draw {
         radius: Double, count: Int, axis: Axis = Axis.XZ,
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
         stagger: Int = 0, group: ParticleGroup? = null, visual: ParticleVisual = ParticleVisual(),
-        lifeCurve: ParticleLifeCurve? = null
+        lifeCurve: ParticleLifeCurve? = null, lifetime: Int = -1
     ): ParticleGroup {
         val g = group ?: manager.createGroup(center)
         for (i in 0 until count) {
@@ -199,7 +199,7 @@ object Draw {
             val u = cos(angle) * radius
             val v = sin(angle) * radius
             val t = i.toDouble() / count
-            place(manager, g, axisPoint(center, axis, u, v), colorFn.colorAt(t), scale, t, visual, false, i, stagger, lifeCurve)
+            place(manager, g, axisPoint(center, axis, u, v), colorFn.colorAt(t), scale, t, visual, false, i, stagger, lifeCurve, lifetime)
         }
         return g
     }
@@ -217,7 +217,7 @@ object Draw {
         radius: Double, perimeterCount: Int, layers: Int, axis: Axis = Axis.XZ,
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
         stagger: Int = 0, group: ParticleGroup? = null, visual: ParticleVisual = ParticleVisual(),
-        lifeCurve: ParticleLifeCurve? = null
+        lifeCurve: ParticleLifeCurve? = null, lifetime: Int = -1
     ): ParticleGroup {
         val g = group ?: manager.createGroup(center)
         var placed = 0
@@ -230,7 +230,7 @@ object Draw {
                 val v = sin(angle) * r
                 place(manager, g, axisPoint(center, axis, u, v),
                     colorFn.colorAt(layer.toDouble() / maxOf(1, layers)), scale,
-                    layer.toDouble() / maxOf(1, layers), visual, false, placed++, stagger, lifeCurve)
+                    layer.toDouble() / maxOf(1, layers), visual, false, placed++, stagger, lifeCurve, lifetime)
             }
         }
         return g
@@ -249,7 +249,7 @@ object Draw {
         rotationOffset: Double = 0.0, axis: Axis = Axis.XZ,
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
         stagger: Int = 0, group: ParticleGroup? = null, visual: ParticleVisual = ParticleVisual(),
-        lifeCurve: ParticleLifeCurve? = null
+        lifeCurve: ParticleLifeCurve? = null, lifetime: Int = -1
     ): ParticleGroup {
         val g = group ?: manager.createGroup(center)
         var placed = 0
@@ -262,7 +262,7 @@ object Draw {
                 val z = (sin(a1) * (1 - t) + sin(a2) * t) * radius
                 val prog = placed.toDouble() / (segmentsPerEdge * 3)
                 place(manager, g, axisPoint(center, axis, x, z),
-                    colorFn.colorAt(prog), scale, prog, visual, false, placed++, stagger, lifeCurve)
+                    colorFn.colorAt(prog), scale, prog, visual, false, placed++, stagger, lifeCurve, lifetime)
             }
         }
         return g
@@ -283,11 +283,11 @@ object Draw {
         colorFn2: ColorSource = ColorSource.of(Color.WHITE),
         scale: Float = DEFAULT_SCALE,
         stagger: Int = 0, group: ParticleGroup? = null, visual: ParticleVisual = ParticleVisual(),
-        lifeCurve: ParticleLifeCurve? = null
+        lifeCurve: ParticleLifeCurve? = null, lifetime: Int = -1
     ): ParticleGroup {
         val g = group ?: manager.createGroup(center)
-        triangle(manager, center, radius, segmentsPerEdge, 0.0, axis, colorFn1, scale, stagger, g, visual, lifeCurve)
-        triangle(manager, center, radius, segmentsPerEdge, PI / 3.0, axis, colorFn2, scale, stagger, g, visual, lifeCurve)
+        triangle(manager, center, radius, segmentsPerEdge, 0.0, axis, colorFn1, scale, stagger, g, visual, lifeCurve, lifetime)
+        triangle(manager, center, radius, segmentsPerEdge, PI / 3.0, axis, colorFn2, scale, stagger, g, visual, lifeCurve, lifetime)
         return g
     }
 
@@ -305,7 +305,7 @@ object Draw {
         hollow: Boolean = false, axis: Axis = Axis.XZ,
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
         stagger: Int = 0, group: ParticleGroup? = null, visual: ParticleVisual = ParticleVisual(),
-        lifeCurve: ParticleLifeCurve? = null
+        lifeCurve: ParticleLifeCurve? = null, lifetime: Int = -1
     ): ParticleGroup {
         val g = group ?: manager.createGroup(center)
         val sp = maxOf(width, height) / (particlesPerAxis.coerceAtLeast(2) - 1)
@@ -324,7 +324,7 @@ object Draw {
                     Axis.XY -> Vec3(u, v, center.z)
                     Axis.YZ -> Vec3(center.x, u, v)
                 }
-                place(manager, g, pos, colorFn.colorAt(t), scale, t, visual, false, placed++, stagger, lifeCurve)
+                place(manager, g, pos, colorFn.colorAt(t), scale, t, visual, false, placed++, stagger, lifeCurve, lifetime)
             }
         }
         return g
@@ -343,7 +343,7 @@ object Draw {
         manager: ParticleManager, center: Vec3, radius: Double, count: Int,
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
         stagger: Int = 0, group: ParticleGroup? = null, visual: ParticleVisual = ParticleVisual(),
-        lifeCurve: ParticleLifeCurve? = null
+        lifeCurve: ParticleLifeCurve? = null, lifetime: Int = -1
     ): ParticleGroup {
         val g = group ?: manager.createGroup(center)
         val phi = PI * (3.0 - sqrt(5.0))
@@ -354,7 +354,7 @@ object Draw {
             val x = cos(theta) * r * radius
             val z = sin(theta) * r * radius
             place(manager, g, Vec3(center.x + x, center.y + y * radius, center.z + z),
-                colorFn.colorAt((1.0 - y) / 2.0), scale, (1.0 - y) / 2.0, visual, false, i, stagger, lifeCurve)
+                colorFn.colorAt((1.0 - y) / 2.0), scale, (1.0 - y) / 2.0, visual, false, i, stagger, lifeCurve, lifetime)
         }
         return g
     }
@@ -373,7 +373,7 @@ object Draw {
         particlesPerAxis: Int = 12, hollow: Boolean = true,
         colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
         stagger: Int = 0, group: ParticleGroup? = null, visual: ParticleVisual = ParticleVisual(),
-        lifeCurve: ParticleLifeCurve? = null
+        lifeCurve: ParticleLifeCurve? = null, lifetime: Int = -1
     ): ParticleGroup {
         val g = group ?: manager.createGroup(center)
         val step = particlesPerAxis.coerceAtLeast(2)
@@ -391,7 +391,7 @@ object Draw {
                     val z = center.z - depth / 2 + iz * sp
                     if (hollow && ix > 0 && ix < nx && iy > 0 && iy < ny && iz > 0 && iz < nz) continue
                     val t = placed.toDouble() / total
-                    place(manager, g, Vec3(x, y, z), colorFn.colorAt(t), scale, t, visual, false, placed++, stagger, lifeCurve)
+                    place(manager, g, Vec3(x, y, z), colorFn.colorAt(t), scale, t, visual, false, placed++, stagger, lifeCurve, lifetime)
                 }
             }
         }
@@ -411,7 +411,7 @@ object Draw {
     private fun place(
         manager: ParticleManager, group: ParticleGroup, pos: Vec3,
         color: Color, scale: Float, t: Double, visual: ParticleVisual,
-        taper: Boolean, index: Int, stagger: Int, lifeCurve: ParticleLifeCurve?
+        taper: Boolean, index: Int, stagger: Int, lifeCurve: ParticleLifeCurve?, lifetime: Int
     ) {
         val f = taperFactor(taper, if (taper) t else 1.0).toFloat()
         val look = if (taper && visual.hasAniso()) {
@@ -421,11 +421,11 @@ object Draw {
         }
         val s = scale * f
         if (stagger <= 0 || index == 0) {
-            spawnInto(manager, group, pos, color, s, look, lifeCurve)
+            spawnInto(manager, group, pos, color, s, look, lifeCurve, lifetime)
             return
         }
         AnimationScheduler.schedule(manager.dimensionId, index * stagger) {
-            spawnInto(manager, group, pos, color, s, look, lifeCurve)
+            spawnInto(manager, group, pos, color, s, look, lifeCurve, lifetime)
         }
     }
 
@@ -433,26 +433,26 @@ object Draw {
     private fun placeVisual(
         manager: ParticleManager, group: ParticleGroup, pos: Vec3,
         color: Color, visual: ParticleVisual, index: Int, stagger: Int,
-        lifeCurve: ParticleLifeCurve?
+        lifeCurve: ParticleLifeCurve?, lifetime: Int
     ) {
         if (stagger <= 0 || index == 0) {
-            spawnInto(manager, group, pos, color, 1f, visual, lifeCurve)
+            spawnInto(manager, group, pos, color, 1f, visual, lifeCurve, lifetime)
             return
         }
         AnimationScheduler.schedule(manager.dimensionId, index * stagger) {
-            spawnInto(manager, group, pos, color, 1f, visual, lifeCurve)
+            spawnInto(manager, group, pos, color, 1f, visual, lifeCurve, lifetime)
         }
     }
 
     private fun spawnInto(
         manager: ParticleManager, group: ParticleGroup, pos: Vec3,
-        color: Color, scale: Float, visual: ParticleVisual, lifeCurve: ParticleLifeCurve?
+        color: Color, scale: Float, visual: ParticleVisual, lifeCurve: ParticleLifeCurve?, lifetime: Int
     ) {
         val builder = manager.create()
             .position(pos)
             .color(color)
             .scale(scale)
-            .lifetime(-1)
+            .lifetime(lifetime)
             .group(group.id)
             .offsetFromPivot(pos.subtract(group.pivot)) // 组变换（旋转/缩放）依赖该偏移
         // 默认外观（纯白方块、不发光）不带 specs：省掉每颗粒子一份对象拷贝

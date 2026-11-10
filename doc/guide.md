@@ -665,6 +665,10 @@ val custom = EasingType.custom(0.68, -0.55, 0.265, 1.55)   // (x1, y1, x2, y2)
 
 ## 命令绘制与数据包
 
+持续生成、公式采样、条件曲面、图片转粒子和逐粒子运动使用新增的 `particle emitter`。
+它按名称分步配置，支持状态、变量热更新、筛选修改和共享实体锚点，见[分步配置粒子生成器](particle-commands.md)。
+下方的 `group/add/program` 用于固定成员的组级编排。
+
 `/pdraw particle` 把公开绘图与 `ParticleGroup` 编排能力拆成可组合的命令，适合 `.mcfunction`、连锁
 命令方块和聊天调试。一个效果按三步构建：
 
@@ -793,7 +797,8 @@ val look = particleVisual { particleTexture("minecraft:end_rod"); fullBright = t
 | `spin=x,y,z`、`spin_space=local\|world` | 贴图欧拉角（度）及旋转空间 |
 | `additive`、`glowing`、`light=0..15`、`intensity=N` | 混合、全亮和动态光参数 |
 | `alpha_curve` / `size_curve` / `red_curve` 等 | `tick:value[:easing]`，多关键帧以逗号分隔 |
-| `lifetime=tick`、`velocity=x,y,z`、`force=x,y,z`、`force_ticks=tick` | 仅 `field`：寿命、初速度和持续受力 |
+| `lifetime=tick` | 所有图元：每颗粒子的存在刻数，未写时保留原来的无限寿命 |
+| `velocity=x,y,z`、`force=x,y,z`、`force_ticks=tick` | 仅 `field`：初速度和持续受力 |
 
 `stagger` 会让 `Draw` 逐颗生成成员。命令层会把紧随其后的 `program` 暂存到最后一颗成员入组之后，并
 保持多条编排命令的顺序，不需要数据包自行估算等待时间。一个命名组最多编排 8192 颗粒子，超过时应拆成
@@ -875,7 +880,7 @@ pdraw particle add spell_motes field ~ ~1 ~ 192 color=#56dfff00 style=soft_dot s
 pdraw particle program spell_motes entity caster @s
 pdraw particle program spell_motes variable set radius 3
 pdraw particle program spell_motes variable set presence 1
-pdraw particle program spell_motes expression 0 q=(i%64)/64;layer=floor(i/64);ang=q*2*PI+t*0.002*(1-2*(layer%2));rad=radius*(0.55+layer*0.2);x=get_entity_x(caster)+cos(ang)*rad;y=get_entity_y(caster)+0.08+sin(ang*3+t*0.004)*0.08;z=get_entity_z(caster)+sin(ang)*rad;sc=presence*(0.65+0.25*sin(t*0.006+i));a=presence;r=0.2;g=0.78;b=1;glow=1;light=13;
+pdraw particle program spell_motes expression 0 q=(i%64)/64;layer=floor(i/64);ang=q*2*PI+t*0.002*(1-2*(layer%2));rad=radius*(0.55+layer*0.2);x=get_entity_x(caster)+cos(ang)*rad;y=get_entity_y(caster)+0.08+sin(ang*3+t*0.004)*0.08;z=get_entity_z(caster)+sin(ang)*rad;sc=presence*(0.65+0.25*sin(t*0.006+i));a=presence;r=0.2;g=0.78;b=1;
 schedule function example:magic/end 4s replace
 ```
 
@@ -888,7 +893,8 @@ pdraw particle program spell_motes retire 2
 
 表达式里的 `i` 是成员序号，`n` 是成员总数，`t` 是毫秒时间；旧式 `expression <tick>` 的 `x/y/z`
 是世界绝对坐标，`expression local <tick>` 则是相对当前组锚点的偏移，
-`r/g/b/a`、`sc`、`glow`、`light` 控制外观。公式可以读取已注册实体和世界状态，完整 getter 表见
+`r/g/b/a`、`sc` 控制外观，glowing/light 在 add 时设置；逐粒子运动和光照输出使用 emitter 的 birth/motion。
+组公式可以读取已注册实体和世界状态，完整 getter 表见
 [编排式动画](#编排式动画)。一个组用了 `expression` 后，公式会接管该组所有成员的位置和外观；需要同时
 保留静态图形时，应像示例一样拆组。
 
@@ -1198,7 +1204,7 @@ group.expression(duration = 5.ticks) {
   `position.preserve()` 仍会报错，不会偷偷补世界原点。
 - 复用的随机值由 `i + seed + salt` 决定，暂停、回绕和重复求值不跳变；固定种子可复现。
 - `group.buildExpression(...)` 返回 `TypedExpression`，`debugString()` 可查看生成文本、参数名与单位。
-- 该入口覆盖组标量表达式的位置/颜色/缩放，另有 `pow`、`phase/start` 与 `local`；`glow/light` 等其它通道继续用字符串 API。
+- 该入口覆盖组标量表达式的位置/颜色/缩放，另有 `pow`、`phase/start` 与 `local`；逐粒子速度、全亮和光照输出使用 `ParticleRecipe` 的 birth/motion。
   Java 可用 `Expressions.builder(duration)` 生成位置/缩放/颜色文本，或直接调用 `group.expression(code, ticks)`。
 
 动态外观、阶段与共享局部值：

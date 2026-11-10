@@ -441,6 +441,7 @@ class ClientParticleEngine {
 
         groups.values.removeIf { it.isEmpty() }
         checkExitWatches()
+        ClientParticleSources.tick()
     }
 
     /** 接收一段退场观察；同一版本的分段合并，[last] 到达后才开始判定。 */
@@ -686,6 +687,7 @@ class ClientParticleEngine {
      * 客户端世界卸载（切维度/重生/退出世界）时清空全部本地状态。
      */
     fun clearAll() {
+        ClientParticleSources.clear()
         particles.clear()
         bridges.clear()
         groups.clear()
@@ -706,6 +708,19 @@ class ClientParticleEngine {
      * 当前活跃粒子数量。
      */
     fun activeCount(): Int = particles.size
+
+    /** 生成声明接管位置和属性，寿命曲线仍按每颗粒子的年龄逐帧采样。 */
+    internal fun applyRecipeFrame(id: UUID, pos: Vec3, r: Float, g: Float, b: Float, a: Float,
+                                  scale: Float, glow: Boolean, light: Int, visual: ResolvedVisual) {
+        val base = visual.scaleArray
+        val sizes = if (base == null) floatArrayOf(scale, scale, 1f) else floatArrayOf(base[0] * scale, base[1] * scale, 1f)
+        updateParticleDirectArray(id, pos, Color.of(r, g, b, a), sizes, glow, light,
+            billboard = visual.billboard, spin = visual.spin, spinLocal = visual.spinLocal)
+        takeover.clear(id)
+        takeover.markPosition(id)
+        val rp = particles[id] ?: return
+        bridges[id]?.let { syncAppearanceToBridge(rp, it, 0f, snap = false) }
+    }
 
     /** 粒子是否还在；比 [snapshot] 便宜，不构造快照。 */
     fun containsParticle(id: UUID): Boolean = particles.containsKey(id)
