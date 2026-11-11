@@ -57,7 +57,7 @@ class ParticleRecipeRuntimeTest {
             motion = linkedMapOf("x" to "y", "y" to "x", "vx" to "vx*2")), true)
         r.tick(); r.tick()
         assertEquals(Vec3(2.0, 1.0, 0.0), r.particles.single().position)
-        assertEquals(0.2, r.particles.single().attributes["vx"])
+        assertEquals(0.2, r.particles.single().value("vx"))
     }
 
     @Test fun `先施力后积分且 kill 会真正移除`() {
@@ -70,7 +70,7 @@ class ParticleRecipeRuntimeTest {
     @Test fun `state 在粒子之间隔离并逐刻保留`() {
         val r = RecipeRuntime(recipe(2).copy(state = mapOf("phase" to 0.0), motion = mapOf("phase" to "phase+1", "x" to "phase")), true)
         repeat(3) { r.tick() }
-        assertEquals(listOf(2.0, 1.0), r.particles.map { it.attributes["phase"] })
+        assertEquals(listOf(2.0, 1.0), r.particles.map { it.value("phase") })
         assertEquals(listOf(1.0, 0.0), r.particles.map { it.position.x })
     }
 
@@ -86,11 +86,11 @@ class ParticleRecipeRuntimeTest {
         val r = RecipeRuntime(recipe(5, 5).copy(birth = mapOf("x" to "u*4")), false)
         r.tick()
         assertEquals(2, r.edit("x>2", mapOf("vy" to "0.2"), false))
-        assertEquals(2, r.particles.count { it.attributes["vy"] == 0.2 })
+        assertEquals(2, r.particles.count { it.value("vy") == 0.2 })
         assertEquals(2, r.edit("x<2", emptyMap(), true))
         assertEquals(listOf(2.0, 3.0, 4.0), r.particles.map { it.position.x })
         r.tick(); assertEquals(8, r.particles.size)
-        assertEquals(2, r.particles.count { it.attributes["vy"] == 0.2 })
+        assertEquals(2, r.particles.count { it.value("vy") == 0.2 })
     }
 
     @Test fun `公式可以使用向量和矩阵变换`() {

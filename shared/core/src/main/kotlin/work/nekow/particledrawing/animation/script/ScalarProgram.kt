@@ -46,6 +46,10 @@ enum class ScalarOp(val pops: Int) {
     NEG(1),
     ADD(2), SUB(2), MUL(2), DIV(2), REM(2), POW(2),
 
+    /** 比较与逻辑：结果写成 1.0 / 0.0，和条件求值的口径一致。 */
+    LT(2), LE(2), GT(2), GE(2), EQ(2), NE(2),
+    AND(2), OR(2), NOT(1),
+
     F_SIN(1), F_COS(1), F_TAN(1),
     F_ASIN(1), F_ACOS(1), F_ATAN(1),
     F_ATAN2(2), F_SQRT(1), F_ABS(1), F_SIGN(1),
@@ -91,10 +95,17 @@ private val SCALAR_FUNC_ARITY = mapOf(
     "random" to 0, "rand" to 1,
 )
 
-/** 运算符字符 -> 操作码。 */
+/** 运算符 -> 操作码；单字符算术与多字符比较/逻辑共用一张表。 */
 private val CHAR_OPS = mapOf(
     '+' to ScalarOp.ADD, '-' to ScalarOp.SUB, '*' to ScalarOp.MUL,
     '/' to ScalarOp.DIV, '%' to ScalarOp.REM, '^' to ScalarOp.POW,
+)
+
+/** 多字符运算符 -> 操作码。 */
+private val WORD_OPS = mapOf(
+    "<" to ScalarOp.LT, "<=" to ScalarOp.LE, ">" to ScalarOp.GT, ">=" to ScalarOp.GE,
+    "==" to ScalarOp.EQ, "!=" to ScalarOp.NE,
+    "&&" to ScalarOp.AND, "||" to ScalarOp.OR,
 )
 
 /** 编译后的纯标量指令序列。 */
@@ -120,6 +131,15 @@ class ScalarProgram(
                 ScalarOp.DIV -> { sp--; stack[sp - 1] /= stack[sp] }
                 ScalarOp.REM -> { sp--; stack[sp - 1] %= stack[sp] }
                 ScalarOp.POW -> { sp--; stack[sp - 1] = stack[sp - 1].pow(stack[sp]) }
+                ScalarOp.LT -> { sp--; stack[sp - 1] = if (stack[sp - 1] < stack[sp]) 1.0 else 0.0 }
+                ScalarOp.LE -> { sp--; stack[sp - 1] = if (stack[sp - 1] <= stack[sp]) 1.0 else 0.0 }
+                ScalarOp.GT -> { sp--; stack[sp - 1] = if (stack[sp - 1] > stack[sp]) 1.0 else 0.0 }
+                ScalarOp.GE -> { sp--; stack[sp - 1] = if (stack[sp - 1] >= stack[sp]) 1.0 else 0.0 }
+                ScalarOp.EQ -> { sp--; stack[sp - 1] = if (stack[sp - 1] == stack[sp]) 1.0 else 0.0 }
+                ScalarOp.NE -> { sp--; stack[sp - 1] = if (stack[sp - 1] != stack[sp]) 1.0 else 0.0 }
+                ScalarOp.AND -> { sp--; stack[sp - 1] = if (stack[sp - 1] != 0.0 && stack[sp] != 0.0) 1.0 else 0.0 }
+                ScalarOp.OR -> { sp--; stack[sp - 1] = if (stack[sp - 1] != 0.0 || stack[sp] != 0.0) 1.0 else 0.0 }
+                ScalarOp.NOT -> stack[sp - 1] = if (stack[sp - 1] == 0.0) 1.0 else 0.0
                 ScalarOp.F_SIN -> stack[sp - 1] = sin(stack[sp - 1])
                 ScalarOp.F_COS -> stack[sp - 1] = cos(stack[sp - 1])
                 ScalarOp.F_TAN -> stack[sp - 1] = tan(stack[sp - 1])
@@ -303,6 +323,70 @@ private fun compileVarPrograms(varDefs: List<VarDef>, varBase: Int): VarPrograms
 
 private class ScalarCodeResult(val program: ScalarProgram, val tempCount: Int, val stackSize: Int)
 
+/** 一段直接操作寄存器的纯标量代码：调用方自己负责分配寄存器与栈。 */
+class RegisterCode(val program: ScalarProgram, val tempCount: Int, val stackSize: Int)
+
+/**
+ * 编译一串「目标名 = 表达式」的赋值，直接写调用方给定的寄存器槽。
+ *
+ * 与 [compileFunctionObject] 的区别：不重置属性、不注入外部输入、不做变量关键帧，
+ * 完全由调用方决定寄存器含义。逐粒子逐 tick 的配方求值走这条路，槽位在编译期固定。
+ *
+ * @param tempStart 临时槽起点；寄存器总数 = tempStart + 返回的 tempCount
+ */
+fun compileRegisterCode(
+    assigns: List<Pair<String, Node>>,
+    nameToSlot: Map<String, Int>,
+    tempStart: Int,
+): RegisterCode? {
+    val ops = ArrayList<ScalarOp>()
+    val args = ArrayList<Int>()
+    val consts = ArrayList<Double>()
+    val tempSlots = HashMap<String, Int>()
+    var tempCount = 0
+    var stackSize = 0
+
+    // 读：只认已登记的槽；未知名字说明含非标量成分，交给调用方回退
+    val readSlot: (String) -> Int? = { name ->
+        when (name) {
+            "i" -> Reg.I; "n" -> Reg.N; "t" -> Reg.T
+            else -> Reg.ATTR_SLOTS[name] ?: nameToSlot[name] ?: tempSlots[name]
+        }
+    }
+    // 写：首次赋值就地分配临时槽，按声明顺序可见
+    val writeSlot: (String) -> Int? = { name ->
+        when (name) {
+            "i" -> Reg.I; "n" -> Reg.N; "t" -> Reg.T
+            else -> Reg.ATTR_SLOTS[name] ?: nameToSlot[name] ?: tempSlots.getOrPut(name) {
+                val s = tempStart + tempCount; tempCount++; s
+            }
+        }
+    }
+
+    for ((target, value) in assigns) {
+        val slot = writeSlot(target) ?: return null
+        val depth = intArrayOf(0)
+        val maxDepth = intArrayOf(0)
+        if (!emitExpr(value, ops, args, consts, readSlot, depth, maxDepth)) return null
+        if (depth[0] != 1) return null
+        ops.add(ScalarOp.POP_REG); args.add(slot)
+        if (maxDepth[0] > stackSize) stackSize = maxDepth[0]
+    }
+
+    return RegisterCode(
+        ScalarProgram(ops.toTypedArray(), args.toIntArray(), consts.toDoubleArray()),
+        tempCount,
+        stackSize,
+    )
+}
+
+/** 把一条表达式解析成 AST；语法错误或空表达式返回 null。 */
+fun parseExpressionNode(expr: String): Node? = try {
+    (parseStatements("__pd_tmp = ($expr)").singleOrNull() as? AssignNode)?.value
+} catch (_: Exception) {
+    null
+}
+
 /** 编译代码块为纯标量指令序列；含向量/矩阵/分量访问/拆包/未知符号时返回 null。 */
 private fun compileScalarCode(code: String, nameToSlot: Map<String, Int>, varCount: Int): ScalarCodeResult? {
     val statements = try {
@@ -311,28 +395,8 @@ private fun compileScalarCode(code: String, nameToSlot: Map<String, Int>, varCou
         return null
     }
 
-    val ops = ArrayList<ScalarOp>()
-    val args = ArrayList<Int>()
-    val consts = ArrayList<Double>()
-    val tempSlots = HashMap<String, Int>()
-    val tempStart = Reg.VAR_START + varCount
-    var tempCount = 0
-    var stackSize = 0
-
-    fun lhsSlot(name: String): Int? = when (name) {
-        "i" -> Reg.I; "n" -> Reg.N; "t" -> Reg.T
-        else -> Reg.ATTR_SLOTS[name] ?: nameToSlot[name] ?: tempSlots.getOrPut(name) {
-            val s = tempStart + tempCount; tempCount++; s
-        }
-    }
-
-    val slotOf: (String) -> Int? = { name ->
-        when (name) {
-            "i" -> Reg.I; "n" -> Reg.N; "t" -> Reg.T
-            else -> Reg.ATTR_SLOTS[name] ?: nameToSlot[name] ?: tempSlots[name]
-        }
-    }
-
+    // 把解包写法摊平成逐名赋值，核心编译只认「一个目标 + 一个表达式」
+    val assigns = ArrayList<Pair<String, Node>>()
     for (stmt in statements) {
         val assign = stmt as? AssignNode ?: return null
         val targets = when (val target = assign.target) {
@@ -350,22 +414,11 @@ private fun compileScalarCode(code: String, nameToSlot: Map<String, Int>, varCou
                 listOf(value)
             }
         }
-        for (k in targets.indices) {
-            val target = lhsSlot(targets[k]) ?: return null
-            val depth = intArrayOf(0)
-            val maxDepth = intArrayOf(0)
-            if (!emitExpr(values[k], ops, args, consts, slotOf, depth, maxDepth)) return null
-            if (depth[0] != 1) return null
-            ops.add(ScalarOp.POP_REG); args.add(target)
-            if (maxDepth[0] > stackSize) stackSize = maxDepth[0]
-        }
+        for (k in targets.indices) assigns += targets[k] to values[k]
     }
 
-    return ScalarCodeResult(
-        ScalarProgram(ops.toTypedArray(), args.toIntArray(), consts.toDoubleArray()),
-        tempCount,
-        stackSize,
-    )
+    val compiled = compileRegisterCode(assigns, nameToSlot, Reg.VAR_START + varCount) ?: return null
+    return ScalarCodeResult(compiled.program, compiled.tempCount, compiled.stackSize)
 }
 
 /** AST -> 指令序列；返回 false 表示含非标量元素（向量/矩阵/分量访问/未知符号）。 */
@@ -395,19 +448,31 @@ private fun emitExpr(
             consts.add(node.value)
             return true
         }
+        is BoolNode -> {
+            push(ScalarOp.PUSH_CONST, consts.size, 1)
+            consts.add(if (node.value) 1.0 else 0.0)
+            return true
+        }
         is VarNode -> {
             val slot = slotOf(node.name) ?: return false
             push(ScalarOp.PUSH_REG, slot, 1)
             return true
         }
         is UnaryNode -> {
-            if (node.op != "-") return false
-            if (!emitExpr(node.operand, ops, args, consts, slotOf, depth, maxDepth)) return false
-            return apply(ScalarOp.NEG)
+            when (node.op) {
+                "-" -> {
+                    if (!emitExpr(node.operand, ops, args, consts, slotOf, depth, maxDepth)) return false
+                    return apply(ScalarOp.NEG)
+                }
+                "!" -> {
+                    if (!emitExpr(node.operand, ops, args, consts, slotOf, depth, maxDepth)) return false
+                    return apply(ScalarOp.NOT)
+                }
+                else -> return false
+            }
         }
         is BinaryNode -> {
-            val opChar = node.op.singleOrNull() ?: return false
-            val op = CHAR_OPS[opChar] ?: return false
+            val op = node.op.singleOrNull()?.let { CHAR_OPS[it] } ?: WORD_OPS[node.op] ?: return false
             if (!emitExpr(node.left, ops, args, consts, slotOf, depth, maxDepth)) return false
             if (!emitExpr(node.right, ops, args, consts, slotOf, depth, maxDepth)) return false
             return apply(op)

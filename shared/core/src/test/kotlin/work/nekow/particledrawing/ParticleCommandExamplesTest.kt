@@ -128,7 +128,7 @@ class ParticleCommandExamplesTest {
         assertEquals(768, runtime.particles.size)
         runtime.particles.forEach { assertEquals(2.4, it.position.length(), 1e-8) }
         assertTrue(runtime.particles.indices.any { before[it].distanceTo(runtime.particles[it].position) > 0.5 })
-        assertTrue(runtime.particles.map { it.attributes.getValue("r") }.distinct().size > 100)
+        assertTrue(runtime.particles.map { it.value("r") }.distinct().size > 100)
     }
 
     @Test fun `桃心示例逐步画完且留在锚点竖直平面`() {
@@ -139,7 +139,7 @@ class ParticleCommandExamplesTest {
         assertFalse(runtime.emitting)
         assertTrue(runtime.particles.any { it.position.x < -2 })
         assertTrue(runtime.particles.any { it.position.x > 2 })
-        runtime.particles.forEach { assertEquals(0.0, it.position.z); assertTrue(it.attributes.getValue("sc") in 0.8..1.0) }
+        runtime.particles.forEach { assertEquals(0.0, it.position.z); assertTrue(it.value("sc") in 0.8..1.0) }
     }
 
     @Test fun `动态曲臂保持九臂数量并在有界区域摆动`() {

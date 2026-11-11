@@ -81,6 +81,103 @@ class RecipeExpressions(recipe: ParticleRecipe) {
     fun accepts() = where.eval(ctx) != 0.0
     fun kills() = kill.eval(ctx) != 0.0
 
+    // ── 热路径 ────────────────────────────────────────────────────────────────
+    // 逐粒子逐 tick 的瓶颈是「按名字查表 + 每次求值重建变量表」。这里把 let、输出、条件
+    // 一起编译成直接读写寄存器槽的标量程序：名字在编译期换成下标，运行期只有数组访问。
+    // 含向量/矩阵/分量的配方编不过就返回 null，调用方自动走上面的解释器路径。
+
+    /** 每颗粒子的固定槽位：16 个属性 + state；运行期由调用方按顺序写入本刻输入。 */
+    val slots: RecipeSlots = buildSlots(recipe)
+
+    /** 本刻输入槽（u 起，共 14 项）之后接 state；再往后是各程序的临时槽。 */
+    private val base = Reg.VAR_START + INPUT_SLOTS.size + recipe.state.size
+
+    /** 编译成功的热路径；null 表示该配方只能走解释器。 */
+    val fast: RecipeFast? = buildFast(recipe)
+
+    private fun buildSlots(recipe: ParticleRecipe): RecipeSlots {
+        val map = LinkedHashMap<String, Int>(32)
+        for ((name, slot) in Reg.ATTR_SLOTS) map[name] = slot
+        map["ax"] = AX; map["ay"] = AY; map["az"] = AZ
+        var s = Reg.VAR_START
+        for (name in INPUT_SLOTS) map[name] = s++
+        for (name in recipe.state.keys) map[name] = s++
+        return RecipeSlots(map)
+    }
+
+    private fun buildFast(recipe: ParticleRecipe): RecipeFast? {
+        val lets = ArrayList<Pair<String, Node>>(recipe.lets.size)
+        for ((name, expr) in recipe.lets) lets += name to (parseExpression(expr) ?: return null)
+
+        val birthAssigns = ArrayList(lets)
+        if (!appendOutputs(birthAssigns, recipe.birth)) return null
+        val birth = compileRegisterCode(birthAssigns, slots.map, base) ?: return null
+
+        // 每刻：先算 kill（看的是推进前的状态），再算 motion
+        val tickAssigns = ArrayList(lets)
+        tickAssigns += KILL_TEMP to (parseExpression(recipe.kill) ?: return null)
+        if (!appendOutputs(tickAssigns, recipe.motion)) return null
+        val tick = compileRegisterCode(tickAssigns, slots.map + mapOf(KILL_TEMP to base), base + 1) ?: return null
+
+        // 出生后的筛选与销毁（看的是出生后的状态）
+        val checkAssigns = ArrayList(lets)
+        checkAssigns += WHERE_TEMP to (parseExpression(recipe.where) ?: return null)
+        checkAssigns += KILL_TEMP to (parseExpression(recipe.kill) ?: return null)
+        val check = compileRegisterCode(
+            checkAssigns,
+            slots.map + mapOf(WHERE_TEMP to base, KILL_TEMP to base + 1),
+            base + 2,
+        ) ?: return null
+
+        val motion = recipe.motion
+        return RecipeFast(
+            base = base,
+            birth = birth,
+            check = check,
+            tick = tick,
+            writesX = "x" in motion || "position" in motion,
+            writesY = "y" in motion || "position" in motion,
+            writesZ = "z" in motion || "position" in motion,
+        )
+    }
+
+    /**
+     * 把一阶段的输出摊成逐分量赋值；向量写法必须是 vec2/3/4(...) 或等长数组字面量。
+     *
+     * 每个输出先落到临时槽，最后统一提交回属性槽：同一阶段里后面的输出必须看到
+     * 阶段开始时的快照，不能看到前面刚写进去的新值。
+     */
+    private fun appendOutputs(assigns: MutableList<Pair<String, Node>>, outputs: Map<String, String>): Boolean {
+        val commits = ArrayList<Pair<String, Node>>(outputs.size)
+        var k = 0
+        fun stage(target: String, node: Node) {
+            val temp = "\$pd_out${k++}"
+            assigns += temp to node
+            commits += target to VarNode(temp, 0, 0)
+        }
+        for ((name, expr) in outputs) {
+            val node = parseExpression(expr) ?: return false
+            val vector = VECTOR_OUTPUTS[name]
+            if (vector == null) {
+                stage(name, node)
+                continue
+            }
+            val parts = vectorParts(node, vector.size) ?: return false
+            for (i in parts.indices) stage(vector[i].first, parts[i])
+        }
+        assigns += commits
+        return true
+    }
+
+    /** `vec3(a,b,c)` 或 `[a,b,c]` 拆成分量；其它写法（变量、方法调用等）不参与热路径。 */
+    private fun vectorParts(node: Node, size: Int): List<Node>? {
+        if (node is ArrayNode) return node.items.takeIf { it.size == size }
+        val call = node as? CallNode ?: return null
+        val callee = call.callee as? VarNode ?: return null
+        if (callee.name != "vec$size" || call.args.size != size) return null
+        return call.args
+    }
+
     /** 一组输出：单名或一个向量表达式拆出的三分量。 */
     class OutputGroup(val names: Array<String>, val components: IntArray, val runner: ScriptRuntime.ExpressionRunner)
 
@@ -168,6 +265,29 @@ class RecipeExpressions(recipe: ParticleRecipe) {
     }
 
     companion object {
+        /** 每刻注入运行期输入的槽位顺序，紧跟寄存器里的属性之后。 */
+        val INPUT_SLOTS = listOf(
+            "u", "dt", "age", "life", "progress", "dx", "dy", "dz", "sx", "sy", "sz", "ax", "ay", "az",
+        )
+        const val U = Reg.VAR_START + 0
+        const val DT = Reg.VAR_START + 1
+        const val AGE = Reg.VAR_START + 2
+        const val LIFE = Reg.VAR_START + 3
+        const val PROGRESS = Reg.VAR_START + 4
+        const val DX = Reg.VAR_START + 5
+        const val DY = Reg.VAR_START + 6
+        const val DZ = Reg.VAR_START + 7
+        const val SX = Reg.VAR_START + 8
+        const val SY = Reg.VAR_START + 9
+        const val SZ = Reg.VAR_START + 10
+        const val AX = Reg.VAR_START + 11
+        const val AY = Reg.VAR_START + 12
+        const val AZ = Reg.VAR_START + 13
+
+        /** 热路径里给条件留的两个固定临时名。 */
+        const val KILL_TEMP = "__kill"
+        const val WHERE_TEMP = "__where"
+
         val ATTRIBUTES = setOf("x", "y", "z", "vx", "vy", "vz", "ax", "ay", "az", "r", "g", "b", "a", "sc", "glow", "light")
 
         /** 一次写三个分量的写法；键不能和同名标量属性同时出现。右值是分量在向量里的下标。 */
@@ -189,4 +309,33 @@ class RecipeExpressions(recipe: ParticleRecipe) {
         /** 命令公式允许的向量/矩阵方法。 */
         val METHODS: Set<String> = setOf("len", "len2", "normalize", "dot", "cross", "dist", "angleTo", "project", "reflect", "lerp", "rotateX", "rotateY", "rotateZ", "translate", "scale")
     }
+}
+
+/** 一颗粒子的数值槽表：名字在编译期定好下标，运行期只做数组下标访问。 */
+class RecipeSlots(val map: Map<String, Int>) {
+    fun slot(name: String): Int = map[name] ?: error("未知字段 '$name'")
+    fun has(name: String): Boolean = name in map
+}
+
+/**
+ * 一条配方热路径：出生、出生后判定、每刻推进各一个标量程序，共用同一份寄存器。
+ *
+ * 三个程序的临时槽从 [base] 起错开分配，所以寄存器总数取各自上界的最大值。
+ */
+class RecipeFast(
+    val base: Int,
+    val birth: RegisterCode,
+    val check: RegisterCode,
+    val tick: RegisterCode,
+    val writesX: Boolean,
+    val writesY: Boolean,
+    val writesZ: Boolean,
+) {
+    val regCount: Int = base + maxOf(birth.tempCount, 1 + tick.tempCount, 2 + check.tempCount)
+    val birthStack = DoubleArray(maxOf(birth.stackSize, 1))
+    val checkStack = DoubleArray(maxOf(check.stackSize, 1))
+    val tickStack = DoubleArray(maxOf(tick.stackSize, 1))
+
+    /** 每颗粒子一份寄存器，初值由运行期按种子与配方填。 */
+    fun newRegs() = DoubleArray(regCount)
 }
