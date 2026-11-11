@@ -746,7 +746,14 @@ class ClientParticleEngine {
     internal fun applyRecipeFrame(id: UUID, pos: Vec3, r: Float, g: Float, b: Float, a: Float,
                                   scale: Float, glow: Boolean, light: Int, visual: ResolvedVisual) {
         val base = visual.scaleArray
-        val sizes = if (base == null) floatArrayOf(scale, scale, 1f) else floatArrayOf(base[0] * scale, base[1] * scale, 1f)
+        // 尺寸数组只被读写、不被持有，用复用缓冲即可；逐粒子每刻新建三元素数组纯属垃圾
+        val sizes = frameSizes
+        if (base == null) {
+            sizes[0] = scale; sizes[1] = scale
+        } else {
+            sizes[0] = base[0] * scale; sizes[1] = base[1] * scale
+        }
+        sizes[2] = 1f
         updateParticleDirectArray(id, pos, Color.of(r, g, b, a), sizes, glow, light,
             billboard = visual.billboard, spin = visual.spin, spinLocal = visual.spinLocal)
         takeover.clear(id)
@@ -754,6 +761,9 @@ class ClientParticleEngine {
         val rp = particles[id] ?: return
         bridges[id]?.let { syncAppearanceToBridge(rp, it, 0f, snap = false) }
     }
+
+    /** 逐粒子同步复用的尺寸缓冲：setScaleArrayDirect / syncScaleArray 都只读不存。 */
+    private val frameSizes = FloatArray(3)
 
     /** 坐标直接给的版本：调用方已经算好世界坐标，省掉一层 Vec3 包装。 */
     internal fun applyRecipeFrame(
