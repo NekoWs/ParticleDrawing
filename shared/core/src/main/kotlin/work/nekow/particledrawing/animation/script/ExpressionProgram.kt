@@ -16,13 +16,6 @@ interface CompiledExpression {
 fun compileExpressionBlock(code: String, extNames: List<String> = emptyList()): CompiledExpression? =
     compileFunctionObject(code, emptyList(), extNames) ?: InterpretedExpression.parse(code, extNames)
 
-private val ATTR_SLOTS = mapOf(
-    "x" to Reg.X, "y" to Reg.Y, "z" to Reg.Z,
-    "r" to Reg.R, "g" to Reg.G, "b" to Reg.B, "a" to Reg.A,
-    "vx" to Reg.VX, "vy" to Reg.VY, "vz" to Reg.VZ,
-    "sc" to Reg.SC, "glow" to Reg.GLOW, "light" to Reg.LIGHT,
-)
-
 private sealed interface Step
 private class ScalarStep(val name: String, val runner: ScriptRuntime.ExpressionRunner) : Step
 private class ListStep(val names: List<String>, val runners: List<ScriptRuntime.ExpressionRunner>) : Step
@@ -34,6 +27,11 @@ private class InterpretedExpression private constructor(
     private val extNames: List<String>,
 ) : CompiledExpression {
 
+    // 逐粒子逐帧求值，变量表与上下文复用同一份，不清空重建。
+    // 代价是这个实例不能跨线程同时用；与 ClientAnimationProgramManager 的单线程约定一致。
+    private val vars = HashMap<String, Any?>()
+    private val ctx = ScriptRuntime.ProcessCtx(0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, vars)
+
     override val regCount: Int get() = Reg.VAR_START + extNames.size
     override fun allocRegs(): DoubleArray = DoubleArray(regCount)
     override fun allocStack(): DoubleArray = DoubleArray(0)
@@ -42,9 +40,9 @@ private class InterpretedExpression private constructor(
         i: Double, n: Double, t: Double, regs: DoubleArray, stack: DoubleArray, external: DoubleArray?,
     ) {
         Reg.resetAttrs(regs)
-        val vars = HashMap<String, Any?>()
+        vars.clear()
         vars["i"] = i; vars["n"] = n; vars["t"] = t
-        for ((name, slot) in ATTR_SLOTS) vars[name] = regs[slot]
+        for ((name, slot) in Reg.ATTR_SLOTS) vars[name] = regs[slot]
         if (external != null) {
             for (idx in extNames.indices) {
                 val value = external.getOrElse(idx) { 0.0 }
@@ -52,22 +50,22 @@ private class InterpretedExpression private constructor(
                 regs[Reg.VAR_START + idx] = value
             }
         }
-        val ctx = ScriptRuntime.ProcessCtx(i, n, t, 1.0, 1.0, 0.0, 0.0, vars)
+        ctx.i = i; ctx.n = n; ctx.t = t
         for (step in steps) {
             when (step) {
-                is ScalarStep -> write(step.name, step.runner.evalAny(ctx), vars, regs)
+                is ScalarStep -> write(step.name, step.runner.evalAny(ctx), regs)
                 is ListStep -> for (idx in step.names.indices) {
-                    write(step.names[idx], step.runners[idx].evalAny(ctx), vars, regs)
+                    write(step.names[idx], step.runners[idx].evalAny(ctx), regs)
                 }
                 is VectorStep -> {
                     val value = step.runner.evalAny(ctx)
-                    for (idx in step.names.indices) write(step.names[idx], component(value, idx), vars, regs)
+                    for (idx in step.names.indices) write(step.names[idx], component(value, idx), regs)
                 }
             }
         }
     }
 
-    private fun write(name: String, value: Any?, vars: MutableMap<String, Any?>, regs: DoubleArray) {
+    private fun write(name: String, value: Any?, regs: DoubleArray) {
         val scalar = when (value) {
             is Double -> value
             is Boolean -> if (value) 1.0 else 0.0
@@ -79,7 +77,7 @@ private class InterpretedExpression private constructor(
             "n" -> regs[Reg.N] = scalar
             "t" -> regs[Reg.T] = scalar
         }
-        ATTR_SLOTS[name]?.let { regs[it] = scalar }
+        Reg.ATTR_SLOTS[name]?.let { regs[it] = scalar }
     }
 
     private fun component(value: Any?, index: Int): Any = when (value) {

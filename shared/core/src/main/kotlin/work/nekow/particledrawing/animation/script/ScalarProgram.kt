@@ -15,6 +15,14 @@ object Reg {
     const val ATTR_COUNT = 13
     const val VAR_START = 16
 
+    /** 可写属性名 -> 寄存器槽；快路径与解释器共用这一张表。 */
+    val ATTR_SLOTS: Map<String, Int> = linkedMapOf(
+        "x" to X, "y" to Y, "z" to Z,
+        "r" to R, "g" to G, "b" to B, "a" to A,
+        "vx" to VX, "vy" to VY, "vz" to VZ,
+        "sc" to SC, "glow" to GLOW, "light" to LIGHT,
+    )
+
     /** 把属性寄存器重置为默认值。 */
     fun resetAttrs(regs: DoubleArray) {
         System.arraycopy(ATTR_INIT, 0, regs, X, ATTR_COUNT)
@@ -23,13 +31,6 @@ object Reg {
 
 /** 属性寄存器初始值（X,Y,Z,R,G,B,A,VX,VY,VZ,SC,GLOW,LIGHT）。 */
 private val ATTR_INIT = doubleArrayOf(0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0)
-
-private val ATTR_SLOTS = mapOf(
-    "x" to Reg.X, "y" to Reg.Y, "z" to Reg.Z,
-    "r" to Reg.R, "g" to Reg.G, "b" to Reg.B, "a" to Reg.A,
-    "vx" to Reg.VX, "vy" to Reg.VY, "vz" to Reg.VZ,
-    "sc" to Reg.SC, "glow" to Reg.GLOW, "light" to Reg.LIGHT,
-)
 
 /** 栈式指令集。pops 为该指令从求值栈弹出的操作数个数；数据搬运类恒为 -1。 */
 enum class ScalarOp(val pops: Int) {
@@ -186,7 +187,12 @@ class CompiledFunction(
     override fun eval(
         i: Double, n: Double, t: Double, regs: DoubleArray, stack: DoubleArray, external: DoubleArray?,
     ) {
-        eval(i, n, t, regs, stack, external, null)
+        run(i, n, t, regs, stack, external)
+    }
+
+    /** 无外部输入通道时的入口。 */
+    fun eval(i: Double, n: Double, t: Double, regs: DoubleArray, stack: DoubleArray) {
+        run(i, n, t, regs, stack, null)
     }
 
     /**
@@ -195,10 +201,9 @@ class CompiledFunction(
      * [external] 是外部输入通道值，顺序与编译期登记的 extNames 一致，长度为 [extCount]；
      * 在变量程序求值之前注入寄存器，派生变量因此可引用实体坐标等运行时输入。
      */
-    fun eval(
+    private fun run(
         i: Double, n: Double, t: Double, regs: DoubleArray, stack: DoubleArray,
-        external: DoubleArray? = null,
-        kfTableOverride: Array<List<Keyframe>>? = null,
+        external: DoubleArray?,
     ) {
         regs[Reg.I] = i
         regs[Reg.N] = n
@@ -214,7 +219,7 @@ class CompiledFunction(
             val progs = varProgs!!
             for (vi in varOrder) progs[vi].exec(regs, stack, kfTable)
         }
-        scalar.exec(regs, stack, kfTableOverride ?: kfTable)
+        scalar.exec(regs, stack, kfTable)
     }
 }
 
@@ -316,7 +321,7 @@ private fun compileScalarCode(code: String, nameToSlot: Map<String, Int>, varCou
 
     fun lhsSlot(name: String): Int? = when (name) {
         "i" -> Reg.I; "n" -> Reg.N; "t" -> Reg.T
-        else -> ATTR_SLOTS[name] ?: nameToSlot[name] ?: tempSlots.getOrPut(name) {
+        else -> Reg.ATTR_SLOTS[name] ?: nameToSlot[name] ?: tempSlots.getOrPut(name) {
             val s = tempStart + tempCount; tempCount++; s
         }
     }
@@ -324,7 +329,7 @@ private fun compileScalarCode(code: String, nameToSlot: Map<String, Int>, varCou
     val slotOf: (String) -> Int? = { name ->
         when (name) {
             "i" -> Reg.I; "n" -> Reg.N; "t" -> Reg.T
-            else -> ATTR_SLOTS[name] ?: nameToSlot[name] ?: tempSlots[name]
+            else -> Reg.ATTR_SLOTS[name] ?: nameToSlot[name] ?: tempSlots[name]
         }
     }
 

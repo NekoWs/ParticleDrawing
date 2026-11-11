@@ -1,7 +1,9 @@
 package work.nekow.particledrawing
 
 import work.nekow.particledrawing.math.Vec3
+import work.nekow.particledrawing.animation.recipe.RecipeExpressions
 import work.nekow.particledrawing.animation.recipe.RecipeRuntime
+import work.nekow.particledrawing.animation.script.BuiltinRegistry
 import work.nekow.particledrawing.api.*
 import kotlin.test.*
 
@@ -120,6 +122,11 @@ class ParticleRecipeRuntimeTest {
         r.tick()
         assertEquals(1, r.particles.size)
         assertEquals(Vec3(10.0, 0.0, 0.0), r.particles.single().position)
+    }
+
+    @Test fun `命令公式白名单都是运行时真的有的名字`() {
+        val missing = RecipeExpressions.FUNCTIONS.filterNot { it in BuiltinRegistry.names }
+        assertTrue(missing.isEmpty(), "命令公式白名单里有运行时没有的函数：$missing")
     }
 
     @Test fun `向量字段不能和同名标量字段同时写`() {
