@@ -281,8 +281,9 @@ object ScriptRuntime {
     }
 
     /** 可复用的裸表达式执行器：同一表达式跨粒子复用 Runtime 与作用域，结果必须是标量。 */
-    class ExpressionRunner(expr: String) {
-        private val node: Node = parseExpression(expr)
+    class ExpressionRunner(val node: Node) {
+        constructor(expr: String) : this(parseExpression(expr))
+
         private val program = ScriptProgram(emptyList(), emptyList(), emptyList(), emptyMap())
         private val obj = createObjectState(0)
         private val rt = Runtime("expr", program, obj, null, null)

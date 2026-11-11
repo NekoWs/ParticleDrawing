@@ -283,7 +283,7 @@ group.pulse(peakRatio = 1.8f, halfPeriodTicks = 20, cycles = 3)
 group.defineEntity(handle = "e", uuid = entity.uuid)
      .followEntity(entity.uuid, offset = Vec3(0.0, 1.0, 0.0))
 
-// 表达式指令：每粒子每 tick 求值一段标量公式
+// 表达式指令：每粒子每 tick 求值一段公式（纯标量走字节码快路径）
 group.expression("""
     th = i / n * 2 * PI;
     [x,y,z] = [
@@ -294,8 +294,9 @@ group.expression("""
 """)
 ```
 
-表达式语法是旧式标量公式（`i/n/t`、`[x,y,z] = ...`），与 `.pdraw` 函数对象的 `this` 脚本语言不同。
-用到什么取什么，`get_entity_*` / `get_world_*` 在需要处调用，不必预先声明属性。
+表达式和脚本共用同一套解析与优先级：纯标量部分编译成字节码快路径，向量、矩阵、分量访问和完整内建函数
+交给同一个表达式解释器；`i/n/t`、`[x,y,z] = ...` 这些写法保持不变。用到什么取什么，
+`get_entity_*` / `get_world_*` 在需要处调用，不必预先声明属性。
 
 | getter | 含义 |
 | --- | --- |

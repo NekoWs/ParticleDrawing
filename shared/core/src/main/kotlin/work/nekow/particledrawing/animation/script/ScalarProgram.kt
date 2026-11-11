@@ -14,6 +14,11 @@ object Reg {
     const val SC = 13; const val GLOW = 14; const val LIGHT = 15
     const val ATTR_COUNT = 13
     const val VAR_START = 16
+
+    /** 把属性寄存器重置为默认值。 */
+    fun resetAttrs(regs: DoubleArray) {
+        System.arraycopy(ATTR_INIT, 0, regs, X, ATTR_COUNT)
+    }
 }
 
 /** 属性寄存器初始值（X,Y,Z,R,G,B,A,VX,VY,VZ,SC,GLOW,LIGHT）。 */
@@ -46,7 +51,7 @@ enum class ScalarOp(val pops: Int) {
     F_EXP(1), F_LOG(1),
     F_FLOOR(1), F_CEIL(1), F_ROUND(1), F_FRACT(1),
     F_POW(2), F_MIN(2), F_MAX(2),
-    F_CLAMP(3), F_LERP(3), F_STEP(2), F_SMOOTHSTEP(3), F_MOD(2),
+    F_CLAMP(3), F_STEP(2), F_SMOOTHSTEP(3), F_MOD(2),
     /** 纯随机源：只压栈。 */
     F_RANDOM(0),
     /** 固定种子伪随机（同一种子恒返回相同 [0,1) 值）。 */
@@ -65,9 +70,24 @@ private val SCALAR_FUNC_OPS = mapOf(
     "floor" to ScalarOp.F_FLOOR, "ceil" to ScalarOp.F_CEIL, "round" to ScalarOp.F_ROUND,
     "fract" to ScalarOp.F_FRACT, "pow" to ScalarOp.F_POW, "min" to ScalarOp.F_MIN,
     "max" to ScalarOp.F_MAX, "clamp" to ScalarOp.F_CLAMP,
-    "lerp" to ScalarOp.F_LERP, "step" to ScalarOp.F_STEP,
+    "step" to ScalarOp.F_STEP,
     "smoothstep" to ScalarOp.F_SMOOTHSTEP, "mod" to ScalarOp.F_MOD,
     "random" to ScalarOp.F_RANDOM, "rand" to ScalarOp.F_RAND,
+)
+
+/** 标量函数参数个数；与 SCALAR_FUNC_OPS 一一对应。 */
+private val SCALAR_FUNC_ARITY = mapOf(
+    "sin" to 1, "cos" to 1, "tan" to 1,
+    "asin" to 1, "acos" to 1, "atan" to 1,
+    "atan2" to 2, "sqrt" to 1, "abs" to 1,
+    "sign" to 1, "exp" to 1,
+    "log" to 1, "ln" to 1,
+    "floor" to 1, "ceil" to 1, "round" to 1,
+    "fract" to 1, "pow" to 2, "min" to 2,
+    "max" to 2, "clamp" to 3,
+    "step" to 2,
+    "smoothstep" to 3, "mod" to 2,
+    "random" to 0, "rand" to 1,
 )
 
 /** 运算符字符 -> 操作码。 */
@@ -113,13 +133,12 @@ class ScalarProgram(
                 ScalarOp.F_LOG -> stack[sp - 1] = ln(stack[sp - 1])
                 ScalarOp.F_FLOOR -> stack[sp - 1] = floor(stack[sp - 1])
                 ScalarOp.F_CEIL -> stack[sp - 1] = ceil(stack[sp - 1])
-                ScalarOp.F_ROUND -> stack[sp - 1] = round(stack[sp - 1])
+                ScalarOp.F_ROUND -> stack[sp - 1] = jsRound(stack[sp - 1])
                 ScalarOp.F_FRACT -> stack[sp - 1] = stack[sp - 1] - floor(stack[sp - 1])
                 ScalarOp.F_POW -> { sp--; stack[sp - 1] = stack[sp - 1].pow(stack[sp]) }
                 ScalarOp.F_MIN -> { sp--; stack[sp - 1] = min(stack[sp - 1], stack[sp]) }
                 ScalarOp.F_MAX -> { sp--; stack[sp - 1] = max(stack[sp - 1], stack[sp]) }
                 ScalarOp.F_CLAMP -> { sp -= 2; stack[sp - 1] = stack[sp - 1].coerceIn(stack[sp], stack[sp + 1]) }
-                ScalarOp.F_LERP -> { sp -= 2; stack[sp - 1] = stack[sp - 1] + (stack[sp] - stack[sp - 1]) * stack[sp + 1] }
                 ScalarOp.F_STEP -> { sp--; stack[sp - 1] = if (stack[sp] >= stack[sp - 1]) 1.0 else 0.0 }
                 ScalarOp.F_SMOOTHSTEP -> {
                     sp -= 2
@@ -128,8 +147,8 @@ class ScalarProgram(
                     stack[sp - 1] = t * t * (3 - 2 * t)
                 }
                 ScalarOp.F_MOD -> { sp--; val a = stack[sp - 1]; val b = stack[sp]; stack[sp - 1] = a - b * floor(a / b) }
-                ScalarOp.F_RANDOM -> stack[sp++] = Math.random()
-                ScalarOp.F_RAND -> { val x = sin(stack[sp - 1] * 127.1 + 311.7) * 43758.5453; stack[sp - 1] = x - floor(x) }
+                ScalarOp.F_RANDOM -> stack[sp++] = kotlin.random.Random.nextDouble()
+                ScalarOp.F_RAND -> { val x = toInt32(stack[sp - 1]); stack[sp - 1] = RandState(x).next() }
                 ScalarOp.READ_ARR -> {
                     val arr = objects!![args[idx]]
                     if (arr !is List<*>) throw IllegalArgumentException("array index requires an array")
@@ -158,11 +177,17 @@ class CompiledFunction(
     private val varOrder: IntArray,
     private val kfTable: Array<List<Keyframe>>,
     private val scalar: ScalarProgram,
-    val regCount: Int,
+    override val regCount: Int,
     val stackSize: Int,
-) {
-    fun allocRegs() = DoubleArray(regCount)
-    fun allocStack() = DoubleArray(stackSize)
+) : CompiledExpression {
+    override fun allocRegs() = DoubleArray(regCount)
+    override fun allocStack() = DoubleArray(stackSize)
+
+    override fun eval(
+        i: Double, n: Double, t: Double, regs: DoubleArray, stack: DoubleArray, external: DoubleArray?,
+    ) {
+        eval(i, n, t, regs, stack, external, null)
+    }
 
     /**
      * 求值单个粒子，写满属性寄存器 Reg.X..Reg.LIGHT。
@@ -178,7 +203,7 @@ class CompiledFunction(
         regs[Reg.I] = i
         regs[Reg.N] = n
         regs[Reg.T] = t
-        System.arraycopy(ATTR_INIT, 0, regs, Reg.X, Reg.ATTR_COUNT)
+        Reg.resetAttrs(regs)
         if (external != null && extCount > 0) {
             System.arraycopy(external, 0, regs, Reg.VAR_START, extCount.coerceAtMost(external.size))
         }
@@ -275,6 +300,12 @@ private class ScalarCodeResult(val program: ScalarProgram, val tempCount: Int, v
 
 /** 编译代码块为纯标量指令序列；含向量/矩阵/分量访问/拆包/未知符号时返回 null。 */
 private fun compileScalarCode(code: String, nameToSlot: Map<String, Int>, varCount: Int): ScalarCodeResult? {
+    val statements = try {
+        parseStatements(code)
+    } catch (_: Exception) {
+        return null
+    }
+
     val ops = ArrayList<ScalarOp>()
     val args = ArrayList<Int>()
     val consts = ArrayList<Double>()
@@ -290,33 +321,38 @@ private fun compileScalarCode(code: String, nameToSlot: Map<String, Int>, varCou
         }
     }
 
-    for (raw in code.split(';')) {
-        val stmt = raw.trim()
-        if (stmt.isEmpty()) continue
-        val eq = stmt.indexOf('=')
-        if (eq < 0) return null
-        val lhs = stmt.substring(0, eq).trim()
-        val rhs = stmt.substring(eq + 1).trim()
-        val names = if (lhs.startsWith("[")) parseNameList(lhs) else listOf(lhs)
-        val isListRhs = rhs.startsWith("[")
-        val exprs = if (isListRhs) parseExprList(rhs) else listOf(rhs)
+    val slotOf: (String) -> Int? = { name ->
+        when (name) {
+            "i" -> Reg.I; "n" -> Reg.N; "t" -> Reg.T
+            else -> ATTR_SLOTS[name] ?: nameToSlot[name] ?: tempSlots[name]
+        }
+    }
 
-        if (!isListRhs && names.size != 1) return null
-        if (isListRhs && names.size != exprs.size) return null
-
-        for (k in names.indices) {
-            val target = lhsSlot(names[k]) ?: return null
-            val rpn = compile(exprs[k])
-            val maxDepth = intArrayOf(0)
-            val slotOf: (String) -> Int? = { name ->
-                when (name) {
-                    "i" -> Reg.I; "n" -> Reg.N; "t" -> Reg.T
-                    else -> ATTR_SLOTS[name] ?: nameToSlot[name] ?: tempSlots[name]
-                }
+    for (stmt in statements) {
+        val assign = stmt as? AssignNode ?: return null
+        val targets = when (val target = assign.target) {
+            is VarTarget -> listOf(target.name)
+            is UnpackTarget -> target.names
+            else -> return null
+        }
+        val values = when (val value = assign.value) {
+            is ArrayNode -> {
+                if (value.items.size != targets.size) return null
+                value.items
             }
-            if (!emitRpn(rpn, ops, args, consts, slotOf, maxDepth)) return null
-            if (maxDepth[0] > stackSize) stackSize = maxDepth[0]
+            else -> {
+                if (targets.size != 1) return null
+                listOf(value)
+            }
+        }
+        for (k in targets.indices) {
+            val target = lhsSlot(targets[k]) ?: return null
+            val depth = intArrayOf(0)
+            val maxDepth = intArrayOf(0)
+            if (!emitExpr(values[k], ops, args, consts, slotOf, depth, maxDepth)) return null
+            if (depth[0] != 1) return null
             ops.add(ScalarOp.POP_REG); args.add(target)
+            if (maxDepth[0] > stackSize) stackSize = maxDepth[0]
         }
     }
 
@@ -327,61 +363,60 @@ private fun compileScalarCode(code: String, nameToSlot: Map<String, Int>, varCou
     )
 }
 
-/** RPN -> 指令序列；返回 false 表示含非标量元素（向量/矩阵函数、分量访问、未知符号）。 */
-private fun emitRpn(
-    rpn: List<Any>,
+/** AST -> 指令序列；返回 false 表示含非标量元素（向量/矩阵/分量访问/未知符号）。 */
+private fun emitExpr(
+    node: Node,
     ops: ArrayList<ScalarOp>,
     args: ArrayList<Int>,
     consts: ArrayList<Double>,
     slotOf: (String) -> Int?,
+    depth: IntArray,
     maxDepth: IntArray,
 ): Boolean {
-    var depth = 0
-    for (o in rpn) {
-        when (o) {
-            is Double -> { ops.add(ScalarOp.PUSH_CONST); args.add(consts.size); consts.add(o); depth++ }
-            is ExprToken.Var -> {
-                val slot = slotOf(o.name) ?: return false
-                ops.add(ScalarOp.PUSH_REG); args.add(slot); depth++
-            }
-            is ExprToken.Comp -> return false
-            "neg" -> { ops.add(ScalarOp.NEG); args.add(0) } // 一元取负：弹出 1 压回 1，深度不变
-            is String -> {
-                val op = SCALAR_FUNC_OPS[o] ?: return false
-                ops.add(op); args.add(0)
-                depth += 1 - op.pops
-            }
-            is Char -> {
-                val op = CHAR_OPS[o] ?: return false
-                ops.add(op); args.add(0)
-                depth += 1 - op.pops
-            }
-            else -> return false
+    fun push(op: ScalarOp, arg: Int, delta: Int) {
+        ops.add(op); args.add(arg)
+        depth[0] += delta
+        if (depth[0] > maxDepth[0]) maxDepth[0] = depth[0]
+    }
+
+    fun apply(op: ScalarOp): Boolean {
+        push(op, 0, 1 - op.pops)
+        return depth[0] >= 0
+    }
+
+    when (node) {
+        is NumNode -> {
+            push(ScalarOp.PUSH_CONST, consts.size, 1)
+            consts.add(node.value)
+            return true
         }
-        if (depth > maxDepth[0]) maxDepth[0] = depth
-        if (depth < 0) return false
+        is VarNode -> {
+            val slot = slotOf(node.name) ?: return false
+            push(ScalarOp.PUSH_REG, slot, 1)
+            return true
+        }
+        is UnaryNode -> {
+            if (node.op != "-") return false
+            if (!emitExpr(node.operand, ops, args, consts, slotOf, depth, maxDepth)) return false
+            return apply(ScalarOp.NEG)
+        }
+        is BinaryNode -> {
+            val opChar = node.op.singleOrNull() ?: return false
+            val op = CHAR_OPS[opChar] ?: return false
+            if (!emitExpr(node.left, ops, args, consts, slotOf, depth, maxDepth)) return false
+            if (!emitExpr(node.right, ops, args, consts, slotOf, depth, maxDepth)) return false
+            return apply(op)
+        }
+        is CallNode -> {
+            val callee = node.callee as? VarNode ?: return false
+            val op = SCALAR_FUNC_OPS[callee.name] ?: return false
+            val arity = SCALAR_FUNC_ARITY[callee.name] ?: return false
+            if (node.args.size != arity) return false
+            for (arg in node.args) {
+                if (!emitExpr(arg, ops, args, consts, slotOf, depth, maxDepth)) return false
+            }
+            return apply(op)
+        }
+        else -> return false
     }
-    return depth == 1
-}
-
-/** 解析赋值左侧的名字列表：`[x, y, z]` → ["x","y","z"]；单名直接返回。 */
-private fun parseNameList(s: String): List<String> =
-    s.trim().removePrefix("[").removeSuffix("]").split(',').map { it.trim() }.filter { it.isNotEmpty() }
-
-/** 解析赋值右侧的表达式列表：`[a, b, c]` → ["a","b","c"]（忽略括号内逗号）；非列表包装为单项。 */
-private fun parseExprList(s: String): List<String> {
-    val inner = s.trim()
-    if (!inner.startsWith("[") || !inner.endsWith("]")) return listOf(inner)
-    val body = inner.substring(1, inner.length - 1)
-    val parts = mutableListOf<String>()
-    var depth = 0
-    val cur = StringBuilder()
-    for (c in body) {
-        if (c == '(') depth++
-        else if (c == ')') depth--
-        if (c == ',' && depth == 0) { parts.add(cur.toString().trim()); cur.setLength(0) }
-        else cur.append(c)
-    }
-    if (cur.isNotEmpty()) parts.add(cur.toString().trim())
-    return parts
 }

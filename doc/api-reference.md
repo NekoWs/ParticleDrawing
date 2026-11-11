@@ -79,8 +79,9 @@ NeoForge 载荷注册版本为 16。
 | `ScriptParser` | 脚本词法与语法分析，产出 AST |
 | `ScriptRuntime` | 脚本运行时：`setup` / `tick` / `process` 三阶段、粒子句柄读写、内建函数表 |
 | `ScriptValues` | 脚本值类型与 JS 语义辅助（数值截断、取整、钳制） |
-| `ScriptExpr` | 标量表达式求值（RPN 编译与缓存） |
-| `ScalarProgram` | 纯标量代码块的字节码编译与执行快路径 |
+| `ScriptExpr` | 变量关键帧插值与标量求值兼容入口（解析统一走 `ScriptRuntime`） |
+| `ScalarProgram` | 纯标量 AST 的字节码编译与执行快路径 |
+| `ExpressionProgram` | 程序表达式后端：纯标量优先走快路径，向量/矩阵/高级函数回退完整解释器 |
 | `Getters` | `get_entity_*` / `get_world_*` 被动输入的重写与静态检查 |
 | `ScriptNoise` | 确定性 PRNG 与 3D Simplex 噪声 |
 | `ScriptFastMath` | 快速标量数学近似，仅在函数对象开启 `fastMath` 时使用 |

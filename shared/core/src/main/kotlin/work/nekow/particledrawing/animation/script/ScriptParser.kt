@@ -353,6 +353,13 @@ class ScriptParser(private val source: String) {
         return node
     }
 
+    /** 解析一段裸语句列表（不带外层函数/花括号）；程序里的标量表达式块走这里。 */
+    fun parseStatementList(): List<Node> {
+        val out = ArrayList<Node>()
+        while (!atEnd()) out.add(parseStatement())
+        return out
+    }
+
     fun parseProgram(): ScriptProgram {
         val setup = ArrayList<Node>()
         val tick = ArrayList<Node>()
@@ -1045,3 +1052,6 @@ fun parseProgram(source: String): ScriptProgram = ScriptParser(source).parseProg
 
 /** 解析裸表达式（无 setup/process 包装，用于 UV 字段等）。 */
 fun parseExpression(source: String): Node = ScriptParser(source).parseBareExpression()
+
+/** 解析裸语句列表（无外层花括号，用于程序里的标量表达式块）。 */
+fun parseStatements(source: String): List<Node> = ScriptParser(source).parseStatementList()

@@ -121,19 +121,22 @@ fun clamp(value: Scalar, minValue: Scalar, maxValue: Scalar): Scalar =
 fun step(edge: Scalar, value: Scalar): Scalar = Scalar("step(${edge.expr},${value.expr})")
 fun smoothstep(edge0: Scalar, edge1: Scalar, value: Scalar): Scalar =
     Scalar("smoothstep(${edge0.expr},${edge1.expr},${value.expr})")
-fun lerp(from: Scalar, to: Scalar, t: Scalar): Scalar = Scalar("lerp(${from.expr},${to.expr},${t.expr})")
+fun lerp(from: Scalar, to: Scalar, t: Scalar): Scalar = Scalar(lerpExpr(from.expr, to.expr, t.expr))
 fun square(value: Scalar): Scalar = Scalar("(${value.expr}*${value.expr})")
 fun clamp01(value: Scalar): Scalar = clamp(value, Scalar.of(0.0), Scalar.of(1.0))
+
+/** 高级表达式引擎没有全局 lerp，这里直接展开成算术。 */
+private fun lerpExpr(from: String, to: String, t: String): String = "(($from)+(($to)-($from))*($t))"
 
 fun sin(angle: Angle): Scalar = sin(Scalar(angle.expr))
 fun cos(angle: Angle): Scalar = cos(Scalar(angle.expr))
 fun tan(angle: Angle): Scalar = tan(Scalar(angle.expr))
 
 fun lerp(from: Length, to: Length, t: Scalar): Length =
-    Length(Double.NaN, "lerp(${from.expr},${to.expr},${t.expr})", false)
+    Length(Double.NaN, lerpExpr(from.expr, to.expr, t.expr), false)
 
 fun lerp(from: Angle, to: Angle, t: Scalar): Angle =
-    Angle(Double.NaN, "lerp(${from.expr},${to.expr},${t.expr})", false)
+    Angle(Double.NaN, lerpExpr(from.expr, to.expr, t.expr), false)
 
 /** 单位值转成表达式标量；长度进入世界格数值，角度进入弧度，时间进入毫秒。 */
 fun Length.toScalar(): Scalar = Scalar(expr)

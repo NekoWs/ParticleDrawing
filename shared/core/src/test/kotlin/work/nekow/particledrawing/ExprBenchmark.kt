@@ -130,7 +130,7 @@ class ExprBenchmarkConsistencyTest {
                 "标量函数表", emptyList(),
                 """
                 r = clamp(i/n, 0, 1);
-                g = lerp(0, 1, i/n);
+                g = 0 + (1 - 0) * i/n;
                 b = smoothstep(0, n, i);
                 a = 1 - fract(i/n);
                 vx = pow(i, 0.5) * sign(i - n/2);
@@ -140,6 +140,11 @@ class ExprBenchmarkConsistencyTest {
                 light = floor(abs(sin(i)) * 16);
                 """,
                 listOf("r", "g", "b", "a", "vx", "vy", "vz", "glow", "light"),
+            ),
+            Formula(
+                "一元负号与幂", emptyList(),
+                "x = -2^2; y = 2^-3; z = round(-0.5);",
+                listOf("x", "y", "z"),
             ),
         )
         for (f in formulas) {

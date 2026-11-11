@@ -8,10 +8,10 @@ import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
 import work.nekow.particledrawing.ParticleDrawing
-import work.nekow.particledrawing.animation.script.CompiledFunction
+import work.nekow.particledrawing.animation.script.CompiledExpression
 import work.nekow.particledrawing.animation.script.GetterRewriter
 import work.nekow.particledrawing.animation.script.InputKey
-import work.nekow.particledrawing.animation.script.compileFunctionObject
+import work.nekow.particledrawing.animation.script.compileExpressionBlock
 import work.nekow.particledrawing.animation.script.evaluate
 import work.nekow.particledrawing.api.EntityProp
 import work.nekow.particledrawing.api.Orient
@@ -132,7 +132,7 @@ internal object ClientAnimationProgramManager {
 
         /** 表达式自己的有限时长终点（程序相对毫秒）；-1 = 一直求值。 */
         var expressionEndMs: Long = -1L
-        var compiled: CompiledFunction? = null
+        var compiled: CompiledExpression? = null
 
         // 可移动轴心：BindPivot(Movable) 绑定，位置走 ProgramAnchorPayload 逐 tick 更新
         var movableAnchor = false
@@ -518,11 +518,11 @@ internal object ClientAnimationProgramManager {
         val extAll = rw.extNames + p.vars.keys
         p.extNames = extAll.toTypedArray()
         p.requiredKeys = rw.keys
-        p.compiled = compileFunctionObject(rw.code, emptyList(), extAll)
+        p.compiled = compileExpressionBlock(rw.code, extAll)
         if (p.compiled == null) {
-            // 快路径编不出（向量/矩阵/分量访问一类）时表达式没有解释器兜底，必须报出来
+            // 快路径和解释器都编不出时才报错；正常情况下向量/矩阵走解释器。
             LOGGER.error(
-                "[ParticleDrawing] 表达式含非标量因素，无法编译，该表达式不生效: {}", rw.code,
+                "[ParticleDrawing] 表达式无法编译，该表达式不生效: {}", rw.code,
             )
         }
         prepareExpressionBuffers(p)

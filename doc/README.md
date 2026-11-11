@@ -30,7 +30,7 @@ ParticleDrawing 是面向 [NeoForge](https://neoforged.net/)（Minecraft 26.2 / 
 | `work.nekow.particledrawing.api` | 公开 API：粒子管理器、绘制、粒子组、单粒子句柄、粒子集、发射器、特效、动画构建 |
 | `work.nekow.particledrawing.animation` | `.pdrawc` 读取与验签、播放进度、客户端逐 tick 求值、服务端播放管理 |
 | `work.nekow.particledrawing.math` | 核心向量、数学运算与资源标识 |
-| `work.nekow.particledrawing.animation.script` | 函数对象脚本：词法语法、运行时、标量字节码快路径、音频采样 |
+| `work.nekow.particledrawing.animation.script` | 函数对象脚本：词法语法、运行时、标量字节码快路径与表达式回退、音频采样 |
 | `work.nekow.particledrawing.core.client` | 客户端渲染引擎、桥接原版粒子、编排程序解释器、音频播放、贴图缓存 |
 | `work.nekow.particledrawing.core.network` | 全部数据包与编解码 |
 | `work.nekow.particledrawing.core.server` | 服务端权威粒子引擎、调度器、发射器登记、动画文件同步 |
