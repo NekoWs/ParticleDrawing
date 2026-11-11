@@ -14,3 +14,9 @@ pdraw particle emitter reset cube
 pdraw particle emitter reset seven-star
 pdraw particle emitter reset sharp-star
 pdraw particle emitter reset five-star
+pdraw particle emitter reset hole_a
+pdraw particle emitter reset hole_b
+pdraw particle emitter reset hole_c
+pdraw particle emitter reset levelup_a
+pdraw particle emitter reset levelup_b
+pdraw particle emitter reset levelup_c
