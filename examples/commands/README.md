@@ -1,6 +1,33 @@
 # 命令函数示例
 
-将 `.mcfunction` 放进数据包的 `data/pdraw_test/function/`，执行 `/reload` 后使用：
+## 安装到测试存档
+
+将本目录的 `.mcfunction` 文件复制到当前存档的数据包，目录结构如下。
+
+```text
+<存档>/datapacks/pdraw-test/
+├─ pack.mcmeta
+└─ data/pdraw_test/function/
+   ├─ sine.mcfunction
+   ├─ clear.mcfunction
+   └─ ...
+```
+
+在 `pdraw-test` 根目录创建 `pack.mcmeta`。下方的格式范围覆盖 26.2 和 26.3。 [26.2 数据包格式](https://www.minecraft.net/en-us/article/minecraft-java-edition-26-2) · [26.3 数据包格式](https://www.minecraft.net/en-us/article/minecraft-java-edition-26-3)
+
+```json
+{
+  "pack": {
+    "description": "ParticleDrawing command examples",
+    "min_format": [107, 1],
+    "max_format": [121, 0]
+  }
+}
+```
+
+开发客户端的存档位于 `run/<目标>/client/saves/`。进入存档后执行 `/reload`，用
+`/datapack list enabled` 确认数据包已启用，再选择一个函数执行。若提示未知函数，检查 `function/`
+是否为单数、数据包目录是否多套了一层，以及日志中是否有命令解析错误。
 
 ```mcfunction
 function pdraw_test:sine
@@ -14,7 +41,7 @@ function pdraw_test:torus-knot
 function pdraw_test:mobius
 ```
 
-每次选择一个函数运行即可。锚点相对函数执行位置，命令方块执行时可以用
+在聊天栏执行时加前缀 `/`。锚点相对函数执行位置，命令方块执行时可以用
 `execute positioned ~ ~2 ~ run function ...` 调整整幅图形的位置。
 执行 `function pdraw_test:clear` 可以清除所有示例粒子并重置对应配置。
 

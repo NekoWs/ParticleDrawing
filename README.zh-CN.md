@@ -31,18 +31,19 @@
 
 ## 环境要求
 
-| 组件 | 版本 |
-| --- | --- |
-| Minecraft | 26.2 / 26.3 |
-| NeoForge | 26.2.0.59+ / 26.3.0.102+ |
-| Java | 25 |
+| Minecraft | 最低 NeoForge | Java |
+| --- | --- | --- |
+| 26.2 | 26.2.0.59 | 25 |
+| 26.3 | 26.3.0.102 | 25 |
+
+NeoForge 1.21.1 是下一个计划适配的目标。当前可下载 26.2 和 26.3。
 
 ## 安装
 
 ### 玩家
 
 1. 安装适用于 Minecraft 26.2 或 26.3 的 NeoForge。
-2. 把模组 jar 放进 `mods/` 目录，或从 [Modrinth](https://modrinth.com/mod/particledrawing) 安装。
+2. 将对应游戏版本的 JAR 放入 `mods/`。 [Modrinth](https://modrinth.com/mod/particledrawing) · [GitHub Releases](https://github.com/NekoWs/ParticleDrawing/releases)
 3. 从[编辑器](https://viewer.nekow.work/)导出动画，把 `.pdrawc` 文件放进 `<gameDir>/animations/`。
 4. 在游戏里使用 `/pdraw` 命令。动画按需加载，新增或替换动画后不需要重启游戏。
 
@@ -62,9 +63,9 @@ dependencies {
 `work.nekow:particledrawing:<version>`。
 使用 Minecraft 26.2 时，把坐标里的 `neoforge-26.3` 改为 `neoforge-26.2`。
 
-`<version>` 取最新发布版，见顶部的 Maven Central 徽章或
-[Maven Central](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3)。要把库打进自己的 jar、
-不要求玩家单独安装，用 `jarJar(implementation("work.nekow:particledrawing-neoforge-26.3:<version>"))`。
+`<version>` 取对应目标已发布的版本。 [26.2](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.2) · [26.3](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3)
+
+要把库嵌入自己的 JAR，可用 `jarJar(implementation("work.nekow:particledrawing-neoforge-26.3:<version>"))`。
 
 还要在 `META-INF/neoforge.mods.toml` 里声明依赖：
 
@@ -100,6 +101,7 @@ Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80)
 | --- | --- |
 | `/pdraw particle group ...` | 创建、列出或删除数据包与命令方块共用的命名粒子组。 |
 | `/pdraw particle add ...` | 向组内添加点、线、光束、螺旋、法阵、球体等图元。 |
+| `/pdraw particle emitter ...` | 分步配置采样、图片、公式、锚点与粒子寿命。 |
 | `/pdraw particle program ...` | 用多条命令编排锚点、实体跟随、移动、旋转、脉冲、变量和逐粒子公式。 |
 | `/pdraw animation list` | 列出 `animations/` 里可用的动画。 |
 | `/pdraw animation play <name> [pos]` | 在 `pos` 播放动画，缺省为玩家前方 3 格。 |
@@ -109,11 +111,12 @@ Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80)
 | `/pdraw animation debug` | 打印求值耗时、粒子数量与播放时间线。 |
 | `/pdraw texture reload` | 从磁盘重新加载粒子贴图（仅客户端）。 |
 
-`particle` 命令按“建组 → 添加全部图元 → 逐条编排”工作，不需要把法术逻辑塞进一条命令。完整语法、
+编排粒子组用 `group → add → program`。曲线采样、图片和持续发射用 `emitter` 分步配置，再用
+`burst` 或 `start` 触发。两种方式都可以在数据包函数和命令方块里使用。完整语法、
 参数表和可直接放进数据包的法阵示例见[使用指南](doc/guide.md#命令绘制与数据包)。
 命令方块入门可从[末地烛贴图的 sin 曲线](doc/guide.md#命令方块简单用法sin-曲线)开始；
 `texture=particle:minecraft:end_rod` 可在 PD 粒子上直接复用原版贴图。
-贴图默认按粒子年龄与寿命换帧；`field anchor` 与 `expression local` 可共用组锚点，`lifetime=80` 指定 4 秒寿命。
+贴图默认按粒子年龄与寿命换帧；`field anchor` 与 `expression local` 可共用组锚点，`lifetime=80` 指定 4 秒寿命。 [数据包安装与函数示例](examples/commands/README.md)
 
 ## 文档
 
@@ -121,6 +124,7 @@ Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80)
 | --- | --- |
 | [getting-started.md](doc/getting-started.md) | 依赖引入、第一个效果、核心概念。 |
 | [guide.md](doc/guide.md) | 绘制形状、编排式动画、句柄、粒子集、发射器、动画。 |
+| [particle-commands.md](doc/particle-commands.md) | 分步配置发射器、公式与图片采样。 |
 | [api-reference.md](doc/api-reference.md) | 按包分类的类索引。 |
 | [known-issues.md](doc/known-issues.md) | 已知限制，以及与编辑器之间的行为差异。 |
 | [multiversion.md](doc/multiversion.md) | 核心边界、平台构建、发布坐标与类型迁移。 |
@@ -142,8 +146,8 @@ cd ParticleDrawing
 ## 发布
 
 `gradle.properties` 里的 `mod_version` 是唯一事实来源。它每次变化，同一个提交都会打上对应的标签
-（`v<mod_version>`）。推送这样的标签会通过 `publish.yml` 把产物发布到 Maven Central，并通过
-`modrinth.yml` 发布到 [Modrinth](https://modrinth.com/mod/particledrawing)（同时把 `README.md` 同步为项目
+（`v<mod_version>`）。推送标签后，`publish.yml` 运行 `publishAndReleaseToMavenCentral`，
+产物经 Central 验证和同步后可下载。`modrinth.yml` 按游戏目标发布到 [Modrinth](https://modrinth.com/mod/particledrawing)（同时把 `README.md` 同步为项目
 正文）。`release.yml` 会构建两个游戏目标并创建 GitHub Release，附上各自的主 JAR、源码 JAR、SHA-256 校验文件，以及从上一个
 标签以来的提交标题生成的发布说明。ALPHA、BETA、RC 标为预发布。三个工作流在标签名与
 `mod_version` 不一致时都会直接失败，没有标签就没有发布。

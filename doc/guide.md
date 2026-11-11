@@ -1,15 +1,7 @@
 # 使用指南
 
-动画文件的函数对象 UV 会在派生粒子出生帧继承，运行中的 UV 公式也会同步到已有粒子。
-换帧继续使用原有时钟，更新 UV 不会重新生成粒子。
-
-从绘制形状到播放动画文件的完整用法。类索引见 [api-reference.md](api-reference.md)，依赖引入与第一个
-效果见 [getting-started.md](getting-started.md)。
-
-当前适配器覆盖 Minecraft 26.2 / NeoForge 26.2.0.59+ 和 Minecraft 26.3 / NeoForge 26.3.0.102+。命令和动画文件的用法沿用原有接口，
-开发环境与旧数据包的迁移说明见[已知限制](known-issues.md#minecraft-263)。
-
-共享核心、运行目录和目标构建见[多版本架构](multiversion.md)。
+从绘制形状到播放动画文件的完整用法。当前 26.2 和 26.3 适配器共用这里的命令、API 和动画格式。
+依赖引入见[快速开始](getting-started.md)，类索引见 [API 参考](api-reference.md)，平台差异见[多版本架构](multiversion.md)。
 
 ## 目录
 
@@ -673,11 +665,11 @@ val custom = EasingType.custom(0.68, -0.55, 0.265, 1.55)   // (x1, y1, x2, y2)
 
 ## 命令绘制与数据包
 
-持续生成、公式采样、条件曲面、图片转粒子和逐粒子运动使用新增的 `particle emitter`。
+持续生成、公式采样、条件曲面、图片转粒子和逐粒子运动使用 `particle emitter`。
 它按名称分步配置，支持状态、变量热更新、筛选修改和共享实体锚点，见[分步配置粒子生成器](particle-commands.md)。
 图片与完整曲面需要显式配置足够的 `max_alive` 和寿命；默认容量为 4096。该文档还提供桃心、旋转球面
 和动态曲臂的分步函数，可以复制后修改公式，或绑定同一实体锚点。
-几何动态例子还包括分层曼陀罗、三叶环面结和莫比乌斯带，见[命令函数示例](../examples/commands/README.md)。
+数据包的目录、`pack.mcmeta` 和分层曼陀罗等完整函数见[命令函数示例](../examples/commands/README.md#安装到测试存档)。
 下方的 `group/add/program` 用于固定成员的组级编排。
 
 `/pdraw particle` 把公开绘图与 `ParticleGroup` 编排能力拆成可组合的命令，适合 `.mcfunction`、连锁
@@ -715,12 +707,12 @@ pdraw particle program demo fade_out 12 ease_in
 准备一个脉冲命令方块，接两个“无条件、始终活动”的连锁命令方块，箭头按顺序相连。每块各填一行：
 
 ```mcfunction
-pdraw particle group reset sine 40.0 -58.0 20.5
+pdraw particle group reset sine ~ ~2 ~
 pdraw particle add sine field anchor 81 texture=particle:minecraft:end_rod size_world=0.12,0.12 glowing light=0 lifetime=80
 pdraw particle program sine expression local 0 u=i/(n-1);x=8*u;y=sin(2*PI*u-t*0.002);z=0;
 ```
 
-触发第一块，即可在 `(40,-58,20.5)` 起点画出一条长 8 格、振幅 1 格、随时间起伏的 sin 曲线。
+触发第一块，即可在它上方 2 格处画出一条长 8 格、振幅 1 格、随时间起伏的 sin 曲线。
 `field` 提供 81 颗粒子，`i` 是从 0 开始的序号，`n` 是总数，`u` 把序号映射到 0..1。
 `field anchor` 在组锚点生成成员，`expression local` 把公式输出视为相对该锚点的偏移；移动效果只改
 第一条命令的坐标。曲线会向下延伸 1 格，建议把起点高度设在地面上方 2 格。清除时执行：
@@ -914,7 +906,8 @@ pdraw particle program spell_motes retire 2
 ## 播放动画文件
 
 除了用代码实时绘制，也可以播放网页编辑器导出的 `.pdrawc` 动画并在运行期修改变量。服务端只把动画定义
-与指令下发给客户端，粒子求值与渲染在客户端本地逐 tick 进行。
+与指令下发给客户端。客户端逐 tick 求值，并按渲染帧更新插值和 `process`。函数对象派生粒子
+出生时继承 UV，后续 UV 公式在原播放时钟上更新已有粒子。
 
 ### 播放与停止
 
@@ -922,12 +915,12 @@ pdraw particle program spell_motes retire 2
 import work.nekow.particledrawing.animation.AnimationLoader
 import work.nekow.particledrawing.animation.ServerAnimationManager
 
-// 播放 <gameDir>/animations/<name>.pdrawc，返回本次播放 ID；文件不存在返回 null
+// 按名称加载并播放已签名的 .pdrawc，返回本次播放 ID
 val animId = ServerAnimationManager.playByName(dim, level.players(), "magic_circle", origin) ?: return
 
-// 或自行提供字节来源（模组内置资源、数据库等）
-val json = AnimationLoader.load("magic_circle")
-ServerAnimationManager.play(dim, players, json, origin)
+// 或把验签后的文件字节交给播放入口
+val bytes = AnimationLoader.load("magic_circle") ?: return
+ServerAnimationManager.play(dim, players, bytes, origin)
 
 ServerAnimationManager.stop(animId, players)      // 停止单次播放
 ServerAnimationManager.stopAll(dim, players)      // 停止整个维度
@@ -1320,17 +1313,17 @@ Shape s = Draw.polygon(manager, p);
 
 ## 注意事项
 
-1. 所有 API 在服务端主线程调用，内部调度任务也在主线程执行。
+1. 服务端 API 与其调度任务在服务端主线程执行。`ClientEffects` 是客户端本地播放入口。
 2. 粒子数量受 `maxParticlesPerDimension` 与 `maxParticlesPerPlayer` 约束，达到上限时 `spawn()` 返回 null。
 3. 引擎按视距自动增减同步给客户端的粒子，持续动画只对已追踪该组任一成员的玩家广播；程序保留完整成员顺序与
    `i/n`，迟到/部分可见成员出生后按当前程序时间补挂，不重播入场。
-4. 无限动画（`durationTicks = -1`、`cycles = -1`）会一直占用 tick 与带宽，用 `stopContinuous()` 或让组
-   `fadeOut()` / `destroyAfter()` 收尾。
+4. 无限动画（`durationTicks = -1`、`cycles = -1`）会持续占用客户端求值与渲染预算。用
+   `stopContinuous()` 或让组 `fadeOut()` / `destroyAfter()` 收尾。
 5. `stagger > 0` 时粒子陆续出现，期间 `group.size()` 会逐步增长。
 6. Java 调用方：绘制形状与部分链式方法带 `@JvmOverloads` 重载，其余带默认参数的方法要写全参数；
    颜色来源用 `ColorSource` 接口或 lambda 实现。
-7. 贴图、UV、各向异性、朝向与加色在生成时定死；中途能改颜色、缩放、位置、发光等级与光强乘数，
-   要换外观就 `remove()` 后重新生成。
+7. 单粒子句柄在生成时设置贴图、UV、各向异性、朝向与加色，运行时可改颜色、缩放、位置、发光等级与光强乘数。
+   要替换句柄的外观规格，先 `remove()` 再生成。动画文件中的 UV 和资源粒子帧序列按各自的时钟更新。
 8. `delay(n)` 期间粒子在 PD 侧还不存在，句柄上的操作一律无效，position() 读不到权威位置；
    `ParticleBatch` 会把延迟成员留到到点。
 9. 发射器声明不随调用方消失，法术结束或投射物消亡时要 `stop()`，否则客户端会一直发下去。

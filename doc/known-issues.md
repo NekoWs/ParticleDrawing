@@ -1,6 +1,6 @@
 # 已知限制
 
-## Minecraft 26.3
+## Minecraft 26.2 与 26.3
 
 当前提供独立的 26.2 和 26.3 适配器。26.3 最低 NeoForge 为 26.3.0.102，26.2 为 26.2.0.59。
 游戏适配器使用 Java 25，共享核心使用 Java 21；见[多版本架构](multiversion.md)。
@@ -17,10 +17,12 @@ NeoGradle 使用 7.1.39，修复 26.3 开发环境重编译 HolderSet 时的访�
 原版计时器、摄像机注入点和动态光照注入点按 26.3 源码核对。
 迁移接口参考 [26.2 → 26.3 官方说明](https://docs.neoforged.net/primer/docs/26.3/)。
 
-26.3 的数据包格式为 121.0，资源包格式为 97.1；旧的命令函数数据包需要更新 pack.mcmeta 中的格式范围。
-`.pdrawc` 布局、脚本语义和命令语法不随游戏版本迁移改变。
+26.2 的数据包/资源包格式为 107.1 / 88.0，26.3 为 121.0 / 97.1。旧数据包迁移时要更新
+`pack.mcmeta`。两个 PD 目标共用 `.pdrawc` 布局、脚本语义和命令语法。
+[数据包示例](../examples/commands/README.md#安装到测试存档) · [Minecraft 26.2](https://www.minecraft.net/en-us/article/minecraft-java-edition-26-2) · [Minecraft 26.3](https://www.minecraft.net/en-us/article/minecraft-java-edition-26-3)
 
-编译、JVM 回归与独立目录的 GameTestServer 启动已验证；客户端 GPU 画面和多人效果仍需游戏内验收。
+两个目标均通过构建、JVM 回归和 GameTestServer 启动。单人客户端已验收绘制、贴图、锚点等效果，
+其中 26.3 覆盖默认透明度和 OIT。多人专服画面尚待专项验证。 [客户端验收范围](multiversion.md#构建与运行)
 开发启动器在非交互终端会提示终端能力受限，NeoForge 的 MixinExtras 依赖选择也会打印 JarJar 提示；
 两者来自开发环境，服务端加载与 GameTest 可正常完成。
 JVM 回归中的 LWJGL 3.4.3 内存后端会触发 JDK 25 的 Unsafe 弃用提示；这是原版提供的原生依赖，
@@ -34,8 +36,8 @@ JVM 回归中的 LWJGL 3.4.3 内存后端会触发 JDK 25 的 Unsafe 弃用提�
 这些参数的回归直接使用 Brigadier 解析器，不需要启动游戏。
 
 采样、公式、粒子年龄、存活上限、回收上界、图片颜色/方向、配置联动和协议有纯 JVM 回归。
-普通 `gradlew test` 不启动 NeoForge 游戏环境；命令方块箭头、真实实体跟随、客户端顶点与纹理效果仍需在游戏里检查。
-可用 [examples/commands](../examples/commands/) 的函数文件复现；新载荷要求联机双方一起更新。
+普通 `gradlew test` 不启动游戏。26.2 和 26.3 的本地验收覆盖数据包函数、真实实体跟随与客户端画面。
+命令方块接线和多人场景尚待专项复验。联机双方需使用匹配的 PD 构建。 [函数复现](../examples/commands/README.md)
 
 ## 程序化贴图与程序成员同步
 
@@ -57,13 +59,13 @@ JVM 回归中的 LWJGL 3.4.3 内存后端会触发 JDK 25 的 Unsafe 弃用提�
 - Java 端有单位、外观、曲线、形状、退场、`Scalars.pow` 与批量结果入口；类型化表达式的高级参数/实体输入以 Kotlin DSL 为主，
   Java 可用 `Expressions.builder` 生成位置/缩放/颜色文本或继续用字符串表达式。
 - 部件选择器在生成时执行，部件句柄只记录成功成员；容量拒绝仍返回 null/`SpawnRejection.CAPACITY`。
-- 退场完成使用客户端尺寸端点回报；程序载荷新增原起点字段，registrar 升到 `"14"`。没有同时追踪全部成员的玩家时走兜底清理。
+- 退场完成使用客户端尺寸端点回报。没有同时追踪全部成员的玩家时走兜底清理。
 
-组表达式新增局部坐标标志，采样生成声明新增网络载荷，当前 registrar 为 `"16"`；联机双方需要同时更新。字符串 API 使用
-`expressionLocal`，命令使用 `expression local`，旧 `expression` 仍输出世界坐标。
+组局部坐标使用字符串 API `expressionLocal` 或命令 `expression local`；`expression` 输出世界坐标。
+当前载荷注册版本为 `16`，含局部坐标标志和采样源声明。
 
 数值文本已统一展开为普通十进制，求值器也接受科学计数法；角速度表达式与运行时阶段控制已补齐。
-修复记录与剩余的游戏内验收项见[消费迁移](issues/readable-api-migration.md)。完整草案与验收见需求正文。
+修复记录与游戏内验收范围见[消费迁移](issues/readable-api-migration.md)。
 
 ## 立体声声像与编辑器有两处差别
 
@@ -114,9 +116,8 @@ source 会换成带限 sinc 重采样器（`AL_SOFT_source_resampler`）：OpenA
 此方式复用；缺资源与帧号越界会显示紫黑错误贴图，并在客户端日志记录原因。切换资源包或 F3+T 后重新读取。
 动态图集最多 256 帧、总计 16777216 像素，各帧需同尺寸，超出会明确报错并显示错误贴图。
 
-粒子外观（贴图、子矩形 UV、各向异性、朝向、加色）在生成那一刻定死，之后不再产生逐 tick 开销；
-运行期只能改颜色、缩放、位置、发光等级与光强乘数。需要换贴图一类的外观就销毁后重新生成。
-未登记过的贴图名不会丢粒子，客户端按纯白方块渲染。
+单粒子句柄的贴图、子矩形 UV、各向异性、朝向和混合规格在生成时设置；更换这类规格需重新生成。
+动画文件的 UV 公式、资源粒子贴图帧序列按各自的时钟更新。未登记的程序化贴图名会按纯白方块渲染。
 
 光强与片元外观分开：`lightIntensity` 只影响动态光照，热更时可以从当前实际亮度缓动过去；
 `CurveChannel.LIGHT` 让光强在寿命内走独立曲线。两者都不会改变透明度或全亮标志。

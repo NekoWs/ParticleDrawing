@@ -1,8 +1,10 @@
 # 多版本核心与平台适配
 
-共享核心以 Java 21 为运行基线，为 Minecraft 1.21.x 及后续版本提供接入基础。
-当前已实现的游戏目标为 NeoForge 26.2 和 26.3；1.21.x 的游戏适配器尚未接入。
-`.pdrawc` 格式、公式、时间单位、命令语法和网络字段布局保持原有约定。
+共享核心以 Java 21 为运行基线。已发布的 NeoForge 目标为 Minecraft 26.2 和 26.3，分别要求
+NeoForge 26.2.0.59 和 26.3.0.102 或更高的对应系列版本，游戏适配器均使用 Java 25。
+下一目标是 NeoForge 1.21.1，见[接入计划](#接入-1211)。
+
+同一份 `.pdrawc` 由两端共用的核心解析，公式、时间单位、命令语法和载荷字段布局跨目标保持一致。
 
 ## 代码边界
 
@@ -11,10 +13,10 @@
 | `shared/core/src/main/kotlin/` | 动画模型与求值、脚本和标量虚拟机、时钟、曲线、图片采样、配方模拟、资源标识和数学 |
 | `shared/core/src/test/` | 不加载 Minecraft 的核心回归 |
 | `shared/core/src/testFixtures/` | 两个平台与编辑器共用的签名文件、脚本夹具和帧时钟测试工具 |
-| `platforms/neoforge-common/src/` | 世界与实体接入、命令、网络封装、API 游戏入口、渲染桥接、资源读取、原生音频 |
+| `platforms/neoforge-common/src/` | 当前两套 26.x 适配器共编译的世界与实体接入、命令、网络、API、渲染、资源与音频 |
 | `platforms/neoforge-26.2/src/` | 26.2 渲染管线、配置类型等版本差异 |
 | `platforms/neoforge-26.3/src/` | Renderpearl/OIT 管线、SYNCED 配置等版本差异 |
-| `gradle/neoforge-platform.gradle` | 两个平台共用的构建、打包与发布规则 |
+| `gradle/neoforge-platform.gradle` | 26.x 的 Java 25、NeoGradle runs、源码组合、核心打包与发布规则 |
 
 核心禁止导入 Minecraft、Forge、NeoForge、Mojang 渲染和 LWJGL 类型。
 `verifyPlatformIndependence` 同时检查源码、编译依赖、JAR 字节码引用与 Java 21 字节码上限。
@@ -60,19 +62,17 @@ OGG 的窗口管理和脚本采样在核心，STB 解码通过 `ScriptWavePcm.Og
 .\gradlew.bat -p platforms/neoforge-26.2 runGameTestServer
 ```
 
-核心在 Java 21 下编译和测试，两个游戏适配器使用 Java 25。CI 分别运行独立核心和两个平台的构建，
-平台构建同时执行核心测试、平台测试、打包门禁与 GameTest 启动检查。
-自动测试覆盖核心和平台逻辑，客户端画面验收记录如下；多人会话不在本轮画面验收范围内。
+CI 使用 Java 21 构建独立核心，使用 Java 25 构建两个游戏适配器。各平台的 `build` 执行核心测试、
+平台测试和打包检查，`runGameTestServer` 验证服务端加载。
 
-2026-11 的本地客户端验收覆盖 NeoForge 26.2 与 26.3：动态 sin 曲线、图片点阵、
-法阵与三维曲面、实体锚点跟随、有限寿命回收，以及签名动画的静态贴图、UV 公式、换帧和加法混合。
-测试使用各自新建的独立存档，主音量关闭；未将旧存档跨版本加载。
+2026-11 在两个游戏目标的单人客户端验证了动态 sin 曲线、图片点阵、法阵与三维曲面、实体锚点跟随、
+有限寿命回收，以及签名动画的静态贴图、UV 公式、换帧和加法混合。测试使用独立的新建存档，主音量关闭。
 26.3 同时核验默认透明度和改进透明度（OIT），实际后端为 OpenGL。
 派生粒子的首帧贴图与后续 UV 同步由 `FunctionTextureTest` 和客户端场景共同验证。
 
 ## 分发与后续适配
 
-每个模组 JAR 内嵌同一次构建的核心；用户按游戏版本安装一个 PD 模组文件即可。
+每个模组 JAR 内嵌同一次构建的核心，源码 JAR 同时包含平台和核心源码。按游戏版本选择 PD 模组 JAR。
 `verifyPackagedCore` 检查核心类和 OGG 宿主实现是否齐全。
 Maven POM 不引用另一个未发布的核心制品，`verifyPublishedDependencies` 对此设门禁。
 
@@ -82,13 +82,20 @@ Maven POM 不引用另一个未发布的核心制品，`verifyPublishedDependenc
 - `work.nekow:particledrawing-neoforge-26.3:<version>`
 
 模组文件名为 `particledrawing-<Minecraft版本>-neoforge-<version>.jar`。
-这些坐标由重构后的发行流程发布；已发布旧版本仍使用原有坐标。
+这些坐标已发布到 Maven Central，旧版继续使用 `work.nekow:particledrawing:<version>`。
 一个 PD 标签对应两个目标，GitHub Release 汇集两个目标的主 JAR、源码 JAR 与校验文件；
-Modrinth 版本号包含游戏版本，两个目标各自发布。
-发布时保留其他版本已有的推荐状态，不自动取消其他目标的推荐。
+Modrinth 版本号包含游戏版本，各目标单独发布，保留其他目标的推荐状态。
+Maven 工作流使用 `publishAndReleaseToMavenCentral`，制品在 Central 完成验证和同步后可下载。
 
-接入 1.21.x 时，应新增目标适配器并独立验证加载器、世界查询、网络、资源与渲染接口，
-继续使用相同的核心测试和夹具。版本目标没有实现并通过验证前，不扩大 Minecraft 兼容范围。
+`master` 维护多版本代码，各游戏版本以目标目录区分，历史发行版通过标签定位。
 
-`master` 维护多版本代码，各游戏版本以目标目录区分。功能与重构分支合并后即可清理，
-不为已接入的游戏版本长期保留一条开发分支；历史发行版继续通过标签定位。
+## 接入 1.21.1
+
+NeoForge 1.21.1 尚未接入。目标使用 Java 21，沿用独立平台构建、核心打包、目标坐标和隔离运行目录。
+先核对目标的加载器、世界查询、网络、资源、渲染、音频与 Mixin 签名，再决定哪些代码可跨版本共编译。
+目前 `neoforge-common` 按 26.x 的原生 API 编译，接入新版本时应按实际接口差异划分共享边界。
+[NeoForge 1.21.1 文档](https://docs.neoforged.net/docs/1.21.1/gettingstarted/)
+
+使用相同的核心测试、动画夹具与命令示例验证行为等价。平台专有的渲染管线可以换用 1.21.1 的实现，
+验收覆盖普通透明、加法混合、朝向、UV 与动态光照，以及命令、锚点、音频、摄像机和联机同步。
+目标通过构建、服务端启动和客户端画面验证后，再加入对应发布目标与公开安装说明。

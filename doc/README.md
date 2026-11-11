@@ -6,6 +6,8 @@ ParticleDrawing 是面向 [NeoForge](https://neoforged.net/)（Minecraft 26.2 / 
 粒子由服务端创建与持有，客户端本地求值、逐渲染帧渲染。编排动画、寿命曲线、发射器这类声明式能力
 只下发一次，运行期几乎不占带宽。
 
+当前已发布的目标为 NeoForge 26.2 和 26.3。1.21.1 的接入计划见[多版本架构](multiversion.md#接入-1211)。
+
 ## 目录
 
 | 文档 | 内容 |
@@ -14,6 +16,7 @@ ParticleDrawing 是面向 [NeoForge](https://neoforged.net/)（Minecraft 26.2 / 
 | [guide.md](guide.md) | 绘制形状、编排动画、单粒子、粒子集、发射器、缓动、播放动画、代码构建动画 |
 | [api-reference.md](api-reference.md) | 按包分类的类索引 |
 | [particle-commands.md](particle-commands.md) | 分步配置采样、图片转粒子、出生/运动公式与条件筛选 |
+| [命令函数示例](../examples/commands/README.md) | 数据包目录、版本元数据与可直接运行的示例 |
 | [multiversion.md](multiversion.md) | Java 21 核心、平台构建、类型转换与版本扩展 |
 | [known-issues.md](known-issues.md) | 平台差异与已知限制 |
 | [issues/readable-effect-api.md](issues/readable-effect-api.md) | 可读特效编写接口的设计与验收目标 |
@@ -26,6 +29,7 @@ ParticleDrawing 是面向 [NeoForge](https://neoforged.net/)（Minecraft 26.2 / 
 | --- | --- |
 | `work.nekow.particledrawing.api` | 公开 API：粒子管理器、绘制、粒子组、单粒子句柄、粒子集、发射器、特效、动画构建 |
 | `work.nekow.particledrawing.animation` | `.pdrawc` 读取与验签、播放进度、客户端逐 tick 求值、服务端播放管理 |
+| `work.nekow.particledrawing.math` | 核心向量、数学运算与资源标识 |
 | `work.nekow.particledrawing.animation.script` | 函数对象脚本：词法语法、运行时、标量字节码快路径、音频采样 |
 | `work.nekow.particledrawing.core.client` | 客户端渲染引擎、桥接原版粒子、编排程序解释器、音频播放、贴图缓存 |
 | `work.nekow.particledrawing.core.network` | 全部数据包与编解码 |

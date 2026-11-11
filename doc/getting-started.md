@@ -4,11 +4,10 @@
 
 ## 环境要求
 
-| 组件 | 版本 |
-| --- | --- |
-| Minecraft | 26.2 / 26.3 |
-| NeoForge | 26.2.0.59+ / 26.3.0.102+ |
-| Java | 25 |
+| Minecraft | 最低 NeoForge | Java |
+| --- | --- | --- |
+| 26.2 | 26.2.0.59 | 25 |
+| 26.3 | 26.3.0.102 | 25 |
 
 目标坐标从重构后的发行版开始使用，旧版坐标与开发构建见[多版本说明](multiversion.md)。
 
@@ -25,9 +24,9 @@ dependencies {
 }
 ```
 
-`<version>` 取最新发布版，见
-[Maven Central](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3)。也可以把库打进自己的 jar，
-让玩家不必单独安装：
+`<version>` 取对应目标已发布的版本。 [26.2](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.2) · [26.3](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3)
+
+需要把库嵌入自己的 JAR 时，使用以下依赖配置。
 
 ```kotlin
 dependencies {
@@ -90,7 +89,7 @@ fun demo(manager: ParticleManager, center: Vec3) {
 
 ## 调用约定
 
-- 所有 API 在服务端主线程调用，命令与事件回调天然满足。
+- 服务端 API 在服务端主线程调用，例如命令回调或服务端 tick 事件。`ClientEffects` 用于客户端本地播放。
 - 粒子数量受服务端配置 `maxParticlesPerDimension`（维度总量）与 `maxParticlesPerPlayer`（单人追踪量）
   约束，达到上限时 `spawn()` 返回 `null`。
 - Java 调用方：绘制形状与部分链式方法带 `@JvmOverloads` 重载，其余带默认参数的方法要写全参数；
@@ -99,5 +98,6 @@ fun demo(manager: ParticleManager, center: Vec3) {
 ## 下一步
 
 - [guide.md](guide.md)：形状参数、编排动画、发射器、播放 `.pdrawc`、代码构建动画。
-- [api-reference.md](api-reference.md)：按包分类的类索引。
+- [api-reference.md](api-reference.md) 按包索引 API 与内部类。
+- [命令函数示例](../examples/commands/README.md) 提供数据包布局和可复制的函数。
 - [known-issues.md](known-issues.md)：平台差异与已知限制。

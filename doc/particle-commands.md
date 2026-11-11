@@ -10,7 +10,7 @@
 
 以下内容可直接保存为 `.mcfunction`。命令方块里每行放一块：第一块脉冲、需要红石，后续连锁、
 无条件、始终活动；箭头依次相连。只触发一次，不要用循环方块反复执行配置。
-可复制的函数文件位于 [examples/commands](../examples/commands/)。
+数据包目录、版本元数据和完整函数见[安装说明](../examples/commands/README.md#安装到测试存档)。
 
 ```mcfunction
 pdraw particle emitter reset sine
@@ -41,7 +41,8 @@ pdraw particle emitter sine burst
 ## 图片转粒子
 
 把静态 PNG 放进游戏或服务端工作目录的 `particleImages/`，例如 `particleImages/ring.png`。
-单人开发环境对应 `run/neoforge-26.3/client/particleImages/`（26.2 则为 `run/neoforge-26.2/client/particleImages/`）。客户端不需要另放一份文件：服务端采样后同步坐标与颜色。
+开发运行使用 `run/<目标>/<运行名>/particleImages/`，例如 26.3 单人的 `run/neoforge-26.3/client/particleImages/`。
+服务端读取图片后同步采样结果，联机玩家直接接收坐标与颜色。
 
 ```mcfunction
 pdraw particle emitter reset sigil
@@ -68,7 +69,7 @@ pdraw particle emitter sigil burst
 
 图片要完整出现，`max_alive` 必须容得下全部有效样本，寿命也要长于画完一轮所需时间。
 默认容量 4096 适合持续发射，但 680×680 的不透明图片以 stride=8 采样时共有 7225 点，会在第 4096 点
-等待空位，看起来像只画了一半。这不是图片裁剪。上面的配置允许 8192 颗同时存在，每刻生成 1024 颗，
+等待空位，看起来像只画了一半。上面的配置允许 8192 颗同时存在，每刻生成 1024 颗，
 7225 点在 8 刻内画完；每颗保留 100 刻。`start/burst` 的反馈会显示实际样本数和容量。
 未筛选时，一轮至少需要 `ceil(样本数/rate)` 个发射批次，批次间隔由 interval 决定；
 where 筛选可能减少存活量，kill 和运动也会改变最终显示。

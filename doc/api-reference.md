@@ -5,7 +5,9 @@
 
 核心模型使用 `work.nekow.particledrawing.math.Vec3` 与 `ResourceId`，游戏入口仍接受原生类型。
 模型构造器和位置字段的 JVM 类型已变化，依赖方需要重新编译；转换方法与兼容范围见
-[多版本架构](multiversion.md#类型与原生服务)。命令语法、文件格式与网络字段布局不变。
+[多版本架构](multiversion.md#类型与原生服务)。`animation` 包横跨核心和平台，
+按名称读取或控制游戏内播放的类位于平台。`.pdrawc` 版本为 18，动画载荷编解码版本为 9，
+NeoForge 载荷注册版本为 16。
 
 ## api：公开 API
 
@@ -54,7 +56,7 @@
 
 | 类 | 作用 |
 | --- | --- |
-| `AnimationLoader` | 读写 `<gameDir>/animations/` 下的 `.pdrawc`，读取时做服务端验签 |
+| `AnimationLoader` | 列出并读取 `<gameDir>/animations/` 下的 `.pdrawc`，读取时验签，缺失或签名无效时返回 null |
 | `PdrawcReader` | `.pdrawc` 解析与 Ed25519 验签 |
 | `ParticleAnimation` | 动画数据模型：粒子、轨道、组、函数对象、贴图、UV、摄像机 |
 | `FunctionObject`、`FunctionVar`、`Entrance` | 函数对象、其变量与入场预设 |
@@ -102,6 +104,7 @@
 | `ClientAnimationManager` | 客户端动画播放管理：求值结果差分同步、音频同步、摄像机查询 |
 | `ClientAnimationProgramManager` | 编排动画程序解释器：糖指令模式与表达式模式 |
 | `ProgramFrame` | 糖指令的帧计算：旋转角度账本与缩放倍率账本 |
+| `ClientParticleSources` | 每游戏刻推进命令/API 采样源与逐粒子公式，按容量、寿命和筛选回收 |
 | `ClientEmitterManager` | 客户端发射器运行时：按渲染帧推进并按需生成粒子 |
 | `EmitterAdvance`、`EmitterSampling` | 发射推进的纯逻辑与逐颗抖动的确定性采样 |
 | `AudioStreamPlayer` | 游戏内音频播放：OpenAL 队列流式、OGG/WAV 解码、采样级 seek、漂移校正 |
@@ -123,6 +126,7 @@
 | `ParticleTrackPayload`、`ParticleTrackBatchPayload`、`ParticleSetPositionPayload`、`ParticleTranslatePayload`、`ParticleRotationPayload` | 直设位置、平移与绕轴旋转 |
 | `ParticleAttachPayload` | 实体锚点：只在挂载时下发一次 |
 | `ParticleTexturePayload` | 程序化贴图内容分块 |
+| `ParticleRecipePayload`、`RecipeCodec` | 分步配置粒子源的启动、更新、筛选与停止协议 |
 | `EmitterPayload` | 发射器声明、更新与停止，含参数编解码 `EmitterParams` / `EmitterParamsCodec` |
 | `AnimationProgramPayload` | 编排程序下发、追加、变量热更、变量渐变与停止 |
 | `ProgramAnchorPayload`、`ProgramCompletePayload` | 移动轴心样本与完成信号 |
@@ -142,6 +146,7 @@
 | `ServerParticleEngine` | 每维度一个的权威粒子引擎：生成、更新、销毁与可见性同步 |
 | `ParticleData`、`ParticleGroupData` | 粒子运行时数据与组成员、轴心 |
 | `ParticleVisibilityManager` | 按视距判定玩家是否可见 |
+| `ServerParticleSources` | 粒子源的服务端实例登记、同步、条件操作与回收 |
 | `ServerEmitterManager` | 发射器登记表：声明、分档更新，以及后进服与走进范围玩家的补发 |
 | `ServerProgramCompletion` | 编排动画完成信号的登记表，含兜底销毁 |
 | `AnimationScheduler` | 服务端延迟任务队列（stagger 入场、定时销毁等） |
@@ -158,6 +163,7 @@
 | `LightAttenuation` | 光照衰减函数：线性、反平方、平滑步进等预设 |
 | `ParticleDrawCommands` | `/pdraw` 根命令；动画集中在 `animation`，贴图重载在 `texture reload` |
 | `ParticleDrawParticleCommands` | `particle group/add/program`：命名组、多图元绘制、固定/实体锚点、组动画、变量与逐粒子表达式 |
+| `ParticleRecipeCommands` | `particle emitter` 的命名采样、图片、公式、变量、锚点与生命周期配置 |
 | `ParticleCommandOptionParser` | `particle add` 的严格 `key=value` 参数解析，覆盖颜色、外观、寿命曲线和物理参数 |
 | `CommandParticleGroups` | 按维度保存命令创建的运行期组，并协调错峰成员与后续编排命令 |
 | `ParticleDrawingConfig` | 服务端与客户端配置项 |

@@ -37,18 +37,19 @@ evaluated on the client, so a running effect costs little to no per-tick bandwid
 
 ## Requirements
 
-| Component | Version    |
-| --------- | ---------- |
-| Minecraft | 26.2 / 26.3 |
-| NeoForge | 26.2.0.59+ / 26.3.0.102+ |
-| Java      | 25         |
+| Minecraft | Minimum NeoForge | Java |
+| --- | --- | --- |
+| 26.2 | 26.2.0.59 | 25 |
+| 26.3 | 26.3.0.102 | 25 |
+
+NeoForge 1.21.1 is the next planned target. The current downloads cover 26.2 and 26.3.
 
 ## Installation
 
 ### Players
 
 1. Install NeoForge for Minecraft 26.2 or 26.3.
-2. Put the mod jar into the `mods/` folder, or install it from [Modrinth](https://modrinth.com/mod/particledrawing).
+2. Install the JAR for your game version into `mods/`. [Modrinth](https://modrinth.com/mod/particledrawing) · [GitHub Releases](https://github.com/NekoWs/ParticleDrawing/releases)
 3. Export an animation from the [editor](https://viewer.nekow.work/) and place the `.pdrawc` file into
    `<gameDir>/animations/`.
 4. Use the `/pdraw` command in game. Animations are loaded on demand, so the game does not have to be
@@ -70,9 +71,9 @@ The target-specific coordinates above apply to releases built from the multi-ver
 Existing older releases retain `work.nekow:particledrawing:<version>`.
 For Minecraft 26.2, replace `neoforge-26.3` with `neoforge-26.2`.
 
-Replace `<version>` with the newest release, shown by the Maven Central badge above or on
-[Maven Central](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3). To ship the library
-inside your own jar instead of requiring players to install it, use
+Choose a published `<version>` for your target on Maven Central. [26.2](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.2) · [26.3](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3)
+
+To bundle the library in your mod JAR, use
 `jarJar(implementation("work.nekow:particledrawing-neoforge-26.3:<version>"))`.
 
 Declare the dependency in `META-INF/neoforge.mods.toml` as well:
@@ -109,6 +110,7 @@ More in the [getting started guide](doc/getting-started.md).
 | ---------------------------- | --------------------------------------------------------------- |
 | `/pdraw particle group ...`  | Create and manage named particle groups for data packs and command blocks. |
 | `/pdraw particle add ...`    | Add dots, beams, helices, magic circles, spheres and other primitives. |
+| `/pdraw particle emitter ...` | Configure sampling, images, formulas, anchors and particle lifetimes in steps. |
 | `/pdraw particle program ...` | Choreograph anchors, entity following, movement, spin, pulses, variables and per-particle expressions. |
 | `/pdraw animation list`      | List the animations available in `animations/`.                 |
 | `/pdraw animation play <name> [pos]` | Play an animation at `pos`, or 3 blocks in front of the player. |
@@ -118,13 +120,13 @@ More in the [getting started guide](doc/getting-started.md).
 | `/pdraw animation debug`     | Print evaluation time, particle count and timeline of playback. |
 | `/pdraw texture reload`      | Reload particle textures from disk (client side only).          |
 
-Particle commands follow a create group → add primitives → program sequence, so a complex effect can be split across
-readable data pack functions or command blocks. See the [command guide](doc/guide.md#命令绘制与数据包) for the full
+Use `group → add → program` for choreographed groups. For sampled curves, images and continuous emitters,
+configure each step with `emitter`, then use `burst` or `start`. Both work in data pack functions and command blocks. See the [command guide](doc/guide.md#命令绘制与数据包) for the full
 syntax and a ready-to-use magic circle example.
 For a short command block example, see the [sin curve with the end rod texture](doc/guide.md#命令方块简单用法sin-曲线).
 Use `texture=particle:minecraft:end_rod` to reuse a vanilla texture while retaining PD animation controls.
 Frames follow particle age and lifetime. Use `field anchor` with `expression local` to share the group anchor,
-and `lifetime=80` for a four-second lifetime.
+and `lifetime=80` for a four-second lifetime. [Data pack setup and example functions](examples/commands/README.md)
 
 ## Documentation
 
@@ -132,6 +134,7 @@ and `lifetime=80` for a four-second lifetime.
 | -------------------------------------------- | --------------------------------------------------------------------- |
 | [getting-started.md](doc/getting-started.md) | Dependency setup, first effect, core concepts.                        |
 | [guide.md](doc/guide.md)                     | Drawing, choreographed groups, handles, batches, emitters, animations. |
+| [particle-commands.md](doc/particle-commands.md) | Step-by-step particle sources, formulas and image sampling. |
 | [api-reference.md](doc/api-reference.md)     | Class index grouped by package.                                       |
 | [known-issues.md](doc/known-issues.md)       | Known limitations and behavior differences against the editor.        |
 | [multiversion.md](doc/multiversion.md)       | Core boundaries, platform builds, coordinates and migration.           |
@@ -154,8 +157,11 @@ coordinates, run directories, and migration notes are in [the multi-version guid
 
 `mod_version` in `gradle.properties` is the single source of truth. Whenever it changes, the same
 commit gets a matching tag (`v<mod_version>`). Pushing such a tag publishes the artifact to Maven
-Central through `publish.yml` and the version to [Modrinth](https://modrinth.com/mod/particledrawing)
-through `modrinth.yml`, which also syncs this README into the project body. `release.yml` builds both game targets and creates a
+Central through `publish.yml` using `publishAndReleaseToMavenCentral`. Central makes the artifacts
+available after validation and synchronization. The tag also runs `modrinth.yml` to publish each target
+and sync this README to the project page. [Modrinth](https://modrinth.com/mod/particledrawing)
+
+`release.yml` builds both game targets and creates a
 GitHub Release with their runtime JARs, sources JARs, SHA-256 checksums, and notes from commit titles since
 the previous tag. ALPHA, BETA, and RC versions are marked as prereleases. All three workflows fail if
 the tag name does not match `mod_version`; there is no release without a tag.
