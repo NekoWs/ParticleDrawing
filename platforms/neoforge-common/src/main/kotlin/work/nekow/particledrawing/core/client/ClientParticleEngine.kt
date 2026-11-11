@@ -27,8 +27,9 @@ class ClientParticleEngine {
     // 动画本地播放直接同步的粒子：跳过 frameUpdate 的缓动轮转
     private val takeover = ParticleTakeover()
 
-    // 发光粒子索引：增量维护，避免 getGlowingParticles 每帧遍历全部粒子
-    private val glowingIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
+    // 会发光的粒子索引（lightLevel > 0）：增量维护。动态光照每帧只扫这一批，
+    // 不再像以前那样遍历全部粒子；名字按用途叫 lightIds，别和「全亮渲染」混淆。
+    private val lightIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
 
     // 带速度的运动粒子索引：每 client tick 确定性积分一次，不参与缓动轮转
     private val motionIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
@@ -58,7 +59,8 @@ class ClientParticleEngine {
     private class Attachment(val entityId: Int, val uuid: UUID?, val offset: Vec3, val local: Boolean)
 
     private var syncCursor = 0
-    private var cachedIds: Array<UUID> = emptyArray()
+    private var cachedIds: Array<UUID?> = arrayOfNulls(0)
+    private var cachedCount = 0
     private var cachedSize = -1
 
     /**
@@ -75,7 +77,10 @@ class ClientParticleEngine {
                       additive: Boolean = false, scaleArray: FloatArray? = null,
                       lifeCurve: ParticleLifeCurve? = null, prev: Vec3? = null,
                       lightIntensity: Float = 1f, emitsLight: Boolean = glowing) {
-        if (particles.size >= ParticleDrawingConfig.CLIENT.maxRenderParticles.get()) return
+        if (particles.size >= ParticleDrawingConfig.CLIENT.maxRenderParticles.get()) {
+            noteRenderCapDrop()
+            return
+        }
 
         // 同一个 id 重新 spawn（服务端重发、迟到同步）：先把旧的整条状态摘掉
         if (particles.containsKey(id)) {
@@ -90,7 +95,7 @@ class ClientParticleEngine {
         rp.captureSpawnSize()
         rp.markBorn(tickSequence)
         particles[id] = rp
-        if ((glowing || emitsLight) && lightLevel > 0) glowingIds.add(id)
+        if (lightsUp(glowing, emitsLight, lightLevel)) lightIds.add(id)
         if (lifeCurve != null && !lifeCurve.isEmpty()) curveIds.add(id)
 
         val pe: ParticleEngine = Minecraft.getInstance().particleEngine
@@ -227,16 +232,13 @@ class ClientParticleEngine {
         scaleEaseIds.remove(id) // 直写尺寸接管缓动
         trackBuffers.remove(id) // 动画直写接管位置，丢开 track 缓冲
         attachments.remove(id)
-        val wasGlowing = (rp.glowing() || rp.emitsLight()) && rp.lightLevel() > 0
+        val wasLight = lightsUp(rp)
         rp.setPositionDirect(pos)
         rp.setColorDirect(color)
         if (scaleArray != null) rp.setScaleArrayDirect(scaleArray) else rp.setScaleDirect(scale)
         rp.setGlowing(glowing)
         rp.setLightLevel(lightLevel)
-        val nowGlowing = (glowing || rp.emitsLight()) && lightLevel > 0
-        if (wasGlowing != nowGlowing) {
-            if (nowGlowing) glowingIds.add(id) else glowingIds.remove(id)
-        }
+        refreshLightIndex(id, wasLight, lightsUp(glowing, rp.emitsLight(), lightLevel))
         bridges[id]?.let {
             it.syncPosition(pos.x, pos.y, pos.z, snap)
             it.syncColor(color.r, color.g, color.b, color.a)
@@ -362,12 +364,25 @@ class ClientParticleEngine {
      */
     fun setLightLevel(id: UUID, level: Int) {
         val rp = particles[id] ?: return
-        val wasGlowing = (rp.glowing() || rp.emitsLight()) && rp.lightLevel() > 0
+        val wasLight = lightsUp(rp)
         rp.setLightLevel(level)
-        val nowGlowing = (rp.glowing() || rp.emitsLight()) && rp.lightLevel() > 0
-        if (wasGlowing != nowGlowing) {
-            if (nowGlowing) glowingIds.add(id) else glowingIds.remove(id)
-        }
+        refreshLightIndex(id, wasLight, lightsUp(rp))
+    }
+
+    /**
+     * 「会发光」的判定只有这一处：全亮或显式发光，且光照等级 > 0。
+     * 动态光照索引与各处状态更新都按它走，避免三份条件各写一遍后漂移。
+     */
+    private fun lightsUp(glowing: Boolean, emitsLight: Boolean, lightLevel: Int): Boolean =
+        (glowing || emitsLight) && lightLevel > 0
+
+    private fun lightsUp(rp: RenderParticle): Boolean =
+        lightsUp(rp.glowing(), rp.emitsLight(), rp.lightLevel())
+
+    /** 状态变化后维持 [lightIds] 索引；只有判定结果翻转才动集合。 */
+    private fun refreshLightIndex(id: UUID, wasLight: Boolean, nowLight: Boolean) {
+        if (wasLight == nowLight) return
+        if (nowLight) lightIds.add(id) else lightIds.remove(id)
     }
 
     /**
@@ -396,7 +411,7 @@ class ClientParticleEngine {
         ClientAnimationProgramManager.onParticleRemoved(id)
         bridges.remove(id)?.remove()
         takeover.clear(id)
-        glowingIds.remove(id)
+        lightIds.remove(id)
         motionIds.remove(id)
         trackBuffers.remove(id)
         attachments.remove(id)
@@ -567,28 +582,37 @@ class ClientParticleEngine {
 
     /**
      * 按轮转顺序分批推进非运动粒子的缓动同步。
+     *
+     * 轮转表的数组跨 tick 复用：粒子数一变就要重建，逐 tick 新建一份 20 万长的数组
+     * 会把 GC 拖垮（发射器场景几乎每 tick 都在变）。数组容量只增不减，用 [cachedCount] 记真实长度。
      */
     private fun syncParticlesInBatches(motionParticles: Set<UUID>) {
         if (particles.size != cachedSize) {
-            cachedIds = particles.keys.toTypedArray()
-            cachedSize = particles.size
-            if (syncCursor >= cachedIds.size) syncCursor = 0
+            val n = particles.size
+            if (cachedIds.size < n) cachedIds = arrayOfNulls(maxOf(n, cachedIds.size * 2))
+            var i = 0
+            for (id in particles.keys) cachedIds[i++] = id
+            if (i < cachedIds.size) cachedIds[i] = null
+            cachedCount = n
+            cachedSize = n
+            if (syncCursor >= cachedCount) syncCursor = 0
         }
 
-        val n = cachedIds.size
+        val n = cachedCount
         if (n == 0) return
 
         val batch = ParticleDrawingConfig.CLIENT.particleBatchSize.get().coerceAtLeast(1)
         val limit = minOf(batch, n)
         var processed = 0
         while (processed < limit) {
-            val id = cachedIds[syncCursor % n]
+            val id = cachedIds[syncCursor]
             syncCursor = (syncCursor + 1) % n
             processed++
+            if (id == null) continue
 
             val rp = particles[id] ?: continue
-            if (rp.id() in motionParticles) continue
-            if (takeover.hasPosition(rp.id())) continue
+            if (id in motionParticles) continue
+            if (takeover.hasPosition(id)) continue
 
             val wasSnap = rp.consumeSnap()
             rp.tick()
@@ -700,14 +724,15 @@ class ClientParticleEngine {
         bridges.clear()
         groups.clear()
         takeover.clearAll()
-        glowingIds.clear()
+        lightIds.clear()
         motionIds.clear()
         trackBuffers.clear()
         attachments.clear()
         curveIds.clear()
         scaleEaseIds.clear()
         exitWatches.clear()
-        cachedIds = emptyArray()
+        cachedIds = arrayOfNulls(0)
+        cachedCount = 0
         cachedSize = -1
         syncCursor = 0
     }
@@ -804,22 +829,63 @@ class ClientParticleEngine {
         }
     }
 
+    /** 当前有没有会发光的粒子；动态光照据此整段跳过，别为没有光的场面付收集成本。 */
+    fun hasLightEmitters(): Boolean = lightIds.isNotEmpty()
+
     /**
      * 所有发光粒子的列表（增量维护，不遍历全部粒子）。
+     *
+     * 每渲染帧都要用的话改用 [lightEmittersInto]：它写进调用方的列表，不再每帧新建。
      */
     fun getGlowingParticles(): List<RenderParticle> {
-        if (glowingIds.isEmpty()) return emptyList()
-        val glowing = ArrayList<RenderParticle>(glowingIds.size)
-        for (id in glowingIds) {
-            val p = particles[id] ?: continue
-            // 收尾那一帧（expiring）仍要参与采样，直到曲线末端真正到零；
-            // 也不在这里按 alpha 预筛，出生淡入的中间值要在本帧按分数年龄算出来。
-            if (p.isAlive() || p.isExpiring()) glowing.add(p)
-        }
+        if (lightIds.isEmpty()) return emptyList()
+        val glowing = ArrayList<RenderParticle>(lightIds.size)
+        lightEmittersInto(glowing)
         return glowing
     }
 
+    /**
+     * 把发光粒子填进 [out]（先清空），复用调用方的列表，避免逐帧分配。
+     *
+     * 收尾那一帧（expiring）仍要参与采样，直到曲线末端真正到零；也不在这里按 alpha 预筛，
+     * 出生淡入的中间值要在本帧按分数年龄算出来。
+     */
+    fun lightEmittersInto(out: MutableList<RenderParticle>) {
+        out.clear()
+        if (lightIds.isEmpty()) return
+        for (id in lightIds) {
+            val p = particles[id] ?: continue
+            if (p.isAlive() || p.isExpiring()) out.add(p)
+        }
+    }
+
+    // 到渲染上限被拒的粒子：按时间窗汇总提示，避免每颗粒子刷一条日志
+    private var capDropCount = 0
+    private var capDropWarnedAt = 0L
+
+    /**
+     * 记录一次「渲染粒子上限已满」。每 10 秒最多提示一次并带上被丢的颗数——
+     * 效果被截断时用户要能看到原因，而不是只看到半截画面。
+     */
+    private fun noteRenderCapDrop() {
+        capDropCount++
+        val now = System.nanoTime()
+        if (capDropWarnedAt != 0L && now - capDropWarnedAt < CAP_DROP_WARN_INTERVAL_NANOS) return
+        val dropped = capDropCount
+        capDropCount = 0
+        capDropWarnedAt = now
+        LOGGER.warn(
+            "渲染粒子上限已满（{}），{} 颗新粒子被丢弃；调大客户端 maxRenderParticles 或减少同屏粒子",
+            ParticleDrawingConfig.CLIENT.maxRenderParticles.get(), dropped,
+        )
+    }
+
     companion object {
+        private val LOGGER = org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing")
+
+        /** 上限提示的最小间隔（纳秒）。 */
+        private const val CAP_DROP_WARN_INTERVAL_NANOS = 10_000_000_000L
+
         @Volatile
         private var INSTANCE: ClientParticleEngine? = null
 

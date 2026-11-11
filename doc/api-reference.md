@@ -160,7 +160,7 @@ NeoForge 载荷注册版本为 16。
 
 | 类 | 作用 |
 | --- | --- |
-| `DynamicLightManager` | 动态光照：向光图坐标注入粒子光照，按「已请求重建」基准累计位移并排队重烘焙 |
+| `DynamicLightManager` | 动态光照：向光图坐标注入粒子光照，按「已请求重建」基准累计位移并排队重烘焙。没有发光粒子、也没有待重建区块时整段跳过；每帧的候选列表与比较器复用，不逐帧分配 |
 | `LightAttenuation` | 光照衰减函数：线性、反平方、平滑步进等预设 |
 | `ParticleDrawCommands` | `/pdraw` 根命令；动画集中在 `animation`，贴图重载在 `texture reload` |
 | `ParticleDrawParticleCommands` | `particle group/add/program`：命名组、多图元绘制、固定/实体锚点、组动画、变量与逐粒子表达式 |

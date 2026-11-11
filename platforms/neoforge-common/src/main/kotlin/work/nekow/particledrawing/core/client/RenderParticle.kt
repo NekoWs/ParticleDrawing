@@ -298,15 +298,19 @@ class RenderParticle(
         spawnSize = currentSize()
     }
 
-    /** 曲线是否驱动颜色/透明度（ALPHA 与 RGB 都算颜色通道）。 */
-    fun hasColorCurve(): Boolean = lifeCurve?.curves?.any {
+    // 寿命曲线在粒子存在期间不变，通道扫描一次就够：逐粒子逐帧问的这两问以前每次都要扫一遍曲线表。
+    private val colorCurve: Boolean = lifeCurve?.curves?.any {
         it.channel == CurveChannel.ALPHA || it.channel == CurveChannel.RED ||
             it.channel == CurveChannel.GREEN || it.channel == CurveChannel.BLUE
     } == true
 
+    private val scaleCurve: Boolean = lifeCurve?.curves?.any { it.channel == CurveChannel.SCALE } == true
+
+    /** 曲线是否驱动颜色/透明度（ALPHA 与 RGB 都算颜色通道）。 */
+    fun hasColorCurve(): Boolean = colorCurve
+
     /** 曲线是否驱动尺寸。 */
-    fun hasScaleCurve(): Boolean =
-        lifeCurve?.curves?.any { it.channel == CurveChannel.SCALE } == true
+    fun hasScaleCurve(): Boolean = scaleCurve
 
     /** 缩放缓动是否还在进行；渲染帧需要按分数刻重写桥接尺寸。 */
     fun isScaleEasing(): Boolean = scaleEase.startMs >= 0L

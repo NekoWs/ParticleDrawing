@@ -8,6 +8,7 @@ import net.minecraft.util.LightCoordsUtil
 import net.minecraft.world.level.BlockAndLightGetter
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.client.ClientParticleEngine
+import work.nekow.particledrawing.core.client.RenderParticle
 import java.util.LinkedHashSet
 import java.util.PriorityQueue
 import java.util.UUID
@@ -56,7 +57,6 @@ internal object LightBakePolicy {
 // 动态光照管理器：不放置光源方块，把带小数精度的光照值写进光图坐标，靠 GPU 逐顶点插值得到平滑过渡。
 // 空间哈希（cell=16 格）加速邻近查询；位移在「已请求重建」的基准上累计，脏 section 跨帧排队，
 // 预算用完不丢请求；读写锁保证线程安全。
-@Suppress("unused")
 object DynamicLightManager {
 
     /** 空间哈希网格边长（格），与区块 section 边长一致。 */
@@ -129,6 +129,18 @@ object DynamicLightManager {
         var lastX: Double = x, var lastY: Double = y, var lastZ: Double = z,
     )
 
+    /** 裁剪用的候选：分数用 double 存，不装箱；比 `Pair<Double, LightSource>` 少两次分配。 */
+    private class Candidate(val score: Double, val src: LightSource)
+
+    /** 候选的定序（先分数，同分按 id）：建一次复用，不逐 cell 逐帧新建比较器。 */
+    private val CANDIDATE_ORDER: Comparator<Candidate> = Comparator { a, b ->
+        val byScore = a.score.compareTo(b.score)
+        if (byScore != 0) byScore else a.src.id.compareTo(b.src.id)
+    }
+
+    /** 本帧的发光粒子候选：复用同一份，不逐帧新建列表。 */
+    private val candidates = ArrayList<RenderParticle>()
+
     /**
      * 每帧根据发光粒子刷新动态光源，并请求受影响的区块重建。
      *
@@ -144,6 +156,11 @@ object DynamicLightManager {
             applyPendingSections()
             return
         }
+
+        // 没有发光粒子、也没有上一帧留下的光源和待重建区块：整段跳过。
+        // 省掉配置读取、关卡查询和每帧的光源收集，没有光效的场面（占大多数）不再付这份成本。
+        // 最后一个光源消失的那一帧 sources 仍非空，会正常走完重建并把版本号抬起来。
+        if (pendingSections.isEmpty() && sources.isEmpty() && !engine.hasLightEmitters()) return
 
         val mc = Minecraft.getInstance()
         val player = mc.player
@@ -190,9 +207,7 @@ object DynamicLightManager {
         }
 
         val nextBaked = HashMap<UUID, BakedState>(newSources.size)
-        val newIds = HashSet<UUID>(newSources.size)
         for (src in newSources) {
-            newIds.add(src.id)
             val prev = lastBaked[src.id]
             if (prev == null) {
                 markSectionsAround(dirtySections, src.x, src.y, src.z)
@@ -216,8 +231,9 @@ object DynamicLightManager {
                 nextBaked[src.id] = prev
             }
         }
+        // nextBaked 收齐了本帧全部光源，直接拿它当「还在不在」的集合，不再另建一份 id 表
         for ((id, prev) in lastBaked) {
-            if (id !in newIds) {
+            if (!nextBaked.containsKey(id)) {
                 // 基准可能落后于最后看到的位置（小位移还没触发重建），两处都失效
                 markSectionsAround(dirtySections, prev.x, prev.y, prev.z)
                 markSectionsAround(dirtySections, prev.lastX, prev.lastY, prev.lastZ)
@@ -255,8 +271,8 @@ object DynamicLightManager {
      * 再用全局上限兜底。
      */
     private fun collectSources(engine: ClientParticleEngine, camX: Double, camY: Double, camZ: Double, renderDistance: Double, partialTick: Float): List<LightSource> {
-        val glowing = engine.getGlowingParticles()
-        if (glowing.isEmpty()) return emptyList()
+        engine.lightEmittersInto(candidates)
+        if (candidates.isEmpty()) return emptyList()
 
         val cullDistSq = renderDistance * renderDistance
         val perCell = ParticleDrawingConfig.CLIENT.maxDynamicLightsPerCell.get().coerceAtLeast(1)
@@ -265,8 +281,8 @@ object DynamicLightManager {
             luminance / (1.0 + sqrt(dx * dx + dy * dy + dz * dz))
 
         // 每个 cell 一个最小堆，保留该 cell 内亮度最高的 perCell 个光源
-        val cellHeaps = HashMap<Long, PriorityQueue<Pair<Double, LightSource>>>()
-        for (p in glowing) {
+        val cellHeaps = HashMap<Long, PriorityQueue<Candidate>>()
+        for (p in candidates) {
             val x = p.interpolatedX(partialTick)
             val y = p.interpolatedY(partialTick)
             val z = p.interpolatedZ(partialTick)
@@ -280,43 +296,38 @@ object DynamicLightManager {
             val luminance = p.lightIntensity(partialTick).toDouble().coerceAtMost(15.0)
             if (luminance <= 0.0) continue
             val score = lightScore(dx, dy, dz, luminance)
-            val src = LightSource(p.id(), x, y, z, luminance)
             val key = cellKey(cellCoord(x), cellCoord(y), cellCoord(z))
             // 同分时按 id 定序：光源集合的遍历顺序抖动不应让预算裁剪在相邻帧换人
-            val heap = cellHeaps.getOrPut(key) {
-                PriorityQueue(compareBy<Pair<Double, LightSource>> { it.first }.thenBy { it.second.id })
-            }
+            val heap = cellHeaps.getOrPut(key) { PriorityQueue(CANDIDATE_ORDER) }
             if (heap.size < perCell) {
-                heap.add(score to src)
-            } else if (score > heap.peek().first) {
+                heap.add(Candidate(score, LightSource(p.id(), x, y, z, luminance)))
+            } else if (score > heap.peek().score) {
                 heap.poll()
-                heap.add(score to src)
+                heap.add(Candidate(score, LightSource(p.id(), x, y, z, luminance)))
             }
         }
 
         val out = ArrayList<LightSource>()
-        for (heap in cellHeaps.values) for ((_, src) in heap) out.add(src)
+        for (heap in cellHeaps.values) for (c in heap) out.add(c.src)
 
         // 全局上限兜底：超出时按亮度得分裁剪
         val maxLights = ParticleDrawingConfig.CLIENT.maxDynamicLights.get()
         if (out.size > maxLights) {
-            val heap = PriorityQueue<Pair<Double, LightSource>>(
-                compareBy<Pair<Double, LightSource>> { it.first }.thenBy { it.second.id },
-            )
+            val heap = PriorityQueue(CANDIDATE_ORDER)
             for (src in out) {
                 val dx = src.x - camX
                 val dy = src.y - camY
                 val dz = src.z - camZ
                 val score = lightScore(dx, dy, dz, src.luminance)
                 if (heap.size < maxLights) {
-                    heap.add(score to src)
-                } else if (score > heap.peek().first) {
+                    heap.add(Candidate(score, src))
+                } else if (score > heap.peek().score) {
                     heap.poll()
-                    heap.add(score to src)
+                    heap.add(Candidate(score, src))
                 }
             }
             val capped = ArrayList<LightSource>(heap.size)
-            for ((_, src) in heap) capped.add(src)
+            for (c in heap) capped.add(c.src)
             return capped
         }
         return out
