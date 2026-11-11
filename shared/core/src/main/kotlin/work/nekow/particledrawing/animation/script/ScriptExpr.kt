@@ -18,7 +18,7 @@ private val FUNCS = mapOf(
 )
 
 private val PREC = mapOf('+' to 1, '-' to 1, '*' to 2, '/' to 2, '%' to 2, '^' to 3)
-private const val NEG_PREC = 2.5 // 一元负号优先级：高于 * / %，低于 ^（-2^2 = -(2^2)）
+private const val NEG_PREC = 3.5 // 一元负号高于幂：-2^2 = (-2)^2，与完整解析器一致
 
 /** RPN 编译缓存：表达式字符串 -> 逆波兰序列（tokenize + shunting-yard 结果）。 */
 private val rpnCache = ConcurrentHashMap<String, List<Any>>()

@@ -2,6 +2,7 @@ package work.nekow.particledrawing
 
 import work.nekow.particledrawing.animation.script.ScriptException
 import work.nekow.particledrawing.animation.script.ScriptRuntime
+import work.nekow.particledrawing.animation.script.evaluate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -20,6 +21,13 @@ class ScriptRuntimeExpressionTest {
     @Test
     fun moduloOnIndex() {
         assertEquals(2.0, ScriptRuntime.evalExpression("this.index % 4", ctx(i = 6.0)), 1e-12)
+    }
+
+    @Test
+    fun scalarFastPathMatchesUnaryMinusPrecedence() {
+        assertEquals(4.0, evaluate("-2^2", emptyMap()), 1e-12)
+        assertEquals(-8.0, evaluate("-(2^3)", emptyMap()), 1e-12)
+        assertEquals(0.125, evaluate("2^-3", emptyMap()), 1e-12)
     }
 
     @Test
