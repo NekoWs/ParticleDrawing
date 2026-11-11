@@ -83,7 +83,9 @@ internal object ClientParticleSources {
             engine.destroyParticles(deadIds.toTypedArray())
             deadIds.clear()
         }
-        // 槽位在配方编译期固定，循环外取一次即可
+        // 槽位在配方编译期固定，循环外取一次即可。
+        // 每颗每刻仍会新建一个 Vec3 与一个 Color：渲染粒子会持有这两个对象做插值端点，
+        // 要再省下去得把 RenderParticle 的位置/颜色换成基本类型字段。
         val slots = e.runtime.slots
         val sR = slots.slot("r"); val sG = slots.slot("g"); val sB = slots.slot("b"); val sA = slots.slot("a")
         val sSc = slots.slot("sc"); val sGlow = slots.slot("glow"); val sLight = slots.slot("light")
