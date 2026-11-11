@@ -5,7 +5,8 @@ import work.nekow.particledrawing.api.ParticleRecipe
 
 /** 复用脚本数学表达式，限制为无赋值、无循环的纯求值；每个输出分量独立求值。 */
 class RecipeExpressions(recipe: ParticleRecipe) {
-    private val values = linkedMapOf<String, Any?>()
+    // 逐粒子逐 tick 复用：只做按名查，不需要保持插入顺序，用 HashMap 省掉链表开销。
+    private val values = HashMap<String, Any?>(64)
     private val ctx = ScriptRuntime.ProcessCtx(0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, values)
     private val lets = recipe.lets.map { (name, expr) -> name to compile(expr, false) }
     val birth = compileOutputs(recipe.birth, "birth")
@@ -29,32 +30,91 @@ class RecipeExpressions(recipe: ParticleRecipe) {
         for (expr in recipe.birth.values + recipe.motion.values + listOf(recipe.where, recipe.kill)) validate(expr, known)
     }
 
-    fun prepare(inputs: Map<String, Double>, variables: Map<String, Double>) {
-        values.clear(); values.putAll(inputs); values.putAll(variables)
+    /**
+     * 填本颗粒子的求值表：属性 + 本刻输入 + 变量 + 派生 let。
+     *
+     * 单趟写进复用的 [values]，不再由调用方先建一张 `inputs` 拷贝再整表搬过来——
+     * 这条路径逐粒子逐 tick 都走，少一次 map 分配就是几百万次/秒的垃圾少一截。
+     */
+    @Suppress("LongParameterList")
+    fun prepare(
+        attributes: Map<String, Double>,
+        i: Double, n: Double, u: Double, t: Double, dt: Double,
+        age: Double, life: Double, progress: Double,
+        dx: Double, dy: Double, dz: Double,
+        sx: Double, sy: Double, sz: Double,
+        variables: Map<String, Double>,
+    ) {
+        values.clear()
+        for ((k, v) in attributes) values[k] = v
+        values["i"] = i; values["n"] = n; values["u"] = u; values["t"] = t; values["dt"] = dt
+        values["age"] = age; values["life"] = life; values["progress"] = progress
+        values["dx"] = dx; values["dy"] = dy; values["dz"] = dz
+        values["sx"] = sx; values["sy"] = sy; values["sz"] = sz
+        for ((k, v) in variables) values[k] = v
         for ((name, runner) in lets) values[name] = finiteLet(name, runner.evalAny(ctx))
     }
 
-    fun evaluate(runners: Map<String, ScriptRuntime.ExpressionRunner>): Map<String, Double> =
-        runners.mapValues { (_, runner) -> finite(runner.eval(ctx)) }
+    /**
+     * 逐粒子逐 tick 求值：结果写进调用方复用的一张表，不新建。
+     *
+     * 向量写法（`position`/`velocity`/`acceleration`）在这里只求值一次再拆分量。
+     * 以前是拆成三条 `(expr).x/.y/.z` 各编一个执行器，同一个 `vec3(...)` 要整段算三遍，
+     * 而逐粒子每秒要跑上百万次。
+     */
+    fun evaluateInto(groups: List<OutputGroup>, out: MutableMap<String, Double>): MutableMap<String, Double> {
+        out.clear()
+        for (g in groups) {
+            if (g.names.size == 1) {
+                out[g.names[0]] = finite(g.runner.eval(ctx))
+            } else {
+                val v = g.runner.evalAny(ctx)
+                for (k in g.names.indices) out[g.names[k]] = finite(component(v, g.components[k], g.names[k]))
+            }
+        }
+        return out
+    }
+
+    fun evaluate(groups: List<OutputGroup>): Map<String, Double> =
+        evaluateInto(groups, LinkedHashMap())
 
     fun accepts() = where.eval(ctx) != 0.0
     fun kills() = kill.eval(ctx) != 0.0
 
-    /** 向量写法拆成三个分量；表达式只写一次，分量取值靠 .x/.y/.z。 */
-    private fun compileOutputs(entries: Map<String, String>, stage: String): Map<String, ScriptRuntime.ExpressionRunner> {
-        val out = linkedMapOf<String, ScriptRuntime.ExpressionRunner>()
+    /** 一组输出：单名或一个向量表达式拆出的三分量。 */
+    class OutputGroup(val names: Array<String>, val components: IntArray, val runner: ScriptRuntime.ExpressionRunner)
+
+    /** 标量直接一组一名；向量写法整段编一个执行器，分量在求值后再取。 */
+    private fun compileOutputs(entries: Map<String, String>, stage: String): List<OutputGroup> {
+        val out = ArrayList<OutputGroup>(entries.size)
         for ((name, expr) in entries) {
             val components = VECTOR_OUTPUTS[name]
             if (components == null) {
-                out[name] = compile(expr, name == "glow")
+                out += OutputGroup(arrayOf(name), intArrayOf(0), compile(expr, name == "glow"))
             } else {
-                for ((component, accessor) in components) {
+                for ((component, _) in components) {
                     require(component !in entries) { "$stage 不能同时写 '$name' 和 '$component'" }
-                    out[component] = compile("($expr).$accessor", false)
                 }
+                out += OutputGroup(
+                    components.map { it.first }.toTypedArray(),
+                    components.map { it.second }.toIntArray(),
+                    compile(expr, false),
+                )
             }
         }
         return out
+    }
+
+    /** 从向量/数组里取第 [index] 个分量；写错形状直接报错，不静默取默认值。 */
+    private fun component(value: Any?, index: Int, name: String): Double {
+        val v = when (value) {
+            is Vec2 -> when (index) { 0 -> value.x; 1 -> value.y; else -> null }
+            is Vec3 -> when (index) { 0 -> value.x; 1 -> value.y; 2 -> value.z; else -> null }
+            is Vec4 -> when (index) { 0 -> value.x; 1 -> value.y; 2 -> value.z; 3 -> value.w; else -> null }
+            is List<*> -> value.getOrNull(index) as? Double
+            else -> null
+        }
+        return requireNotNull(v) { "输出 '$name' 的第 $index 个分量取不到：右侧不是够长的向量或数组" }
     }
 
     private fun compile(expr: String, condition: Boolean): ScriptRuntime.ExpressionRunner {
@@ -110,11 +170,11 @@ class RecipeExpressions(recipe: ParticleRecipe) {
     companion object {
         val ATTRIBUTES = setOf("x", "y", "z", "vx", "vy", "vz", "ax", "ay", "az", "r", "g", "b", "a", "sc", "glow", "light")
 
-        /** 一次写三个分量的写法；键不能和同名标量属性同时出现。 */
-        val VECTOR_OUTPUTS = linkedMapOf(
-            "position" to listOf("x" to "x", "y" to "y", "z" to "z"),
-            "velocity" to listOf("vx" to "x", "vy" to "y", "vz" to "z"),
-            "acceleration" to listOf("ax" to "x", "ay" to "y", "az" to "z"),
+        /** 一次写三个分量的写法；键不能和同名标量属性同时出现。右值是分量在向量里的下标。 */
+        val VECTOR_OUTPUTS: Map<String, List<Pair<String, Int>>> = linkedMapOf(
+            "position" to listOf("x" to 0, "y" to 1, "z" to 2),
+            "velocity" to listOf("vx" to 0, "vy" to 1, "vz" to 2),
+            "acceleration" to listOf("ax" to 0, "ay" to 1, "az" to 2),
         )
 
         /** 可写字段全集，命令补全用。 */

@@ -321,7 +321,7 @@ object ScriptRuntime {
     ) {
         private val scopes = ArrayList<MutableMap<String, Any?>>()
         private val constSets = ArrayList<MutableSet<String>?>()
-        private val varsMap = HashMap<String, Any?>()
+        private var varsRef: Map<String, Any?>? = null
         private val receiverStack = ArrayList<ParticleValue>()
         private var funcDepth = 0
         private var inFunction = false
@@ -347,10 +347,14 @@ object ScriptRuntime {
             }
         }
 
+        /**
+         * 外部变量只按引用读，不再逐次拷进私有表。
+         *
+         * 表达式每颗粒子每个分量都要重新取一次变量，拷一份几十项的 HashMap 是纯开销；
+         * 这些表在两次求值之间不会被改，直接读和读快照等价。
+         */
         private fun rebuildVarsMap() {
-            varsMap.clear()
-            val src = if (phase == "expr") pctx?.vars else ctx?.vars
-            if (src != null) for ((k, v) in src) varsMap[k] = v
+            varsRef = if (phase == "expr") pctx?.vars else ctx?.vars
         }
 
         /** 复用表达式执行器：切换到下一次求值的 ProcessCtx 并重建变量表。 */
@@ -655,7 +659,7 @@ object ScriptRuntime {
                 objState.globals[name] = value
                 return
             }
-            if (name in CONSTANTS || varsMap.containsKey(name)) {
+            if (name in CONSTANTS || varsRef?.containsKey(name) == true) {
                 err("cannot assign to read-only name '$name'", n)
             }
             err("undeclared variable '$name'", n)
@@ -1135,7 +1139,8 @@ object ScriptRuntime {
                 }
             }
             if (objState.globals.containsKey(name)) return objState.globals[name]
-            if (varsMap.containsKey(name)) return varsMap[name]
+            val vars = varsRef
+            if (vars != null && vars.containsKey(name)) return vars[name]
             if (name in CONSTANTS) return CONSTANTS[name]
             if (program.functions.containsKey(name)) return FuncVal(name)
             err("unknown variable '$name'", n)

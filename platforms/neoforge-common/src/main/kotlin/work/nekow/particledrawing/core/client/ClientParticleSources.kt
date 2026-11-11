@@ -54,12 +54,28 @@ internal object ClientParticleSources {
         }
     }
 
+    // 逐 tick 复用：别为每颗粒子攒一份哈希集/数组，几千颗 ×20tps 就是几十万次分配
+    private val livingSet: MutableSet<RecipeRuntime.Particle> =
+        java.util.Collections.newSetFromMap(java.util.IdentityHashMap())
+    private val deadIds = ArrayList<UUID>()
+
     private fun sync(e: Entry, frame: Frame?) {
         val engine = ClientParticleEngine.instance() ?: return
-        val living = e.runtime.particles.toHashSet()
-        val dead = e.members.filterKeys { it !in living }
-        engine.destroyParticles(dead.values.map { it.id }.toTypedArray())
-        dead.keys.forEach { e.members.remove(it) }
+        // 反向清理：members 里 runtime 已不再持有的粒子
+        livingSet.clear()
+        for (p in e.runtime.particles) livingSet.add(p)
+        val dead = e.members.entries.iterator()
+        while (dead.hasNext()) {
+            val entry = dead.next()
+            if (entry.key !in livingSet) {
+                deadIds.add(entry.value.id)
+                dead.remove()
+            }
+        }
+        if (deadIds.isNotEmpty()) {
+            engine.destroyParticles(deadIds.toTypedArray())
+            deadIds.clear()
+        }
         for (p in e.runtime.particles) {
             var member = e.members[p]
             if (member == null) {
