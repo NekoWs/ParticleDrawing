@@ -17,6 +17,10 @@ import java.util.UUID
 internal object ClientParticleSources {
     private data class Frame(val pos: Vec3, val yaw: Float = 0f, val pitch: Float = 0f, val local: Boolean = false) {
         fun apply(v: Vec3) = AttachMath.resolve(pos, yaw, pitch, v, local)
+
+        /** 原地版本：结果写进 [out] 的前三项，逐粒子同步不建中间对象。 */
+        fun applyInto(x: Double, y: Double, z: Double, out: DoubleArray) =
+            AttachMath.resolveInto(pos.x, pos.y, pos.z, yaw, pitch, x, y, z, local, out)
     }
     private class Member(val id: UUID, val frame: Frame, val visual: ResolvedVisual)
     private class Entry(val runtime: RecipeRuntime, var anchor: RecipeAnchor) {
@@ -59,6 +63,9 @@ internal object ClientParticleSources {
         java.util.Collections.newSetFromMap(java.util.IdentityHashMap())
     private val deadIds = ArrayList<UUID>()
 
+    /** 逐粒子同步复用的落点，避免每颗每刻建 Vec3。 */
+    private val posOut = DoubleArray(3)
+
     private fun sync(e: Entry, frame: Frame?) {
         val engine = ClientParticleEngine.instance() ?: return
         // 反向清理：members 里 runtime 已不再持有的粒子
@@ -76,28 +83,31 @@ internal object ClientParticleSources {
             engine.destroyParticles(deadIds.toTypedArray())
             deadIds.clear()
         }
+        // 槽位在配方编译期固定，循环外取一次即可
+        val slots = e.runtime.slots
+        val sR = slots.slot("r"); val sG = slots.slot("g"); val sB = slots.slot("b"); val sA = slots.slot("a")
+        val sSc = slots.slot("sc"); val sGlow = slots.slot("glow"); val sLight = slots.slot("light")
         for (p in e.runtime.particles) {
             var member = e.members[p]
             if (member == null) {
                 if (frame == null) continue
                 val id = UUID.randomUUID()
-                val v = p.attributes
                 val look = ResolvedVisual.of(e.runtime.recipe.visual, 1f)
-                val pos = frame.apply(p.position.toMinecraft())
-                engine.spawnParticle(id, pos.x, pos.y, pos.z,
-                    v.getValue("r").toFloat(), v.getValue("g").toFloat(), v.getValue("b").toFloat(), v.getValue("a").toFloat(),
-                    v.getValue("sc").toFloat(), p.lifetime, null, v.getValue("glow") != 0.0, v.getValue("light").toInt(), look, e.runtime.recipe.lifeCurve)
+                frame.applyInto(p.x, p.y, p.z, posOut)
+                engine.spawnParticle(id, posOut[0], posOut[1], posOut[2],
+                    p.regs[sR].toFloat(), p.regs[sG].toFloat(), p.regs[sB].toFloat(), p.regs[sA].toFloat(),
+                    p.regs[sSc].toFloat(), p.lifetime, null, p.regs[sGlow] != 0.0, p.regs[sLight].toInt(), look, e.runtime.recipe.lifeCurve)
                 require(engine.containsParticle(id)) { "客户端粒子数量已达上限，生成器已停止；清理后 remove/start 重试" }
                 engine.markSpawnedDuringRender(id, 0f)
                 member = Member(id, frame, look)
                 e.members[p] = member
             }
-            val v = p.attributes
             val current = if (e.runtime.recipe.follow) frame ?: member.frame else member.frame
-            val pos = current.apply(p.position.toMinecraft())
-            val a = if (e.runtime.recipe.follow && frame == null) 0f else v.getValue("a").toFloat()
-            engine.applyRecipeFrame(member.id, pos, v.getValue("r").toFloat(), v.getValue("g").toFloat(), v.getValue("b").toFloat(), a,
-                v.getValue("sc").toFloat(), v.getValue("glow") != 0.0, v.getValue("light").toInt(), member.visual)
+            current.applyInto(p.x, p.y, p.z, posOut)
+            val alpha = if (e.runtime.recipe.follow && frame == null) 0f else p.regs[sA].toFloat()
+            engine.applyRecipeFrame(member.id, posOut[0], posOut[1], posOut[2],
+                p.regs[sR].toFloat(), p.regs[sG].toFloat(), p.regs[sB].toFloat(), alpha,
+                p.regs[sSc].toFloat(), p.regs[sGlow] != 0.0, p.regs[sLight].toInt(), member.visual)
         }
     }
 

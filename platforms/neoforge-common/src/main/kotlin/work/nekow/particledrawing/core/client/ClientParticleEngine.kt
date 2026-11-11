@@ -755,6 +755,13 @@ class ClientParticleEngine {
         bridges[id]?.let { syncAppearanceToBridge(rp, it, 0f, snap = false) }
     }
 
+    /** 坐标直接给的版本：调用方已经算好世界坐标，省掉一层 Vec3 包装。 */
+    internal fun applyRecipeFrame(
+        id: UUID, x: Double, y: Double, z: Double,
+        r: Float, g: Float, b: Float, a: Float,
+        scale: Float, glow: Boolean, light: Int, visual: ResolvedVisual,
+    ) = applyRecipeFrame(id, Vec3(x, y, z), r, g, b, a, scale, glow, light, visual)
+
     /** 粒子是否还在；比 [snapshot] 便宜，不构造快照。 */
     fun containsParticle(id: UUID): Boolean = particles.containsKey(id)
 

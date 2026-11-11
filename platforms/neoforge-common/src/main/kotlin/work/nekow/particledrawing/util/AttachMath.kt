@@ -38,4 +38,33 @@ object AttachMath {
         val v = Vector3f(offset.x.toFloat(), offset.y.toFloat(), offset.z.toFloat()).rotate(q)
         return Vec3(entityPos.x + v.x, entityPos.y + v.y, entityPos.z + v.z)
     }
+
+    /**
+     * 逐粒子同步用的原地版本：不建 Vec3/Quaternionf，结果写进 [out] 的前三个元素。
+     * 与 [resolve] 同一套朝向约定，只是把三角函数展开，省掉每颗每刻的对象分配。
+     */
+    @JvmStatic
+    fun resolveInto(
+        ex: Double, ey: Double, ez: Double,
+        yawDeg: Float, pitchDeg: Float,
+        ox: Double, oy: Double, oz: Double,
+        local: Boolean,
+        out: DoubleArray,
+    ) {
+        if (!local) {
+            out[0] = ex + ox; out[1] = ey + oy; out[2] = ez + oz
+            return
+        }
+        val yaw = -Math.toRadians(yawDeg.toDouble()).toFloat()
+        val pitch = Math.toRadians(pitchDeg.toDouble()).toFloat()
+        val cy = kotlin.math.cos(yaw); val sy = kotlin.math.sin(yaw)
+        val cx = kotlin.math.cos(pitch); val sx = kotlin.math.sin(pitch)
+        val fx = ox.toFloat(); val fy = oy.toFloat(); val fz = oz.toFloat()
+        // 先 RotX(pitch) 再 RotY(yaw)，与 rotationYXZ 的乘法顺序一致
+        val y1 = fy * cx - fz * sx
+        val z1 = fy * sx + fz * cx
+        out[0] = ex + (fx * cy + z1 * sy)
+        out[1] = ey + y1
+        out[2] = ez + (-fx * sy + z1 * cy)
+    }
 }
