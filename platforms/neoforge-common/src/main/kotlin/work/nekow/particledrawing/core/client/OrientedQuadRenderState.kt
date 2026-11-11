@@ -78,11 +78,17 @@ class OrientedQuadRenderState : QuadParticleRenderState() {
         val queue = current
         val index = cursor++
         val width = if (queue != null && index < queue.count) queue.values[index] else -1f
-        if (width < 0f || width == scale) {
-            super.renderRotatedQuad(builder, x, y, z, xRot, yRot, zRot, wRot, scale, u0, u1, v0, v1, color, lightCoords)
+        // 均匀四边形也自己画：原版那条路每颗粒子每帧会 new 一个 Quaternionf 加四个 Vector3f，
+        // 两万颗粒子就是每秒几百万个临时对象，是帧时间抖动的主因。
+        val uniform = width < 0f || width == scale
+        scratchQ.set(xRot, yRot, zRot, wRot)
+        if (uniform) {
+            vertex(builder, x, y, z, 1f, -1f, scale, scale, u1, v1, color, lightCoords)
+            vertex(builder, x, y, z, 1f, 1f, scale, scale, u1, v0, color, lightCoords)
+            vertex(builder, x, y, z, -1f, 1f, scale, scale, u0, v0, color, lightCoords)
+            vertex(builder, x, y, z, -1f, -1f, scale, scale, u0, v1, color, lightCoords)
             return
         }
-        scratchQ.set(xRot, yRot, zRot, wRot)
         // 四角与 UV 的对应关系与原版 renderRotatedQuad 完全一致
         vertex(builder, x, y, z, 1f, -1f, width, scale, u1, v1, color, lightCoords)
         vertex(builder, x, y, z, 1f, 1f, width, scale, u1, v0, color, lightCoords)
