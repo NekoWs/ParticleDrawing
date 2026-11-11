@@ -11,6 +11,7 @@ import net.neoforged.neoforge.client.event.ViewportEvent
 import net.neoforged.neoforge.event.level.LevelEvent
 import net.neoforged.neoforge.event.tick.PlayerTickEvent
 import work.nekow.particledrawing.ParticleDrawing
+import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.lighting.DynamicLightManager
 
 // 客户端粒子渲染处理器：每 game tick 更新粒子引擎缓动，速度积分与缓动轮转对时间敏感，不能按渲染帧推进；
@@ -20,10 +21,21 @@ import work.nekow.particledrawing.lighting.DynamicLightManager
 @Suppress("unused")
 object ParticleRenderHandler {
 
+    private val LOGGER = org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing")
+
     private var engineInitialized = false
 
     // 上次推进引擎时的关卡 gameTime：还是同一个值就说明这一 tick 关卡没走，引擎也不许动
     private var lastLevelGameTime = Long.MIN_VALUE
+
+    // —— 性能日志（配置 debugLogFps，默认关）——
+    // 帧时间只在渲染帧口径上量：renderFrame 每帧一次，比客户端 tick 更接近玩家体感。
+    private var perfWindowStartNanos = 0L
+    private var perfLastFrameNanos = 0L
+    private var perfFrames = 0
+    private var perfSumMs = 0.0
+    private var perfWorstMs = 0.0
+    private val PERF_WINDOW_NANOS = 5_000_000_000L
 
     /**
      * 客户端 game tick 事件处理（约 20Hz）：粒子引擎的延迟初始化与缓动同步。
@@ -47,7 +59,14 @@ object ParticleRenderHandler {
         if (gameTime == lastLevelGameTime) return
         lastLevelGameTime = gameTime
 
-        ClientParticleEngine.instance()?.frameUpdate()
+        val engine = ClientParticleEngine.instance() ?: return
+        val t0 = System.nanoTime()
+        engine.frameUpdate()
+        // 单刻推进超时就留一行：巨量粒子卡顿时，这行直接指到引擎推进而不是渲染
+        val ms = (System.nanoTime() - t0) / 1_000_000.0
+        if (ParticleDrawingConfig.CLIENT.debugLogFps.get() && ms > 50.0) {
+            LOGGER.info("[PD-perf] tick={}ms particles={}", String.format("%.1f", ms), engine.activeCount())
+        }
     }
 
     /**
@@ -69,6 +88,49 @@ object ParticleRenderHandler {
         // 正在 resize 的粒子：尺寸也按分数刻采样，Bridge 与观察入口保持一致
         engine.frameSyncScaleEases(partialTick)
         DynamicLightManager.renderDynamicLights(engine, partialTick)
+        sampleFrameTime(engine)
+    }
+
+    /**
+     * 性能日志：窗口内统计帧数与帧时间，每 5 秒打一行。
+     *
+     * 只量「渲染帧到渲染帧」的墙钟间隔，含渲染、引擎推进与 GC；`worst` 是最长那一帧，
+     * 粘帧从这里看，不看平均。开关是配置项，默认关，正常游玩不产生任何日志。
+     */
+    private fun sampleFrameTime(engine: ClientParticleEngine) {
+        if (!ParticleDrawingConfig.CLIENT.debugLogFps.get()) {
+            perfWindowStartNanos = 0L
+            perfLastFrameNanos = 0L
+            return
+        }
+        val now = System.nanoTime()
+        val last = perfLastFrameNanos
+        perfLastFrameNanos = now
+        if (last == 0L) {
+            perfWindowStartNanos = now
+            return
+        }
+        val ms = (now - last) / 1_000_000.0
+        perfFrames++
+        perfSumMs += ms
+        if (ms > perfWorstMs) perfWorstMs = ms
+        val elapsed = now - perfWindowStartNanos
+        if (elapsed < PERF_WINDOW_NANOS) return
+
+        val seconds = elapsed / 1e9
+        LOGGER.info(
+            "[PD-perf] fps={} frames={} avg={}ms worst={}ms | particles={} lights={}",
+            String.format("%.1f", perfFrames / seconds),
+            perfFrames,
+            String.format("%.2f", perfSumMs / perfFrames),
+            String.format("%.2f", perfWorstMs),
+            engine.activeCount(),
+            DynamicLightManager.sourceCount(),
+        )
+        perfWindowStartNanos = now
+        perfFrames = 0
+        perfSumMs = 0.0
+        perfWorstMs = 0.0
     }
 
     // 玩家 game tick 事件（约 20Hz）：只在本地玩家的 tick 里推进一次，PlayerTickEvent 对每个在场玩家各触发一次。

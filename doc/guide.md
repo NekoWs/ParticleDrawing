@@ -669,6 +669,10 @@ trail.isActive()
 
 粒子被截断时会看到日志里「渲染粒子上限已满」的提醒，说明是上限而不是效果没生成。
 
+想知道到底卡在哪一段，把 `debugLogFps` 打开（`[debug]` 段，默认关）：每 5 秒一行
+`[PD-perf] fps=… avg=…ms worst=…ms | particles=… lights=…`，单刻推进超过 50ms 时还会多一行
+`[PD-perf] tick=…ms`。这两行能把「粒子太多」和「单刻求值太慢」区分开。
+
 ## 缓动
 
 预设：`LINEAR`、`EASE_IN` / `EASE_OUT` / `EASE_IN_OUT`，以及 `*_QUAD` / `*_CUBIC` / `*_BOUNCE` /

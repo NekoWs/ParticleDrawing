@@ -57,6 +57,7 @@ object ParticleDrawingConfig {
         val enableDynamicLights: ModConfigSpec.BooleanValue
         val maxRenderParticles: ModConfigSpec.IntValue
         val particleBatchSize: ModConfigSpec.IntValue
+        val debugLogFps: ModConfigSpec.BooleanValue
 
         init {
             builder.push("dynamic_lights")
@@ -81,6 +82,12 @@ object ParticleDrawingConfig {
             particleBatchSize = builder
                 .comment("The number of particles whose eased state is synchronized to the renderer per frame (fair round-robin batch).")
                 .defineInRange("particleBatchSize", 4096, 64, 65536)
+            builder.pop()
+
+            builder.push("debug")
+            debugLogFps = builder
+                .comment("Log render frame time and particle count every 5 seconds. Diagnostic switch; leave off in normal play.")
+                .define("debugLogFps", false)
             builder.pop()
 
         }

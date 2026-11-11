@@ -88,6 +88,14 @@ object DynamicLightManager {
     @Volatile
     private var hasLights = false
 
+    /** 光源数量快照（写锁内更新），诊断日志读它，避免无锁读可变列表。 */
+    @Volatile
+    private var sourceCountSnapshot = 0
+
+    /** 当前生效的动态光源数量（诊断用，精确到上一次重建）。 */
+    @JvmStatic
+    fun sourceCount(): Int = sourceCountSnapshot
+
     /**
      * 动态光照版本号：光源集合、位置、亮度或开关有任何变化就自增。
      *
@@ -254,6 +262,7 @@ object DynamicLightManager {
                 cellIndex.getOrPut(key) { ArrayList() }.add(src)
             }
             hasLights = newSources.isNotEmpty()
+            sourceCountSnapshot = newSources.size
 
             lastBaked.clear()
             lastBaked.putAll(nextBaked)
@@ -345,6 +354,7 @@ object DynamicLightManager {
             sources.clear()
             cellIndex.clear()
             hasLights = false
+            sourceCountSnapshot = 0
         } finally {
             LOCK.writeLock().unlock()
         }
