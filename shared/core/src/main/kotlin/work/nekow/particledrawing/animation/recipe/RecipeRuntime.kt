@@ -11,7 +11,7 @@ import work.nekow.particledrawing.math.Vec3
  * 粒子状态存成一条定长寄存器：[Reg.X]..[Reg.LIGHT] 是属性，之后是 state 与本刻输入，
  * 再往后是编译出来的临时槽。配方能编译时走寄存器直算，编不过才回退解释器。
  */
-class RecipeRuntime(var recipe: ParticleRecipe, val burst: Boolean) {
+class RecipeRuntime(var recipe: ParticleRecipe, val burst: Boolean, preferFast: Boolean = true) {
     /**
      * 一颗粒子。热路径下推进一颗粒子只做几次数组读写，不再按名字查表、不再逐粒子分配。
      */
@@ -35,7 +35,7 @@ class RecipeRuntime(var recipe: ParticleRecipe, val burst: Boolean) {
         val position: Vec3 get() = Vec3(regs[Reg.X], regs[Reg.Y], regs[Reg.Z])
     }
 
-    private var expressions = RecipeExpressions(recipe)
+    private var expressions = RecipeExpressions(recipe, preferFast)
     var ticks = 0L
         private set
     var cursor = 0L

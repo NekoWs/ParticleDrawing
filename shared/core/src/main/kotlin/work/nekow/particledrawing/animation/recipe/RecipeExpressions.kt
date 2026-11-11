@@ -4,7 +4,7 @@ import work.nekow.particledrawing.animation.script.*
 import work.nekow.particledrawing.api.ParticleRecipe
 
 /** 复用脚本数学表达式，限制为无赋值、无循环的纯求值；每个输出分量独立求值。 */
-class RecipeExpressions(recipe: ParticleRecipe) {
+class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
     // 逐粒子逐 tick 复用：只做按名查，不需要保持插入顺序，用 HashMap 省掉链表开销。
     private val values = HashMap<String, Any?>(64)
     private val ctx = ScriptRuntime.ProcessCtx(0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, values)
@@ -93,7 +93,7 @@ class RecipeExpressions(recipe: ParticleRecipe) {
     private val base = Reg.VAR_START + INPUT_SLOTS.size + recipe.state.size
 
     /** 编译成功的热路径；null 表示该配方只能走解释器。 */
-    val fast: RecipeFast? = buildFast(recipe)
+    val fast: RecipeFast? = if (preferFast) buildFast(recipe) else null
 
     private fun buildSlots(recipe: ParticleRecipe): RecipeSlots {
         val map = LinkedHashMap<String, Int>(32)
