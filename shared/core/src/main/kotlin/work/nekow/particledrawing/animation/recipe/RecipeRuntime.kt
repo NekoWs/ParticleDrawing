@@ -49,8 +49,9 @@ class RecipeRuntime(var recipe: ParticleRecipe, val burst: Boolean) {
         }
         particles.removeAll { !it.alive }
         if (emitting && allowBirth && ticks % recipe.interval == 0L) {
-            repeat(recipe.rate) {
-                if (!emitting || particles.size >= recipe.maxAlive) return@repeat
+            var attempt = 0
+            while (attempt < recipe.rate) {
+                if (!emitting || particles.size >= recipe.maxAlive) break
                 val seed = recipe.seeds[(cursor % recipe.seeds.size).toInt()]
                 val a = defaults(seed)
                 val p = Particle(cursor++, seed, recipe.lifetime, a)
@@ -61,6 +62,7 @@ class RecipeRuntime(var recipe: ParticleRecipe, val burst: Boolean) {
                 prepare(p)
                 if (expressions.accepts() && !expressions.kills()) particles += p
                 if (burst && cursor >= recipe.seeds.size) emitting = false
+                attempt++
             }
         }
         ticks++
@@ -95,6 +97,7 @@ class RecipeRuntime(var recipe: ParticleRecipe, val burst: Boolean) {
         put("t", ticks * 50.0); put("dt", 1.0); put("age", p.age.toDouble()); put("life", p.lifetime.toDouble())
         put("progress", if (p.lifetime > 0) p.age.toDouble() / p.lifetime else 0.0)
         put("dx", p.initialPosition.x); put("dy", p.initialPosition.y); put("dz", p.initialPosition.z)
+        put("sx", p.seed.position.x); put("sy", p.seed.position.y); put("sz", p.seed.position.z)
     }
 
     private fun prepare(p: Particle) = expressions.prepare(inputs(p), recipe.variables)

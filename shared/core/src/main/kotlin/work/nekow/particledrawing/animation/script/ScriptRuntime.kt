@@ -159,7 +159,7 @@ object ScriptRuntime {
         var life: Double,
         var uv_x: Double,
         var uv_y: Double,
-        val vars: Map<String, Double>,
+        val vars: Map<String, Any?>,
         val out: ScriptOut = ScriptOut(),
         var fastMath: Boolean = false,
         var duration: Double = 0.0,
@@ -288,9 +288,14 @@ object ScriptRuntime {
         private val rt = Runtime("expr", program, obj, null, null)
         private val topScope = HashMap<String, Any?>()
 
-        fun eval(ctx: ProcessCtx): Double {
+        /** 求值为任意脚本值；公式里的向量/矩阵中间量走这里。 */
+        fun evalAny(ctx: ProcessCtx): Any? {
             rt.resetExpr(ctx, topScope)
-            val v = rt.evalExpr(node)
+            return rt.evalExpr(node)
+        }
+
+        fun eval(ctx: ProcessCtx): Double {
+            val v = evalAny(ctx)
             if (v !is Double) {
                 throw ScriptException("expression must evaluate to a number, got ${typeName(v)}", node.line, node.col)
             }
@@ -315,7 +320,7 @@ object ScriptRuntime {
     ) {
         private val scopes = ArrayList<MutableMap<String, Any?>>()
         private val constSets = ArrayList<MutableSet<String>?>()
-        private val varsMap = HashMap<String, Double>()
+        private val varsMap = HashMap<String, Any?>()
         private val receiverStack = ArrayList<ParticleValue>()
         private var funcDepth = 0
         private var inFunction = false

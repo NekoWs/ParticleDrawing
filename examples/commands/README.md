@@ -39,6 +39,10 @@ function pdraw_test:tentacles
 function pdraw_test:mandala
 function pdraw_test:torus-knot
 function pdraw_test:mobius
+function pdraw_test:cube
+function pdraw_test:seven-star
+function pdraw_test:sharp-star
+function pdraw_test:five-star
 ```
 
 在聊天栏执行时加前缀 `/`。锚点相对函数执行位置，命令方块执行时可以用
@@ -66,6 +70,19 @@ pdraw particle emitter mobius variable tilt 1.1
 
 speed 使用弧度/毫秒，tilt 使用弧度；这些示例的公式每刻读取变量，更新时不会重新生成整组。
 重播曼陀罗时需依次 burst 三个配置；重新运行整个函数则会清除旧效果并从头播放。
+
+## ColorBlock 等价示例
+
+| 函数 | 效果 | 配置名 | 画完用时 |
+| --- | --- | --- | --- |
+| cube | 青色立方体十二条棱，粒子缓慢上浮 | cube | 2 刻 |
+| seven-star | 七芒星曲线，每刻画 25 颗 | seven-star | 41 刻 |
+| sharp-star | 锐角星形，参数拆成 p/q，速度用矩阵旋转 | sharp-star | 7 刻 |
+| five-star | 五角星曲线，步长 2 | five-star | 1 刻 |
+
+这些函数用 `sample` 选参数、`let` 拆中间量、`birth position` / `motion velocity` 一次写三个分量。
+`where` 里的 `sx/sy/sz` 是采样原始坐标，和出生后的 `x/y/z` 分开，筛选不受出生位移影响。
+参数含义见[分步配置粒子生成器](../../doc/particle-commands.md)。
 
 ## 图片示例
 

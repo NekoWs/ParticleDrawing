@@ -113,6 +113,30 @@ pdraw particle emitter sigil image resource demo:images/ring.png
 不照搬案例里接近正切极点的超远坐标。球面是表面点阵，体积填充可另用空间网格与球内条件。
 ColorBlock 的参数 t 在 PD 中对应采样参数 u；PD 的 t 专指发射器毫秒，不能直接整段复制原公式。
 
+### 四种常见模式怎么对应
+
+| ColorBlock | PD 写法 |
+| --- | --- |
+| `parameter` 一次画完 | `sample range` + `birth position`，`rate` 拉高，`burst` |
+| `tickparameter` 逐步画 | 同上，`rate` 设成每刻要画的颗数，`burst` 只遍历一轮 |
+| `conditional` 空间筛选 | `sample grid` + `where`，条件用 `sx/sy/sz` 看原始网格坐标 |
+| 速度表达式里的矩阵 | `let` 存矩阵和向量，`motion velocity` 一次写三个分量 |
+
+四个可直接运行的例子在 `examples/commands/`：`cube`、`seven-star`、`sharp-star`、`five-star`。
+以锐角星形为例，把 ColorBlock 的一行拆成可读的几行：
+
+```mcfunction
+pdraw particle emitter sharp-star let p floor(u/78.5)/25
+pdraw particle emitter sharp-star let q u%157/25
+pdraw particle emitter sharp-star birth position vec3(5*(cos(p)*cos(q))^3, 5*(sin(p)*cos(q))^3, 5*sin(q)^3)
+pdraw particle emitter sharp-star let ang 0.05
+pdraw particle emitter sharp-star let turn mat3(vec3(-sin(ang),0,-cos(ang)), vec3(0,1,0), vec3(cos(ang),0,-sin(ang)))
+pdraw particle emitter sharp-star motion velocity turn*vec3(x*2*sin(ang), 0.1, z*2*sin(ang))
+```
+
+`u`、`t`、`x`、`a` 这些名字是内建输入，不能拿来当 `let`/变量名；换成语义名（`p`、`q`、`amp`、`ang`）更清楚。
+`where` 要求 `&&`/`||`，不是 ColorBlock 的 `&`/`|`；比较仍可用 `==`、`<`、`abs`。
+
 例如运行球面函数后，单独改变转速，或者把整个球跟随玩家：
 
 ```mcfunction
@@ -160,14 +184,19 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 | `age`、`life`、`progress` | 当前粒子年龄（刻）、出生时寿命（刻）、年龄/寿命；无限寿命的 progress 为 0 |
 | `dt` | 一次模拟的时间，固定为 1 刻 |
 | `x,y,z` | 当前锚点坐标系内的位置 |
+| `sx,sy,sz` | 本轮样本的原始坐标；grid 是网格点，range/count 是 0，图片是像素位置。出生公式改了 `x/y/z` 也不影响它 |
 | `dx,dy,dz` | 出生公式算完后的初始位置；适合保留曲线、图片或网格布局做变换；birth 阶段读取它们时为原始样本坐标 |
 | `vx,vy,vz`、`ax,ay,az` | 当前速度（格/刻）和加速度（格/刻²） |
 | `r,g,b,a`、`sc`、`glow`、`light` | 当前颜色、尺寸倍率、全亮、向外照明等级 |
 
 可写属性是 `x/y/z/vx/vy/vz/ax/ay/az/r/g/b/a/sc/glow/light` 和用 `state` 声明的字段。
+也可以一次写三个分量：`position` 写 `x/y/z`、`velocity` 写 `vx/vy/vz`、`acceleration` 写 `ax/ay/az`，
+公式结果是 `vec3`。同一条命令里不能同时写 `position` 和 `x`，会明确报错。
 颜色必须在 0..1，尺寸不得为负，照明等级在 0..15。`glow` 可用布尔条件。
 同一阶段的输出使用同一输入快照，例如 `motion x y` 与 `motion y x` 能交换两个分量。
-需要多步计算时使用多条 `let`。不能通过一条属性公式改变其它属性。
+需要多步计算时使用多条 `let`；`let` 可以保留数值、布尔、向量和矩阵，后续公式按 `.x/.y/.z` 取分量。
+`where` 在出生公式之后求值，用 `sx/sy/sz` 可以回到原始采样坐标；用 `x/y/z` 则看出生后的位置。
+不能通过一条属性公式改变其它属性。
 
 每刻先检查寿命与 kill，再计算 motion，随后速度加上加速度、位置加上速度。
 显式输出了某个位置分量时，该分量直接采用公式结果，不再叠加对应速度。

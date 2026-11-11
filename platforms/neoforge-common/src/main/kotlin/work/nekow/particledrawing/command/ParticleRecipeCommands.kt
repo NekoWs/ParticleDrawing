@@ -75,7 +75,7 @@ internal object ParticleRecipeCommands {
                     if (kind == "variable") d.variable(field, value) else d.update(d.recipe.copy(state = d.recipe.state + (field to value)))
                 } })))
         for (stage in listOf("let", "birth", "motion", "change")) name.then(Commands.literal(stage)
-            .then(Commands.argument("field", StringArgumentType.word()).suggests { ctx, b -> SharedSuggestionProvider.suggest(RecipeExpressions.ATTRIBUTES + draft(ctx).recipe.state.keys, b) }
+            .then(Commands.argument("field", StringArgumentType.word()).suggests { ctx, b -> SharedSuggestionProvider.suggest(RecipeExpressions.OUTPUTS + draft(ctx).recipe.state.keys, b) }
                 .then(Commands.argument("formula", StringArgumentType.greedyString()).executes { ctx -> configure(ctx) { d ->
                     val field = word(ctx, "field"); val formula = word(ctx, "formula")
                     when (stage) {

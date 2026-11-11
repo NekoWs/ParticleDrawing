@@ -10,3 +10,7 @@ pdraw particle emitter reset mandala-star
 pdraw particle emitter reset mandala-ring
 pdraw particle emitter reset knot
 pdraw particle emitter reset mobius
+pdraw particle emitter reset cube
+pdraw particle emitter reset seven-star
+pdraw particle emitter reset sharp-star
+pdraw particle emitter reset five-star

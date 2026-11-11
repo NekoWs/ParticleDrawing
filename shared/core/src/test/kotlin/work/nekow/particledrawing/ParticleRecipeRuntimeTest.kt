@@ -98,6 +98,36 @@ class ParticleRecipeRuntimeTest {
         assertEquals(1.0, r.particles.single().position.y, 1e-9)
     }
 
+    @Test fun `let 可以保留向量和矩阵并一次写 position 与 velocity`() {
+        val r = RecipeRuntime(recipe().copy(
+            lets = linkedMapOf(
+                "dir" to "vec3(1,2,0)",
+                "swap" to "mat3(vec3(0,1,0),vec3(1,0,0),vec3(0,0,1))",
+            ),
+            birth = mapOf("position" to "swap*dir"),
+            motion = mapOf("velocity" to "vec3(0.1,0.2,0.3)"),
+        ), true)
+        r.tick()
+        assertEquals(Vec3(2.0, 1.0, 0.0), r.particles.single().position)
+        r.tick()
+        assertEquals(Vec3(2.1, 1.2, 0.3), r.particles.single().position)
+    }
+
+    @Test fun `where 可以按原始样本坐标筛选而不受出生位移影响`() {
+        val grid = ParticleSampling.grid(Vec3(-1.0, 0.0, 0.0), Vec3(1.0, 0.0, 0.0), 1.0)
+        val r = RecipeRuntime(ParticleRecipe(grid, rate = 9, birth = mapOf("position" to "vec3(10,0,0)"),
+            where = "sx < 0"), true)
+        r.tick()
+        assertEquals(1, r.particles.size)
+        assertEquals(Vec3(10.0, 0.0, 0.0), r.particles.single().position)
+    }
+
+    @Test fun `向量字段不能和同名标量字段同时写`() {
+        assertFailsWith<IllegalArgumentException> {
+            recipe().copy(birth = mapOf("position" to "vec3(1,2,3)", "x" to "1")).validate()
+        }
+    }
+
     @Test fun `无限寿命必须显式给出且仍可用条件销毁`() {
         val r = RecipeRuntime(recipe().copy(lifetime = -1, kill = "age >= 100"), true)
         repeat(100) { r.tick() }; assertEquals(99, r.particles.single().age)
