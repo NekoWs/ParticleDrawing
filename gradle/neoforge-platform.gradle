@@ -145,18 +145,23 @@ configurations {
     runtimeClasspath.extendsFrom coreBundle
 }
 
-// 1.21.1 是纯 Java 版，不像 26.x 自带 Kotlin 标准库；模组必须自己带上，
-// 用 NeoForge 的 jarJar 内嵌，FML 会把内嵌 jar 当独立文件加进模块层（开发运行同样生效）。
+// 1.21.1 是纯 Java 版，不像 26.x 自带 Kotlin 标准库；模组必须自己带上，见下面的 processResources。
 def bundleKotlin = targetProperties.getProperty('bundle_kotlin', '') == 'true'
+def kotlinStdlib = bundleKotlin
+        ? configurations.detachedConfiguration(dependencies.create('org.jetbrains.kotlin:kotlin-stdlib:2.4.10'))
+        : null
 if (bundleKotlin) {
-    jarJar.enable()
+    // 标准库类直接并入模组输出：开发运行加载的是 sourceSet 输出，模组模块据此拿到 kotlin 包，
+    // 不依赖模块层的 classpath 可见性；打包时这些类也会随 resources 一起进 JAR。
+    tasks.named('processResources').configure {
+        from({ kotlinStdlib.collect { zipTree(it) } }) {
+            include 'kotlin/**'
+        }
+    }
 }
 
 dependencies {
     implementation "net.neoforged:neoforge:${neo_version}"
-    if (bundleKotlin) {
-        jarJar 'org.jetbrains.kotlin:kotlin-stdlib:2.4.10'
-    }
     compileOnly project(':pdraw-core')
     coreBundle project(':pdraw-core')
     testImplementation project(':pdraw-core')
