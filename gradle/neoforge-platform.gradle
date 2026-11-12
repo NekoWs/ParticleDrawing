@@ -33,6 +33,21 @@ if (!replacedPaths.isEmpty()) {
     }
 }
 
+// 1.21.1 用类型别名桥接两代 API 的命名（Identifier / BlockAndLightGetter）。
+// 别名在使用点就被擦除，没有运行期引用，但 Kotlin 仍会为别名文件生成空 facade 类，
+// 这些类会把 net.minecraft.* 包带进模组模块，FML 解析模块层时会报包冲突。编译后删掉即可。
+if (targetProperties.getProperty('drop_alias_facades', '') == 'true') {
+    tasks.named('compileKotlin').configure {
+        doLast {
+            def facades = new File(destinationDirectory.get().asFile, 'net/minecraft')
+            if (facades.exists()) delete facades
+        }
+    }
+    tasks.named('jar').configure {
+        exclude 'net/minecraft/**'
+    }
+}
+
 // 核心源码已经通过上面的 srcDirs 并进主源集，不再跨项目引用 :pdraw-core 的 sourceSet：
 // Gradle 9 会在配置期无锁解析对方配置而报错，Gradle 10 也不再允许。
 def dataRunName = targetProperties.getProperty('data_run', 'clientData')
@@ -130,8 +145,18 @@ configurations {
     runtimeClasspath.extendsFrom coreBundle
 }
 
+// 1.21.1 是纯 Java 版，不像 26.x 自带 Kotlin 标准库；模组必须自己带上，
+// 用 NeoForge 的 jarJar 内嵌，FML 会把内嵌 jar 当独立文件加进模块层（开发运行同样生效）。
+def bundleKotlin = targetProperties.getProperty('bundle_kotlin', '') == 'true'
+if (bundleKotlin) {
+    jarJar.enable()
+}
+
 dependencies {
     implementation "net.neoforged:neoforge:${neo_version}"
+    if (bundleKotlin) {
+        jarJar 'org.jetbrains.kotlin:kotlin-stdlib:2.4.10'
+    }
     compileOnly project(':pdraw-core')
     coreBundle project(':pdraw-core')
     testImplementation project(':pdraw-core')
