@@ -2,6 +2,8 @@ package work.nekow.particledrawing.platform
 
 import net.minecraft.client.Minecraft
 import net.minecraft.client.multiplayer.ClientLevel
+import net.minecraft.client.renderer.texture.DynamicTexture
+import com.mojang.blaze3d.platform.NativeImage
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
@@ -54,6 +56,18 @@ object PlatformCompat {
     fun applyFov(event: net.neoforged.neoforge.client.event.ViewportEvent.ComputeFov, fov: Float) {
         event.fov = fov
     }
+
+    /** 写一个像素。26.x 是 `setPixel`，1.21.1 是 `setPixelRGBA`。 */
+    fun setPixel(image: NativeImage, x: Int, y: Int, argb: Int) = image.setPixel(x, y, argb)
+
+    /** 读一个像素。 */
+    fun getPixel(image: NativeImage, x: Int, y: Int): Int = image.getPixel(x, y)
+
+    /** 建动态贴图。26.x 需要带名字的 `Supplier`。 */
+    fun dynamicTexture(name: String, image: NativeImage) = DynamicTexture({ name }, image)
+
+    /** 登记失败时释放。26.x 由 `DynamicTexture.close()` 连带释放底图。 */
+    fun closeTexture(texture: DynamicTexture, image: NativeImage) = texture.close()
 
     /** 命令权限：只允许游戏管理员。 */
     fun gamemastersOnly(): Predicate<CommandSourceStack> = Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)

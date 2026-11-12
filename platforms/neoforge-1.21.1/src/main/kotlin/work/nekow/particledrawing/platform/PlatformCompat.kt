@@ -1,6 +1,8 @@
 package work.nekow.particledrawing.platform
 
+import com.mojang.blaze3d.platform.NativeImage
 import net.minecraft.client.Minecraft
+import net.minecraft.client.renderer.texture.DynamicTexture
 import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.world.entity.Entity
 import net.minecraft.client.renderer.LightTexture
@@ -53,6 +55,20 @@ object PlatformCompat {
     /** FOV 覆盖：1.21.1 的 fov 字段是 double。 */
     fun applyFov(event: net.neoforged.neoforge.client.event.ViewportEvent.ComputeFov, fov: Float) {
         event.fov = fov.toDouble()
+    }
+
+    /** 写一个像素。1.21.1 是 `setPixelRGBA`。 */
+    fun setPixel(image: NativeImage, x: Int, y: Int, argb: Int) = image.setPixelRGBA(x, y, argb)
+
+    /** 读一个像素。 */
+    fun getPixel(image: NativeImage, x: Int, y: Int): Int = image.getPixelRGBA(x, y)
+
+    /** 建动态贴图。1.21.1 的构造器只吃底图。 */
+    fun dynamicTexture(name: String, image: NativeImage) = DynamicTexture(image)
+
+    /** 登记失败时释放。1.21.1 的 `DynamicTexture` 没有 `close()`，直接释放底图。 */
+    fun closeTexture(texture: DynamicTexture, image: NativeImage) {
+        image.close()
     }
 
     /** 命令权限：只允许游戏管理员（等级 2）。 */

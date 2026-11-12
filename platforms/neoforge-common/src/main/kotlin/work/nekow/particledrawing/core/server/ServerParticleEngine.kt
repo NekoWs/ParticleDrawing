@@ -371,7 +371,7 @@ class ServerParticleEngine(
         if (level == null) return null
         val uuid = data.attachedUuid()
         if (uuid != null) {
-            val byUuid = level.getEntity(uuid)
+            val byUuid = (level as? ServerLevel)?.getEntity(uuid)
             if (byUuid != null) {
                 data.refreshAttachedEntityId(byUuid.id)
                 return byUuid

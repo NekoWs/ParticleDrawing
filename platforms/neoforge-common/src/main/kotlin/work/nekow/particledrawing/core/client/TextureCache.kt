@@ -7,6 +7,7 @@ import com.mojang.blaze3d.platform.NativeImage
 import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.texture.DynamicTexture
 import net.minecraft.resources.Identifier
+import work.nekow.particledrawing.platform.PlatformCompat
 import org.apache.logging.log4j.LogManager
 import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.api.ParticleTextures
@@ -60,7 +61,7 @@ object TextureCache {
                     try {
                         for ((index, image) in images.withIndex()) {
                             for (y in 0 until height) for (x in 0 until width) {
-                                atlas.setPixel(x, index * height + y, image.getPixel(x, y))
+                                PlatformCompat.setPixel(atlas, x, index * height + y, PlatformCompat.getPixel(image, x, y))
                             }
                         }
                     } catch (error: Exception) {
@@ -114,7 +115,7 @@ object TextureCache {
         val img = NativeImage(width, height, false)
         for (y in 0 until height) {
             for (x in 0 until width) {
-                img.setPixel(x, y, pixels[y * width + x])
+                PlatformCompat.setPixel(img, x, y, pixels[y * width + x])
             }
         }
         return registerImage(textureName, img)
@@ -124,7 +125,7 @@ object TextureCache {
         val w = img.width
         val h = img.height
         val dt = try {
-            DynamicTexture({ "PD:$textureName" }, img)
+            PlatformCompat.dynamicTexture("PD:$textureName", img)
         } catch (e: Exception) {
             img.close()
             throw e
@@ -134,7 +135,7 @@ object TextureCache {
             Minecraft.getInstance().textureManager.register(id, dt)
         } catch (e: Exception) {
             // register 抛出时纹理系统还没接管 NativeImage，必须由这里释放。
-            dt.close()
+            PlatformCompat.closeTexture(dt, img)
             throw e
         }
         val entry = Entry(id, w, h, animation)
@@ -171,11 +172,11 @@ object TextureCache {
         val img = NativeImage(8, 8, false)
         for (y in 0 until 8) {
             for (x in 0 until 8) {
-                img.setPixel(x, y, -1) // ARGB 0xFFFFFFFF，不透明白
+                PlatformCompat.setPixel(img, x, y, -1) // ARGB 0xFFFFFFFF，不透明白
             }
         }
         val dt = try {
-            DynamicTexture({ "PD:$DEFAULT_WHITE" }, img)
+            PlatformCompat.dynamicTexture("PD:$DEFAULT_WHITE", img)
         } catch (e: Exception) {
             img.close()
             throw e
@@ -184,7 +185,7 @@ object TextureCache {
         try {
             Minecraft.getInstance().textureManager.register(id, dt)
         } catch (e: Exception) {
-            dt.close()
+            PlatformCompat.closeTexture(dt, img)
             throw e
         }
         val entry = Entry(id, 8, 8)
