@@ -39,8 +39,26 @@ if (!replacedPaths.isEmpty()) {
 if (targetProperties.getProperty('drop_alias_facades', '') == 'true') {
     tasks.named('compileKotlin').configure {
         doLast {
-            def facades = new File(destinationDirectory.get().asFile, 'net/minecraft')
+            def classesDir = destinationDirectory.get().asFile
+            def facades = new File(classesDir, 'net/minecraft')
             if (facades.exists()) delete facades
+            // 标准库并入同一个类目录：开发运行的模组文件就是这个目录，kotlin 包因此属于模组自己的模块，
+            // 不依赖模块层对 classpath 的可见性；打包时同样随 classes 进 JAR。
+            def stdlib = project.configurations.findByName('kotlinStdlib121')
+            stdlib?.files?.each { zipFile ->
+                // 直接读 ZIP：Gradle 的 zipTree 在 doLast 里展开缓存中的 jar 会报 Cannot expand ZIP
+                new java.util.zip.ZipFile(zipFile).withCloseable { zip ->
+                    zip.entries().each { entry ->
+                        if (!entry.directory && entry.name.startsWith('kotlin/')) {
+                            def target = new File(classesDir, entry.name)
+                            target.parentFile.mkdirs()
+                            zip.getInputStream(entry).withCloseable { input ->
+                                target.withOutputStream { out -> input.transferTo(out) }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     tasks.named('jar').configure {
@@ -53,7 +71,13 @@ if (targetProperties.getProperty('drop_alias_facades', '') == 'true') {
 def dataRunName = targetProperties.getProperty('data_run', 'clientData')
 sourceSets {
     main {
-        kotlin.setSrcDirs([new File(commonSource, 'main/kotlin'), new File(targetSource, 'main/kotlin')])
+        // 核心源码也并进主源集：开发运行时核心类必须和平台同属一个模组模块，
+        // 否则 FML 的模块看不到它们（ClassNotFoundException）。
+        kotlin.setSrcDirs([
+                new File(repositoryRoot, 'shared/core/src/main/kotlin'),
+                new File(commonSource, 'main/kotlin'),
+                new File(targetSource, 'main/kotlin'),
+        ])
         java.setSrcDirs([new File(commonSource, 'main/java'), new File(targetSource, 'main/java')])
         resources.setSrcDirs([new File(commonSource, 'main/resources'), new File(targetSource, 'main/resources'), generatedResources])
     }
@@ -145,19 +169,11 @@ configurations {
     runtimeClasspath.extendsFrom coreBundle
 }
 
-// 1.21.1 是纯 Java 版，不像 26.x 自带 Kotlin 标准库；模组必须自己带上，见下面的 processResources。
+// 1.21.1 是纯 Java 版，不像 26.x 自带 Kotlin 标准库；模组必须自己带上，见 compileKotlin 的 doLast。
 def bundleKotlin = targetProperties.getProperty('bundle_kotlin', '') == 'true'
-def kotlinStdlib = bundleKotlin
-        ? configurations.detachedConfiguration(dependencies.create('org.jetbrains.kotlin:kotlin-stdlib:2.4.10'))
-        : null
 if (bundleKotlin) {
-    // 标准库类直接并入模组输出：开发运行加载的是 sourceSet 输出，模组模块据此拿到 kotlin 包，
-    // 不依赖模块层的 classpath 可见性；打包时这些类也会随 resources 一起进 JAR。
-    tasks.named('processResources').configure {
-        from({ kotlinStdlib.collect { zipTree(it) } }) {
-            include 'kotlin/**'
-        }
-    }
+    configurations { kotlinStdlib121 { transitive = false } }
+    dependencies { kotlinStdlib121 'org.jetbrains.kotlin:kotlin-stdlib:2.4.10' }
 }
 
 dependencies {
