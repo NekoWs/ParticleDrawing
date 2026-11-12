@@ -143,6 +143,14 @@ runs {
         systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
 
         arguments '--width', '1708', '--height', '960'
+        // 验收用的直入钩子：不传属性时完全惰性，不影响正常启动。
+        // -PpdQuickPlay=<存档名> 直接进单人世界；-PpdQuickConnect=<地址> 直连服务器。
+        if (project.hasProperty('pdQuickPlay')) {
+            arguments '--quickPlaySingleplayer', project.property('pdQuickPlay').toString()
+        }
+        if (project.hasProperty('pdQuickConnect')) {
+            arguments '--quickPlayMultiplayer', project.property('pdQuickConnect').toString()
+        }
     }
 
     server {
