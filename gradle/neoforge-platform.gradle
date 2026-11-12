@@ -164,9 +164,7 @@ runs {
 }
 
 configurations {
-    coreBundle { transitive = false }
     runtimeClasspath.extendsFrom localRuntime
-    runtimeClasspath.extendsFrom coreBundle
 }
 
 // 1.21.1 是纯 Java 版，不像 26.x 自带 Kotlin 标准库；模组必须自己带上，见 compileKotlin 的 doLast。
@@ -179,7 +177,6 @@ if (bundleKotlin) {
 dependencies {
     implementation "net.neoforged:neoforge:${neo_version}"
     compileOnly project(':pdraw-core')
-    coreBundle project(':pdraw-core')
     testImplementation project(':pdraw-core')
     testImplementation 'org.jetbrains.kotlin:kotlin-test'
     testImplementation(testFixtures(project(':pdraw-core')))
@@ -254,11 +251,9 @@ kotlin {
 }
 
 // 发布的模组包含同一次构建的核心，用户只需安装对应游戏版本的一个 JAR。
+// 核心源码已经并入主源集，类直接来自编译输出，不再从核心 JAR 解包（否则同类重复）。
 tasks.named('jar', Jar) {
     dependsOn ':pdraw-core:jar'
-    from({ configurations.coreBundle.collect { zipTree(it) } }) {
-        exclude 'META-INF/MANIFEST.MF'
-    }
 }
 tasks.named('sourcesJar') { from(project(':pdraw-core').file('src/main/kotlin')) }
 tasks.named('test') { dependsOn ':pdraw-core:test' }
