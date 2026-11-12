@@ -108,6 +108,17 @@ private val WORD_OPS = mapOf(
     "&&" to ScalarOp.AND, "||" to ScalarOp.OR,
 )
 
+/**
+ * 结果表示真假的运算。
+ *
+ * 解释器只在 `where` / `kill` / `glow` 里把表达式包成 `(expr) ? 1 : 0`，别的位置写出布尔值会报类型错；
+ * 编译路径同样只允许它们出现在这些条件位置，否则回退，避免出现「原来报错、现在能跑」的分叉。
+ */
+private val CONDITION_OPS = setOf(
+    ScalarOp.LT, ScalarOp.LE, ScalarOp.GT, ScalarOp.GE, ScalarOp.EQ, ScalarOp.NE,
+    ScalarOp.AND, ScalarOp.OR, ScalarOp.NOT,
+)
+
 /** 编译后的纯标量指令序列。 */
 class ScalarProgram(
     private val ops: Array<ScalarOp>,
@@ -333,11 +344,13 @@ class RegisterCode(val program: ScalarProgram, val tempCount: Int, val stackSize
  * 完全由调用方决定寄存器含义。逐粒子逐 tick 的配方求值走这条路，槽位在编译期固定。
  *
  * @param tempStart 临时槽起点；寄存器总数 = tempStart + 返回的 tempCount
+ * @param conditionTargets 这些目标名的表达式整体处于条件位置（结果按真假用），允许写比较与逻辑运算
  */
 fun compileRegisterCode(
     assigns: List<Pair<String, Node>>,
     nameToSlot: Map<String, Int>,
     tempStart: Int,
+    conditionTargets: Set<String> = emptySet(),
 ): RegisterCode? {
     val ops = ArrayList<ScalarOp>()
     val args = ArrayList<Int>()
@@ -367,7 +380,7 @@ fun compileRegisterCode(
         val slot = writeSlot(target) ?: return null
         val depth = intArrayOf(0)
         val maxDepth = intArrayOf(0)
-        if (!emitExpr(value, ops, args, consts, readSlot, depth, maxDepth)) return null
+        if (!emitExpr(value, ops, args, consts, readSlot, depth, maxDepth, target in conditionTargets)) return null
         if (depth[0] != 1) return null
         ops.add(ScalarOp.POP_REG); args.add(slot)
         if (maxDepth[0] > stackSize) stackSize = maxDepth[0]
@@ -430,6 +443,7 @@ private fun emitExpr(
     slotOf: (String) -> Int?,
     depth: IntArray,
     maxDepth: IntArray,
+    allowCond: Boolean,
 ): Boolean {
     fun push(op: ScalarOp, arg: Int, delta: Int) {
         ops.add(op); args.add(arg)
@@ -461,11 +475,13 @@ private fun emitExpr(
         is UnaryNode -> {
             when (node.op) {
                 "-" -> {
-                    if (!emitExpr(node.operand, ops, args, consts, slotOf, depth, maxDepth)) return false
+                    if (!emitExpr(node.operand, ops, args, consts, slotOf, depth, maxDepth, false)) return false
                     return apply(ScalarOp.NEG)
                 }
                 "!" -> {
-                    if (!emitExpr(node.operand, ops, args, consts, slotOf, depth, maxDepth)) return false
+                    if (!allowCond) return false
+                    // 取反的入参仍是条件
+                    if (!emitExpr(node.operand, ops, args, consts, slotOf, depth, maxDepth, true)) return false
                     return apply(ScalarOp.NOT)
                 }
                 else -> return false
@@ -473,8 +489,12 @@ private fun emitExpr(
         }
         is BinaryNode -> {
             val op = node.op.singleOrNull()?.let { CHAR_OPS[it] } ?: WORD_OPS[node.op] ?: return false
-            if (!emitExpr(node.left, ops, args, consts, slotOf, depth, maxDepth)) return false
-            if (!emitExpr(node.right, ops, args, consts, slotOf, depth, maxDepth)) return false
+            // 比较/逻辑的结果是布尔：只有条件位置才允许
+            if (op in CONDITION_OPS && !allowCond) return false
+            // && 和 || 的两侧都是条件，比较的两侧和算术的两侧都是数值
+            val operandCond = op == ScalarOp.AND || op == ScalarOp.OR
+            if (!emitExpr(node.left, ops, args, consts, slotOf, depth, maxDepth, operandCond)) return false
+            if (!emitExpr(node.right, ops, args, consts, slotOf, depth, maxDepth, operandCond)) return false
             return apply(op)
         }
         is CallNode -> {
@@ -483,7 +503,7 @@ private fun emitExpr(
             val arity = SCALAR_FUNC_ARITY[callee.name] ?: return false
             if (node.args.size != arity) return false
             for (arg in node.args) {
-                if (!emitExpr(arg, ops, args, consts, slotOf, depth, maxDepth)) return false
+                if (!emitExpr(arg, ops, args, consts, slotOf, depth, maxDepth, false)) return false
             }
             return apply(op)
         }

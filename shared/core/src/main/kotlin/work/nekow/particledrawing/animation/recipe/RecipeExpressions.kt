@@ -110,23 +110,30 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
         for ((name, expr) in recipe.lets) lets += name to (parseExpression(expr) ?: return null)
 
         val birthAssigns = ArrayList(lets)
-        if (!appendOutputs(birthAssigns, recipe.birth)) return null
-        val birth = compileRegisterCode(birthAssigns, slots.map, base) ?: return null
+        val birthConds = HashSet<String>()
+        if (!appendOutputs(birthAssigns, recipe.birth, birthConds)) return null
+        val birth = compileRegisterCode(birthAssigns, slots.map, base, birthConds) ?: return null
 
         // 每刻：先算 kill（看的是推进前的状态），再算 motion
         val tickAssigns = ArrayList(lets)
         tickAssigns += KILL_TEMP to (parseExpression(recipe.kill) ?: return null)
-        if (!appendOutputs(tickAssigns, recipe.motion)) return null
-        val tick = compileRegisterCode(tickAssigns, slots.map + mapOf(KILL_TEMP to base), base + 1) ?: return null
+        val tickConds = HashSet<String>()
+        tickConds += KILL_TEMP
+        if (!appendOutputs(tickAssigns, recipe.motion, tickConds)) return null
+        val tick = compileRegisterCode(
+            tickAssigns, slots.map + mapOf(KILL_TEMP to base), base + 1, tickConds,
+        ) ?: return null
 
         // 出生后的筛选与销毁（看的是出生后的状态）
         val checkAssigns = ArrayList(lets)
         checkAssigns += WHERE_TEMP to (parseExpression(recipe.where) ?: return null)
         checkAssigns += KILL_TEMP to (parseExpression(recipe.kill) ?: return null)
+        val checkConds = setOf(WHERE_TEMP, KILL_TEMP)
         val check = compileRegisterCode(
             checkAssigns,
             slots.map + mapOf(WHERE_TEMP to base, KILL_TEMP to base + 1),
             base + 2,
+            checkConds,
         ) ?: return null
 
         val motion = recipe.motion
@@ -146,12 +153,19 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
      *
      * 每个输出先落到临时槽，最后统一提交回属性槽：同一阶段里后面的输出必须看到
      * 阶段开始时的快照，不能看到前面刚写进去的新值。
+     *
+     * [conditions] 收集「整体按真假用」的临时槽（`glow`），这些表达式里才允许写比较和逻辑运算。
      */
-    private fun appendOutputs(assigns: MutableList<Pair<String, Node>>, outputs: Map<String, String>): Boolean {
+    private fun appendOutputs(
+        assigns: MutableList<Pair<String, Node>>,
+        outputs: Map<String, String>,
+        conditions: MutableSet<String> = HashSet(),
+    ): Boolean {
         val commits = ArrayList<Pair<String, Node>>(outputs.size)
         var k = 0
         fun stage(target: String, node: Node) {
             val temp = "\$pd_out${k++}"
+            if (target == "glow") conditions += temp
             assigns += temp to node
             commits += target to VarNode(temp, 0, 0)
         }

@@ -7,6 +7,7 @@ import work.nekow.particledrawing.api.ParticleSampling
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -96,12 +97,32 @@ class RecipeFastPathEquivalenceTest {
             kill = "y > 1 || x < -1.5",
         )
 
+    /** 速度与加速度同时写，筛选和销毁都用逻辑运算。 */
+    private val both: ParticleRecipe
+        get() = ParticleRecipe(
+            ParticleSampling.count(32),
+            rate = 32,
+            lifetime = 200,
+            maxAlive = 128,
+            lets = linkedMapOf("ax0" to "sin(u*6.2832)*0.01", "ay0" to "cos(u*6.2832)*0.01"),
+            birth = mapOf("position" to "vec3(u*4-2,1,0)"),
+            motion = mapOf(
+                "velocity" to "vec3(vx*0.98+ax0, vy*0.98+ay0, vz*0.98)",
+                "acceleration" to "vec3(0, -0.002, 0)",
+                "r" to "clamp(0.5+0.5*sin(age*0.2),0,1)",
+                "glow" to "1",
+            ),
+            where = "x > -2 && x < 2",
+            kill = "y < -1 || age > 150",
+        )
+
     @Test
     fun compiledRecipesTakeTheFastPath() {
         assertNotNull(RecipeExpressions(hole).fast, "黑洞配方应能编译")
         assertNotNull(RecipeExpressions(ring).fast, "升级动画配方应能编译")
         assertNotNull(RecipeExpressions(stateful).fast, "state 配方应能编译")
         assertNotNull(RecipeExpressions(filtered).fast, "筛选配方应能编译")
+        assertNotNull(RecipeExpressions(both).fast, "速度+加速度配方应能编译")
     }
 
     @Test
@@ -130,6 +151,69 @@ class RecipeFastPathEquivalenceTest {
 
     @Test
     fun filterMatchesInterpreter() = assertSame("filter", filtered)
+
+    @Test
+    fun velocityAndAccelerationMatchInterpreter() = assertSame("both", both)
+
+    /** 比较运算的结果是布尔值：解释器只在 where / kill / glow 里允许，编译路径也必须只在那些位置允许。 */
+    @Test
+    fun comparisonOutsideConditionDoesNotCompile() {
+        val bad = ParticleRecipe(
+            ParticleSampling.count(8),
+            rate = 8,
+            lifetime = 100,
+            maxAlive = 16,
+            birth = mapOf("position" to "vec3(u,0,0)"),
+            motion = mapOf("r" to "x > 0"),
+        )
+        assertNull(RecipeExpressions(bad).fast, "数值位置写比较必须回退，否则解释器报错的配方会变成能跑")
+    }
+
+    /** 同上，但布尔被当数值参与算术。 */
+    @Test
+    fun booleanArithmeticDoesNotCompile() {
+        val bad = ParticleRecipe(
+            ParticleSampling.count(8),
+            rate = 8,
+            lifetime = 100,
+            maxAlive = 16,
+            birth = mapOf("position" to "vec3(u,0,0)"),
+            where = "(x > 0) + 1",
+        )
+        assertNull(RecipeExpressions(bad).fast, "条件位置里把布尔当数值用也必须回退")
+    }
+
+    /** 回退后解释器的表现和改动前一致：把布尔当数值会抛错，不会静默变成 1/0。 */
+    @Test
+    fun fallbackStillRejectsBooleanAsNumber() {
+        val bad = ParticleRecipe(
+            ParticleSampling.count(8),
+            rate = 8,
+            lifetime = 100,
+            maxAlive = 16,
+            birth = mapOf("position" to "vec3(u,0,0)"),
+            motion = mapOf("r" to "x > 0"),
+        )
+        assertFailsWith<RuntimeException> {
+            val rt = RecipeRuntime(bad, burst = true)
+            // 第一刻只出生、不推进，公式要在第二刻才求值
+            repeat(3) { rt.tick() }
+        }
+    }
+
+    /** glow 是条件位置，里面写比较应当照常编译进热路径。 */
+    @Test
+    fun glowConditionStillCompiles() {
+        val glowRecipe = ParticleRecipe(
+            ParticleSampling.count(8),
+            rate = 8,
+            lifetime = 100,
+            maxAlive = 16,
+            birth = mapOf("position" to "vec3(u,0,0)"),
+            motion = mapOf("glow" to "sin(age*0.2) > 0.5 && age < 60"),
+        )
+        assertNotNull(RecipeExpressions(glowRecipe).fast, "glow 里的比较应走热路径")
+    }
 
     /** 同一配方分别走快慢两条路，逐刻逐粒子比较所有持久字段。 */
     private fun assertSame(name: String, recipe: ParticleRecipe, ticks: Int = 40) {
