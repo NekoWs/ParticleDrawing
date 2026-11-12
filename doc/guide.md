@@ -394,12 +394,46 @@ handle.remove()
 光强是动态光照的独立通道，不改变片元透明度与全亮标志。最终亮度会乘上透明度、尺寸与
 出生/退场包络：组 `fadeOut`、`scaleTo(0)`、表达式 `presence` 都会让照明连续收束，不需要
 为了控光把造型改成半透明。要让光强随时间走自己的曲线，用 `CurveChannel.LIGHT`：
-
 ```kotlin
 manager.create().position(p).scale(3f).lifetime(20)
     .glowing(true).lightLevel(15)
     .curve(ParticleCurve.light(CurveKey.at(0, 1f), CurveKey.at(20, 0f)))
     .spawn()
+```
+
+### 只发光、不画外观
+
+腰灯、宠物饰品这类对象本身已经有物品模型，只需要跟着实体的光。用 `lightOnly(true)` 让粒子
+不提交任何片元，光强只由 `lightLevel`、`lightIntensity` 和 `CurveChannel.LIGHT` 决定，
+**不再乘透明度和尺寸**——所以不用再拿 0.0001 尺寸的不透明精灵去骗过衰减：
+
+```kotlin
+manager.create().position(pos).lifetime(-1)
+    .lightLevel(15)             // 灯有多亮
+    .lightIntensity(0.7f)       // 静态乘数，调光用
+    .lightOnly(true)            // 只发光，不画
+    .spawn()
+```
+
+锚定、插值、视距同步、`remove()` 清理都照常；普通特效不传这个选项，仍按透明度和尺寸淡出。
+命令侧是 `appearance light_only true`（或旧的 `key=value` 参数写法 `light_only`）。
+
+#### 光影包兼容
+
+PD 把粒子光写进**客户端光图**（亮度 mixin 那条路）。所以能不能看到，取决于光影包从哪儿取光：
+
+- 直接读光图的光影包（原版光照，以及只做后期、色调、水体这类改动的包）会继承粒子照明；
+- 自己维护体素追踪或手持照明的包（部分 iterationRP 版本、自带光追的包）一般只认自己的光源，
+  粒子光不会自动出现，需要在包侧显式集成。
+
+需要显式集成时用 `ParticleLights.snapshot()`：它给出当帧光源的插值世界坐标、有效强度和照射半径，
+筛选预算由使用方决定，PD 不假定具体的 uniform 名称、曝光或衰减算法。
+
+```kotlin
+val lights = ParticleLights.snapshot()          // 逐帧取用可用 snapshotInto(reusableList)
+for (light in lights) {
+    // light.x / light.y / light.z / light.intensity / light.range
+}
 ```
 
 ### 外观
@@ -842,7 +876,7 @@ val look = particleVisual { particleTexture("minecraft:end_rod"); fullBright = t
 | `style=square\|soft_dot\|line`、`texture=名称`、`uv=u,v,w,h` | 内置形状、自定义贴图与 UV |
 | `size=w,h` / `size_world=w,h`、`billboard=true\|false` | 编辑器单位或世界格尺寸、是否面向摄像机 |
 | `spin=x,y,z`、`spin_space=local\|world` | 贴图欧拉角（度）及旋转空间 |
-| `additive`、`glowing`、`light=0..15`、`intensity=N` | 混合、全亮和动态光参数 |
+| `additive`、`glowing`、`light=0..15`、`intensity=N`、`light_only` | 混合、全亮和动态光参数；`light_only` 只发光不画外观 |
 | `alpha_curve` / `size_curve` / `red_curve` 等 | `tick:value[:easing]`，多关键帧以逗号分隔 |
 | `lifetime=tick` | 所有图元：每颗粒子的存在刻数，未写时保留原来的无限寿命 |
 | `velocity=x,y,z`、`force=x,y,z`、`force_ticks=tick` | 仅 `field`：初速度和持续受力 |

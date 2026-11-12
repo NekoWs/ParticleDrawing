@@ -29,7 +29,8 @@ NeoForge 载荷注册版本为 16。
 | `Anchor` | 发射与特效锚点：`Fixed` / `Entity` / `Movable`，`Orient` 决定整组是否随运动方向转向 |
 | `ParticleCurve`、`CurveKey`、`CurveChannel` | 逐粒子寿命曲线的单通道关键帧（透明度、尺寸、RGB、对外光强），同一通道多条相乘 |
 | `ParticleLifeCurve` | 一条粒子的全部寿命曲线，随生成包下发 |
-| `ParticleVisual` | 逐粒子外观规格：贴图、子矩形 UV、各向异性尺寸、朝向、加法混合、免光照、向外照明、光强乘数 |
+| `ParticleVisual` | 逐粒子外观规格：贴图、子矩形 UV、各向异性尺寸、朝向、加法混合、免光照、向外照明、光强乘数、只发光不画外观 `lightOnly` |
+| `ParticleLights`、`LightSample` | 动态光源的只读入口：`snapshot()` / `snapshotInto(out)` 给出当帧光源的插值坐标、有效强度与照射半径，供第三方按自己的预算接光影包 |
 | `ParticleStyle` | 内置外观形状：`SQUARE`、`SOFT_DOT`、`LINE`，客户端按需生成 16px 贴图 |
 | `ParticleTextures` | `of(名称)` 按年龄/寿命播放资源贴图序列，`of(名称, 帧号)` 指定静态帧，`animated(名称, FPS)` 固定帧率循环；`ParticleVisual.particleTexture` 与可读外观 Builder 共用 |
 | `ParticleGroup.expressionLocal` | 公式输出相对当前组锚点，支持实体跟随与局部朝向；类型化 `position.local` 和 Java `positionLocal` 复用同一后端 |
@@ -160,7 +161,7 @@ NeoForge 载荷注册版本为 16。
 
 | 类 | 作用 |
 | --- | --- |
-| `DynamicLightManager` | 动态光照：向光图坐标注入粒子光照，按「已请求重建」基准累计位移并排队重烘焙。没有发光粒子、也没有待重建区块时整段跳过；每帧的候选列表与比较器复用，不逐帧分配 |
+| `DynamicLightManager` | 动态光照：向光图坐标注入粒子光照，按「已请求重建」基准累计位移并排队重烘焙。没有发光粒子、也没有待重建区块时整段跳过；每帧的候选列表与比较器复用，不逐帧分配。另提供当帧只读快照 `lightSnapshot()` / `snapshotInto()` |
 | `LightAttenuation` | 光照衰减函数：线性、反平方、平滑步进等预设 |
 | `ParticleDrawCommands` | `/pdraw` 根命令；动画集中在 `animation`，贴图重载在 `texture reload` |
 | `ParticleDrawParticleCommands` | `particle group/add/program`：命名组、多图元绘制、固定/实体锚点、组动画、变量与逐粒子表达式 |
