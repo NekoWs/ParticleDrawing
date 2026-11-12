@@ -6,8 +6,8 @@
 [![Maven Central](https://img.shields.io/maven-central/v/work.nekow/particledrawing-neoforge-26.3?label=Maven%20Central)](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3)
 [![Modrinth](https://img.shields.io/modrinth/dt/particledrawing?label=Modrinth&logo=modrinth)](https://modrinth.com/mod/particledrawing)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-![Minecraft](https://img.shields.io/badge/Minecraft-26.2%20%2F%2026.3-informational)
-![NeoForge](https://img.shields.io/badge/NeoForge-26.2%20%2F%2026.3-informational)
+![Minecraft](https://img.shields.io/badge/Minecraft-26.2%20%2F%2026.3%20%2F%201.21.1-informational)
+![NeoForge](https://img.shields.io/badge/NeoForge-26.2%20%2F%2026.3%20%2F%2021.1-informational)
 
 A server-authoritative particle effects library for NeoForge. It plays the animations exported by the
 [ParticleDrawing editor](https://viewer.nekow.work/) and exposes a Kotlin/Java API for drawing and
@@ -41,14 +41,15 @@ evaluated on the client, so a running effect costs little to no per-tick bandwid
 | --- | --- | --- |
 | 26.2 | 26.2.0.59 | 25 |
 | 26.3 | 26.3.0.102 | 25 |
+| 1.21.1 | 21.1.235 | 21 |
 
-NeoForge 1.21.1 is the next planned target. The current downloads cover 26.2 and 26.3.
+Downloads cover 26.2, 26.3 and 1.21.1.
 
 ## Installation
 
 ### Players
 
-1. Install NeoForge for Minecraft 26.2 or 26.3.
+1. Install NeoForge for Minecraft 26.2, 26.3 or 1.21.1.
 2. Install the JAR for your game version into `mods/`. [Modrinth](https://modrinth.com/mod/particledrawing) · [GitHub Releases](https://github.com/NekoWs/ParticleDrawing/releases)
 3. Export an animation from the [editor](https://viewer.nekow.work/) and place the `.pdrawc` file into
    `<gameDir>/animations/`.

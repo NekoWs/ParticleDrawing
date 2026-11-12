@@ -1,8 +1,8 @@
 # 多版本核心与平台适配
 
-共享核心以 Java 21 为运行基线。已发布的 NeoForge 目标为 Minecraft 26.2 和 26.3，分别要求
-NeoForge 26.2.0.59 和 26.3.0.102 或更高的对应系列版本，游戏适配器均使用 Java 25。
-下一目标是 NeoForge 1.21.1，见[接入计划](#接入-1211)。
+共享核心以 Java 21 为运行基线。已发布的 NeoForge 目标为 Minecraft 26.2、26.3 与 1.21.1：
+26.x 要求 NeoForge 26.2.0.59 / 26.3.0.102 或更高的对应系列版本并使用 Java 25，
+1.21.1 要求 NeoForge 21.1.235 或更高的 21.1 系列版本并使用 Java 21。
 
 同一份 `.pdrawc` 由两端共用的核心解析，公式、时间单位、命令语法和载荷字段布局跨目标保持一致。
 
@@ -16,6 +16,7 @@ NeoForge 26.2.0.59 和 26.3.0.102 或更高的对应系列版本，游戏适配�
 | `platforms/neoforge-common/src/` | 当前两套 26.x 适配器共编译的世界与实体接入、命令、网络、API、渲染、资源与音频 |
 | `platforms/neoforge-26.2/src/` | 26.2 渲染管线、配置类型等版本差异 |
 | `platforms/neoforge-26.3/src/` | Renderpearl/OIT 管线、SYNCED 配置等版本差异 |
+| `platforms/neoforge-1.21.1/src/` | 1.21.1 的渲染类型、桥接粒子、贴图重载与 Mixin 注入点 |
 | `gradle/neoforge-platform.gradle` | 26.x 的 Java 25、NeoGradle runs、源码组合、核心打包与发布规则 |
 
 核心禁止导入 Minecraft、Forge、NeoForge、Mojang 渲染和 LWJGL 类型。
@@ -91,11 +92,51 @@ Maven 工作流使用 `publishAndReleaseToMavenCentral`，制品在 Central 完�
 
 ## 接入 1.21.1
 
-NeoForge 1.21.1 尚未接入。目标使用 Java 21，沿用独立平台构建、核心打包、目标坐标和隔离运行目录。
-先核对目标的加载器、世界查询、网络、资源、渲染、音频与 Mixin 签名，再决定哪些代码可跨版本共编译。
-目前 `neoforge-common` 按 26.x 的原生 API 编译，接入新版本时应按实际接口差异划分共享边界。
-[NeoForge 1.21.1 文档](https://docs.neoforged.net/docs/1.21.1/gettingstarted/)
+1.21.1 目标已接入：`platforms/neoforge-1.21.1`，NeoForge 21.1.235，Java 21，
+使用独立的 `settings.gradle`、`target.properties` 与 `run/neoforge-1.21.1/` 运行目录。
 
-使用相同的核心测试、动画夹具与命令示例验证行为等价。平台专有的渲染管线可以换用 1.21.1 的实现，
-验收覆盖普通透明、加法混合、朝向、UV 与动态光照，以及命令、锚点、音频、摄像机和联机同步。
-目标通过构建、服务端启动和客户端画面验证后，再加入对应发布目标与公开安装说明。
+### 共享边界
+
+`neoforge-common` 里按原生 API 划分，被目标整份替换的文件列在 `target.properties` 的
+`shared_replacements` 中（只排除共享目录里的那一份，目标目录同名文件照常编译）：
+
+| 文件 | 差异 |
+| --- | --- |
+| `platform/PlatformCompat.kt` | 发包、世界时钟、资源标识、光图、权限、FOV、区块标脏、按 UUID 找实体 |
+| `core/client/BridgeParticle.kt` | 1.21.1 用 `render(VertexConsumer, Camera, float)` + `getRenderType()` |
+| `core/client/ParticleTextureReloadListener.kt` | 用 `RegisterClientReloadListenersEvent` 注册 |
+| `mixin/BrightnessGetterMixin.java` | 注入点是 `LevelRenderer.getLightColor(BlockAndTintGetter, BlockPos)`（类，不是接口） |
+| `mixin/EntityRendererMixin.java` | 与 26.x 相同 |
+| `mixin/CameraMixin.java` | 1.21.1 暂未启用，见下文已知差异 |
+
+`BatchedQuadParticleGroup`、`OrientedQuadRenderState` 与它们的两个几何测试是 26.x 的批量渲染构造，
+1.21.1 没有对应实现，整份排除。
+
+两代 API 的命名差异用类型别名抹平，别名在使用点就被擦除，不产生运行期引用：
+
+```kotlin
+typealias Identifier = ResourceLocation          // net.minecraft.resources
+typealias BlockAndLightGetter = BlockAndTintGetter // net.minecraft.world.level
+```
+
+Kotlin 会为别名文件生成空 facade 类，这些类会把 `net.minecraft.*` 包带进模组模块并触发 FML 的包冲突，
+因此编译后删除对应目录、打包时排除该路径（`drop_alias_facades`）。
+
+### 打包与运行
+
+1.21.1 是纯 Java 版，不像 26.x 自带 Kotlin 标准库。目标把 `kotlin-stdlib` 解包进编译输出目录，
+使 `kotlin` 包归属模组自身模块，开发运行与发布 JAR 都自带运行时；编译前清理该目录，避免污染增量编译。
+`neoforge.mods.toml` 与 `particledrawing.mixins.json` 也下沉到各目标，1.21.1 的清单需要
+`modLoader="javafml"` 与 `loaderVersion`，Mixin 兼容级别为 `JAVA_21`。
+
+### 验证范围
+
+构建与 271 个平台测试通过；专服启动到 `Done`，模组、配置与 Mixin 正常加载且不加载客户端渲染类；
+单人客户端以 64 颗正弦粒子场景验收：8 帧拼图逐帧连续、无闪动、无漂移，逐帧粒子像素值稳定。
+
+### 已知差异
+
+摄像机预览（`/pdraw camera`）在 1.21.1 上暂不可用：`Camera` 在启动早期被加载，此时模组类还不在可见范围内，
+混入里对模组类的直接引用会在附加阶段抛 `ClassNotFoundException`。恢复该功能需要用反射桥接或延后注入。
+
+[NeoForge 1.21.1 文档](https://docs.neoforged.net/docs/1.21.1/gettingstarted/)

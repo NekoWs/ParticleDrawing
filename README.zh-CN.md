@@ -6,8 +6,8 @@
 [![Maven Central](https://img.shields.io/maven-central/v/work.nekow/particledrawing-neoforge-26.3?label=Maven%20Central)](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3)
 [![Modrinth](https://img.shields.io/modrinth/dt/particledrawing?label=Modrinth&logo=modrinth)](https://modrinth.com/mod/particledrawing)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-![Minecraft](https://img.shields.io/badge/Minecraft-26.2%20%2F%2026.3-informational)
-![NeoForge](https://img.shields.io/badge/NeoForge-26.2%20%2F%2026.3-informational)
+![Minecraft](https://img.shields.io/badge/Minecraft-26.2%20%2F%2026.3%20%2F%201.21.1-informational)
+![NeoForge](https://img.shields.io/badge/NeoForge-26.2%20%2F%2026.3%20%2F%2021.1-informational)
 
 面向 NeoForge 的服务端权威粒子效果库，播放 [ParticleDrawing 编辑器](https://viewer.nekow.work/)导出的动画，
 并提供 Kotlin / Java API，在代码里直接绘制与编排粒子。
@@ -35,14 +35,15 @@
 | --- | --- | --- |
 | 26.2 | 26.2.0.59 | 25 |
 | 26.3 | 26.3.0.102 | 25 |
+| 1.21.1 | 21.1.235 | 21 |
 
-NeoForge 1.21.1 是下一个计划适配的目标。当前可下载 26.2 和 26.3。
+当前可下载 26.2、26.3 与 1.21.1。
 
 ## 安装
 
 ### 玩家
 
-1. 安装适用于 Minecraft 26.2 或 26.3 的 NeoForge。
+1. 安装适用于 Minecraft 26.2、26.3 或 1.21.1 的 NeoForge。
 2. 将对应游戏版本的 JAR 放入 `mods/`。 [Modrinth](https://modrinth.com/mod/particledrawing) · [GitHub Releases](https://github.com/NekoWs/ParticleDrawing/releases)
 3. 从[编辑器](https://viewer.nekow.work/)导出动画，把 `.pdrawc` 文件放进 `<gameDir>/animations/`。
 4. 在游戏里使用 `/pdraw` 命令。动画按需加载，新增或替换动画后不需要重启游戏。
