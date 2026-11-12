@@ -38,6 +38,11 @@ if (!replacedPaths.isEmpty()) {
 // 这些类会把 net.minecraft.* 包带进模组模块，FML 解析模块层时会报包冲突。编译后删掉即可。
 if (targetProperties.getProperty('drop_alias_facades', '') == 'true') {
     tasks.named('compileKotlin').configure {
+        doFirst {
+            // 上一轮拷进输出目录的标准库类会被下一次增量编译当成类路径来源，先清掉保证编译起点干净。
+            def stale = new File(destinationDirectory.get().asFile, 'kotlin')
+            if (stale.exists()) delete stale
+        }
         doLast {
             def classesDir = destinationDirectory.get().asFile
             def facades = new File(classesDir, 'net/minecraft')
