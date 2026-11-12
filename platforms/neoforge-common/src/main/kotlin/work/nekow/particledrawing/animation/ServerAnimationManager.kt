@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.animation
 
+import work.nekow.particledrawing.platform.PlatformCompat
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
@@ -73,7 +74,7 @@ object ServerAnimationManager {
     @JvmStatic
     fun play(animation: ParticleAnimation, players: Collection<ServerPlayer>, origin: Vec3): UUID {
         require(players.isNotEmpty()) { "play 需要至少一个玩家" }
-        val level: ServerLevel = players.first().level()
+        val level: ServerLevel = PlatformCompat.serverLevelOf(players.first())
         return play(animation, ParticleUtils.dimensionUUID(level), players, origin)
     }
 

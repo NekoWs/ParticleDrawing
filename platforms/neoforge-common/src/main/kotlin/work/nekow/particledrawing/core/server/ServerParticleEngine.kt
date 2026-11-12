@@ -2,6 +2,7 @@ package work.nekow.particledrawing.core.server
 
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.server.level.ServerLevel
+import net.minecraft.world.level.Level
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.phys.Vec3
@@ -366,7 +367,7 @@ class ServerParticleEngine(
     }
 
     /** 解析锚点实体：优先按 uuid（网络 id 会随实体重载、换维度变化），解析到就刷新 id 缓存。 */
-    private fun resolveAttached(level: ServerLevel?, data: ParticleData): Entity? {
+    private fun resolveAttached(level: Level?, data: ParticleData): Entity? {
         if (level == null) return null
         val uuid = data.attachedUuid()
         if (uuid != null) {

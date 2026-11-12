@@ -18,6 +18,21 @@ project.ext.set('java_version', javaVersion)
 def commonSource = new File(repositoryRoot, 'platforms/neoforge-common/src')
 def targetSource = new File(repositoryRoot, "platforms/$targetName/src")
 def generatedResources = new File(targetSource, 'generated/resources')
+// 目标可以在共享树里整份替换个别文件（1.21.1 的渲染与贴图要用另一代 API 重写）。
+// 只排除共享目录里的那一份：目标目录里的同名文件照常参与编译。
+def replacedPaths = (targetProperties.getProperty('shared_replacements', '') ?: '')
+        .split(',').collect { it.trim() }.findAll { it }
+if (!replacedPaths.isEmpty()) {
+    def excluded = [] as Set
+    ['main/kotlin', 'main/java', 'test/kotlin', 'test/java'].each { sub ->
+        def root = new File(commonSource, sub).absolutePath + File.separator
+        replacedPaths.each { excluded.add(root + it.replace('/', java.io.File.separator)) }
+    }
+    [sourceSets.main.kotlin, sourceSets.main.java, sourceSets.test.kotlin, sourceSets.test.java].each { set ->
+        set.exclude { element -> excluded.contains(element.file.absolutePath) }
+    }
+}
+
 // 核心源码已经通过上面的 srcDirs 并进主源集，不再跨项目引用 :pdraw-core 的 sourceSet：
 // Gradle 9 会在配置期无锁解析对方配置而报错，Gradle 10 也不再允许。
 def dataRunName = targetProperties.getProperty('data_run', 'clientData')

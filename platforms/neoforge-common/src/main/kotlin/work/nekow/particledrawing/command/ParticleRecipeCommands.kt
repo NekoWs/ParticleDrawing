@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.command
 
+import work.nekow.particledrawing.platform.PlatformCompat
 import com.mojang.brigadier.arguments.BoolArgumentType
 import com.mojang.brigadier.arguments.DoubleArgumentType
 import com.mojang.brigadier.arguments.IntegerArgumentType
@@ -21,7 +22,7 @@ import java.util.Locale
 /** /pdraw particle emitter：每条命令配置一个职责，公式按属性拆开。 */
 internal object ParticleRecipeCommands {
     fun tree(): LiteralArgumentBuilder<CommandSourceStack> {
-        val root = Commands.literal("emitter").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)).executes(::help)
+        val root = Commands.literal("emitter").requires(PlatformCompat.gamemastersOnly()).executes(::help)
         root.then(Commands.literal("help").executes(::help))
         for (verb in listOf("create", "reset")) root.then(Commands.literal(verb)
             .then(Commands.argument("name", StringArgumentType.string()).executes { ctx -> safe(ctx) {

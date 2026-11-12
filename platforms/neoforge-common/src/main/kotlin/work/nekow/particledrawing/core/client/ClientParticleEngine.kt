@@ -1,9 +1,9 @@
 package work.nekow.particledrawing.core.client
 
+import work.nekow.particledrawing.platform.PlatformCompat
 import net.minecraft.client.Minecraft
 import net.minecraft.client.particle.ParticleEngine
 import net.minecraft.world.phys.Vec3
-import net.neoforged.neoforge.client.network.ClientPacketDistributor
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleLifeCurve
@@ -500,7 +500,7 @@ class ClientParticleEngine {
             if (now < end) return
         }
         exitWatches.remove(exitId)
-        ClientPacketDistributor.sendToServer(ParticleExitCompletePayload(exitId, watch.version))
+        PlatformCompat.sendToServer(ParticleExitCompletePayload(exitId, watch.version))
     }
 
     private fun checkExitWatches() {
@@ -521,7 +521,7 @@ class ClientParticleEngine {
             }
             if (!done) continue
             exitWatches.remove(exitId)
-            ClientPacketDistributor.sendToServer(ParticleExitCompletePayload(exitId, watch.version))
+            PlatformCompat.sendToServer(ParticleExitCompletePayload(exitId, watch.version))
         }
     }
 

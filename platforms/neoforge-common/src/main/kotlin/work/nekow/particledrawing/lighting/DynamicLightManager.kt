@@ -1,10 +1,10 @@
 package work.nekow.particledrawing.lighting
 
+import work.nekow.particledrawing.platform.PlatformCompat
 import net.minecraft.client.Minecraft
 import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.core.BlockPos
 import net.minecraft.core.SectionPos
-import net.minecraft.util.LightCoordsUtil
 import net.minecraft.world.level.BlockAndLightGetter
 import work.nekow.particledrawing.api.LightSample
 import work.nekow.particledrawing.config.ParticleDrawingConfig
@@ -494,7 +494,7 @@ object DynamicLightManager {
         val dynamic = getDynamicLightLevel(x, y, z)
         if (dynamic <= 0.0) return lightmap
 
-        val block = LightCoordsUtil.block(lightmap)
+        val block = PlatformCompat.lightBlock(lightmap)
         if (dynamic <= block) return lightmap
 
         val scaled = (dynamic * 16.0).toInt()
@@ -576,12 +576,11 @@ object DynamicLightManager {
             return
         }
 
-        val extractor = mc.levelExtractor
         var budget = MAX_REBUILDS_PER_FRAME
         val it = pendingSections.iterator()
         while (it.hasNext() && budget > 0) {
             val packed = it.next()
-            extractor.setSectionDirty(SectionPos.x(packed), SectionPos.y(packed), SectionPos.z(packed))
+            PlatformCompat.markSectionDirty(SectionPos.x(packed), SectionPos.y(packed), SectionPos.z(packed))
             it.remove()
             budget--
         }

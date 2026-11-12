@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.animation
 
+import work.nekow.particledrawing.platform.PlatformCompat
 import net.minecraft.resources.Identifier
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerLevel
@@ -88,7 +89,7 @@ object ServerEffectManager {
     @JvmStatic
     fun play(players: Collection<ServerPlayer>, key: Identifier, anchor: Anchor, options: EffectOptions): UUID {
         require(players.isNotEmpty()) { "play 需要至少一个玩家" }
-        val level: ServerLevel = players.first().level()
+        val level: ServerLevel = PlatformCompat.serverLevelOf(players.first())
         return play(ParticleUtils.dimensionUUID(level), players, key, anchor, options)
     }
 

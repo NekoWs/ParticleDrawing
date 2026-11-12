@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.core.client
 
+import work.nekow.particledrawing.platform.PlatformCompat
 import net.minecraft.client.Minecraft
 import net.minecraft.client.multiplayer.ClientLevel
 import net.neoforged.api.distmarker.Dist
@@ -180,6 +181,6 @@ object ParticleRenderHandler {
     fun onComputeFov(event: ViewportEvent.ComputeFov) {
         // 与 CameraMixin 的姿态插值同规则：按渲染 partialTick 在相邻 tick 之间插值，FOV 不逐 tick 跳变
         val fov = CameraController.currentFov(event.partialTick.toDouble()) ?: return
-        event.fov = fov
+        PlatformCompat.applyFov(event, fov)
     }
 }

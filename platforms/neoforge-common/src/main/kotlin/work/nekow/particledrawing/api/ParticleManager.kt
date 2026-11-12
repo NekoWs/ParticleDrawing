@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.api
 
+import work.nekow.particledrawing.platform.PlatformCompat
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.level.Level
@@ -230,7 +231,7 @@ class ParticleManager private constructor(val level: ServerLevel) {
             // 本机就是客户端（单机 / 自带客户端）：服务端线程只入队，GPU 解码在主线程做。
             // 重复登记时解的也是注册表里第一次的字节，与广播出去的那份一致。
             val bytes = entry.bytes
-            if (bytes != null && FMLEnvironment.getDist() == Dist.CLIENT) {
+            if (bytes != null && PlatformCompat.isClientDist) {
                 ClientTextureSyncManager.enqueueLocal(entry.name, bytes)
             }
             // 服务端：推给在线玩家；还没进服的玩家由 TextureSyncService.sendAll 在进服时补
@@ -247,7 +248,7 @@ class ParticleManager private constructor(val level: ServerLevel) {
          */
         @JvmStatic
         fun registerBuiltinTextures() {
-            if (FMLEnvironment.getDist() != Dist.CLIENT) return
+            if (!PlatformCompat.isClientDist) return
             ClientTextureSyncManager.enqueueBuiltins()
         }
     }

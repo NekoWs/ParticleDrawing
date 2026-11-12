@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.api
 
+import work.nekow.particledrawing.platform.PlatformCompat
 import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
@@ -32,7 +33,7 @@ object Effects {
     @JvmOverloads
     fun play(key: Identifier, players: Collection<ServerPlayer>, anchor: Anchor, options: EffectOptions = EffectOptions()): EffectHandle {
         require(players.isNotEmpty()) { "play 需要至少一个玩家" }
-        val level: ServerLevel = players.first().level()
+        val level: ServerLevel = PlatformCompat.serverLevelOf(players.first())
         val id = ServerEffectManager.play(players, key, anchor, options)
         return EffectHandle(id, level)
     }

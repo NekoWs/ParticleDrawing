@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.core.client
 
+import work.nekow.particledrawing.platform.PlatformCompat
 import net.minecraft.client.Minecraft
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.LivingEntity
@@ -23,7 +24,6 @@ import work.nekow.particledrawing.animation.program.finiteDurationMs
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.network.ProgramCompletePayload
 import work.nekow.particledrawing.util.rotateAround
-import net.neoforged.neoforge.client.network.ClientPacketDistributor
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.floor
@@ -61,7 +61,7 @@ internal object ClientAnimationProgramManager {
         }
         val level = mc.level ?: return null
         // 实体全局注册表 O(1) 直查，覆盖尚未进入渲染列表的实体
-        level.getEntity(uuid)?.let { entityByUuid[uuid] = it; return it }
+        PlatformCompat.clientEntityByUuid(level, uuid)?.let { entityByUuid[uuid] = it; return it }
         for (e in level.entitiesForRendering()) {
             if (e.uuid == uuid) { entityByUuid[uuid] = e; return e }
         }
@@ -440,7 +440,7 @@ internal object ClientAnimationProgramManager {
         if (now < ledgerEndMs + COMPLETION_MARGIN_MS) return
         if (ledgerEndMs <= p.reportedEndMs) return
         p.reportedEndMs = ledgerEndMs
-        ClientPacketDistributor.sendToServer(ProgramCompletePayload(p.animationId))
+        PlatformCompat.sendToServer(ProgramCompletePayload(p.animationId))
     }
 
     /**
@@ -629,9 +629,9 @@ internal object ClientAnimationProgramManager {
         EntityProp.SPRINTING -> if (e.isSprinting()) 1.0 else 0.0
     }
 
-    /** 世界属性取值，时钟取自 level.overworldClockTime。 */
+    /** 世界属性取值，时钟取自 PlatformCompat.clockTime(level)。 */
     private fun sampleWorldProp(level: net.minecraft.client.multiplayer.ClientLevel, prop: WorldProp): Double {
-        val clock = level.overworldClockTime
+        val clock = PlatformCompat.clockTime(level)
         return when (prop) {
             WorldProp.DAY_TIME -> (clock % 24000L).toDouble()
             WorldProp.GAME_TIME -> clock.toDouble()

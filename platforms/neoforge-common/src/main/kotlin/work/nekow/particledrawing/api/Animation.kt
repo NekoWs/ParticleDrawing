@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.api
 
+import work.nekow.particledrawing.platform.PlatformCompat
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.phys.Vec3
@@ -48,7 +49,7 @@ class Animation internal constructor(
      */
     fun play(players: Collection<ServerPlayer>, origin: Vec3): Animation {
         require(players.isNotEmpty()) { "play 需要至少一个玩家" }
-        val lvl: ServerLevel = players.first().level()
+        val lvl: ServerLevel = PlatformCompat.serverLevelOf(players.first())
         return play(lvl, players, origin)
     }
 

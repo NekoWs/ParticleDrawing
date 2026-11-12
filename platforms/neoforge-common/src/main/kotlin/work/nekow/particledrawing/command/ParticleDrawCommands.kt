@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.command
 
+import work.nekow.particledrawing.platform.PlatformCompat
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
 import com.mojang.brigadier.suggestion.Suggestions
@@ -170,7 +171,7 @@ object ParticleDrawCommands {
      * 贴图渲染仅在客户端，服务端执行时返回提示。
      */
     private fun reloadTextures(ctx: CommandContext<CommandSourceStack>): Int {
-        if (FMLEnvironment.getDist() != Dist.CLIENT) {
+        if (!PlatformCompat.isClientDist) {
             ctx.source.sendFailure(Component.literal("贴图渲染仅在客户端，/pdraw texture reload 仅客户端可用"))
             return 0
         }
@@ -198,7 +199,7 @@ object ParticleDrawCommands {
      * 只改客户端相机的位置、旋转与 FOV，不动玩家实体；动画播完或停止时自动退出。
      */
     private fun switchCamera(ctx: CommandContext<CommandSourceStack>): Int {
-        if (FMLEnvironment.getDist() != Dist.CLIENT) {
+        if (!PlatformCompat.isClientDist) {
             ctx.source.sendFailure(Component.literal("/pdraw animation camera 仅客户端可用"))
             return 0
         }
@@ -218,7 +219,7 @@ object ParticleDrawCommands {
      * /pdraw animation camera stop：退出摄像机预览，恢复正常视角。
      */
     private fun stopCamera(ctx: CommandContext<CommandSourceStack>): Int {
-        if (FMLEnvironment.getDist() != Dist.CLIENT) {
+        if (!PlatformCompat.isClientDist) {
             ctx.source.sendFailure(Component.literal("/pdraw animation camera 仅客户端可用"))
             return 0
         }
