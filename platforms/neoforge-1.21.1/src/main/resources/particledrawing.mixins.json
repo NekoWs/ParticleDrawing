@@ -1,0 +1,17 @@
+{
+  "required": true,
+  "package": "work.nekow.particledrawing.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [],
+  "client": [
+    "BrightnessGetterMixin",
+    "CameraMixin",
+    "EntityRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
+}

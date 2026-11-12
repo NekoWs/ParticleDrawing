@@ -12,10 +12,15 @@ file("$repositoryRoot/platforms/$targetName/target.properties").withInputStream 
 ['minecraft_version', 'minecraft_version_range', 'neo_version'].each { key ->
     project.ext.set(key, targetProperties.getProperty(key))
 }
+// 各目标自己声明构建用的 JDK：26.x 用 25，1.21.1 用 21。缺省保持 25。
+def javaVersion = targetProperties.getProperty('java_version', '25') as int
+project.ext.set('java_version', javaVersion)
 def commonSource = new File(repositoryRoot, 'platforms/neoforge-common/src')
 def targetSource = new File(repositoryRoot, "platforms/$targetName/src")
 def generatedResources = new File(targetSource, 'generated/resources')
-evaluationDependsOn(':pdraw-core')
+// 核心源码已经通过上面的 srcDirs 并进主源集，不再跨项目引用 :pdraw-core 的 sourceSet：
+// Gradle 9 会在配置期无锁解析对方配置而报错，Gradle 10 也不再允许。
+def dataRunName = targetProperties.getProperty('data_run', 'clientData')
 sourceSets {
     main {
         kotlin.setSrcDirs([new File(commonSource, 'main/kotlin'), new File(targetSource, 'main/kotlin')])
@@ -43,7 +48,7 @@ base {
     archivesName = "${mod_id}-${minecraft_version}-neoforge"
 }
 
-java.toolchain.languageVersion = JavaLanguageVersion.of(25)
+java.toolchain.languageVersion = JavaLanguageVersion.of(javaVersion)
 java.withSourcesJar()
 
 tasks.withType(Test).configureEach {
@@ -72,7 +77,6 @@ runs {
         // 核心与平台共用包，开发运行时也必须归入同一个模组，避免模块加载隔离。
         modSources {
             add(project.mod_id, project.sourceSets.main)
-            add(project.mod_id, project(':pdraw-core').sourceSets.main)
         }
     }
 
@@ -91,9 +95,17 @@ runs {
         systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
     }
 
-    clientData {
-        arguments.addAll '--mod', project.mod_id, '--all', '--output', generatedResources.absolutePath,
-                '--existing', new File(commonSource, 'main/resources').absolutePath
+    // 数据生成运行名随 NeoGradle 版本变化：26.x 是 clientData，1.21.1 是 data
+    if (dataRunName == 'data') {
+        data {
+            arguments.addAll '--mod', project.mod_id, '--all', '--output', generatedResources.absolutePath,
+                    '--existing', new File(commonSource, 'main/resources').absolutePath
+        }
+    } else {
+        clientData {
+            arguments.addAll '--mod', project.mod_id, '--all', '--output', generatedResources.absolutePath,
+                    '--existing', new File(commonSource, 'main/resources').absolutePath
+        }
     }
 }
 
@@ -177,7 +189,7 @@ idea {
     }
 }
 kotlin {
-    jvmToolchain(25)
+    jvmToolchain(javaVersion)
 }
 
 // 发布的模组包含同一次构建的核心，用户只需安装对应游戏版本的一个 JAR。
