@@ -747,31 +747,35 @@ class ServerParticleEngine(
         val maxPerPlayer = ParticleDrawingConfig.SERVER.maxParticlesPerPlayer.get()
 
         for (player in players) {
-            val tracked = playerParticles[player.uuid] ?: continue
+            // 没有追踪记录不等于「不用管」：后进服、传送进维度、或者刚从视距外走回来的玩家
+            // 都没有记录，他们正是需要首次补发的人。按空集合处理，让下面的补发循环正常跑。
+            val tracked = playerParticles[player.uuid]
 
-            val toRemove = ArrayList<UUID>()
-            for (particleId in tracked) {
-                val data = particles[particleId]
-                if (data == null || !ParticleVisibilityManager.isWithinViewDistance(player, data.position())) {
-                    toRemove.add(particleId)
+            if (tracked != null) {
+                val toRemove = ArrayList<UUID>()
+                for (particleId in tracked) {
+                    val data = particles[particleId]
+                    if (data == null || !ParticleVisibilityManager.isWithinViewDistance(player, data.position())) {
+                        toRemove.add(particleId)
+                    }
+                }
+                for (particleId in toRemove) {
+                    val groupId = particles[particleId]?.groupId
+                    tracked.remove(particleId)
+                    visibleTo[particleId]?.remove(player.uuid)
+                    if (groupId != null) releaseGroupCount(player.uuid, groupId)
+                    PacketDistributor.sendToPlayer(player, ParticleDestroyPayload.single(particleId))
+                    if (groupId != null && !playerTracksGroup(player.uuid, groupId)) {
+                        ServerProgramDelivery.onUntracked(groupId, player.uuid)
+                    }
                 }
             }
-            for (particleId in toRemove) {
-                val groupId = particles[particleId]?.groupId
-                tracked.remove(particleId)
-                visibleTo[particleId]?.remove(player.uuid)
-                if (groupId != null) releaseGroupCount(player.uuid, groupId)
-                PacketDistributor.sendToPlayer(player, ParticleDestroyPayload.single(particleId))
-                if (groupId != null && !playerTracksGroup(player.uuid, groupId)) {
-                    ServerProgramDelivery.onUntracked(groupId, player.uuid)
-                }
-            }
 
-            var count = tracked.size
+            var count = tracked?.size ?: 0
             if (count < maxPerPlayer) {
                 for ((particleId, data) in particles) {
                     if (count >= maxPerPlayer) break
-                    if (tracked.contains(particleId)) continue
+                    if (tracked?.contains(particleId) == true) continue
                     if (!ParticleVisibilityManager.isWithinViewDistance(player, data.position())) continue
 
                     val groupId = data.groupId
