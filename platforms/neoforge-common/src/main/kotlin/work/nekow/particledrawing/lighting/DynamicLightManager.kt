@@ -6,6 +6,7 @@ import net.minecraft.core.BlockPos
 import net.minecraft.core.SectionPos
 import net.minecraft.util.LightCoordsUtil
 import net.minecraft.world.level.BlockAndLightGetter
+import work.nekow.particledrawing.api.LightSample
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.client.ClientParticleEngine
 import work.nekow.particledrawing.core.client.RenderParticle
@@ -91,6 +92,38 @@ object DynamicLightManager {
     /** 光源数量快照（写锁内更新），诊断日志读它，避免无锁读可变列表。 */
     @Volatile
     private var sourceCountSnapshot = 0
+
+    /** 最近一帧收集到的光源与照射半径：对外只读快照读它，避免读可变列表。 */
+    @Volatile
+    private var frameSources: Array<LightSource> = emptyArray()
+
+    @Volatile
+    private var frameRadius: Double = 0.0
+
+    /**
+     * 最近一帧动态光源的只读快照；没有光源或功能关闭时是空列表。
+     *
+     * 供第三方按自己的预算筛选取用（例如接入光影包），不依赖粒子引擎对象。
+     */
+    fun lightSnapshot(): List<LightSample> {
+        if (frameSources.isEmpty()) return emptyList()
+        val out = ArrayList<LightSample>(frameSources.size)
+        toSamples(frameSources, frameRadius, out)
+        return out
+    }
+
+    /** 把快照写进 [out]（先清空），返回数量；需要逐帧取用又不建列表时用它。 */
+    fun snapshotInto(out: MutableList<LightSample>): Int {
+        out.clear()
+        if (frameSources.isEmpty()) return 0
+        toSamples(frameSources, frameRadius, out)
+        return out.size
+    }
+
+    /** 光源 -> 快照项；映射本身无状态，单测直接喂构造好的光源。 */
+    internal fun toSamples(sources: Array<LightSource>, radius: Double, out: MutableList<LightSample>) {
+        for (src in sources) out += LightSample(src.id, src.x, src.y, src.z, src.luminance, radius)
+    }
 
     /** 当前生效的动态光源数量（诊断用，精确到上一次重建）。 */
     @JvmStatic
@@ -192,6 +225,9 @@ object DynamicLightManager {
 
         val renderDistance = mc.options.effectiveRenderDistance * 16.0
         val newSources = collectSources(engine, player.x, player.y, player.z, renderDistance, partialTick)
+        // 对外快照：这一帧实际参与照明的光源，坐标已按 partialTick 插值
+        frameSources = newSources.toTypedArray()
+        frameRadius = radius
 
         // 光场变了就抬版本号：位置、亮度、数量或照射半径任一变化都算
         var signature = signatureOf(newSources)
@@ -355,6 +391,7 @@ object DynamicLightManager {
             cellIndex.clear()
             hasLights = false
             sourceCountSnapshot = 0
+            frameSources = emptyArray()
         } finally {
             LOCK.writeLock().unlock()
         }
