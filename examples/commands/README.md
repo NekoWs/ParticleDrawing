@@ -55,6 +55,7 @@ function pdraw_test:five-star
 | --- | --- | --- |
 | mandala | 青色十二瓣玫瑰、金色双三角星、蓝色三重外环，分层反向旋转 | mandala、mandala-star、mandala-ring |
 | torus-knot | 倾斜旋转的三叶环面结，沿曲线流动的粉蓝渐变 | knot |
+| halo-aura | 脚底光环，加上从环里升起、循环爬升的竖条柱 | halo、aura |
 | mobius | 绕中心旋转的莫比乌斯扭带，点阵呈现单面曲面的扭转 | mobius |
 
 三组均存在 240 刻（12 秒），最后 30 刻淡出，一次触发即可。mandala 共 2040 颗，另外两组分别
