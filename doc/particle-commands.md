@@ -169,6 +169,8 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 | `let <名称> <公式>` | 中间计算量，按声明顺序求值 |
 | `birth <属性> <公式>` | 只在出生时计算的属性 |
 | `motion <属性> <公式>` | 每刻读取当前状态并计算的属性 |
+| `orbit vec3(x,y,z)` | 锚点偏移公式，按发射器运行毫秒 `t` 求值，叠加在锚点原点上 |
+| `orbit unset` | 取消锚点偏移 |
 | `where <条件>` | 出生公式之后，只生成满足条件的样本 |
 | `kill <条件>` | 每刻及出生时判定，成立即真正销毁 |
 | `unset variable\|state\|let\|birth\|motion\|change <字段>` | 删除一项配置 |
@@ -196,6 +198,24 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 同一阶段的输出使用同一输入快照，例如 `motion x y` 与 `motion y x` 能交换两个分量。
 需要多步计算时使用多条 `let`；`let` 可以保留数值、布尔、向量和矩阵，后续公式按 `.x/.y/.z` 取分量。
 `where` 在出生公式之后求值，用 `sx/sy/sz` 可以回到原始采样坐标；用 `x/y/z` 则看出生后的位置。
+
+### 让发射器沿轨迹移动
+
+`orbit` 给锚点叠一条按时间求值的偏移，发射器原点就会动起来；已出生的粒子留在出生位置，
+配合 `rate`/`interval` 就能沿轨迹铺出粒子。公式只能引用 `t`（发射器运行毫秒）、`variable`、
+`state` 与 `let`，写样本级的 `u`/`i`/`age` 会直接报错。
+
+```mcfunction
+pdraw particle emitter trail anchor fixed ~ ~ ~
+pdraw particle emitter trail sample count 1
+pdraw particle emitter trail orbit vec3(sin(t*0.001)*4, 0, cos(t*0.001)*4)
+pdraw particle emitter trail lifetime 400
+pdraw particle emitter trail rate 1
+pdraw particle emitter trail interval 1
+pdraw particle emitter trail start
+```
+
+上面这段让发射器沿半径 4 的圆匀速绕行，每刻发一颗，留下一条圆环。
 不能通过一条属性公式改变其它属性。
 
 每刻先检查寿命与 kill，再计算 motion，随后速度加上加速度、位置加上速度。
