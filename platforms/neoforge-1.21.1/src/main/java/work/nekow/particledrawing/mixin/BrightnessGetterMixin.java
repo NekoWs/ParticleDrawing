@@ -9,9 +9,10 @@ import org.spongepowered.asm.mixin.injection.At;
 import work.nekow.particledrawing.lighting.DynamicLightManager;
 
 // 动态光照混入（1.21.1）：区块网格烘焙取亮度走 LevelRenderer.getLightColor，
-// 在这里把动态光照叠加进打包光坐标。26.x 的注入点是 LightCoordsUtil.BrightnessGetter。
+// 在这里把动态光照叠加进打包光坐标。26.x 的注入点是 LightCoordsUtil.BrightnessGetter（接口）。
+// LevelRenderer 是类，所以本混入必须是类而不是接口。
 @Mixin(value = LevelRenderer.class, priority = 900)
-public interface BrightnessGetterMixin {
+public abstract class BrightnessGetterMixin {
 
     @ModifyReturnValue(
             method = "getLightColor(Lnet/minecraft/world/level/BlockAndTintGetter;Lnet/minecraft/core/BlockPos;)I",
