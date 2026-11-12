@@ -5,8 +5,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.gen.Accessor;
-import org.spongepowered.asm.mixin.gen.Invoker;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -16,16 +15,17 @@ import work.nekow.particledrawing.core.client.CameraController;
 // 摄像机预览（/pdraw camera，1.21.1）：在 Camera.setup 返回处覆盖玩家相机的位置与旋转，
 // 之后 prepareCullFrustum / setupPerspective 都会用这个姿态；FOV 由粒子渲染处理器在计算 FOV 时覆盖。
 // 26.x 的注入点是 alignWithEntity。
+//
+// 这里用 @Shadow 按描述符绑定：1.21.1 的 setRotation 有 (float,float) 与 (float,float,float) 两个重载，
+// 用 @Invoker 按名字找会因重载歧义失败。
 @Mixin(Camera.class)
 public abstract class CameraMixin {
 
-    /** 调用 protected {@code Camera#setRotation(float,float,float)}。 */
-    @Invoker("setRotation")
-    abstract void particleDrawing$invokeSetRotation(float yRot, float xRot, float roll);
+    @Shadow
+    private Vec3 position;
 
-    /** 写入 private 字段 {@code Camera#position}。 */
-    @Accessor("position")
-    abstract void particleDrawing$setPosition(Vec3 position);
+    @Shadow
+    protected abstract void setRotation(float yRot, float xRot, float roll);
 
     @Inject(
         method = "setup(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/world/entity/Entity;ZZF)V",
@@ -43,7 +43,7 @@ public abstract class CameraMixin {
         double[] target = pose.getTarget();
         double rollDeg = pose.getRoll();
 
-        this.particleDrawing$setPosition(new Vec3(pos[0], pos[1], pos[2]));
+        this.position = new Vec3(pos[0], pos[1], pos[2]);
 
         // 视线方向 d = normalize(target - pos)
         double dx = target[0] - pos[0];
@@ -87,6 +87,6 @@ public abstract class CameraMixin {
         float xRot = (float) Math.toDegrees(-b);
         float rollMc = (float) Math.toDegrees(-cc);
 
-        this.particleDrawing$invokeSetRotation(yRot, xRot, rollMc);
+        this.setRotation(yRot, xRot, rollMc);
     }
 }
