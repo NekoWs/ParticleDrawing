@@ -31,6 +31,10 @@ if (!replacedPaths.isEmpty()) {
     [sourceSets.main.kotlin, sourceSets.main.java, sourceSets.test.kotlin, sourceSets.test.java].each { set ->
         set.exclude { element -> excluded.contains(element.file.absolutePath) }
     }
+    // allSource 不继承上面的排除，sourcesJar 会把共享与目标两份同名文件都打进去，这里单独排一次。
+    tasks.matching { it.name == 'sourcesJar' }.configureEach {
+        exclude { element -> excluded.contains(element.file.absolutePath) }
+    }
 }
 
 // 1.21.1 用类型别名桥接两代 API 的命名（Identifier / BlockAndLightGetter）。
@@ -268,7 +272,7 @@ kotlin {
 tasks.named('jar', Jar) {
     dependsOn ':pdraw-core:jar'
 }
-tasks.named('sourcesJar') { from(project(':pdraw-core').file('src/main/kotlin')) }
+// 核心源码已经在主源集的 srcDirs 里，sourcesJar 不再单独加一次，否则条目重复。
 tasks.named('test') { dependsOn ':pdraw-core:test' }
 tasks.named('cleanTest') { dependsOn ':pdraw-core:cleanTest' }
 tasks.named('check') { dependsOn ':pdraw-core:check' }
