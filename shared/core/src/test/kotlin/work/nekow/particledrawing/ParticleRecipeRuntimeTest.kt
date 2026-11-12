@@ -178,4 +178,28 @@ class ParticleRecipeRuntimeTest {
         runtime.tick()
         assertEquals(2.0, runtime.particles[0].position.z, 1e-9)
     }
+
+    @Test fun `锚点偏移按发射器运行毫秒求值`() {
+        val r = RecipeRuntime(recipe(1).copy(orbit = "vec3(t*0.001, 2, -1)"), true)
+        val out = DoubleArray(3)
+        assertTrue(r.orbitOffset(out, 0f))
+        assertEquals(0.0, out[0], 1e-9)
+        assertEquals(2.0, out[1], 1e-9)
+        assertEquals(-1.0, out[2], 1e-9)
+        r.tick(); r.tick()
+        assertTrue(r.orbitOffset(out, 0f))
+        assertEquals(0.1, out[0], 1e-9)
+    }
+
+    @Test fun `没有锚点偏移公式时不偏移`() {
+        val r = RecipeRuntime(recipe(1), true)
+        assertFalse(r.orbitOffset(DoubleArray(3), 0f))
+    }
+
+    @Test fun `锚点偏移不能引用样本级变量`() {
+        val ex = assertFailsWith<IllegalArgumentException> {
+            RecipeRuntime(recipe(1).copy(orbit = "vec3(u, 0, 0)"), true)
+        }
+        assertTrue(ex.message?.contains("未知变量") == true)
+    }
 }

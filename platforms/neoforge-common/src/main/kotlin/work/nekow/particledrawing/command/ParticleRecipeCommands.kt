@@ -86,6 +86,14 @@ internal object ParticleRecipeCommands {
                         else -> { val next = d.changes + (field to formula); d.recipe.copy(birth = next, where = d.selector).validate(); d.changes[field] = formula }
                     }
                 } })))
+        // 锚点偏移：叠加在 anchor 的原点上，按发射器运行毫秒 t 求值。已出生的粒子不跟着走，
+        // 发射器跑过的轨迹就留下一串粒子。
+        name.then(Commands.literal("orbit")
+            .then(Commands.literal("unset").executes { ctx -> configure(ctx) { d -> d.update(d.recipe.copy(orbit = "")) } })
+            .then(Commands.argument("formula", StringArgumentType.greedyString()).executes { ctx -> configure(ctx) { d ->
+                d.update(d.recipe.copy(orbit = word(ctx, "formula")))
+            } }))
+
         for (kind in listOf("where", "kill", "select")) name.then(Commands.literal(kind)
             .then(Commands.argument("formula", StringArgumentType.greedyString()).executes { ctx -> configure(ctx) { d ->
                 val f = word(ctx, "formula")
@@ -210,7 +218,7 @@ internal object ParticleRecipeCommands {
         ctx.source.sendFailure(Component.literal(e.message ?: "粒子生成配置错误")); 0
     }
     private fun help(ctx: CommandContext<CommandSourceStack>) = success(ctx,
-        "emitter create|reset|copy|list；emitter <名称> anchor|sample|image|variable|state|let|birth|motion|where|kill|appearance|texture|rate|interval|lifetime|max_alive|follow|select|change|apply|remove_selected|start|burst|stop|remove|delete|inspect|unset；公式中的 u 是采样参数，age 是粒子年龄（刻），t 是发射器时间（毫秒）")
+        "emitter create|reset|copy|list；emitter <名称> anchor|orbit|sample|image|variable|state|let|birth|motion|where|kill|appearance|texture|rate|interval|lifetime|max_alive|follow|select|change|apply|remove_selected|start|burst|stop|remove|delete|inspect|unset；公式中的 u 是采样参数，age 是粒子年龄（刻），t 是发射器时间（毫秒）")
 
     private val APPEARANCE = setOf("texture", "style", "color", "scale", "uv", "size", "size_world", "billboard", "spin", "spin_space", "additive", "glowing", "light", "light_only", "intensity", "alpha_curve", "size_curve", "red_curve", "green_curve", "blue_curve", "light_curve")
 }

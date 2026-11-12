@@ -36,6 +36,11 @@ data class ParticleRecipe(
     val kill: String = "false",
     val visual: ParticleVisual = ParticleVisual(),
     val lifeCurve: ParticleLifeCurve? = null,
+    /**
+     * 锚点偏移公式（vec3），按发射器运行毫秒 `t` 求值，叠加在锚点原点之上。
+     * 空串表示不偏移。只允许引用 `t`、variable、state 与 let。
+     */
+    val orbit: String = "",
 ) {
     fun validate() {
         require(seeds.isNotEmpty() && seeds.size <= MAX_SEEDS) { "出生样本需要 1 到 $MAX_SEEDS 个" }
@@ -43,6 +48,7 @@ data class ParticleRecipe(
         require(lifetime == -1 || lifetime in 1..MAX_LIFETIME) { "lifetime 需要 -1（无限）或 1..$MAX_LIFETIME 刻" }
         require(maxAlive in 1..MAX_SEEDS) { "max_alive 需要 1..$MAX_SEEDS" }
         require(listOf(variables, state, lets, birth, motion).all { it.size <= MAX_FIELDS }) { "每类公式或变量最多 $MAX_FIELDS 项" }
+        require(orbit.length <= MAX_EXPRESSION) { "锚点偏移公式最多 $MAX_EXPRESSION 字符" }
         for (s in seeds) {
             require(listOf(s.position.x, s.position.y, s.position.z, s.u).all(Double::isFinite)) { "出生坐标和参数必须是有限数" }
             require(listOf(s.color.r, s.color.g, s.color.b, s.color.a).all { it.isFinite() && it in 0f..1f }) { "样本颜色需要在 0..1" }

@@ -42,7 +42,7 @@ internal object ClientParticleSources {
                 RecipeOperation.VARIABLE -> sources[p.id]?.runtime?.let { it.update(it.recipe.copy(variables = it.recipe.variables + p.variables)) }
                 RecipeOperation.STOP -> sources[p.id]?.runtime?.emitting = false
                 RecipeOperation.REMOVE -> remove(p.id)
-                RecipeOperation.EDIT -> sources[p.id]?.let { it.runtime.edit(p.predicate, p.changes, p.deleteSelected); sync(it, resolve(it.anchor)) }
+                RecipeOperation.EDIT -> sources[p.id]?.let { it.runtime.edit(p.predicate, p.changes, p.deleteSelected); sync(it, resolve(it)) }
             }
         } catch (e: RuntimeException) { remove(p.id); error(p.id, e) }
     }
@@ -50,7 +50,7 @@ internal object ClientParticleSources {
     fun tick() {
         for ((id, e) in sources.toList()) {
             try {
-                val frame = resolve(e.anchor)
+                val frame = resolve(e)
                 e.runtime.tick(frame != null)
                 sync(e, frame)
                 if (e.runtime.finished) sources.remove(id)
@@ -113,12 +113,26 @@ internal object ClientParticleSources {
         }
     }
 
-    private fun resolve(a: RecipeAnchor): Frame? {
-        if (a.entity == null) return Frame(a.position.add(a.offset).toMinecraft())
-        val level = Minecraft.getInstance().level ?: return null
-        val entity = level.getEntity(a.entityId)?.takeIf { it.uuid == a.entity }
-            ?: level.entitiesForRendering().firstOrNull { it.uuid == a.entity } ?: return null
-        return Frame(AttachMath.resolve(entity.position(), entity.yRot, entity.xRot, a.offset.toMinecraft(), a.local), entity.yRot, entity.xRot, a.local)
+    /** 锚点偏移的落点，逐 tick 复用。 */
+    private val orbitOut = DoubleArray(3)
+
+    /**
+     * 解析这一 tick 的锚点：先取基础锚点（固定坐标或实体），再加上 `orbit` 偏移公式。
+     * 偏移在帧内按 partialTick 插值；这里每 tick 一次，取整刻值。
+     */
+    private fun resolve(e: Entry): Frame? {
+        val a = e.anchor
+        val base = if (a.entity == null) {
+            Frame(a.position.add(a.offset).toMinecraft())
+        } else {
+            val level = Minecraft.getInstance().level ?: return null
+            val entity = level.getEntity(a.entityId)?.takeIf { it.uuid == a.entity }
+                ?: level.entitiesForRendering().firstOrNull { it.uuid == a.entity } ?: return null
+            Frame(AttachMath.resolve(entity.position(), entity.yRot, entity.xRot, a.offset.toMinecraft(), a.local), entity.yRot, entity.xRot, a.local)
+        }
+        if (!e.runtime.hasOrbit) return base
+        e.runtime.orbitOffset(orbitOut, 0f)
+        return Frame(base.pos.add(orbitOut[0], orbitOut[1], orbitOut[2]), base.yaw, base.pitch, base.local)
     }
 
     private fun error(id: UUID, e: RuntimeException) {

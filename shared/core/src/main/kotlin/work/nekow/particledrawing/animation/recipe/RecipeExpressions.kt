@@ -14,6 +14,11 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
     private val where = compile(recipe.where, true)
     private val kill = compile(recipe.kill, true)
 
+    /** 锚点偏移公式；空串表示没有偏移。每 tick 求一次，不参与逐粒子热路径。 */
+    private val orbit = recipe.orbit.takeIf(String::isNotBlank)?.let { compile(it, false) }
+    private val orbitVariables = recipe.variables
+    private val orbitState = recipe.state
+
     init {
         val names = recipe.variables.keys.toList() + recipe.state.keys.toList() + recipe.lets.keys.toList()
         require(names.size == names.toSet().size) { "variable、state 和 let 不能重名" }
@@ -28,6 +33,8 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
         val known = (INPUTS + recipe.variables.keys + recipe.state.keys).toMutableSet()
         for ((name, expr) in recipe.lets) { validate(expr, known); known += name }
         for (expr in recipe.birth.values + recipe.motion.values + listOf(recipe.where, recipe.kill)) validate(expr, known)
+        // 锚点偏移只认发射器级的量：u/i/age 这类样本级输入在求锚点时没有意义，写了要报错而不是静默取 0。
+        recipe.orbit.takeIf(String::isNotBlank)?.let { validate(it, ANCHOR_INPUTS + recipe.variables.keys + recipe.state.keys + recipe.lets.keys) }
     }
 
     /**
@@ -77,6 +84,29 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
 
     fun evaluate(groups: List<OutputGroup>): Map<String, Double> =
         evaluateInto(groups, LinkedHashMap())
+
+    /** 有没有锚点偏移公式。 */
+    val hasOrbit: Boolean get() = orbit != null
+
+    /**
+     * 求锚点偏移：只填发射器级的量（`t`、variable、state、let），样本级输入不参与。
+     * 每 tick 调一次，不进逐粒子热路径。
+     */
+    fun prepareAnchor(t: Double) {
+        values.clear()
+        values["t"] = t
+        values["dt"] = 1.0
+        for ((k, v) in orbitVariables) values[k] = v
+        for ((k, v) in orbitState) values[k] = v
+        for ((name, runner) in lets) values[name] = finiteLet(name, runner.evalAny(ctx))
+    }
+
+    /** 把 [prepareAnchor] 之后求出的偏移写进 out[0..2]。 */
+    fun orbitInto(out: DoubleArray) {
+        val runner = requireNotNull(orbit) { "没有锚点偏移公式" }
+        val v = runner.evalAny(ctx)
+        for (i in 0..2) out[i] = component(v, i, "orbit")
+    }
 
     fun accepts() = where.eval(ctx) != 0.0
     fun kills() = kill.eval(ctx) != 0.0
@@ -315,6 +345,9 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
         val OUTPUTS: Set<String> = ATTRIBUTES + VECTOR_OUTPUTS.keys
 
         val INPUTS = ATTRIBUTES + setOf("i", "n", "u", "t", "age", "life", "progress", "dt", "dx", "dy", "dz", "sx", "sy", "sz")
+
+        /** 锚点偏移公式能用的输入：只有发射器级的量，没有样本。 */
+        val ANCHOR_INPUTS = setOf("t", "dt")
         private val NAME = Regex("[A-Za-z_][A-Za-z0-9_]{0,47}")
 
         /** 命令公式允许调用的函数；必须都是运行时内建里真有的（测试钉着，别只改一边）。 */

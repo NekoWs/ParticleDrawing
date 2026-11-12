@@ -94,6 +94,20 @@ class RecipeRuntime(var recipe: ParticleRecipe, val burst: Boolean, preferFast: 
         return out
     }
 
+    /** 有没有锚点偏移公式。 */
+    val hasOrbit: Boolean get() = expressions.hasOrbit
+
+    /**
+     * 求锚点偏移（格）：每 tick 一次，`t` 为发射器运行毫秒，按 partialTick 做帧内插值。
+     * 结果写进调用方复用的 out[0..2]；没有公式返回 false。
+     */
+    fun orbitOffset(out: DoubleArray, partialTick: Float): Boolean {
+        if (!expressions.hasOrbit) return false
+        expressions.prepareAnchor(ticks * 50.0 + partialTick * 50.0)
+        expressions.orbitInto(out)
+        return true
+    }
+
     /** 一颗粒子需要多少个寄存器：热路径含临时槽，慢路径只要固定槽。 */
     private fun regSize(): Int = expressions.fast?.regCount ?: (expressions.slots.map.values.max() + 1)
 

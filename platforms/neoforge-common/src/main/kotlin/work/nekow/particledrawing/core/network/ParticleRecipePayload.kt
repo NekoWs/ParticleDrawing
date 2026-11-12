@@ -68,6 +68,7 @@ internal object RecipeCodec {
         writeStrings(buf, r.lets); writeStrings(buf, r.birth); writeStrings(buf, r.motion)
         buf.writeUtf(r.where, ParticleRecipe.MAX_EXPRESSION); buf.writeUtf(r.kill, ParticleRecipe.MAX_EXPRESSION)
         ParticleVisualCodec.write(buf, r.visual); ParticleCurveCodec.write(buf, r.lifeCurve)
+        buf.writeUtf(r.orbit, ParticleRecipe.MAX_EXPRESSION)
     }
 
     fun read(buf: FriendlyByteBuf): ParticleRecipe {
@@ -77,7 +78,8 @@ internal object RecipeCodec {
         return ParticleRecipe(seeds, buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean(),
             readNumbers(buf), readNumbers(buf), readStrings(buf), readStrings(buf), readStrings(buf),
             buf.readUtf(ParticleRecipe.MAX_EXPRESSION), buf.readUtf(ParticleRecipe.MAX_EXPRESSION),
-            ParticleVisualCodec.read(buf) ?: ParticleVisual(), ParticleCurveCodec.read(buf))
+            ParticleVisualCodec.read(buf) ?: ParticleVisual(), ParticleCurveCodec.read(buf),
+            buf.readUtf(ParticleRecipe.MAX_EXPRESSION))
     }
 
     fun writeAnchor(buf: FriendlyByteBuf, a: RecipeAnchor) {
