@@ -34,11 +34,11 @@ internal data class ParticleCommandOptions(
  * 解析空格分隔的 `key=value` 参数。值可用双引号包住，未知键直接报错。
  */
 internal object ParticleCommandOptionParser {
-    private val booleanFlags = setOf("additive", "glowing", "taper", "hollow", "rainbow")
+    private val booleanFlags = setOf("additive", "glowing", "taper", "hollow", "rainbow", "light_only")
     private val allowed = setOf(
         "color", "gradient", "rainbow", "scale", "stagger", "lifetime", "axis", "taper", "hollow",
         "thickness", "style", "texture", "uv", "size", "size_world", "billboard", "spin", "spin_space",
-        "additive", "glowing", "light", "intensity", "alpha_curve", "size_curve", "red_curve",
+        "additive", "glowing", "light", "light_only", "intensity", "alpha_curve", "size_curve", "red_curve",
         "green_curve", "blue_curve", "light_curve", "velocity", "force", "force_ticks",
     )
 
@@ -95,6 +95,7 @@ internal object ParticleCommandOptionParser {
             visual.lightLevel(level)
         }
         values["intensity"]?.let { visual.lightIntensity(float(it, "intensity")) }
+        values["light_only"]?.let { visual.lightOnly(bool(it, "light_only")) }
 
         var curves = ParticleLifeCurve.EMPTY
         fun curve(key: String, channel: CurveChannel) {

@@ -30,6 +30,8 @@ class BridgeParticle(
     private var uv: UvData? = null,
     private val additive: Boolean = false,
     private val textureClock: RenderParticle? = null,
+    /** 只发光不画外观：不提交任何顶点，粒子本身仍在引擎里走时钟与光照收集。 */
+    private val lightOnly: Boolean = false,
 ) : SingleQuadParticle(level, x, y, z, defaultSprite()) {
 
     // 贴图解析结果（贴图已注册时才非 null）：Identifier + 尺寸
@@ -272,6 +274,8 @@ class BridgeParticle(
         camera: net.minecraft.client.Camera,
         partialTick: Float
     ) {
+        // 只发光的外观不产生片元；光照收集走 RenderParticle.lightIntensity，与本方法无关
+        if (lightOnly) return
         val f = frameFactor(partialTick)
         texturePartialTick = f
         if (f <= 0f) {

@@ -42,6 +42,17 @@ class ParticleCommandOptionsTest {
     }
 
     @Test
+    fun `light_only 是开关参数并自动打开向外照明`() {
+        val on = ParticleCommandOptionParser.parse("light=15 light_only")
+        assertTrue(on.visual.lightOnly)
+        assertTrue(on.visual.emitsLight, "只发光必须同时是光源，否则这条命令没有任何效果")
+
+        val off = ParticleCommandOptionParser.parse("light=15 light_only=false")
+        assertFalse(off.visual.lightOnly)
+        assertFalse(off.visual.emitsLight)
+    }
+
+    @Test
     fun `引号允许贴图名和值包含空格`() {
         val options = ParticleCommandOptionParser.parse("texture=\"magic ring/main\" color=#abcdef")
         assertEquals("magic ring/main", options.visual.texture)

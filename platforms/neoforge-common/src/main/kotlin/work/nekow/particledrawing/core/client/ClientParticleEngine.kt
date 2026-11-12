@@ -76,7 +76,8 @@ class ClientParticleEngine {
                       spin: DoubleArray = ZERO_SPIN, spinLocal: Boolean = true,
                       additive: Boolean = false, scaleArray: FloatArray? = null,
                       lifeCurve: ParticleLifeCurve? = null, prev: Vec3? = null,
-                      lightIntensity: Float = 1f, emitsLight: Boolean = glowing) {
+                      lightIntensity: Float = 1f, emitsLight: Boolean = glowing,
+                      lightOnly: Boolean = false) {
         if (particles.size >= ParticleDrawingConfig.CLIENT.maxRenderParticles.get()) {
             noteRenderCapDrop()
             return
@@ -88,14 +89,16 @@ class ClientParticleEngine {
             for (memberSet in groups.values) memberSet.remove(id)
         }
 
+        // lightOnly 的粒子一定是光源，免得调用方漏设 emitsLight 就完全没光
+        val emits = emitsLight || lightOnly
         val rp = RenderParticle(id, Vec3(x, y, z),
             Color.of(r, g, b, a), scale, glowing, lightLevel, lifetimeTicks, uv, lifeCurve, prev, lightIntensity,
-            emitsLight)
+            emits, lightOnly)
         if (scaleArray != null) rp.setScaleArrayDirect(scaleArray)
         rp.captureSpawnSize()
         rp.markBorn(tickSequence)
         particles[id] = rp
-        if (lightsUp(glowing, emitsLight, lightLevel)) lightIds.add(id)
+        if (lightsUp(glowing, emits, lightLevel)) lightIds.add(id)
         if (lifeCurve != null && !lifeCurve.isEmpty()) curveIds.add(id)
 
         val pe: ParticleEngine = Minecraft.getInstance().particleEngine
@@ -105,7 +108,7 @@ class ClientParticleEngine {
             // 于是 xo/x 是一对「上一 tick → 本 tick」的端点，原版渲染按 partialTick 扫掠
             val start = prev ?: Vec3(x, y, z)
             val bp = BridgeParticle(id, level, start.x, start.y, start.z,
-                Color.of(r, g, b, a), scale, glowing, uv, additive, rp)
+                Color.of(r, g, b, a), scale, glowing, uv, additive, rp, lightOnly)
             if (scaleArray != null) bp.syncScaleArray(scaleArray)
             bp.syncOrientation(billboard, spin, spinLocal)
             if (prev != null) bp.syncPosition(x, y, z, snap = false)
@@ -139,6 +142,7 @@ class ClientParticleEngine {
             id, x, y, z, r, g, b, a, scale, lifetimeTicks, groupId, glowing, lightLevel,
             visual.uv, visual.billboard, visual.spin, visual.spinLocal, visual.additive,
             visual.scaleArray, lifeCurve, prev, visual.lightIntensity, visual.emitsLight || glowing,
+            visual.lightOnly,
         )
     }
 

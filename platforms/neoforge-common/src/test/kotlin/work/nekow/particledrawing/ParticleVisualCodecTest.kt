@@ -138,6 +138,16 @@ class ParticleVisualCodecTest {
     }
 
     @Test
+    fun `只发光不画外观往返一致`() {
+        val withOnly = roundTrip(ParticleVisual().additive(true).lightOnly(true))
+        val without = roundTrip(ParticleVisual().additive(true))
+        assertTrue(withOnly.visual!!.lightOnly, "lightOnly 必须过协议")
+        assertTrue(withOnly.visual!!.emitsLight, "开启 lightOnly 时照明位应一起下发")
+        assertFalse(without.visual!!.lightOnly)
+        assertFalse(without.visual!!.emitsLight)
+    }
+
+    @Test
     fun `各字段都不写：只有 flags 那一个 varInt`() {
         val v = ParticleVisual().texture("test:inline_${seq.incrementAndGet()}")
         val b = buf()

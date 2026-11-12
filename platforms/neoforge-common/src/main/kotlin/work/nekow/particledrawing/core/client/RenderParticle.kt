@@ -62,6 +62,8 @@ class RenderParticle(
     prev: Vec3? = null,
     lightIntensity: Float = 1f,
     emitsLight: Boolean = glowing,
+    /** 只发光不画外观；光强不随透明度和尺寸衰减。 */
+    private val lightOnly: Boolean = false,
 ) {
 
     // 位置 / 颜色 / 缩放（直接缓动）
@@ -170,6 +172,9 @@ class RenderParticle(
     fun id(): UUID = id
     fun glowing(): Boolean = glowing
     fun emitsLight(): Boolean = emitsLightSource
+
+    /** 只发光不画外观；见 [ParticleVisual.lightOnly]。 */
+    fun lightOnly(): Boolean = lightOnly
     fun lightLevel(): Int = lightLevel
 
     /**
@@ -212,7 +217,7 @@ class RenderParticle(
      * 都会连续收束；显式 remove 或死亡后光源不再被收集。
      */
     fun lightIntensity(partialTick: Float = 0f): Float {
-        if ((!glowing && !emitsLightSource) || lightLevel <= 0) return 0f
+        if ((!glowing && !emitsLightSource && !lightOnly) || lightLevel <= 0) return 0f
         val value = rawLightIntensity(partialTick) + lightTransitionOffset(partialTick)
         return if (value.isFinite()) value.coerceAtLeast(0f) else 0f
     }
@@ -220,9 +225,15 @@ class RenderParticle(
     /** 不含运行时热更过渡的亮度：静态乘数、曲线、透明度与尺寸包络。 */
     private fun rawLightIntensity(partialTick: Float): Float {
         if (lifeCurve != null) refreshCurve(partialTick)
+        val curveLight = if (lifeCurve != null) mulLight else 1f
+        // 只发光的外观没有可见片元，透明度和尺寸不该再参与衰减：
+        // 光强只由等级、静态乘数和显式光照曲线决定
+        if (lightOnly) {
+            val only = lightLevel * baseLightIntensity * curveLight
+            return if (only.isFinite()) only.coerceAtLeast(0f) else 0f
+        }
         val alpha = (col.cur.a * if (lifeCurve != null) mulA else 1f).coerceIn(0f, 1f)
         val curveScale = if (lifeCurve != null) mulScale else 1f
-        val curveLight = if (lifeCurve != null) mulLight else 1f
         visualScaleAt(partialTick, lightScaleBuf, applyCurve = false)
         val baseSize = max(abs(lightScaleBuf[0]), abs(lightScaleBuf[1]))
         val size = (baseSize / max(spawnSize, 1e-6f)).coerceIn(0f, 1f)

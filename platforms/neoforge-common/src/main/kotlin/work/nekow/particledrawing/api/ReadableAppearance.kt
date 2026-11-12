@@ -8,10 +8,15 @@ class Light private constructor(
     val level: Int,
     val intensity: Float,
     val emits: Boolean,
+    /** 只发光、不画外观：光强不随透明度和尺寸衰减。 */
+    val only: Boolean = false,
 ) {
 
-    override fun toString(): String =
-        if (!emits) "Light.none" else "Light(level=$level, intensity=$intensity)"
+    override fun toString(): String = when {
+        only -> "Light(level=$level, intensity=$intensity, only=true)"
+        !emits -> "Light.none"
+        else -> "Light(level=$level, intensity=$intensity)"
+    }
 
     companion object {
         @JvmStatic
@@ -24,6 +29,15 @@ class Light private constructor(
             require(level in 0..15) { "光照等级必须在 0..15" }
             require(intensity.isFinite() && intensity >= 0f) { "光强乘数必须是非负有限值" }
             return Light(level, intensity, level > 0)
+        }
+
+        /** 只发光不画外观（腰灯、饰品灯）：外观由物品模型表达，这里只提供照明。 */
+        @JvmStatic
+        @JvmOverloads
+        fun only(level: Int, intensity: Float = 1f): Light {
+            require(level in 0..15) { "光照等级必须在 0..15" }
+            require(intensity.isFinite() && intensity >= 0f) { "光强乘数必须是非负有限值" }
+            return Light(level, intensity, true, true)
         }
     }
 }
@@ -133,7 +147,8 @@ class ParticleVisualBuilder {
         visual.glowing = fullBright
         visual.lightLevel = light.level
         visual.lightIntensity = light.intensity
-        visual.emitsLight = light.emits
+        visual.emitsLight = light.emits || light.only
+        visual.lightOnly = light.only
         visual.additive = blend == Blend.ADDITIVE
         visual.billboard = facing == Facing.BILLBOARD
         visual.spinXDeg = 0.0

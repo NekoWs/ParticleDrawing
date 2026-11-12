@@ -61,6 +61,9 @@ class ParticleVisual {
      */
     var emitsLight: Boolean = false
 
+    /** 只发光、不画外观；见 [lightOnly]。 */
+    var lightOnly: Boolean = false
+
     /**
      * 对外光强的静态乘数（缺省 1）。
      *
@@ -177,6 +180,21 @@ class ParticleVisual {
         return this
     }
 
+    /**
+     * 只当光源、不画外观。
+     *
+     * 开启后不再提交任何片元，地面照明只由 [lightLevel]、[lightIntensity] 和显式光照曲线决定，
+     * 不受透明度和尺寸影响；锚定、插值、视距同步与移除流程照常。适合挂在外观已由物品模型
+     * 表达的对象上（腰灯、饰品灯）。默认关闭，普通特效仍随透明度和大小淡出。
+     *
+     * 开启会一并把 [emitsLight] 置为 true，否则这个粒子不会照亮任何东西。
+     */
+    fun lightOnly(enabled: Boolean): ParticleVisual {
+        lightOnly = enabled
+        if (enabled) emitsLight = true
+        return this
+    }
+
     /** 对外光强乘数（>= 0；1 = 原始亮度）。只影响动态光照。 */
     fun lightIntensity(multiplier: Float): ParticleVisual {
         require(multiplier.isFinite() && multiplier >= 0f) { "光强乘数必须是非负有限值" }
@@ -201,6 +219,7 @@ class ParticleVisual {
         c.glowing = glowing
         c.lightLevel = lightLevel
         c.emitsLight = emitsLight
+        c.lightOnly = lightOnly
         c.lightIntensity = lightIntensity
         return c
     }
@@ -214,7 +233,7 @@ class ParticleVisual {
      */
     fun isPristine(): Boolean = texture == null && uvRect == null && !hasAniso() &&
         billboard && spinXDeg == 0.0 && spinYDeg == 0.0 && spinZDeg == 0.0 && spinLocal &&
-        !additive && !glowing && !emitsLight && lightIntensity == 1f
+        !additive && !glowing && !emitsLight && !lightOnly && lightIntensity == 1f
 
     /**
      * 解析成渲染用的 UV，由客户端调用。[texW]/[texH] 是已注册贴图的像素尺寸，未知传 0。

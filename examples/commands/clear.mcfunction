@@ -20,3 +20,4 @@ pdraw particle emitter reset hole_c
 pdraw particle emitter reset levelup_a
 pdraw particle emitter reset levelup_b
 pdraw particle emitter reset levelup_c
+pdraw particle emitter reset waist_light

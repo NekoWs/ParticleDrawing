@@ -211,5 +211,5 @@ internal object ParticleRecipeCommands {
     private fun help(ctx: CommandContext<CommandSourceStack>) = success(ctx,
         "emitter create|reset|copy|list；emitter <名称> anchor|sample|image|variable|state|let|birth|motion|where|kill|appearance|texture|rate|interval|lifetime|max_alive|follow|select|change|apply|remove_selected|start|burst|stop|remove|delete|inspect|unset；公式中的 u 是采样参数，age 是粒子年龄（刻），t 是发射器时间（毫秒）")
 
-    private val APPEARANCE = setOf("texture", "style", "color", "scale", "uv", "size", "size_world", "billboard", "spin", "spin_space", "additive", "glowing", "light", "intensity", "alpha_curve", "size_curve", "red_curve", "green_curve", "blue_curve", "light_curve")
+    private val APPEARANCE = setOf("texture", "style", "color", "scale", "uv", "size", "size_world", "billboard", "spin", "spin_space", "additive", "glowing", "light", "light_only", "intensity", "alpha_curve", "size_curve", "red_curve", "green_curve", "blue_curve", "light_curve")
 }
