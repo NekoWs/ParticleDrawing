@@ -221,6 +221,21 @@ class BridgeParticle(
     private fun frameWidth(partialTick: Float): Float = blend.widthAt(frameFactor(partialTick))
     private fun frameHeight(partialTick: Float): Float = blend.heightAt(frameFactor(partialTick))
 
+    /**
+     * 渲染剔除用的包围盒。
+     *
+     * 原版按 `getQuadSize()` 算半边长；尺寸为 0 或负值时包围盒退化成点/反向盒，会被视锥直接判掉，
+     * 表现就是粒子存在但 `render()` 从不被调用。这里改用插值后的位置与长宽里较大的那一边，
+     * 并兜一个最小半边长，保证盒子始终合法。
+     */
+    override fun getRenderBoundingBox(partialTicks: Float): net.minecraft.world.phys.AABB {
+        val half = maxOf(frameWidth(partialTicks), frameHeight(partialTicks), 0.5f)
+        val px = sampledX(partialTicks)
+        val py = sampledY(partialTicks)
+        val pz = sampledZ(partialTicks)
+        return net.minecraft.world.phys.AABB(px - half, py - half, pz - half, px + half, py + half, pz + half)
+    }
+
     override fun tick() {
         age++
         if (age >= lifetime) remove()
