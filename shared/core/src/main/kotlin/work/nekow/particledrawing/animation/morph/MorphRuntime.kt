@@ -212,6 +212,13 @@ class MorphRuntime(
         if (t.slotIndex < 0) return false
         val slot = slots.getOrNull(t.slotIndex) ?: return false
         val target = targetOf(t)
+        // 到达后保留速度：不再沿路径求值，直接按当前速度继续飞。
+        if (t.arrived && options.keepVelocity) {
+            t.posX += t.velX * dt
+            t.posY += t.velY * dt
+            t.posZ += t.velZ * dt
+            return true
+        }
         t.elapsed += dt
         val prevX = t.posX; val prevY = t.posY; val prevZ = t.posZ
 

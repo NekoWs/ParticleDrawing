@@ -201,6 +201,36 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 
 ### 让发射器沿轨迹移动
 
+### 让常驻粒子群变形到新编队
+
+`group <组> morph` 是给**已有粒子群**用的：成员不重生、不销毁，按最近邻分配平滑地移到新槽位。
+槽位用公式描述，变量 `i`/`n`/`u`，动态目标还能用 `t`。
+
+```mcfunction
+pdraw particle program demo morph slots 120 vec3(cos(u*6.2832)*3, 101.5, sin(u*6.2832)*3)
+pdraw particle program demo morph ticks 120
+pdraw particle program demo morph easing in_out_cubic
+pdraw particle program demo morph max_speed 0.5
+pdraw particle program demo morph loop -1
+pdraw particle program demo morph start
+```
+
+| 子命令 | 含义 |
+| --- | --- |
+| `morph slots <数量> <位置公式>` | 目标槽位；位置必须是 `vec3(...)` |
+| `morph yaw\|pitch\|size <公式>` | 槽位朝向与尺寸（默认不改粒子原值） |
+| `morph control1\|control2 <公式>` | 每颗粒子自己的路径控制点（二次/三次贝塞尔） |
+| `morph ticks\|stagger\|loop <整数>` | 时长、错峰、往返次数（`-1` 无限） |
+| `morph max_speed\|max_accel\|converge <数>` | 限速、限加速度、收敛阈值 |
+| `morph path straight\|quadratic\|cubic` | 直线或贝塞尔路径 |
+| `morph easing <名字>` | 缓动名，与 `move` 等命令同一套 |
+| `morph wobble <none\|bell\|noise\|vortex> [强度] [峰值]` | 过渡中段的扰动，收尾必衰减到 0 |
+| `morph allocation <nearest\|index\|angle>` | 分配策略 |
+| `morph dynamic\|keep_velocity\|attributes <true\|false>` | 动态目标、到达后继续飞、是否连朝向尺寸一起写 |
+| `morph start` / `inspect` / `reset` | 下发、查看当前草稿、清空草稿 |
+
+过渡进行中再次 `start` 会以**当前实际位置与速度**为新起点重新分配，不会跳回旧起点；
+限速给定时若时长太短会自动延长，保证单帧位移不超上限。
 `orbit` 给锚点叠一条按时间求值的偏移，发射器原点就会动起来；已出生的粒子留在出生位置，
 配合 `rate`/`interval` 就能沿轨迹铺出粒子。公式只能引用 `t`（发射器运行毫秒）、`variable`、
 `state` 与 `let`，写样本级的 `u`/`i`/`age` 会直接报错。

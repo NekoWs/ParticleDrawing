@@ -319,4 +319,58 @@ class MorphGuardrailsTest {
         assertTrue(maxZ > 0.1, "涡流没有产生横向偏移")
         assertTrue(runtime.maxDistanceToSlot() <= 0.05 + 1e-9, "扰动后没有收敛")
     }
+    // ── 运行时控制 ────────────────────────────────────────────────────────────
+
+    @Test
+    fun `到达后保留速度会继续向前飞`() {
+        val runtime = MorphRuntime(
+            listOf(MorphParticle(id(0), Vec3(0.0, 0.0, 0.0))),
+            listOf(MorphSlot(Vec3(4.0, 0.0, 0.0))),
+            MorphOptions(ticks = 10, keepVelocity = true),
+        )
+        repeat(12) { runtime.tick() }
+        val atArrival = runtime.positionOf(id(0))!!
+        repeat(5) { runtime.tick() }
+        val later = runtime.positionOf(id(0))!!
+        assertTrue(later.x > atArrival.x + 1e-6, "保留速度后应当继续前进")
+    }
+
+    @Test
+    fun `取消后停在原地且不再推进`() {
+        val runtime = MorphRuntime(ringParticles(8), ringSlots(8), MorphOptions(ticks = 40))
+        repeat(6) { runtime.tick() }
+        runtime.cancel()
+        val frozen = runtime.ids().associateWith { runtime.positionOf(it)!! }
+        repeat(10) { runtime.tick() }
+        for (p in runtime.ids()) {
+            assertEquals(frozen[p]!!.x, runtime.positionOf(p)!!.x, 1e-12)
+            assertTrue(runtime.isDone(), "取消后应视为已结束")
+        }
+    }
+
+    @Test
+    fun `改参只改时长不重新分配`() {
+        val runtime = MorphRuntime(ringParticles(10), ringSlots(10), MorphOptions(ticks = 20))
+        repeat(5) { runtime.tick() }
+        val slotsBefore = runtime.ids().associateWith { runtime.slotOf(it) }
+        val idsBefore = runtime.ids().toSet()
+        runtime.retune(MorphOptions(ticks = 40, easing = MorphEasing.OUT_CUBIC))
+        assertEquals(slotsBefore, runtime.ids().associateWith { runtime.slotOf(it) }, "改参不应重新分配")
+        assertEquals(idsBefore, runtime.ids().toSet())
+        var guard = 0
+        while (!runtime.isDone() && guard++ < 200) runtime.tick()
+        assertTrue(runtime.maxDistanceToSlot() <= 0.05 + 1e-9, "改参后仍应收敛")
+    }
+
+    @Test
+    fun `暂停与倍率影响推进速度`() {
+        val runtime = MorphRuntime(ringParticles(4), ringSlots(4), MorphOptions(ticks = 20))
+        runtime.pause()
+        repeat(5) { runtime.tick() }
+        assertEquals(0.0, runtime.ticksElapsed, 1e-12, "暂停时不应推进")
+        runtime.resume()
+        runtime.speed(2.0)
+        runtime.tick()
+        assertEquals(2.0, runtime.ticksElapsed, 1e-12, "倍率 2 应当一帧走两刻")
+    }
 }

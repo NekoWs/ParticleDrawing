@@ -1765,7 +1765,11 @@ object ScriptRuntime {
     /** 选项对象 → MorphOptions；拼错键直接报错，不静默忽略。 */
     private fun scriptMorphOptions(value: Any?, n: Node): work.nekow.particledrawing.animation.morph.MorphOptions {
         if (value == null) return work.nekow.particledrawing.animation.morph.MorphOptions()
-        val map = value as? Map<*, *> ?: err("morph 的第二个参数需要是选项对象", n)
+        val map: Map<*, *> = when (value) {
+            is ObjVal -> value.fields
+            is Map<*, *> -> value
+            else -> err("morph 的第二个参数需要是选项对象", n)
+        }
         fun num(key: String): Double? = (map[key] as? Number)?.toDouble()
         fun str(key: String): String? = map[key]?.toString()
         val known = setOf(
