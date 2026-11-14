@@ -150,6 +150,7 @@ internal object ParticleDrawParticleCommands {
         group.then(timedEasing("fade_in", ::programFadeIn))
         group.then(timedEasing("fade_out", ::programFadeOut))
         group.then(timedEasing("fade_out_keep", ::programFadeOutKeep))
+        group.then(MorphCommandTree.tree())
         group.then(Commands.literal("move")
             .then(Commands.argument("x", DoubleArgumentType.doubleArg())
                 .then(Commands.argument("y", DoubleArgumentType.doubleArg())

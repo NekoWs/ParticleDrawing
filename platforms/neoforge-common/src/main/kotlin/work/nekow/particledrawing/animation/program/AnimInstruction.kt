@@ -3,6 +3,7 @@ package work.nekow.particledrawing.animation.program
 import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.Orient
+import work.nekow.particledrawing.animation.morph.MorphSpec
 import work.nekow.particledrawing.core.easing.EasingType
 import java.util.UUID
 
@@ -15,7 +16,7 @@ import java.util.UUID
 enum class InstructionType {
     FADE_IN, FADE_OUT, RECOLOR, SCALE_BY, TRANSLATE,
     ROTATE_ONCE, MOVE_PATH, SPIN, PULSE, STOP_CONTINUOUS, BIND_PIVOT, EXPRESSION,
-    MOVE_EACH, SCALE_TO;
+    MOVE_EACH, SCALE_TO, MORPH;
 
     companion object {
         private val BY_ORDINAL = entries.toTypedArray()
@@ -33,6 +34,7 @@ enum class InstructionType {
  */
 internal fun AnimInstruction.finiteDurationMs(): Int? = when (this) {
     is AnimInstruction.Spin -> null
+    is AnimInstruction.Morph -> spec.ticks * 50
     is AnimInstruction.Expression -> if (durationMs <= 0) null else durationMs
     is AnimInstruction.Pulse -> if (cycles < 0) null else halfPeriodMs * 2 * cycles
     is AnimInstruction.FadeIn -> durationMs
@@ -177,6 +179,7 @@ sealed class AnimInstruction {
             is BindPivot -> copy(startMs = startMs + delta)
             is Expression -> copy(startMs = startMs + delta)
             is MoveEach -> copy(startMs = startMs + delta)
+            is Morph -> copy(startMs = startMs + delta)
             is ScaleTo -> copy(startMs = startMs + delta)
         }
     }
@@ -203,6 +206,7 @@ sealed class AnimInstruction {
                 InstructionType.EXPRESSION -> Expression(startMs, buf.readUtf(), buf.readVarInt(), buf.readBoolean())
                 InstructionType.MOVE_EACH -> MoveEach(startMs, buf.readFloat(), buf.readVarInt(), readEasing(buf))
                 InstructionType.SCALE_TO -> ScaleTo(startMs, buf.readFloat(), buf.readVarInt(), readEasing(buf))
+                InstructionType.MORPH -> readMorph(startMs, buf)
             }
         }
     }
@@ -409,4 +413,73 @@ sealed class AnimInstruction {
             buf.writeFloat(offsetScale); buf.writeVarInt(durationMs); writeEasing(buf, easing)
         }
     }
+
+    /**
+     * 编队变换：把整组粒子从当前位置过渡到按公式生成的槽位。
+     *
+     * 槽位公式在客户端求值（`i`/`n`/`u` 与本指令的形变时间 `t`），因此每颗粒子可以有
+     * 自己的路径与落点；[MorphSpec.dynamicSlots] 为真时每 tick 重算，支持目标自己在动。
+     */
+    data class Morph(
+        override val startMs: Int,
+        val slotCount: Int,
+        val position: String,
+        val yaw: String? = null,
+        val pitch: String? = null,
+        val size: String? = null,
+        val control1: String? = null,
+        val control2: String? = null,
+        val spec: MorphSpec = MorphSpec(),
+    ) : AnimInstruction() {
+        override val type get() = InstructionType.MORPH
+        override fun writeBody(buf: FriendlyByteBuf) {
+            buf.writeVarInt(slotCount)
+            buf.writeUtf(position)
+            for (s in arrayOf(yaw, pitch, size, control1, control2)) {
+                buf.writeBoolean(s != null)
+                if (s != null) buf.writeUtf(s)
+            }
+            buf.writeVarInt(spec.ticks)
+            buf.writeVarInt(spec.staggerTicks)
+            buf.writeDouble(spec.maxSpeed)
+            buf.writeDouble(spec.maxAccel)
+            buf.writeVarInt(spec.path)
+            buf.writeUtf(spec.easing)
+            buf.writeVarInt(spec.wobble)
+            buf.writeDouble(spec.wobbleStrength)
+            buf.writeDouble(spec.wobblePeaks)
+            buf.writeDouble(spec.convergeEps)
+            buf.writeVarInt(spec.loop)
+            buf.writeVarInt(spec.allocation)
+            buf.writeBoolean(spec.keepVelocity)
+            buf.writeBoolean(spec.writeAttributes)
+            buf.writeBoolean(spec.dynamicSlots)
+        }
+    }
+
+}
+
+private fun readMorph(startMs: Int, buf: FriendlyByteBuf): AnimInstruction.Morph {
+        val count = buf.readVarInt()
+        val position = buf.readUtf()
+        fun opt(): String? = if (buf.readBoolean()) buf.readUtf() else null
+        val yaw = opt(); val pitch = opt(); val size = opt(); val c1 = opt(); val c2 = opt()
+        val spec = MorphSpec(
+            ticks = buf.readVarInt(),
+            staggerTicks = buf.readVarInt(),
+            maxSpeed = buf.readDouble(),
+            maxAccel = buf.readDouble(),
+            path = buf.readVarInt(),
+            easing = buf.readUtf(),
+            wobble = buf.readVarInt(),
+            wobbleStrength = buf.readDouble(),
+            wobblePeaks = buf.readDouble(),
+            convergeEps = buf.readDouble(),
+            loop = buf.readVarInt(),
+            allocation = buf.readVarInt(),
+            keepVelocity = buf.readBoolean(),
+            writeAttributes = buf.readBoolean(),
+            dynamicSlots = buf.readBoolean(),
+        )
+    return AnimInstruction.Morph(startMs, count, position, yaw, pitch, size, c1, c2, spec)
 }

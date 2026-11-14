@@ -601,6 +601,9 @@ class RenderParticle(
         snapNextSync = true
     }
 
+    /** 当前落地位置；形变等外部控制器读取起点用。 */
+    fun currentPosition(): Vec3 = pos.cur
+
     /** 直接设置位置。 */
     fun setPositionDirect(position: Vec3) {
         rotEase.active = false

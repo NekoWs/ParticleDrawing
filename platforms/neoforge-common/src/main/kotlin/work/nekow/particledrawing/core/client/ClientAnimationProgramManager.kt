@@ -5,6 +5,8 @@ import net.minecraft.client.Minecraft
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.platform.toCore
+import work.nekow.particledrawing.platform.toMinecraft
 import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
@@ -129,6 +131,9 @@ internal object ClientAnimationProgramManager {
         var expressionLocal = false
         var anchorHidden = false
         var expressionStartMs = 0L
+
+        /** 正在进行的编队变换；到点后只建一次。 */
+        var morph: work.nekow.particledrawing.animation.morph.MorphRuntime? = null
 
         /** 表达式自己的有限时长终点（程序相对毫秒）；-1 = 一直求值。 */
         var expressionEndMs: Long = -1L
@@ -723,6 +728,39 @@ internal object ClientAnimationProgramManager {
         out[5] = regs[6]; out[6] = regs[7]; out[7] = regs[8]   // r g b
     }
 
+    /**
+     * 到点就为这个程序建立一次编队变换：以每颗粒子当前落地位置为起点，
+     * 槽位由公式现算；[work.nekow.particledrawing.animation.morph.MorphSpec.dynamicSlots]
+     * 为真时每 tick 重算，目标可以自己动。
+     */
+    private fun ensureMorph(p: Program, engine: ClientParticleEngine, now: Long) {
+        if (p.morph != null) return
+        val ins: AnimInstruction.Morph = p.slots.firstNotNullOfOrNull { slot ->
+            val candidate = slot.ins
+            if (candidate is AnimInstruction.Morph && now >= candidate.startMs) candidate else null
+        } ?: return
+        val formulas = try {
+            work.nekow.particledrawing.animation.morph.MorphSlotFormulas(
+                ins.slotCount, ins.position, ins.yaw, ins.pitch, ins.size, ins.control1, ins.control2,
+            )
+        } catch (e: RuntimeException) {
+            org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing")
+                .error("编队变换的槽位公式无法解析: {}", e.message)
+            return
+        }
+        val particles = p.states.keys.mapIndexed { index, uuid ->
+            work.nekow.particledrawing.animation.morph.MorphParticle(
+                uuid, (engine.positionOf(uuid) ?: p.initialPivot).toCore(), work.nekow.particledrawing.math.Vec3.ZERO, index,
+            )
+        }
+        if (particles.isEmpty()) return
+        val provider: ((Double) -> List<work.nekow.particledrawing.animation.morph.MorphSlot>)? =
+            if (ins.spec.dynamicSlots) { t -> formulas.build(t) } else null
+        p.morph = work.nekow.particledrawing.animation.morph.MorphRuntime(
+            particles, formulas.build(0.0), ins.spec.toOptions(), provider,
+        )
+    }
+
     private fun sugarFrame(p: Program, engine: ClientParticleEngine, now: Long) {
         for (slot in p.slots) applySlot(p, slot, now)
         val pivot = resolvePivot(p) ?: return
@@ -739,6 +777,10 @@ internal object ClientAnimationProgramManager {
         // 轴心瞬移/断流恢复：这一帧让位置跳变
         val anchorSnap = p.anchorSnapPending
         p.anchorSnapPending = false
+
+        ensureMorph(p, engine, now)
+        val morph = p.morph
+        morph?.tick(1.0)
 
         for ((uuid, st) in p.states) {
             val r: Float; val g: Float; val b: Float; val aBase: Float
@@ -757,7 +799,7 @@ internal object ClientAnimationProgramManager {
             // 沿各自偏移方向外移：方向用当前的 rel（跟着旋转一起转），幅度 = 倍率 × 偏移长度
             val shifted = if (driftScale == 0f) local else local.add(st.rel.scale(driftScale.toDouble()))
             engine.applyProgramFrame(
-                uuid, pivot.apply(p.pathOffset.add(shifted)),
+                uuid, if (morph != null && morph.slotOf(uuid) != null) morph.positionOf(uuid)!!.toMinecraft() else pivot.apply(p.pathOffset.add(shifted)),
                 r, g, b, alpha, scale, anchorSnap,
             )
         }
@@ -798,6 +840,8 @@ internal object ClientAnimationProgramManager {
         val local = now - start
 
         when (ins) {
+            // 编队变换是组级行为，在 sugarFrame 里统一推进，这里不做逐粒子处理。
+            is AnimInstruction.Morph -> Unit
             is AnimInstruction.BindPivot -> when (val ref = ins.pivot) {
                 is PivotRef.Fixed -> {
                     p.pivotFixed = ref.pos; p.pivotEntity = null

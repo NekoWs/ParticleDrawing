@@ -779,6 +779,9 @@ class ClientParticleEngine {
     /** 粒子是否还在；比 [snapshot] 便宜，不构造快照。 */
     fun containsParticle(id: UUID): Boolean = particles.containsKey(id)
 
+    /** 粒子当前落地位置；不存在返回 null。编队变换读取起点用。 */
+    fun positionOf(id: UUID): net.minecraft.world.phys.Vec3? = particles[id]?.currentPosition()
+
     /** 粒子当前视觉快照（动画程序 arm 时初始化基态用）。 */
     class Snapshot(val position: Vec3, val r: Float, val g: Float, val b: Float, val a: Float, val scale: Float)
 

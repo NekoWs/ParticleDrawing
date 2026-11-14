@@ -1,6 +1,9 @@
 package work.nekow.particledrawing.api
 
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.animation.morph.MorphOptions
+import work.nekow.particledrawing.animation.morph.MorphSpec
+import work.nekow.particledrawing.animation.morph.MorphSlotFormulas
 import work.nekow.particledrawing.animation.program.AnimInstruction
 import work.nekow.particledrawing.animation.script.GetterRewriter
 import work.nekow.particledrawing.animation.program.EntityBinding
@@ -538,6 +541,35 @@ class ParticleGroup(
      */
     fun move(delta: Vec3, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
         emit(AnimInstruction.Translate(cursorMs, delta, durationTicks * 50, easing))
+        return this
+    }
+    /**
+     * 编队变换：把整组粒子平滑过渡到一组目标槽位。
+     *
+     * 槽位用公式描述（变量 `i`、`n`、`u`，动态目标还能用 `t`），与命令、脚本共用同一套写法；
+     * 每颗粒子按 [MorphOptions.allocation] 选槽位，过渡只改位置，不重生也不销毁成员。
+     * 过渡进行中再次调用会按当前实际位置与速度重新开始，不回退起点。
+     */
+    @JvmOverloads
+    fun morph(
+        slotCount: Int,
+        position: String,
+        options: MorphOptions = MorphOptions(),
+        yaw: String? = null,
+        pitch: String? = null,
+        size: String? = null,
+        control1: String? = null,
+        control2: String? = null,
+        dynamicSlots: Boolean = false,
+    ): ParticleGroup {
+        // 先在服务端解析一遍公式，配置写错时立刻报错，而不是等到客户端求值时静默失败。
+        MorphSlotFormulas(slotCount, position, yaw, pitch, size, control1, control2).build(0.0)
+        emit(
+            AnimInstruction.Morph(
+                cursorMs, slotCount, position, yaw, pitch, size, control1, control2,
+                MorphSpec.of(options, dynamicSlots),
+            ),
+        )
         return this
     }
 
