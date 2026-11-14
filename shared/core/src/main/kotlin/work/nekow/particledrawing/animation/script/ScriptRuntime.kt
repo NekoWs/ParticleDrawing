@@ -206,7 +206,10 @@ object ScriptRuntime {
         val spawnConfig: (Any?) -> ParticleHost = { cfg -> spawn().also { if (cfg != null) applySpawnConfig(it, cfg) } },
         val get: (String) -> Any? = { throw ScriptException("this.get is not available here") },
         val view: ViewTransform = ViewTransform(),
-    )
+    ) {
+        /** 脚本里发起的编队变换；宿主每帧调 [tickMorph] 推进。 */
+        var morph: work.nekow.particledrawing.animation.morph.MorphRuntime? = null
+    }
 
     fun createObjectState(seed: Int): ObjectState = ObjectState(HashMap(), RandState(seed), seed)
 
@@ -1744,7 +1747,77 @@ object ScriptRuntime {
             return hsvToRgb(listOf(hsv.x, hsv.y, v.coerceIn(0.0, 1.0)), n)
         }
 
-        private fun callBuiltin(name: String, args: List<Any?>, n: Node): Any? {
+        /** 数组字面量 → 槽位列表；元素可以是 vec2/vec3/vec4。 */
+    private fun scriptSlots(value: Any?, n: Node): List<work.nekow.particledrawing.animation.morph.MorphSlot> {
+        val list = value as? List<*> ?: err("morph 的第一个参数需要是槽位数组", n)
+        if (list.isEmpty()) err("morph 的槽位数组不能为空", n)
+        return list.map { item ->
+            val p = when (item) {
+                is Vec3 -> work.nekow.particledrawing.math.Vec3(item.x, item.y, item.z)
+                is Vec2 -> work.nekow.particledrawing.math.Vec3(item.x, item.y, 0.0)
+                is Vec4 -> work.nekow.particledrawing.math.Vec3(item.x, item.y, item.z)
+                else -> err("槽位需要是 vec3 或 vec2", n)
+            }
+            work.nekow.particledrawing.animation.morph.MorphSlot(p)
+        }
+    }
+
+    /** 选项对象 → MorphOptions；拼错键直接报错，不静默忽略。 */
+    private fun scriptMorphOptions(value: Any?, n: Node): work.nekow.particledrawing.animation.morph.MorphOptions {
+        if (value == null) return work.nekow.particledrawing.animation.morph.MorphOptions()
+        val map = value as? Map<*, *> ?: err("morph 的第二个参数需要是选项对象", n)
+        fun num(key: String): Double? = (map[key] as? Number)?.toDouble()
+        fun str(key: String): String? = map[key]?.toString()
+        val known = setOf(
+            "ticks", "stagger", "max_speed", "max_accel", "path", "easing", "wobble",
+            "strength", "peaks", "eps", "loop", "allocation", "keep_velocity", "attributes",
+        )
+        for (key in map.keys) {
+            val k = key?.toString() ?: continue
+            if (k !in known) err("morph 没有选项 '$k'", n)
+        }
+        val path = when (str("path")?.lowercase()) {
+            null, "straight", "line" -> work.nekow.particledrawing.animation.morph.MorphPath.STRAIGHT
+            "quadratic", "quad", "bezier" -> work.nekow.particledrawing.animation.morph.MorphPath.QUADRATIC
+            "cubic" -> work.nekow.particledrawing.animation.morph.MorphPath.CUBIC
+            else -> err("morph 的 path 只能是 straight/quadratic/cubic", n)
+        }
+        val wobble = when (str("wobble")?.lowercase()) {
+            null, "none" -> work.nekow.particledrawing.animation.morph.MorphWobble.NONE
+            "bell" -> work.nekow.particledrawing.animation.morph.MorphWobble.BELL
+            "noise" -> work.nekow.particledrawing.animation.morph.MorphWobble.NOISE
+            "vortex" -> work.nekow.particledrawing.animation.morph.MorphWobble.VORTEX
+            else -> err("morph 的 wobble 只能是 none/bell/noise/vortex", n)
+        }
+        val allocation = when (str("allocation")?.lowercase()) {
+            null, "nearest" -> work.nekow.particledrawing.animation.morph.MorphAllocation.NEAREST
+            "index" -> work.nekow.particledrawing.animation.morph.MorphAllocation.INDEX
+            "angle" -> work.nekow.particledrawing.animation.morph.MorphAllocation.ANGLE
+            else -> err("morph 的 allocation 只能是 nearest/index/angle", n)
+        }
+        val easing = str("easing")?.let {
+            work.nekow.particledrawing.animation.morph.MorphEasing.byName(it)
+                ?: err("morph 不认识的缓动 '$it'", n)
+        } ?: work.nekow.particledrawing.animation.morph.MorphEasing.LINEAR
+        return work.nekow.particledrawing.animation.morph.MorphOptions(
+            ticks = num("ticks")?.toInt() ?: 40,
+            staggerTicks = num("stagger")?.toInt() ?: 0,
+            maxSpeed = num("max_speed") ?: 0.0,
+            maxAccel = num("max_accel") ?: 0.0,
+            path = path,
+            easing = easing,
+            wobble = wobble,
+            wobbleStrength = num("strength") ?: 0.0,
+            wobblePeaks = num("peaks") ?: 1.0,
+            convergeEps = num("eps") ?: 0.05,
+            loop = num("loop")?.toInt() ?: 0,
+            allocation = allocation,
+            keepVelocity = map["keep_velocity"] == true,
+            writeAttributes = map["attributes"] == true,
+        )
+    }
+
+    private fun callBuiltin(name: String, args: List<Any?>, n: Node): Any? {
             if (name !in BUILTINS) {
                 if (program.functions.containsKey(name)) return callUserFunc(program.functions[name]!!, args, n)
                 err("unknown function '$name'", n)
@@ -1762,6 +1835,22 @@ object ScriptRuntime {
                 "print" -> {
                     val line = args.joinToString(" ") { formatValue(it) }
                     ctx?.print?.invoke(line)
+                    0.0
+                }
+                "morph" -> {
+                    val c = ctx ?: err("morph 只能在粒子上下文里调用", n)
+                    val slots = scriptSlots(args[0], n)
+                    val opts = scriptMorphOptions(args.getOrNull(1), n)
+                    val particles = c.particles.map { h ->
+                        work.nekow.particledrawing.animation.morph.MorphParticle(
+                            morphIdOf(h.index),
+                            work.nekow.particledrawing.math.Vec3(h.pos[0], h.pos[1], h.pos[2]),
+                            work.nekow.particledrawing.math.Vec3(h.vel[0], h.vel[1], h.vel[2]),
+                            h.index,
+                        )
+                    }
+                    if (particles.isEmpty()) err("morph 需要至少一颗粒子", n)
+                    c.morph = work.nekow.particledrawing.animation.morph.MorphRuntime(particles, slots, opts)
                     0.0
                 }
                 "assert" -> { if (!truthy(args[0], n)) throw ScriptException(args.getOrElse(1) { "" }.toString()); 0.0 }
@@ -2018,5 +2107,26 @@ object BuiltinRegistry {
         "hash", "phases", "repeat",
         "color",
         "unique", "reverse", "sort",
+        "morph",
     )
+}
+
+// ── 编队变换（脚本内建 morph） ──────────────────────────────────────────────
+
+/** 脚本粒子按序号映射成稳定 UUID，编队变换用它做身份。 */
+internal fun morphIdOf(index: Int): java.util.UUID = java.util.UUID(0x50444D4F525048L, index.toLong())
+
+/**
+ * 每帧推进脚本发起的编队变换，并把结果写回粒子位置。
+ * 宿主在跑完一帧脚本之后调用一次。
+ */
+fun tickMorph(ctx: ScriptRuntime.ScriptCtx) {
+    val m = ctx.morph ?: return
+    m.tick(1.0)
+    for (h in ctx.particles) {
+        val p = m.positionOf(morphIdOf(h.index)) ?: continue
+        h.pos[0] = p.x
+        h.pos[1] = p.y
+        h.pos[2] = p.z
+    }
 }

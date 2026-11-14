@@ -255,6 +255,8 @@ class ClientAnimationPlayer(
         val objState: ScriptRuntime.ObjectState,
     ) {
         val particles = ArrayList<ParticleHost>()
+        /** 脚本发起的编队变换，跨帧保存。 */
+        var morph: work.nekow.particledrawing.animation.morph.MorphRuntime? = null
         var spawnSerial = 0
         var cursorMs = 0.0
         var curMs = 0.0
@@ -505,6 +507,7 @@ class ClientAnimationPlayer(
             st = fx.st.toDouble(),
             maxMs = maxMs.toDouble(),
             view = rt.view,
+            // 编队变换跨帧保存：交出去的时候把已有实例塞进 ctx，帧末再收回。
             // this.get(名称)：查找键是资产名称（与编辑器一致），id 只是轨道属主/编解码的内部键。
             get = { name ->
                 animation.texts.firstOrNull { it.name == name }?.let { TextValue(it) }
@@ -976,7 +979,11 @@ class ClientAnimationPlayer(
                 rt.cursorMs = b
                 if (rt.program.tick.isNotEmpty()) {
                     try {
-                        ScriptRuntime.runTickFrame(rt.program, rt.objState, makeCtx(fx, rt, b))
+                        val frameCtx = makeCtx(fx, rt, b)
+                        frameCtx.morph = rt.morph
+                        ScriptRuntime.runTickFrame(rt.program, rt.objState, frameCtx)
+                        rt.morph = frameCtx.morph
+                        work.nekow.particledrawing.animation.script.tickMorph(frameCtx)
                         // 跑过的阶段才算「上一次」，this.delta 从它起算。
                         rt.lastPhaseMs = b
                     } catch (e: Throwable) {
@@ -997,7 +1004,11 @@ class ClientAnimationPlayer(
                 rt.skipProcessOnce = false
             } else if (rt.program.process.isNotEmpty()) {
                 try {
-                    ScriptRuntime.runProcessFrame(rt.program, rt.objState, makeCtx(fx, rt, t))
+                    val frameCtx = makeCtx(fx, rt, t)
+                    frameCtx.morph = rt.morph
+                    ScriptRuntime.runProcessFrame(rt.program, rt.objState, frameCtx)
+                    rt.morph = frameCtx.morph
+                    work.nekow.particledrawing.animation.script.tickMorph(frameCtx)
                     rt.lastPhaseMs = t
                 } catch (e: Throwable) {
                     println("[pdrawc] 函数对象 ${fx.id} process 求值失败：${e.message}")
