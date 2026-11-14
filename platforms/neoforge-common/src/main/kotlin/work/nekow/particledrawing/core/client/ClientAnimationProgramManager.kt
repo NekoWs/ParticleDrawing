@@ -132,8 +132,10 @@ internal object ClientAnimationProgramManager {
         var anchorHidden = false
         var expressionStartMs = 0L
 
-        /** 正在进行的编队变换；到点后只建一次。 */
+        /** 正在进行的编队变换；每次新的形变指令到点都重建一次。 */
         var morph: work.nekow.particledrawing.animation.morph.MorphRuntime? = null
+        /** 已经生效的形变指令起点，用来识别"更新的那一条"。 */
+        var morphStartMs: Int = Int.MIN_VALUE
 
         /** 表达式自己的有限时长终点（程序相对毫秒）；-1 = 一直求值。 */
         var expressionEndMs: Long = -1L
@@ -734,11 +736,17 @@ internal object ClientAnimationProgramManager {
      * 为真时每 tick 重算，目标可以自己动。
      */
     private fun ensureMorph(p: Program, engine: ClientParticleEngine, now: Long) {
-        if (p.morph != null) return
+        // 同一个程序可以有多次形变：只认比当前生效那条更晚的指令，到点就按当时的
+        // 实际位置与速度重建，于是"心形 → 星形 → 结"这种链条能一段接一段地跑。
         val ins: AnimInstruction.Morph = p.slots.firstNotNullOfOrNull { slot ->
             val candidate = slot.ins
-            if (candidate is AnimInstruction.Morph && now >= candidate.startMs) candidate else null
+            if (candidate is AnimInstruction.Morph && now >= candidate.startMs && candidate.startMs > p.morphStartMs) {
+                candidate
+            } else {
+                null
+            }
         } ?: return
+        p.morphStartMs = ins.startMs
         val formulas = try {
             work.nekow.particledrawing.animation.morph.MorphSlotFormulas(
                 ins.slotCount, ins.position, ins.yaw, ins.pitch, ins.size, ins.control1, ins.control2,
