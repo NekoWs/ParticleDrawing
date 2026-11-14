@@ -46,6 +46,12 @@ if (targetProperties.getProperty('drop_alias_facades', '') == 'true') {
             // 上一轮拷进输出目录的标准库类会被下一次增量编译当成类路径来源，先清掉保证编译起点干净。
             def stale = new File(destinationDirectory.get().asFile, 'kotlin')
             if (stale.exists()) delete stale
+            // 别名 facade 类在编译后被删掉了，但增量编译会认为别名源文件没变而跳过重编，
+            // 结果下一轮解析 Identifier 时找不到它。这里把别名源文件时间戳刷新，强制它们每轮重编。
+            def aliasRoot = new File(targetSource, 'main/kotlin/net/minecraft')
+            if (aliasRoot.exists()) {
+                aliasRoot.eachFileRecurse { file -> if (file.isFile()) file.lastModified = System.currentTimeMillis() }
+            }
         }
         doLast {
             def classesDir = destinationDirectory.get().asFile
