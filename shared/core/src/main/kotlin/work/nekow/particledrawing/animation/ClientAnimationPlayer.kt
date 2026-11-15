@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.animation
 
+import work.nekow.particledrawing.light.LightShape
 import work.nekow.particledrawing.math.Vec3
 import work.nekow.particledrawing.animation.script.AudioValue
 import work.nekow.particledrawing.animation.script.ParticleHost
@@ -49,6 +50,8 @@ class ClientAnimationPlayer(
         var spinLocal: Boolean = true,
         /** true=加法混合（来自所属函数对象的 flags bit7）；渲染端据此换 ADDITIVE_PARTICLE 管线。 */
         var additive: Boolean = false,
+        var lightShape: LightShape? = null,
+        var lightIntensity: Float = 1f,
     ) {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -57,7 +60,7 @@ class ClientAnimationPlayer(
             other as ParticleState
 
             if (glowing != other.glowing) return false
-            if (lightLevel != other.lightLevel) return false
+            if (lightLevel != other.lightLevel || lightShape != other.lightShape || lightIntensity != other.lightIntensity) return false
             if (visible != other.visible) return false
             if (derived != other.derived) return false
             if (id != other.id) return false
@@ -76,6 +79,8 @@ class ClientAnimationPlayer(
         override fun hashCode(): Int {
             var result = glowing.hashCode()
             result = 31 * result + lightLevel
+            result = 31 * result + (lightShape?.hashCode() ?: 0)
+            result = 31 * result + lightIntensity.hashCode()
             result = 31 * result + visible.hashCode()
             result = 31 * result + derived.hashCode()
             result = 31 * result + id.hashCode()
@@ -1107,6 +1112,8 @@ class ClientAnimationPlayer(
             }
             s.glowing = host.glow
             s.lightLevel = host.light.toInt().coerceIn(0, 15)
+            s.lightShape = host.lightShape
+            s.lightIntensity = host.lightIntensity.toFloat()
             s.visible = visible
             // 脚本逐粒子广告牌/自转（billboard=true 时渲染端忽略 spin）
             s.billboard = host.billboard

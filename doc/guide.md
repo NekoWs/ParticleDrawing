@@ -403,6 +403,12 @@ manager.create().position(p).scale(3f).lifetime(20)
 
 ### 只发光、不画外观
 
+射灯可在同一份外观上继续设置 `.spotlight(12.0, 35.0, 20.0)`、
+`.lightDirection(0.0, -90.0)` 与 `.lightFalloff(LightFalloff.SMOOTH)`。
+锥角是半角，方向采用世界坐标。粒子移动时光源随之移动，RGB 参与地形照明。
+脚本粒子可以设置 `p.lightShape = [12, 35, 20, 1, 0, -90, "smooth"]`；
+在 `process` 中调整 `p.lightIntensity` 即可连续调光。
+
 腰灯、宠物饰品这类对象本身已经有物品模型，只需要跟着实体的光。用 `lightOnly(true)` 让粒子
 不提交任何片元，光强只由 `lightLevel`、`lightIntensity` 和 `CurveChannel.LIGHT` 决定，
 **不再乘透明度和尺寸**——所以不用再拿 0.0001 尺寸的不透明精灵去骗过衰减：

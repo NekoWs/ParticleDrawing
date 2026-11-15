@@ -422,6 +422,7 @@ object ClientAnimationManager {
                         uuid, pos, state.color, state.scale, state.glowing, state.lightLevel, snap = true,
                         billboard = state.billboard, spin = state.spin, spinLocal = state.spinLocal,
                     )
+                    engine.updateScriptLight(uuid, state.lightShape, state.lightIntensity)
                     engine.updateParticleUv(uuid, state.uv)
                 }
             }
@@ -502,6 +503,7 @@ object ClientAnimationManager {
                         snap = snapDirectWrite(state.derived),
                         billboard = state.billboard, spin = state.spin, spinLocal = state.spinLocal,
                     )
+                    engine.updateScriptLight(uuid, state.lightShape, state.lightIntensity)
                     engine.updateParticleUv(uuid, state.uv)
                 }
             }
@@ -574,6 +576,7 @@ object ClientAnimationManager {
             state.color.r, state.color.g, state.color.b, state.color.a,
             state.scale[0], -1, null, state.glowing, state.lightLevel, state.uv,
             state.billboard, state.spin, state.spinLocal, state.additive, state.scale,
+            lightIntensity = state.lightIntensity, lightShape = state.lightShape,
         )
     }
 

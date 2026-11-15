@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.animation.script
 
+import work.nekow.particledrawing.light.LightShape
 import kotlin.math.ceil
 import kotlin.math.floor
 import work.nekow.particledrawing.animation.AudioAsset
@@ -69,6 +70,14 @@ interface ParticleHost {
     /** 自转空间（true=local）。 */
     var spinLocal: Boolean
     val fields: MutableMap<String, Any?>
+    var lightShape: LightShape?
+        get() = fields["lightShape"] as? LightShape
+        set(value) {
+            if (value == null) fields.remove("lightShape") else fields["lightShape"] = value
+        }
+    var lightIntensity: Double
+        get() = fields["lightIntensity"] as? Double ?: 1.0
+        set(value) { fields["lightIntensity"] = value }
     fun kill()
 }
 

@@ -20,8 +20,8 @@ class LoopWrapRestoreTest {
             id = "fx0",
             name = "fx0",
             center = doubleArrayOf(0.0, 0.0, 0.0),
-            source = "let r = 0\nfunc setup() { r = rand(); this.spawn(); }\n" +
-                "func process() { for (const p of this.particles) { p.position.x = r; } }",
+            source = "let r = 0\nfunc setup() { r = rand(); this.spawn({ light: 15, lightShape: [12, 45, 25, 1, 0, -90, \"smooth\"] }); }\n" +
+                "func process() { for (const p of this.particles) { p.position.x = r; p.lightIntensity = 0.5 + this.time / 1000; } }",
             seed = 7,
             vars = mapOf("k" to FunctionVar(0.0, listOf(Keyframe(1000.0, 0.0, EasingType.LINEAR)))),
             duration = 0,
@@ -40,15 +40,22 @@ class LoopWrapRestoreTest {
         val player = ClientAnimationPlayer(animation(), Vec3.ZERO, startGameTick = 0L, currentGameTick = 0L)
         val state = player.currentStates().first { it.id == "fx0:p0" }
         val first = state.pos.x
+        val shape = state.lightShape
+        assertEquals(45.0, shape?.outerDeg)
+        assertEquals(0.5f, state.lightIntensity)
 
         // 推进到循环末尾前一 tick（maxMs=1000，即 950ms），随后回卷到 t=0。
         player.tick(19L)
         player.advanceFrame(950.0)
+        assertEquals(1.45f, player.currentStates().single().lightIntensity)
         player.tick(20L)
         player.advanceFrame(0.0)
 
         assertEquals(0, player.currentMsValue)
         // r 来自 setup 的 rand()，回卷后必须与首圈一致。
-        assertEquals(first, player.currentStates().first { it.id == "fx0:p0" }.pos.x, 1e-12)
+        val restored = player.currentStates().single()
+        assertEquals(first, restored.pos.x, 1e-12)
+        assertEquals(shape, restored.lightShape)
+        assertEquals(0.5f, restored.lightIntensity)
     }
 }

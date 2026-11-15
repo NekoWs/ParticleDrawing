@@ -232,4 +232,25 @@ class LightMathTest {
         assertEquals(0.0, LightMath.normalized(-3.0))
         assertTrue(abs(LightMath.normalized(7.5) - 0.5) < 1e-9)
     }
+
+    @Test
+    fun `地形采样平滑斜射锥边并保留光轴与背面的亮度`() {
+        val axis = LightMath.directionOf(-70.0, -53.0)
+        val rim = LightMath.cosOfDegrees(20.0)
+        // 定长采样沿另一条俯仰角扫过锥边。
+        fun sample(pitch: Double, radius: Double): Double {
+            val point = LightMath.directionOf(-70.0, pitch)
+            return LightMath.coneFactorOf(
+                point.x * 6.0, point.y * 6.0, point.z * 6.0,
+                axis.x, axis.y, axis.z, rim, rim, 1.0, radius,
+            )
+        }
+        assertEquals(1.0, sample(-53.0, 0.85))
+        assertEquals(1.0, sample(-34.0, 0.0))
+        assertEquals(0.0, sample(-32.0, 0.0))
+        val inside = sample(-34.0, 0.85)
+        val outside = sample(-32.0, 0.85)
+        assertTrue(inside < 1.0 && inside > outside && outside > 0.0)
+        assertEquals(0.0, sample(47.0, 0.85))
+    }
 }

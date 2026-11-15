@@ -347,7 +347,35 @@ pdraw particle emitter shell apply
 或速度已存进粒子状态时，需另用 change/apply 或 motion 显式清零。
 
 外观使用 `texture <资源名>` 或 `appearance <参数> <值>`，每条只设置一项。支持现有的 style、color、
-scale、uv、size、size_world、billboard、spin、spin_space、additive、glowing、light、intensity 与 `*_curve`。
+scale、uv、size、size_world、billboard、spin、spin_space、additive、glowing、light、intensity、
+spot、light_dir、light_range、light_falloff 与 `*_curve`。
+
+### 动态光与射灯
+
+| 参数 | 含义 |
+| --- | --- |
+| `light=15` | 0–15 的对外光照等级，0 关灯 |
+| `intensity=0.75` | 非负强度倍数，最终亮度最高为 15 |
+| `spot=45,25,2` | 外锥半角、内锥半角、边缘锐度；可省略后两项。内锥默认是外锥的 60%，锐度默认 1，内外锥相等为硬边 |
+| `light_dir=0,-90` | 世界偏航与俯仰，单位为度。偏航 0 朝 +Z，俯仰 -90 朝下 |
+| `light_range=12` | 灯的照射半径，最大 64 格，0 沿用客户端默认半径 |
+| `light_falloff=smooth` | 径向衰减，支持 `constant`、`linear`（默认）、`smooth`、`inverse`、`inverse_square` |
+| `color=#ff5938` | 设置粒子颜色；已配置形状的光源也用它为地形新增亮度上色 |
+| `light_only=true` | 隐藏发光粒子的外观 |
+| `light_curve=0:1,8:0.2,16:1` | 按粒子存活刻数调光，可与锥角、衰减和亮度组合 |
+
+例如在顶面为 Y=-63 的平面上，从上方三格向下打光。
+
+```mcfunction
+pdraw particle group reset lamps 0.0 -60.0 0.0
+pdraw particle add lamps dot 0.0 -60.0 0.0 light=15 light_only=true color=#ff5938 spot=35,20 light_dir=0,-90 light_range=12 light_falloff=smooth
+```
+
+光源中心跟着粒子移动，朝向用世界坐标。多盏灯取最高亮度，地形颜色按各灯的照射贡献混合。
+客户端的 `maxDynamicLights` 和 `maxDynamicLightsPerCell` 分别限制总数与每 16 格立方区域的数量。
+`showSpotlightBeams` 可开启空气中的淡光束。它绘制最多 32 盏附近射灯，沿光轴遇到方块时收短。
+在单人平地测试世界可运行 `/pdraw light demo` 对比一盏点光与外锥半角为 20°、35°、50° 的斜射灯。该命令将执行者切到旁观模式、移动机位并把时间设到午夜。
+`/pdraw light` 在单人世界报告光源与地形覆盖数据。
 曲线写法仍是 `0:1,40:0:ease_out`。修改 spin_space 前先设置 spin。
 
 配置按维度保存在运行时内存中，重启或卸载维度后清空；建议在数据包的 load 函数里声明，技能函数只触发

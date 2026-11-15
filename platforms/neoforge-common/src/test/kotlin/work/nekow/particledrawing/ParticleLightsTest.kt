@@ -4,6 +4,8 @@ import work.nekow.particledrawing.api.LightSample
 import work.nekow.particledrawing.api.ParticleLights
 import work.nekow.particledrawing.lighting.DynamicLightManager
 import java.util.UUID
+import work.nekow.particledrawing.light.LightShape
+import work.nekow.particledrawing.platform.PlatformCompat
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -16,15 +18,25 @@ import kotlin.test.assertTrue
 class ParticleLightsTest {
 
     @Test
+    fun `合并亮度保留小数精度和原有天空光`() {
+        val packed = 0x00af0040
+        assertEquals(0x00af0078, PlatformCompat.lightWithMinimumBlock(packed, 7.5))
+        assertEquals(0x00af0044, PlatformCompat.lightWithMinimumBlock(packed, 4.25))
+        assertEquals(packed, PlatformCompat.lightWithMinimumBlock(packed, 3.5))
+        assertEquals(0x00af00f0, PlatformCompat.lightWithMinimumBlock(packed, 15.0))
+    }
+
+    @Test
     fun `光源快照透出坐标强度与半径`() {
         val a = UUID.randomUUID()
         val b = UUID.randomUUID()
+        val spot = LightShape.spot(12.0, 30.0)
         val sources = arrayOf(
-            DynamicLightManager.LightSource(a, 1.5, 64.0, -3.25, 12.0),
+            DynamicLightManager.LightSource(a, 1.5, 64.0, -3.25, 12.0, range = 12.0, shape = spot, rgb = 0xff8800),
             DynamicLightManager.LightSource(b, -8.0, 30.5, 2.0, 4.0),
         )
         val out = ArrayList<LightSample>()
-        DynamicLightManager.toSamples(sources, 16.0, out)
+        DynamicLightManager.toSamples(sources, out)
 
         assertEquals(2, out.size)
         assertEquals(a, out[0].id)
@@ -32,7 +44,10 @@ class ParticleLightsTest {
         assertEquals(64.0, out[0].y, 0.0)
         assertEquals(-3.25, out[0].z, 0.0)
         assertEquals(12.0, out[0].intensity, 0.0)
-        assertEquals(16.0, out[0].range, 0.0, "照射半径按帧统一给出")
+        assertEquals(12.0, out[0].range)
+        assertEquals(spot, out[0].shape)
+        assertEquals(0xff8800, out[0].rgb)
+        assertEquals(16.0, out[1].range)
         assertEquals(b, out[1].id)
         assertEquals(4.0, out[1].intensity, 0.0)
     }

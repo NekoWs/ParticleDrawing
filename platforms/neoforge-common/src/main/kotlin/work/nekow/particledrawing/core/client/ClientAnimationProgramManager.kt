@@ -648,40 +648,9 @@ internal object ClientAnimationProgramManager {
         }
     }
 
-    /** 由本地玩家 game tick 事件调用（真 20Hz、实体移动后）。 */
-    /** 验收钩子：带着 -Dpd.demo 启动时，进世界后自动执行一次射灯演示。 */
-    private var demoFired = false
-    private var demoCountdown = 60
-
-    private var demoLogged = false
-
-    internal fun maybeRunDemo() {
-        if (demoFired) return
-        val flag = System.getProperty("pd.demo")
-        if (!demoLogged) {
-            demoLogged = true
-            org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").info(
-                "[PD-demo] 钩子检查: 属性={} level={} connection={}",
-                flag,
-                Minecraft.getInstance().level != null,
-                Minecraft.getInstance().connection != null,
-            )
-        }
-        if (flag == null) return
-        // 等世界真正就绪再演示：进服瞬间 tp 与分组命令还落不了地。
-        if (Minecraft.getInstance().level == null) return
-        if (demoCountdown > 0) {
-            demoCountdown--
-            return
-        }
-        val connection = Minecraft.getInstance().connection ?: return
-        demoFired = true
-        connection.sendCommand("pdraw light demo")
-    }
-
+    /** 由本地玩家 game tick 事件调用。 */
     @JvmStatic
     fun tick() {
-        maybeRunDemo()
         val level = Minecraft.getInstance().level ?: return
         val engine = ClientParticleEngine.instance() ?: return
         val nowClient = level.gameTime

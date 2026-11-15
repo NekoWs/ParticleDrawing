@@ -147,6 +147,7 @@ object LightMath {
         dirX: Double, dirY: Double, dirZ: Double,
         innerCos: Double, outerCos: Double,
         falloff: LightFalloff, edge: Double,
+        sampleRadius: Double = 0.0,
     ): Double {
         val ox = px - lx
         val oy = py - ly
@@ -155,16 +156,17 @@ object LightMath {
         if (distSq >= range * range) return 0.0
         val fall = attenuation(sqrt(distSq), range, falloff)
         if (fall <= 0.0) return 0.0
-        val cone = coneFactorOf(ox, oy, oz, dirX, dirY, dirZ, innerCos, outerCos, edge)
+        val cone = coneFactorOf(ox, oy, oz, dirX, dirY, dirZ, innerCos, outerCos, edge, sampleRadius)
         if (cone <= 0.0) return 0.0
         return luminance * fall * cone
     }
 
-    /** [coneFactor] 的原始类型版本，热路径用。 */
+    /** [sampleRadius] 为采样半径，0 时按单点精确求值。 */
     fun coneFactorOf(
         ox: Double, oy: Double, oz: Double,
         dirX: Double, dirY: Double, dirZ: Double,
         innerCos: Double, outerCos: Double, edge: Double,
+        sampleRadius: Double = 0.0,
     ): Double {
         if (dirX == 0.0 && dirY == 0.0 && dirZ == 0.0) return 1.0
         val len = sqrt(ox * ox + oy * oy + oz * oz)
@@ -172,8 +174,16 @@ object LightMath {
         val dirLen = sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ)
         if (dirLen <= 1e-9) return 1.0
         val cosA = (ox * dirX + oy * dirY + oz * dirZ) / (len * dirLen)
-        if (innerCos <= outerCos) return if (cosA >= innerCos) 1.0 else 0.0
-        val raw = ((cosA - outerCos) / (innerCos - outerCos)).coerceIn(0.0, 1.0)
+        // 方块顶点之间约隔一格。临近锥边时把小于采样间距的过渡带加宽。
+        // 余弦的变化率为 sin(角度) / 距离，因此远处使用更小的角度补偿。
+        val width = innerCos - outerCos
+        val padding = if (sampleRadius > 0.0) {
+            val sinOuter = sqrt(max(0.0, 1.0 - outerCos * outerCos))
+            max(0.0, sampleRadius * sinOuter / len - width * 0.5)
+        } else 0.0
+        val filteredWidth = width + 2.0 * padding
+        if (filteredWidth <= 0.0) return if (cosA >= innerCos) 1.0 else 0.0
+        val raw = ((cosA - outerCos + padding) / filteredWidth).coerceIn(0.0, 1.0)
         val smoothed = raw * raw * (3.0 - 2.0 * raw)
         val e = if (edge < 1e-3) 1e-3 else edge
         return if (e == 1.0) smoothed else Math.pow(smoothed, e)

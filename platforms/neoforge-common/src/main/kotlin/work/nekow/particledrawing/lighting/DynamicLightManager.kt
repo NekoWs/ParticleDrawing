@@ -3,13 +3,12 @@ package work.nekow.particledrawing.lighting
 import work.nekow.particledrawing.platform.PlatformCompat
 import net.minecraft.client.Minecraft
 import net.minecraft.client.multiplayer.ClientLevel
-import net.minecraft.core.BlockPos
 import net.minecraft.core.SectionPos
-import net.minecraft.world.level.BlockAndLightGetter
 import work.nekow.particledrawing.api.LightSample
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.light.LightFalloff
 import work.nekow.particledrawing.light.LightMath
+import work.nekow.particledrawing.light.LightShape
 import work.nekow.particledrawing.core.client.ClientParticleEngine
 import work.nekow.particledrawing.core.client.RenderParticle
 import java.util.LinkedHashSet
@@ -18,8 +17,8 @@ import java.util.UUID
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.math.ceil
 import kotlin.math.floor
-import kotlin.math.max
 import kotlin.math.sqrt
+import kotlin.math.roundToInt
 
 /** 光图写入精度是 1/16 级：签名、烘焙脏判与缓存失效都按这个粒度比较。 */
 private fun quantizeLuminance(luminance: Double): Int = (luminance * 16.0).toInt()
@@ -69,17 +68,11 @@ object DynamicLightManager {
     /** 每帧最大区块重建数量。 */
     private const val MAX_REBUILDS_PER_FRAME = 1024
 
-    /** 单盏灯允许的最大半径（格）：防止一个写错的参数把整片地形卷进重建。 */
-    private const val MAX_LIGHT_RANGE = 64.0
-
     private val TRIPLE_ZERO = Triple(0.0, 0.0, 0.0)
 
     /** 光源最大照射半径（格），每帧从配置刷新，默认 16。 */
-    @Volatile
-    private var lightRadius = 16.0
-
-    @Volatile
-    private var lightRadiusSquared = 256.0
+    private const val DEFAULT_RADIUS = 16.0
+    private const val TERRAIN_SAMPLE_RADIUS = 0.85
 
     /** 以 cell（16 格）为单位的邻近搜索半径，= ceil(lightRadius / 16)。 */
     @Volatile
@@ -94,7 +87,17 @@ object DynamicLightManager {
     private val cellIndex = HashMap<Long, MutableList<LightSource>>()
 
     @Volatile
-    private var hasLights = false
+    private var lightBounds: LightBounds? = null
+
+    private class LightBounds(
+        val minX: Double, val minY: Double, val minZ: Double,
+        val maxX: Double, val maxY: Double, val maxZ: Double,
+    ) {
+        fun contains(x: Double, y: Double, z: Double, margin: Double = 0.0): Boolean =
+            x >= minX - margin && x <= maxX + margin &&
+                y >= minY - margin && y <= maxY + margin &&
+                z >= minZ - margin && z <= maxZ + margin
+    }
 
     /** 光源数量快照（写锁内更新），诊断日志读它，避免无锁读可变列表。 */
     @Volatile
@@ -104,128 +107,42 @@ object DynamicLightManager {
     @Volatile
     private var frameSources: Array<LightSource> = emptyArray()
 
-    @Volatile
-    private var frameRadius: Double = 0.0
-
     /**
      * 最近一帧动态光源的只读快照；没有光源或功能关闭时是空列表。
      *
      * 供第三方按自己的预算筛选取用（例如接入光影包），不依赖粒子引擎对象。
      */
     fun lightSnapshot(): List<LightSample> {
-        if (frameSources.isEmpty()) return emptyList()
-        val out = ArrayList<LightSample>(frameSources.size)
-        toSamples(frameSources, frameRadius, out)
+        val snapshot = frameSources
+        if (snapshot.isEmpty()) return emptyList()
+        val out = ArrayList<LightSample>(snapshot.size)
+        toSamples(snapshot, out)
         return out
     }
 
     /** 把快照写进 [out]（先清空），返回数量；需要逐帧取用又不建列表时用它。 */
     fun snapshotInto(out: MutableList<LightSample>): Int {
         out.clear()
-        if (frameSources.isEmpty()) return 0
-        toSamples(frameSources, frameRadius, out)
+        toSamples(frameSources, out)
         return out.size
     }
 
     /** 光源 -> 快照项；映射本身无状态，单测直接喂构造好的光源。 */
-    internal fun toSamples(sources: Array<LightSource>, radius: Double, out: MutableList<LightSample>) {
-        for (src in sources) out += LightSample(src.id, src.x, src.y, src.z, src.luminance, radius)
+    internal fun toSamples(sources: Array<LightSource>, out: MutableList<LightSample>) {
+        for (src in sources) out += LightSample(src.id, src.x, src.y, src.z, src.luminance, src.range, src.shape, src.rgb)
     }
 
     /** 当前生效的动态光源数量（诊断用，精确到上一次重建）。 */
     @JvmStatic
     fun sourceCount(): Int = sourceCountSnapshot
 
-    // ── 诊断计数：只增不减，用来判断「光有没有真的写进地形」 ──
-    /** 区块烘焙时走到亮度混入的次数。 */
+    private val terrainOverrides = java.util.concurrent.atomic.LongAdder()
     @Volatile
-    private var entryLogged = false
-
-    @Volatile
-    var bakeCalls: Long = 0L
-        private set
-
-    /** 混入里判定为「动态光更亮、要覆盖」的次数。 */
-    @Volatile
-    var bakeOverrides: Long = 0L
-        private set
-
-    /** 向渲染器提交脏 section 的次数。 */
-    @Volatile
-    var sectionsMarked: Long = 0L
-        private set
-
-    /** 烘焙时读到过动态光的次数，以及读到过的最大值与其位置。 */
-    @Volatile
-    var bakePositive: Long = 0L
-        private set
-
-    @Volatile
-    private var stateLogged = false
-
-    /** 地形烘焙位置到最近光源的最小距离；用来判断灯下方区块有没有被重建。 */
-    @Volatile
-    var terrainNearestDist: Double = Double.MAX_VALUE
-        private set
-
-    @Volatile
-    private var maxDynamicSeen: Double = 0.0
-
-    @Volatile
-    private var maxDynamicAt: String = "-"
-
-    /** 烘焙混入回调用：记一次调用，并按需记一次覆盖。 */
-    @JvmStatic
-    fun noteBakeCall(overridden: Boolean) {
-        bakeCalls++
-        if (overridden) bakeOverrides++
-    }
-
-    @JvmStatic
-    fun noteSectionMarked() {
-        sectionsMarked++
-    }
-
-    /** 地形烘焙入口的调用次数（与实体取光分开计）。 */
-    @Volatile
-    var terrainCalls: Long = 0L
-        private set
-
-    @Volatile
-    private var terrainSamples = 0
-
-    @JvmStatic
-    fun noteTerrainCall(x: Double, y: Double, z: Double, dynamic: Double, overridden: Boolean) {
-        terrainCalls++
-        if (dynamic > 0.0) bakePositive++
-        if (overridden) bakeOverrides++
-        // 烘焙位置离最近光源多远：用来判断「灯下方那些区块到底有没有被重建」。
-        // sources 是写锁保护的列表，烘焙在 worker 线程上跑，必须持读锁遍历，否则会撞并发修改。
-        var best = Double.MAX_VALUE
-        LOCK.readLock().lock()
-        try {
-            for (src in sources) {
-                val dx = src.x - x
-                val dy = src.y - y
-                val dz = src.z - z
-                val d = sqrt(dx * dx + dy * dy + dz * dz)
-                if (d < best) best = d
-            }
-        } finally {
-            LOCK.readLock().unlock()
-        }
-        if (best < terrainNearestDist) terrainNearestDist = best
-        if (terrainSamples < 2) {
-            terrainSamples++
-            org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing")
-                .info("[PD-terrain] pos=({}, {}, {}) dynamic={} 最近光源={} 覆盖={}", x, y, z, dynamic, best, overridden)
-        }
-    }
+    private var sectionsMarked = 0L
 
     @JvmStatic
     fun diagnostics(): String =
-        "烘焙调用=$bakeCalls 覆盖=$bakeOverrides 读到光=$bakePositive 峰值=${"%.2f".format(maxDynamicSeen)}@$maxDynamicAt " +
-            "地形烘焙=$terrainCalls 最近烘焙距离=${"%.1f".format(terrainNearestDist)} 脏区块提交=$sectionsMarked"
+        "地形光图覆盖=${terrainOverrides.sum()} 脏区块提交=$sectionsMarked"
 
     /**
      * 动态光照版本号：光源集合、位置、亮度或开关有任何变化就自增。
@@ -259,11 +176,13 @@ object DynamicLightManager {
         val x: Double, val y: Double, val z: Double,
         val luminance: Double,
         /** 这盏灯实际生效的照射半径（已按全局上限夹过）。 */
-        val range: Double = lightRadius,
+        val range: Double = DEFAULT_RADIUS,
         val dirX: Double = 0.0, val dirY: Double = 0.0, val dirZ: Double = 0.0,
         val innerCos: Double = 1.0, val outerCos: Double = -1.0,
         val edge: Double = 1.0,
         val falloff: LightFalloff = LightFalloff.LINEAR,
+        val shape: LightShape? = null,
+        val rgb: Int = 0xffffff,
     ) {
         /** 光图写入精度是 1/16 级；签名与烘焙比较都按这个精度量化。 */
         val lightQ: Int get() = quantizeLuminance(luminance)
@@ -271,6 +190,7 @@ object DynamicLightManager {
 
     private class BakedState(
         val x: Double, val y: Double, val z: Double, val lightQ: Int,
+        val range: Double, val shape: LightShape?, val rgb: Int,
         var lastX: Double = x, var lastY: Double = y, var lastZ: Double = z,
     )
 
@@ -296,15 +216,6 @@ object DynamicLightManager {
     @JvmStatic
     @JvmOverloads
     fun renderDynamicLights(engine: ClientParticleEngine, partialTick: Float = 0f) {
-        // 无条件留一行痕迹：确认这条渲染路径确实在跑，并顺带看清验收属性有没有传到 JVM。
-        if (!entryLogged) {
-            entryLogged = true
-            org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").info(
-                "[PD-entry] 光照渲染入口已执行 pd.demo={}", System.getProperty("pd.demo"),
-            )
-        }
-        // 每帧都会走到这里，用它当验收钩子的入口比玩家 tick 可靠（暂停/失焦都不影响）。
-        work.nekow.particledrawing.core.client.ClientAnimationProgramManager.maybeRunDemo()
         if (!isEnabled()) {
             clear()
             applyPendingSections()
@@ -327,73 +238,35 @@ object DynamicLightManager {
         // 先切 pending 的关卡归属，再产生本帧脏 section，避免刚入队就被换维清掉
         ensurePendingLevel(level)
 
-        // 每帧刷新照射半径，由配置驱动；半径变了要把旧、新影响范围都失效。
-        val radius = ParticleDrawingConfig.CLIENT.dynamicLightMaxDistance.get().coerceAtLeast(1.0)
-        val newRange = ceil(radius / 16.0).toInt().coerceAtLeast(1)
-        val oldRange = cellRange
-        var radiusChanged = radius != lightRadius || newRange != oldRange
-        lightRadius = radius
-        lightRadiusSquared = radius * radius
-        cellRange = newRange
-
+        val radius = ParticleDrawingConfig.CLIENT.dynamicLightMaxDistance.get().coerceIn(1.0, LightShape.MAX_RANGE)
         val renderDistance = mc.options.effectiveRenderDistance * 16.0
-        val newSources = collectSources(engine, player.x, player.y, player.z, renderDistance, partialTick)
-        // 逐灯半径可能比全局配置更大：搜索范围按本帧最大的那盏灯铺开，
-        // 否则外圈的光源会因为所在 cell 压根没被访问而完全不生效。
-        var maxRange = radius
-        for (src in newSources) if (src.range > maxRange) maxRange = src.range
-        if (maxRange > lightRadius) {
-            lightRadius = maxRange
-            lightRadiusSquared = maxRange * maxRange
-            val widened = ceil(maxRange / 16.0).toInt().coerceAtLeast(1)
-            if (widened != cellRange) {
-                cellRange = widened
-                radiusChanged = true
-            }
-        }
-
-        // 对外快照：这一帧实际参与照明的光源，坐标已按 partialTick 插值
-        frameSources = newSources.toTypedArray()
-        frameRadius = maxRange
+        val newSources = collectSources(engine, player.x, player.y, player.z, renderDistance, partialTick, radius)
+        val range = newSources.maxOfOrNull { it.range } ?: radius
+        val newCellRange = ceil(range / 16.0).toInt()
 
         // 光场变了就抬版本号：位置、亮度、数量或照射半径任一变化都算
-        var signature = signatureOf(newSources)
-        signature = signature * 31 + java.lang.Double.doubleToLongBits(radius)
-        if (signature != lastSignature || !lastEnabled) {
-            lastSignature = signature
-            lastEnabled = true
-            version++
-        }
+        val signature = signatureOf(newSources)
+        val changed = signature != lastSignature || !lastEnabled
 
         // 计算需要重建的区块：新增、移动、移除的光源。
         val dirtySections = LinkedHashSet<Long>()
-        if (radiusChanged) {
-            val range = max(oldRange, newRange)
-            for (prev in lastBaked.values) {
-                markSectionsAround(dirtySections, prev.x, prev.y, prev.z, range)
-            }
-            for (src in newSources) {
-                markSectionsAround(dirtySections, src.x, src.y, src.z, range)
-            }
-        }
-
         val nextBaked = HashMap<UUID, BakedState>(newSources.size)
         for (src in newSources) {
             val prev = lastBaked[src.id]
             if (prev == null) {
-                markSectionsAround(dirtySections, src.x, src.y, src.z)
-                nextBaked[src.id] = BakedState(src.x, src.y, src.z, src.lightQ)
+                markSectionsAround(dirtySections, src.x, src.y, src.z, src.range)
+                nextBaked[src.id] = BakedState(src.x, src.y, src.z, src.lightQ, src.range, src.shape, src.rgb)
                 continue
             }
-            if (LightBakePolicy.shouldRebake(
+            if (prev.range != src.range || prev.shape != src.shape || prev.rgb != src.rgb || LightBakePolicy.shouldRebake(
                     prev.x, prev.y, prev.z, prev.lightQ,
                     prev.lastX, prev.lastY, prev.lastZ,
                     src.x, src.y, src.z, src.lightQ,
                 )
             ) {
-                markSectionsAround(dirtySections, prev.x, prev.y, prev.z)
-                markSectionsAround(dirtySections, src.x, src.y, src.z)
-                nextBaked[src.id] = BakedState(src.x, src.y, src.z, src.lightQ)
+                markSectionsAround(dirtySections, prev.x, prev.y, prev.z, prev.range)
+                markSectionsAround(dirtySections, src.x, src.y, src.z, src.range)
+                nextBaked[src.id] = BakedState(src.x, src.y, src.z, src.lightQ, src.range, src.shape, src.rgb)
             } else {
                 // 小位移继续累计在基准上，只记下这一帧看到的位置
                 prev.lastX = src.x
@@ -406,31 +279,43 @@ object DynamicLightManager {
         for ((id, prev) in lastBaked) {
             if (!nextBaked.containsKey(id)) {
                 // 基准可能落后于最后看到的位置（小位移还没触发重建），两处都失效
-                markSectionsAround(dirtySections, prev.x, prev.y, prev.z)
-                markSectionsAround(dirtySections, prev.lastX, prev.lastY, prev.lastZ)
+                markSectionsAround(dirtySections, prev.x, prev.y, prev.z, prev.range)
+                markSectionsAround(dirtySections, prev.lastX, prev.lastY, prev.lastZ, prev.range)
             }
         }
 
         // 先排队再更新基准：预算不够时请求留在 pending 里，不会因基准提前更新而丢
         pendingSections.addAll(dirtySections)
 
-        // 重建空间索引，写锁保护。
-        LOCK.writeLock().lock()
-        try {
-            sources.clear()
-            sources.addAll(newSources)
-            cellIndex.clear()
-            for (src in newSources) {
-                val key = cellKey(cellCoord(src.x), cellCoord(src.y), cellCoord(src.z))
-                cellIndex.getOrPut(key) { ArrayList() }.add(src)
+        lastBaked.clear()
+        lastBaked.putAll(nextBaked)
+        if (changed) {
+            LOCK.writeLock().lock()
+            try {
+                sources.clear()
+                sources.addAll(newSources)
+                cellIndex.clear()
+                cellRange = newCellRange
+                for (src in newSources) {
+                    val key = cellKey(cellCoord(src.x), cellCoord(src.y), cellCoord(src.z))
+                    cellIndex.getOrPut(key) { ArrayList() }.add(src)
+                }
+                frameSources = newSources.toTypedArray()
+                sourceCountSnapshot = newSources.size
+                lightBounds = if (newSources.isEmpty()) null else LightBounds(
+                    newSources.minOf { it.x - it.range },
+                    newSources.minOf { it.y - it.range },
+                    newSources.minOf { it.z - it.range },
+                    newSources.maxOf { it.x + it.range },
+                    newSources.maxOf { it.y + it.range },
+                    newSources.maxOf { it.z + it.range },
+                )
+                lastSignature = signature
+                lastEnabled = true
+                version++
+            } finally {
+                LOCK.writeLock().unlock()
             }
-            hasLights = newSources.isNotEmpty()
-            sourceCountSnapshot = newSources.size
-
-            lastBaked.clear()
-            lastBaked.putAll(nextBaked)
-        } finally {
-            LOCK.writeLock().unlock()
         }
 
         applyPendingSections()
@@ -442,9 +327,10 @@ object DynamicLightManager {
      * 每个 16×16×16 cell 内只保留亮度得分最高的 [maxDynamicLightsPerCell] 个光源，
      * 再用全局上限兜底。
      */
-    private fun collectSources(engine: ClientParticleEngine, camX: Double, camY: Double, camZ: Double, renderDistance: Double, partialTick: Float): List<LightSource> {
+    private fun collectSources(engine: ClientParticleEngine, camX: Double, camY: Double, camZ: Double, renderDistance: Double, partialTick: Float, defaultRadius: Double): List<LightSource> {
         engine.lightEmittersInto(candidates)
-        if (candidates.isEmpty()) return emptyList()
+        val maxLights = ParticleDrawingConfig.CLIENT.maxDynamicLights.get()
+        if (candidates.isEmpty() || maxLights == 0) return emptyList()
 
         val cullDistSq = renderDistance * renderDistance
         val perCell = ParticleDrawingConfig.CLIENT.maxDynamicLightsPerCell.get().coerceAtLeast(1)
@@ -475,20 +361,21 @@ object DynamicLightManager {
             val dir = if (spot) shape.direction() else TRIPLE_ZERO
             val src = LightSource(
                 p.id(), x, y, z, luminance,
-                range = (shape?.range?.takeIf { it > 0.0 } ?: lightRadius).coerceIn(1.0, MAX_LIGHT_RANGE),
+                range = (shape?.range?.takeIf { it > 0.0 } ?: defaultRadius),
                 dirX = dir.first, dirY = dir.second, dirZ = dir.third,
                 innerCos = if (spot) shape.innerCos() else 1.0,
                 outerCos = if (spot) shape.outerCos() else -1.0,
                 edge = shape?.edge ?: 1.0,
                 falloff = shape?.falloff ?: LightFalloff.LINEAR,
+                shape = shape,
+                rgb = p.lightColor(partialTick),
             )
             // 同分时按 id 定序：光源集合的遍历顺序抖动不应让预算裁剪在相邻帧换人
             val heap = cellHeaps.getOrPut(key) { PriorityQueue(CANDIDATE_ORDER) }
-            if (heap.size < perCell) {
-                heap.add(Candidate(score, src))
-            } else if (score > heap.peek().score) {
-                heap.poll()
-                heap.add(Candidate(score, src))
+            val candidate = Candidate(score, src)
+            if (heap.size < perCell || CANDIDATE_ORDER.compare(candidate, heap.peek()) > 0) {
+                if (heap.size == perCell) heap.poll()
+                heap.add(candidate)
             }
         }
 
@@ -496,7 +383,6 @@ object DynamicLightManager {
         for (heap in cellHeaps.values) for (c in heap) out.add(c.src)
 
         // 全局上限兜底：超出时按亮度得分裁剪
-        val maxLights = ParticleDrawingConfig.CLIENT.maxDynamicLights.get()
         if (out.size > maxLights) {
             val heap = PriorityQueue(CANDIDATE_ORDER)
             for (src in out) {
@@ -504,11 +390,10 @@ object DynamicLightManager {
                 val dy = src.y - camY
                 val dz = src.z - camZ
                 val score = lightScore(dx, dy, dz, src.luminance)
-                if (heap.size < maxLights) {
-                    heap.add(Candidate(score, src))
-                } else if (score > heap.peek().score) {
-                    heap.poll()
-                    heap.add(Candidate(score, src))
+                val candidate = Candidate(score, src)
+                if (heap.size < maxLights || CANDIDATE_ORDER.compare(candidate, heap.peek()) > 0) {
+                    if (heap.size == maxLights) heap.poll()
+                    heap.add(candidate)
                 }
             }
             val capped = ArrayList<LightSource>(heap.size)
@@ -529,7 +414,7 @@ object DynamicLightManager {
             oldSources.addAll(sources)
             sources.clear()
             cellIndex.clear()
-            hasLights = false
+            lightBounds = null
             sourceCountSnapshot = 0
             frameSources = emptyArray()
         } finally {
@@ -538,10 +423,10 @@ object DynamicLightManager {
 
         // 光源没了也要把旧受光地形排进重建队列，否则关掉动态光后地形还亮着
         for (src in oldSources) {
-            markSectionsAround(pendingSections, src.x, src.y, src.z)
+            markSectionsAround(pendingSections, src.x, src.y, src.z, src.range)
         }
         for (prev in lastBaked.values) {
-            markSectionsAround(pendingSections, prev.x, prev.y, prev.z)
+            markSectionsAround(pendingSections, prev.x, prev.y, prev.z, prev.range)
         }
         lastBaked.clear()
 
@@ -569,8 +454,13 @@ object DynamicLightManager {
         var h = 1125899906842597L + list.size
         for (src in list) {
             var e = src.id.hashCode().toLong()
-            e = e * 31 + java.lang.Double.doubleToLongBits(src.x + src.y * 3.0 + src.z * 7.0)
+            e = e * 31 + src.x.toBits()
+            e = e * 31 + src.y.toBits().rotateLeft(21)
+            e = e * 31 + src.z.toBits().rotateLeft(42)
+            e = e * 31 + src.range.toBits()
+            e = e * 31 + (src.shape?.hashCode() ?: 0)
             e = e * 31 + src.lightQ
+            e = e * 31 + src.rgb
             h += e * -7046029254386353131L
         }
         return h
@@ -580,95 +470,98 @@ object DynamicLightManager {
     @JvmStatic
     fun isEnabled(): Boolean = ParticleDrawingConfig.CLIENT.enableDynamicLights.get()
 
-    /**
-     * 查询指定位置（小数坐标）的动态光照等级，返回带小数的 [Double]（0-15）。
-     */
+    @JvmStatic
+    fun hasActiveLights(): Boolean = lightBounds != null && isEnabled()
+
+    @JvmStatic
+    fun hasTerrainLightsAt(x: Int, y: Int, z: Int): Boolean =
+        lightBounds?.contains(x.toDouble(), y.toDouble(), z.toDouble(), margin = 2.0) == true && isEnabled()
+
     @JvmStatic
     fun getDynamicLightLevel(x: Double, y: Double, z: Double): Double {
-        if (!hasLights) return 0.0
+        var brightest = 0.0
+        visitContributions(x, y, z) { _, level ->
+            if (level > brightest) brightest = level
+        }
+        return brightest
+    }
 
+    private inline fun visitContributions(
+        x: Double, y: Double, z: Double,
+        sampleRadius: Double = 0.0,
+        visit: (LightSource, Double) -> Unit,
+    ) {
+        if (lightBounds?.contains(x, y, z) != true) return
         LOCK.readLock().lock()
         try {
+            if (sources.size <= 16) {
+                for (src in sources) visit(src, contribution(src, x, y, z, sampleRadius))
+                return
+            }
             val cx = cellCoord(x)
             val cy = cellCoord(y)
             val cz = cellCoord(z)
             val range = cellRange
-
-            var result = 0.0
             for (dx in -range..range) {
                 for (dy in -range..range) {
                     for (dz in -range..range) {
                         val cell = cellIndex[cellKey(cx + dx, cy + dy, cz + dz)] ?: continue
-                        for (src in cell) {
-                            // 点光与射灯走同一套求值：朝向为零向量时锥体权重恒为 1。
-                            val light = LightMath.contributionOf(
-                                x, y, z, src.x, src.y, src.z,
-                                src.luminance, src.range,
-                                src.dirX, src.dirY, src.dirZ,
-                                src.innerCos, src.outerCos, src.falloff, src.edge,
-                            )
-                            if (light > result) result = light
-                        }
+                        for (src in cell) visit(src, contribution(src, x, y, z, sampleRadius))
                     }
                 }
             }
-            return if (result > 15.0) 15.0 else result
         } finally {
             LOCK.readLock().unlock()
         }
     }
 
-    /**
-     * 将动态光照合并进打包光图坐标。
-     *
-     * 原版光图坐标为 `block << 4 | sky << 20`，方块光照字段的低 4 bit（bit 0-3）
-     * 通常为 0。此处用 `(dynamic * 16)` 写入该字段以保留小数精度，使原版平滑光照
-     * 管线（`smoothBlock` 读取 bit 0-7）在顶点间插值时获得 16 倍平滑度。
-     * 仅当动态值高于原方块光照时覆盖，不压暗原版已照亮的区域。
-     *
-     * @param lightmap 原版光图坐标
-     * @param x/y/z 查询位置（小数坐标）
-     * @return 合并后的光图坐标
-     */
+    private fun contribution(src: LightSource, x: Double, y: Double, z: Double, sampleRadius: Double): Double =
+        LightMath.contributionOf(
+            x, y, z, src.x, src.y, src.z, src.luminance, src.range,
+            src.dirX, src.dirY, src.dirZ, src.innerCos, src.outerCos, src.falloff, src.edge, sampleRadius,
+        )
+
+    /** 只抬高方块光，保留原版天空光与已照亮的方块。 */
     @JvmStatic
     fun getLightmapWithDynamicLight(lightmap: Int, x: Double, y: Double, z: Double): Int {
-        val dynamic = getDynamicLightLevel(x, y, z)
-        if (dynamic > 0.0) bakePositive++
-        if (!stateLogged && hasLights) {
-            stateLogged = true
-            val nearest = sources.minByOrNull { s ->
-                val dx = s.x - x; val dy = s.y - y; val dz = s.z - z
-                dx * dx + dy * dy + dz * dz
-            }
-            val dist = nearest?.let { s ->
-                val dx = s.x - x; val dy = s.y - y; val dz = s.z - z
-                sqrt(dx * dx + dy * dy + dz * dz)
-            } ?: -1.0
-            org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").info(
-                "[PD-state] 有光源时首次烘焙: pos=({}, {}, {}) dynamic={} 源数={} cellRange={} 最近距离={} 线程={}",
-                x, y, z, dynamic, sources.size, cellRange, dist, Thread.currentThread().name,
-            )
-        }
-        if (dynamic > maxDynamicSeen) {
-            maxDynamicSeen = dynamic
-            maxDynamicAt = "(${"%.1f".format(x)}, ${"%.1f".format(y)}, ${"%.1f".format(z)})"
-        }
-        if (dynamic <= 0.0) return lightmap
-
-        val block = PlatformCompat.lightBlock(lightmap)
-        if (dynamic <= block) return lightmap
-        // 只叠加方块光通道，天空光原样保留；布局与进位都交给原版工具。
-        return PlatformCompat.lightAddEmission(lightmap, (dynamic - block).toFloat())
-    }
-
-    /**
-     * 以方块位置查询并合并动态光照，供亮度获取器混入调用。
-     */
-    @JvmStatic
-    fun getLightmapWithDynamicLight(level: BlockAndLightGetter, pos: BlockPos, lightmap: Int): Int {
         if (!isEnabled()) return lightmap
-        return getLightmapWithDynamicLight(lightmap, pos.x + 0.5, pos.y + 0.5, pos.z + 0.5)
+        val dynamic = getDynamicLightLevel(x, y, z)
+        return PlatformCompat.lightWithMinimumBlock(lightmap, dynamic)
     }
+
+    /** 返回地形顶点的 ARGB（高 32 位）和光图坐标（低 32 位）。 */
+    @JvmStatic
+    fun shadeTerrainVertex(color: Int, lightmap: Int, x: Double, y: Double, z: Double): Long {
+        var brightest = 0.0
+        var weight = 0.0
+        var red = 0.0
+        var green = 0.0
+        var blue = 0.0
+        visitContributions(x, y, z, TERRAIN_SAMPLE_RADIUS) { source, level ->
+            if (level > 0.0) {
+                if (level > brightest) brightest = level
+                weight += level
+                red += ((source.rgb shr 16) and 255) * level
+                green += ((source.rgb shr 8) and 255) * level
+                blue += (source.rgb and 255) * level
+            }
+        }
+        val merged = PlatformCompat.lightWithMinimumBlock(lightmap, brightest)
+        if (merged == lightmap) return packVertex(color, lightmap)
+        terrainOverrides.increment()
+        // 颜色随新增光占比变化，光斑边缘不会先褪成亮白再变暗。
+        val block = PlatformCompat.lightBlock(lightmap)
+        val tint = (brightest - block).coerceAtLeast(0.0) / (brightest + 2.0)
+        fun channel(input: Int, total: Double): Int =
+            (input * (1.0 - tint * (1.0 - total / (weight * 255.0)))).roundToInt().coerceIn(0, 255)
+        val r = channel((color shr 16) and 255, red)
+        val g = channel((color shr 8) and 255, green)
+        val b = channel(color and 255, blue)
+        return packVertex((color and 0xff000000.toInt()) or (r shl 16) or (g shl 8) or b, merged)
+    }
+
+    private fun packVertex(color: Int, lightmap: Int): Long =
+        (color.toLong() shl 32) or (lightmap.toLong() and 0xffffffffL)
 
     /**
      * 把方块坐标映射为空间哈希的 cell 坐标。
@@ -689,15 +582,14 @@ object DynamicLightManager {
     private fun markSectionsAround(
         out: MutableSet<Long>,
         x: Double, y: Double, z: Double,
-        range: Int = cellRange,
+        radius: Double,
     ) {
-        val sx = SectionPos.blockToSectionCoord(floor(x).toInt())
-        val sy = SectionPos.blockToSectionCoord(floor(y).toInt())
-        val sz = SectionPos.blockToSectionCoord(floor(z).toInt())
-        for (dx in -range..range) {
-            for (dy in -range..range) {
-                for (dz in -range..range) {
-                    out.add(SectionPos.asLong(sx + dx, sy + dy, sz + dz))
+        // 多留一格，覆盖环境遮蔽取相邻方块亮度的采样。
+        val margin = radius + 1.0
+        for (sx in cellCoord(x - margin)..cellCoord(x + margin)) {
+            for (sy in cellCoord(y - margin)..cellCoord(y + margin)) {
+                for (sz in cellCoord(z - margin)..cellCoord(z + margin)) {
+                    out.add(SectionPos.asLong(sx, sy, sz))
                 }
             }
         }
@@ -741,6 +633,7 @@ object DynamicLightManager {
             val packed = it.next()
             PlatformCompat.markSectionDirty(SectionPos.x(packed), SectionPos.y(packed), SectionPos.z(packed))
             it.remove()
+            sectionsMarked++
             budget--
         }
     }

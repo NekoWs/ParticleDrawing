@@ -66,7 +66,7 @@ class RenderParticle(
     /** 只发光不画外观；光强不随透明度和尺寸衰减。 */
     private val lightOnly: Boolean = false,
     /** 光源形状（射灯锥角、半径、衰减）；null = 点光。 */
-    private val lightShape: LightShape? = null,
+    private var lightShape: LightShape? = null,
 ) {
 
     // 位置 / 颜色 / 缩放（直接缓动）
@@ -174,7 +174,7 @@ class RenderParticle(
 
     fun id(): UUID = id
     fun glowing(): Boolean = glowing
-    fun emitsLight(): Boolean = emitsLightSource
+    fun emitsLight(): Boolean = emitsLightSource || lightShape != null
 
     /** 只发光不画外观；见 [ParticleVisual.lightOnly]。 */
     fun lightOnly(): Boolean = lightOnly
@@ -182,6 +182,11 @@ class RenderParticle(
 
     /** 光源形状；null 表示按老行为（点光、线性衰减、全局半径）。 */
     fun shape(): LightShape? = lightShape
+
+    fun setScriptLight(shape: LightShape?, intensity: Float) {
+        lightShape = shape
+        baseLightIntensity = intensity
+    }
 
     /**
      * 生成后经过的 tick 数（引擎时钟：关卡暂停时不增长）。
@@ -223,7 +228,7 @@ class RenderParticle(
      * 都会连续收束；显式 remove 或死亡后光源不再被收集。
      */
     fun lightIntensity(partialTick: Float = 0f): Float {
-        if ((!glowing && !emitsLightSource && !lightOnly) || lightLevel <= 0) return 0f
+        if ((!glowing && !emitsLight() && !lightOnly) || lightLevel <= 0) return 0f
         val value = rawLightIntensity(partialTick) + lightTransitionOffset(partialTick)
         return if (value.isFinite()) value.coerceAtLeast(0f) else 0f
     }
@@ -384,6 +389,13 @@ class RenderParticle(
     fun x(): Double = pos.cur.x
     fun y(): Double = pos.cur.y
     fun z(): Double = pos.cur.z
+    fun lightColor(partialTick: Float): Int {
+        if (lightShape == null) return 0xffffff
+        if (lifeCurve != null) refreshCurve(partialTick)
+        fun channel(value: Float) = (value.coerceIn(0f, 1f) * 255f).toInt()
+        return (channel(col.cur.r * mulR) shl 16) or (channel(col.cur.g * mulG) shl 8) or channel(col.cur.b * mulB)
+    }
+
     fun r(): Float = col.cur.r
     fun g(): Float = col.cur.g
     fun b(): Float = col.cur.b

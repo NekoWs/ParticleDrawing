@@ -4,6 +4,8 @@
 
 package work.nekow.particledrawing.animation.script
 
+import work.nekow.particledrawing.light.LightFalloff
+import work.nekow.particledrawing.light.LightShape
 import kotlin.math.*
 
 // this 对象名。
@@ -29,7 +31,7 @@ private fun setVecComp(v: Any?, comp: String, value: Double): Any = when (v) {
 }
 
 // this.spawn(config) 可选字段。
-private val SPAWN_CONFIG_FIELDS = setOf("position", "color", "velocity", "scale", "glow", "light", "life", "uv")
+private val SPAWN_CONFIG_FIELDS = setOf("position", "color", "velocity", "scale", "glow", "light", "life", "uv", "lightShape", "lightIntensity")
 
 private fun cfgVec(v: Any?, field: String, len: Int): List<Double> {
     if (isVec(v)) {
@@ -84,6 +86,34 @@ private fun scaleShape(v: Any?, out: DoubleArray): Int {
 private fun readScale(w: ParticleHost): Any =
     if (w.scaleDim == 0) w.scale[0] else Vec3(w.scale[0], w.scale[1], w.scale[2])
 
+private fun readLightShape(shape: LightShape?): List<Any> =
+    if (shape == null) emptyList() else listOf(
+        shape.range, shape.outerDeg, shape.innerDeg, shape.edge, shape.yawDeg, shape.pitchDeg,
+        shape.falloff.name.lowercase(),
+    )
+
+private fun parseLightShape(value: Any?): LightShape? {
+    val list = value as? List<*> ?: throw ScriptException("lightShape requires an array")
+    if (list.isEmpty()) return null
+    if (list.size != 7) throw ScriptException("lightShape requires [range, outer, inner, edge, yaw, pitch, falloff]")
+    fun number(i: Int) = list[i] as? Double ?: throw ScriptException("lightShape[$i] requires a num")
+    val falloff = LightFalloff.entries.firstOrNull { it.name.lowercase() == list[6] }
+        ?: throw ScriptException("lightShape falloff must be constant, linear, smooth, inverse or inverse_square")
+    return try {
+        LightShape(number(0), number(1), number(2), number(3), number(4), number(5), falloff).validated()
+    } catch (e: IllegalArgumentException) {
+        throw ScriptException(e.message ?: "invalid lightShape")
+    }
+}
+
+private fun parseLightIntensity(value: Any?): Double {
+    val n = value as? Double
+    if (n == null || !n.isFinite() || n < 0.0 || n > Float.MAX_VALUE) {
+        throw ScriptException("lightIntensity requires a finite nonnegative num")
+    }
+    return n
+}
+
 private fun applySpawnConfig(host: ParticleHost, config: Any?) {
     if (config !is ObjVal) throw ScriptException("this.spawn(config) requires an object")
     for ((key, v) in config.fields) {
@@ -108,6 +138,8 @@ private fun applySpawnConfig(host: ParticleHost, config: Any?) {
             "glow" -> host.glow = v as? Boolean
                 ?: (((v as? Double) ?: throw ScriptException("spawn config 'glow' requires a num")) > 0.5)
             "light" -> host.light = clampNum(jsRound((v as? Double) ?: throw ScriptException("spawn config 'light' requires a num")), 0.0, 15.0)
+            "lightShape" -> host.lightShape = parseLightShape(v)
+            "lightIntensity" -> host.lightIntensity = parseLightIntensity(v)
             "life" -> {
                 val n = jsRound((v as? Double) ?: throw ScriptException("spawn config 'life' requires a num"))
                 host.life = if (n.isFinite()) (if (n < 0.0) -1.0 else n) else -1.0
@@ -743,6 +775,8 @@ object ScriptRuntime {
                 "scale" -> readScale(w)
                 "glow" -> w.glow
                 "light" -> w.light
+                "lightShape" -> readLightShape(w.lightShape)
+                "lightIntensity" -> w.lightIntensity
                 "life" -> w.life
                 "index" -> w.index.toDouble()
                 "rotation" -> Vec3(w.rotation[0], w.rotation[1], w.rotation[2])
@@ -912,6 +946,8 @@ object ScriptRuntime {
                     w.glow = value as? Boolean ?: ((value as Double) > 0.5)
                 }
                 "light" -> w.light = clampNum(jsRound(num(value, "particle.light", n)), 0.0, 15.0)
+                "lightShape" -> w.lightShape = parseLightShape(value)
+                "lightIntensity" -> w.lightIntensity = parseLightIntensity(value)
                 "life" -> {
                     val v = jsRound(num(value, "particle.life", n))
                     w.life = if (v.isFinite()) (if (v < 0.0) -1.0 else v) else -1.0
@@ -1514,7 +1550,7 @@ object ScriptRuntime {
         }
 
         private fun particleHasField(pv: ParticleValue, field: String): Boolean = when (field) {
-            "position", "color", "velocity", "scale", "glow", "light", "life", "index", "rotation", "billboard", "spinSpace" -> true
+            "position", "color", "velocity", "scale", "glow", "light", "life", "index", "rotation", "billboard", "spinSpace", "lightShape", "lightIntensity" -> true
             else -> pv.host.fields.containsKey(field)
         }
 

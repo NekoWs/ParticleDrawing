@@ -7,7 +7,7 @@ package work.nekow.particledrawing.light
  * `innerDeg == 0` 时按 `outerDeg * 0.6` 自动给一个软边。方向只给偏航/俯仰，
  * 由 [LightMath.directionOf] 转成单位向量，省得每帧归一化。
  */
-class LightShape(
+data class LightShape(
     /** 照射半径（格）；<= 0 表示沿用全局配置。 */
     val range: Double = 0.0,
     /** 外锥半角（度）；<= 0 表示点光。 */
@@ -25,17 +25,16 @@ class LightShape(
     /** 是否真的构成射灯（有锥角）。 */
     val isSpot: Boolean get() = outerDeg > 0.0
 
-    /** 内锥的最终度数：没写就取外锥的 60%，避免内外相等导致硬边。 */
+    /** 内锥的最终度数：没写就取外锥的 60%；内外锥相等时使用硬边。 */
     val effectiveInnerDeg: Double
         get() = when {
             outerDeg <= 0.0 -> 0.0
             innerDeg <= 0.0 -> outerDeg * 0.6
-            innerDeg >= outerDeg -> outerDeg * 0.999
             else -> innerDeg
         }
 
     fun validated(): LightShape {
-        require(range.isFinite() && range >= 0.0) { "光照半径必须是非负数" }
+        require(range.isFinite() && range in 0.0..MAX_RANGE) { "光照半径必须在 0 到 64 格之间" }
         require(outerDeg.isFinite() && outerDeg in 0.0..179.0) { "射灯外锥半角必须在 0 到 179 度之间" }
         require(innerDeg.isFinite() && innerDeg >= 0.0) { "射灯内锥半角不能为负" }
         require(innerDeg <= outerDeg) { "射灯内锥角不能大于外锥角" }
@@ -63,6 +62,7 @@ class LightShape(
     companion object {
         /** 老行为：点光、线性衰减、半径用全局值。 */
         val POINT = LightShape()
+        const val MAX_RANGE = 64.0
 
         fun spot(range: Double, outerDeg: Double, innerDeg: Double = 0.0, edge: Double = 1.0): LightShape =
             LightShape(range = range, outerDeg = outerDeg, innerDeg = innerDeg, edge = edge)

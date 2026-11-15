@@ -41,17 +41,12 @@ object PlatformCompat {
     /** 取光图里的方块光照分量。26.x 是 `LightCoordsUtil`，1.21.1 是 `LightTexture`。 */
     fun lightBlock(packed: Int): Int = LightCoordsUtil.block(packed)
 
-    /** 取出打包光坐标里的天空光等级。 */
-    fun lightSky(packed: Int): Int = LightCoordsUtil.sky(packed)
-
-    /** 用方块光与天空光等级重新打包；布局由原版工具决定，不自己拼位。 */
-    fun lightPack(block: Int, sky: Int): Int = LightCoordsUtil.pack(block, sky)
-
-    /**
-     * 在打包光坐标上叠加一份方块光发光量（0-15，可带小数）。
-     * 原版工具负责进位与钳制，天空光通道原样保留——这是唯一安全的光图写入方式。
-     */
-    fun lightAddEmission(packed: Int, amount: Float): Int = LightCoordsUtil.addSmoothBlockEmission(packed, amount)
+    /** 保留天空光，将方块光抬到指定的亮度。 */
+    fun lightWithMinimumBlock(packed: Int, minimum: Double): Int {
+        val block = (minimum * 16.0).toInt().coerceIn(0, 240)
+        if (block <= LightCoordsUtil.smoothBlock(packed)) return packed
+        return LightCoordsUtil.smoothPack(block, LightCoordsUtil.smoothSky(packed))
+    }
 
     /**
      * 清掉地形取光的顶点缓存；光场变了必须清，否则重建出来的网格还是旧亮度。
@@ -68,7 +63,6 @@ object PlatformCompat {
     /** 标记区块 section 需要重建。26.x 走 `Minecraft.levelExtractor`。 */
     fun markSectionDirty(sectionX: Int, sectionY: Int, sectionZ: Int) {
         Minecraft.getInstance().levelExtractor.setSectionDirty(sectionX, sectionY, sectionZ)
-        work.nekow.particledrawing.lighting.DynamicLightManager.noteSectionMarked()
     }
 
     /** FOV 覆盖：26.x 的 fov 字段是 float。 */

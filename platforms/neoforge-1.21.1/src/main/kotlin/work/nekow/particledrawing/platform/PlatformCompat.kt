@@ -40,6 +40,12 @@ object PlatformCompat {
     /** 取光图里的方块光照分量。1.21.1 用 `LightTexture`。 */
     fun lightBlock(packed: Int): Int = LightTexture.block(packed)
 
+    /** 保留天空光，将方块光抬到指定的亮度。 */
+    fun lightWithMinimumBlock(packed: Int, minimum: Double): Int {
+        val block = (minimum * 16.0).toInt()
+        return if (block > (packed and 255)) (packed and 255.inv()) or block else packed
+    }
+
     /** 玩家所在服务端关卡：1.21.1 的 `Entity.level()` 静态类型是 `Level`，需要下转。 */
     fun serverLevelOf(player: ServerPlayer): ServerLevel = player.level() as ServerLevel
 

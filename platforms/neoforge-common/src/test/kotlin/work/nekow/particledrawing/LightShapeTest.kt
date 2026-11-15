@@ -64,9 +64,9 @@ class LightShapeTest {
     }
 
     @Test
-    fun `内锥不小于外锥时收一点避免除零`() {
+    fun `内外锥相等时保留硬边`() {
         val shape = LightShape(range = 8.0, outerDeg = 30.0, innerDeg = 30.0)
-        assertTrue(shape.effectiveInnerDeg < 30.0)
+        assertEquals(30.0, shape.effectiveInnerDeg)
     }
 
     @Test

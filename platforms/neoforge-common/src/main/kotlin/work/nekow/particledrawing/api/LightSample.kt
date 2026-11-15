@@ -1,6 +1,7 @@
 package work.nekow.particledrawing.api
 
 import java.util.UUID
+import work.nekow.particledrawing.light.LightShape
 
 /**
  * 一帧动态光源的只读快照。
@@ -18,6 +19,8 @@ class LightSample internal constructor(
     val z: Double,
     val intensity: Double,
     val range: Double,
+    val shape: LightShape? = null,
+    val rgb: Int = 0xffffff,
 ) {
     override fun toString(): String =
         "LightSample(id=$id, pos=($x, $y, $z), intensity=$intensity, range=$range)"

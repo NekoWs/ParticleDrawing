@@ -54,6 +54,7 @@ object ParticleDrawingConfig {
         val maxDynamicLights: ModConfigSpec.IntValue
         val maxDynamicLightsPerCell: ModConfigSpec.IntValue
         val dynamicLightMaxDistance: ModConfigSpec.DoubleValue
+        val showSpotlightBeams: ModConfigSpec.BooleanValue
         val enableDynamicLights: ModConfigSpec.BooleanValue
         val maxRenderParticles: ModConfigSpec.IntValue
         val particleBatchSize: ModConfigSpec.IntValue
@@ -64,6 +65,9 @@ object ParticleDrawingConfig {
             enableDynamicLights = builder
                 .comment("Enable dynamic lighting from glowing particles.")
                 .define("enableDynamicLights", true)
+            showSpotlightBeams = builder
+                .comment("Draw a faint beam for nearby spotlights.")
+                .define("showSpotlightBeams", false)
             maxDynamicLights = builder
                 .comment("The maximum number of dynamic light sources active at once (global upper bound).")
                 .defineInRange("maxDynamicLights", 512, 0, 4096)
@@ -71,7 +75,7 @@ object ParticleDrawingConfig {
                 .comment("The maximum number of dynamic light sources computed per 16x16x16 cell. Limits lights locally so each area keeps its brightest sources instead of being starved by distant ones.")
                 .defineInRange("maxDynamicLightsPerCell", 8, 1, 64)
             dynamicLightMaxDistance = builder
-                .comment("The maximum distance dynamic lighting affects the world.")
+                .comment("Default range of particle lights without an explicit range.")
                 .defineInRange("dynamicLightMaxDistance", 16.0, 1.0, 64.0)
             builder.pop()
 

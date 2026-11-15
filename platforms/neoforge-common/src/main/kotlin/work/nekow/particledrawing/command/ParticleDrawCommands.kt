@@ -73,7 +73,7 @@ object ParticleDrawCommands {
                     .then(Commands.literal("reload").executes(::reloadTextures)))
                 .then(Commands.literal("light")
                     .executes(::lightProbe)
-                    .then(Commands.literal("demo").executes(::lightDemo)))
+                    .then(Commands.literal("demo").requires(PlatformCompat.gamemastersOnly()).executes(::lightDemo)))
         )
     }
 
@@ -98,6 +98,10 @@ object ParticleDrawCommands {
      * 就能分清是光源没被收集、还是光图没写进去。
      */
     private fun lightProbe(ctx: CommandContext<CommandSourceStack>): Int {
+        if (ctx.source.server.isDedicatedServer) {
+            ctx.source.sendFailure(Component.literal("动态光照在客户端计算，此命令仅可在单人世界读取光场"))
+            return 0
+        }
         // 定时函数是以服务端身份跑的，这里不能用 playerOrException；按命令源坐标取样即可。
         val enabled = work.nekow.particledrawing.lighting.DynamicLightManager.isEnabled()
         val count = work.nekow.particledrawing.lighting.DynamicLightManager.sourceCount()
@@ -108,7 +112,7 @@ object ParticleDrawCommands {
         val z = pos.z
         val here = work.nekow.particledrawing.lighting.DynamicLightManager.getDynamicLightLevel(x, y, z)
         val below = work.nekow.particledrawing.lighting.DynamicLightManager.getDynamicLightLevel(x, y - 1.0, z)
-        val ahead = work.nekow.particledrawing.lighting.DynamicLightManager.getDynamicLightLevel(x, y + 2.0, z)
+        val above = work.nekow.particledrawing.lighting.DynamicLightManager.getDynamicLightLevel(x, y + 2.0, z)
         val samples = work.nekow.particledrawing.lighting.DynamicLightManager.lightSnapshot()
         val first = samples.firstOrNull()
         val detail = if (first == null) {
@@ -119,55 +123,41 @@ object ParticleDrawCommands {
         }
         val diag = work.nekow.particledrawing.lighting.DynamicLightManager.diagnostics()
         val line = "动态光: 启用=$enabled 源=$count 版本=$version | 脚下=${"%.2f".format(here)} " +
-            "下方=${"%.2f".format(below)} 上方=${"%.2f".format(ahead)} | $diag | $detail"
-        // 同时进服务端日志，自动化排查时直接 grep 即可，不必依赖聊天栏截图
+            "下方=${"%.2f".format(below)} 上方=${"%.2f".format(above)} | $diag | $detail"
         org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").info("[PD-light] {}", line)
         ctx.source.sendSuccess({ Component.literal(line) }, false)
         return 1
     }
 
-    /** 演示用的三盏灯：位置、外锥、内锥。 */
+    private data class DemoLamp(val x: Double, val color: String, val outer: Int = 0, val inner: Int = 0)
+
     private val LIGHT_DEMO = listOf(
-        Triple(-6.0, 20.0, 10.0),
-        Triple(0.0, 45.0, 25.0),
-        Triple(6.0, 65.0, 40.0),
+        DemoLamp(-13.5, "#ff7955"),
+        DemoLamp(-5.0, "#ff7955", 20, 12),
+        DemoLamp(2.5, "#78ff85", 35, 21),
+        DemoLamp(10.0, "#738dff", 50, 30),
     )
 
-    /**
-     * 一条命令搭出射灯演示：摆机位、建三盏不同锥角的灯。
-     *
-     * 内部直接转发 `particle group/create/add` 这些已有命令，复用它们的参数校验与下发路径，
-     * 不另写一套建灯逻辑。验收时只要 `/pdraw light demo`，不用再拼数据包。
-     */
+    /** 在顶面为 Y=-63 的平地上，对照一盏点光与三盏斜射的灯。 */
     private fun lightDemo(ctx: CommandContext<CommandSourceStack>): Int {
-        val server = ctx.source.server
-        val commands = server.commands
-        val baseY = -61.0
-        fun run(command: String) {
-            try {
-                commands.performPrefixedCommand(ctx.source, command)
-            } catch (error: Exception) {
-                org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing")
-                    .warn("[PD-demo] 命令失败: {} ({})", command, error.message)
-            }
-        }
+        val commands = ctx.source.server.commands
+        fun run(command: String) = commands.performPrefixedCommand(ctx.source, command)
 
         run("gamemode spectator @s")
         run("time set midnight")
-        run("particle group clear")
-        LIGHT_DEMO.forEachIndexed { index, spec ->
-            val (x, outer, inner) = spec
-            val name = "lightdemo$index"
-            run("particle group create $name $x $baseY 0")
+        LIGHT_DEMO.forEachIndexed { index, lamp ->
+            val group = "lightdemo$index"
+            val pos = "${lamp.x} -59.0 0.5"
+            val spotlight = if (lamp.outer > 0) " spot=${lamp.outer},${lamp.inner} light_dir=-70,-53" else ""
+            run("pdraw particle group reset $group $pos")
             run(
-                "particle add $name circle $x $baseY 0 0.35 ${8 + index * 2} " +
-                    "glowing=true size_world=0.08,0.08 light=15 light_range=26 " +
-                    "spot=$outer,$inner light_dir=0,-90",
+                "pdraw particle add $group dot $pos color=${lamp.color} glowing=true size_world=0.16,0.16 " +
+                    "light=15 light_range=9 light_falloff=smooth$spotlight",
             )
         }
-        run("tp @s 0 ${baseY + 2.5} 9 facing 0 ${baseY - 1} 0")
+        run("tp @s 0.0 -51.0 21.0 facing 0.0 -63.0 2.0")
         ctx.source.sendSuccess(
-            { Component.literal("射灯演示：三盏灯锥角 20°/45°/65°，向下照射；/pdraw light 可查看光场数据") },
+            { Component.literal("从左到右：点光、斜射灯 20°、35°、50°（外锥半角）") },
             false,
         )
         return 1

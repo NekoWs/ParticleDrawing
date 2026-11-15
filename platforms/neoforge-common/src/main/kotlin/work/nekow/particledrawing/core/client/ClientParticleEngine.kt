@@ -99,7 +99,7 @@ class ClientParticleEngine {
         rp.captureSpawnSize()
         rp.markBorn(tickSequence)
         particles[id] = rp
-        if (lightsUp(glowing, emits, lightLevel)) lightIds.add(id)
+        if (lightsUp(glowing, emits || lightShape != null, lightLevel)) lightIds.add(id)
         if (lifeCurve != null && !lifeCurve.isEmpty()) curveIds.add(id)
 
         val pe: ParticleEngine = Minecraft.getInstance().particleEngine
@@ -217,6 +217,13 @@ class ClientParticleEngine {
                                   billboard: Boolean = true, spin: DoubleArray = ZERO_SPIN,
                                   spinLocal: Boolean = true) {
         applyDirect(id, pos, color, glowing, lightLevel, snap, 0f, scaleArray, billboard, spin, spinLocal)
+    }
+
+    fun updateScriptLight(id: UUID, shape: LightShape?, intensity: Float) {
+        val particle = particles[id] ?: return
+        val wasLight = lightsUp(particle)
+        particle.setScriptLight(shape, intensity)
+        refreshLightIndex(id, wasLight, lightsUp(particle))
     }
 
     /** 动画求值后的 UV 同步到已有粒子，保留当前的出生与换帧时钟。 */
