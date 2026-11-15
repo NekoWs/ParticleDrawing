@@ -139,6 +139,9 @@ object DynamicLightManager {
     // ── 诊断计数：只增不减，用来判断「光有没有真的写进地形」 ──
     /** 区块烘焙时走到亮度混入的次数。 */
     @Volatile
+    private var entryLogged = false
+
+    @Volatile
     var bakeCalls: Long = 0L
         private set
 
@@ -293,6 +296,13 @@ object DynamicLightManager {
     @JvmStatic
     @JvmOverloads
     fun renderDynamicLights(engine: ClientParticleEngine, partialTick: Float = 0f) {
+        // 无条件留一行痕迹：确认这条渲染路径确实在跑，并顺带看清验收属性有没有传到 JVM。
+        if (!entryLogged) {
+            entryLogged = true
+            org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").info(
+                "[PD-entry] 光照渲染入口已执行 pd.demo={}", System.getProperty("pd.demo"),
+            )
+        }
         // 每帧都会走到这里，用它当验收钩子的入口比玩家 tick 可靠（暂停/失焦都不影响）。
         work.nekow.particledrawing.core.client.ClientAnimationProgramManager.maybeRunDemo()
         if (!isEnabled()) {
