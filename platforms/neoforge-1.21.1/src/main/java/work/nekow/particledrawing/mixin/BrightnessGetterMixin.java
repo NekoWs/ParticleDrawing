@@ -27,9 +27,7 @@ public abstract class BrightnessGetterMixin {
         if (!DynamicLightManager.isEnabled()) {
             return original;
         }
-        if (level.getBlockState(pos).isSolidRender(level, pos)) {
-            return original;
-        }
+        // 地形表面本身就是实体方块：这一判会把地面排除在动态光之外，只剩空气格受光。
         return DynamicLightManager.getLightmapWithDynamicLight(level, pos, original);
     }
 }

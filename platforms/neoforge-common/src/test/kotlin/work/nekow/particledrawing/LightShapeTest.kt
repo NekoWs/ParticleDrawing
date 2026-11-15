@@ -116,4 +116,33 @@ class LightShapeTest {
         assertTrue(ParticleVisual().isPristine())
         assertTrue(!ParticleVisual().apply { spotlight(8.0, 25.0) }.isPristine())
     }
+    @Test
+    fun `命令参数能解析出射灯形状`() {
+        val o = work.nekow.particledrawing.command.ParticleCommandOptionParser.parse(
+            "glowing=true light=15 spot=40,22 light_range=34 light_dir=0,-90 size_world=0.3,0.3",
+        )
+        val shape = o.visual.lightShape
+        assertNotNull(shape, "spot 参数应当解析成光源形状")
+        assertEquals(40.0, shape.outerDeg, 1e-9)
+        assertEquals(22.0, shape.innerDeg, 1e-9)
+        assertEquals(34.0, shape.range, 1e-9)
+        assertEquals(-90.0, shape.pitchDeg, 1e-9)
+        assertEquals(0.0, shape.yawDeg, 1e-9)
+    }
+
+    @Test
+    fun `只写外锥角也能解析`() {
+        val o = work.nekow.particledrawing.command.ParticleCommandOptionParser.parse("spot=30 light_range=20")
+        val shape = o.visual.lightShape
+        assertNotNull(shape)
+        assertEquals(30.0, shape.outerDeg, 1e-9)
+        assertEquals(18.0, shape.effectiveInnerDeg, 1e-9)
+    }
+
+    @Test
+    fun `未知衰减曲线会报错`() {
+        assertFailsWith<IllegalArgumentException> {
+            work.nekow.particledrawing.command.ParticleCommandOptionParser.parse("light_falloff=weird")
+        }
+    }
 }

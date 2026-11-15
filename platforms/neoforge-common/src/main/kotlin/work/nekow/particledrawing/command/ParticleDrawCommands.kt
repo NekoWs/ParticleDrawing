@@ -71,6 +71,7 @@ object ParticleDrawCommands {
                 .then(animation)
                 .then(Commands.literal("texture")
                     .then(Commands.literal("reload").executes(::reloadTextures)))
+                .then(Commands.literal("light").executes(::lightProbe))
         )
     }
 
@@ -85,6 +86,40 @@ object ParticleDrawCommands {
             { Component.literal("用法: /pdraw particle ... 绘制粒子；/pdraw animation ... 播放动画；/pdraw texture reload 重载贴图") },
             false,
         )
+        return 1
+    }
+
+    /**
+     * 诊断：把动态光场在本地的实际数值念出来。
+     *
+     * 排查「画面没亮」时先看这里的数字：源数量、版本号、以及玩家脚下与身前的光照等级，
+     * 就能分清是光源没被收集、还是光图没写进去。
+     */
+    private fun lightProbe(ctx: CommandContext<CommandSourceStack>): Int {
+        // 定时函数是以服务端身份跑的，这里不能用 playerOrException；按命令源坐标取样即可。
+        val enabled = work.nekow.particledrawing.lighting.DynamicLightManager.isEnabled()
+        val count = work.nekow.particledrawing.lighting.DynamicLightManager.sourceCount()
+        val version = work.nekow.particledrawing.lighting.DynamicLightManager.version()
+        val pos = ctx.source.position
+        val x = pos.x
+        val y = pos.y
+        val z = pos.z
+        val here = work.nekow.particledrawing.lighting.DynamicLightManager.getDynamicLightLevel(x, y, z)
+        val below = work.nekow.particledrawing.lighting.DynamicLightManager.getDynamicLightLevel(x, y - 1.0, z)
+        val ahead = work.nekow.particledrawing.lighting.DynamicLightManager.getDynamicLightLevel(x, y + 2.0, z)
+        val samples = work.nekow.particledrawing.lighting.DynamicLightManager.lightSnapshot()
+        val first = samples.firstOrNull()
+        val detail = if (first == null) {
+            "无光源"
+        } else {
+            "首个光源 pos=(${"%.1f".format(first.x)}, ${"%.1f".format(first.y)}, ${"%.1f".format(first.z)}) " +
+                "强度=${"%.2f".format(first.intensity)} 半径=${"%.1f".format(first.range)}"
+        }
+        val line = "动态光: 启用=$enabled 源=$count 版本=$version | 脚下=${"%.2f".format(here)} " +
+            "下方=${"%.2f".format(below)} 上方=${"%.2f".format(ahead)} | $detail"
+        // 同时进服务端日志，自动化排查时直接 grep 即可，不必依赖聊天栏截图
+        org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").info("[PD-light] {}", line)
+        ctx.source.sendSuccess({ Component.literal(line) }, false)
         return 1
     }
 
