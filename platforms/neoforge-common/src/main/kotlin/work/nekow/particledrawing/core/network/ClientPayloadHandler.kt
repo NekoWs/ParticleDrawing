@@ -199,7 +199,9 @@ internal object ClientPayloadHandler {
 
     internal fun handleLightShape(payload: ParticleLightShapePayload, context: IPayloadContext) {
         context.enqueueWork {
-            ClientParticleEngine.instance()?.setLightShape(payload.particleId, payload.shape)
+            ClientParticleEngine.instance()?.setLightShape(
+                payload.particleId, payload.shape, payload.part, payload.durationTicks, payload.easing,
+            )
         }
     }
 

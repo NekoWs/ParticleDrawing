@@ -6,6 +6,7 @@ import work.nekow.particledrawing.platform.toMinecraft
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.network.LightShapePart
 import work.nekow.particledrawing.core.server.AnimationScheduler
 import work.nekow.particledrawing.core.server.ParticleData
 import work.nekow.particledrawing.util.AttachMath
@@ -272,7 +273,7 @@ class ParticleHandle(
         return this
     }
 
-    /** 当前的显式光源形状；未配置或粒子已移除时返回 null。 */
+    /** 服务端记录的目标形状；未配置或粒子已移除时返回 null。 */
     fun lightShape(): LightShape? = data()?.visual()?.lightShape
 
     /**
@@ -283,31 +284,67 @@ class ParticleHandle(
         manager.getEngine().setLightShape(id, shape, manager.getPlayers())
     }
 
-    /** 修改已配置光源的世界朝向（度）。 */
-    fun lightDirection(yawDeg: Double, pitchDeg: Double): ParticleHandle =
-        editLightShape { it.withDirection(yawDeg, pitchDeg) }
+    /** 调整世界朝向（度）；偏航走最短角距。时长为 0 时立即落地。 */
+    @JvmOverloads
+    fun lightDirection(
+        yawDeg: Double, pitchDeg: Double, durationTicks: Int = 0, easing: EasingType = EasingType.LINEAR,
+    ): ParticleHandle =
+        editLightShape(LightShapePart.DIRECTION, durationTicks, easing) { it.withDirection(yawDeg, pitchDeg) }
 
-    /** 修改锥半角。省略内锥时取外锥的 60%，省略锐度时沿用当前值。 */
+    @JvmOverloads
+    fun lightDirection(yawDeg: Double, pitchDeg: Double, over: Time, easing: Ease = Ease.LINEAR): ParticleHandle =
+        lightDirection(yawDeg, pitchDeg, over.requireWholeTicks("转向时长"), easing.toEasingType())
+
+    /** 立即修改锥半角。省略内锥时取外锥的 60%。 */
     @JvmOverloads
     fun lightFocus(outerDeg: Double, innerDeg: Double = 0.0): ParticleHandle =
-        editLightShape { it.withFocus(outerDeg, innerDeg) }
+        lightFocus(outerDeg, innerDeg, 0, EasingType.LINEAR)
 
-    /** 修改锥半角与边缘锐度。 */
+    /** 立即修改锥半角与边缘锐度。 */
     fun lightFocus(outerDeg: Double, innerDeg: Double, edge: Double): ParticleHandle =
-        editLightShape { it.withFocus(outerDeg, innerDeg, edge) }
+        lightFocus(outerDeg, innerDeg, edge, 0, EasingType.LINEAR)
+
+    /** 缓动到新的外锥半角，内锥取外锥的 60%。 */
+    fun lightFocus(outerDeg: Double, durationTicks: Int, easing: EasingType): ParticleHandle =
+        lightFocus(outerDeg, 0.0, durationTicks, easing)
+
+    @JvmOverloads
+    fun lightFocus(outerDeg: Double, over: Time, easing: Ease = Ease.LINEAR): ParticleHandle =
+        lightFocus(outerDeg, over.requireWholeTicks("聚焦时长"), easing.toEasingType())
+
+    /** 缓动内外锥半角，沿用当前配置的边缘锐度。 */
+    fun lightFocus(
+        outerDeg: Double, innerDeg: Double, durationTicks: Int, easing: EasingType,
+    ): ParticleHandle =
+        editLightShape(LightShapePart.FOCUS, durationTicks, easing) { it.withFocus(outerDeg, innerDeg) }
+
+    /** 同时缓动内外锥半角与边缘锐度。 */
+    fun lightFocus(
+        outerDeg: Double, innerDeg: Double, edge: Double, durationTicks: Int, easing: EasingType,
+    ): ParticleHandle =
+        editLightShape(LightShapePart.FOCUS, durationTicks, easing) { it.withFocus(outerDeg, innerDeg, edge) }
 
     /** 修改距离衰减和半径。 */
     fun lightFalloff(falloff: LightFalloff, range: Double): ParticleHandle =
-        editLightShape { it.withFalloff(falloff, range) }
+        editLightShape(LightShapePart.FALLOFF) { it.withFalloff(falloff, range) }
 
     /** 修改距离衰减，沿用当前半径。 */
     fun lightFalloff(falloff: LightFalloff): ParticleHandle =
-        editLightShape { it.withFalloff(falloff) }
+        editLightShape(LightShapePart.FALLOFF) { it.withFalloff(falloff) }
 
-    private inline fun editLightShape(edit: (LightShape) -> LightShape): ParticleHandle {
+    private inline fun editLightShape(
+        part: LightShapePart, durationTicks: Int = 0, easing: EasingType = EasingType.LINEAR,
+        edit: (LightShape) -> LightShape,
+    ): ParticleHandle {
+        require(durationTicks >= 0) { "光源形状的缓动时长不能为负" }
         val data = data() ?: return this
         val shape = checkNotNull(data.visual()?.lightShape) { "请先用 lightShape 设置光源形状" }
-        return lightShape(edit(shape))
+        val target = edit(shape)
+        if (part == LightShapePart.FOCUS && durationTicks > 0) {
+            require(shape.isSpot && target.isSpot) { "聚焦缓动的起点和终点必须是射灯" }
+        }
+        manager.getEngine().setLightShape(id, target, manager.getPlayers(), part, durationTicks, easing)
+        return this
     }
 
     /**

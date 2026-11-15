@@ -20,6 +20,7 @@ import work.nekow.particledrawing.core.network.ParticleForcePayload
 import work.nekow.particledrawing.core.network.ParticleForceBatchPayload
 import work.nekow.particledrawing.core.network.ParticleLightIntensityPayload
 import work.nekow.particledrawing.core.network.ParticleLightLevelPayload
+import work.nekow.particledrawing.core.network.LightShapePart
 import work.nekow.particledrawing.core.network.ParticleLightShapePayload
 import work.nekow.particledrawing.core.network.ParticleRotationPayload
 import work.nekow.particledrawing.core.network.ParticleSetPositionPayload
@@ -458,11 +459,13 @@ class ServerParticleEngine(
         sendToVisible(playersInDimension, data.position(), payload)
     }
 
-    internal fun setLightShape(id: UUID, shape: LightShape?, playersInDimension: Collection<ServerPlayer>) {
+    internal fun setLightShape(
+        id: UUID, shape: LightShape?, playersInDimension: Collection<ServerPlayer>,
+        part: LightShapePart = LightShapePart.ALL, durationTicks: Int = 0, easing: EasingType = EasingType.LINEAR,
+    ) {
         val data = particles[id] ?: return
-        if (data.visual()?.lightShape == shape) return
         data.setLightShape(shape)
-        sendToTracked(playersInDimension, listOf(id), ParticleLightShapePayload(id, shape))
+        sendToTracked(playersInDimension, listOf(id), ParticleLightShapePayload(id, shape, part, durationTicks, easing))
     }
 
     /**

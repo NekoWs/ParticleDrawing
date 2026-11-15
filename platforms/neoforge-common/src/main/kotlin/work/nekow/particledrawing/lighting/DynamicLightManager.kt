@@ -358,7 +358,7 @@ object DynamicLightManager {
             val score = lightScore(dx, dy, dz, luminance)
             val key = cellKey(cellCoord(x), cellCoord(y), cellCoord(z))
             // 形状是每颗粒子自带的外观参数：射灯给出锥角与朝向，点光拿到的是零向量。
-            val shape = p.shape()
+            val shape = p.shape(partialTick)
             val spot = shape != null && shape.isSpot
             val dir = if (spot) shape.direction() else TRIPLE_ZERO
             val src = LightSource(

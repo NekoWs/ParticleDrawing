@@ -7,14 +7,14 @@
 模型构造器和位置字段的 JVM 类型已变化，依赖方需要重新编译；转换方法与兼容范围见
 [多版本架构](multiversion.md#类型与原生服务)。`animation` 包横跨核心和平台，
 按名称读取或控制游戏内播放的类位于平台。`.pdrawc` 版本为 18，动画载荷编解码版本为 9，
-NeoForge 载荷注册版本为 18，联机两端需要使用相同的载荷注册版本。
+NeoForge 载荷注册版本为 19，联机两端需要使用相同的载荷注册版本。
 
 ## api：公开 API
 
 | 类 | 作用 |
 | --- | --- |
 | `ParticleManager` | 维度级入口：创建粒子与粒子组、声明运行时发射器、批量生成 `spawnAll` / `spawnAllDetailed`、批量指令 `trackAll` / `setVelocityAll` / `applyForceAll`、程序化贴图登记 `registerTexture` / `registerBuiltinTextures`；贴图返回 true 只表示逻辑登记已接受，GPU 解码由客户端主线程排队完成 |
-| `ParticleHandle` | 单粒子句柄：移动、速度、力、实体锚点、重着色、缩放、光强与光源形状热更、销毁、只读查询 `position()` / `velocity()` |
+| `ParticleHandle` | 单粒子句柄：移动、速度、力、实体锚点、重着色、缩放、光强、光轴与聚焦缓动、销毁、只读查询 `position()` / `velocity()` |
 | `ParticleHandle.Builder` | 粒子生成参数：位置、颜色、缩放、寿命、外观规格、寿命曲线、首帧插值端点、逐粒子延迟 |
 | `ParticleGroup` | 粒子组与编排动画：轴心绑定、一次性变换、持续运动、变量热更、表达式指令、可更新阶段 `phaseParameter`、完成信号；`add(existing)` 会改挂既有/延迟成员，程序按玩家可见成员投递，迟到成员补挂到同一原起点时间轴 |
 | `ParticleBatch` | 程序化粒子集：成员逐 tick 增删、批量位置/速度/力、条件回收、补齐到 N |

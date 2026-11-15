@@ -424,13 +424,15 @@ manager.create().position(p).scale(3f).lifetime(20)
 ParticleHandle lamp = manager.create().position(pos)
     .spotlight(12, 35).lightDirection(25, -35).lightOnly(true).spawn();
 if (lamp != null) {
-    lamp.lightDirection(70, -45).lightFocus(24).lightIntensity(0.4f, 8);
+    lamp.lightDirection(70, -45, 20, EasingType.EASE_IN_OUT)
+        .lightFocus(24, 20, EasingType.EASE_OUT)
+        .lightIntensity(0.4f, 8);
     lamp.move(target, 8, EasingType.LINEAR);
 }
 ```
 
 在单颗、批量或发射器间复用配置时，用 `work.nekow.particledrawing.light.LightShape`。
-同一时刻要改多个形状参数时，可先组合再用一次 `lightShape(shape)` 提交。
+需要立即替换整份形状时，可先组合再用一次 `lightShape(shape)` 提交。
 
 ```kotlin
 val beam = LightShape.spot(12.0, 35.0, 20.0, 1.5)
@@ -456,8 +458,21 @@ Java 可写 `ParticleAppearance.builder().light(Light.only(15, 0.6f).withShape(b
 | 光色 | 射灯与 `LightShape.point()` 使用粒子 RGB，`Color.WHITE` 为白光。出生时用 `color(...)`，单颗运行期用 `recolor(...)`。 |
 | 亮度与移动 | `lightLevel(0..15)`，0 关灯。`lightIntensity(乘数, 时长)` 与 `move(target, 时长, easing)` 支持过渡，`track(target)` 适合每刻跟随。 |
 
-单颗灯的形状更新即时生效。`lightDirection`、`lightFocus` 和 `lightFalloff` 基于当前
-显式形状；连续扫光时可逐刻提交新形状。用 `lightShape(LightShape.point())` 切换成彩色点光。
+`lightDirection` 和 `lightFocus` 各自接受时长（tick）和 `EasingType`，也可用 `Time` 与 `Ease`。
+两项可以同时运行，期间改目标会从客户端正在显示的朝向或锥角接续。偏航沿最短角距过渡，
+缓动进度限制在起止值之间以保持合法的俯仰和锥角。时长为 0 时立即应用。
+
+```kotlin
+lamp.lightDirection(70.0, -45.0, 20.ticks, Ease.IN_OUT)
+    .lightFocus(24.0, 20.ticks, Ease.OUT)
+
+// 在前一段结束前调用也能平滑接续；同时指定内锥和边缘锐度。
+lamp.lightFocus(32.0, 18.0, 1.5, durationTicks = 12, easing = EasingType.EASE_IN_OUT)
+```
+
+聚焦缓动的起点与终点都须是射灯。用 `lightShape(LightShape.point())` 切换成彩色点光。
+服务端 `lightShape()` 返回目标形状，客户端 `ParticleLights.snapshot()` 返回本帧插值后的形状。
+迟到或重新进入视距的玩家直接看到服务端记录的目标形状。
 `lightShape(null)` 清除显式形状，已有全亮或独立照明标记的粒子恢复为默认白色点光。
 发射器的配置更新应用于接下来出生的粒子。光束显示由客户端 `showSpotlightBeams` 控制，
 光源预算由 `maxDynamicLights` 和 `maxDynamicLightsPerCell` 控制。

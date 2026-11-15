@@ -10,6 +10,7 @@ import work.nekow.particledrawing.api.ParticleLifeCurve
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.light.LightShape
+import work.nekow.particledrawing.core.network.LightShapePart
 import work.nekow.particledrawing.core.network.ParticleExitCompletePayload
 import work.nekow.particledrawing.util.AttachMath
 import java.util.*
@@ -397,10 +398,12 @@ class ClientParticleEngine {
         if (nowLight) lightIds.add(id) else lightIds.remove(id)
     }
 
-    internal fun setLightShape(id: UUID, shape: LightShape?) {
+    internal fun setLightShape(
+        id: UUID, shape: LightShape?, part: LightShapePart, durationTicks: Int, easing: EasingType,
+    ) {
         val rp = particles[id] ?: return
         val wasLight = lightsUp(rp)
-        rp.setLightShape(shape)
+        rp.applyLightShape(shape, part, durationTicks * 50L, easing)
         refreshLightIndex(id, wasLight, lightsUp(rp))
     }
 

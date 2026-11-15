@@ -7,6 +7,7 @@ import work.nekow.particledrawing.api.CurveChannel
 import work.nekow.particledrawing.api.ParticleLifeCurve
 import work.nekow.particledrawing.core.easing.EasingCurve
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.network.LightShapePart
 import work.nekow.particledrawing.light.LightShape
 import work.nekow.particledrawing.util.rotateAround
 import java.util.UUID
@@ -38,6 +39,20 @@ private class LightEase(
     var durationMs: Long = 0L,
     var easing: EasingCurve = LINEAR,
 )
+
+/** 从接手时采样到的光源形状过渡到新目标。 */
+private class LightShapeEase(
+    val from: LightShape,
+    val startMs: Double,
+    val durationMs: Long,
+    val easing: EasingType,
+) {
+    fun finished(now: Double): Boolean = now - startMs >= durationMs
+
+    // 保持锥角和俯仰有效，避免带过冲的曲线穿过点光的边界。
+    fun fraction(now: Double): Float =
+        easing.evaluate(((now - startMs) / durationMs).toFloat()).coerceIn(0f, 1f)
+}
 
 /**
  * 渲染粒子：保存可视化状态并支持缓动过渡与速度积分。
@@ -150,6 +165,10 @@ class RenderParticle(
     /** 运行时目标热更的过渡；startMs < 0 表示没有过渡。 */
     private var lightEase = LightEase()
 
+    private var directionEase: LightShapeEase? = null
+    private var focusEase: LightShapeEase? = null
+    private var lightShapeSampleMs = 0.0
+
     /** 寿命到点但仍留一帧画零末端（仅当曲线末端确实收到零）。 */
     private var expiring = false
 
@@ -180,11 +199,72 @@ class RenderParticle(
     fun lightOnly(): Boolean = lightOnly
     fun lightLevel(): Int = lightLevel
 
-    /** 光源形状；null 表示按老行为（点光、线性衰减、全局半径）。 */
-    fun shape(): LightShape? = lightShape
+    /** 本帧的光源形状；null 为默认点光。 */
+    fun shape(partialTick: Float = 0f): LightShape? {
+        lightShapeSampleMs = maxOf(lightShapeSampleMs, engineMs + partialTick.coerceIn(0f, 1f) * 50.0)
+        return lightShapeAt(lightShapeSampleMs)
+    }
 
     internal fun setLightShape(shape: LightShape?) {
         lightShape = shape
+        directionEase = null
+        focusEase = null
+    }
+
+    internal fun applyLightShape(shape: LightShape?, part: LightShapePart, durationMs: Long, easing: EasingType) {
+        if (part == LightShapePart.ALL || shape == null) {
+            setLightShape(shape)
+            return
+        }
+
+        if (part == LightShapePart.DIRECTION || part == LightShapePart.FOCUS) {
+            // 收到更新时可能还在上一渲染帧所在的 tick；从已显示的分数刻接手，避免退回刻边界。
+            val now = maxOf(lightShapeSampleMs, engineMs.toDouble())
+            val from = if (durationMs > 0L) lightShapeAt(now) else null
+            val transition = from?.let { LightShapeEase(it, now, durationMs, easing) }
+            if (part == LightShapePart.DIRECTION) directionEase = transition else focusEase = transition
+        }
+        lightShape = shape
+    }
+
+    private fun lightShapeAt(now: Double): LightShape? {
+        val target = lightShape ?: return null
+        val direction = directionEase?.takeUnless { it.finished(now) }
+        val focus = focusEase?.takeUnless { it.finished(now) }
+        directionEase = direction
+        focusEase = focus
+        if (direction == null && focus == null) return target
+
+        var yaw = target.yawDeg
+        var pitch = target.pitchDeg
+        if (direction != null) {
+            val k = direction.fraction(now)
+            val from = direction.from
+            val startYaw = Math.IEEEremainder(from.yawDeg, 360.0)
+            val targetYaw = Math.IEEEremainder(yaw, 360.0)
+            yaw = when (k) {
+                0f -> from.yawDeg
+                1f -> target.yawDeg
+                else -> startYaw + Math.IEEEremainder(targetYaw - startYaw, 360.0) * k
+            }
+            pitch = lerp(from.pitchDeg, pitch, k)
+        }
+
+        var outer = target.outerDeg
+        var inner = target.innerDeg
+        var edge = target.edge
+        if (focus != null) {
+            val k = focus.fraction(now)
+            val from = focus.from
+            outer = if (k == 1f) outer else lerp(from.outerDeg, outer, k)
+            inner = when (k) {
+                0f -> from.innerDeg
+                1f -> target.innerDeg
+                else -> lerp(from.effectiveInnerDeg, target.effectiveInnerDeg, k).coerceAtMost(outer)
+            }
+            edge = if (k == 1f) edge else lerp(from.edge, edge, k)
+        }
+        return target.copy(yawDeg = yaw, pitchDeg = pitch, outerDeg = outer, innerDeg = inner, edge = edge)
     }
 
     fun setScriptLight(shape: LightShape?, intensity: Float) {

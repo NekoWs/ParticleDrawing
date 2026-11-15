@@ -10,6 +10,7 @@ import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.api.particleVisual
 import work.nekow.particledrawing.core.client.RenderParticle
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.network.LightShapePart
 import work.nekow.particledrawing.core.network.ParticleLightShapePayload
 import work.nekow.particledrawing.core.network.ParticleVisualCodec
 import work.nekow.particledrawing.core.server.ParticleData
@@ -181,8 +182,14 @@ class LightShapeTest {
         val beam = LightShape.spot(12.0, 35.0, 20.0, 2.0)
             .withDirection(17.5, -42.5)
             .withFalloff(LightFalloff.INVERSE_SQUARE)
-        for (shape in listOf(beam, LightShape.point(6.0), null)) {
-            val payload = ParticleLightShapePayload(id, shape)
+        val updates = listOf(
+            ParticleLightShapePayload(id, beam),
+            ParticleLightShapePayload(id, LightShape.point(6.0)),
+            ParticleLightShapePayload(id, null),
+            ParticleLightShapePayload(id, beam, LightShapePart.DIRECTION, 12, EasingType.EASE_IN_OUT),
+            ParticleLightShapePayload(id, beam, LightShapePart.FOCUS, 20, EasingType.custom(0.2, 0.0, 0.9, 1.0)),
+        )
+        for (payload in updates) {
             val out = FriendlyByteBuf(Unpooled.buffer())
             try {
                 ParticleLightShapePayload.STREAM_CODEC.encode(out, payload)
@@ -223,5 +230,66 @@ class LightShapeTest {
         assertNull(data.visual()?.lightShape)
         assertFalse(render.emitsLight())
         assertEquals(0f, render.lightIntensity())
+    }
+
+    private fun lamp(shape: LightShape) = RenderParticle(
+        UUID.randomUUID(), Vec3.ZERO, Color.WHITE, 1f, false, 15, -1, lightShape = shape,
+    )
+
+    @Test
+    fun `转向走最短偏航和聚焦各自按分数刻采样`() {
+        val beam = LightShape.spot(12.0, 18.0).withDirection(170.0, -35.0)
+        val turned = beam.withDirection(-170.0, -55.0)
+        val focused = turned.withFocus(38.0, 22.0, 2.0)
+        val render = lamp(beam)
+        render.applyLightShape(turned, LightShapePart.DIRECTION, 100L, EasingType.LINEAR)
+        render.applyLightShape(focused, LightShapePart.FOCUS, 200L, EasingType.EASE_IN)
+        val frame = assertNotNull(render.shape(0.5f))
+        assertEquals(175.0, frame.yawDeg, 1e-6)
+        assertEquals(-40.0, frame.pitchDeg, 1e-6)
+        val zoom = EasingType.EASE_IN.evaluate(0.125f)
+        assertEquals(18.0 + 20.0 * zoom, frame.outerDeg, 1e-6)
+        assertEquals(10.8 + 11.2 * zoom, frame.effectiveInnerDeg, 1e-6)
+        assertEquals(1.0 + zoom, frame.edge, 1e-6)
+        repeat(2) { render.advanceEngine() }
+        val half = assertNotNull(render.shape())
+        assertEquals(-170.0, half.yawDeg)
+        assertTrue(half.outerDeg < 38.0)
+        repeat(2) { render.advanceEngine() }
+        assertEquals(focused, render.shape())
+    }
+
+    @Test
+    fun `分数刻重定向连续且不影响另一项缓动`() {
+        val beam = LightShape.spot(12.0, 20.0)
+        val turned = beam.withDirection(80.0, -50.0)
+        val focused = turned.withFocus(40.0, 30.0)
+        val render = lamp(beam)
+        render.applyLightShape(turned, LightShapePart.DIRECTION, 200L, EasingType.LINEAR)
+        render.applyLightShape(focused, LightShapePart.FOCUS, 200L, EasingType.LINEAR)
+        render.advanceEngine()
+        val before = assertNotNull(render.shape(0.6f))
+        val retargeted = focused.withDirection(12.0, -70.0)
+        render.applyLightShape(retargeted, LightShapePart.DIRECTION, 100L, EasingType.LINEAR)
+        assertEquals(before, render.shape(0.6f))
+        val after = assertNotNull(render.shape(0.8f))
+        assertTrue(after.yawDeg < before.yawDeg)
+        assertTrue(after.outerDeg > before.outerDeg)
+
+        val refocused = retargeted.withFocus(18.0)
+        render.applyLightShape(refocused, LightShapePart.FOCUS, 100L, EasingType.LINEAR)
+        val resumed = assertNotNull(render.shape(0.8f))
+        assertEquals(after.yawDeg, resumed.yawDeg, 1e-9)
+        assertEquals(after.outerDeg, resumed.outerDeg, 1e-9)
+        assertEquals(after.effectiveInnerDeg, resumed.effectiveInnerDeg, 1e-9)
+        val ranged = refocused.withFalloff(LightFalloff.SMOOTH, 16.0)
+        render.applyLightShape(ranged, LightShapePart.FALLOFF, 0L, EasingType.LINEAR)
+        val next = assertNotNull(render.shape(0.9f))
+        assertTrue(next.yawDeg < resumed.yawDeg)
+        assertTrue(next.outerDeg < resumed.outerDeg)
+        assertEquals(16.0, next.range)
+
+        repeat(2) { render.advanceEngine() }
+        assertEquals(ranged, render.shape(0.8f))
     }
 }
