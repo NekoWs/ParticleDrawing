@@ -1,6 +1,7 @@
 package work.nekow.particledrawing.api
 
 import net.minecraft.world.phys.Vec3
+import java.awt.Font
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -174,6 +175,21 @@ object Draw {
             placeVisual(manager, g, a.add(b).scale(0.5), colorFn.colorAt(t), look, index++, stagger, lifeCurve, lifetime)
         }
         return g
+    }
+
+    /** 生成文字的世界坐标，可直接交给 [ParticleGroup.morph]。文字在 XY 平面，从 +Z 一侧阅读。 */
+    @JvmStatic
+    @JvmOverloads
+    fun textPoints(
+        text: String, center: Vec3, count: Int, height: Double,
+        font: Font = Font(Font.SANS_SERIF, Font.BOLD, 1),
+    ): List<Vec3> {
+        require(center.x.isFinite() && center.y.isFinite() && center.z.isFinite()) { "文字中心需要有限坐标" }
+        return ParticleTextSampler.sample(text, count, height, font).map {
+            val point = center.add(it.x, it.y, it.z)
+            require(point.x.isFinite() && point.y.isFinite()) { "文字坐标超出可表示范围" }
+            point
+        }
     }
 
     // 2D 图形（axis 选择所在平面）

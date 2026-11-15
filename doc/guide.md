@@ -286,6 +286,18 @@ group.expression("""
 
 ### 字幕与形状切换
 
+`Draw.textPoints(text, center, count, height)` 按笔画生成恰好 `count` 个世界坐标，直接用作形变目标。
+`height` 以格为单位，宽度随字形比例变化，支持换行。默认使用运行该代码的机器上的无衬线粗体。
+缺少中文等字形时会明确报出字符码，可在最后一个参数传入字体，服务端也可以从模组资源用
+`Font.createFont(Font.TRUETYPE_FONT, stream)` 读取 TTF 或 OpenType 字体。客户端接收坐标即可绘制。
+
+```kotlin
+val points = Draw.textPoints("变换形状", center, count = 602, height = 2.4)
+group.morph(points)
+```
+
+Java 可调用 `Draw.textPoints("变换形状", center, 602, 2.4)`，也可传入第五个 `Font` 参数。
+
 `ParticleGroup.morph(points, options)` 接收 `List<Vec3>` 世界坐标，可直接使用文字、图片或模型的采样点。
 单次可传 1–8192 个目标，粒子与目标等量时，每个目标恰好分到一颗。多余的粒子停在当前点。
 给每个落点配置外观时，使用 `morphSlots(List<ParticleMorphSlot>, MorphOptions)`，Java 和 Kotlin 均可调用。

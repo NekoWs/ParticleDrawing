@@ -36,6 +36,7 @@ KDoc。只在特定包中提供的类型单独注明。代码示例见[使用指
 | --- | --- |
 | `ParticleEmitter`、`EmitterHandle` | 按距离或间隔沿锚点生成粒子，更新参数或停止生成 |
 | `ParticleSampling`、`ParticleImageSampler`、`ParticleSeed` | 计数、范围、网格和图片样本 |
+| `ParticleTextSampler` | 从字符串的字形笔画生成指定数量的坐标；用 `Draw.textPoints` 直接取得世界坐标 |
 | `ParticleRecipe`、`RecipeAnchor` | 用样本、公式、筛选和锚点声明出生与运动 |
 | `ParticleSources`、`ParticleSourceHandle` | 启动单轮或持续生成，修改现有实例并停止或移除 |
 
