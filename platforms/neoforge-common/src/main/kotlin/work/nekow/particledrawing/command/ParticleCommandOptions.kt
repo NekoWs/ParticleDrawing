@@ -12,6 +12,9 @@ import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.light.LightFalloff
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /** `/pdraw particle add` 各图元共用的外观参数。 */
 internal data class ParticleCommandOptions(
@@ -51,16 +54,16 @@ internal object ParticleCommandOptionParser {
             val split = token.indexOf('=')
             val key = (if (split < 0) token else token.substring(0, split)).lowercase()
             val value = if (split < 0) "true" else token.substring(split + 1)
-            require(key in allowed) { "未知参数 '$key'；使用 /pdraw particle help 查看参数" }
-            require(split >= 0 || key in booleanFlags) { "参数 '$key' 需要写成 $key=值" }
-            require(key !in values) { "参数 '$key' 写了两次" }
+            requireLocalized(key in allowed) { translation("error.command.unknown_option", key) }
+            requireLocalized(split >= 0 || key in booleanFlags) { translation("error.command.missing_value", key) }
+            requireLocalized(key !in values) { translation("error.command.duplicate_option", key) }
             values[key] = value
         }
 
         val colorModes = listOf("color", "gradient", "rainbow").filter(values::containsKey)
-        require(colorModes.size <= 1) { "color、gradient、rainbow 只能选一个" }
-        require("spin_space" !in values || "spin" in values) { "spin_space 需要和 spin 一起使用" }
-        require("force_ticks" !in values || "force" in values) { "force_ticks 需要和 force 一起使用" }
+        requireLocalized(colorModes.size <= 1) { translation("error.command.color_mode") }
+        requireLocalized("spin_space" !in values || "spin" in values) { translation("error.command.spin_space") }
+        requireLocalized("force_ticks" !in values || "force" in values) { translation("error.command.force_ticks") }
 
         val visual = ParticleVisual()
         values["style"]?.let { visual.style(parseStyle(it)) }
@@ -82,7 +85,7 @@ internal object ParticleCommandOptionParser {
             when (it.lowercase()) {
                 "local" -> true
                 "world" -> false
-                else -> throw IllegalArgumentException("spin_space 只能是 local 或 world")
+                else -> throw LocalizedArgumentException(translation("error.command.spin_space_choice"))
             }
         } ?: true
         values["spin"]?.let {
@@ -93,7 +96,7 @@ internal object ParticleCommandOptionParser {
         values["glowing"]?.let { visual.glowing(bool(it, "glowing")) }
         values["light"]?.let {
             val level = int(it, "light")
-            require(level in 0..15) { "light 需要是 0 到 15 的整数" }
+            requireLocalized(level in 0..15) { translation("error.command.light_level") }
             visual.lightLevel(level)
         }
         values["intensity"]?.let { visual.lightIntensity(float(it, "intensity")) }
@@ -101,7 +104,7 @@ internal object ParticleCommandOptionParser {
         // 光源形状：spot=外锥[,内锥[,锐度]]，light_dir=偏航,俯仰，light_range=半径，light_falloff=曲线名
         val spot = values["spot"]?.let { optionalFloats(it, 3, "spot") }
         val range = values["light_range"]?.let { float(it, "light_range") } ?: 0f
-        require(range >= 0f) { "light_range 不能为负" }
+        requireLocalized(range >= 0f) { translation("error.command.light_range") }
         if (spot != null) {
             val outer = spot[0].toDouble()
             val inner = spot.getOrElse(1) { 0f }.toDouble()
@@ -116,7 +119,7 @@ internal object ParticleCommandOptionParser {
         }
         values["light_falloff"]?.let {
             val curve = LightFalloff.byName(it)
-                ?: throw IllegalArgumentException("未知衰减曲线 '$it'")
+                ?: throw LocalizedArgumentException(translation("error.command.light_falloff", it))
             visual.lightFalloff(curve, range.toDouble())
         }
         values["light_only"]?.let { visual.lightOnly(bool(it, "light_only")) }
@@ -135,13 +138,13 @@ internal object ParticleCommandOptionParser {
         val color = when {
             values.containsKey("gradient") -> {
                 val pair = values.getValue("gradient").split(':')
-                require(pair.size == 2) { "gradient 格式是 #RRGGBB:#RRGGBB" }
+                requireLocalized(pair.size == 2) { translation("error.command.gradient") }
                 ColorSource.gradient(parseColor(pair[0]), parseColor(pair[1]))
             }
             values.containsKey("rainbow") -> ColorSource.rainbow(
                 values.getValue("rainbow").takeUnless { it.equals("true", true) }?.let {
                     val alpha = float(it, "rainbow")
-                    require(alpha in 0f..1f) { "rainbow 透明度需要在 0 到 1 之间" }
+                    requireLocalized(alpha in 0f..1f) { translation("error.command.rainbow_alpha") }
                     alpha
                 } ?: 1f,
             )
@@ -150,13 +153,13 @@ internal object ParticleCommandOptionParser {
         }
 
         val lifetime = values["lifetime"]?.let { int(it, "lifetime") } ?: -1
-        require(lifetime >= -1) { "lifetime 只能是 -1（无限）或非负整数" }
+        requireLocalized(lifetime >= -1) { translation("error.command.lifetime") }
         val forceTicks = values["force_ticks"]?.let { int(it, "force_ticks") } ?: -1
-        require(forceTicks >= -1) { "force_ticks 只能是 -1（持续）或非负整数" }
+        requireLocalized(forceTicks >= -1) { translation("error.command.force_duration") }
         val stagger = values["stagger"]?.let { int(it, "stagger") } ?: 0
-        require(stagger >= 0) { "stagger 不能为负" }
+        requireLocalized(stagger >= 0) { translation("error.stagger") }
         val thickness = values["thickness"]?.let { float(it, "thickness") } ?: 0.1f
-        require(thickness > 0f) { "thickness 必须大于 0" }
+        requireLocalized(thickness > 0f) { translation("error.command.thickness") }
 
         return ParticleCommandOptions(
             provided = values.keys,
@@ -193,16 +196,16 @@ internal object ParticleCommandOptionParser {
                 else -> token.append(c)
             }
         }
-        require(!quoted) { "参数中的双引号没有闭合" }
-        require(!escaped) { "参数不能以转义符结尾" }
+        requireLocalized(!quoted) { translation("error.command.unclosed_quote") }
+        requireLocalized(!escaped) { translation("error.command.trailing_escape") }
         if (token.isNotEmpty()) out += token.toString()
         return out
     }
 
     internal fun parseColor(raw: String): Color {
         val s = raw.removePrefix("#")
-        require(s.length == 6 || s.length == 8) { "颜色 '$raw' 应为 #RRGGBB 或 #RRGGBBAA" }
-        val value = s.toLongOrNull(16) ?: throw IllegalArgumentException("颜色 '$raw' 含非十六进制字符")
+        requireLocalized(s.length == 6 || s.length == 8) { translation("error.command.color_format", raw) }
+        val value = s.toLongOrNull(16) ?: throw LocalizedArgumentException(translation("error.command.color_digits", raw))
         val r: Int
         val g: Int
         val b: Int
@@ -231,12 +234,12 @@ internal object ParticleCommandOptionParser {
         "ease_out_bounce" -> EasingType.EASE_OUT_BOUNCE
         "ease_in_elastic" -> EasingType.EASE_IN_ELASTIC
         "ease_out_elastic" -> EasingType.EASE_OUT_ELASTIC
-        else -> throw IllegalArgumentException("未知缓动 '$raw'")
+        else -> throw LocalizedArgumentException(translation("error.easing.unknown", raw))
     }
 
     private fun parseCurve(raw: String, key: String): List<CurveKey> = raw.split(',').map { item ->
         val part = item.split(':')
-        require(part.size in 2..3) { "$key 的关键帧格式是 tick:value[:easing]" }
+        requireLocalized(part.size in 2..3) { translation("error.command.curve_format", key) }
         CurveKey(float(part[0], key), float(part[1], key), part.getOrNull(2)?.let(::easing) ?: EasingType.LINEAR)
     }
 
@@ -244,38 +247,38 @@ internal object ParticleCommandOptionParser {
         "square" -> ParticleStyle.SQUARE
         "soft_dot", "softdot", "dot" -> ParticleStyle.SOFT_DOT
         "line" -> ParticleStyle.LINE
-        else -> throw IllegalArgumentException("style 只能是 square、soft_dot 或 line")
+        else -> throw LocalizedArgumentException(translation("error.command.style"))
     }
 
     private fun parseAxis(raw: String): Draw.Axis = when (raw.lowercase()) {
         "xz" -> Draw.Axis.XZ
         "xy" -> Draw.Axis.XY
         "yz" -> Draw.Axis.YZ
-        else -> throw IllegalArgumentException("axis 只能是 xz、xy 或 yz")
+        else -> throw LocalizedArgumentException(translation("error.command.axis"))
     }
 
     private fun bool(raw: String, key: String): Boolean = when (raw.lowercase()) {
         "true", "1", "yes", "on" -> true
         "false", "0", "no", "off" -> false
-        else -> throw IllegalArgumentException("$key 需要 true 或 false")
+        else -> throw LocalizedArgumentException(translation("error.command.boolean", key))
     }
 
     private fun float(raw: String, key: String): Float =
-        raw.toFloatOrNull()?.takeIf { it.isFinite() } ?: throw IllegalArgumentException("$key 需要有限数字")
+        raw.toFloatOrNull()?.takeIf { it.isFinite() } ?: throw LocalizedArgumentException(translation("error.command.finite", key))
 
     private fun int(raw: String, key: String): Int =
-        raw.toIntOrNull() ?: throw IllegalArgumentException("$key 需要整数")
+        raw.toIntOrNull() ?: throw LocalizedArgumentException(translation("error.command.integer", key))
 
     /** 允许省略尾部数字：`spot=30`、`spot=30,15`、`spot=30,15,2` 都成立。 */
     private fun optionalFloats(raw: String, max: Int, key: String): FloatArray {
         val p = raw.split(',')
-        require(p.size in 1..max) { "$key 最多 $max 个逗号分隔的数字" }
+        requireLocalized(p.size in 1..max) { translation("error.command.max_components", key, max) }
         return FloatArray(p.size) { float(p[it], key) }
     }
 
     private fun floats(raw: String, count: Int, key: String): FloatArray {
         val p = raw.split(',')
-        require(p.size == count) { "$key 需要 $count 个逗号分隔的数字" }
+        requireLocalized(p.size == count) { translation("error.command.exact_components", key, count) }
         return FloatArray(count) { float(p[it], key) }
     }
 

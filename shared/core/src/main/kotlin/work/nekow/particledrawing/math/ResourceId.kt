@@ -1,9 +1,12 @@
 package work.nekow.particledrawing.math
 
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
+
 /** 带命名空间的资源标识；资源查找由宿主实现。 */
 data class ResourceId(val namespace: String, val path: String) {
     init {
-        require(namespace.matches(Regex("[a-z0-9_.-]+")) && path.matches(Regex("[a-z0-9/._-]+"))) { "无效资源名 $namespace:$path" }
+        requireLocalized(namespace.matches(Regex("[a-z0-9_.-]+")) && path.matches(Regex("[a-z0-9/._-]+"))) { translation("error.resource.invalid", namespace, path) }
     }
     override fun toString() = "$namespace:$path"
     companion object {

@@ -7,6 +7,9 @@ import java.util.WeakHashMap
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
+import work.nekow.particledrawing.i18n.LocalizedStateException
+import work.nekow.particledrawing.i18n.checkLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 脚本采样级 PCM：a.sampleAt(ms[, ch]) / a.peakAt(ms, win[, ch]) 取真实波形，
@@ -61,7 +64,7 @@ object ScriptWavePcm {
             val wav = parseWav(a.data) ?: return null
             return WavPcm(a.data, wav)
         }
-        check(oggReader !== MissingOggReader) { "宿主未安装 OGG 解码器" }
+        checkLocalized(oggReader !== MissingOggReader) { translation("error.audio.ogg_missing") }
         val info = try {
             oggReader.info(a.data)
         } catch (_: Exception) {
@@ -236,7 +239,7 @@ object ScriptWavePcm {
             }
             val slot = pickSlot()
             val want = minOf(windowFrames, frames - start)
-            check(oggReader !== MissingOggReader) { "宿主未安装 OGG 解码器" }
+            checkLocalized(oggReader !== MissingOggReader) { translation("error.audio.ogg_missing") }
             val samples = try {
                 oggReader.read(data, start, want, channels)
             } catch (_: Exception) {
@@ -259,8 +262,8 @@ object ScriptWavePcm {
     }
 
     private object MissingOggReader : OggReader {
-        override fun info(data: ByteArray): OggInfo? = throw IllegalStateException("宿主未安装 OGG 解码器")
+        override fun info(data: ByteArray): OggInfo? = throw LocalizedStateException(translation("error.audio.ogg_missing"))
         override fun read(data: ByteArray, startFrame: Int, frameCount: Int, channels: Int): FloatArray? =
-            throw IllegalStateException("宿主未安装 OGG 解码器")
+            throw LocalizedStateException(translation("error.audio.ogg_missing"))
     }
 }

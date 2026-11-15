@@ -5,6 +5,8 @@ import net.minecraft.network.codec.StreamCodec
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
 import java.util.UUID
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 批量设置速度数据包：一个包覆盖多颗粒子，语义与 [ParticleVelocityPayload] 相同
@@ -21,7 +23,7 @@ data class ParticleVelocityBatchPayload(
 
     init {
         // 超限直接报错，发送端按 BatchChunking 拆包后下发
-        require(updates.size <= MAX_BATCH) { "粒子速度批量超限: ${updates.size} > $MAX_BATCH" }
+        requireLocalized(updates.size <= MAX_BATCH) { translation("error.packet.velocity_limit", updates.size, MAX_BATCH) }
     }
 
     /** 一条速度设置。 */
@@ -44,7 +46,7 @@ data class ParticleVelocityBatchPayload(
             object : StreamCodec<FriendlyByteBuf, ParticleVelocityBatchPayload> {
                 override fun decode(buf: FriendlyByteBuf): ParticleVelocityBatchPayload {
                     val n = buf.readVarInt()
-                    require(n in 0..MAX_BATCH) { "粒子速度批量超限: $n" }
+                    requireLocalized(n in 0..MAX_BATCH) { translation("error.packet.velocity_count", n) }
                     val list = ArrayList<Update>(n)
                     repeat(n) {
                         list.add(

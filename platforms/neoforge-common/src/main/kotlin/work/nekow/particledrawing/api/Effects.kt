@@ -8,6 +8,8 @@ import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.ServerEffectManager
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 特效播放门面（服务端），外部模组的主要入口。
 object Effects {
@@ -32,7 +34,7 @@ object Effects {
     @JvmStatic
     @JvmOverloads
     fun play(key: Identifier, players: Collection<ServerPlayer>, anchor: Anchor, options: EffectOptions = EffectOptions()): EffectHandle {
-        require(players.isNotEmpty()) { "play 需要至少一个玩家" }
+        requireLocalized(players.isNotEmpty()) { translation("error.animation.players") }
         val level: ServerLevel = PlatformCompat.serverLevelOf(players.first())
         val id = ServerEffectManager.play(players, key, anchor, options)
         return EffectHandle(id, level)

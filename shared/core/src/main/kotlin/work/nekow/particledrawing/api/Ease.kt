@@ -1,6 +1,8 @@
 package work.nekow.particledrawing.api
 
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 公开缓动入口，避免新代码直接依赖 `core.easing`。
@@ -39,8 +41,8 @@ class Ease private constructor(val type: EasingType) {
 
         @JvmStatic
         fun custom(x1: Double, y1: Double, x2: Double, y2: Double): Ease {
-            require(x1.isFinite() && y1.isFinite() && x2.isFinite() && y2.isFinite()) {
-                "缓动控制点必须是有限值"
+            requireLocalized(x1.isFinite() && y1.isFinite() && x2.isFinite() && y2.isFinite()) {
+                translation("error.easing.control_points")
             }
             return Ease(EasingType.custom(x1, y1, x2, y2))
         }

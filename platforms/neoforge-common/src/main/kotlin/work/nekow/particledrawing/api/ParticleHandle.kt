@@ -13,6 +13,9 @@ import work.nekow.particledrawing.util.AttachMath
 import work.nekow.particledrawing.light.LightFalloff
 import work.nekow.particledrawing.light.LightShape
 import java.util.UUID
+import work.nekow.particledrawing.i18n.checkNotNullLocalized
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 已生成粒子的句柄，支持属性更新和生命周期控制。
@@ -62,7 +65,7 @@ class ParticleHandle(
     /** 带显式时间的移动。 */
     @JvmOverloads
     fun move(target: Vec3, over: Time, easing: Ease = Ease.LINEAR): ParticleHandle =
-        move(target, over.requireWholeTicks("移动时长"), easing.toEasingType())
+        move(target, over.requireWholeTicks(translation("field.move_duration").resolve()), easing.toEasingType())
 
     /**
      * 立即移动粒子（无缓动）。
@@ -266,7 +269,7 @@ class ParticleHandle(
         durationTicks: Int = 0,
         easing: EasingType = EasingType.LINEAR,
     ): ParticleHandle {
-        require(durationTicks >= 0) { "lightIntensity 的时长不能为负" }
+        requireLocalized(durationTicks >= 0) { translation("error.particle.light_intensity_duration") }
         manager.getEngine().setLightIntensity(
             id, multiplier, durationTicks, easing, manager.getPlayers(),
         )
@@ -293,7 +296,7 @@ class ParticleHandle(
 
     @JvmOverloads
     fun lightDirection(yawDeg: Double, pitchDeg: Double, over: Time, easing: Ease = Ease.LINEAR): ParticleHandle =
-        lightDirection(yawDeg, pitchDeg, over.requireWholeTicks("转向时长"), easing.toEasingType())
+        lightDirection(yawDeg, pitchDeg, over.requireWholeTicks(translation("field.turn_duration").resolve()), easing.toEasingType())
 
     /** 立即修改锥半角。省略内锥时取外锥的 60%。 */
     @JvmOverloads
@@ -310,7 +313,7 @@ class ParticleHandle(
 
     @JvmOverloads
     fun lightFocus(outerDeg: Double, over: Time, easing: Ease = Ease.LINEAR): ParticleHandle =
-        lightFocus(outerDeg, over.requireWholeTicks("聚焦时长"), easing.toEasingType())
+        lightFocus(outerDeg, over.requireWholeTicks(translation("field.focus_duration").resolve()), easing.toEasingType())
 
     /** 缓动内外锥半角，沿用当前配置的边缘锐度。 */
     fun lightFocus(
@@ -336,12 +339,12 @@ class ParticleHandle(
         part: LightShapePart, durationTicks: Int = 0, easing: EasingType = EasingType.LINEAR,
         edit: (LightShape) -> LightShape,
     ): ParticleHandle {
-        require(durationTicks >= 0) { "光源形状的缓动时长不能为负" }
+        requireLocalized(durationTicks >= 0) { translation("error.light.duration") }
         val data = data() ?: return this
-        val shape = checkNotNull(data.visual()?.lightShape) { "请先用 lightShape 设置光源形状" }
+        val shape = checkNotNullLocalized(data.visual()?.lightShape) { translation("error.light.shape_required") }
         val target = edit(shape)
         if (part == LightShapePart.FOCUS && durationTicks > 0) {
-            require(shape.isSpot && target.isSpot) { "聚焦缓动的起点和终点必须是射灯" }
+            requireLocalized(shape.isSpot && target.isSpot) { translation("error.light.focus_spot") }
         }
         manager.getEngine().setLightShape(id, target, manager.getPlayers(), part, durationTicks, easing)
         return this
@@ -356,7 +359,7 @@ class ParticleHandle(
      */
     @JvmOverloads
     fun recolor(color: Color, over: Time, easing: Ease = Ease.LINEAR): ParticleHandle =
-        recolor(color, over.requireWholeTicks("改色时长"), easing.toEasingType())
+        recolor(color, over.requireWholeTicks(translation("field.recolor_duration").resolve()), easing.toEasingType())
 
     fun recolor(color: Color, durationTicks: Int, easing: EasingType): ParticleHandle {
         val engine = manager.getEngine()
@@ -379,7 +382,7 @@ class ParticleHandle(
      */
     @JvmOverloads
     fun resize(scale: Float, over: Time, easing: Ease = Ease.LINEAR): ParticleHandle =
-        resize(scale, over.requireWholeTicks("缩放时长"), easing.toEasingType())
+        resize(scale, over.requireWholeTicks(translation("field.scale_duration").resolve()), easing.toEasingType())
 
     fun resize(scale: Float, durationTicks: Int, easing: EasingType): ParticleHandle {
         val engine = manager.getEngine()

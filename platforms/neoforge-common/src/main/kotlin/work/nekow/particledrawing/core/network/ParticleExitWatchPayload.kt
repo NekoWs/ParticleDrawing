@@ -6,6 +6,8 @@ import net.minecraft.network.codec.StreamCodec
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
 import java.util.UUID
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 服务端 → 客户端：观察一批粒子的尺寸退场终点。
@@ -22,8 +24,8 @@ data class ParticleExitWatchPayload(
 ) : CustomPacketPayload {
 
     init {
-        require(particleIds.size <= MAX_BATCH) { "退场观察段过大：${particleIds.size} > $MAX_BATCH" }
-        require(durationTicks >= 0) { "退场观察时长不能为负" }
+        requireLocalized(particleIds.size <= MAX_BATCH) { translation("error.packet.exit_limit", particleIds.size, MAX_BATCH) }
+        requireLocalized(durationTicks >= 0) { translation("error.packet.exit_duration") }
     }
 
     companion object {
@@ -42,7 +44,7 @@ data class ParticleExitWatchPayload(
                     val version = ByteBufCodecs.VAR_INT.decode(buf)
                     val duration = ByteBufCodecs.VAR_INT.decode(buf)
                     val count = ByteBufCodecs.VAR_INT.decode(buf)
-                    require(count in 0..MAX_BATCH) { "退场观察段过大：$count > $MAX_BATCH" }
+                    requireLocalized(count in 0..MAX_BATCH) { translation("error.packet.exit_limit", count, MAX_BATCH) }
                     val ids = ArrayList<UUID>(count)
                     repeat(count) { ids.add(StreamCodecs.UUID_CODEC.decode(buf)) }
                     val last = buf.readBoolean()
@@ -50,8 +52,8 @@ data class ParticleExitWatchPayload(
                 }
 
                 override fun encode(buf: FriendlyByteBuf, p: ParticleExitWatchPayload) {
-                    require(p.particleIds.size <= MAX_BATCH) {
-                        "退场观察段过大：${p.particleIds.size} > $MAX_BATCH"
+                    requireLocalized(p.particleIds.size <= MAX_BATCH) {
+                        translation("error.packet.exit_limit", p.particleIds.size, MAX_BATCH)
                     }
                     StreamCodecs.UUID_CODEC.encode(buf, p.exitId)
                     ByteBufCodecs.VAR_INT.encode(buf, p.version)

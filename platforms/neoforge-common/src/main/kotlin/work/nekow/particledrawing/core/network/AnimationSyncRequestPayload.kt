@@ -4,6 +4,8 @@ import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.codec.StreamCodec
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 客户端 → 服务器「动画文件同步请求」（playToServer）。
@@ -32,7 +34,7 @@ data class AnimationSyncRequestPayload(
                 override fun decode(buf: FriendlyByteBuf): AnimationSyncRequestPayload {
                     val n = buf.readVarInt()
                     if (n < 0 || n > MAX_HASHES) {
-                        throw IllegalArgumentException("animation_sync_request 哈希条目数超限: $n")
+                        throw LocalizedArgumentException(translation("error.packet.animation_hashes", n))
                     }
                     val map = HashMap<String, String>(n)
                     repeat(n) {

@@ -7,6 +7,8 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 import work.nekow.particledrawing.core.server.AnimationScheduler
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 颜色来源：按形状参数 t ∈ [0,1] 返回颜色（线段起点→终点、圆周一周、球面顶→底等）。可用 lambda 直接构造。
 @Suppress("unused")
@@ -184,10 +186,10 @@ object Draw {
         text: String, center: Vec3, count: Int, height: Double,
         font: Font = Font(Font.SANS_SERIF, Font.BOLD, 1),
     ): List<Vec3> {
-        require(center.x.isFinite() && center.y.isFinite() && center.z.isFinite()) { "文字中心需要有限坐标" }
+        requireLocalized(center.x.isFinite() && center.y.isFinite() && center.z.isFinite()) { translation("error.text.center") }
         return ParticleTextSampler.sample(text, count, height, font).map {
             val point = center.add(it.x, it.y, it.z)
-            require(point.x.isFinite() && point.y.isFinite()) { "文字坐标超出可表示范围" }
+            requireLocalized(point.x.isFinite() && point.y.isFinite()) { translation("error.text.coordinates") }
             point
         }
     }

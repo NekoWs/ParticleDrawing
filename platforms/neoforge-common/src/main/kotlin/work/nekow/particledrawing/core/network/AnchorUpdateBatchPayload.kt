@@ -5,6 +5,8 @@ import net.minecraft.network.codec.StreamCodec
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
 import java.util.UUID
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 服务端每 tick 批量下发的可移动锚点更新，一次一包。
@@ -16,7 +18,7 @@ data class AnchorUpdateBatchPayload(
 
     init {
         // 解码端按同一上限拒绝，避免畸形条数触发大块内存分配
-        require(updates.size <= MAX_BATCH) { "锚点更新批量超限: ${updates.size} > $MAX_BATCH" }
+        requireLocalized(updates.size <= MAX_BATCH) { translation("error.packet.anchor_limit", updates.size, MAX_BATCH) }
     }
 
     data class AnchorUpdate(
@@ -39,7 +41,7 @@ data class AnchorUpdateBatchPayload(
             object : StreamCodec<FriendlyByteBuf, AnchorUpdateBatchPayload> {
                 override fun decode(buf: FriendlyByteBuf): AnchorUpdateBatchPayload {
                     val n = buf.readVarInt()
-                    require(n in 0..MAX_BATCH) { "锚点更新批量超限: $n" }
+                    requireLocalized(n in 0..MAX_BATCH) { translation("error.packet.anchor_count", n) }
                     val list = ArrayList<AnchorUpdate>(n)
                     repeat(n) {
                         list.add(

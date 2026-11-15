@@ -19,6 +19,7 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.roundToInt
+import work.nekow.particledrawing.i18n.translation
 
 @Suppress("unused")
 class ClientAnimationPlayer(
@@ -214,7 +215,7 @@ class ClientAnimationPlayer(
             try {
                 ScriptRuntime.ExpressionRunner(expr)
             } catch (e: Throwable) {
-                println("[pdrawc] UV 表达式编译失败：${e.message}")
+                println(translation("log.uv.compile", e.message).resolve())
                 null
             }
         }
@@ -227,7 +228,7 @@ class ClientAnimationPlayer(
             val v = runner.eval(ctx)
             if (v.isFinite()) v else fallback
         } catch (e: Throwable) {
-            println("[pdrawc] UV 表达式求值失败：${e.message}")
+            println(translation("log.uv.evaluate", e.message).resolve())
             fallback
         }
     }
@@ -471,7 +472,7 @@ class ClientAnimationPlayer(
         rt.lastPhaseMs = fx.st.toDouble()
         rt
     } catch (e: Throwable) {
-        println("[pdrawc] 函数对象 ${fx.id} 编译失败：${e.message}")
+        println(translation("log.script.compile", fx.id, e.message).resolve())
         null
     }
 
@@ -492,7 +493,7 @@ class ClientAnimationPlayer(
         try {
             ScriptRuntime.runSpawnSetup(rt.program, rt.objState, makeCtx(fx, rt, fx.st.toDouble()))
         } catch (e: Throwable) {
-            println("[pdrawc] 函数对象 ${fx.id} setup 求值失败：${e.message}")
+            println(translation("log.script.setup", fx.id, e.message).resolve())
         }
     }
 
@@ -723,7 +724,7 @@ class ClientAnimationPlayer(
             try {
                 rt.restoreForLoopStart(target.toDouble())
             } catch (e: Throwable) {
-                println("[pdrawc] 函数对象 ${rt.fx.id} 循环回卷恢复失败：${e.message}")
+                println(translation("log.script.rewind", rt.fx.id, e.message).resolve())
             }
         }
     }
@@ -894,7 +895,7 @@ class ClientAnimationPlayer(
             try {
                 advanceFx(fx, rt, t)
             } catch (e: Throwable) {
-                println("[pdrawc] 函数对象 ${fx.id} 推进失败：${e.message}")
+                println(translation("log.script.advance", fx.id, e.message).resolve())
             }
         }
     }
@@ -906,7 +907,7 @@ class ClientAnimationPlayer(
             try {
                 reconcileFxStates(fx, rt, t, t - fx.st)
             } catch (e: Throwable) {
-                println("[pdrawc] 函数对象 ${fx.id} reconcile 失败：${e.message}")
+                println(translation("log.script.reconcile", fx.id, e.message).resolve())
             }
         }
     }
@@ -998,7 +999,7 @@ class ClientAnimationPlayer(
                         // 跑过的阶段才算「上一次」，this.delta 从它起算。
                         rt.lastPhaseMs = b
                     } catch (e: Throwable) {
-                        println("[pdrawc] 函数对象 ${fx.id} tick 求值失败：${e.message}")
+                        println(translation("log.script.tick", fx.id, e.message).resolve())
                         break
                     }
                 }
@@ -1020,7 +1021,7 @@ class ClientAnimationPlayer(
                     ScriptRuntime.runProcessFrame(rt.program, rt.objState, frameCtx)
                     rt.lastPhaseMs = t
                 } catch (e: Throwable) {
-                    println("[pdrawc] 函数对象 ${fx.id} process 求值失败：${e.message}")
+                    println(translation("log.script.process", fx.id, e.message).resolve())
                 }
             }
             // 捕获 process 后快照：loop 动画首圈、恰在 t == st、process 执行后。

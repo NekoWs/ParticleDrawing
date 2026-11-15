@@ -2,6 +2,8 @@ package work.nekow.particledrawing.core.easing
 
 import java.util.Objects
 import kotlin.math.abs
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 三次贝塞尔缓动曲线，由四个控制点参数定义。
 @Suppress("unused")
@@ -98,7 +100,7 @@ class EasingCurve(
         fun fromCss(css: String): EasingCurve {
             val inner = css.replace("cubic-bezier(", "").replace(")", "").trim()
             val parts = inner.split(",")
-            require(parts.size == 4) { "CSS cubic-bezier 参数非法: $css" }
+            requireLocalized(parts.size == 4) { translation("error.easing.css", css) }
             return EasingCurve(
                 parts[0].trim().toDouble(),
                 parts[1].trim().toDouble(),

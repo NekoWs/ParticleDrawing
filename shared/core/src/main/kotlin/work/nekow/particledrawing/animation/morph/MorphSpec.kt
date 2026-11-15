@@ -1,5 +1,8 @@
 package work.nekow.particledrawing.animation.morph
 
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.translation
+
 /**
  * 可以跨网络传输的形变配置：只含原始类型与枚举序号，避免把函数式缓动塞进包里。
  *
@@ -71,5 +74,5 @@ private fun MorphEasing.nameOf(): String = when (this) {
     MorphEasing.OUT_CUBIC -> "out_cubic"
     MorphEasing.IN_OUT_CUBIC -> "in_out_cubic"
     MorphEasing.OUT_BACK -> "out_back"
-    else -> throw IllegalArgumentException("组形变只支持可同步的 MorphEasing 预设")
+    else -> throw LocalizedArgumentException(translation("error.morph.easing_preset"))
 }

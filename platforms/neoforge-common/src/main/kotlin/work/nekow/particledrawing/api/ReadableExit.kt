@@ -2,6 +2,8 @@ package work.nekow.particledrawing.api
 
 import work.nekow.particledrawing.core.server.ServerExitCompletion
 import java.util.UUID
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 语义化退场：逐个成员做片元尺寸收束，不缩组、不改变运动；完成由客户端尺寸端点回报。
 
@@ -21,9 +23,9 @@ class ParticleSizeExit internal constructor(private val exit: ExitSpec) {
      * 目标在缓动结束时落地；只作用于成员自身，不改变组轴心、速度或位置。
      */
     fun to(value: Double, over: Time, easing: Ease = Ease.LINEAR): ExitSpec {
-        require(value.isFinite() && value >= 0.0) { "退场尺寸必须是非负有限值" }
-        over.requirePositive("退场时长")
-        val ticks = over.requireWholeTicks("退场时长")
+        requireLocalized(value.isFinite() && value >= 0.0) { translation("error.exit.scale") }
+        over.requirePositive(translation("field.exit_time").resolve())
+        val ticks = over.requireWholeTicks(translation("field.exit_time").resolve())
         for (handle in exit.handles) {
             handle.resize(value.toFloat(), ticks, easing.toEasingType())
         }

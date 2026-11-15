@@ -9,7 +9,7 @@ import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
 import net.minecraft.commands.SharedSuggestionProvider
 import net.minecraft.commands.arguments.coordinates.Vec3Argument
-import net.minecraft.network.chat.Component
+import work.nekow.particledrawing.lighting.DynamicLightManager
 import net.minecraft.world.phys.Vec3
 import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.api.distmarker.Dist
@@ -26,6 +26,8 @@ import work.nekow.particledrawing.core.client.ClientParticleEngine
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
+import work.nekow.particledrawing.i18n.component
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 命令注册：/pdraw 及粒子绘制、动画播放、贴图管理子命令。
@@ -83,7 +85,7 @@ object ParticleDrawCommands {
      */
     private fun rootUsage(ctx: CommandContext<CommandSourceStack>): Int {
         ctx.source.sendSuccess(
-            { Component.literal("用法: /pdraw particle ... 绘制粒子；/pdraw animation ... 播放动画；/pdraw texture reload 重载贴图") },
+            { translation("command.root.usage").component() },
             false,
         )
         return 1
@@ -97,39 +99,39 @@ object ParticleDrawCommands {
      */
     private fun lightProbe(ctx: CommandContext<CommandSourceStack>): Int {
         if (ctx.source.server.isDedicatedServer) {
-            ctx.source.sendFailure(Component.literal("动态光照在客户端计算，此命令仅可在单人世界读取光场"))
+            ctx.source.sendFailure(translation("error.light.singleplayer").component())
             return 0
         }
         // 定时函数是以服务端身份跑的，这里不能用 playerOrException；按命令源坐标取样即可。
-        val enabled = work.nekow.particledrawing.lighting.DynamicLightManager.isEnabled()
-        val count = work.nekow.particledrawing.lighting.DynamicLightManager.sourceCount()
-        val version = work.nekow.particledrawing.lighting.DynamicLightManager.version()
+        val enabled = DynamicLightManager.isEnabled()
+        val count = DynamicLightManager.sourceCount()
+        val version = DynamicLightManager.version()
         val pos = ctx.source.position
         val x = pos.x
         val y = pos.y
         val z = pos.z
-        val here = work.nekow.particledrawing.lighting.DynamicLightManager.getDynamicLightLevel(x, y, z)
-        val below = work.nekow.particledrawing.lighting.DynamicLightManager.getDynamicLightLevel(x, y - 1.0, z)
-        val above = work.nekow.particledrawing.lighting.DynamicLightManager.getDynamicLightLevel(x, y + 2.0, z)
-        val samples = work.nekow.particledrawing.lighting.DynamicLightManager.lightSnapshot()
-        val first = samples.firstOrNull()
-        val detail = if (first == null) {
-            "无光源"
-        } else {
-            "首个光源 pos=(${"%.1f".format(first.x)}, ${"%.1f".format(first.y)}, ${"%.1f".format(first.z)}) " +
-                "强度=${"%.2f".format(first.intensity)} 半径=${"%.1f".format(first.range)}"
-        }
-        val diag = work.nekow.particledrawing.lighting.DynamicLightManager.diagnostics()
-        val line = "动态光: 启用=$enabled 源=$count 版本=$version | 脚下=${"%.2f".format(here)} " +
-            "下方=${"%.2f".format(below)} 上方=${"%.2f".format(above)} | $diag | $detail"
-        org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").info("[PD-light] {}", line)
-        ctx.source.sendSuccess({ Component.literal(line) }, false)
+        val here = DynamicLightManager.getDynamicLightLevel(x, y, z)
+        val below = DynamicLightManager.getDynamicLightLevel(x, y - 1.0, z)
+        val above = DynamicLightManager.getDynamicLightLevel(x, y + 2.0, z)
+        val first = DynamicLightManager.lightSnapshot().firstOrNull()
+        val source = if (first == null) translation("diagnostic.light.no_source") else translation(
+            "diagnostic.light.source",
+            "%.1f, %.1f, %.1f".format(Locale.ROOT, first.x, first.y, first.z),
+            "%.2f".format(Locale.ROOT, first.intensity), "%.1f".format(Locale.ROOT, first.range),
+        )
+        val line = translation(
+            "command.light.status", enabled, count, version, "%.2f".format(Locale.ROOT, here),
+            "%.2f".format(Locale.ROOT, below), "%.2f".format(Locale.ROOT, above),
+            DynamicLightManager.diagnosticsText(), source,
+        )
+        org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").info("[PD-light] {}", line.resolve())
+        ctx.source.sendSuccess({ line.component() }, false)
         return 1
     }
 
     private fun animationUsage(ctx: CommandContext<CommandSourceStack>): Int {
         ctx.source.sendSuccess(
-            { Component.literal("动画命令: list | play <name> [pos] | stop | camera | debug | var") },
+            { translation("command.animation.usage").component() },
             false,
         )
         return 1
@@ -141,11 +143,11 @@ object ParticleDrawCommands {
     private fun listAnimations(ctx: CommandContext<CommandSourceStack>): Int {
         val names = AnimationLoader.list()
         val msg = if (names.isEmpty()) {
-            "暂无动画，请将导出的 .pdrawc 放入 animations/ 目录"
+            translation("command.animation.empty")
         } else {
-            "可用动画: " + names.joinToString(", ")
+            translation("command.animation.list", names.joinToString(", "))
         }
-        ctx.source.sendSuccess({ Component.literal(msg) }, false)
+        ctx.source.sendSuccess({ msg.component() }, false)
         return names.size
     }
 
@@ -165,8 +167,9 @@ object ParticleDrawCommands {
         val name = StringArgumentType.getString(ctx, "name")
         val data = AnimationLoader.load(name)
             ?: run {
-                val reason = if (AnimationLoader.has(name)) "动画验签失败: $name" else "未找到动画: $name"
-                ctx.source.sendFailure(Component.literal(reason))
+                val reason = if (AnimationLoader.has(name)) translation("error.animation.signature", name)
+                    else translation("error.animation.not_found", name)
+                ctx.source.sendFailure(reason.component())
                 return 0
             }
 
@@ -178,7 +181,7 @@ object ParticleDrawCommands {
             // 命令方块、告示牌一类非玩家执行者拿不到朝向，回退不了就明确报错，别抛原始异常
             val player = ctx.source.player
             if (player == null) {
-                ctx.source.sendFailure(Component.literal("命令方块执行 /pdraw animation play 时必须给出 pos"))
+                ctx.source.sendFailure(translation("error.animation.position").component())
                 return 0
             }
             player.position().add(player.lookAngle.scale(3.0))
@@ -186,7 +189,7 @@ object ParticleDrawCommands {
 
         ServerAnimationManager.play(dim, level.players(), data, origin)
         ctx.source.sendSuccess(
-            { Component.literal("正在播放动画: $name") },
+            { translation("command.animation.play", name).component() },
             false
         )
         return 1
@@ -201,7 +204,7 @@ object ParticleDrawCommands {
         ServerAnimationManager.stopAll(dim, level.players())
         // 特效与文件动画共用客户端的播放表：只停动画会留下服务端还在、客户端已消失的特效记录
         ServerEffectManager.stopAll(dim, level.players())
-        ctx.source.sendSuccess({ Component.literal("已停止当前维度的全部动画与特效") }, false)
+        ctx.source.sendSuccess({ translation("command.animation.stop").component() }, false)
         return 1
     }
 
@@ -211,12 +214,12 @@ object ParticleDrawCommands {
      */
     private fun reloadTextures(ctx: CommandContext<CommandSourceStack>): Int {
         if (!PlatformCompat.isClientDist) {
-            ctx.source.sendFailure(Component.literal("贴图渲染仅在客户端，/pdraw texture reload 仅客户端可用"))
+            ctx.source.sendFailure(translation("error.texture.client_only").component())
             return 0
         }
         ClientAnimationManager.reloadTextures()
         ctx.source.sendSuccess(
-            { Component.literal("已重建贴图纹理（重新播放动画以应用）") },
+            { translation("command.texture.reload").component() },
             false
         )
         return 1
@@ -227,7 +230,7 @@ object ParticleDrawCommands {
      */
     private fun cameraUsage(ctx: CommandContext<CommandSourceStack>): Int {
         ctx.source.sendSuccess(
-            { Component.literal("用法: /pdraw animation camera <名称|id> 切换摄像机；/pdraw animation camera stop 退出") },
+            { translation("command.camera.usage").component() },
             false
         )
         return 1
@@ -239,18 +242,18 @@ object ParticleDrawCommands {
      */
     private fun switchCamera(ctx: CommandContext<CommandSourceStack>): Int {
         if (!PlatformCompat.isClientDist) {
-            ctx.source.sendFailure(Component.literal("/pdraw animation camera 仅客户端可用"))
+            ctx.source.sendFailure(translation("error.camera.client_only").component())
             return 0
         }
         val name = StringArgumentType.getString(ctx, "name")
         val target = ClientAnimationManager.findCamera(name)
         if (target == null) {
-            ctx.source.sendFailure(Component.literal("未找到摄像机: $name（无播放中的动画包含该摄像机）"))
+            ctx.source.sendFailure(translation("error.camera.not_found", name).component())
             return 0
         }
         CameraController.attach(target.animationId, target.cameraId, target.origin)
         CameraController.updatePose(target.pose)
-        ctx.source.sendSuccess({ Component.literal("已切换到摄像机: ${target.cameraId}") }, false)
+        ctx.source.sendSuccess({ translation("command.camera.switch", target.cameraId).component() }, false)
         return 1
     }
 
@@ -259,11 +262,11 @@ object ParticleDrawCommands {
      */
     private fun stopCamera(ctx: CommandContext<CommandSourceStack>): Int {
         if (!PlatformCompat.isClientDist) {
-            ctx.source.sendFailure(Component.literal("/pdraw animation camera 仅客户端可用"))
+            ctx.source.sendFailure(translation("error.camera.client_only").component())
             return 0
         }
         CameraController.detach()
-        ctx.source.sendSuccess({ Component.literal("已退出摄像机预览") }, false)
+        ctx.source.sendSuccess({ translation("command.camera.stop").component() }, false)
         return 1
     }
 
@@ -284,7 +287,7 @@ object ParticleDrawCommands {
 
         if (infos.isEmpty()) {
             ctx.source.sendSuccess(
-                { Component.literal("无播放中的动画（引擎活跃粒子总数: $engineParticles）") },
+                { translation("command.animation.none_playing", engineParticles).component() },
                 false
             )
             return 0
@@ -294,14 +297,13 @@ object ParticleDrawCommands {
             val shortId = animId.toString().take(8)
             val lastMs = String.format(Locale.ROOT, "%.2f", lastAdvanceMillis)
             val avgMs = String.format(Locale.ROOT, "%.2f", avgAdvanceMillis)
-            val msg = "动画 $shortId… | 粒子: $particleCount | " +
-                "时间轴: ${currentMs}ms/${maxMs}ms | " +
-                "已播放帧: $frameCount | " +
-                "每刻求值: 上次 ${lastMs}ms / 平均 ${avgMs}ms"
-            ctx.source.sendSuccess({ Component.literal(msg) }, false)
+            val msg = translation(
+                "command.animation.debug_row", shortId, particleCount, currentMs, maxMs, frameCount, lastMs, avgMs,
+            )
+            ctx.source.sendSuccess({ msg.component() }, false)
         }
         ctx.source.sendSuccess(
-            { Component.literal("播放中动画数: ${infos.size}，引擎活跃粒子总数: $engineParticles") },
+            { translation("command.animation.debug_total", infos.size, engineParticles).component() },
             false
         )
         return infos.size
@@ -317,7 +319,7 @@ object ParticleDrawCommands {
         val dim = ParticleUtils.dimensionUUID(level)
         ServerAnimationManager.updateVariableForDimension(dim, name, value, level.players())
         ctx.source.sendSuccess(
-            { Component.literal("已更新变量: $name = $value") },
+            { translation("command.animation.variable", name, value).component() },
             false
         )
         return 1

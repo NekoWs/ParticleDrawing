@@ -1,6 +1,8 @@
 package work.nekow.particledrawing.animation.emitter
 
 import work.nekow.particledrawing.math.Vec3
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 发射器的推进逻辑：纯数学，不碰渲染与网络，便于单测。
 // 里程口径按段内插值发射，因为要的是一颗正好落在段中间的位置。
@@ -14,7 +16,7 @@ import work.nekow.particledrawing.math.Vec3
 internal class DistanceAdvance(private val spacing: Double) {
 
     init {
-        require(spacing > 0.0) { "spacing 必须为正" }
+        requireLocalized(spacing > 0.0) { translation("error.spacing") }
     }
 
     private var carry = 0.0
@@ -54,7 +56,7 @@ internal class DistanceAdvance(private val spacing: Double) {
 internal class TimeAdvance(private val intervalMs: Double, private val maxPerFrame: Int = 64) {
 
     init {
-        require(intervalMs > 0.0) { "intervalMs 必须为正" }
+        requireLocalized(intervalMs > 0.0) { translation("error.interval_ms") }
     }
 
     private var carry = 0.0

@@ -1,5 +1,7 @@
 package work.nekow.particledrawing.command
 
+import work.nekow.particledrawing.i18n.failureComponent
+import work.nekow.particledrawing.i18n.LocalizedText
 import com.mojang.brigadier.arguments.BoolArgumentType
 import com.mojang.brigadier.arguments.DoubleArgumentType
 import com.mojang.brigadier.arguments.IntegerArgumentType
@@ -14,7 +16,6 @@ import net.minecraft.commands.Commands
 import net.minecraft.commands.SharedSuggestionProvider
 import net.minecraft.commands.arguments.EntityArgument
 import net.minecraft.commands.arguments.coordinates.Vec3Argument
-import net.minecraft.network.chat.Component
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.Draw
 import work.nekow.particledrawing.api.ParticleBatch
@@ -26,6 +27,10 @@ import java.util.concurrent.CompletableFuture
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.component
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /** 命令驱动的粒子绘图、命名组和组程序。 */
 internal object ParticleDrawParticleCommands {
@@ -252,9 +257,9 @@ internal object ParticleDrawParticleCommands {
     private fun entry(ctx: CommandContext<CommandSourceStack>, allowProgrammed: Boolean = true): CommandParticleGroups.Entry {
         val name = StringArgumentType.getString(ctx, "group")
         val entry = CommandParticleGroups.get(dimension(ctx), name)
-            ?: throw IllegalArgumentException("当前维度没有粒子组 '$name'")
+            ?: throw LocalizedArgumentException(translation("error.group.not_found", name))
         if (!allowProgrammed && entry.programmed) {
-            throw IllegalArgumentException("粒子组 '$name' 已开始编排；请先添加完全部图元，再执行 program")
+            throw LocalizedArgumentException(translation("error.group.already_started", name))
         }
         return entry
     }
@@ -263,17 +268,17 @@ internal object ParticleDrawParticleCommands {
 
     private fun requireOptions(options: ParticleCommandOptions, allowed: Set<String>) {
         val unsupported = options.provided - allowed
-        require(unsupported.isEmpty()) { "这个图元不使用参数: ${unsupported.sorted().joinToString(", ")}" }
+        requireLocalized(unsupported.isEmpty()) { translation("error.command.unused_options", unsupported.sorted().joinToString(", ")) }
     }
 
     private fun reserveMembers(entry: CommandParticleGroups.Entry, count: Int, stagger: Int = 0) {
-        require(count >= 0) { "粒子数量不能为负" }
-        require((count.toLong() - 1L).coerceAtLeast(0L) * stagger <= Int.MAX_VALUE) {
-            "stagger 与粒子数量的乘积过大"
+        requireLocalized(count >= 0) { translation("error.command.particle_count") }
+        requireLocalized((count.toLong() - 1L).coerceAtLeast(0L) * stagger <= Int.MAX_VALUE) {
+            translation("error.command.stagger_overflow")
         }
         val total = entry.expectedMembers.toLong() + count
-        require(total <= AnimationProgramCodecs.MAX_PROGRAM_MEMBERS) {
-            "粒子组 '${entry.name}' 最多可编排 ${AnimationProgramCodecs.MAX_PROGRAM_MEMBERS} 颗粒子；请拆成多个组"
+        requireLocalized(total <= AnimationProgramCodecs.MAX_PROGRAM_MEMBERS) {
+            translation("error.group.capacity", entry.name, AnimationProgramCodecs.MAX_PROGRAM_MEMBERS)
         }
         entry.expectedMembers = total.toInt()
         CommandParticleGroups.waitForMembers(entry, count, stagger)
@@ -287,18 +292,18 @@ internal object ParticleDrawParticleCommands {
             0
         }
         val message = if (pending > 0) {
-            "已向 '${entry.name}' 生成 $count 颗粒子，另有 $pending 颗按 stagger 入场"
+            translation("command.group.add_stagger", entry.name, count, pending)
         } else {
-            "已向 '${entry.name}' 添加 $count 颗粒子（当前 ${entry.group.size()} 颗）"
+            translation("command.group.add", entry.name, count, entry.group.size())
         }
-        ctx.source.sendSuccess({ Component.literal(message) }, false)
+        ctx.source.sendSuccess({ message.component() }, false)
         return count.coerceAtLeast(1)
     }
 
     private inline fun safe(ctx: CommandContext<CommandSourceStack>, action: () -> Int): Int = try {
         action()
     } catch (e: IllegalArgumentException) {
-        ctx.source.sendFailure(Component.literal(e.message ?: "粒子命令参数错误"))
+        ctx.source.sendFailure(e.failureComponent("error.command.particle_parameters"))
         0
     }
 
@@ -316,30 +321,33 @@ internal object ParticleDrawParticleCommands {
         val manager = ParticleManager.of(ctx.source.level)
         if (replace) CommandParticleGroups.remove(dimension(ctx), name)
         CommandParticleGroups.create(dimension(ctx), name, manager.createGroup(pos))
-        val verb = if (replace) "已重置" else "已创建"
-        ctx.source.sendSuccess({ Component.literal("$verb 粒子组 '$name'，轴心 $pos") }, false)
+        val message = if (replace) translation("command.group.reset", name, pos)
+            else translation("command.group.create", name, pos)
+        ctx.source.sendSuccess({ message.component() }, false)
         return 1
     }
 
     private fun listGroups(ctx: CommandContext<CommandSourceStack>): Int {
         val names = CommandParticleGroups.names(dimension(ctx))
-        ctx.source.sendSuccess({ Component.literal(if (names.isEmpty()) "当前维度没有命令粒子组" else "命令粒子组: ${names.joinToString(", ")}") }, false)
+        val message = if (names.isEmpty()) translation("command.group.empty_list")
+            else translation("command.group.list", names.joinToString(", "))
+        ctx.source.sendSuccess({ message.component() }, false)
         return names.size
     }
 
     private fun removeGroup(ctx: CommandContext<CommandSourceStack>): Int {
         val name = StringArgumentType.getString(ctx, "group")
         if (!CommandParticleGroups.remove(dimension(ctx), name)) {
-            ctx.source.sendFailure(Component.literal("当前维度没有粒子组 '$name'"))
+            ctx.source.sendFailure(translation("error.group.not_found", name).component())
             return 0
         }
-        ctx.source.sendSuccess({ Component.literal("已移除粒子组 '$name'") }, false)
+        ctx.source.sendSuccess({ translation("command.group.remove", name).component() }, false)
         return 1
     }
 
     private fun clearGroups(ctx: CommandContext<CommandSourceStack>): Int {
         val count = CommandParticleGroups.clear(dimension(ctx))
-        ctx.source.sendSuccess({ Component.literal("已清除当前维度的 $count 个命令粒子组") }, false)
+        ctx.source.sendSuccess({ translation("command.group.clear", count).component() }, false)
         return count
     }
 
@@ -488,12 +496,12 @@ internal object ParticleDrawParticleCommands {
         easing(ctx)
         optionalString(ctx, "color")?.let(ParticleCommandOptionParser::parseColor)
         optionalString(ctx, "points")?.let(::parsePath)
-        optionalString(ctx, "handle")?.let { requireFormulaName(it, "实体句柄") }
-        optionalString(ctx, "name")?.let { requireFormulaName(it, "变量名") }
+        optionalString(ctx, "handle")?.let { requireFormulaName(it, translation("field.entity_handle")) }
+        optionalString(ctx, "name")?.let { requireFormulaName(it, translation("field.variable_name")) }
         val e = entry(ctx)
-        require(e.group.size() > 0) { "粒子组 '${e.name}' 还没有成员；先用 particle add 添加图元" }
-        require(!requiresActive || e.activated) { "粒子组 '${e.name}' 还没有启动程序" }
-        require(activates || !e.activated) { "静态变量和实体句柄必须在首条动画或 expression 之前声明" }
+        requireLocalized(e.group.size() > 0) { translation("error.group.no_members", e.name) }
+        requireLocalized(!requiresActive || e.activated) { translation("error.group.not_started", e.name) }
+        requireLocalized(activates || !e.activated) { translation("error.group.static_declarations") }
         val queued = CommandParticleGroups.hasPendingMembers(e)
         if (queued) {
             e.programmed = true
@@ -502,7 +510,7 @@ internal object ParticleDrawParticleCommands {
                 try {
                     action(e)
                 } catch (error: Exception) {
-                    ctx.source.sendFailure(Component.literal(error.message ?: "粒子编排参数错误"))
+                    ctx.source.sendFailure(error.failureComponent("error.command.program_parameters"))
                 }
             }
         } else {
@@ -510,8 +518,8 @@ internal object ParticleDrawParticleCommands {
             e.programmed = true
             if (activates) e.activated = true
         }
-        val message = if (queued) "已排入粒子组 '${e.name}' 的程序，错峰成员到齐后执行" else "已更新粒子组 '${e.name}' 的程序"
-        ctx.source.sendSuccess({ Component.literal(message) }, false)
+        val message = if (queued) translation("command.group.program_queued", e.name) else translation("command.group.program_updated", e.name)
+        ctx.source.sendSuccess({ message.component() }, false)
         1
     }
 
@@ -599,35 +607,33 @@ internal object ParticleDrawParticleCommands {
         null
     }
 
-    private fun requireFormulaName(name: String, label: String) {
-        require(FORMULA_NAME.matches(name)) { "$label '$name' 不是合法标识符" }
-        require(name !in RESERVED_FORMULA_NAMES) { "$label '$name' 与公式内建名冲突" }
+    private fun requireFormulaName(name: String, label: LocalizedText) {
+        requireLocalized(FORMULA_NAME.matches(name)) { translation("error.command.identifier", label, name) }
+        requireLocalized(name !in RESERVED_FORMULA_NAMES) { translation("error.command.identifier_reserved", label, name) }
     }
 
     private fun parsePath(rawPath: String): List<Vec3> = rawPath.split(';').mapIndexed { index, raw ->
         val parts = raw.split(',')
-        require(parts.size == 3) { "move_path 第 ${index + 1} 个点需要写成 x,y,z" }
+        requireLocalized(parts.size == 3) { translation("error.command.path_point", index + 1) }
         val values = parts.map { it.toDoubleOrNull()?.takeIf(Double::isFinite) }
-        require(values.all { it != null }) { "move_path 第 ${index + 1} 个点含无效数字" }
+        requireLocalized(values.all { it != null }) { translation("error.command.path_number", index + 1) }
         Vec3(values[0]!!, values[1]!!, values[2]!!)
     }
 
     private fun help(ctx: CommandContext<CommandSourceStack>): Int {
-        ctx.source.sendSuccess({ Component.literal("/pdraw particle emitter：分步配置采样、图片与粒子行为；group|add|program：固定成员组的绘制与编排") }, false)
-        ctx.source.sendSuccess({ Component.literal("add 参数: color/gradient/rainbow, scale/stagger, style/texture/uv/size, additive/glowing/light, *_curve；输入子命令可看补全") }, false)
-        ctx.source.sendSuccess({ Component.literal("field anchor <数量> 可复用组锚点；field 的 lifetime=80 表示 4 秒，未写时永存；expression local 使用锚点相对坐标") }, false)
+        ctx.source.sendSuccess({ translation("command.particle.usage").component() }, false)
         return 1
     }
     private fun groupHelp(ctx: CommandContext<CommandSourceStack>): Int {
-        ctx.source.sendSuccess({ Component.literal("group create|reset <名称> <轴心> | list | remove <名称> | clear") }, false)
+        ctx.source.sendSuccess({ translation("command.group.usage").component() }, false)
         return 1
     }
     private fun addHelp(ctx: CommandContext<CommandSourceStack>): Int {
-        ctx.source.sendSuccess({ Component.literal("add <组> dot|field|line|beam|helix|circle|disc|triangle|hexagram|rect|sphere|cuboid ... [key=value]") }, false)
+        ctx.source.sendSuccess({ translation("command.group.add_usage").component() }, false)
         return 1
     }
     private fun programHelp(ctx: CommandContext<CommandSourceStack>): Int {
-        ctx.source.sendSuccess({ Component.literal("program <组> anchor|pivot|follow|delay|fade_in|fade_out|move|move_path|rotate|recolor|scale_by|scale_to|spin|pulse|variable|entity|expression|retire ...") }, false)
+        ctx.source.sendSuccess({ translation("command.program.usage").component() }, false)
         return 1
     }
 

@@ -15,6 +15,8 @@ import java.security.spec.EdECPublicKeySpec
 import java.security.spec.NamedParameterSpec
 import java.util.zip.Inflater
 import java.util.zip.InflaterInputStream
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * .pdrawc 二进制播放文件读取器 + Ed25519 验签。
@@ -55,13 +57,13 @@ object PdrawcReader {
     /** 验签并解析为 [ParticleAnimation]；验签失败/格式损坏抛异常（拒绝播放）。 */
     @JvmStatic
     fun parse(bytes: ByteArray): ParticleAnimation {
-        if (!verify(bytes)) throw IllegalArgumentException("pdrawc 签名验证失败")
+        if (!verify(bytes)) throw LocalizedArgumentException(translation("error.file.signature"))
         val unsigned = bytes.copyOfRange(0, bytes.size - SIG_LEN)
         val r = Reader(ByteBuffer.wrap(unsigned).order(ByteOrder.LITTLE_ENDIAN))
 
-        if (!r.bytes(4).contentEquals(MAGIC)) throw IllegalArgumentException("pdrawc 魔数错误")
+        if (!r.bytes(4).contentEquals(MAGIC)) throw LocalizedArgumentException(translation("error.file.header"))
         val version = r.varint()
-        if (version != VERSION) throw IllegalArgumentException("pdrawc 版本不支持: $version")
+        if (version != VERSION) throw LocalizedArgumentException(translation("error.file.version", version))
         r.bytes(PUB_LEN) // 公钥已用于验签，跳过
 
         val bodyBytes = inflateRaw(r.remainingBytes())
@@ -127,7 +129,7 @@ object PdrawcReader {
         val groupUV = LinkedHashMap<String, UvData>()
         for (i in 0 until groupUVCount) {
             val gi = br.varint()
-            if (gi !in groupNames.indices) throw IllegalArgumentException("pdrawc 组 UV 索引越界")
+            if (gi !in groupNames.indices) throw LocalizedArgumentException(translation("error.file.group_uv"))
             groupUV[groupNames[gi]] = readUV(br, texNames)
         }
 
@@ -213,7 +215,7 @@ object PdrawcReader {
                 val ids = ArrayList<String>(pn)
                 for (k in 0 until pn) {
                     val pIdx = br.varint()
-                    if (pIdx !in particles.indices) throw IllegalArgumentException("pdrawc 文字粒子索引越界: $pIdx")
+                    if (pIdx !in particles.indices) throw LocalizedArgumentException(translation("error.file.text_particle", pIdx))
                     ids.add("p$pIdx")
                 }
                 chars.add(TextChar(index, code, pos, size, ids))
@@ -245,7 +247,7 @@ object PdrawcReader {
             val fadeIn = br.varint()
             val fadeOut = br.varint()
             val hopCount = br.varint()
-            if (hopCount > 2000000) throw IllegalArgumentException("pdrawc 音频 hopCount 过大: $hopCount")
+            if (hopCount > 2000000) throw LocalizedArgumentException(translation("error.file.audio_hop_count", hopCount))
             val bpm = br.f32().toDouble()
             val beatOffsetMs = br.f32().toDouble()
             val onsetMax = br.f32().toDouble()
@@ -279,7 +281,7 @@ object PdrawcReader {
         for (i in 0 until trackCount) {
             val prIdx = br.u8()
             val pr = TrackPr.fromOrdinal(prIdx)
-                ?: throw IllegalArgumentException("pdrawc 未知 pr 枚举: $prIdx")
+                ?: throw LocalizedArgumentException(translation("error.animation.track_property", prIdx))
             val mode = if (br.u8() == 1) AnimTrack.Mode.OP else AnimTrack.Mode.SET
             val idCount = br.varint()
             val ids = ArrayList<String>(idCount)
@@ -291,10 +293,10 @@ object PdrawcReader {
                         0 -> "p$idx"
                         1 -> "g:g$idx"
                         2 -> "f:fx$idx"
-                        3 -> if (idx in cameras.indices) "c:${cameras[idx].id}" else throw IllegalArgumentException("pdrawc 摄像机索引越界: $idx")
-                        4 -> if (idx in texts.indices) "t:${texts[idx].id}" else throw IllegalArgumentException("pdrawc 文字对象索引越界: $idx")
-                        5 -> if (idx in audioAssets.indices) "a:${audioAssets[idx].id}" else throw IllegalArgumentException("pdrawc 音频资产索引越界: $idx")
-                        else -> throw IllegalArgumentException("pdrawc 未知轨道引用类型: $kind")
+                        3 -> if (idx in cameras.indices) "c:${cameras[idx].id}" else throw LocalizedArgumentException(translation("error.file.camera_index", idx))
+                        4 -> if (idx in texts.indices) "t:${texts[idx].id}" else throw LocalizedArgumentException(translation("error.file.text_index", idx))
+                        5 -> if (idx in audioAssets.indices) "a:${audioAssets[idx].id}" else throw LocalizedArgumentException(translation("error.file.audio_index", idx))
+                        else -> throw LocalizedArgumentException(translation("error.file.track_type", kind))
                     }
                 )
             }
@@ -302,7 +304,7 @@ object PdrawcReader {
             tracks.add(AnimTrack(pr, ids, kf, mode))
         }
 
-        if (br.remaining() != 0) throw IllegalArgumentException("pdrawc 存在未解析的尾随字节")
+        if (br.remaining() != 0) throw LocalizedArgumentException(translation("error.file.trailing_bytes"))
 
         return ParticleAnimation(loop, particles, tracks, groups, functions, texNames, groupUV, texData, groupSpinSpace, groupRotSpace, cameras, texts, audioAssets)
     }
@@ -334,9 +336,9 @@ object PdrawcReader {
 
     private fun readUV(r: Reader, texNames: List<String>): UvData {
         val texIdx = r.varint()
-        if (texIdx !in texNames.indices) throw IllegalArgumentException("pdrawc 贴图索引越界: $texIdx")
+        if (texIdx !in texNames.indices) throw LocalizedArgumentException(translation("error.file.texture_index", texIdx))
         val modeIdx = r.u8()
-        if (modeIdx !in UV_MODES.indices) throw IllegalArgumentException("pdrawc 未知 UV 模式: $modeIdx")
+        if (modeIdx !in UV_MODES.indices) throw LocalizedArgumentException(translation("error.file.uv_mode", modeIdx))
         val texSize = intArrayOf(r.varint(), r.varint())
         val uvStart = intArrayOf(r.varint(), r.varint())
         val uvSize = intArrayOf(r.varint(), r.varint())
@@ -385,14 +387,14 @@ object PdrawcReader {
         return when (r.u8()) {
             0 -> {
                 val idx = r.varint()
-                if (idx !in EasingType.PRESETS.indices) throw IllegalArgumentException("pdrawc 缓动预设越界: $idx")
+                if (idx !in EasingType.PRESETS.indices) throw LocalizedArgumentException(translation("error.easing.index", idx))
                 EasingType.PRESETS[idx]
             }
             1 -> EasingType.custom(
                 r.f32().toDouble(), r.f32().toDouble(), r.f32().toDouble(), r.f32().toDouble()
             )
             2 -> EasingType.NONE
-            else -> throw IllegalArgumentException("pdrawc 未知缓动类型")
+            else -> throw LocalizedArgumentException(translation("error.easing.type"))
         }
     }
 
@@ -422,7 +424,7 @@ object PdrawcReader {
         fun u8(): Int = buf.get().toInt() and 0xff
 
         fun bytes(n: Int): ByteArray {
-            if (n < 0 || n > buf.remaining()) throw IllegalArgumentException("pdrawc 数据截断")
+            if (n < 0 || n > buf.remaining()) throw LocalizedArgumentException(translation("error.file.truncated"))
             val out = ByteArray(n)
             buf.get(out)
             return out
@@ -445,9 +447,9 @@ object PdrawcReader {
                 result = result or ((b.toLong() and 0x7f) shl shift)
                 if (b and 0x80 == 0) break
                 shift += 7
-                if (shift > 35) throw IllegalArgumentException("pdrawc varint 溢出")
+                if (shift > 35) throw LocalizedArgumentException(translation("error.file.varint_overflow"))
             }
-            if (result > Int.MAX_VALUE) throw IllegalArgumentException("pdrawc varint 超出 Int 范围")
+            if (result > Int.MAX_VALUE) throw LocalizedArgumentException(translation("error.file.varint_range"))
             return result.toInt()
         }
 

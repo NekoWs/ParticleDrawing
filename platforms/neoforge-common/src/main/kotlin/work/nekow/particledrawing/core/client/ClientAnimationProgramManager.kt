@@ -33,6 +33,7 @@ import work.nekow.particledrawing.util.rotateAround
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.floor
+import work.nekow.particledrawing.i18n.translation
 
 // 客户端动画程序运行时：解释 AnimInstruction 指令流并直写渲染。
 // 组级状态（pivot/pathOffset/scaleMul/pulseMul/fade 因子）+ 粒子级相对轴心的偏移 rel；
@@ -62,7 +63,7 @@ internal object ClientAnimationProgramManager {
         mc.player?.let { if (it.uuid == uuid) return it }
         entityByUuid[uuid]?.let { cached ->
             if (cached.isAlive && cached.level() === mc.level) return cached
-            LOGGER.warn("[ParticleDrawing] 实体缓存失效，重新解析: {}", uuid)
+            LOGGER.warn(translation("log.program.entity_cache").resolve(), uuid)
             entityByUuid.remove(uuid, cached)
         }
         val level = mc.level ?: return null
@@ -304,7 +305,7 @@ internal object ClientAnimationProgramManager {
         val p = programs[programId] ?: return
         if (name !in p.vars && name.length > MAX_VAR_NAME_LENGTH) {
             LOGGER.warn(
-                "[ParticleDrawing] 变量名过长（{} > {}），setVariable 热更丢弃: {}",
+                translation("log.program.variable_limit").resolve(),
                 name.length, MAX_VAR_NAME_LENGTH, name,
             )
             return
@@ -327,7 +328,7 @@ internal object ClientAnimationProgramManager {
             GetterRewriter.rewrite(expr, p.handleIndexByName, p.entityBindings.size)
         } catch (e: IllegalArgumentException) {
             LOGGER.warn(
-                "[ParticleDrawing] setVariable getter 解析失败: {}", e.message,
+                translation("log.program.variable_getter").resolve(), e.message,
             )
             return null
         }
@@ -402,7 +403,7 @@ internal object ClientAnimationProgramManager {
         while (it.hasNext()) {
             val (programId, p) = it.next()
             if (p.particleIds.any { engine.containsParticle(it) }) continue
-            LOGGER.debug("[ParticleDrawing] program {} 的粒子已全部消失，收掉本地程序", programId)
+            LOGGER.debug(translation("log.program.no_particles").resolve(), programId)
             it.remove()
         }
     }
@@ -520,7 +521,7 @@ internal object ClientAnimationProgramManager {
             GetterRewriter.rewrite(code, p.handleIndexByName, p.entityBindings.size)
         } catch (e: IllegalArgumentException) {
             LOGGER.error(
-                "[ParticleDrawing] 表达式编译失败（getter 解析）: {}", e.message,
+                translation("log.program.expression_getter").resolve(), e.message,
             )
             p.compiled = null
             p.requiredKeys = emptyList()
@@ -535,7 +536,7 @@ internal object ClientAnimationProgramManager {
         if (p.compiled == null) {
             // 快路径和解释器都编不出时才报错；正常情况下向量/矩阵走解释器。
             LOGGER.error(
-                "[ParticleDrawing] 表达式无法编译，该表达式不生效: {}", rw.code,
+                translation("log.program.expression_compile").resolve(), rw.code,
             )
         }
         prepareExpressionBuffers(p)
@@ -597,7 +598,7 @@ internal object ClientAnimationProgramManager {
             p.missStreak++
             if (p.missStreak % 60 == 0) {
                 LOGGER.warn(
-                    "[ParticleDrawing] 程序输入实体连续 {} 次无法解析（相关 getter 读 0）: slots={}",
+                    translation("log.program.entities_missing").resolve(),
                     p.missStreak, missing,
                 )
             }
@@ -769,7 +770,7 @@ internal object ClientAnimationProgramManager {
                 )
             }
         } catch (e: IllegalArgumentException) {
-            LOGGER.error("编队变换的槽位无法求值: {}", e.message)
+            LOGGER.error(translation("log.morph.slot_evaluation").resolve(), e.message)
         }
     }
 
@@ -796,7 +797,7 @@ internal object ClientAnimationProgramManager {
             morph?.tick(1.0)
         } catch (e: IllegalArgumentException) {
             morph?.cancel()
-            LOGGER.error("编队变换已停止，动态槽位无法求值: {}", e.message)
+            LOGGER.error(translation("log.morph.dynamic_slot").resolve(), e.message)
         }
 
         for ((uuid, st) in p.states) {

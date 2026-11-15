@@ -13,6 +13,8 @@ import work.nekow.particledrawing.util.rotateAround
 import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.max
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 private val LINEAR = EasingCurve(0.0, 0.0, 1.0, 1.0)
 
@@ -387,7 +389,7 @@ class RenderParticle(
      * 目标为 0 时也能从当前亮度平滑淡出；时长 0 直接落地。
      */
     fun applyLightIntensity(multiplier: Float, durationMs: Long, easing: EasingType) {
-        require(multiplier.isFinite() && multiplier >= 0f) { "光强乘数必须是非负有限值" }
+        requireLocalized(multiplier.isFinite() && multiplier >= 0f) { translation("error.light.intensity") }
         if (durationMs <= 0L) {
             baseLightIntensity = multiplier
             lightEase = LightEase()

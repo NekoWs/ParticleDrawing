@@ -38,6 +38,8 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import org.apache.logging.log4j.LogManager
 import org.apache.logging.log4j.Logger
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 private val LOGGER: Logger = LogManager.getLogger("ParticleDrawing")
 
@@ -450,8 +452,8 @@ class ServerParticleEngine(
      */
     fun setLightIntensity(id: UUID, multiplier: Float, durationTicks: Int,
                           easing: EasingType, playersInDimension: Collection<ServerPlayer>) {
-        require(multiplier.isFinite() && multiplier >= 0f) { "光强乘数必须是非负有限值" }
-        require(durationTicks >= 0) { "光强过渡时长不能为负" }
+        requireLocalized(multiplier.isFinite() && multiplier >= 0f) { translation("error.light.intensity") }
+        requireLocalized(durationTicks >= 0) { translation("error.light.duration") }
         val data = particles[id] ?: return
         data.setLightIntensity(multiplier)
 
@@ -841,7 +843,7 @@ class ServerParticleEngine(
         val now = System.nanoTime()
         if (now - lastCapacityWarnNanos > 1_000_000_000L) {
             lastCapacityWarnNanos = now
-            LOGGER.warn("[ParticleDrawing] 维度 {} 的粒子数已达上限，最多 {} 颗粒子",
+            LOGGER.warn(translation("log.world.capacity").resolve(),
                 dimensionId, ParticleDrawingConfig.SERVER.maxParticlesPerDimension.get())
         }
     }

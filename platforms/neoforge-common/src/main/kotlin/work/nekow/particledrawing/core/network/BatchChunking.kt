@@ -1,5 +1,8 @@
 package work.nekow.particledrawing.core.network
 
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
+
 /**
  * 批量载荷的拆包：条数超过单包上限时按原顺序切成若干段，每段不超过 [max]。
  *
@@ -9,7 +12,7 @@ internal object BatchChunking {
 
     /** 把 [items] 按 [max] 切成若干段；空列表得到空结果。 */
     fun <T> chunks(items: List<T>, max: Int): List<List<T>> {
-        require(max > 0) { "单包上限必须为正（$max）" }
+        requireLocalized(max > 0) { translation("error.packet.batch_size", max) }
         if (items.isEmpty()) return emptyList()
         if (items.size <= max) return listOf(items)
         val out = ArrayList<List<T>>((items.size + max - 1) / max)

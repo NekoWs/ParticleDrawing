@@ -5,6 +5,8 @@ import net.minecraft.world.phys.Vec3
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 命名坐标基与形状门面：点先在局部平面生成，再交给一个坐标基落到世界。
 // 生成结果仍是普通 ParticleGroup 与 ParticleHandle，不新增播放器或成员表。
@@ -65,7 +67,7 @@ object Frames {
         followYaw: Boolean = false,
         offset: Vec3 = Vec3.ZERO,
     ): CoordinateFrame {
-        require(followPosition || !followYaw) { "followYaw 需要同时 followPosition" }
+        requireLocalized(followPosition || !followYaw) { translation("error.shape.follow_yaw") }
         val origin = holder.position().add(offset)
         if (!followYaw) {
             return CoordinateFrame(
@@ -88,11 +90,11 @@ object Frames {
     /** 从正前方与上方向构造正交基；退化输入显式报错，不返回任意轴。 */
     @JvmStatic
     fun basis(forward: Vec3, upHint: Vec3 = Vec3(0.0, 1.0, 0.0)): CoordinateFrame {
-        require(forward.lengthSqr() > 1e-12) { "坐标基的 forward 不能是零向量" }
-        require(upHint.lengthSqr() > 1e-12) { "坐标基的 upHint 不能是零向量" }
+        requireLocalized(forward.lengthSqr() > 1e-12) { translation("error.shape.forward") }
+        requireLocalized(upHint.lengthSqr() > 1e-12) { translation("error.shape.up_hint") }
         val f = forward.normalize()
         val right = upHint.cross(f)
-        require(right.lengthSqr() > 1e-12) { "坐标基的 forward 与 upHint 平行，请换一个 upHint" }
+        requireLocalized(right.lengthSqr() > 1e-12) { translation("error.shape.parallel_axes") }
         val r = right.normalize()
         val up = f.cross(r).normalize()
         return CoordinateFrame(Vec3.ZERO, r, up, f)
@@ -194,15 +196,15 @@ class PolygonSpec {
         color: Color? = null,
         appearance: ParticleVisual? = null,
     ): PolygonSpec {
-        require(partSpecs.none { it.name == name }) { "部件名 '$name' 重复" }
+        requireLocalized(partSpecs.none { it.name == name }) { translation("error.shape.part_name", name) }
         partSpecs.add(ShapePartSpec(name, selector, color, appearance))
         return this
     }
 
     fun build(manager: ParticleManager): Shape {
-        require(sides >= 3) { "正多边形至少需要 3 条边" }
-        require(samplesPerEdge >= 1) { "每条边至少需要 1 个采样" }
-        radius.requirePositive("多边形半径")
+        requireLocalized(sides >= 3) { translation("error.shape.polygon_sides") }
+        requireLocalized(samplesPerEdge >= 1) { translation("error.shape.edge_samples") }
+        radius.requirePositive(translation("field.polygon_radius").resolve())
         val frame = coordinateFrame ?: Frames.fixed(center)
         val group = frame.createGroup(manager)
         angularSpeed?.let { group.spin(frame.up, it.radiansPerTick) }

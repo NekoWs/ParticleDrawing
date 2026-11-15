@@ -3,6 +3,7 @@ package work.nekow.particledrawing.core.server
 import java.util.UUID
 import org.apache.logging.log4j.LogManager
 import org.apache.logging.log4j.Logger
+import work.nekow.particledrawing.i18n.translation
 
 // 服务端动画调度器：按 game tick 驱动延迟与循环任务。
 // 所有方法只能在服务端主线程调用；队列无并发保护依赖这一前提。
@@ -38,7 +39,7 @@ object AnimationScheduler {
             try {
                 top.action()
             } catch (e: Exception) {
-                LOGGER.error("调度任务执行失败", e)
+                LOGGER.error(translation("log.scheduler.task_failed").resolve(), e)
             }
         }
     }

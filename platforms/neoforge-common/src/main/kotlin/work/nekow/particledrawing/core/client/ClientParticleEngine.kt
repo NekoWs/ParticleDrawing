@@ -18,6 +18,7 @@ import work.nekow.particledrawing.core.network.ParticleExitCompletePayload
 import work.nekow.particledrawing.util.AttachMath
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 客户端粒子引擎，管理渲染粒子的生命周期、桥接与逐 tick 同步（缓动与寿命走引擎 tick，[frameSyncCurves] 例外）。
@@ -934,7 +935,7 @@ class ClientParticleEngine {
         capDropCount = 0
         capDropWarnedAt = now
         LOGGER.warn(
-            "渲染粒子上限已满（{}），{} 颗新粒子被丢弃；调大客户端 maxRenderParticles 或减少同屏粒子",
+            translation("log.render.particle_limit").resolve(),
             ParticleDrawingConfig.CLIENT.maxRenderParticles.get(), dropped,
         )
     }

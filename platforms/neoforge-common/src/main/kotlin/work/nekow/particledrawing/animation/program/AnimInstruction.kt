@@ -9,6 +9,9 @@ import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.network.AnimationProgramCodecs
 import work.nekow.particledrawing.core.network.StreamCodecs
 import java.util.UUID
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 客户端动画程序：编排式动画（ParticleGroup 链式调用）录制成的声明式指令流，服务端下发一次，客户端本地求值直写渲染，持续动画零带宽。
 // 指令全部为纯数据；startMs 是相对程序起点的毫秒，客户端用 payload 的 gameTime 锚点对齐时钟（1 game tick = 50ms）。
@@ -26,7 +29,7 @@ enum class InstructionType {
 
         /** 序号反查；越界视为协议损坏并抛错。 */
         fun fromOrdinal(raw: Int): InstructionType =
-            BY_ORDINAL.getOrNull(raw) ?: throw IllegalArgumentException("未知动画指令 tag=$raw")
+            BY_ORDINAL.getOrNull(raw) ?: throw LocalizedArgumentException(translation("error.program.instruction_type", raw))
     }
 }
 
@@ -439,12 +442,12 @@ sealed class AnimInstruction {
 
         init {
             if (slots != null) {
-                require(slots.size == slotCount && slotCount in 1..AnimationProgramCodecs.MAX_PROGRAM_MEMBERS) {
-                    "位置槽位数量必须在 1 到 ${AnimationProgramCodecs.MAX_PROGRAM_MEMBERS} 之间"
+                requireLocalized(slots.size == slotCount && slotCount in 1..AnimationProgramCodecs.MAX_PROGRAM_MEMBERS) {
+                    translation("error.morph.slot_count", AnimationProgramCodecs.MAX_PROGRAM_MEMBERS)
                 }
-                require(!spec.dynamicSlots) { "位置槽位列表只支持静态目标" }
-                require(spec.writeAttributes || slots.none { it.yaw != null || it.pitch != null || it.size != null }) {
-                    "带外观的槽位必须启用属性"
+                requireLocalized(!spec.dynamicSlots) { translation("error.morph.static_slots") }
+                requireLocalized(spec.writeAttributes || slots.none { it.yaw != null || it.pitch != null || it.size != null }) {
+                    translation("error.morph.slot_appearance")
                 }
             }
         }
@@ -500,9 +503,9 @@ private const val MORPH_APPEARANCE = 2
 private fun readMorph(startMs: Int, buf: FriendlyByteBuf): AnimInstruction.Morph {
     val count = buf.readVarInt()
     val targetType = buf.readUnsignedByte().toInt()
-    require(targetType in MORPH_FORMULAS..MORPH_APPEARANCE) { "未知形变槽位类型: $targetType" }
+    requireLocalized(targetType in MORPH_FORMULAS..MORPH_APPEARANCE) { translation("error.morph.slot_type", targetType) }
     val slots = if (targetType == MORPH_FORMULAS) null else {
-        require(count in 1..AnimationProgramCodecs.MAX_PROGRAM_MEMBERS) { "位置槽位数量越界: $count" }
+        requireLocalized(count in 1..AnimationProgramCodecs.MAX_PROGRAM_MEMBERS) { translation("error.morph.slot_count_invalid", count) }
         fun readOptionalDouble() = buf.readDouble().takeUnless { it.isNaN() }
         List(count) {
             val position = StreamCodecs.readVec(buf)

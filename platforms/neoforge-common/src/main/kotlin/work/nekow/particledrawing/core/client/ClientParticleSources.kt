@@ -1,10 +1,12 @@
 package work.nekow.particledrawing.core.client
 
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.diagnostic
+import work.nekow.particledrawing.i18n.component
 import work.nekow.particledrawing.platform.toMinecraft
 
 
 import net.minecraft.client.Minecraft
-import net.minecraft.network.chat.Component
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.recipe.RecipeRuntime
 import work.nekow.particledrawing.api.RecipeAnchor
@@ -12,6 +14,7 @@ import work.nekow.particledrawing.core.network.ParticleRecipePayload
 import work.nekow.particledrawing.core.network.RecipeOperation
 import work.nekow.particledrawing.util.AttachMath
 import java.util.UUID
+import work.nekow.particledrawing.i18n.translation
 
 /** 声明式采样器的客户端桥接；所有积分按游戏刻推进，暂停时不推进。 */
 internal object ClientParticleSources {
@@ -99,7 +102,7 @@ internal object ClientParticleSources {
                 engine.spawnParticle(id, posOut[0], posOut[1], posOut[2],
                     p.regs[sR].toFloat(), p.regs[sG].toFloat(), p.regs[sB].toFloat(), p.regs[sA].toFloat(),
                     p.regs[sSc].toFloat(), p.lifetime, null, p.regs[sGlow] != 0.0, p.regs[sLight].toInt(), look, e.runtime.recipe.lifeCurve)
-                require(engine.containsParticle(id)) { "客户端粒子数量已达上限，生成器已停止；清理后 remove/start 重试" }
+                requireLocalized(engine.containsParticle(id)) { translation("error.recipe.client_limit") }
                 engine.markSpawnedDuringRender(id, 0f)
                 member = Member(id, frame, look)
                 e.members[p] = member
@@ -136,8 +139,11 @@ internal object ClientParticleSources {
     }
 
     private fun error(id: UUID, e: RuntimeException) {
-        org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").error("粒子生成器 {}: {}", id, e.message)
-        Minecraft.getInstance().player?.sendSystemMessage(Component.literal("PD 粒子生成器已停止并清理当前实例: ${e.message}；修正后 remove/start 重试"))
+        org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").error(translation("log.recipe.instance").resolve(), id, e.message)
+        val detail = e.diagnostic()
+        val message = if (detail == null) translation("error.recipe.stopped")
+            else translation("error.recipe.stopped_detail", detail)
+        Minecraft.getInstance().player?.sendSystemMessage(message.component())
     }
 
     private fun remove(id: UUID) {

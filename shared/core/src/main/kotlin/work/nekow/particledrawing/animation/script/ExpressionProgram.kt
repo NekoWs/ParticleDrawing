@@ -1,5 +1,9 @@
 package work.nekow.particledrawing.animation.script
 
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.localizedError
+import work.nekow.particledrawing.i18n.translation
+
 /** 程序表达式执行后端：快路径字节码与完整解释器共用同一入口。 */
 interface CompiledExpression {
     val regCount: Int
@@ -69,7 +73,7 @@ private class InterpretedExpression private constructor(
         val scalar = when (value) {
             is Double -> value
             is Boolean -> if (value) 1.0 else 0.0
-            else -> throw IllegalArgumentException("表达式输出 '$name' 不是标量")
+            else -> throw LocalizedArgumentException(translation("error.expression.scalar_output", name))
         }
         vars[name] = scalar
         when (name) {
@@ -81,11 +85,11 @@ private class InterpretedExpression private constructor(
     }
 
     private fun component(value: Any?, index: Int): Any = when (value) {
-        is Vec2 -> when (index) { 0 -> value.x; 1 -> value.y; else -> error("向量分量不足") }
-        is Vec3 -> when (index) { 0 -> value.x; 1 -> value.y; 2 -> value.z; else -> error("向量分量不足") }
-        is Vec4 -> when (index) { 0 -> value.x; 1 -> value.y; 2 -> value.z; 3 -> value.w; else -> error("向量分量不足") }
-        is List<*> -> value.getOrNull(index) ?: throw IllegalArgumentException("数组分量不足")
-        else -> throw IllegalArgumentException("解包右侧不是向量或数组")
+        is Vec2 -> when (index) { 0 -> value.x; 1 -> value.y; else -> localizedError(translation("error.expression.vector_components")) }
+        is Vec3 -> when (index) { 0 -> value.x; 1 -> value.y; 2 -> value.z; else -> localizedError(translation("error.expression.vector_components")) }
+        is Vec4 -> when (index) { 0 -> value.x; 1 -> value.y; 2 -> value.z; 3 -> value.w; else -> localizedError(translation("error.expression.vector_components")) }
+        is List<*> -> value.getOrNull(index) ?: throw LocalizedArgumentException(translation("error.expression.array_components"))
+        else -> throw LocalizedArgumentException(translation("error.expression.unpack_type"))
     }
 
     companion object {

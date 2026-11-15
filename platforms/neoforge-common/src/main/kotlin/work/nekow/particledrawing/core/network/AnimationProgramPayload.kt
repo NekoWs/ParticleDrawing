@@ -9,6 +9,8 @@ import work.nekow.particledrawing.animation.program.AnimInstruction
 import work.nekow.particledrawing.animation.program.EntityBinding
 import work.nekow.particledrawing.animation.program.PivotRef
 import java.util.UUID
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 客户端动画程序协议族：首次下发完整程序，Append 追加指令，SetProgramVar 热更变量，Stop 停止程序。
 // 指令为纯数据；客户端按服务端 gameTime 锚点对齐时钟后本地求值。
@@ -45,7 +47,7 @@ internal object AnimationProgramCodecs {
 
     fun readInstructionList(buf: FriendlyByteBuf): List<AnimInstruction> {
         val n = buf.readVarInt()
-        require(n in 0..MAX_INSTRUCTIONS_PER_PAYLOAD) { "编排指令条数越界: $n" }
+        requireLocalized(n in 0..MAX_INSTRUCTIONS_PER_PAYLOAD) { translation("error.packet.instruction_count", n) }
         return List(n) { AnimInstruction.read(buf) }
     }
 
@@ -113,11 +115,11 @@ data class AnimationProgramPayload(
 ) : CustomPacketPayload {
 
     init {
-        require(instructions.size <= AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD) {
-            "编排指令包超限: ${instructions.size} > ${AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD}"
+        requireLocalized(instructions.size <= AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD) {
+            translation("error.packet.instruction_limit", instructions.size, AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD)
         }
-        require(particleIds.size <= AnimationProgramCodecs.MAX_PROGRAM_MEMBERS) {
-            "编排程序成员过多: ${particleIds.size} > ${AnimationProgramCodecs.MAX_PROGRAM_MEMBERS}"
+        requireLocalized(particleIds.size <= AnimationProgramCodecs.MAX_PROGRAM_MEMBERS) {
+            translation("error.packet.program_members", particleIds.size, AnimationProgramCodecs.MAX_PROGRAM_MEMBERS)
         }
     }
 
@@ -166,8 +168,8 @@ data class AnimationProgramAppendPayload(
 
     init {
         // 超限直接报错，发送端按 MAX_INSTRUCTIONS_PER_PAYLOAD 拆段后下发
-        require(instructions.size <= AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD) {
-            "编排指令追加包超限: ${instructions.size} > ${AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD}"
+        requireLocalized(instructions.size <= AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD) {
+            translation("error.packet.instruction_limit", instructions.size, AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD)
         }
     }
 

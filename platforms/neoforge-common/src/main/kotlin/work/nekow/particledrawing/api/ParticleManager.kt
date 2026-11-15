@@ -15,6 +15,8 @@ import work.nekow.particledrawing.core.server.ServerParticleEngine
 import work.nekow.particledrawing.core.server.TextureSyncService
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.*
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 创建和管理粒子的入口点。
@@ -207,7 +209,7 @@ class ParticleManager private constructor(val level: ServerLevel) {
         @JvmStatic
         fun of(level: Level): ParticleManager {
             if (level !is ServerLevel) {
-                throw IllegalArgumentException("ParticleManager 需要 ServerLevel")
+                throw LocalizedArgumentException(translation("error.manager.server_level"))
             }
             return ParticleManager(level)
         }

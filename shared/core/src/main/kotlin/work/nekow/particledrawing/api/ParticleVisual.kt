@@ -8,6 +8,8 @@ import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.util.VisualMath
 import kotlin.math.max
 import kotlin.math.roundToInt
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 逐粒子外观规格：贴图 / 子矩形 UV / 各向异性尺寸 / 朝向 / 加法混合 / 免光照。
@@ -102,7 +104,7 @@ class ParticleVisual {
     /** 用整张贴图（[name] 见 [texture]）；会清掉之前设的子矩形 UV。 */
     fun texture(name: String): ParticleVisual {
         // 贴图名随生成包内联下发，长度上限与 TextureRegistry 的登记上限一致
-        require(name.length <= MAX_TEXTURE_NAME) { "贴图名过长（${name.length} > $MAX_TEXTURE_NAME）" }
+        requireLocalized(name.length <= MAX_TEXTURE_NAME) { translation("error.texture.name_length", name.length, MAX_TEXTURE_NAME) }
         ParticleTextures.parse(name)
         texture = name
         uvRect = null
@@ -223,7 +225,7 @@ class ParticleVisual {
 
     /** 对外光强乘数（>= 0；1 = 原始亮度）。只影响动态光照。 */
     fun lightIntensity(multiplier: Float): ParticleVisual {
-        require(multiplier.isFinite() && multiplier >= 0f) { "光强乘数必须是非负有限值" }
+        requireLocalized(multiplier.isFinite() && multiplier >= 0f) { translation("error.light.intensity") }
         lightIntensity = multiplier
         return this
     }

@@ -1,18 +1,22 @@
 package work.nekow.particledrawing.api
 
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.requireNotNullLocalized
+import work.nekow.particledrawing.i18n.translation
 
 private fun ParticleGroup.requireParameterName(name: String) {
-    require(PARAM_NAME.matches(name)) { "参数名 '$name' 不是合法标识符" }
-    require(name !in RESERVED_PARAM_NAMES) { "参数名 '$name' 与内建名字冲突" }
-    require(name !in readableParameterNames) { "参数名 '$name' 已经绑定过" }
+    requireLocalized(PARAM_NAME.matches(name)) { translation("error.parameter.name", name) }
+    requireLocalized(name !in RESERVED_PARAM_NAMES) { translation("error.parameter.reserved", name) }
+    requireLocalized(name !in readableParameterNames) { translation("error.parameter.bound", name) }
 }
 
 private fun ParticleGroup.registerParameter(name: String, kind: String, unit: String, values: Vec3) {
     requireParameterName(name)
     for (suffix in listOf("_x", "_y", "_z")) {
-        require("$name$suffix" !in readableParameterNames) {
-            "参数名 '$name' 的分量 '$name$suffix' 已经绑定过"
+        requireLocalized("$name$suffix" !in readableParameterNames) {
+            translation("error.parameter.component_bound", name, name, suffix)
         }
     }
     readableParameterNames.add(name)
@@ -39,7 +43,7 @@ class VectorParameter internal constructor(
         )
 
     fun set(value: Vec3): VectorParameter {
-        require(value.x.isFinite() && value.y.isFinite() && value.z.isFinite()) { "向量参数必须是有限值" }
+        requireLocalized(value.x.isFinite() && value.y.isFinite() && value.z.isFinite()) { translation("error.parameter.vector") }
         group.setVariableLive("${name}_x", numberLiteral(value.x))
         group.setVariableLive("${name}_y", numberLiteral(value.y))
         group.setVariableLive("${name}_z", numberLiteral(value.z))
@@ -47,9 +51,9 @@ class VectorParameter internal constructor(
     }
 
     fun set(value: Vec3, over: Time, easing: Ease = Ease.LINEAR): VectorParameter {
-        require(value.x.isFinite() && value.y.isFinite() && value.z.isFinite()) { "向量参数必须是有限值" }
-        over.requirePositive("参数过渡时长")
-        val ticks = over.requireWholeTicks("参数过渡时长")
+        requireLocalized(value.x.isFinite() && value.y.isFinite() && value.z.isFinite()) { translation("error.parameter.vector") }
+        over.requirePositive(translation("field.parameter_duration").resolve())
+        val ticks = over.requireWholeTicks(translation("field.parameter_duration").resolve())
         group.setVariableInterpolated("${name}_x", numberLiteral(value.x), ticks, easing.toEasingType())
         group.setVariableInterpolated("${name}_y", numberLiteral(value.y), ticks, easing.toEasingType())
         group.setVariableInterpolated("${name}_z", numberLiteral(value.z), ticks, easing.toEasingType())
@@ -82,8 +86,8 @@ class DirectionParameter internal constructor(
 
     fun set(value: Vec3, over: Time, easing: Ease = Ease.LINEAR): DirectionParameter {
         val unit = normalize(value)
-        over.requirePositive("方向过渡时长")
-        val ticks = over.requireWholeTicks("方向过渡时长")
+        over.requirePositive(translation("field.direction_duration").resolve())
+        val ticks = over.requireWholeTicks(translation("field.direction_duration").resolve())
         group.setVariableInterpolated("${name}_x", numberLiteral(unit.x), ticks, easing.toEasingType())
         group.setVariableInterpolated("${name}_y", numberLiteral(unit.y), ticks, easing.toEasingType())
         group.setVariableInterpolated("${name}_z", numberLiteral(unit.z), ticks, easing.toEasingType())
@@ -91,7 +95,7 @@ class DirectionParameter internal constructor(
     }
 
     private fun normalize(value: Vec3): Vec3 {
-        require(value.lengthSqr() > 1e-12) { "方向参数不能是零向量" }
+        requireLocalized(value.lengthSqr() > 1e-12) { translation("error.parameter.direction") }
         return value.normalize()
     }
 }
@@ -105,15 +109,15 @@ class ScalarParameter internal constructor(
     val value: Scalar get() = Scalar(name)
 
     fun set(value: Double): ScalarParameter {
-        require(value.isFinite()) { "标量参数必须是有限值" }
+        requireLocalized(value.isFinite()) { translation("error.parameter.scalar") }
         group.setVariableLive(name, numberLiteral(value))
         return this
     }
 
     fun set(value: Double, over: Time, easing: Ease = Ease.LINEAR): ScalarParameter {
-        require(value.isFinite()) { "标量参数必须是有限值" }
-        over.requirePositive("参数过渡时长")
-        group.setVariableInterpolated(name, numberLiteral(value), over.requireWholeTicks("参数过渡时长"), easing.toEasingType())
+        requireLocalized(value.isFinite()) { translation("error.parameter.scalar") }
+        over.requirePositive(translation("field.parameter_duration").resolve())
+        group.setVariableInterpolated(name, numberLiteral(value), over.requireWholeTicks(translation("field.parameter_duration").resolve()), easing.toEasingType())
         return this
     }
 }
@@ -124,14 +128,14 @@ fun ParticleGroup.vectorParameter(name: String, value: Vec3): VectorParameter {
 }
 
 fun ParticleGroup.directionParameter(name: String, value: Vec3): DirectionParameter {
-    require(value.lengthSqr() > 1e-12) { "方向参数不能是零向量" }
+    requireLocalized(value.lengthSqr() > 1e-12) { translation("error.parameter.direction") }
     val unit = value.normalize()
     registerParameter(name, "direction", "unit", unit)
     return DirectionParameter(this, name)
 }
 
 fun ParticleGroup.scalarParameter(name: String, value: Double): ScalarParameter {
-    require(value.isFinite()) { "标量参数必须是有限值" }
+    requireLocalized(value.isFinite()) { translation("error.parameter.scalar") }
     requireParameterName(name)
     readableParameterNames.add(name)
     readableParameters.add(ParameterInfo(name, "scalar", "-"))
@@ -181,11 +185,11 @@ class PhaseParameter internal constructor(
     val isActive: Boolean get() = state == 1
 
     internal fun register() {
-        require(PARAM_NAME.matches(name)) { "阶段名 '$name' 不是合法标识符" }
-        require(name.length + "_duration".length <= 64) { "阶段名 '$name' 过长" }
-        require(name !in RESERVED_PARAM_NAMES) { "阶段名 '$name' 与内建名字冲突" }
+        requireLocalized(PARAM_NAME.matches(name)) { translation("error.phase.name", name) }
+        requireLocalized(name.length + "_duration".length <= 64) { translation("error.phase.name_length", name) }
+        requireLocalized(name !in RESERVED_PARAM_NAMES) { translation("error.phase.reserved", name) }
         for (variable in listOf(startName, durationName, stateName)) {
-            require(variable !in group.readableParameterNames) { "阶段变量 '$variable' 已经绑定过" }
+            requireLocalized(variable !in group.readableParameterNames) { translation("error.phase.bound", variable) }
         }
         group.readableParameterNames.add(startName)
         group.readableParameterNames.add(durationName)
@@ -198,9 +202,9 @@ class PhaseParameter internal constructor(
 
     /** 从当前表达式时刻开始计时；重复调用即重入。 */
     fun start(duration: Time): PhaseParameter {
-        duration.requirePositive("阶段时长")
+        duration.requirePositive(translation("field.phase_duration").resolve())
         val ms = duration.millis
-        require(ms.isFinite() && ms > 0.0) { "阶段时长必须是正的有限值" }
+        requireLocalized(ms.isFinite() && ms > 0.0) { translation("error.phase.duration") }
         val now = group.currentExpressionTimeMs()
         set("_state", 0.0)
         set("_start", now.toDouble())
@@ -307,7 +311,7 @@ class ExpressionPosition internal constructor(private val frame: ExpressionFrame
     }
 
     fun local(value: Vector) {
-        requireNotNull(frame.group) { "没有粒子组时不能构建局部坐标" }
+        requireNotNullLocalized(frame.group) { translation("error.expression.local_group") }
         frame.builder.localPosition = true
         frame.builder.positionCode =
             "x=${value.x.render()};y=${value.y.render()};z=${value.z.render()};"
@@ -315,7 +319,7 @@ class ExpressionPosition internal constructor(private val frame: ExpressionFrame
 
     /** 当前后端不能保留逐粒子初始位置；显式拒绝，不偷偷补世界原点。 */
     fun preserve(): Nothing = throw UnsupportedOperationException(
-        "标量表达式后端不能保留逐粒子位置；请显式使用 position.world 或 position.local",
+        translation("error.expression.position_mode").resolve(),
     )
 }
 
@@ -363,7 +367,7 @@ class ExpressionFrame internal constructor(
 
     /** 0..1 进度；duration 必须是正的常量时间。 */
     fun progress(duration: Time): Scalar {
-        duration.requirePositive("progress 时长")
+        duration.requirePositive(translation("field.progress_duration").resolve())
         return clamp01(Scalar("(t/${duration.render()})"))
     }
 
@@ -390,10 +394,10 @@ class ExpressionFrame internal constructor(
      * 同名重复绑定、保留名冲突都在构建时拒绝；调试导出会列出局部表达式。
      */
     fun local(name: String, value: Scalar): Scalar {
-        require(PARAM_NAME.matches(name)) { "局部表达式名 '$name' 不是合法标识符" }
-        require(name !in RESERVED_PARAM_NAMES) { "局部表达式名 '$name' 与内建名字冲突" }
-        require(name !in builder.locals) { "局部表达式名 '$name' 重复绑定" }
-        group?.let { require(name !in it.readableParameterNames) { "局部表达式名 '$name' 与参数冲突" } }
+        requireLocalized(PARAM_NAME.matches(name)) { translation("error.expression.binding_name", name) }
+        requireLocalized(name !in RESERVED_PARAM_NAMES) { translation("error.expression.binding_reserved", name) }
+        requireLocalized(name !in builder.locals) { translation("error.expression.binding_duplicate", name) }
+        group?.let { requireLocalized(name !in it.readableParameterNames) { translation("error.expression.binding_conflict", name) } }
         builder.locals[name] = value
         return Scalar(name)
     }
@@ -401,8 +405,8 @@ class ExpressionFrame internal constructor(
     /** 从组年龄 0 起的阶段；[offset] 用于同一时间轴上的延后阶段。 */
     @JvmOverloads
     fun phase(duration: Time, offset: Time = Time.milliseconds(0.0)): Phase {
-        duration.requirePositive("阶段时长")
-        offset.requireNonNegative("阶段偏移")
+        duration.requirePositive(translation("field.phase_duration").resolve())
+        offset.requireNonNegative(translation("field.phase_offset").resolve())
         return Phase(duration, offset)
     }
 
@@ -411,8 +415,8 @@ class ExpressionFrame internal constructor(
     fun start(duration: Time, offset: Time = Time.milliseconds(0.0)): Phase = phase(duration, offset)
 
     fun entity(handle: String): ExpressionEntity {
-        require(PARAM_NAME.matches(handle)) { "实体句柄 '$handle' 不是合法标识符" }
-        group?.let { require(it.hasEntityHandle(handle)) { "实体句柄 '$handle' 尚未在组上 defineEntity" } }
+        requireLocalized(PARAM_NAME.matches(handle)) { translation("error.entity.handle_invalid", handle) }
+        group?.let { requireLocalized(it.hasEntityHandle(handle)) { translation("error.getter.handle_unknown", handle) } }
         return ExpressionEntity(handle)
     }
 
@@ -428,7 +432,7 @@ internal class TypedExpressionBuilder {
 
     fun build(): String {
         val position = positionCode
-            ?: throw IllegalArgumentException("类型化表达式必须显式设置 position.world 或 position.local")
+            ?: throw LocalizedArgumentException(translation("error.expression.position"))
         val prelude = buildString {
             for ((name, value) in locals) append("$name=${value.expr};")
         }
@@ -471,7 +475,7 @@ class TypedExpression internal constructor(
 class ExpressionTextBuilder internal constructor(duration: Time) {
 
     private val builder = TypedExpressionBuilder()
-    val durationTicks: Int = duration.requireWholeTicks("表达式时长")
+    val durationTicks: Int = duration.requireWholeTicks(translation("field.expression_duration").resolve())
 
     fun positionWorld(x: Scalar, y: Scalar, z: Scalar): ExpressionTextBuilder {
         builder.localPosition = false
@@ -528,7 +532,7 @@ fun ParticleGroup.buildExpression(
     duration: Time,
     block: ExpressionFrame.() -> Unit,
 ): TypedExpression {
-    val ticks = duration.requireWholeTicks("表达式时长")
+    val ticks = duration.requireWholeTicks(translation("field.expression_duration").resolve())
     val builder = TypedExpressionBuilder()
     val frame = ExpressionFrame(this, builder)
     frame.block()

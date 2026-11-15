@@ -5,6 +5,8 @@ import net.minecraft.network.codec.StreamCodec
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
 import java.util.UUID
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 批量直设位置数据包：一个包覆盖多颗粒子，语义与 [ParticleTrackPayload] 相同：
@@ -19,7 +21,7 @@ data class ParticleTrackBatchPayload(
 
     init {
         // 超限直接报错，发送端按 BatchChunking 拆包后下发
-        require(updates.size <= MAX_BATCH) { "粒子位置批量超限: ${updates.size} > $MAX_BATCH" }
+        requireLocalized(updates.size <= MAX_BATCH) { translation("error.packet.track_limit", updates.size, MAX_BATCH) }
     }
 
     /** 一条直设位置。 */
@@ -42,7 +44,7 @@ data class ParticleTrackBatchPayload(
             object : StreamCodec<FriendlyByteBuf, ParticleTrackBatchPayload> {
                 override fun decode(buf: FriendlyByteBuf): ParticleTrackBatchPayload {
                     val n = buf.readVarInt()
-                    require(n in 0..MAX_BATCH) { "粒子位置批量超限: $n" }
+                    requireLocalized(n in 0..MAX_BATCH) { translation("error.packet.track_count", n) }
                     val list = ArrayList<Track>(n)
                     repeat(n) {
                         list.add(

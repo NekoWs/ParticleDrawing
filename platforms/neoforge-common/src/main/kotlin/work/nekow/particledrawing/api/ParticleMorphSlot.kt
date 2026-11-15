@@ -1,6 +1,8 @@
 package work.nekow.particledrawing.api
 
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 组形变槽位。位置使用世界坐标，yaw 和 pitch 使用度，size 使用粒子 scale 的单位。
@@ -13,8 +15,8 @@ data class ParticleMorphSlot @JvmOverloads constructor(
     val size: Double? = null,
 ) {
     init {
-        require(position.x.isFinite() && position.y.isFinite() && position.z.isFinite()) { "槽位坐标必须是有限数" }
-        require(yaw?.isFinite() != false && pitch?.isFinite() != false) { "槽位朝向必须是有限数" }
-        require(size == null || size in 0.0..Float.MAX_VALUE.toDouble()) { "槽位 size 必须是非负的有效尺寸" }
+        requireLocalized(position.x.isFinite() && position.y.isFinite() && position.z.isFinite()) { translation("error.morph.slot_position") }
+        requireLocalized(yaw?.isFinite() != false && pitch?.isFinite() != false) { translation("error.morph.slot_orientation") }
+        requireLocalized(size == null || size in 0.0..Float.MAX_VALUE.toDouble()) { translation("error.morph.slot_size") }
     }
 }

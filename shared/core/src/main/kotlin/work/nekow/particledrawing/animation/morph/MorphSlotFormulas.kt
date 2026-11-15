@@ -4,6 +4,9 @@ import work.nekow.particledrawing.animation.script.ScriptException
 import work.nekow.particledrawing.animation.script.ScriptRuntime
 import work.nekow.particledrawing.animation.script.Vec3 as ScriptVec3
 import work.nekow.particledrawing.math.Vec3
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 用公式描述的一整套槽位。
@@ -22,8 +25,8 @@ class MorphSlotFormulas(
     private val control2: String? = null,
 ) {
     init {
-        require(count >= 1) { "槽位数量至少为 1" }
-        require(position.isNotBlank()) { "槽位位置公式不能为空" }
+        requireLocalized(count >= 1) { translation("error.morph.slots") }
+        requireLocalized(position.isNotBlank()) { translation("error.morph.position_formula") }
     }
 
     private val posRunner = runner(position, "position")
@@ -55,30 +58,30 @@ class MorphSlotFormulas(
                     pitch = pitchRunner?.let { scalar(it.eval(ctx)) } ?: Double.NaN,
                     size = sizeRunner?.let {
                         val value = scalar(it.eval(ctx))
-                        require(value in 0.0..Float.MAX_VALUE.toDouble()) { "槽位 size 必须是非负的有效尺寸" }
+                        requireLocalized(value in 0.0..Float.MAX_VALUE.toDouble()) { translation("error.morph.slot_size") }
                         value
                     } ?: Double.NaN,
                     control1 = c1Runner?.let { vec(it.evalAny(ctx), "control1") },
                     control2 = c2Runner?.let { vec(it.evalAny(ctx), "control2") },
                 )
             } catch (e: ScriptException) {
-                throw IllegalArgumentException("槽位 $i 无法求值: ${e.message}", e)
+                throw LocalizedArgumentException(translation("error.morph.slot_evaluation", i, e.message), e)
             }
         }
         return out
     }
 
     private fun runner(expr: String, field: String): ScriptRuntime.ExpressionRunner {
-        require(expr.isNotBlank()) { "槽位字段 '$field' 的公式为空" }
+        requireLocalized(expr.isNotBlank()) { translation("error.morph.empty_formula", field) }
         return try {
             ScriptRuntime.ExpressionRunner(expr)
         } catch (e: RuntimeException) {
-            throw IllegalArgumentException("槽位字段 '$field' 的公式无法解析: ${e.message}", e)
+            throw LocalizedArgumentException(translation("error.morph.invalid_formula", field, e.message), e)
         }
     }
 
     private fun scalar(v: Double): Double {
-        require(v.isFinite()) { "槽位公式产生了非有限数" }
+        requireLocalized(v.isFinite()) { translation("error.morph.slot_nonfinite") }
         return v
     }
 
@@ -87,16 +90,16 @@ class MorphSlotFormulas(
             is Vec3 -> v
             is ScriptVec3 -> Vec3(v.x, v.y, v.z)
             is List<*> -> {
-                require(v.size >= 3) { "槽位字段 '$field' 的列表至少要有三个分量" }
+                requireLocalized(v.size >= 3) { translation("error.morph.slot_components", field) }
                 Vec3(
-                    (v[0] as? Number)?.toDouble() ?: throw IllegalArgumentException("槽位字段 '$field' 的第 1 个分量不是数"),
-                    (v[1] as? Number)?.toDouble() ?: throw IllegalArgumentException("槽位字段 '$field' 的第 2 个分量不是数"),
-                    (v[2] as? Number)?.toDouble() ?: throw IllegalArgumentException("槽位字段 '$field' 的第 3 个分量不是数"),
+                    (v[0] as? Number)?.toDouble() ?: throw LocalizedArgumentException(translation("error.morph.slot_x", field)),
+                    (v[1] as? Number)?.toDouble() ?: throw LocalizedArgumentException(translation("error.morph.slot_y", field)),
+                    (v[2] as? Number)?.toDouble() ?: throw LocalizedArgumentException(translation("error.morph.slot_z", field)),
                 )
             }
-            else -> throw IllegalArgumentException("槽位字段 '$field' 需要 vec3(...) 形式的三维向量")
+            else -> throw LocalizedArgumentException(translation("error.morph.slot_vector", field))
         }
-        require(point.x.isFinite() && point.y.isFinite() && point.z.isFinite()) { "槽位字段 '$field' 需要有限坐标" }
+        requireLocalized(point.x.isFinite() && point.y.isFinite() && point.z.isFinite()) { translation("error.morph.slot_finite", field) }
         return point
     }
 }

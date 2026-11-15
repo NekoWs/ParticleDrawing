@@ -20,6 +20,9 @@ import work.nekow.particledrawing.animation.program.finiteDurationMs
 import work.nekow.particledrawing.core.server.AnimationScheduler
 import net.neoforged.neoforge.network.PacketDistributor
 import java.util.UUID
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 编排式动画的粒子组：一组可同时变换的粒子（由 Draw 工具或 [ParticleManager.createGroup] 创建）。
@@ -97,7 +100,7 @@ class ParticleGroup(
 
     /** handle 在实体注册表中必须唯一，也不得与程序变量重名，同名会在公式环境里互相覆盖。 */
     private fun requireFreeHandle(handle: String) {
-        require(entityBindings.none { it.handle == handle } && handle !in vars) { "实体句柄名 '$handle' 已被占用" }
+        requireLocalized(entityBindings.none { it.handle == handle } && handle !in vars) { translation("error.group.handle_taken", handle) }
     }
 
     /** 可读表达式构建时检查实体句柄是否已登记。 */
@@ -106,7 +109,7 @@ class ParticleGroup(
     /** 服务端预警：扫描代码里的 get_* 调用，报出未知名或形态误用一类确定错误。 */
     private fun lintGetters(code: String) {
         for (problem in GetterRewriter.lint(code)) {
-            LOGGER.warn("[ParticleDrawing] group {} 公式预警: {}", id, problem)
+            LOGGER.warn(translation("log.group.formula_warning").resolve(), id, problem)
         }
     }
 
@@ -177,8 +180,8 @@ class ParticleGroup(
             armed = false
             return
         }
-        require(members.size <= MAX_MEMBERS_PER_PROGRAM) {
-            "group $id 成员过多（${members.size} > $MAX_MEMBERS_PER_PROGRAM）"
+        requireLocalized(members.size <= MAX_MEMBERS_PER_PROGRAM) {
+            translation("error.group.size_limit", id, members.size, MAX_MEMBERS_PER_PROGRAM)
         }
         deliveryMembers = members
         ServerProgramDelivery.register(id, manager.dimensionId, members) { player -> sendFullProgram(player) }
@@ -208,8 +211,8 @@ class ParticleGroup(
                 movableAnchor = true
                 emit(AnimInstruction.BindPivot(cursorNow(), PivotRef.Movable(anchor.pos, anchor.velocity, anchor.orient)))
             }
-            is Anchor.Entity -> throw IllegalArgumentException(
-                "ParticleGroup.anchor 不接受实体锚点：实体锚点用 followEntity(uuid, offset, local)"
+            is Anchor.Entity -> throw LocalizedArgumentException(
+                translation("error.group.entity_anchor")
             )
         }
         return this
@@ -227,8 +230,8 @@ class ParticleGroup(
      */
     @JvmOverloads
     fun updateAnchor(previous: Vec3, current: Vec3, velocity: Vec3 = current.subtract(previous)): ParticleGroup {
-        require(movableAnchor) {
-            "updateAnchor 需要先用 anchor(Anchor.Movable(...)) 绑定可移动轴心"
+        requireLocalized(movableAnchor) {
+            translation("error.group.movable_anchor")
         }
         pivot = current
         for (player in manager.getPlayers()) {
@@ -271,7 +274,7 @@ class ParticleGroup(
      */
     fun onAnimationComplete(action: (ParticleGroup) -> Unit): ParticleGroup {
         if (!hasCompletionSource()) {
-            LOGGER.warn("[ParticleDrawing] group {} 账本上没有有限终点，onAnimationComplete 不会触发", id)
+            LOGGER.warn(translation("log.group.completion_missing").resolve(), id)
             return this
         }
         ServerProgramCompletion.onComplete(id, manager.dimensionId, fallbackTicks(), action = { action(this) })
@@ -286,9 +289,9 @@ class ParticleGroup(
      */
     @JvmOverloads
     fun retire(graceTicks: Int = 2): ParticleGroup {
-        require(graceTicks >= 0) { "retire 的余量不能为负" }
+        requireLocalized(graceTicks >= 0) { translation("error.group.retire_margin") }
         if (!hasCompletionSource()) {
-            LOGGER.warn("[ParticleDrawing] group {} 账本上没有有限终点，retire 不会触发（改用 destroyAfter）", id)
+            LOGGER.warn(translation("log.group.retire_missing").resolve(), id)
             return this
         }
         ServerProgramCompletion.retire(id, manager.dimensionId, graceTicks, fallbackTicks())
@@ -390,20 +393,19 @@ class ParticleGroup(
         if (!armed) {
             val members = manager.getEngine().getGroup(id)?.memberIds()?.toList()
             if (members.isNullOrEmpty()) {
-                LOGGER.warn("[ParticleDrawing] group {} 没有成员，动画程序未下发", id)
+                LOGGER.warn(translation("log.group.empty").resolve(), id)
                 // 没有成员时指令发不出去：留一小段等成员到位，超过上限就丢弃，避免无限增长
                 if (instructions.size > MAX_PENDING_INSTRUCTIONS) {
                     LOGGER.warn(
-                        "[ParticleDrawing] group {} 待发指令过多（{} 条）且没有成员，已丢弃；补上成员后请重录动画",
+                        translation("log.group.pending_limit").resolve(),
                         id, instructions.size,
                     )
                     instructions.clear()
                 }
                 return
             }
-            require(members.size <= MAX_MEMBERS_PER_PROGRAM) {
-                "group $id 成员过多（${members.size} > $MAX_MEMBERS_PER_PROGRAM）：受控清单要一次发完，" +
-                    "请拆成多个组（一个组是「一段编排」，不是粒子场）"
+            requireLocalized(members.size <= MAX_MEMBERS_PER_PROGRAM) {
+                translation("error.group.size_limit", id, members.size, MAX_MEMBERS_PER_PROGRAM)
             }
             val batch = instructions.map { it.shiftStartMs(clock.shiftMs) }
             instructions.clear()
@@ -475,7 +477,7 @@ class ParticleGroup(
     /** 带显式时间的淡入。 */
     @JvmOverloads
     fun fadeIn(over: Time, easing: Ease = Ease.OUT): ParticleGroup =
-        fadeIn(over.requireWholeTicks("淡入时长"), easing.toEasingType())
+        fadeIn(over.requireWholeTicks(translation("field.fade_in").resolve()), easing.toEasingType())
 
     /**
      * 淡出：整组透明度缓动到 0；[removeAfter] 为 true 时淡出结束（+250ms 余量）由服务端销毁整组，
@@ -490,7 +492,7 @@ class ParticleGroup(
     /** 带显式时间的淡出。 */
     @JvmOverloads
     fun fadeOut(over: Time, removeAfter: Boolean = true, easing: Ease = Ease.IN): ParticleGroup =
-        fadeOut(over.requireWholeTicks("淡出时长"), removeAfter, easing.toEasingType())
+        fadeOut(over.requireWholeTicks(translation("field.fade_out").resolve()), removeAfter, easing.toEasingType())
 
     /**
      * 定时销毁整组（含所有粒子）。
@@ -502,7 +504,7 @@ class ParticleGroup(
     }
 
     /** 带显式时间的定时销毁。 */
-    fun destroyAfter(time: Time): ParticleGroup = destroyAfter(time.requireWholeTicks("销毁延时"))
+    fun destroyAfter(time: Time): ParticleGroup = destroyAfter(time.requireWholeTicks(translation("field.destroy_delay").resolve()))
 
     /**
      * 停止本组全部持续型动画（无限模式的 spin / pulse）。
@@ -562,7 +564,7 @@ class ParticleGroup(
         control2: String? = null,
         dynamicSlots: Boolean = false,
     ): ParticleGroup {
-        require(!expressionMode) { "组表达式已接管位置，请在独立粒子组上使用 morph" }
+        requireLocalized(!expressionMode) { translation("error.group.morph_position") }
         MorphSlotFormulas(slotCount, position, yaw, pitch, size, control1, control2).build(0.0)
         emit(
             AnimInstruction.Morph(
@@ -579,15 +581,15 @@ class ParticleGroup(
      */
     @JvmOverloads
     fun morph(points: List<Vec3>, options: MorphOptions = MorphOptions()): ParticleGroup {
-        require(!expressionMode) { "组表达式已接管位置，请在独立粒子组上使用 morph" }
-        require(!options.writeAttributes) { "位置槽位列表只支持位置形变" }
+        requireLocalized(!expressionMode) { translation("error.group.morph_position") }
+        requireLocalized(!options.writeAttributes) { translation("error.morph.position_only") }
         return morphSlotsInternal(points.map(::ParticleMorphSlot), options)
     }
 
     /** 把成员过渡到带可选朝向与尺寸的静态槽位，自动启用槽位属性。 */
     @JvmOverloads
     fun morphSlots(slots: List<ParticleMorphSlot>, options: MorphOptions = MorphOptions()): ParticleGroup {
-        require(!expressionMode) { "组表达式已接管位置，请在独立粒子组上使用 morph" }
+        requireLocalized(!expressionMode) { translation("error.group.morph_position") }
         return morphSlotsInternal(slots.toList(), options.copy(writeAttributes = true))
     }
 
@@ -667,7 +669,7 @@ class ParticleGroup(
      * 表示完全收起，客户端不绘制。
      */
     fun scaleTo(target: Float, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
-        require(target >= 0f) { "scaleTo 的目标倍率不能为负" }
+        requireLocalized(target >= 0f) { translation("error.group.scale_to") }
         emit(AnimInstruction.ScaleTo(cursorMs, target, durationTicks * 50, easing))
         return this
     }
@@ -685,7 +687,7 @@ class ParticleGroup(
 
     /** 折线路径移动：从当前基准出发依次经过 [points]，[easing] 作用于全程进度。同 [move]，不改轴心绑定。 */
     fun movePath(points: List<Vec3>, durationTicks: Int, easing: EasingType = EasingType.LINEAR): ParticleGroup {
-        require(points.isNotEmpty()) { "movePath 至少需要一个途经点" }
+        requireLocalized(points.isNotEmpty()) { translation("error.group.path") }
         emit(AnimInstruction.MovePath(cursorMs, points, durationTicks * 50, easing))
         return this
     }
@@ -709,8 +711,8 @@ class ParticleGroup(
      * 或已有变量重名，违反立即抛异常。
      */
     fun defineEntity(handle: String, uuid: UUID): ParticleGroup {
-        require(HANDLE_REGEX.matches(handle)) { "实体句柄名 '$handle' 不是合法标识符" }
-        require(handle !in RESERVED_NAMES) { "实体句柄名 '$handle' 与内建名冲突" }
+        requireLocalized(HANDLE_REGEX.matches(handle)) { translation("error.entity.handle_invalid", handle) }
+        requireLocalized(handle !in RESERVED_NAMES) { translation("error.entity.handle_reserved", handle) }
         requireFreeHandle(handle)
         entityBindings.add(EntityBinding(handle, uuid))
         armed = false // 注册表变化需重发全量
@@ -719,7 +721,7 @@ class ParticleGroup(
 
     /** 设置程序静态变量（编译进公式环境的常量）。 */
     fun setVariable(name: String, value: Double): ParticleGroup {
-        require(entityBindings.none { it.handle == name }) { "变量名 '$name' 与实体句柄冲突" }
+        requireLocalized(entityBindings.none { it.handle == name }) { translation("error.group.variable_handle_conflict", name) }
         vars[name] = value
         return this
     }
@@ -760,7 +762,7 @@ class ParticleGroup(
     fun expressionLocal(code: String, durationTicks: Int = 0): ParticleGroup = expressionInSpace(code, durationTicks, true)
 
     private fun expressionInSpace(code: String, durationTicks: Int, local: Boolean): ParticleGroup {
-        require(durationTicks >= 0) { "expression 的时长不能为负" }
+        requireLocalized(durationTicks >= 0) { translation("error.group.expression_duration") }
         work.nekow.particledrawing.animation.recipe.GroupExpressionOutputs.validate(code)
         lintGetters(code)
         // 表达式接管几何，完成账本改看表达式与变量缓动。
@@ -802,7 +804,7 @@ class ParticleGroup(
         ticks: Int,
         easing: EasingType = EasingType.LINEAR,
     ): ParticleGroup {
-        require(ticks >= 0) { "setVariableInterpolated 的时长不能为负" }
+        requireLocalized(ticks >= 0) { translation("error.group.variable_duration") }
         lintGetters(value)
         // 账本：同名重定向直接替换旧终点；0 tick 等于立即赋值，不留终点
         if (ticks > 0) {

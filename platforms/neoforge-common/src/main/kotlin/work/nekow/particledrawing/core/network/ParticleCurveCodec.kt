@@ -6,6 +6,9 @@ import work.nekow.particledrawing.api.CurveKey
 import work.nekow.particledrawing.api.ParticleCurve
 import work.nekow.particledrawing.api.ParticleLifeCurve
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 寿命曲线的协议编解码：整段只在 spawn 包里出现一次，按通道与关键帧紧凑写。
 // 缓动走紧凑编码：预设占 1~2 字节，自定义三次贝塞尔写 4 个 double。
@@ -35,10 +38,10 @@ internal fun readEasingCompact(buf: FriendlyByteBuf, strict: Boolean = false): E
     val type = buf.readByte().toInt()
     if (type == EASE_STEP) return EasingType.NONE
     if (type == EASE_CUSTOM) return EasingType.custom(buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readDouble())
-    require(!strict || type == EASE_PRESET) { "未知缓动类型" }
+    requireLocalized(!strict || type == EASE_PRESET) { translation("error.easing.type") }
     val index = buf.readVarInt()
     return EasingType.PRESETS.getOrElse(index) {
-        require(!strict) { "缓动预设越界: $index" }
+        requireLocalized(!strict) { translation("error.easing.index", index) }
         EasingType.LINEAR
     }
 }
@@ -70,14 +73,14 @@ internal object ParticleCurveCodec {
     fun read(buf: FriendlyByteBuf): ParticleLifeCurve? {
         val curveCount = buf.readVarInt()
         if (curveCount <= 0) return null
-        require(curveCount <= ParticleLifeCurve.MAX_CURVES) { "寿命曲线条数越界: $curveCount" }
+        requireLocalized(curveCount <= ParticleLifeCurve.MAX_CURVES) { translation("error.packet.curve_count", curveCount) }
 
         val curves = ArrayList<ParticleCurve>(curveCount)
         for (i in 0 until curveCount) {
             val channel = CurveChannel.entries.getOrNull(buf.readVarInt())
-                ?: throw IllegalArgumentException("未知寿命曲线通道")
+                ?: throw LocalizedArgumentException(translation("error.packet.curve_channel"))
             val keyCount = buf.readVarInt()
-            require(keyCount in 1..ParticleCurve.MAX_KEYS) { "寿命曲线关键帧数越界: $keyCount" }
+            requireLocalized(keyCount in 1..ParticleCurve.MAX_KEYS) { translation("error.packet.curve_keys", keyCount) }
             val keys = ArrayList<CurveKey>(keyCount)
             for (j in 0 until keyCount) {
                 keys.add(CurveKey(buf.readFloat(), buf.readFloat(), readEasingCompact(buf)))

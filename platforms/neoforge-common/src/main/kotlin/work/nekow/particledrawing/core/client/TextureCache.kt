@@ -16,6 +16,8 @@ import work.nekow.particledrawing.util.HashUtils
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 自定义贴图缓存：把 PNG 字节（.pdrawc 内嵌或程序化 registerTexture 下发）解码为 DynamicTexture 并注册进 TextureManager。
 // 贴图名映射到 particledrawing:custom/<md5-hex>，同名同图。
@@ -55,8 +57,8 @@ object TextureCache {
                     if (images.size == 1) return registerImage(textureName, images.removeAt(0))
                     val width = images.first().width
                     val height = images.first().height
-                    require(images.all { it.width == width && it.height == height }) { "粒子贴图序列的帧尺寸必须一致" }
-                    require(width.toLong() * height * images.size <= 16_777_216L) { "粒子贴图序列超过像素上限" }
+                    requireLocalized(images.all { it.width == width && it.height == height }) { translation("error.texture.frame_dimensions") }
+                    requireLocalized(width.toLong() * height * images.size <= 16_777_216L) { translation("error.texture.pixel_limit") }
                     val atlas = NativeImage(width, height * images.size, false)
                     try {
                         for ((index, image) in images.withIndex()) {
@@ -75,7 +77,7 @@ object TextureCache {
             }
         } catch (error: Exception) {
             // 缓存错误贴图，避免每颗粒子反复读缺失资源；重载资源包后可重新解析。
-            LOGGER.error("ParticleDrawing: 粒子贴图 {} 加载失败：{}", textureName, error.message)
+            LOGGER.error(translation("log.texture.load").resolve(), textureName, error.message)
             val pixels = IntArray(16 * 16) { i ->
                 if (((i % 16) / 8 + (i / 16) / 8) % 2 == 0) 0xFFFF00FF.toInt() else 0xFF000000.toInt()
             }

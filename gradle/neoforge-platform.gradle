@@ -90,7 +90,12 @@ sourceSets {
                 new File(targetSource, 'main/kotlin'),
         ])
         java.setSrcDirs([new File(commonSource, 'main/java'), new File(targetSource, 'main/java')])
-        resources.setSrcDirs([new File(commonSource, 'main/resources'), new File(targetSource, 'main/resources'), generatedResources])
+        resources.setSrcDirs([
+                new File(repositoryRoot, 'shared/core/src/main/resources'),
+                new File(commonSource, 'main/resources'),
+                new File(targetSource, 'main/resources'),
+                generatedResources,
+        ])
     }
     test {
         kotlin.setSrcDirs([new File(commonSource, 'test/kotlin'), new File(targetSource, 'test/kotlin')])

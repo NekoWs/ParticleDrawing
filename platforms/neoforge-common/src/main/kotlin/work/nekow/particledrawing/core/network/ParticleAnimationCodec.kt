@@ -17,6 +17,8 @@ import work.nekow.particledrawing.animation.TrackPr
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.animation.script.Keyframe
 import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 代码生成 [ParticleAnimation] 的网络编解码：手写二进制，与 .pdrawc 无关，不签名。
@@ -78,7 +80,7 @@ internal object ParticleAnimationCodec {
 
     fun read(buf: FriendlyByteBuf): ParticleAnimation {
         val version = buf.readVarInt()
-        if (version != VERSION) throw IllegalArgumentException("ParticleAnimation 载荷版本不支持: $version")
+        if (version != VERSION) throw LocalizedArgumentException(translation("error.packet.animation_version", version))
 
         val loop = buf.readBoolean()
 
@@ -201,7 +203,7 @@ internal object ParticleAnimationCodec {
     private fun readTrack(buf: FriendlyByteBuf): AnimTrack {
         val prOrdinal = buf.readByte().toInt()
         val pr = TrackPr.fromOrdinal(prOrdinal)
-            ?: throw IllegalArgumentException("未知 pr 枚举序号: $prOrdinal")
+            ?: throw LocalizedArgumentException(translation("error.animation.track_property", prOrdinal))
         val mode = if (buf.readByte().toInt() == 1) AnimTrack.Mode.OP else AnimTrack.Mode.SET
         val idCount = buf.readVarInt()
         val ids = ArrayList<String>(idCount)

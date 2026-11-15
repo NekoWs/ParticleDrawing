@@ -11,6 +11,9 @@ import work.nekow.particledrawing.core.network.ParticleRecipePayload
 import work.nekow.particledrawing.core.network.RecipeOperation
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.requireNotNullLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /** 服务端主线程登记生成声明；客户端自行执行采样和运动，无逐颗逐刻广播。 */
 internal object ServerParticleSources {
@@ -30,7 +33,7 @@ internal object ServerParticleSources {
 
     fun start(level: ServerLevel, recipe: ParticleRecipe, anchor: RecipeAnchor, burst: Boolean): UUID {
         recipe.validate()
-        require(entries.size < 256) { "活跃生成器已达 256 个，请先移除不用的生成器" }
+        requireLocalized(entries.size < 256) { translation("error.recipe.active_limit") }
         val id = UUID.randomUUID()
         val entry = Entry(ParticleUtils.dimensionUUID(level), freeze(recipe), anchor, burst)
         entries[id] = entry
@@ -40,21 +43,21 @@ internal object ServerParticleSources {
 
     fun update(id: UUID, recipe: ParticleRecipe, level: ServerLevel) {
         recipe.validate()
-        val e = requireNotNull(entries[id]) { "生成器已结束，请重新 start" }
-        require(e.recipe.state.keys == recipe.state.keys) { "运行中不能增删 state 字段" }
+        val e = requireNotNullLocalized(entries[id]) { translation("error.recipe.ended") }
+        requireLocalized(e.recipe.state.keys == recipe.state.keys) { translation("error.recipe.state_change") }
         e.updated(recipe)
         e.recipe = freeze(recipe)
         send(e, level, ParticleRecipePayload(id, RecipeOperation.UPDATE, recipe = e.recipe))
     }
 
     fun anchor(id: UUID, anchor: RecipeAnchor, level: ServerLevel) {
-        val e = requireNotNull(entries[id]) { "生成器已结束，请重新 start" }
+        val e = requireNotNullLocalized(entries[id]) { translation("error.recipe.ended") }
         e.anchor = anchor
         send(e, level, ParticleRecipePayload(id, RecipeOperation.ANCHOR, anchor = anchor))
     }
 
     fun variable(id: UUID, name: String, value: Double, level: ServerLevel) {
-        val e = requireNotNull(entries[id]) { "生成器已结束" }
+        val e = requireNotNullLocalized(entries[id]) { translation("error.recipe.ended") }
         val next = e.recipe.copy(variables = e.recipe.variables + (name to value))
         next.validate()
         e.recipe = next
@@ -70,7 +73,7 @@ internal object ServerParticleSources {
     }
 
     fun edit(id: UUID, predicate: String, changes: Map<String, String>, remove: Boolean, level: ServerLevel) {
-        val e = requireNotNull(entries[id]) { "生成器已结束" }
+        val e = requireNotNullLocalized(entries[id]) { translation("error.recipe.ended") }
         e.recipe.copy(birth = changes, where = predicate).validate()
         send(e, level, ParticleRecipePayload(id, RecipeOperation.EDIT, predicate = predicate, changes = changes, deleteSelected = remove))
     }

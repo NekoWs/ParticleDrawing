@@ -1,5 +1,6 @@
 package work.nekow.particledrawing
 
+import work.nekow.particledrawing.i18n.LocalizedFailure
 import work.nekow.particledrawing.math.Vec3
 import work.nekow.particledrawing.animation.recipe.RecipeExpressions
 import work.nekow.particledrawing.animation.recipe.RecipeRuntime
@@ -200,6 +201,6 @@ class ParticleRecipeRuntimeTest {
         val ex = assertFailsWith<IllegalArgumentException> {
             RecipeRuntime(recipe(1).copy(orbit = "vec3(u, 0, 0)"), true)
         }
-        assertTrue(ex.message?.contains("未知变量") == true)
+        assertEquals("particledrawing.error.expression.unknown_variable", (ex as? LocalizedFailure)?.text?.key)
     }
 }

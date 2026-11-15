@@ -3,6 +3,8 @@ package work.nekow.particledrawing.api
 import work.nekow.particledrawing.math.Vec3
 import work.nekow.particledrawing.animation.recipe.RecipeExpressions
 import java.util.UUID
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /** 一颗出生样本；位置是锚点相对坐标，颜色可来自图片像素。 */
 data class ParticleSeed(val position: Vec3, val color: Color = Color.WHITE, val u: Double = 0.0)
@@ -43,15 +45,15 @@ data class ParticleRecipe(
     val orbit: String = "",
 ) {
     fun validate() {
-        require(seeds.isNotEmpty() && seeds.size <= MAX_SEEDS) { "出生样本需要 1 到 $MAX_SEEDS 个" }
-        require(rate in 1..MAX_RATE && interval in 1..72000) { "rate 需要 1..$MAX_RATE，interval 需要 1..72000 刻" }
-        require(lifetime == -1 || lifetime in 1..MAX_LIFETIME) { "lifetime 需要 -1（无限）或 1..$MAX_LIFETIME 刻" }
-        require(maxAlive in 1..MAX_SEEDS) { "max_alive 需要 1..$MAX_SEEDS" }
-        require(listOf(variables, state, lets, birth, motion).all { it.size <= MAX_FIELDS }) { "每类公式或变量最多 $MAX_FIELDS 项" }
-        require(orbit.length <= MAX_EXPRESSION) { "锚点偏移公式最多 $MAX_EXPRESSION 字符" }
+        requireLocalized(seeds.isNotEmpty() && seeds.size <= MAX_SEEDS) { translation("error.recipe.seed_count", MAX_SEEDS) }
+        requireLocalized(rate in 1..MAX_RATE && interval in 1..72000) { translation("error.recipe.cadence", MAX_RATE) }
+        requireLocalized(lifetime == -1 || lifetime in 1..MAX_LIFETIME) { translation("error.recipe.lifetime", MAX_LIFETIME) }
+        requireLocalized(maxAlive in 1..MAX_SEEDS) { translation("error.recipe.max_alive", MAX_SEEDS) }
+        requireLocalized(listOf(variables, state, lets, birth, motion).all { it.size <= MAX_FIELDS }) { translation("error.recipe.fields_limit", MAX_FIELDS) }
+        requireLocalized(orbit.length <= MAX_EXPRESSION) { translation("error.recipe.anchor_length", MAX_EXPRESSION) }
         for (s in seeds) {
-            require(listOf(s.position.x, s.position.y, s.position.z, s.u).all(Double::isFinite)) { "出生坐标和参数必须是有限数" }
-            require(listOf(s.color.r, s.color.g, s.color.b, s.color.a).all { it.isFinite() && it in 0f..1f }) { "样本颜色需要在 0..1" }
+            requireLocalized(listOf(s.position.x, s.position.y, s.position.z, s.u).all(Double::isFinite)) { translation("error.recipe.seed_finite") }
+            requireLocalized(listOf(s.color.r, s.color.g, s.color.b, s.color.a).all { it.isFinite() && it in 0f..1f }) { translation("error.recipe.seed_color") }
         }
         RecipeExpressions(this)
     }

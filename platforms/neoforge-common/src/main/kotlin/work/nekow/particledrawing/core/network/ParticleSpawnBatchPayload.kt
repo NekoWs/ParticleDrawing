@@ -4,6 +4,8 @@ import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.codec.StreamCodec
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 批量粒子生成：一次包下发整批 [entries]。
@@ -18,7 +20,7 @@ data class ParticleSpawnBatchPayload(
 ) : CustomPacketPayload {
 
     init {
-        require(entries.size <= MAX_BATCH) { "批量生成条数越界: ${entries.size} > $MAX_BATCH" }
+        requireLocalized(entries.size <= MAX_BATCH) { translation("error.packet.spawn_limit", entries.size, MAX_BATCH) }
     }
 
     companion object {
@@ -35,7 +37,7 @@ data class ParticleSpawnBatchPayload(
             object : StreamCodec<FriendlyByteBuf, ParticleSpawnBatchPayload> {
                 override fun decode(buf: FriendlyByteBuf): ParticleSpawnBatchPayload {
                     val count = buf.readVarInt()
-                    require(count in 0..MAX_BATCH) { "批量生成条数越界: $count" }
+                    requireLocalized(count in 0..MAX_BATCH) { translation("error.packet.spawn_count", count) }
                     val entries = ArrayList<ParticleSpawnPayload>(count)
                     for (i in 0 until count) entries.add(ParticleSpawnPayload.readFrom(buf))
                     return ParticleSpawnBatchPayload(entries)

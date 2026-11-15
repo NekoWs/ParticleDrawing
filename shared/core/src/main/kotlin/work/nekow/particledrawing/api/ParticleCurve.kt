@@ -1,6 +1,8 @@
 package work.nekow.particledrawing.api
 
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 寿命曲线通道。
@@ -85,9 +87,9 @@ class ParticleCurve(
     val keys: List<CurveKey> = keys.sortedBy { it.tTicks }
 
     init {
-        require(this.keys.isNotEmpty()) { "寿命曲线至少需要一个关键帧" }
-        require(this.keys.size <= MAX_KEYS) { "寿命曲线关键帧过多（${this.keys.size} > $MAX_KEYS）" }
-        require(this.keys.first().tTicks >= 0f) { "关键帧时刻不能为负（生成前不存在）" }
+        requireLocalized(this.keys.isNotEmpty()) { translation("error.curve.empty") }
+        requireLocalized(this.keys.size <= MAX_KEYS) { translation("error.curve.key_limit", this.keys.size, MAX_KEYS) }
+        requireLocalized(this.keys.first().tTicks >= 0f) { translation("error.curve.key_time") }
     }
 
     /** [ticks]（生成后 tick 数）处的通道值；段内按后一关键帧的缓动插值。 */
@@ -154,7 +156,7 @@ class ParticleLifeCurve(curves: List<ParticleCurve>) {
     val curves: List<ParticleCurve> = curves.toList()
 
     init {
-        require(this.curves.size <= MAX_CURVES) { "寿命曲线条数过多（${this.curves.size} > $MAX_CURVES）" }
+        requireLocalized(this.curves.size <= MAX_CURVES) { translation("error.curve.limit", this.curves.size, MAX_CURVES) }
     }
 
     fun isEmpty(): Boolean = curves.isEmpty()

@@ -2,6 +2,8 @@ package work.nekow.particledrawing.animation.morph
 
 import work.nekow.particledrawing.math.Vec3
 import java.util.UUID
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 目标槽位：位置，可选朝向、尺寸与路径控制点。
@@ -98,12 +100,12 @@ data class MorphOptions(
     val writeAttributes: Boolean = false,
 ) {
     init {
-        require(ticks >= 0) { "ticks 不能为负" }
-        require(staggerTicks >= 0) { "stagger 不能为负" }
-        require(loop >= -1) { "loop 只能是 -1、0 或正数" }
-        require(convergeEps > 0.0) { "convergeEps 必须为正" }
-        require(maxSpeed >= 0.0 && maxAccel >= 0.0) { "限速不能为负" }
-        require(wobbleStrength >= 0.0) { "扰动强度不能为负" }
+        requireLocalized(ticks >= 0) { translation("error.ticks") }
+        requireLocalized(staggerTicks >= 0) { translation("error.stagger") }
+        requireLocalized(loop >= -1) { translation("error.morph.loop") }
+        requireLocalized(convergeEps > 0.0) { translation("error.morph.convergence") }
+        requireLocalized(maxSpeed >= 0.0 && maxAccel >= 0.0) { translation("error.morph.speed_limit") }
+        requireLocalized(wobbleStrength >= 0.0) { translation("error.morph.wobble_strength") }
     }
 }
 

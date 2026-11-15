@@ -1,5 +1,8 @@
 package work.nekow.particledrawing.command
 
+import work.nekow.particledrawing.i18n.failureComponent
+import work.nekow.particledrawing.i18n.component
+import work.nekow.particledrawing.i18n.LocalizedText
 import com.mojang.brigadier.CommandDispatcher
 import com.mojang.brigadier.arguments.DoubleArgumentType
 import com.mojang.brigadier.arguments.IntegerArgumentType
@@ -9,7 +12,6 @@ import com.mojang.brigadier.context.CommandContext
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
 import net.minecraft.commands.SharedSuggestionProvider
-import net.minecraft.network.chat.Component
 import work.nekow.particledrawing.animation.morph.MorphAllocation
 import work.nekow.particledrawing.animation.morph.MorphEasing
 import work.nekow.particledrawing.animation.morph.MorphOptions
@@ -18,6 +20,9 @@ import work.nekow.particledrawing.animation.morph.MorphWobble
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * `pdraw particle program <组> morph …` 的命令树。
@@ -81,18 +86,18 @@ object MorphCommandTree {
         val dim = ParticleUtils.dimensionUUID(ctx.source.level)
         val name = StringArgumentType.getString(ctx, "group")
         CommandParticleGroups.get(dim, name)
-            ?: throw IllegalArgumentException("当前维度没有粒子组 '$name'")
+            ?: throw LocalizedArgumentException(translation("error.group.not_found", name))
     }
 
-    private fun success(ctx: CommandContext<CommandSourceStack>, message: String): Int {
-        ctx.source.sendSuccess({ Component.literal(message) }, false)
+    private fun success(ctx: CommandContext<CommandSourceStack>, message: LocalizedText): Int {
+        ctx.source.sendSuccess({ message.component() }, false)
         return 1
     }
 
     private fun safe(ctx: CommandContext<CommandSourceStack>, action: () -> Int): Int = try {
         action()
     } catch (e: IllegalArgumentException) {
-        ctx.source.sendFailure(Component.literal(e.message ?: "编队变换参数错误"))
+        ctx.source.sendFailure(e.failureComponent("error.morph.parameters"))
         0
     }
 
@@ -107,7 +112,7 @@ object MorphCommandTree {
                             val d = draft(ctx)
                             d.slotCount = IntegerArgumentType.getInteger(ctx, "count")
                             d.position = StringArgumentType.getString(ctx, "position")
-                            success(ctx, "槽位 ${d.slotCount} 个：${d.position}")
+                            success(ctx, translation("command.morph.slots", d.slotCount, d.position))
                         }
                     },
                 ),
@@ -128,7 +133,7 @@ object MorphCommandTree {
                                 "control1" -> d.control1 = f
                                 else -> d.control2 = f
                             }
-                            success(ctx, "槽位 $field = $f")
+                            success(ctx, translation("command.setting", field, f))
                         }
                     },
                 ),
@@ -147,7 +152,7 @@ object MorphCommandTree {
                                 "stagger" -> d.stagger = v
                                 else -> d.loop = v
                             }
-                            success(ctx, "$field = $v")
+                            success(ctx, translation("command.setting", field, v))
                         }
                     },
                 ),
@@ -166,7 +171,7 @@ object MorphCommandTree {
                                 "max_accel" -> d.maxAccel = v
                                 else -> d.convergeEps = if (v <= 0.0) 0.05 else v
                             }
-                            success(ctx, "$field = $v")
+                            success(ctx, translation("command.setting", field, v))
                         }
                     },
                 ),
@@ -184,9 +189,9 @@ object MorphCommandTree {
                                 "straight", "line" -> MorphPath.STRAIGHT
                                 "quadratic", "quad", "bezier" -> MorphPath.QUADRATIC
                                 "cubic" -> MorphPath.CUBIC
-                                else -> throw IllegalArgumentException("路径只能是 straight / quadratic / cubic")
+                                else -> throw LocalizedArgumentException(translation("error.morph.path"))
                             }
-                            success(ctx, "path = ${d.path}")
+                            success(ctx, translation("command.setting", "path", d.path))
                         }
                     },
             ),
@@ -198,9 +203,9 @@ object MorphCommandTree {
                     safe(ctx) {
                         val d = draft(ctx)
                         val name = StringArgumentType.getString(ctx, "name")
-                        require(MorphEasing.byName(name) != null) { "未知缓动 '$name'" }
+                        requireLocalized(MorphEasing.byName(name) != null) { translation("error.easing.unknown", name) }
                         d.easing = name
-                        success(ctx, "easing = $name")
+                        success(ctx, translation("command.setting", "easing", name))
                     }
                 },
             ),
@@ -218,9 +223,9 @@ object MorphCommandTree {
                                 "bell" -> MorphWobble.BELL
                                 "noise" -> MorphWobble.NOISE
                                 "vortex" -> MorphWobble.VORTEX
-                                else -> throw IllegalArgumentException("扰动只能是 none / bell / noise / vortex")
+                                else -> throw LocalizedArgumentException(translation("error.morph.wobble"))
                             }
-                            success(ctx, "wobble = ${d.wobble}")
+                            success(ctx, translation("command.setting", "wobble", d.wobble))
                         }
                     }
                     .then(
@@ -237,7 +242,7 @@ object MorphCommandTree {
                                         }
                                         d.wobbleStrength = DoubleArgumentType.getDouble(ctx, "strength")
                                         d.wobblePeaks = DoubleArgumentType.getDouble(ctx, "peaks")
-                                        success(ctx, "wobble = ${d.wobble} 强度 ${d.wobbleStrength} 峰值 ${d.wobblePeaks}")
+                                        success(ctx, translation("command.morph.wobble", d.wobble, d.wobbleStrength, d.wobblePeaks))
                                     }
                                 },
                             ),
@@ -256,9 +261,9 @@ object MorphCommandTree {
                                 "nearest" -> MorphAllocation.NEAREST
                                 "index" -> MorphAllocation.INDEX
                                 "angle" -> MorphAllocation.ANGLE
-                                else -> throw IllegalArgumentException("分配策略只能是 nearest / index / angle")
+                                else -> throw LocalizedArgumentException(translation("error.morph.allocation"))
                             }
-                            success(ctx, "allocation = ${d.allocation}")
+                            success(ctx, translation("command.setting", "allocation", d.allocation))
                         }
                     },
             ),
@@ -276,7 +281,7 @@ object MorphCommandTree {
                                 "keep_velocity" -> d.keepVelocity = v
                                 else -> d.attributes = v
                             }
-                            success(ctx, "$field = $v")
+                            success(ctx, translation("command.setting", field, v))
                         }
                     },
                 ),
@@ -287,7 +292,7 @@ object MorphCommandTree {
             Commands.literal("start").executes { ctx ->
                 safe(ctx) {
                     val d = draft(ctx)
-                    require(d.position.isNotBlank()) { "还没有设置槽位：先 morph slots <数量> <位置公式>" }
+                    requireLocalized(d.position.isNotBlank()) { translation("error.morph.slots_command") }
                     val e = entry(ctx)
                     e.group.morph(
                         d.slotCount, d.position, d.options(),
@@ -295,7 +300,7 @@ object MorphCommandTree {
                     )
                     success(
                         ctx,
-                        "编队变换已启动：${d.slotCount} 个槽位，${d.ticks} 刻，分配 ${d.allocation}，路径 ${d.path}",
+                        translation("command.morph.start", d.slotCount, d.ticks),
                     )
                 }
             },
@@ -307,9 +312,10 @@ object MorphCommandTree {
                     val d = draft(ctx)
                     success(
                         ctx,
-                        "morph: 槽位 ${d.slotCount} 个 [${d.position}]；${d.ticks} 刻，错峰 ${d.stagger}，" +
-                            "限速 ${d.maxSpeed}，路径 ${d.path}，缓动 ${d.easing}，扰动 ${d.wobble}，" +
-                            "分配 ${d.allocation}，循环 ${d.loop}，动态 ${d.dynamic}",
+                        translation(
+                            "command.morph.inspect", d.slotCount, d.position, d.ticks, d.stagger, d.maxSpeed,
+                            d.path, d.easing, d.wobble, d.allocation, d.loop, d.dynamic,
+                        ),
                     )
                 }
             },
@@ -320,7 +326,7 @@ object MorphCommandTree {
                 val dim = ParticleUtils.dimensionUUID(ctx.source.level)
                 val name = StringArgumentType.getString(ctx, "group")
                 draftNames[dim]?.remove(name)
-                success(ctx, "已清空 '$name' 的形变草稿")
+                success(ctx, translation("command.morph.reset", name))
             }
         })
 

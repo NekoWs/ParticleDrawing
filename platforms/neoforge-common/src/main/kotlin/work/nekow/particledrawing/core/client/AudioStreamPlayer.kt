@@ -12,6 +12,8 @@ import org.lwjgl.system.MemoryUtil
 import work.nekow.particledrawing.animation.AudioAsset
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import work.nekow.particledrawing.i18n.LocalizedStateException
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 游戏内音频播放（.pdrawc 音频资产）：复用 Minecraft 的 OpenAL context 自建 source，
@@ -81,7 +83,7 @@ class AudioStreamPlayer internal constructor(
             chunkFrames = maxOf(256, sampleRate * chunkMs / 1000)
             d
         } catch (e: Exception) {
-            println("[pdrawc] 音频解码失败 ${asset.name}: ${e.message}")
+            println(translation("log.audio.decode", asset.name, e.message).resolve())
             null
         }
     }
@@ -540,7 +542,7 @@ internal class OggDecoder(bytes: ByteArray) : AudioDecoder {
                 handle = STBVorbis.stb_vorbis_open_memory(mem, err, null)
                 errCode = err.get(0)
             }
-            if (handle == 0L) throw IllegalStateException("STB Vorbis 打开失败: $errCode")
+            if (handle == 0L) throw LocalizedStateException(translation("error.audio.vorbis", errCode))
             val info = STBVorbisInfo.malloc()
             try {
                 STBVorbis.stb_vorbis_get_info(handle, info)
@@ -549,7 +551,7 @@ internal class OggDecoder(bytes: ByteArray) : AudioDecoder {
             } finally {
                 info.free()
             }
-            if (ch !in 1..2) throw IllegalStateException("OGG 声道数不支持: $ch")
+            if (ch !in 1..2) throw LocalizedStateException(translation("error.audio.ogg_channels", ch))
         } catch (e: Exception) {
             close()
             throw e
@@ -592,7 +594,7 @@ internal class WavDecoder(bytes: ByteArray) : AudioDecoder {
 
     init {
         if (buf.remaining() < 12 || String(byteArrayOf(buf.get(0), buf.get(1), buf.get(2), buf.get(3))) != "RIFF") {
-            throw IllegalStateException("不是 RIFF/WAV 文件")
+            throw LocalizedStateException(translation("error.audio.wav_header"))
         }
         buf.position(12)
         var fmtChannels = 1
@@ -623,13 +625,13 @@ internal class WavDecoder(bytes: ByteArray) : AudioDecoder {
             buf.position(body + size + (size and 1))
             if (fmtBits != 0 && dataLength > 0) break
         }
-        if (dataLength <= 0) throw IllegalStateException("WAV 缺少 data 块")
+        if (dataLength <= 0) throw LocalizedStateException(translation("error.audio.wav_data"))
         channels = fmtChannels.coerceIn(1, 2)
         sampleRate = fmtRate
         bits = fmtBits
         isFloat = fmtFloat
         if (bits != 16 && bits != 8 && !isFloat) {
-            throw IllegalStateException("WAV 位深不支持: $fmtBits")
+            throw LocalizedStateException(translation("error.audio.wav_bits", fmtBits))
         }
         // 没 seek 过就直接 read 时也要从 data 块正文开始，否则会把 RIFF 头当样本读出来
         dataPos = dataOffset

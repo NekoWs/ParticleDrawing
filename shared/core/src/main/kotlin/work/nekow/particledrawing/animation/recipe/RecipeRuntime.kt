@@ -4,6 +4,8 @@ import work.nekow.particledrawing.animation.script.Reg
 import work.nekow.particledrawing.api.ParticleRecipe
 import work.nekow.particledrawing.api.ParticleSeed
 import work.nekow.particledrawing.math.Vec3
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 可在纯 JVM 验证的出生调度和逐粒子积分；渲染与网络只消费它的状态。
@@ -61,7 +63,7 @@ class RecipeRuntime(var recipe: ParticleRecipe, val burst: Boolean, preferFast: 
 
     fun update(next: ParticleRecipe) {
         next.validate()
-        require(next.state.keys == recipe.state.keys) { "运行中不能增删 state 字段；请停止后重新启动" }
+        requireLocalized(next.state.keys == recipe.state.keys) { translation("error.recipe.state_change") }
         val compiled = RecipeExpressions(next)
         recipe = next
         expressions = compiled
@@ -185,17 +187,17 @@ class RecipeRuntime(var recipe: ParticleRecipe, val burst: Boolean, preferFast: 
     private fun validateFast(p: Particle) {
         val r = p.regs
         val slots = checkSlots
-        for (i in slots.indices) require(r[slots[i]].isFinite()) { "粒子公式产生了非有限数（${checkNames[i]}）" }
-        require(r[Reg.SC] >= 0.0) { "sc 不能为负" }
-        require(r[Reg.R] in 0.0..1.0) { "r 需要在 0..1" }
-        require(r[Reg.G] in 0.0..1.0) { "g 需要在 0..1" }
-        require(r[Reg.B] in 0.0..1.0) { "b 需要在 0..1" }
-        require(r[Reg.A] in 0.0..1.0) { "a 需要在 0..1" }
-        require(r[Reg.LIGHT] in 0.0..15.0) { "light 需要在 0..15" }
-        require(r[Reg.X].toFloat().isFinite() && r[Reg.Y].toFloat().isFinite() && r[Reg.Z].toFloat().isFinite()) {
-            "坐标超出渲染数值范围"
+        for (i in slots.indices) requireLocalized(r[slots[i]].isFinite()) { translation("error.expression.nonfinite_output", checkNames[i]) }
+        requireLocalized(r[Reg.SC] >= 0.0) { translation("error.expression.scale") }
+        requireLocalized(r[Reg.R] in 0.0..1.0) { translation("error.expression.red") }
+        requireLocalized(r[Reg.G] in 0.0..1.0) { translation("error.expression.green") }
+        requireLocalized(r[Reg.B] in 0.0..1.0) { translation("error.expression.blue") }
+        requireLocalized(r[Reg.A] in 0.0..1.0) { translation("error.expression.alpha") }
+        requireLocalized(r[Reg.LIGHT] in 0.0..15.0) { translation("error.expression.light") }
+        requireLocalized(r[Reg.X].toFloat().isFinite() && r[Reg.Y].toFloat().isFinite() && r[Reg.Z].toFloat().isFinite()) {
+            translation("error.render.position_range")
         }
-        require(r[Reg.SC].toFloat().isFinite()) { "sc 超出渲染数值范围" }
+        requireLocalized(r[Reg.SC].toFloat().isFinite()) { translation("error.render.scale_range") }
     }
 
     // ── 解释器回退路径 ────────────────────────────────────────────────────────
@@ -269,17 +271,17 @@ class RecipeRuntime(var recipe: ParticleRecipe, val burst: Boolean, preferFast: 
     private fun validateSlow(p: Particle) {
         val r = p.regs
         val slots = checkSlots
-        for (i in slots.indices) require(r[slots[i]].isFinite()) { "粒子公式产生了非有限数（${checkNames[i]}）" }
-        require(r[Reg.SC] >= 0.0) { "sc 不能为负" }
-        require(r[Reg.R] in 0.0..1.0) { "r 需要在 0..1" }
-        require(r[Reg.G] in 0.0..1.0) { "g 需要在 0..1" }
-        require(r[Reg.B] in 0.0..1.0) { "b 需要在 0..1" }
-        require(r[Reg.A] in 0.0..1.0) { "a 需要在 0..1" }
-        require(r[Reg.LIGHT] in 0.0..15.0) { "light 需要在 0..15" }
-        require(r[Reg.X].toFloat().isFinite() && r[Reg.Y].toFloat().isFinite() && r[Reg.Z].toFloat().isFinite()) {
-            "坐标超出渲染数值范围"
+        for (i in slots.indices) requireLocalized(r[slots[i]].isFinite()) { translation("error.expression.nonfinite_output", checkNames[i]) }
+        requireLocalized(r[Reg.SC] >= 0.0) { translation("error.expression.scale") }
+        requireLocalized(r[Reg.R] in 0.0..1.0) { translation("error.expression.red") }
+        requireLocalized(r[Reg.G] in 0.0..1.0) { translation("error.expression.green") }
+        requireLocalized(r[Reg.B] in 0.0..1.0) { translation("error.expression.blue") }
+        requireLocalized(r[Reg.A] in 0.0..1.0) { translation("error.expression.alpha") }
+        requireLocalized(r[Reg.LIGHT] in 0.0..15.0) { translation("error.expression.light") }
+        requireLocalized(r[Reg.X].toFloat().isFinite() && r[Reg.Y].toFloat().isFinite() && r[Reg.Z].toFloat().isFinite()) {
+            translation("error.render.position_range")
         }
-        require(r[Reg.SC].toFloat().isFinite()) { "sc 超出渲染数值范围" }
+        requireLocalized(r[Reg.SC].toFloat().isFinite()) { translation("error.render.scale_range") }
     }
 
     /** 写一颗粒子的初值：属性、本刻输入与 state（寄存器数组本身已清零）。 */
@@ -345,7 +347,7 @@ class RecipeRuntime(var recipe: ParticleRecipe, val burst: Boolean, preferFast: 
     companion object {
         /** 假定全部样本通过，计入存活上限和发射间隔，给服务端一个安全回收上界。 */
         fun retirementBudget(r: ParticleRecipe): Long {
-            require(r.lifetime > 0) { "无限寿命不能推算回收时间" }
+            requireLocalized(r.lifetime > 0) { translation("error.recipe.unbounded_reclaim") }
             val batch = minOf(r.rate, r.maxAlive)
             return ((r.seeds.size.toLong() + batch - 1) / batch) * r.interval +
                 ((r.seeds.size - 1L) / r.maxAlive + 1L) * r.lifetime + 4L

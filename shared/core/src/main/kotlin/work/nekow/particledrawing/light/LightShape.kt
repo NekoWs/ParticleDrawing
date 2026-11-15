@@ -1,5 +1,8 @@
 package work.nekow.particledrawing.light
 
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
+
 /**
  * 一个光源的形状与衰减描述，挂在粒子的外观上（可空 = 老行为：点光、线性衰减、用全局半径）。
  *
@@ -34,13 +37,13 @@ data class LightShape(
         }
 
     fun validated(): LightShape {
-        require(range.isFinite() && range in 0.0..MAX_RANGE) { "光照半径必须在 0 到 64 格之间" }
-        require(outerDeg.isFinite() && outerDeg in 0.0..179.0) { "射灯外锥半角必须在 0 到 179 度之间" }
-        require(innerDeg.isFinite() && innerDeg >= 0.0) { "射灯内锥半角不能为负" }
-        require(innerDeg <= outerDeg) { "射灯内锥角不能大于外锥角" }
-        require(edge.isFinite() && edge >= 1.0) { "边缘锐度不能小于 1" }
-        require(pitchDeg.isFinite() && pitchDeg in -90.0..90.0) { "射灯俯仰必须在 -90 到 90 度之间" }
-        require(yawDeg.isFinite()) { "射灯偏航必须是有限数" }
+        requireLocalized(range.isFinite() && range in 0.0..MAX_RANGE) { translation("error.light.range") }
+        requireLocalized(outerDeg.isFinite() && outerDeg in 0.0..179.0) { translation("error.light.outer_angle") }
+        requireLocalized(innerDeg.isFinite() && innerDeg >= 0.0) { translation("error.light.inner_angle") }
+        requireLocalized(innerDeg <= outerDeg) { translation("error.light.cone_order") }
+        requireLocalized(edge.isFinite() && edge >= 1.0) { translation("error.light.edge") }
+        requireLocalized(pitchDeg.isFinite() && pitchDeg in -90.0..90.0) { translation("error.light.pitch") }
+        requireLocalized(yawDeg.isFinite()) { translation("error.light.yaw") }
         return this
     }
 

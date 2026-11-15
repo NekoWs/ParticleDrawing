@@ -4,6 +4,8 @@ import work.nekow.particledrawing.api.ParticleGroup
 import work.nekow.particledrawing.core.server.AnimationScheduler
 import java.util.UUID
 import kotlin.math.max
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /** 数据包与命令方块创建的命名粒子组；名称在维度内唯一，服务器重启后清空。 */
 internal object CommandParticleGroups {
@@ -21,9 +23,9 @@ internal object CommandParticleGroups {
     private val dimensions = HashMap<UUID, LinkedHashMap<String, Entry>>()
 
     fun create(dimension: UUID, name: String, group: ParticleGroup): Entry {
-        require(NAME.matches(name)) { "组名只能含字母、数字、下划线、短横线、点和冒号" }
+        requireLocalized(NAME.matches(name)) { translation("error.group.name") }
         val groups = dimensions.getOrPut(dimension) { linkedMapOf() }
-        require(name !in groups) { "粒子组 '$name' 已存在；先 remove 或换一个名称" }
+        requireLocalized(name !in groups) { translation("error.group.exists", name) }
         return Entry(name, group).also { groups[name] = it }
     }
 

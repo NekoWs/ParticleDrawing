@@ -6,6 +6,9 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
 import work.nekow.particledrawing.api.*
 import java.util.UUID
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /** 命令生成器的声明、锚点更新和现存成员操作。操作码只追加。 */
 enum class RecipeOperation { START, UPDATE, ANCHOR, STOP, REMOVE, EDIT, VARIABLE }
@@ -40,7 +43,7 @@ data class ParticleRecipePayload(
 
             override fun decode(buf: FriendlyByteBuf): ParticleRecipePayload {
                 val id = buf.readUUID()
-                val operation = RecipeOperation.entries.getOrNull(buf.readVarInt()) ?: throw IllegalArgumentException("未知生成器操作")
+                val operation = RecipeOperation.entries.getOrNull(buf.readVarInt()) ?: throw LocalizedArgumentException(translation("error.packet.recipe_operation"))
                 return when (operation) {
                     RecipeOperation.START -> ParticleRecipePayload(id, operation, RecipeCodec.read(buf), RecipeCodec.readAnchor(buf), buf.readBoolean())
                     RecipeOperation.UPDATE -> ParticleRecipePayload(id, operation, recipe = RecipeCodec.read(buf))
@@ -108,5 +111,5 @@ internal object RecipeCodec {
         repeat(count(buf, ParticleRecipe.MAX_FIELDS)) { val k = buf.readUtf(48); require(k !in this); put(k, buf.readDouble()) }
     }
 
-    private fun count(buf: FriendlyByteBuf, max: Int) = buf.readVarInt().also { require(it in 0..max) { "粒子生成声明超限" } }
+    private fun count(buf: FriendlyByteBuf, max: Int) = buf.readVarInt().also { requireLocalized(it in 0..max) { translation("error.packet.recipe_size") } }
 }

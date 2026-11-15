@@ -5,6 +5,8 @@ import net.minecraft.network.codec.StreamCodec
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
 import java.util.UUID
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 粒子销毁数据包，支持单个、批量和组的销毁。
@@ -19,7 +21,7 @@ data class ParticleDestroyPayload(
 
     init {
         // 解码端按同一上限拒绝，避免畸形条数触发大块内存分配
-        require(particleIds.size <= MAX_BATCH) { "粒子销毁批量超限: ${particleIds.size} > $MAX_BATCH" }
+        requireLocalized(particleIds.size <= MAX_BATCH) { translation("error.packet.destroy_limit", particleIds.size, MAX_BATCH) }
     }
 
     companion object {
@@ -36,7 +38,7 @@ data class ParticleDestroyPayload(
             object : StreamCodec<FriendlyByteBuf, ParticleDestroyPayload> {
                 override fun decode(buf: FriendlyByteBuf): ParticleDestroyPayload {
                     val count = buf.readVarInt()
-                    require(count in 0..MAX_BATCH) { "粒子销毁批量超限: $count" }
+                    requireLocalized(count in 0..MAX_BATCH) { translation("error.packet.destroy_count", count) }
                     val ids = Array(count) { StreamCodecs.UUID_CODEC.decode(buf) }
                     val groupId = StreamCodecs.readNullableUUID(buf)
                     return ParticleDestroyPayload(ids, groupId)

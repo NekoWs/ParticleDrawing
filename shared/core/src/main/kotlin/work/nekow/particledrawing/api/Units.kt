@@ -2,13 +2,15 @@ package work.nekow.particledrawing.api
 
 import work.nekow.particledrawing.math.Vec3
 import java.math.BigDecimal
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 显式单位值：时间、长度、角度、角速度、速度与加速度。
 // Kotlin 用扩展属性（6.ticks、1.2.blocks），Java 用同名静态工厂；两者落到同一个值。
 // 表达式里的单位保留单位类型，运算时只在边界换算成数值，不同量纲不能相加。
 
-private fun finite(value: Double, what: String): Double {
-    require(value.isFinite()) { "$what 必须是有限值" }
+private fun finite(value: Double, fieldKey: String): Double {
+    requireLocalized(value.isFinite()) { translation("error.parameter.finite", translation(fieldKey)) }
     return value
 }
 
@@ -20,14 +22,14 @@ private fun finite(value: Double, what: String): Double {
  * 保留与 Double 往返一致的十进制值，只去掉无意义的尾零。
  */
 fun numberLiteral(value: Double): String {
-    require(value.isFinite()) { "数值字面量必须是有限值" }
+    requireLocalized(value.isFinite()) { translation("error.number.finite") }
     if (value == 0.0) return "0"
     return BigDecimal.valueOf(value).stripTrailingZeros().toPlainString()
 }
 
 /** Float 走最短十进制表示，避免 0.1f.toDouble() 的二进制尾数写进表达式。 */
 fun numberLiteral(value: Float): String {
-    require(value.isFinite()) { "数值字面量必须是有限值" }
+    requireLocalized(value.isFinite()) { translation("error.number.finite") }
     if (value == 0.0f) return "0"
     return BigDecimal(value.toString()).stripTrailingZeros().toPlainString()
 }
@@ -48,45 +50,45 @@ class Time(
     val seconds: Double get() = millis / 1000.0
 
     /** 必须是整数 tick；小数刻调用方要显式选一种取整方式。 */
-    fun requireWholeTicks(field: String = "时间"): Int {
-        require(constant) { "$field 是表达式值，不能在这里做常量校验" }
+    fun requireWholeTicks(field: String = translation("field.time").resolve()): Int {
+        requireLocalized(constant) { translation("error.parameter.constant", field) }
         val ticks = ticks
-        require(ticks.isFinite()) { "$field 不是有限值" }
-        require(ticks >= 0.0) { "$field 不能为负" }
-        require(ticks <= Int.MAX_VALUE.toDouble()) { "$field 超出 Int tick 范围" }
-        require(kotlin.math.abs(ticks - kotlin.math.round(ticks)) <= 1e-6) {
-            "$field 需要整数 tick，当前是 ${ticks}t；请显式 roundedTicks/floorTicks/ceilTicks"
+        requireLocalized(ticks.isFinite()) { translation("error.parameter.finite", field) }
+        requireLocalized(ticks >= 0.0) { translation("error.parameter.nonnegative", field) }
+        requireLocalized(ticks <= Int.MAX_VALUE.toDouble()) { translation("error.parameter.tick_range", field) }
+        requireLocalized(kotlin.math.abs(ticks - kotlin.math.round(ticks)) <= 1e-6) {
+            translation("error.parameter.whole_ticks", field, ticks)
         }
         return kotlin.math.round(ticks).toInt()
     }
 
-    fun roundedTicks(): Int = kotlin.math.round(checkedTicks("时间")).toInt()
-    fun floorTicks(): Int = kotlin.math.floor(checkedTicks("时间")).toInt()
-    fun ceilTicks(): Int = kotlin.math.ceil(checkedTicks("时间")).toInt()
+    fun roundedTicks(): Int = kotlin.math.round(checkedTicks()).toInt()
+    fun floorTicks(): Int = kotlin.math.floor(checkedTicks()).toInt()
+    fun ceilTicks(): Int = kotlin.math.ceil(checkedTicks()).toInt()
 
     fun isConstant(): Boolean = constant
 
-    private fun checkedTicks(field: String): Double {
-        require(constant) { "$field 是表达式值，不能在这里做常量校验" }
+    private fun checkedTicks(): Double {
+        requireLocalized(constant) { translation("error.parameter.constant", translation("field.time")) }
         val value = ticks
-        require(value.isFinite()) { "$field 不是有限值" }
-        require(value >= Int.MIN_VALUE.toDouble() && value <= Int.MAX_VALUE.toDouble()) {
-            "$field 超出 Int tick 范围"
+        requireLocalized(value.isFinite()) { translation("error.parameter.finite", translation("field.time")) }
+        requireLocalized(value >= Int.MIN_VALUE.toDouble() && value <= Int.MAX_VALUE.toDouble()) {
+            translation("error.parameter.tick_range", translation("field.time"))
         }
         return value
     }
 
     /** 非负校验，返回自身便于链式。 */
-    fun requireNonNegative(field: String = "时间"): Time {
-        require(constant) { "$field 是表达式值，不能在这里做常量校验" }
-        require(millis >= 0.0) { "$field 不能为负" }
+    fun requireNonNegative(field: String = translation("field.time").resolve()): Time {
+        requireLocalized(constant) { translation("error.parameter.constant", field) }
+        requireLocalized(millis >= 0.0) { translation("error.parameter.nonnegative", field) }
         return this
     }
 
     /** 正数校验。 */
-    fun requirePositive(field: String = "时间"): Time {
-        require(constant) { "$field 是表达式值，不能在这里做常量校验" }
-        require(millis > 0.0) { "$field 必须为正" }
+    fun requirePositive(field: String = translation("field.time").resolve()): Time {
+        requireLocalized(constant) { translation("error.parameter.constant", field) }
+        requireLocalized(millis > 0.0) { translation("error.parameter.positive", field) }
         return this
     }
 
@@ -98,13 +100,13 @@ class Time(
     operator fun times(value: Scalar): Time {
         val const = constant && value.isConstant
         val result = millis * value.constantOrNaN()
-        return Time(if (const) finite(result, "时间乘法") else Double.NaN, "($expr*${value.expr})", const)
+        return Time(if (const) finite(result, "field.time_product") else Double.NaN, "($expr*${value.expr})", const)
     }
 
     operator fun div(value: Scalar): Time {
         val const = constant && value.isConstant
         val result = millis / value.constantOrNaN()
-        return Time(if (const) finite(result, "时间除法") else Double.NaN, "($expr/${value.expr})", const)
+        return Time(if (const) finite(result, "field.time_quotient") else Double.NaN, "($expr/${value.expr})", const)
     }
 
     operator fun div(other: Time): Scalar = Scalar(
@@ -115,7 +117,7 @@ class Time(
     private fun binary(a: Time, b: Time, op: String): Time {
         val const = a.constant && b.constant
         val result = if (op == "-") a.millis - b.millis else a.millis + b.millis
-        return Time(if (const) finite(result, "时间运算") else Double.NaN, "(${a.expr}$op${b.expr})", const)
+        return Time(if (const) finite(result, "field.time_calculation") else Double.NaN, "(${a.expr}$op${b.expr})", const)
     }
 
     override fun equals(other: Any?): Boolean = other is Time && constant && other.constant && millis == other.millis
@@ -125,8 +127,8 @@ class Time(
     companion object {
         @JvmStatic
         fun ticks(ticks: Double): Time {
-            finite(ticks, "时间")
-            val millis = finite(ticks * 50.0, "时间")
+            finite(ticks, "field.time")
+            val millis = finite(ticks * 50.0, "field.time")
             return Time(millis, numberLiteral(millis), true)
         }
 
@@ -135,7 +137,7 @@ class Time(
 
         @JvmStatic
         fun milliseconds(millis: Double): Time {
-            finite(millis, "时间")
+            finite(millis, "field.time")
             return Time(millis, numberLiteral(millis), true)
         }
 
@@ -163,17 +165,17 @@ class Length(
     private val constant: Boolean,
 ) {
 
-    val mcPixels: Double get() = finite(blocks * 16.0, "长度换算")
+    val mcPixels: Double get() = finite(blocks * 16.0, "field.length_conversion")
 
-    fun requireNonNegative(field: String = "长度"): Length {
-        require(constant) { "$field 是表达式值，不能在这里做常量校验" }
-        require(blocks >= 0.0) { "$field 不能为负" }
+    fun requireNonNegative(field: String = translation("field.length").resolve()): Length {
+        requireLocalized(constant) { translation("error.parameter.constant", field) }
+        requireLocalized(blocks >= 0.0) { translation("error.parameter.nonnegative", field) }
         return this
     }
 
-    fun requirePositive(field: String = "长度"): Length {
-        require(constant) { "$field 是表达式值，不能在这里做常量校验" }
-        require(blocks > 0.0) { "$field 必须为正" }
+    fun requirePositive(field: String = translation("field.length").resolve()): Length {
+        requireLocalized(constant) { translation("error.parameter.constant", field) }
+        requireLocalized(blocks > 0.0) { translation("error.parameter.positive", field) }
         return this
     }
 
@@ -186,13 +188,13 @@ class Length(
     operator fun times(value: Scalar): Length {
         val const = constant && value.isConstant
         val result = blocks * value.constantOrNaN()
-        return Length(if (const) finite(result, "长度乘法") else Double.NaN, "($expr*${value.expr})", const)
+        return Length(if (const) finite(result, "field.length_product") else Double.NaN, "($expr*${value.expr})", const)
     }
 
     operator fun div(value: Scalar): Length {
         val const = constant && value.isConstant
         val result = blocks / value.constantOrNaN()
-        return Length(if (const) finite(result, "长度除法") else Double.NaN, "($expr/${value.expr})", const)
+        return Length(if (const) finite(result, "field.length_quotient") else Double.NaN, "($expr/${value.expr})", const)
     }
 
     operator fun div(other: Length): Scalar = Scalar(
@@ -205,17 +207,17 @@ class Length(
     private fun binary(a: Length, b: Length, op: String): Length {
         val const = a.constant && b.constant
         val result = if (op == "-") a.blocks - b.blocks else a.blocks + b.blocks
-        return Length(if (const) finite(result, "长度运算") else Double.NaN, "(${a.expr}$op${b.expr})", const)
+        return Length(if (const) finite(result, "field.length_calculation") else Double.NaN, "(${a.expr}$op${b.expr})", const)
     }
 
     override fun equals(other: Any?): Boolean = other is Length && constant && other.constant && blocks == other.blocks
     override fun hashCode(): Int = blocks.hashCode()
-    override fun toString(): String = if (constant) "${blocks}格" else "Length($expr)"
+    override fun toString(): String = if (constant) translation("unit.blocks", blocks).resolve() else "Length($expr)"
 
     companion object {
         @JvmStatic
         fun blocks(blocks: Double): Length {
-            finite(blocks, "长度")
+            finite(blocks, "field.length")
             return Length(blocks, numberLiteral(blocks), true)
         }
 
@@ -224,7 +226,7 @@ class Length(
 
         @JvmStatic
         fun mcPixels(pixels: Double): Length {
-            finite(pixels, "长度")
+            finite(pixels, "field.length")
             val blocks = pixels / 16.0
             return Length(blocks, numberLiteral(blocks), true)
         }
@@ -246,7 +248,7 @@ class Angle(
     private val constant: Boolean,
 ) {
 
-    val degrees: Double get() = finite(Math.toDegrees(radians), "角度换算")
+    val degrees: Double get() = finite(Math.toDegrees(radians), "field.angle_conversion")
 
     fun render(): String = expr
 
@@ -257,13 +259,13 @@ class Angle(
     operator fun times(value: Scalar): Angle {
         val const = constant && value.isConstant
         val result = radians * value.constantOrNaN()
-        return Angle(if (const) finite(result, "角度乘法") else Double.NaN, "($expr*${value.expr})", const)
+        return Angle(if (const) finite(result, "field.angle_product") else Double.NaN, "($expr*${value.expr})", const)
     }
 
     operator fun div(value: Scalar): Angle {
         val const = constant && value.isConstant
         val result = radians / value.constantOrNaN()
-        return Angle(if (const) finite(result, "角度除法") else Double.NaN, "($expr/${value.expr})", const)
+        return Angle(if (const) finite(result, "field.angle_quotient") else Double.NaN, "($expr/${value.expr})", const)
     }
 
     operator fun div(other: Angle): Scalar = Scalar(
@@ -273,7 +275,7 @@ class Angle(
 
     operator fun div(other: Time): AngularSpeed {
         val const = constant && other.isConstant()
-        val result = if (const) finite(radians / other.millis * 1000.0, "角度/时间") else Double.NaN
+        val result = if (const) finite(radians / other.millis * 1000.0, "field.angle_rate") else Double.NaN
         return AngularSpeed(result, "($expr/${other.expr})", const)
     }
 
@@ -282,7 +284,7 @@ class Angle(
     private fun binary(a: Angle, b: Angle, op: String): Angle {
         val const = a.constant && b.constant
         val result = if (op == "-") a.radians - b.radians else a.radians + b.radians
-        return Angle(if (const) finite(result, "角度运算") else Double.NaN, "(${a.expr}$op${b.expr})", const)
+        return Angle(if (const) finite(result, "field.angle_calculation") else Double.NaN, "(${a.expr}$op${b.expr})", const)
     }
 
     override fun equals(other: Any?): Boolean = other is Angle && constant && other.constant && radians == other.radians
@@ -292,13 +294,13 @@ class Angle(
     companion object {
         @JvmStatic
         fun radians(radians: Double): Angle {
-            finite(radians, "角度")
+            finite(radians, "field.angle")
             return Angle(radians, numberLiteral(radians), true)
         }
 
         @JvmStatic
         fun degrees(degrees: Double): Angle {
-            finite(degrees, "角度")
+            finite(degrees, "field.angle")
             val radians = Math.toRadians(degrees)
             return Angle(radians, numberLiteral(radians), true)
         }
@@ -328,7 +330,7 @@ class AngularSpeed(
     operator fun times(time: Time): Angle {
         val const = constant && time.isConstant()
         val result = radiansPerSecond * (time.millis / 1000.0)
-        return Angle(if (const) finite(result, "角速度×时间") else Double.NaN, "($expr*${time.expr})", const)
+        return Angle(if (const) finite(result, "field.angular_speed_product") else Double.NaN, "($expr*${time.expr})", const)
     }
 
     fun isConstant(): Boolean = constant
@@ -339,7 +341,7 @@ class AngularSpeed(
     companion object {
         @JvmStatic
         fun radiansPerSecond(value: Double): AngularSpeed {
-            finite(value, "角速度")
+            finite(value, "field.angular_speed")
             val perMillis = value / 1000.0
             return AngularSpeed(value, numberLiteral(perMillis), true)
         }
@@ -367,7 +369,7 @@ class Velocity private constructor(val vector: Vec3) {
     companion object {
         @JvmStatic
         fun blocksPerTick(x: Double, y: Double, z: Double): Velocity =
-            Velocity(Vec3(finite(x, "速度"), finite(y, "速度"), finite(z, "速度")))
+            Velocity(Vec3(finite(x, "field.velocity"), finite(y, "field.velocity"), finite(z, "field.velocity")))
 
         @JvmStatic
         fun blocksPerTick(vector: Vec3): Velocity =
@@ -391,7 +393,7 @@ class Acceleration private constructor(val vector: Vec3) {
     companion object {
         @JvmStatic
         fun blocksPerTickSquared(x: Double, y: Double, z: Double): Acceleration =
-            Acceleration(Vec3(finite(x, "加速度"), finite(y, "加速度"), finite(z, "加速度")))
+            Acceleration(Vec3(finite(x, "field.acceleration"), finite(y, "field.acceleration"), finite(z, "field.acceleration")))
 
         @JvmStatic
         fun blocksPerTickSquared(vector: Vec3): Acceleration =
@@ -411,8 +413,8 @@ class Lifetime private constructor(
 
     fun toTicksOrInfinite(): Int = if (infinite) -1 else ticks
 
-    fun requireFinite(field: String = "寿命"): Int {
-        require(!infinite) { "$field 需要有限值，当前是无限" }
+    fun requireFinite(field: String = translation("field.lifetime").resolve()): Int {
+        requireLocalized(!infinite) { translation("error.parameter.finite_lifetime", field) }
         return ticks
     }
 
@@ -428,11 +430,11 @@ class Lifetime private constructor(
 
         @JvmStatic
         fun ticks(ticks: Int): Lifetime {
-            require(ticks >= 0) { "有限寿命不能为负" }
+            requireLocalized(ticks >= 0) { translation("error.units.lifetime_negative") }
             return Lifetime(ticks, false)
         }
 
         @JvmStatic
-        fun of(time: Time): Lifetime = ticks(time.requireWholeTicks("寿命"))
+        fun of(time: Time): Lifetime = ticks(time.requireWholeTicks(translation("field.lifetime").resolve()))
     }
 }

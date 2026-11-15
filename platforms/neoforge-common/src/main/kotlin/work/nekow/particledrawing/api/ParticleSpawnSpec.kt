@@ -6,6 +6,8 @@ import work.nekow.particledrawing.platform.toMinecraft
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.light.LightShape
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 一次批量生成里的一颗粒子。
@@ -66,7 +68,7 @@ class ParticleSpawnSpec {
 
     /** 出生加速度（blocks/tick²）；[ticks] <0 = 无限，0 = 不受力。 */
     fun acceleration(acceleration: Acceleration, ticks: Int = -1): ParticleSpawnSpec = apply {
-        require(ticks >= -1) { "加速度 tick 数不能小于 -1" }
+        requireLocalized(ticks >= -1) { translation("error.particle.acceleration_ticks") }
         this.accelerationPerTickSquared = acceleration.toVec3().toMinecraft()
         this.accelerationTicks = ticks
     }
@@ -75,7 +77,7 @@ class ParticleSpawnSpec {
         acceleration(Acceleration.blocksPerTickSquared(x.toDouble(), y.toDouble(), z.toDouble()), ticks)
 
     fun acceleration(acceleration: Vec3, ticks: Int = -1): ParticleSpawnSpec = apply {
-        require(ticks >= -1) { "加速度 tick 数不能小于 -1" }
+        requireLocalized(ticks >= -1) { translation("error.particle.acceleration_ticks") }
         this.accelerationPerTickSquared = acceleration
         this.accelerationTicks = ticks
     }

@@ -5,6 +5,8 @@ import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.network.EmitterParams
 import work.nekow.particledrawing.core.network.EmitterUpdatePayload
 import work.nekow.particledrawing.light.LightShape
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 发射口径：按锚点走过的里程发射，还是按时间发射。
@@ -57,7 +59,7 @@ class ParticleEmitter internal constructor(
      * 投射物快慢不影响粒子密度，长度按格给。
      */
     fun spacing(blocks: Double): ParticleEmitter {
-        require(blocks > 0.0) { "spacing 必须为正（每多少格一颗）" }
+        requireLocalized(blocks > 0.0) { translation("error.spacing") }
         mode = EmitMode.DISTANCE
         spacingBlocks = blocks
         return this
@@ -65,7 +67,7 @@ class ParticleEmitter internal constructor(
 
     /** 按时间发射：每 [ticks] tick 一颗（1 tick = 50ms）。 */
     fun interval(ticks: Int): ParticleEmitter {
-        require(ticks > 0) { "interval 必须为正（每多少 tick 一颗）" }
+        requireLocalized(ticks > 0) { translation("error.emitter.interval") }
         mode = EmitMode.TIME
         intervalMillis = ticks * 50
         return this
@@ -73,7 +75,7 @@ class ParticleEmitter internal constructor(
 
     /** 按时间发射：每 [ms] 毫秒一颗，可给到渲染帧粒度。 */
     fun intervalMs(ms: Int): ParticleEmitter {
-        require(ms > 0) { "intervalMs 必须为正（每多少毫秒一颗）" }
+        requireLocalized(ms > 0) { translation("error.interval_ms") }
         mode = EmitMode.TIME
         intervalMillis = ms
         return this
@@ -81,17 +83,17 @@ class ParticleEmitter internal constructor(
 
     /** 每颗粒子的寿命（tick）；必须为正。 */
     fun life(ticks: Int): ParticleEmitter {
-        require(ticks > 0) { "life 必须为正（每颗粒子活多少 tick）" }
+        requireLocalized(ticks > 0) { translation("error.emitter.life") }
         lifetimeTicks = ticks
         return this
     }
 
     /** 带显式时间的寿命；小数刻必须显式取整。 */
-    fun life(time: Time): ParticleEmitter = life(time.requireWholeTicks("发射器寿命"))
+    fun life(time: Time): ParticleEmitter = life(time.requireWholeTicks(translation("field.emitter_lifetime").resolve()))
 
     /** 发射器粒子必须是有限寿命。 */
     fun life(lifetime: Lifetime): ParticleEmitter =
-        life(lifetime.requireFinite("发射器寿命"))
+        life(lifetime.requireFinite(translation("field.emitter_lifetime").resolve()))
 
     /** 每颗粒子的颜色。 */
     fun color(color: Color): ParticleEmitter = apply { this.color = color }
@@ -197,15 +199,15 @@ class ParticleEmitter internal constructor(
 
     /** 寿命最后 [ticks] tick 内 alpha 淡到 0。 */
     fun fadeOut(ticks: Int, easing: EasingType = EasingType.EASE_IN): ParticleEmitter = apply {
-        require(ticks > 0) { "fadeOut 的时长必须为正" }
+        requireLocalized(ticks > 0) { translation("error.curve.fade_duration") }
         fadeOutTicks = ticks
         fadeOutEasing = easing
     }
 
     /** 寿命最后 [ticks] tick 内尺寸缩到 [factor] 倍。 */
     fun shrinkTo(factor: Float, ticks: Int, easing: EasingType = EasingType.EASE_IN): ParticleEmitter = apply {
-        require(ticks > 0) { "shrinkTo 的时长必须为正" }
-        require(factor >= 0f) { "shrinkTo 的目标倍率不能为负" }
+        requireLocalized(ticks > 0) { translation("error.curve.shrink_duration") }
+        requireLocalized(factor >= 0f) { translation("error.curve.shrink_scale") }
         shrinkTarget = factor
         shrinkTicks = ticks
         shrinkEasing = easing
@@ -220,7 +222,7 @@ class ParticleEmitter internal constructor(
      * 偏移由「发射器 id + 第几颗」的哈希算出，同一声明在任何客户端上第 N 颗的偏移都相同。
      */
     fun jitter(blocks: Double): ParticleEmitter = apply {
-        require(blocks >= 0.0) { "jitter 不能为负（格）" }
+        requireLocalized(blocks >= 0.0) { translation("error.emitter.jitter") }
         this.jitterBlocks = blocks
     }
 

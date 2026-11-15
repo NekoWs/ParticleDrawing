@@ -12,6 +12,7 @@ import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.core.TextureRegistry
 import work.nekow.particledrawing.core.network.ParticleTexturePayload
 import java.io.ByteArrayOutputStream
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 客户端程序化贴图接收：按 id 累积分块，收齐后解码注册进 [TextureCache]。
@@ -32,7 +33,7 @@ object ClientTextureSyncManager {
         TextureRegistry.declare(payload.id, payload.name)
         val out = pending.getOrPut(payload.id) { ByteArrayOutputStream() }
         if (out.size() + payload.data.size > TextureRegistry.MAX_BYTES) {
-            LOGGER.warn("ParticleDrawing: 贴图 {} 超过字节上限，已丢弃", payload.name)
+            LOGGER.warn(translation("log.texture.size").resolve(), payload.name)
             pending.remove(payload.id)
             return
         }
@@ -45,7 +46,7 @@ object ClientTextureSyncManager {
             // 留一份字节，`/pdraw reload` 清空缓存后能就地重载
             TextureRegistry.storeBytes(payload.id, bytes)
         } else {
-            LOGGER.warn("ParticleDrawing: 贴图 {} 解码失败，引用它的粒子回落纯白方块", payload.name)
+            LOGGER.warn(translation("log.texture.decode").resolve(), payload.name)
         }
     }
 
@@ -83,7 +84,7 @@ object ClientTextureSyncManager {
         return try {
             TextureCache.load(name, bytes) != null
         } catch (e: Exception) {
-            LOGGER.warn("ParticleDrawing: 贴图 {} 注册失败：{}", name, e.message)
+            LOGGER.warn(translation("log.texture.register").resolve(), name, e.message)
             false
         }
     }

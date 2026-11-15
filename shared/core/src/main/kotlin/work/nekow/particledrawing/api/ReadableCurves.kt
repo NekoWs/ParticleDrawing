@@ -1,6 +1,8 @@
 package work.nekow.particledrawing.api
 
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 命名寿命曲线门面：关键帧仍是现有 ParticleCurve；easing 归属为“上一帧 → 目标帧”。
 
@@ -12,8 +14,8 @@ class CurveChannelBuilder internal constructor(private val channel: CurveChannel
 
     /** 在生成时刻的起始值。每个通道必须且只能调用一次。 */
     fun start(value: Number): CurveChannelBuilder {
-        require(!started) { "${channel.name} 曲线已经调用过 start" }
-        val v = finiteNumber(value.toDouble(), "曲线值")
+        requireLocalized(!started) { translation("error.curve.start_duplicate", channel.name) }
+        val v = finiteNumber(value.toDouble(), translation("field.curve_value").resolve())
         keys.add(CurveKey.at(0, v))
         started = true
         return this
@@ -21,19 +23,19 @@ class CurveChannelBuilder internal constructor(private val channel: CurveChannel
 
     /** 到达 [at] 时的目标值；[easing] 作用于上一帧到这一帧。 */
     fun to(value: Number, at: Time, easing: Ease = Ease.LINEAR): CurveChannelBuilder {
-        require(started) { "${channel.name} 曲线必须先调用 start" }
-        val v = finiteNumber(value.toDouble(), "曲线值")
-        val t = at.requireNonNegative("曲线时间").ticks.toFloat()
-        require(t > lastTime() + 1e-6f) { "${channel.name} 曲线时间必须递增（目标 ${at.ticks}t）" }
+        requireLocalized(started) { translation("error.curve.start_missing", channel.name) }
+        val v = finiteNumber(value.toDouble(), translation("field.curve_value").resolve())
+        val t = at.requireNonNegative(translation("field.curve_time").resolve()).ticks.toFloat()
+        requireLocalized(t > lastTime() + 1e-6f) { translation("error.curve.key_order", channel.name, at.ticks) }
         keys.add(CurveKey.at(t, v, easing.toEasingType()))
         return this
     }
 
     /** 保持当前值到 [until]，再继续下一个 [to]。 */
     fun hold(until: Time): CurveChannelBuilder {
-        require(started) { "${channel.name} 曲线必须先调用 start" }
-        val t = until.requireNonNegative("保持时间").ticks.toFloat()
-        require(t > lastTime() + 1e-6f) { "${channel.name} 保持时间必须递增（目标 ${until.ticks}t）" }
+        requireLocalized(started) { translation("error.curve.start_missing", channel.name) }
+        val t = until.requireNonNegative(translation("field.hold_time").resolve()).ticks.toFloat()
+        requireLocalized(t > lastTime() + 1e-6f) { translation("error.curve.hold_order", channel.name, until.ticks) }
         keys.add(CurveKey.at(t, keys.last().value, EasingType.NONE))
         return this
     }
@@ -44,7 +46,7 @@ class CurveChannelBuilder internal constructor(private val channel: CurveChannel
 }
 
 private fun finiteNumber(value: Double, what: String): Double {
-    require(value.isFinite()) { "$what 必须是有限值" }
+    requireLocalized(value.isFinite()) { translation("error.parameter.finite", what) }
     return value
 }
 
@@ -85,12 +87,12 @@ fun sizeEnvelope(
     enterEasing: Ease = Ease.OUT,
     leaveEasing: Ease = Ease.IN_OUT,
 ): ParticleLifeCurve {
-    lifetime.requirePositive("寿命")
-    enter.requireNonNegative("入段")
-    leave.requireNonNegative("退段")
+    lifetime.requirePositive(translation("field.lifetime").resolve())
+    enter.requireNonNegative(translation("field.enter_time").resolve())
+    leave.requireNonNegative(translation("field.exit_time").resolve())
     val life = lifetime.ticks
-    require(enter.ticks + leave.ticks <= life + 1e-6) {
-        "入段 + 退段不能超过寿命（${enter.ticks}+${leave.ticks} > $life）"
+    requireLocalized(enter.ticks + leave.ticks <= life + 1e-6) {
+        translation("error.curve.envelope_length", enter.ticks, leave.ticks, life)
     }
     return lifeCurve {
         scale {
@@ -108,9 +110,9 @@ fun sizeEnvelope(
 /** 只在寿命最后 [leave] 内淡出到 0。 */
 @JvmOverloads
 fun fadeOut(lifetime: Time, leave: Time, easing: Ease = Ease.IN_OUT): ParticleLifeCurve {
-    lifetime.requirePositive("寿命")
-    leave.requirePositive("退段")
-    require(leave.ticks <= lifetime.ticks + 1e-6) { "退段不能超过寿命（${leave.ticks} > ${lifetime.ticks}）" }
+    lifetime.requirePositive(translation("field.lifetime").resolve())
+    leave.requirePositive(translation("field.exit_time").resolve())
+    requireLocalized(leave.ticks <= lifetime.ticks + 1e-6) { translation("error.curve.fade_length", leave.ticks, lifetime.ticks) }
     return lifeCurve {
         alpha {
             start(1.0)

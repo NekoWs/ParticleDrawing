@@ -1,5 +1,7 @@
 package work.nekow.particledrawing.lighting
 
+import work.nekow.particledrawing.i18n.translation
+import work.nekow.particledrawing.i18n.LocalizedText
 import work.nekow.particledrawing.platform.PlatformCompat
 import net.minecraft.client.Minecraft
 import net.minecraft.client.multiplayer.ClientLevel
@@ -142,8 +144,10 @@ object DynamicLightManager {
     private var sectionsMarked = 0L
 
     @JvmStatic
-    fun diagnostics(): String =
-        "地形光图覆盖=${terrainOverrides.sum()} 脏区块提交=$sectionsMarked"
+    fun diagnostics(): String = diagnosticsText().resolve()
+
+    internal fun diagnosticsText(): LocalizedText =
+        translation("diagnostic.light.terrain", terrainOverrides.sum(), sectionsMarked)
 
     /**
      * 动态光照版本号：光源集合、位置、亮度或开关有任何变化就自增。

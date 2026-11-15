@@ -7,6 +7,10 @@ import work.nekow.particledrawing.api.*
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.requireNotNullLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /** 维度内命名的配置草稿；运行句柄与草稿分开，复制配置不会复制正在播放的粒子。 */
 internal object CommandParticleRecipes {
@@ -34,14 +38,14 @@ internal object CommandParticleRecipes {
             Sampling.PARAMETER -> range?.let { ParticleSampling.range(it.first, it.second, it.third) } ?: ParticleSampling.count(count)
             Sampling.GRID -> ParticleSampling.grid(min, max, step)
             Sampling.IMAGE -> {
-                val name = requireNotNull(image) { "请先设置 image file 或 image resource" }
+                val name = requireNotNullLocalized(image) { translation("error.recipe.image_source") }
                 val input = if (imageResource) {
-                    val resource = level.server.resourceManager.getResource(Identifier.parse(name)).orElseThrow { IllegalArgumentException("数据包图片不存在: $name") }
+                    val resource = level.server.resourceManager.getResource(Identifier.parse(name)).orElseThrow { LocalizedArgumentException(translation("error.image.missing", name)) }
                     resource.open()
                 } else {
                     val root = Path.of("particleImages").toAbsolutePath().normalize()
                     val target = safeImagePath(root, name)
-                    require(Files.isRegularFile(target)) { "图片不存在: $target" }
+                    requireLocalized(Files.isRegularFile(target)) { translation("error.image.missing", target) }
                     Files.newInputStream(target)
                 }
                 input.use { ParticleImageSampler.sample(it, imageOptions) }
@@ -49,7 +53,7 @@ internal object CommandParticleRecipes {
         }
 
         fun start(level: ServerLevel, burst: Boolean) {
-            require(burst || handle == null) { "生成器已有运行实例；请先 remove，再 start；stop 只停止出生" }
+            requireLocalized(burst || handle == null) { translation("error.recipe.running") }
             handles()
             val resolved = recipe.copy(seeds = samples(level))
             resolved.validate()
@@ -85,14 +89,14 @@ internal object CommandParticleRecipes {
     fun create(dimension: UUID, name: String, anchor: RecipeAnchor): Draft {
         validName(name)
         val map = dimensions.getOrPut(dimension) { linkedMapOf() }
-        require(map.size < 256) { "当前维度最多 256 个命名配置" }
-        require(name !in map) { "生成器 '$name' 已存在" }
+        requireLocalized(map.size < 256) { translation("error.recipe.config_limit") }
+        requireLocalized(name !in map) { translation("error.recipe.exists", name) }
         return Draft(anchor).also { map[name] = it }
     }
     fun reset(dimension: UUID, name: String, anchor: RecipeAnchor): Draft {
         validName(name)
         val map = dimensions.getOrPut(dimension) { linkedMapOf() }
-        require(name in map || map.size < 256) { "当前维度最多 256 个命名配置" }
+        requireLocalized(name in map || map.size < 256) { translation("error.recipe.config_limit") }
         map[name]?.removeParticles()
         val next = Draft(anchor)
         map[name] = next
@@ -103,13 +107,13 @@ internal object CommandParticleRecipes {
         validName(to)
         val source = get(dimension, from)
         val map = dimensions.getValue(dimension)
-        require(to !in map && map.size < 256) { "目标名称已存在或配置数量超限" }
+        requireLocalized(to !in map && map.size < 256) { translation("error.recipe.copy_target") }
         map[to] = source.copyDraft()
     }
-    fun get(dimension: UUID, name: String) = dimensions[dimension]?.get(name) ?: throw IllegalArgumentException("当前维度没有生成器 '$name'")
+    fun get(dimension: UUID, name: String) = dimensions[dimension]?.get(name) ?: throw LocalizedArgumentException(translation("error.recipe.not_found", name))
     fun names(dimension: UUID) = dimensions[dimension]?.keys?.toList() ?: emptyList()
     fun remove(dimension: UUID, name: String) {
-        require(dimensions[dimension]?.values?.none { it.anchorLink == name } != false) { "该锚点正被其它生成器引用，请先修改它们的 anchor" }
+        requireLocalized(dimensions[dimension]?.values?.none { it.anchorLink == name } != false) { translation("error.recipe.anchor_in_use") }
         get(dimension, name).removeParticles(); dimensions[dimension]?.remove(name)
     }
     fun anchor(dimension: UUID, name: String, value: RecipeAnchor) {
@@ -121,7 +125,7 @@ internal object CommandParticleRecipes {
         val seen = hashSetOf(name)
         var current: String? = target
         while (current != null) {
-            require(seen.add(current)) { "锚点引用不能成环" }
+            requireLocalized(seen.add(current)) { translation("error.recipe.anchor_cycle") }
             current = get(dimension, current).anchorLink
         }
         get(dimension, name).anchorLink = target
@@ -142,16 +146,16 @@ internal object CommandParticleRecipes {
     fun discard(dimension: UUID) { dimensions.remove(dimension) }
     fun clear() = dimensions.clear()
     private fun validName(name: String) {
-        require(Regex("[A-Za-z0-9_.:-]{1,64}").matches(name)) { "名称只能含字母、数字、下划线、短横线、点和冒号，最多 64 字符" }
-        require(name !in setOf("create", "reset", "copy", "list", "help")) { "'$name' 是子命令，不能用作生成器名称" }
+        requireLocalized(Regex("[A-Za-z0-9_.:-]{1,64}").matches(name)) { translation("error.recipe.name") }
+        requireLocalized(name !in setOf("create", "reset", "copy", "list", "help")) { translation("error.recipe.reserved_name", name) }
     }
 
     internal fun safeImagePath(root: Path, name: String): Path {
-        require(!Path.of(name).isAbsolute) { "image file 需要 particleImages 内的相对路径" }
+        requireLocalized(!Path.of(name).isAbsolute) { translation("error.image.relative_path") }
         val base = root.toAbsolutePath().normalize()
         val target = base.resolve(name).normalize()
-        require(target.startsWith(base) && target != base) { "图片路径不能越过 particleImages" }
-        if (Files.exists(target)) require(target.toRealPath().startsWith(base.toRealPath())) { "图片符号链接不能越过 particleImages" }
+        requireLocalized(target.startsWith(base) && target != base) { translation("error.image.outside_directory") }
+        if (Files.exists(target)) requireLocalized(target.toRealPath().startsWith(base.toRealPath())) { translation("error.image.outside_directory") }
         return target
     }
 }

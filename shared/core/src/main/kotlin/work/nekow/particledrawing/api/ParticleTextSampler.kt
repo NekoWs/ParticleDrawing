@@ -11,6 +11,8 @@ import java.awt.geom.Path2D
 import java.awt.image.BufferedImage
 import kotlin.math.ceil
 import kotlin.math.sqrt
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /** 采样文字的笔画，返回以字形包围盒为中心的 XY 平面坐标。 */
 object ParticleTextSampler {
@@ -33,18 +35,18 @@ object ParticleTextSampler {
         height: Double,
         font: Font = Font(Font.SANS_SERIF, Font.BOLD, EM_PIXELS.toInt()),
     ): List<Vec3> {
-        require(text.isNotBlank() && text.length <= MAX_TEXT_LENGTH) { "粒子文字需要 1 到 $MAX_TEXT_LENGTH 个 UTF-16 单元，且包含可见字符" }
-        require(count in 1..ParticleRecipe.MAX_SEEDS) { "粒子文字数量必须在 1 到 ${ParticleRecipe.MAX_SEEDS} 之间" }
-        require(height.isFinite() && height > 0.0) { "粒子文字高度必须是有限正数" }
+        requireLocalized(text.isNotBlank() && text.length <= MAX_TEXT_LENGTH) { translation("error.text.length", MAX_TEXT_LENGTH) }
+        requireLocalized(count in 1..ParticleRecipe.MAX_SEEDS) { translation("error.sampling.count", ParticleRecipe.MAX_SEEDS) }
+        requireLocalized(height.isFinite() && height > 0.0) { translation("error.text.height") }
 
         val outline = outlineOf(text, font.deriveFont(EM_PIXELS))
         val bounds = outline.bounds
         val width = bounds.width
         val rows = bounds.height
-        require(width in 1..MAX_RASTER_DIMENSION && rows in 1..MAX_RASTER_DIMENSION && width.toLong() * rows <= MAX_RASTER_PIXELS) {
-            "字形为空或过大，请缩短文字或拆分成多组"
+        requireLocalized(width in 1..MAX_RASTER_DIMENSION && rows in 1..MAX_RASTER_DIMENSION && width.toLong() * rows <= MAX_RASTER_PIXELS) {
+            translation("error.text.bounds")
         }
-        require((height * (width.toDouble() / rows)).isFinite()) { "粒子文字宽度超出可表示范围" }
+        requireLocalized((height * (width.toDouble() / rows)).isFinite()) { translation("error.text.width") }
 
         val image = BufferedImage(width, rows, BufferedImage.TYPE_BYTE_GRAY)
         val graphics = image.createGraphics()
@@ -66,9 +68,9 @@ object ParticleTextSampler {
         for ((index, line) in text.lines().withIndex()) {
             if (line.isBlank()) continue
             val missing = font.canDisplayUpTo(line)
-            require(missing == -1) {
+            requireLocalized(missing == -1) {
                 val code = line.codePointAt(missing).toString(16).uppercase().padStart(4, '0')
-                "字体 ${font.fontName} 缺少 U+$code，请传入包含该字符的字体"
+                translation("error.text.glyph", font.fontName, code)
             }
             val layout = TextLayout(line, font, context)
             val offset = AffineTransform.getTranslateInstance(-layout.bounds.centerX, index * lineHeight)
@@ -89,7 +91,7 @@ object ParticleTextSampler {
                 if (raster.getSample(col, row, 0) >= 128) ink[inkCount++] = row * width + col
             }
         }
-        require(inkCount > 0) { "文字没有可采样的笔画" }
+        requireLocalized(inkCount > 0) { translation("error.text.no_ink") }
         // 文字很窄或请求的粒子很多时，把笔画像素细分，仍然给出不同的坐标。
         val sub = ceil(sqrt(count.toDouble() / inkCount)).toInt().coerceAtLeast(1)
         val perPixel = sub * sub

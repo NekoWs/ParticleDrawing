@@ -25,6 +25,9 @@ import work.nekow.particledrawing.core.network.VariableUpdatePayload
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 服务端特效播放管理器（按 key 播放 .pdrawc + 可移动锚点 + 播放时钟）。
 // 资源注册表按 key 播放；可移动锚点每 tick 批量下发一次；时钟支持 seek/暂停/变速。
@@ -63,11 +66,11 @@ object ServerEffectManager {
         options: EffectOptions,
     ): UUID {
         val data = EffectRegistry.dataFor(key)
-            ?: throw IllegalArgumentException("特效未注册: $key")
+            ?: throw LocalizedArgumentException(translation("error.effect.not_registered", key))
         val anim = try {
             PdrawcReader.parse(data)
         } catch (e: Exception) {
-            throw IllegalArgumentException("特效解析失败: $key", e)
+            throw LocalizedArgumentException(translation("error.effect.parse", key), e)
         }
         val id = UUID.randomUUID()
         val loop = options.loop() ?: anim.loop
@@ -88,7 +91,7 @@ object ServerEffectManager {
     /** 便捷重载：从首个玩家所在维度推导 dimensionId。 */
     @JvmStatic
     fun play(players: Collection<ServerPlayer>, key: Identifier, anchor: Anchor, options: EffectOptions): UUID {
-        require(players.isNotEmpty()) { "play 需要至少一个玩家" }
+        requireLocalized(players.isNotEmpty()) { translation("error.animation.players") }
         val level: ServerLevel = PlatformCompat.serverLevelOf(players.first())
         return play(ParticleUtils.dimensionUUID(level), players, key, anchor, options)
     }
@@ -103,7 +106,7 @@ object ServerEffectManager {
     @JvmStatic
     fun updateAnchor(playbackId: UUID, pos: Vec3, velocity: Vec3) {
         val pb = playbacks[playbackId] ?: run {
-            LOGGER.debug("锚点更新找不到播放 {}，已丢弃", playbackId)
+            LOGGER.debug(translation("log.effect.anchor_missing").resolve(), playbackId)
             return
         }
         val orient = (pb.anchor as? Anchor.Movable)?.orient ?: Orient.VELOCITY

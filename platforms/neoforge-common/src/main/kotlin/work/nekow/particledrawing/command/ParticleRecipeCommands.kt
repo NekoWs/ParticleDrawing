@@ -1,5 +1,8 @@
 package work.nekow.particledrawing.command
 
+import work.nekow.particledrawing.i18n.failureComponent
+import work.nekow.particledrawing.i18n.component
+import work.nekow.particledrawing.i18n.LocalizedText
 import work.nekow.particledrawing.platform.PlatformCompat
 import com.mojang.brigadier.arguments.BoolArgumentType
 import com.mojang.brigadier.arguments.DoubleArgumentType
@@ -12,12 +15,14 @@ import net.minecraft.commands.Commands
 import net.minecraft.commands.SharedSuggestionProvider
 import net.minecraft.commands.arguments.EntityArgument
 import net.minecraft.commands.arguments.coordinates.Vec3Argument
-import net.minecraft.network.chat.Component
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.recipe.RecipeExpressions
 import work.nekow.particledrawing.api.*
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.Locale
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /** /pdraw particle emitter：每条命令配置一个职责，公式按属性拆开。 */
 internal object ParticleRecipeCommands {
@@ -29,18 +34,23 @@ internal object ParticleRecipeCommands {
                 val name = word(ctx, "name")
                 if (verb == "reset") CommandParticleRecipes.reset(dim(ctx), name, RecipeAnchor(ctx.source.position))
                 else CommandParticleRecipes.create(dim(ctx), name, RecipeAnchor(ctx.source.position))
-                success(ctx, "已创建生成器 '$name'；配置完成后 start 或 burst")
+                val message = if (verb == "reset") translation("command.recipe.reset", name)
+                    else translation("command.recipe.create", name)
+                success(ctx, message)
             } }))
-        root.then(Commands.literal("list").executes { ctx -> safe(ctx) { success(ctx, "生成器: ${CommandParticleRecipes.names(dim(ctx)).joinToString(", ")}") } })
+        root.then(Commands.literal("list").executes { ctx -> safe(ctx) { success(ctx, translation("command.recipe.list", CommandParticleRecipes.names(dim(ctx)).joinToString(", "))) } })
         root.then(Commands.literal("copy").then(Commands.argument("from", StringArgumentType.string())
             .then(Commands.argument("to", StringArgumentType.string()).executes { ctx -> safe(ctx) {
-                CommandParticleRecipes.copy(dim(ctx), word(ctx, "from"), word(ctx, "to")); success(ctx, "已复制生成器配置")
+                CommandParticleRecipes.copy(dim(ctx), word(ctx, "from"), word(ctx, "to")); success(ctx, translation("command.recipe.copy"))
             } })))
 
         val name = Commands.argument("name", StringArgumentType.string()).suggests { ctx, b -> SharedSuggestionProvider.suggest(CommandParticleRecipes.names(dim(ctx)).map(StringArgumentType::escapeIfRequired), b) }
         name.then(Commands.literal("inspect").executes { ctx -> safe(ctx) {
             val d = draft(ctx); val r = d.recipe
-            success(ctx, "${word(ctx, "name")}: sample=${d.sampling.name.lowercase()}, rate=${r.rate}/${r.interval}t, lifetime=${r.lifetime}t, max_alive=${r.maxAlive}, follow=${r.follow}, running=${d.handle != null}; birth=${r.birth}; motion=${r.motion}; variables=${r.variables}; let=${r.lets}; where=${r.where}; kill=${r.kill}")
+            success(ctx, translation(
+                "command.recipe.inspect", word(ctx, "name"), d.sampling.name.lowercase(), r.rate, r.interval,
+                r.lifetime, r.maxAlive, r.follow, d.handle != null, r.birth, r.motion, r.variables, r.lets, r.where, r.kill,
+            ))
         } })
         for (verb in listOf("start", "burst", "stop", "remove", "apply", "remove_selected")) name.then(Commands.literal(verb).executes { ctx -> safe(ctx) {
             val d = draft(ctx)
@@ -48,17 +58,23 @@ internal object ParticleRecipeCommands {
                 "start", "burst" -> d.start(ctx.source.level, verb == "burst")
                 "stop" -> d.handles().forEach { it.stop() }
                 "remove" -> d.removeParticles()
-                "apply" -> { require(d.changes.isNotEmpty()) { "请先用 change 配置要修改的属性" }; d.handles().forEach { it.changeWhere(d.selector, d.changes) } }
+                "apply" -> { requireLocalized(d.changes.isNotEmpty()) { translation("error.recipe.change_required") }; d.handles().forEach { it.changeWhere(d.selector, d.changes) } }
                 "remove_selected" -> d.handles().forEach { it.removeWhere(d.selector) }
             }
-            val counts = if (verb == "start" || verb == "burst") {
-                val r = d.recipe
-                "；样本 ${r.seeds.size}，同时存活上限 ${r.maxAlive}" +
-                    if (r.seeds.size > r.maxAlive) "；超过上限的样本会等待空位。若需同时显示完整图形，请提高 max_alive" else ""
-            } else ""
-            success(ctx, "生成器 '${word(ctx, "name")}' 已执行 $verb$counts")
+            val emitter = word(ctx, "name")
+            val message = when (verb) {
+                "start", "burst" -> {
+                    val recipe = d.recipe
+                    translation("command.recipe.started", emitter, verb, recipe.seeds.size, recipe.maxAlive)
+                }
+                else -> translation("command.recipe.action", emitter, verb)
+            }
+            if ((verb == "start" || verb == "burst") && d.recipe.seeds.size > d.recipe.maxAlive) {
+                ctx.source.sendSuccess({ translation("command.recipe.raise_limit").component() }, false)
+            }
+            success(ctx, message)
         } })
-        name.then(Commands.literal("delete").executes { ctx -> safe(ctx) { CommandParticleRecipes.remove(dim(ctx), word(ctx, "name")); success(ctx, "已删除生成器与配置") } })
+        name.then(Commands.literal("delete").executes { ctx -> safe(ctx) { CommandParticleRecipes.remove(dim(ctx), word(ctx, "name")); success(ctx, translation("command.recipe.delete")) } })
         name.then(anchorTree())
         name.then(sampleTree())
         name.then(imageTree())
@@ -110,7 +126,7 @@ internal object ParticleRecipeCommands {
                     "birth" -> d.update(d.recipe.copy(birth = d.recipe.birth - field))
                     "motion" -> d.update(d.recipe.copy(motion = d.recipe.motion - field))
                     "change" -> d.changes.remove(field)
-                    else -> throw IllegalArgumentException("未知配置节")
+                    else -> throw LocalizedArgumentException(translation("error.recipe.section"))
                 }
             } })))
 
@@ -176,7 +192,7 @@ internal object ParticleRecipeCommands {
         root.then(Commands.literal("stride").then(Commands.argument("stride", IntegerArgumentType.integer(1, 256)).executes { ctx -> sampleConfig(ctx) { d -> d.imageOptions = d.imageOptions.copy(stride = IntegerArgumentType.getInteger(ctx, "stride")) } }))
         for (key in listOf("spacing", "alpha")) root.then(Commands.literal(key).then(Commands.argument("value", DoubleArgumentType.doubleArg()).executes { ctx -> sampleConfig(ctx) { d ->
             val v = DoubleArgumentType.getDouble(ctx, "value")
-            require(v.isFinite() && (if (key == "spacing") v > 0 else v in 0.0..1.0)) { "spacing 必须为正，alpha 需要在 0..1" }
+            requireLocalized(v.isFinite() && (if (key == "spacing") v > 0 else v in 0.0..1.0)) { translation("error.recipe.sample_options") }
             d.imageOptions = if (key == "spacing") d.imageOptions.copy(spacing = v) else d.imageOptions.copy(alpha = v)
         } }))
         root.then(Commands.literal("plane").then(Commands.argument("plane", StringArgumentType.word()).suggests { _, b -> SharedSuggestionProvider.suggest(listOf("xy", "xz", "yz"), b) }
@@ -185,13 +201,13 @@ internal object ParticleRecipeCommands {
     }
 
     private fun appearance(d: CommandParticleRecipes.Draft, key: String, value: String) {
-        require(key in APPEARANCE) { "未知外观参数 '$key'" }
+        requireLocalized(key in APPEARANCE) { translation("error.recipe.appearance_key", key) }
         val text = ParticleCommandArguments.text(value)
         val values = LinkedHashMap(d.appearance).apply { put(key, text) }
         val parsed = ParticleCommandOptionParser.parse(values.entries.joinToString(" ") {
             "${it.key}=\"${it.value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
         })
-        require(parsed.provided == values.keys) { "每条 appearance 命令只设置一个参数" }
+        requireLocalized(parsed.provided == values.keys) { translation("error.recipe.appearance_value") }
         var birth = d.recipe.birth
         if (key == "color") {
             val c = ParticleCommandOptionParser.parseColor(text)
@@ -203,22 +219,26 @@ internal object ParticleRecipeCommands {
     }
 
     private fun sampleConfig(ctx: CommandContext<CommandSourceStack>, action: (CommandParticleRecipes.Draft) -> Unit) = configure(ctx) { d ->
-        require(d.handle == null) { "采样配置只影响出生布局；请先 remove，再配置并 start；运动和变量可以直接热更新" }
+        requireLocalized(d.handle == null) { translation("error.recipe.running_sampling") }
         action(d)
     }
 
     private fun configure(ctx: CommandContext<CommandSourceStack>, action: (CommandParticleRecipes.Draft) -> Unit) = safe(ctx) {
-        action(draft(ctx)); success(ctx, "已更新生成器 '${word(ctx, "name")}'")
+        action(draft(ctx)); success(ctx, translation("command.recipe.update", word(ctx, "name")))
     }
     private fun draft(ctx: CommandContext<CommandSourceStack>) = CommandParticleRecipes.get(dim(ctx), word(ctx, "name"))
     private fun dim(ctx: CommandContext<CommandSourceStack>) = ParticleUtils.dimensionUUID(ctx.source.level)
     private fun word(ctx: CommandContext<CommandSourceStack>, name: String) = StringArgumentType.getString(ctx, name)
-    private fun success(ctx: CommandContext<CommandSourceStack>, message: String): Int { ctx.source.sendSuccess({ Component.literal(message) }, false); return 1 }
+    private fun success(ctx: CommandContext<CommandSourceStack>, message: LocalizedText): Int {
+        ctx.source.sendSuccess({ message.component() }, false)
+        return 1
+    }
     private inline fun safe(ctx: CommandContext<CommandSourceStack>, action: () -> Int): Int = try { action() } catch (e: Exception) {
-        ctx.source.sendFailure(Component.literal(e.message ?: "粒子生成配置错误")); 0
+        ctx.source.sendFailure(e.failureComponent("error.recipe.parameters"))
+        0
     }
     private fun help(ctx: CommandContext<CommandSourceStack>) = success(ctx,
-        "emitter create|reset|copy|list；emitter <名称> anchor|orbit|sample|image|variable|state|let|birth|motion|where|kill|appearance|texture|rate|interval|lifetime|max_alive|follow|select|change|apply|remove_selected|start|burst|stop|remove|delete|inspect|unset；公式中的 u 是采样参数，age 是粒子年龄（刻），t 是发射器时间（毫秒）")
+        translation("command.recipe.usage"))
 
     private val APPEARANCE = setOf("texture", "style", "color", "scale", "uv", "size", "size_world", "billboard", "spin", "spin_space", "additive", "glowing", "light", "light_only", "intensity", "spot", "light_dir", "light_range", "light_falloff", "alpha_curve", "size_curve", "red_curve", "green_curve", "blue_curve", "light_curve")
 }

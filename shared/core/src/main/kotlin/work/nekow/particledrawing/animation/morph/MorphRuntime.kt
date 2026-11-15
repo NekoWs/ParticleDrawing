@@ -8,6 +8,8 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.sqrt
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 一次编队变换的运行时：分配、逐粒子过渡、限速、扰动、循环与查询都集中在这里。
@@ -82,8 +84,8 @@ class MorphRuntime(
     private var _waiting: List<UUID> = emptyList()
 
     init {
-        require(particles.isNotEmpty()) { "形变至少需要一颗粒子" }
-        require(slots.isNotEmpty()) { "形变至少需要一个槽位" }
+        requireLocalized(particles.isNotEmpty()) { translation("error.morph.particles") }
+        requireLocalized(slots.isNotEmpty()) { translation("error.morph.slots") }
         start(particles, slots)
     }
 
@@ -410,7 +412,7 @@ class MorphRuntime(
 
     /** 时间倍率；0 暂停，1 正常，可大于 1 加速。 */
     fun speed(scale: Double) {
-        require(scale >= 0.0) { "倍率不能为负" }
+        requireLocalized(scale >= 0.0) { translation("error.morph.time_scale") }
         timeScale = scale
     }
 

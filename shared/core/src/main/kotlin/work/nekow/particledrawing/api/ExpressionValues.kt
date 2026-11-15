@@ -2,6 +2,8 @@ package work.nekow.particledrawing.api
 
 import work.nekow.particledrawing.math.Vec3
 import kotlin.math.PI
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 可读表达式门面：构建一次标量表达式，最终仍交给 ParticleGroup.expression 的现有后端。
 // 单位类型只决定生成文本和编译期能否混用；运行期仍然是既有的逐帧标量求值，不新增播放器。
@@ -13,7 +15,7 @@ class Scalar(
 ) {
 
     init {
-        require(constantValue == null || constantValue.isFinite()) { "标量常量必须是有限值" }
+        requireLocalized(constantValue == null || constantValue.isFinite()) { translation("error.number.finite") }
     }
 
     val isConstant: Boolean get() = constantValue != null
@@ -54,7 +56,7 @@ class Scalar(
     companion object {
         @JvmStatic
         fun of(value: Double): Scalar {
-            require(value.isFinite()) { "标量必须是有限值" }
+            requireLocalized(value.isFinite()) { translation("error.number.finite") }
             return Scalar(numberLiteral(value), value)
         }
     }
@@ -71,21 +73,21 @@ operator fun Double.div(value: Scalar): Scalar = Scalar.of(this) / value
 operator fun Scalar.times(length: Length): Length {
     val const = isConstant && length.isConstant()
     val result = constantOrNaN() * length.blocks
-    require(!const || result.isFinite()) { "长度乘法溢出或非有限" }
+    requireLocalized(!const || result.isFinite()) { translation("error.units.length_product") }
     return Length(if (const) result else Double.NaN, "($expr*${length.expr})", const)
 }
 
 operator fun Scalar.times(time: Time): Time {
     val const = isConstant && time.isConstant()
     val result = constantOrNaN() * time.millis
-    require(!const || result.isFinite()) { "时间乘法溢出或非有限" }
+    requireLocalized(!const || result.isFinite()) { translation("error.units.time_product") }
     return Time(if (const) result else Double.NaN, "($expr*${time.expr})", const)
 }
 
 operator fun Scalar.times(angle: Angle): Angle {
     val const = isConstant && angle.isConstant()
     val result = constantOrNaN() * angle.radians
-    require(!const || result.isFinite()) { "角度乘法溢出或非有限" }
+    requireLocalized(!const || result.isFinite()) { translation("error.units.angle_product") }
     return Angle(if (const) result else Double.NaN, "($expr*${angle.expr})", const)
 }
 

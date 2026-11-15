@@ -2,6 +2,9 @@ package work.nekow.particledrawing.animation.script
 
 import work.nekow.particledrawing.api.EntityProp
 import work.nekow.particledrawing.api.WorldProp
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 被动输入 getter（get_*）重写：把调用点换成合成外部变量，并产出实际需要的输入清单。
 // 约束：实体 getter 参数必须是编译期常量；get_entity_pos 仅允许独占赋值形态；未知属性名与未登记句柄在编译期报错。
@@ -53,12 +56,12 @@ object GetterRewriter {
             val arg = raw.trim()
             arg.toDoubleOrNull()?.let { num ->
                 val idx = num.toInt()
-                require(num == idx.toDouble() && idx in 0 until entityCount) {
-                    "实体句柄越界: $raw（注册表容量 $entityCount）"
+                requireLocalized(num == idx.toDouble() && idx in 0 until entityCount) {
+                    translation("error.getter.handle_index", raw, entityCount)
                 }
                 return idx
             }
-            return handles[arg] ?: throw IllegalArgumentException("未知实体句柄 '$arg'（需先 defineEntity 登记）")
+            return handles[arg] ?: throw LocalizedArgumentException(translation("error.getter.handle_unknown", arg))
         }
 
         // 1) pos 整取特判：展开为三分量合成变量
@@ -78,21 +81,21 @@ object GetterRewriter {
             when (kind) {
                 "get_world" -> {
                     val prop = WorldProp.fromWire(propWire)
-                    require(prop != null) {
-                        "未知世界属性 'get_world_$propWire'，可用: ${WorldProp.entries.joinToString("/") { it.wire }}"
+                    requireLocalized(prop != null) {
+                        translation("error.getter.world_property_choices", propWire, WorldProp.entries.joinToString("/") { it.wire })
                     }
-                    require(arg.isEmpty()) { "get_world_$propWire 不接受参数" }
+                    requireLocalized(arg.isEmpty()) { translation("error.getter.world_args", propWire) }
                     alloc(InputKey.World(prop))
                 }
                 else -> {
                     val prop = EntityProp.fromWire(propWire)
-                    require(prop != null) {
-                        "未知实体属性 'get_entity_$propWire'，可用: ${EntityProp.entries.joinToString("/") { it.wire }}"
+                    requireLocalized(prop != null) {
+                        translation("error.getter.entity_property_choices", propWire, EntityProp.entries.joinToString("/") { it.wire })
                     }
-                    require(prop != EntityProp.POS) {
-                        "get_entity_pos 仅支持独占赋值形态: [x,y,z] = get_entity_pos(句柄)"
+                    requireLocalized(prop != EntityProp.POS) {
+                        translation("error.getter.entity_position")
                     }
-                    require(arg.isNotEmpty()) { "get_entity_${prop.wire} 需要实体句柄参数" }
+                    requireLocalized(arg.isNotEmpty()) { translation("error.getter.entity_args", prop.wire) }
                     val idx = handleIndexOf(arg)
                     alloc(InputKey.Entity(idx, prop))
                 }
@@ -111,16 +114,16 @@ object GetterRewriter {
             val arg = m.groupValues[3].trim()
             when (kind) {
                 "get_world" -> {
-                    if (WorldProp.fromWire(propWire) == null) problems.add("未知世界属性 get_world_$propWire")
-                    if (arg.isNotEmpty()) problems.add("get_world_$propWire 不接受参数")
+                    if (WorldProp.fromWire(propWire) == null) problems.add(translation("error.getter.world_property", propWire).resolve())
+                    if (arg.isNotEmpty()) problems.add(translation("error.getter.world_arguments", propWire).resolve())
                 }
                 else -> {
                     if (propWire == EntityProp.POS.wire) {
-                        problems.add("get_entity_pos 仅支持 [x,y,z] = get_entity_pos(句柄) 形态")
+                        problems.add(translation("error.getter.entity_position").resolve())
                     } else if (EntityProp.fromWire(propWire) == null) {
-                        problems.add("未知实体属性 get_entity_$propWire")
+                        problems.add(translation("error.getter.entity_property", propWire).resolve())
                     }
-                    if (arg.isEmpty()) problems.add("get_entity_$propWire 缺少句柄参数")
+                    if (arg.isEmpty()) problems.add(translation("error.getter.entity_handle", propWire).resolve())
                 }
             }
         }

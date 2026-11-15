@@ -13,6 +13,8 @@ import work.nekow.particledrawing.core.network.VariableUpdatePayload
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 服务端动画管理器（权威播放/停止/变量）：只下发动画定义、停止命令与变量更新，播放与渲染全在客户端本地进行。
 @Suppress("unused")
@@ -73,7 +75,7 @@ object ServerAnimationManager {
     /** [play] 的便捷重载：从首个玩家所在的维度推导 dimensionId。 */
     @JvmStatic
     fun play(animation: ParticleAnimation, players: Collection<ServerPlayer>, origin: Vec3): UUID {
-        require(players.isNotEmpty()) { "play 需要至少一个玩家" }
+        requireLocalized(players.isNotEmpty()) { translation("error.animation.players") }
         val level: ServerLevel = PlatformCompat.serverLevelOf(players.first())
         return play(animation, ParticleUtils.dimensionUUID(level), players, origin)
     }

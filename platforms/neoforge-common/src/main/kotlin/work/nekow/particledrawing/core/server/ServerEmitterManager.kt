@@ -13,6 +13,7 @@ import work.nekow.particledrawing.core.network.EmitterUpdatePayload
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 服务端发射器登记表：发射行为全部在客户端发生，这里只在声明时登记、变更时更新，
@@ -71,7 +72,7 @@ object ServerEmitterManager {
               players: Collection<ServerPlayer>): UUID? {
         if (records.size >= MAX_ACTIVE_EMITTERS) {
             LOGGER.error(
-                "发射器数量已达上限（{}），声明被拒绝：发射器不会自动回收，用完要 stop()",
+                translation("log.emitter.capacity").resolve(),
                 MAX_ACTIVE_EMITTERS,
             )
             return null

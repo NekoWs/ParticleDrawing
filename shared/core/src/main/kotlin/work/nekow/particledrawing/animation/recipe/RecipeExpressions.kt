@@ -2,6 +2,11 @@ package work.nekow.particledrawing.animation.recipe
 
 import work.nekow.particledrawing.animation.script.*
 import work.nekow.particledrawing.api.ParticleRecipe
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.localizedError
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.requireNotNullLocalized
+import work.nekow.particledrawing.i18n.translation
 
 /** 复用脚本数学表达式，限制为无赋值、无循环的纯求值；每个输出分量独立求值。 */
 class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
@@ -21,15 +26,15 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
 
     init {
         val names = recipe.variables.keys.toList() + recipe.state.keys.toList() + recipe.lets.keys.toList()
-        require(names.size == names.toSet().size) { "variable、state 和 let 不能重名" }
-        for (name in names) require(NAME.matches(name) && name !in INPUTS && name !in FUNCTIONS &&
+        requireLocalized(names.size == names.toSet().size) { translation("error.expression.name_overlap") }
+        for (name in names) requireLocalized(NAME.matches(name) && name !in INPUTS && name !in FUNCTIONS &&
             name !in VECTOR_OUTPUTS && name !in setOf("PI", "E", "this")
         ) {
-            "变量名 '$name' 无效或与内建名称冲突"
+            translation("error.expression.variable_name", name)
         }
-        require((recipe.variables.values + recipe.state.values).all(Double::isFinite)) { "变量必须是有限数" }
+        requireLocalized((recipe.variables.values + recipe.state.values).all(Double::isFinite)) { translation("error.expression.variable_value") }
         val outputs = ATTRIBUTES + VECTOR_OUTPUTS.keys + recipe.state.keys
-        for (name in recipe.birth.keys + recipe.motion.keys) require(name in outputs) { "不可写属性 '$name'" }
+        for (name in recipe.birth.keys + recipe.motion.keys) requireLocalized(name in outputs) { translation("error.expression.read_only", name) }
         val known = (INPUTS + recipe.variables.keys + recipe.state.keys).toMutableSet()
         for ((name, expr) in recipe.lets) { validate(expr, known); known += name }
         for (expr in recipe.birth.values + recipe.motion.values + listOf(recipe.where, recipe.kill)) validate(expr, known)
@@ -103,7 +108,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
 
     /** 把 [prepareAnchor] 之后求出的偏移写进 out[0..2]。 */
     fun orbitInto(out: DoubleArray) {
-        val runner = requireNotNull(orbit) { "没有锚点偏移公式" }
+        val runner = requireNotNullLocalized(orbit) { translation("error.expression.anchor_formula") }
         val v = runner.evalAny(ctx)
         for (i in 0..2) out[i] = component(v, i, "orbit")
     }
@@ -137,7 +142,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
 
     private fun buildFast(recipe: ParticleRecipe): RecipeFast? {
         val lets = ArrayList<Pair<String, Node>>(recipe.lets.size)
-        for ((name, expr) in recipe.lets) lets += name to (parseExpression(expr) ?: return null)
+        for ((name, expr) in recipe.lets) lets += name to parseExpression(expr)
 
         val birthAssigns = ArrayList(lets)
         val birthConds = HashSet<String>()
@@ -146,7 +151,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
 
         // 每刻：先算 kill（看的是推进前的状态），再算 motion
         val tickAssigns = ArrayList(lets)
-        tickAssigns += KILL_TEMP to (parseExpression(recipe.kill) ?: return null)
+        tickAssigns += KILL_TEMP to parseExpression(recipe.kill)
         val tickConds = HashSet<String>()
         tickConds += KILL_TEMP
         if (!appendOutputs(tickAssigns, recipe.motion, tickConds)) return null
@@ -156,8 +161,8 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
 
         // 出生后的筛选与销毁（看的是出生后的状态）
         val checkAssigns = ArrayList(lets)
-        checkAssigns += WHERE_TEMP to (parseExpression(recipe.where) ?: return null)
-        checkAssigns += KILL_TEMP to (parseExpression(recipe.kill) ?: return null)
+        checkAssigns += WHERE_TEMP to parseExpression(recipe.where)
+        checkAssigns += KILL_TEMP to parseExpression(recipe.kill)
         val checkConds = setOf(WHERE_TEMP, KILL_TEMP)
         val check = compileRegisterCode(
             checkAssigns,
@@ -200,7 +205,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
             commits += target to VarNode(temp, 0, 0)
         }
         for ((name, expr) in outputs) {
-            val node = parseExpression(expr) ?: return false
+            val node = parseExpression(expr)
             val vector = VECTOR_OUTPUTS[name]
             if (vector == null) {
                 stage(name, node)
@@ -234,7 +239,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
                 out += OutputGroup(arrayOf(name), intArrayOf(0), compile(expr, name == "glow"))
             } else {
                 for ((component, _) in components) {
-                    require(component !in entries) { "$stage 不能同时写 '$name' 和 '$component'" }
+                    requireLocalized(component !in entries) { translation("error.expression.output_conflict", stage, name, component) }
                 }
                 out += OutputGroup(
                     components.map { it.first }.toTypedArray(),
@@ -255,16 +260,16 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
             is List<*> -> value.getOrNull(index) as? Double
             else -> null
         }
-        return requireNotNull(v) { "输出 '$name' 的第 $index 个分量取不到：右侧不是够长的向量或数组" }
+        return requireNotNullLocalized(v) { translation("error.expression.component", name, index) }
     }
 
     private fun compile(expr: String, condition: Boolean): ScriptRuntime.ExpressionRunner {
-        require(expr.isNotBlank() && expr.length <= ParticleRecipe.MAX_EXPRESSION) { "公式不能为空，最多 ${ParticleRecipe.MAX_EXPRESSION} 字符" }
+        requireLocalized(expr.isNotBlank() && expr.length <= ParticleRecipe.MAX_EXPRESSION) { translation("error.expression.formula_length", ParticleRecipe.MAX_EXPRESSION) }
         return ScriptRuntime.ExpressionRunner(if (condition) "($expr) ? 1 : 0" else expr)
     }
 
     private fun finite(value: Double): Double {
-        require(value.isFinite()) { "粒子公式产生了非有限数" }
+        requireLocalized(value.isFinite()) { translation("error.expression.nonfinite") }
         return value
     }
 
@@ -280,7 +285,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
             is Boolean -> true
             else -> false
         }
-        require(ok) { "let '$name' 只能是有限数值、布尔、向量或矩阵" }
+        requireLocalized(ok) { translation("error.expression.let_type", name) }
         return value as Any
     }
 
@@ -288,7 +293,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
         fun visit(node: Node) {
             when (node) {
                 is NumNode, is BoolNode -> Unit
-                is VarNode -> require(node.name in known) { "未知变量 '${node.name}'" }
+                is VarNode -> requireLocalized(node.name in known) { translation("error.expression.unknown_variable", node.name) }
                 is UnaryNode -> visit(node.operand)
                 is BinaryNode -> { visit(node.left); visit(node.right) }
                 is TernaryNode -> { visit(node.cond); visit(node.thenExpr); visit(node.elseExpr) }
@@ -298,11 +303,11 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
                 is ArrayNode -> node.items.forEach(::visit)
                 is CallNode -> {
                     val callee = node.callee as? VarNode
-                    require(callee != null && callee.name in FUNCTIONS) { "这里只支持数学函数调用" }
+                    requireLocalized(callee != null && callee.name in FUNCTIONS) { translation("error.expression.math_call") }
                     node.args.forEach(::visit)
                 }
-                is MethodNode -> { require(node.method in METHODS) { "不支持方法 '${node.method}'" }; visit(node.obj); node.args.forEach(::visit) }
-                else -> throw IllegalArgumentException("粒子公式只接受数学表达式")
+                is MethodNode -> { requireLocalized(node.method in METHODS) { translation("error.expression.unsupported_method", node.method) }; visit(node.obj); node.args.forEach(::visit) }
+                else -> throw LocalizedArgumentException(translation("error.expression.math_only"))
             }
         }
         visit(parseExpression(expr))
@@ -360,7 +365,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
 
 /** 一颗粒子的数值槽表：名字在编译期定好下标，运行期只做数组下标访问。 */
 class RecipeSlots(val map: Map<String, Int>) {
-    fun slot(name: String): Int = map[name] ?: error("未知字段 '$name'")
+    fun slot(name: String): Int = map[name] ?: localizedError(translation("error.expression.unknown_field", name))
     fun has(name: String): Boolean = name in map
 }
 

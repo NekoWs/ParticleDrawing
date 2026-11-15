@@ -20,6 +20,9 @@ import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
 import java.util.function.Consumer
+import work.nekow.particledrawing.i18n.LocalizedStateException
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 代码构建的粒子动画，可播放或链式操作，Kotlin DSL 与 Java Builder 双入口。
 @Suppress("unused")
@@ -48,7 +51,7 @@ class Animation internal constructor(
      * @param origin 播放原点（世界坐标）
      */
     fun play(players: Collection<ServerPlayer>, origin: Vec3): Animation {
-        require(players.isNotEmpty()) { "play 需要至少一个玩家" }
+        requireLocalized(players.isNotEmpty()) { translation("error.animation.players") }
         val lvl: ServerLevel = PlatformCompat.serverLevelOf(players.first())
         return play(lvl, players, origin)
     }
@@ -345,7 +348,7 @@ class TrackBuilder internal constructor() {
     fun keyframe(ms: Int, value: Number, easing: EasingType): TrackBuilder = keyframe(ms, value.toDouble(), easing)
 
     internal fun build(): AnimTrack =
-        AnimTrack(tpr ?: throw IllegalStateException("track 未设置 pr"), tids, tkeyframes.toList(), tmode)
+        AnimTrack(tpr ?: throw LocalizedStateException(translation("error.animation.track_property_missing")), tids, tkeyframes.toList(), tmode)
 }
 
 @Suppress("unused")

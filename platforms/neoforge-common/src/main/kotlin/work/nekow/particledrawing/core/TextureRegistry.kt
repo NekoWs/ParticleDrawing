@@ -6,6 +6,7 @@ import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.util.HashUtils
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import work.nekow.particledrawing.i18n.translation
 
 /**
  * 程序化贴图登记表：双端共用一份逻辑，不依赖任何客户端/服务端类。
@@ -84,18 +85,18 @@ object TextureRegistry {
     @JvmStatic
     fun register(name: String, pngBytes: ByteArray): Entry? {
         if (!isValidName(name)) {
-            LOGGER.warn("ParticleDrawing: 贴图名非法，已忽略（长度 {}）", name.length)
+            LOGGER.warn(translation("log.texture.invalid_name").resolve(), name.length)
             return null
         }
         if (pngBytes.isEmpty() || pngBytes.size > MAX_BYTES) {
-            LOGGER.warn("ParticleDrawing: 贴图 {} 字节数非法（{}），已忽略", name, pngBytes.size)
+            LOGGER.warn(translation("log.texture.invalid_bytes").resolve(), name, pngBytes.size)
             return null
         }
         val existing = byName[name]
         if (existing != null) {
             val known = existing.bytes
             if (known != null && HashUtils.sha1Hex(known) != HashUtils.sha1Hex(pngBytes)) {
-                LOGGER.warn("ParticleDrawing: 贴图 {} 已登记且内容不同，按第一次的生效", name)
+                LOGGER.warn(translation("log.texture.duplicate").resolve(), name)
             }
             return existing
         }

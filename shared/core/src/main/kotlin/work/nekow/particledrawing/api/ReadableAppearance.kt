@@ -1,6 +1,8 @@
 package work.nekow.particledrawing.api
 
 import work.nekow.particledrawing.light.LightShape
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 
 // 命名外观门面：把“世界尺寸 / 全亮 / 对外照明 / 混合 / 朝向”一次写清，
 // 单颗、批量、Draw 与发射器都还是同一份 ParticleVisual，不新增渲染模型。
@@ -32,8 +34,8 @@ class Light private constructor(
         @JvmStatic
         @JvmOverloads
         fun level(level: Int, intensity: Float = 1f): Light {
-            require(level in 0..15) { "光照等级必须在 0..15" }
-            require(intensity.isFinite() && intensity >= 0f) { "光强乘数必须是非负有限值" }
+            requireLocalized(level in 0..15) { translation("error.light.level") }
+            requireLocalized(intensity.isFinite() && intensity >= 0f) { translation("error.light.intensity") }
             return Light(level, intensity, level > 0)
         }
 
@@ -41,8 +43,8 @@ class Light private constructor(
         @JvmStatic
         @JvmOverloads
         fun only(level: Int, intensity: Float = 1f): Light {
-            require(level in 0..15) { "光照等级必须在 0..15" }
-            require(intensity.isFinite() && intensity >= 0f) { "光强乘数必须是非负有限值" }
+            requireLocalized(level in 0..15) { translation("error.light.level") }
+            requireLocalized(intensity.isFinite() && intensity >= 0f) { translation("error.light.intensity") }
             return Light(level, intensity, true, true)
         }
     }
@@ -81,8 +83,8 @@ class ParticleVisualBuilder {
 
     /** 世界格尺寸；只给宽度时高度同宽。 */
     fun worldSize(width: Length, height: Length = width): ParticleVisualBuilder {
-        width.requirePositive("外观宽度")
-        height.requirePositive("外观高度")
+        width.requirePositive(translation("field.width").resolve())
+        height.requirePositive(translation("field.height").resolve())
         worldWidth = width
         worldHeight = height
         return this
@@ -140,7 +142,7 @@ class ParticleVisualBuilder {
     }
 
     fun build(): ParticleVisual {
-        require(style == null || texture == null) { "style 与 texture 只能选一种" }
+        requireLocalized(style == null || texture == null) { translation("error.visual.style_texture") }
         val visual = ParticleVisual()
         style?.let { visual.style(it) }
         texture?.let { visual.texture(it) }
