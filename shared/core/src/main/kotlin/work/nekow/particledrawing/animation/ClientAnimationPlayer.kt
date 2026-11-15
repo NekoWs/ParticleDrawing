@@ -261,6 +261,8 @@ class ClientAnimationPlayer(
         val objState: ScriptRuntime.ObjectState,
     ) {
         val particles = ArrayList<ParticleHost>()
+        // 一旦进入逐帧同步，清除光源或粒子消失也走同一路径。
+        var frameSyncLight = false
         var spawnSerial = 0
         var cursorMs = 0.0
         var curMs = 0.0
@@ -753,7 +755,8 @@ class ClientAnimationPlayer(
     /** 该派生粒子所属函数对象是否开启帧级同步（false=按 game tick 同步，与普通粒子渲染一致）。 */
     fun isFrameSyncDerived(id: String): Boolean {
         val fx = particleFunction(id) ?: return false
-        return fx.frameSync || fxRuntimes[fx.id]?.objState?.morph != null
+        val runtime = fxRuntimes[fx.id]
+        return fx.frameSync || runtime?.frameSyncLight == true || runtime?.objState?.morph != null
     }
 
     fun stop() { finished = true }
@@ -1115,6 +1118,11 @@ class ClientAnimationPlayer(
             s.lightLevel = host.light.toInt().coerceIn(0, 15)
             s.lightShape = host.lightShape
             s.lightIntensity = host.lightIntensity.toFloat()
+            if (!rt.frameSyncLight && (rt.program.process.isNotEmpty() || rt.program.tick.isNotEmpty()) &&
+                (s.lightShape != null || s.glowing && s.lightLevel > 0 || s.lightIntensity != 1f)
+            ) {
+                rt.frameSyncLight = true
+            }
             s.visible = visible
             // 脚本逐粒子广告牌/自转（billboard=true 时渲染端忽略 spin）
             s.billboard = host.billboard

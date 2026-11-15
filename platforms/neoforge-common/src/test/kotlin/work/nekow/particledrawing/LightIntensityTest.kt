@@ -43,6 +43,18 @@ class LightIntensityTest {
     ).also { it.captureSpawnSize() }
 
     @Test
+    fun `逐帧光源直接使用脚本已采样的位置`() {
+        val rp = particle()
+        rp.setPositionDirect(Vec3(2.0, 4.0, 6.0), snap = true)
+        assertEquals(2.0, rp.interpolatedX(0.25f))
+        assertEquals(4.0, rp.interpolatedY(0.25f))
+        assertEquals(6.0, rp.interpolatedZ(0.25f))
+
+        rp.setPositionDirect(Vec3(6.0, 8.0, 10.0))
+        assertEquals(4.0, rp.interpolatedX(0.5f))
+    }
+
+    @Test
     fun `LIGHT 曲线只出现在光强通道，不改 alpha 与尺寸`() {
         val curve = ParticleLifeCurve.of(
             ParticleCurve.light(CurveKey.at(0, 1f), CurveKey.at(10, 0.25f)),

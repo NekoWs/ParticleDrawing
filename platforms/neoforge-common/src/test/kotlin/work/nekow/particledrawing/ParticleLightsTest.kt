@@ -18,6 +18,16 @@ import kotlin.test.assertTrue
 class ParticleLightsTest {
 
     @Test
+    fun `白光保留原材质颜色`() {
+        val material = 0x92a9cdef.toInt()
+        val weight = 9.45
+        val white = weight * 255
+        assertEquals(material, DynamicLightManager.tintTerrainColor(
+            material, 3, 7.5, weight, white, white, white,
+        ))
+    }
+
+    @Test
     fun `合并亮度保留小数精度和原有天空光`() {
         val packed = 0x00af0040
         assertEquals(0x00af0078, PlatformCompat.lightWithMinimumBlock(packed, 7.5))

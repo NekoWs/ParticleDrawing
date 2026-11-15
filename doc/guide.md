@@ -414,13 +414,36 @@ manager.create().position(p).scale(3f).lifetime(20)
     .spawn()
 ```
 
-### 只发光、不画外观
+### 白光与动态射灯
 
-射灯可在同一份外观上继续设置 `.spotlight(12.0, 35.0, 20.0)`、
+射灯可在同一份外观上设置 `.spotlight(12.0, 35.0, 20.0)`、
 `.lightDirection(0.0, -90.0)` 与 `.lightFalloff(LightFalloff.SMOOTH)`。
-锥角是半角，方向采用世界坐标。粒子移动时光源随之移动，RGB 参与地形照明。
-脚本粒子可以设置 `p.lightShape = [12, 35, 20, 1, 0, -90, "smooth"]`；
-在 `process` 中调整 `p.lightIntensity` 即可连续调光。
+锥角使用半角，方向采用世界坐标。设 `color=#ffffff` 或在脚本里用 `[1, 1, 1, 1]`，
+照明会保留材质原有的颜色，画面仍受原版光图与环境光影响。
+
+脚本可在同一个 `process` 里移动粒子、旋转光轴、调节强度并改变聚焦范围：
+
+```js
+func setup() {
+  this.spawn({ color: [1, 1, 1, 1], scale: 0.16, glow: true, light: 15 })
+}
+
+func process() {
+  let p = this.particles[0]
+  let t = this.time / 1000
+  let pulse = 0.5 + 0.5 * sin(t)
+  let outer = 18 + 25 * pulse
+  p.position = [2 * cos(t), 0, 2 * sin(t)]
+  p.lightIntensity = 0.4 + 0.6 * pulse
+  p.lightShape = [12, outer, outer * 0.6, 1, 45 * t, -55, "smooth"]
+}
+```
+
+`lightShape` 依次为半径、外锥半角、内锥半角、边缘锐度、偏航、俯仰和衰减。
+在编辑器中声明外部变量后也可用变量驱动这些字段，例如用 `/pdraw animation var yaw 90`
+在播放中更新脚本读取的 `yaw`。光源与光束逐帧更新，地形网格的重烘焙请求按 50ms 合并提交。
+
+### 只发光、不画外观
 
 腰灯、宠物饰品这类对象本身已经有物品模型，只需要跟着实体的光。用 `lightOnly(true)` 让粒子
 不提交任何片元，光强只由 `lightLevel`、`lightIntensity` 和 `CurveChannel.LIGHT` 决定，

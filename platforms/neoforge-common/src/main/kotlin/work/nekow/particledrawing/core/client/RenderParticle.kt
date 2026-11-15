@@ -622,14 +622,15 @@ class RenderParticle(
     /** 当前落地位置；形变等外部控制器读取起点用。 */
     fun currentPosition(): Vec3 = pos.cur
 
-    /** 直接设置位置。 */
-    fun setPositionDirect(position: Vec3) {
+    /** 逐帧位置已在脚本里采样，snap 时光照和粒子都使用该位置。 */
+    fun setPositionDirect(position: Vec3, snap: Boolean = false) {
         rotEase.active = false
         transEase.active = false
         offEase.active = false
-        prevX = pos.cur.x
-        prevY = pos.cur.y
-        prevZ = pos.cur.z
+        val previous = if (snap) position else pos.cur
+        prevX = previous.x
+        prevY = previous.y
+        prevZ = previous.z
         pos.cur = position
         pos.tgt = position
         posEase.startMs = -1L

@@ -245,7 +245,7 @@ class ClientParticleEngine {
         trackBuffers.remove(id) // 动画直写接管位置，丢开 track 缓冲
         attachments.remove(id)
         val wasLight = lightsUp(rp)
-        rp.setPositionDirect(pos)
+        rp.setPositionDirect(pos, snap)
         rp.setColorDirect(color)
         if (scaleArray != null) rp.setScaleArrayDirect(scaleArray) else rp.setScaleDirect(scale)
         rp.setGlowing(glowing)

@@ -65,8 +65,9 @@ object DynamicLightManager {
     private const val CELL_BITS = 4
     private const val CELL_MASK = 0x1FFFFF
 
-    /** 每帧最大区块重建数量。 */
-    private const val MAX_REBUILDS_PER_FRAME = 1024
+    /** 地形批次每 50ms 提交一次；光束、实体和粒子取光仍逐帧更新。 */
+    private const val TERRAIN_REFRESH_NANOS = 50_000_000L
+    private const val MAX_REBUILDS_PER_BATCH = 1024
 
     private val TRIPLE_ZERO = Triple(0.0, 0.0, 0.0)
 
@@ -165,11 +166,12 @@ object DynamicLightManager {
      */
     private val lastBaked = HashMap<UUID, BakedState>()
 
-    /** 已排队、还没提交给渲染器的脏 section；跨帧保留，预算用完不丢。 */
+    /** 已排队的旧、新覆盖区；跨帧合并，防止快速扫过时遗漏要清掉的光斑。 */
     private val pendingSections = LinkedHashSet<Long>()
 
     /** [pendingSections] 所属的关卡；换维后旧 section 键不能带到新世界。 */
     private var pendingLevel: ClientLevel? = null
+    private var lastTerrainSubmitNs: Long? = null
 
     internal class LightSource(
         val id: UUID,
@@ -549,15 +551,21 @@ object DynamicLightManager {
         val merged = PlatformCompat.lightWithMinimumBlock(lightmap, brightest)
         if (merged == lightmap) return packVertex(color, lightmap)
         terrainOverrides.increment()
-        // 颜色随新增光占比变化，光斑边缘不会先褪成亮白再变暗。
-        val block = PlatformCompat.lightBlock(lightmap)
+        val tinted = tintTerrainColor(color, PlatformCompat.lightBlock(lightmap), brightest, weight, red, green, blue)
+        return packVertex(tinted, merged)
+    }
+
+    // 颜色随新增光占比变化，光斑边缘不会先褪成亮白再变暗。
+    internal fun tintTerrainColor(
+        color: Int, block: Int, brightest: Double, weight: Double, red: Double, green: Double, blue: Double,
+    ): Int {
         val tint = (brightest - block).coerceAtLeast(0.0) / (brightest + 2.0)
         fun channel(input: Int, total: Double): Int =
             (input * (1.0 - tint * (1.0 - total / (weight * 255.0)))).roundToInt().coerceIn(0, 255)
         val r = channel((color shr 16) and 255, red)
         val g = channel((color shr 8) and 255, green)
         val b = channel(color and 255, blue)
-        return packVertex((color and 0xff000000.toInt()) or (r shl 16) or (g shl 8) or b, merged)
+        return (color and 0xff000000.toInt()) or (r shl 16) or (g shl 8) or b
     }
 
     private fun packVertex(color: Int, lightmap: Int): Long =
@@ -600,15 +608,16 @@ object DynamicLightManager {
         val previous = pendingLevel
         if (previous != null && previous !== level) {
             pendingSections.clear()
+            lastTerrainSubmitNs = null
             lastBaked.clear()
         }
         pendingLevel = level
     }
 
     /**
-     * 把排队的脏 section 交给渲染器，并按帧限流。
+     * 把排队的脏 section 按固定间隔分批交给渲染器。
      *
-     * 没提交的条目留在 [pendingSections] 里，下一帧继续；预算耗尽的帧不会把请求丢掉。
+     * 没提交的条目留在 [pendingSections] 里，下一帧继续；预算耗尽时也会保留请求。
      * 换关卡时旧 section 键作废，避免在新世界重建一批无关区块。
      */
     private fun applyPendingSections() {
@@ -618,16 +627,22 @@ object DynamicLightManager {
         if (level == null) {
             pendingSections.clear()
             pendingLevel = null
+            lastTerrainSubmitNs = null
             return
         }
         val previous = pendingLevel
         pendingLevel = level
         if (previous != null && previous !== level) {
             pendingSections.clear()
+            lastTerrainSubmitNs = null
             return
         }
 
-        var budget = MAX_REBUILDS_PER_FRAME
+        val now = System.nanoTime()
+        val last = lastTerrainSubmitNs
+        if (last != null && now - last < TERRAIN_REFRESH_NANOS) return
+        lastTerrainSubmitNs = now
+        var budget = MAX_REBUILDS_PER_BATCH
         val it = pendingSections.iterator()
         while (it.hasNext() && budget > 0) {
             val packed = it.next()
