@@ -1,40 +1,16 @@
 # ParticleDrawing 文档
 
-ParticleDrawing 是面向 [NeoForge](https://neoforged.net/)（Minecraft 26.2 / 26.3）的粒子效果库：播放网页编辑器
-导出的 `.pdrawc` 动画，同时提供 Kotlin / Java API 在代码里绘制与编排粒子。
-
-粒子由服务端创建与持有，客户端本地求值、逐渲染帧渲染。编排动画、寿命曲线、发射器这类声明式能力
-只下发一次，运行期几乎不占带宽。
-
-当前已发布的目标为 NeoForge 26.2 和 26.3。1.21.1 的接入计划见[多版本架构](multiversion.md#接入-1211)。
-
-## 目录
+ParticleDrawing 在 NeoForge 中绘制和编排粒子，也可播放编辑器导出的 `.pdrawc` 动画。
 
 | 文档 | 内容 |
 | --- | --- |
-| [getting-started.md](getting-started.md) | 引入依赖、第一个效果、核心概念 |
-| [guide.md](guide.md) | 绘制形状、编排动画、单粒子、粒子集、发射器、缓动、播放动画、代码构建动画 |
-| [api-reference.md](api-reference.md) | 按包分类的类索引 |
-| [particle-commands.md](particle-commands.md) | 分步配置采样、图片转粒子、出生/运动公式与条件筛选 |
-| [命令函数示例](../examples/commands/README.md) | 数据包目录、版本元数据与可直接运行的示例 |
-| [multiversion.md](multiversion.md) | Java 21 核心、平台构建、类型转换与版本扩展 |
-| [known-issues.md](known-issues.md) | 平台差异与已知限制 |
-| [issues/readable-effect-api.md](issues/readable-effect-api.md) | 可读特效编写接口的设计与验收目标 |
-| [issues/readable-api-migration.md](issues/readable-api-migration.md) | 消费迁移验收：类型化法阵、运行时阶段与已覆盖边界 |
-| [issues/runtime-texture-program-sync.md](issues/runtime-texture-program-sync.md) | 贴图线程与组程序成员可见性修复、复现与验收 |
+| [快速开始](getting-started.md) | 支持的游戏版本、安装、Gradle 依赖和第一个效果 |
+| [Kotlin 与 Java 使用指南](guide.md) | 形状、粒子组、单粒子、粒子集与发射器 |
+| [粒子命令](particle-commands.md) | 命令方块、数据包、组编排、公式采样和图片点阵 |
+| [动画播放与构建](animation.md) | 签名动画、播放控制、时间轴与轨道 |
+| [动态光照](lighting.md) | 点光、射灯、缓动、脚本与光影接入 |
+| [API 参考](api-reference.md) | Kotlin 与 Java 常用类型索引 |
+| [多版本构建](multiversion.md) | 共享核心、版本适配、构建校验与发布 |
+| [已知限制](known-issues.md) | 平台功能差异和渲染、音频限制 |
 
-## 包结构
-
-| 包 | 内容 |
-| --- | --- |
-| `work.nekow.particledrawing.api` | 公开 API：粒子管理器、绘制、粒子组、单粒子句柄、粒子集、发射器、特效、动画构建 |
-| `work.nekow.particledrawing.animation` | `.pdrawc` 读取与验签、播放进度、客户端逐 tick 求值、服务端播放管理 |
-| `work.nekow.particledrawing.math` | 核心向量、数学运算与资源标识 |
-| `work.nekow.particledrawing.animation.script` | 函数对象脚本：词法语法、运行时、标量字节码快路径与表达式回退、音频采样 |
-| `work.nekow.particledrawing.core.client` | 客户端渲染引擎、桥接原版粒子、编排程序解释器、音频播放、贴图缓存 |
-| `work.nekow.particledrawing.core.network` | 全部数据包与编解码 |
-| `work.nekow.particledrawing.core.server` | 服务端权威粒子引擎、调度器、发射器登记、动画文件同步 |
-| `work.nekow.particledrawing.lighting` | 动态光照注入与衰减函数 |
-| `work.nekow.particledrawing.command`、`.config`、`.util` | `/pdraw` 命令、配置、工具函数 |
-
-原版渲染注入（Mixin）在 `platforms/neoforge-common/src/main/java/work/nekow/particledrawing/mixin`。
+数据包目录和可直接运行的函数见[命令函数示例](../examples/commands/README.md)。

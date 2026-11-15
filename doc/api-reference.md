@@ -1,174 +1,62 @@
 # API 参考
 
-按包分类的类索引。`work.nekow.particledrawing.api` 与 `light` 包里的 `LightShape`、`LightFalloff` 是公开 API。其余包属于内部实现，可能随版本改动。
-字段、参数与边界语义写在对应类的 KDoc 里，用法与示例见 [guide.md](guide.md)。
+常用 Kotlin 与 Java 入口位于 `work.nekow.particledrawing.api`。以下按用途索引，参数与重载见对应类的
+KDoc。只在特定包中提供的类型单独注明。代码示例见[使用指南](guide.md)。
 
-核心模型使用 `work.nekow.particledrawing.math.Vec3` 与 `ResourceId`，游戏入口仍接受原生类型。
-模型构造器和位置字段的 JVM 类型已变化，依赖方需要重新编译；转换方法与兼容范围见
-[多版本架构](multiversion.md#类型与原生服务)。`animation` 包横跨核心和平台，
-按名称读取或控制游戏内播放的类位于平台。`.pdrawc` 版本为 18，动画载荷编解码版本为 9，
-NeoForge 载荷注册版本为 19，联机两端需要使用相同的载荷注册版本。
+## 创建与控制
 
-## api：公开 API
-
-| 类 | 作用 |
+| 类型 | 用途 |
 | --- | --- |
-| `ParticleManager` | 维度级入口：创建粒子与粒子组、声明运行时发射器、批量生成 `spawnAll` / `spawnAllDetailed`、批量指令 `trackAll` / `setVelocityAll` / `applyForceAll`、程序化贴图登记 `registerTexture` / `registerBuiltinTextures`；贴图返回 true 只表示逻辑登记已接受，GPU 解码由客户端主线程排队完成 |
-| `ParticleHandle` | 单粒子句柄：移动、速度、力、实体锚点、重着色、缩放、光强、光轴与聚焦缓动、销毁、只读查询 `position()` / `velocity()` |
-| `ParticleHandle.Builder` | 粒子生成参数：位置、颜色、缩放、寿命、外观规格、寿命曲线、首帧插值端点、逐粒子延迟 |
-| `ParticleGroup` | 粒子组与编排动画：轴心绑定、一次性变换、持续运动、变量热更、表达式指令、可更新阶段 `phaseParameter`、完成信号；`add(existing)` 会改挂既有/延迟成员，程序按玩家可见成员投递，迟到成员补挂到同一原起点时间轴 |
-| `ParticleBatch` | 程序化粒子集：成员逐 tick 增删、批量位置/速度/力、条件回收、补齐到 N |
-| `ParticleSpawnSpec` | 批量生成的单颗粒子规格（纯数据，字段与 `Builder` 对应，含出生速度/加速度配对） |
-| `ParticleEmitter` | 运行时发射器的构建器：口径（里程或间隔）、寿命、外观、曲线、抖动 |
-| `EmitterHandle` | 已声明发射器的句柄：改锚点、口径及后续粒子的参数与外观（含光源形状），停止与状态查询 |
-| `ParticleRecipe`、`ParticleSeed` | 可组合的出生样本、出生/运动公式、条件、状态、寿命和外观声明；t 为毫秒，age/life 为刻。maxAlive 默认 4096，满额时等待空位；完整点阵需足够容量和寿命 |
-| `ParticleSampling` | 参数数量、参数范围与空间网格采样；只提供样本，不预设效果 |
-| `ParticleImageSampler` | CPU 读取单帧图片并采样为独立粒子，保留颜色/透明度；可配置像素步幅、世界间距、平面与 alpha 阈值 |
-| `RecipeAnchor` | 固定或实体 UUID 锚点，偏移与局部坐标系可配置 |
-| `ParticleSources`、`ParticleSourceHandle` | 以声明启动循环或单轮生成；更新声明、锚点、条件修改/删除、停止出生或立即移除 |
-| `Anchor` | 发射与特效锚点：`Fixed` / `Entity` / `Movable`，`Orient` 决定整组是否随运动方向转向 |
-| `ParticleCurve`、`CurveKey`、`CurveChannel` | 逐粒子寿命曲线的单通道关键帧（透明度、尺寸、RGB、对外光强），同一通道多条相乘 |
-| `ParticleLifeCurve` | 一条粒子的全部寿命曲线，随生成包下发 |
-| `ParticleVisual` | 逐粒子外观规格：贴图、子矩形 UV、各向异性尺寸、朝向、加法混合、免光照、向外照明、光强乘数、只发光不画外观 `lightOnly`、光源形状 `spotlight` / `lightDirection` / `lightFalloff` |
-| `LightShape`、`LightFalloff` | 可复用的点光与射灯配置（`work.nekow.particledrawing.light` 包）。`point` / `spot` 创建形状，`withDirection` / `withFocus` / `withFalloff` 返回改过的副本。单颗、批量、发射器与 `Light.withShape` 共用。 |
-| `ParticleLights`、`LightSample` | 动态光源的只读入口。`snapshot()` / `snapshotInto(out)` 给出当帧光源的插值坐标、有效强度、照射半径、形状与 RGB，供第三方接入光影包。 |
-| `ParticleStyle` | 内置外观形状：`SQUARE`、`SOFT_DOT`、`LINE`，客户端按需生成 16px 贴图 |
-| `ParticleTextures` | `of(名称)` 按年龄/寿命播放资源贴图序列，`of(名称, 帧号)` 指定静态帧，`animated(名称, FPS)` 固定帧率循环；`ParticleVisual.particleTexture` 与可读外观 Builder 共用 |
-| `ParticleGroup.expressionLocal` | 公式输出相对当前组锚点，支持实体跟随与局部朝向；类型化 `position.local` 和 Java `positionLocal` 复用同一后端 |
-| `Draw`、`ColorSource`、`Draw.Axis` | 静态形状库与形状参数化颜色来源（固定色、双色渐变、彩虹、lambda） |
-| `Color` | 不可变 RGBA 颜色与工厂方法 |
-| `Animation` | 代码构建的动画：`create`（Kotlin DSL）/ `builder`（Java Builder）构建，`play` / `stop` / `updateVariable` / `isActive` 控制播放 |
-| `GetterProps`（`EntityProp` / `WorldProp`） | 表达式被动输入的封闭词表 |
-| `Effects`、`EffectHandle` | 服务端特效门面：注册、按锚点播放、锚点与播放时钟控制、参数回调 |
-| `ClientEffects`、`ClientEffectHandle` | 纯客户端本地特效播放 |
-| `EffectOptions`、`EffectRegistry`、`EffectCallbacks` | 特效播放选项、特效注册表、回调与变量存储 |
-| `GroupClock`、`LifeCurveSugar` | 组时间轴换算与曲线糖的换算（内部使用） |
-| `Time`、`Length`、`Angle`、`AngularSpeed`、`Velocity`、`Acceleration`、`Lifetime` | 显式单位值；Kotlin `6.ticks` / `1.2.blocks`，Java 同名静态工厂 |
-| `Ease` | 公开缓动入口，映射既有 `EasingType` |
-| `particleVisual`、`ParticleVisualBuilder`、`ParticleAppearance`、`Light`、`Blend`、`Facing` | 命名外观 DSL/Builder：世界尺寸、全亮、对外照明、混合与朝向 |
-| `lifeCurve`、`ParticleLifeCurveBuilder`、`sizeEnvelope`、`fadeOut`、`LifeCurves` | 命名寿命曲线 DSL 与常用包络糖 |
-| `Scalar`、`ParameterInfo`、`ExpressionFrame`、`ExpressionMember`、`ExpressionPosition`、`Phase`、`PhaseParameter`、`TypedExpression` | 类型化组标量表达式、参数/实体输入、固定/可更新阶段、确定性随机、命名局部表达式与调试导出 |
-| `Vector`、`Direction`、`vec3`、`Angles`、`Scalars` | 表达式向量/方向、黄金角、`pow` 与 Java 标量数学入口 |
-| `ExpressionTextBuilder`、`Expressions` | Java 友好的位置/缩放/颜色表达式文本构建器 |
-| `Frames`、`CoordinateFrame`、`PolygonSpec`、`Shape`、`ShapePart`、`PartSelector`、`Shapes` | 坐标基、正多边形轮廓、命名部件与形状结果 |
-| `ExitSpec`、`ParticleSizeExit`、`ExitState`、`Exits` | 逐成员片元尺寸退场、保留运动、客户端尺寸端点回报、完成清理与状态 |
-| `SpawnResult`、`SpawnRejection`、`ParticleManager.spawnAllDetailed`、`ParticleBatch.spawnAllDetailed` | 批量生成的原始下标结果、拒绝原因与自动分段 |
+| `ParticleManager` | 按维度创建粒子、粒子组和发射器，登记并同步贴图 |
+| `ParticleHandle.Builder`、`ParticleHandle` | 设置出生规格和延迟，运行时控制单颗粒子 |
+| `ParticleGroup` | 绑定轴心，录制组动画、公式、变量和退场 |
+| `ParticleBatch` | 管理可逐刻增删的粒子集，批量移动、施力和清理 |
+| `ParticleSpawnSpec`、`SpawnResult`、`SpawnRejection` | 描述出生属性与初始运动，读取 `spawnAllDetailed` 按输入下标返回的结果 |
+| `Draw`、`ColorSource`、`Color` | 绘制预设或参数形状，指定 RGBA、渐变、彩虹或自定义颜色函数 |
+| `Anchor`、`Frames`、`CoordinateFrame` | 描述固定、实体和可移动锚点及形状坐标基 |
+| `PolygonSpec`、`Shape`、`ShapePart`、`PartSelector`、`Shapes` | 创建正多边形和命名部件，按部件选择成员 |
 
-## animation：动画文件与播放
+## 外观与光照
 
-| 类 | 作用 |
+| 类型 | 用途 |
 | --- | --- |
-| `AnimationLoader` | 列出并读取 `<gameDir>/animations/` 下的 `.pdrawc`，读取时验签，缺失或签名无效时返回 null |
-| `PdrawcReader` | `.pdrawc` 解析与 Ed25519 验签 |
-| `ParticleAnimation` | 动画数据模型：粒子、轨道、组、函数对象、贴图、UV、摄像机 |
-| `FunctionObject`、`FunctionVar`、`Entrance` | 函数对象、其变量与入场预设 |
-| `AnimParticle`、`AnimTrack`、`AnimKeyframe`、`AnimCamera` | 粒子、轨道、关键帧与摄像机 |
-| `TrackPr` | 轨道分量枚举，声明顺序即 `.pdrawc` 序号（共 31 个，含音频对象的播放属性） |
-| `TextObject`、`TextChar` | 文字对象源记录，供脚本通过 `this.get(id)` 只读访问 |
-| `AudioAsset` | 音频资产：原始字节、量化特征列与拍点表 |
-| `UvData` | UV 参数模型：静态、填充、flipbook 动画三种模式 |
-| `AnimationProgress` | 服务端权威播放进度公式，两端共用 |
-| `PlaybackClock` | 特效播放时钟，支持 seek、暂停与变速 |
-| `ProcessClock` | 渲染帧 process 时刻的单调游标 |
-| `ClientAnimationPlayer` | 客户端逐 tick 求值器：轨道插值、函数对象 `setup` / `tick` / `process`、循环回卷；派生粒子出生帧即具备继承的 UV |
-| `ServerAnimationManager` | 服务端动画播放管理：按名或字节播放、停止、变量更新、活跃查询 |
-| `ServerEffectManager` | 服务端特效播放管理：可移动锚点、播放时钟、参数与完成回调 |
+| `ParticleVisual`、`ParticleStyle`、`ParticleTextures` | 设置尺寸、朝向、混合方式、贴图及换帧 |
+| `particleVisual`、`ParticleAppearance`、`Light`、`Blend`、`Facing` | Kotlin DSL 和 Java Builder，分别描述全亮与对外照明 |
+| `ParticleCurve`、`CurveKey`、`CurveChannel`、`ParticleLifeCurve` | 逐粒子的外观和光强寿命曲线 |
+| `lifeCurve`、`LifeCurves` | 用 DSL 或 Java 入口创建关键帧和淡出包络 |
+| `LightShape`、`LightFalloff` | `work.nekow.particledrawing.light` 中的点光、射灯和衰减配置 |
+| `ParticleLights`、`LightSample` | 在客户端读取光源位置、亮度、形状和 RGB |
 
-## animation.script：函数对象脚本
+[光照用法](lighting.md) · [贴图用法](guide.md#贴图登记与下发)
 
-| 类 | 作用 |
+## 采样与运行时生成
+
+| 类型 | 用途 |
 | --- | --- |
-| `ScriptParser` | 脚本词法与语法分析，产出 AST |
-| `ScriptRuntime` | 脚本运行时：`setup` / `tick` / `process` 三阶段、粒子句柄读写、内建函数表 |
-| `ScriptValues` | 脚本值类型与 JS 语义辅助（数值截断、取整、钳制） |
-| `ScriptExpr` | 变量关键帧插值与标量求值兼容入口（解析统一走 `ScriptRuntime`） |
-| `ScalarProgram` | 纯标量 AST 的字节码编译与执行快路径 |
-| `ExpressionProgram` | 程序表达式后端：纯标量优先走快路径，向量/矩阵/高级函数回退完整解释器 |
-| `Getters` | `get_entity_*` / `get_world_*` 被动输入的重写与静态检查 |
-| `ScriptNoise` | 确定性 PRNG 与 3D Simplex 噪声 |
-| `ScriptFastMath` | 快速标量数学近似，仅在函数对象开启 `fastMath` 时使用 |
-| `ScriptAudio` | 音频特征查表（频带、响度、起音、节拍） |
-| `ScriptWavePcm` | 采样级 PCM 取值：WAV 按字节直读、OGG 按窗口解码 |
+| `ParticleEmitter`、`EmitterHandle` | 按距离或间隔沿锚点生成粒子，更新参数或停止生成 |
+| `ParticleSampling`、`ParticleImageSampler`、`ParticleSeed` | 计数、范围、网格和图片样本 |
+| `ParticleRecipe`、`RecipeAnchor` | 用样本、公式、筛选和锚点声明出生与运动 |
+| `ParticleSources`、`ParticleSourceHandle` | 启动单轮或持续生成，修改现有实例并停止或移除 |
 
-## core.client：客户端渲染
+## 单位、表达式与退场
 
-| 类 | 作用 |
+| 类型 | 用途 |
 | --- | --- |
-| `ClientParticleEngine` | 客户端粒子引擎：网络包落地点、本地动画直写点、发射器落地点、只读逐粒子观察、缩放缓动逐帧采样 |
-| `ParticleSample` | `forEachParticleSample` 回调里的只读快照：id、位置、实际 alpha/尺寸、全亮与光照等级 |
-| `RenderParticle` | 渲染粒子状态：缓动、速度与力积分、欧拉旋转、寿命曲线乘数、resize 基准尺寸 |
-| `BridgeParticle` | 桥接原版粒子系统的渲染代理，按 partialTick 插值位置、尺寸与颜色；26.3 的透明贴图与加色粒子分别提供对应 OIT 管线 |
-| `BatchedQuadParticleGroup`、`ParticleGroupRegistrar` | 自定义粒子分组，绕过原版每组的四边形上限 |
-| `TrackBuffer` | track 指令的逐 tick 插值缓冲，缺包时保持端点 |
-| `ParticleTakeover` | 粒子的位置接管与外观接管标记 |
-| `LightCachePolicy` | 光照缓存的失效判定（动态光版本、方块变化、分摊超时） |
-| `ResolvedVisual`、`AppearanceBlend` | 外观规格的客户端解析与外观混合 |
-| `TextureCache` | 贴图缓存：PNG 字节与内置形状像素到 `DynamicTexture` |
-| `ClientAnimationManager` | 客户端动画播放管理：求值结果差分同步、音频同步、摄像机查询 |
-| `ClientAnimationProgramManager` | 编排动画程序解释器：糖指令模式与表达式模式 |
-| `ProgramFrame` | 糖指令的帧计算：旋转角度账本与缩放倍率账本 |
-| `ClientParticleSources` | 每游戏刻推进命令/API 采样源与逐粒子公式，按容量、寿命和筛选回收 |
-| `ClientEmitterManager` | 客户端发射器运行时：按渲染帧推进并按需生成粒子 |
-| `EmitterAdvance`、`EmitterSampling` | 发射推进的纯逻辑与逐颗抖动的确定性采样 |
-| `AudioStreamPlayer` | 游戏内音频播放：OpenAL 队列流式、OGG/WAV 解码、采样级 seek、漂移校正 |
-| `CameraController` | `/pdraw animation camera` 的摄像机预览状态 |
-| `EffectAnchorResolver` | 客户端锚点解析：位置、旋转四元数与整体缩放 |
-| `ParticleRenderHandler` | 客户端 tick 与渲染帧事件处理 |
-| `ClientAnimationSyncManager`、`ClientTextureSyncManager` | 配置阶段文件接收与程序化贴图的主线程解码队列 |
-| `AdditiveParticlePipeline`、`OrientedQuadRenderState` | 加法混合渲染管线与非广告牌四边形的朝向处理 |
+| `Time`、`Length`、`Angle`、`AngularSpeed`、`Velocity`、`Acceleration`、`Lifetime`、`Ease` | 带单位的参数、时间与缓动 |
+| `Scalar`、`Vector`、`Direction`、`ExpressionFrame`、`ExpressionMember`、`ExpressionPosition` | Kotlin 类型化组表达式，描述时间、索引、坐标和输出属性 |
+| `ParameterInfo`、`TypedExpression`、`Phase`、`PhaseParameter` | 表达式参数、固定与可更新运行阶段 |
+| `Getters`、`GetterProps`、`EntityProp`、`WorldProp` | 组公式可读取的实体与世界属性。`Getters` 位于 `animation.script` |
+| `vec3`、`Angles`、`Scalars`、`Expressions`、`ExpressionTextBuilder` | 向量和标量运算，以及 Java 表达式编写入口 |
+| `ExitSpec`、`ParticleSizeExit`、`ExitState`、`Exits` | 保留运动的逐粒子尺寸退场和完成清理 |
 
-## core.network：网络层
+## 动画与特效
 
-| 类 | 作用 |
+| 类型 | 用途 |
 | --- | --- |
-| `NetworkHandler` | 注册全部数据包 |
-| `ClientPayloadHandler`、`ServerPayloadHandler` | 客户端与服务端的数据包分发 |
-| `ParticleSpawnPayload`、`ParticleSpawnBatchPayload` | 单颗与批量生成（批量一次最多 256 条） |
-| `ParticleUpdatePayload`、`ParticleDestroyPayload`、`ParticleLightLevelPayload` | 增量更新、销毁与光照等级 |
-| `ParticleVelocityPayload`、`ParticleVelocityBatchPayload`、`ParticleForcePayload`、`ParticleForceBatchPayload` | 速度与加速度（力）指令 |
-| `ParticleTrackPayload`、`ParticleTrackBatchPayload`、`ParticleSetPositionPayload`、`ParticleTranslatePayload`、`ParticleRotationPayload` | 直设位置、平移与绕轴旋转 |
-| `ParticleAttachPayload` | 实体锚点：只在挂载时下发一次 |
-| `ParticleTexturePayload` | 程序化贴图内容分块 |
-| `ParticleRecipePayload`、`RecipeCodec` | 分步配置粒子源的启动、更新、筛选与停止协议 |
-| `EmitterPayload` | 发射器声明、更新与停止，含参数编解码 `EmitterParams` / `EmitterParamsCodec` |
-| `AnimationProgramPayload` | 编排程序下发、追加、变量热更、变量渐变与停止 |
-| `ProgramAnchorPayload`、`ProgramCompletePayload` | 移动轴心样本与完成信号 |
-| `PlayAnimationPayload`、`PlayAnimationDataPayload`、`StopAnimationPayload`、`VariableUpdatePayload` | 动画播放控制 |
-| `PlayEffectPayload`、`EffectDataPayload`、`EffectRequestPayload`、`AnchorUpdateBatchPayload`、`ClockSyncPayload` | 特效播放、锚点同步与时钟同步 |
-| `ParticleExitWatchPayload`、`ParticleExitCompletePayload` | 尺寸退场观察与客户端完成回报（版本化，支持重定向） |
-| `AnimationSyncBeginPayload`、`AnimationSyncRequestPayload`、`AnimationSyncFilePayload`、`AnimationSyncDonePayload` | 配置阶段动画文件同步 |
-| `BatchChunking`、`ParticleVisualCodec`、`ParticleCurveCodec`、`ParticleAnimationCodec`、`StreamCodecs` | 拆包与编解码工具 |
+| `Animation` | 用 Kotlin DSL 或 Java Builder 构建并播放带轨道的动画 |
+| `Effects`、`EffectHandle`、`EffectOptions` | 服务端注册、播放、锚定、控制时间轴和修改参数 |
+| `ClientEffects`、`ClientEffectHandle` | 客户端本地播放与控制 |
+| `AnimationLoader`、`ServerAnimationManager` | 在 `animation` 包中按文件名加载、验签和播放 |
+| `ParticleAnimation`、`TrackPr`、`UvData` | `animation` 包中的动画模型、轨道分量和贴图取景规格 |
 
-批量载荷的单包上限由编解码两端共同约束，超限构造即报错：速度、位置、力、退场观察、销毁与锚点更新为 512 条，
-批量生成为 256 条；发送端先经 `BatchChunking` 拆段，公开 API 对成员数没有上限。
-
-## core.server：服务端权威
-
-| 类 | 作用 |
-| --- | --- |
-| `ServerParticleEngine` | 每维度一个的权威粒子引擎：生成、更新、销毁与可见性同步 |
-| `ParticleData`、`ParticleGroupData` | 粒子运行时数据与组成员、轴心 |
-| `ParticleVisibilityManager` | 按视距判定玩家是否可见 |
-| `ServerParticleSources` | 粒子源的服务端实例登记、同步、条件操作与回收 |
-| `ServerEmitterManager` | 发射器登记表：声明、分档更新，以及后进服与走进范围玩家的补发 |
-| `ServerProgramCompletion` | 编排动画完成信号的登记表，含兜底销毁 |
-| `AnimationScheduler` | 服务端延迟任务队列（stagger 入场、定时销毁等） |
-| `AnimationSyncService`、`AnimationSyncConfigTask` | 动画文件同步的纯逻辑与配置阶段任务 |
-| `ServerParticleHandler` | 服务端 tick、卸载、切维度、重生与登录事件 |
-| `TextureSyncService`、`TextureRegistry` | 程序化贴图的登记、广播与进服补发 |
-| `ParticleTextureReloadListener` | 资源包重载后失效 `particle:` 引用缓存，既有粒子按新资源重新解析 |
-
-## lighting、command、config、util、mixin
-
-| 类 | 作用 |
-| --- | --- |
-| `DynamicLightManager` | 动态光照：向光图坐标注入粒子光照，按「已请求重建」基准累计位移并排队重烘焙。没有发光粒子、也没有待重建区块时整段跳过；每帧的候选列表与比较器复用，不逐帧分配。另提供当帧只读快照 `lightSnapshot()` / `snapshotInto()` |
-| `LightAttenuation` | 光照衰减函数：线性、反平方、平滑步进等预设 |
-| `ParticleDrawCommands` | `/pdraw` 根命令；动画集中在 `animation`，贴图重载在 `texture reload` |
-| `ParticleDrawParticleCommands` | `particle group/add/program`：命名组、多图元绘制、固定/实体锚点、组动画、变量与逐粒子表达式 |
-| `ParticleRecipeCommands` | `particle emitter` 的命名采样、图片、公式、变量、锚点与生命周期配置 |
-| `ParticleCommandOptionParser` | `particle add` 的严格 `key=value` 参数解析，覆盖颜色、外观、寿命曲线和物理参数 |
-| `CommandParticleGroups` | 按维度保存命令创建的运行期组，并协调错峰成员与后续编排命令 |
-| `ParticleDrawingConfig` | 服务端与客户端配置项 |
-| `ParticleUtils`、`HashUtils`、`Vec3Math`、`VisualMath`、`AttachMath`、`BuiltinTextures` | 维度 UUID、哈希、向量与视觉数学、实体锚点数学、内置形状贴图 |
-| `BrightnessGetterMixin`、`CameraMixin`、`EntityRendererMixin` | 方块亮度合并动态光、摄像机预览覆盖、实体光照计入动态光 |
+[播放与构建动画](animation.md) · [核心与平台类型转换](multiversion.md#类型与原生服务)

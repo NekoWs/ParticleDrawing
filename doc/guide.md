@@ -1,22 +1,15 @@
-# 使用指南
+# Kotlin 与 Java 使用指南
 
-从绘制形状到播放动画文件的完整用法。当前 26.2 和 26.3 适配器共用这里的命令、API 和动画格式。
-依赖引入见[快速开始](getting-started.md)，类索引见 [API 参考](api-reference.md)，平台差异见[多版本架构](multiversion.md)。
-
-## 目录
+用代码创建粒子、编排粒子组和运行发射器。依赖配置见[快速开始](getting-started.md)，
+类型索引见 [API 参考](api-reference.md)。
 
 - [绘制形状](#绘制形状)
-- [渐变着色](#渐变着色)
 - [编排式动画](#编排式动画)
 - [单粒子](#单粒子)
 - [批量生成与粒子集](#批量生成与粒子集)
 - [运行时发射器](#运行时发射器)
-- [缓动](#缓动)
-- [命令绘制与数据包](#命令绘制与数据包)
-- [播放动画文件](#播放动画文件)
-- [代码构建动画](#代码构建动画)
-- [示例](#示例)
-- [注意事项](#注意事项)
+- [单位、表达式与退场](#单位表达式与退场)
+- [动画文件与轨道](animation.md) · [动态光照](lighting.md) · [游戏命令](particle-commands.md)
 
 ## 绘制形状
 
@@ -246,14 +239,7 @@ group.onAnimationComplete { /* 账本走完时回调 */ }
 缓动到点与上报之间隔了一 tick 的桥接余量，客户端会把刚走完的终点留到上报那一次。服务端排的兜底任务
 带登记版本，账本往后挪（追加指令、缓动重定向、立即赋值取消缓动）时会重排，旧任务自动失效。
 
-### 视觉通道按渲染帧插值
-
-组级尺寸（`scaleTo` / `scaleBy` / 表达式 `sc`）、颜色与透明度都在渲染帧上按 partialTick 插值：位置由
-桥接粒子的 `xo/x` 扫掠，尺寸与颜色由 `BridgeParticle` 记下的上一 tick 到本 tick 两个端点插值。程序本身
-仍按 game tick 求值，只是写渲染层那一步做了插值。
-
-生成包给的透明度与尺寸只是占位：出生后第一次真正同步（表达式首帧、寿命曲线首帧、即时改色改尺寸）会把
-两端原子写成新值。首次接管与显式瞬移（轴心跳变、断流恢复）同样对位置、宽高、颜色与透明度一起原子落地。
+位置、尺寸、颜色和透明度按渲染帧插值。首帧接管和显式瞬移直接应用新的位置与外观。
 
 ### 持续运动
 
@@ -275,8 +261,8 @@ group.pulse(peakRatio = 1.8f, halfPeriodTicks = 20, cycles = 3)
 ### 实体通道与公式
 
 编排动画以客户端自驱程序执行：链式调用录制为指令流一次性下发，客户端按服务端时钟锚点本地求值并直写
-渲染，持续动画在运行期零带宽。程序载荷同时带“本次下发时的服务端时刻”和“原程序起点”；迟到/重入玩家
-首次收到时按原起点补上已经过的相位，不会从零重播。
+渲染。程序仅投递给追踪组成员的玩家，成员序号 `i/n` 以完整组为准。
+迟到或重新进入视距的玩家沿原始程序时间轴继续播放。
 
 ```kotlin
 // 把实体以名字写进程序注册表，公式里即可被动取值
@@ -380,7 +366,7 @@ circle.fadeIn(20)
 
 ## 单粒子
 
-需要精确控制某一颗粒子时用流式 Builder：
+`ParticleManager.create()` 返回生成规格 Builder。`spawn()` 因维度容量不足而被拒绝时返回 `null`。
 
 ```kotlin
 val handle = manager.create()
@@ -388,9 +374,6 @@ val handle = manager.create()
     .color(Color.ofHsb(0.6f, 0.9f, 0.9f))
     .scale(0.4f)
     .lifetime(-1)                  // -1 = 永存
-    .glowing(true)
-    .lightLevel(15)                // 向外发出光照
-    .lightIntensity(0.6f)          // 静态光强乘数（只影响动态光照）
     .offsetFromPivot(dx, dy, dz)   // 相对组轴心的偏移
     .spawn() ?: return             // 达到维度上限时为 null
 
@@ -398,146 +381,18 @@ handle.move(target, 20, EasingType.EASE_OUT)
 handle.recolor(Color.WHITE, 10, EasingType.LINEAR)
 handle.resize(2f, 10, EasingType.LINEAR)
 handle.setVelocity(Vec3(0.0, 0.1, 0.0))
-handle.lightLevel(7)
-handle.lightIntensity(0.4f, 8, EasingType.EASE_IN_OUT) // 8t 内从当前实际亮度接续到 0.4
 handle.moveInstant(pos)
 handle.remove()
 ```
 
-光强是动态光照的独立通道，不改变片元透明度与全亮标志。最终亮度会乘上透明度、尺寸与
-出生/退场包络：组 `fadeOut`、`scaleTo(0)`、表达式 `presence` 都会让照明连续收束，不需要
-为了控光把造型改成半透明。要让光强随时间走自己的曲线，用 `CurveChannel.LIGHT`：
-```kotlin
-manager.create().position(p).scale(3f).lifetime(20)
-    .glowing(true).lightLevel(15)
-    .curve(ParticleCurve.light(CurveKey.at(0, 1f), CurveKey.at(20, 0f)))
-    .spawn()
-```
+光源设置与缓动见[动态光照](lighting.md)。
 
-### 白光与动态射灯
-
-调用 `manager.create().position(pos).spotlight(12.0, 35.0).spawn()` 就可以生成一盏
-白色射灯，默认垂直朝下。半径和角度参数为 `Double`。
-`lightOnly(true)` 隐藏灯的粒子外观。返回的句柄可以直接更新当前光源。
-
-```java
-ParticleHandle lamp = manager.create().position(pos)
-    .spotlight(12, 35).lightDirection(25, -35).lightOnly(true).spawn();
-if (lamp != null) {
-    lamp.lightDirection(70, -45, 20, EasingType.EASE_IN_OUT)
-        .lightFocus(24, 20, EasingType.EASE_OUT)
-        .lightIntensity(0.4f, 8);
-    lamp.move(target, 8, EasingType.LINEAR);
-}
-```
-
-在单颗、批量或发射器间复用配置时，用 `work.nekow.particledrawing.light.LightShape`。
-需要立即替换整份形状时，可先组合再用一次 `lightShape(shape)` 提交。
-
-```kotlin
-val beam = LightShape.spot(12.0, 35.0, 20.0, 1.5)
-    .withDirection(25.0, -35.0)
-    .withFalloff(LightFalloff.SMOOTH)
-
-val lamp = manager.create().position(pos).lightShape(beam).lightOnly(true).spawn() ?: return
-val batchSpec = ParticleSpawnSpec().position(pos).lightShape(beam).lightOnly(true)
-val emitter = manager.emitter(pos.x, pos.y, pos.z).interval(4).lightShape(beam).spawn()
-val narrowed = beam.withDirection(70.0, -45.0).withFocus(24.0)
-lamp.lightShape(narrowed)
-emitter.lightShape(narrowed)
-```
-
-命名外观 DSL 用 `particleVisual { light = Light.only(15, 0.6f).withShape(beam) }`。
-Java 可写 `ParticleAppearance.builder().light(Light.only(15, 0.6f).withShape(beam)).build()`。
-
-| 参数 | 配置方法与单位 |
-| --- | --- |
-| 半径与衰减 | `withFalloff(falloff, range)` 或 `lamp.lightFalloff(falloff, range)`。半径 0–64 格，0 用客户端默认值。衰减可选 `CONSTANT`、`LINEAR`、`SMOOTH`、`INVERSE`、`INVERSE_SQUARE`。 |
-| 朝向 | `withDirection(yaw, pitch)` 或 `lamp.lightDirection(yaw, pitch)`。世界坐标，偏航 0° 朝 +Z，+90° 朝 −X，负俯仰向下。 |
-| 聚焦与边缘 | `withFocus(outer, inner, edge)` 或 `lamp.lightFocus(outer, inner, edge)`。锥角均为半角，内锥省略时取外锥的 60%，内外相等使用硬边。锐度从 1 起，越大越硬。 |
-| 光色 | 射灯与 `LightShape.point()` 使用粒子 RGB，`Color.WHITE` 为白光。出生时用 `color(...)`，单颗运行期用 `recolor(...)`。 |
-| 亮度与移动 | `lightLevel(0..15)`，0 关灯。`lightIntensity(乘数, 时长)` 与 `move(target, 时长, easing)` 支持过渡，`track(target)` 适合每刻跟随。 |
-
-`lightDirection` 和 `lightFocus` 各自接受时长（tick）和 `EasingType`，也可用 `Time` 与 `Ease`。
-两项可以同时运行，期间改目标会从客户端正在显示的朝向或锥角接续。偏航沿最短角距过渡，
-缓动进度限制在起止值之间以保持合法的俯仰和锥角。时长为 0 时立即应用。
-
-```kotlin
-lamp.lightDirection(70.0, -45.0, 20.ticks, Ease.IN_OUT)
-    .lightFocus(24.0, 20.ticks, Ease.OUT)
-
-// 在前一段结束前调用也能平滑接续；同时指定内锥和边缘锐度。
-lamp.lightFocus(32.0, 18.0, 1.5, durationTicks = 12, easing = EasingType.EASE_IN_OUT)
-```
-
-聚焦缓动的起点与终点都须是射灯。用 `lightShape(LightShape.point())` 切换成彩色点光。
-服务端 `lightShape()` 返回目标形状，客户端 `ParticleLights.snapshot()` 返回本帧插值后的形状。
-迟到或重新进入视距的玩家直接看到服务端记录的目标形状。
-`lightShape(null)` 清除显式形状，已有全亮或独立照明标记的粒子恢复为默认白色点光。
-发射器的配置更新应用于接下来出生的粒子。光束显示由客户端 `showSpotlightBeams` 控制，
-光源预算由 `maxDynamicLights` 和 `maxDynamicLightsPerCell` 控制。
-
-脚本也可用白色 `[1, 1, 1, 1]`，并在同一个 `process` 里同步驱动移动、旋转、调光和聚焦：
-
-```js
-func setup() {
-  this.spawn({ color: [1, 1, 1, 1], scale: 0.16, glow: true, light: 15 })
-}
-
-func process() {
-  let p = this.particles[0]
-  let t = this.time / 1000
-  let pulse = 0.5 + 0.5 * sin(t)
-  let outer = 18 + 25 * pulse
-  p.position = [2 * cos(t), 0, 2 * sin(t)]
-  p.lightIntensity = 0.4 + 0.6 * pulse
-  p.lightShape = [12, outer, outer * 0.6, 1, 45 * t, -55, "smooth"]
-}
-```
-
-`lightShape` 依次为半径、外锥半角、内锥半角、边缘锐度、偏航、俯仰和衰减。
-在编辑器中声明外部变量后也可用变量驱动这些字段，例如用 `/pdraw animation var yaw 90`
-在播放中更新脚本读取的 `yaw`。光源与光束逐帧更新，地形网格的重烘焙请求按 50ms 合并提交。
-
-### 只发光、不画外观
-
-腰灯、宠物饰品这类对象本身已经有物品模型，只需要跟着实体的光。用 `lightOnly(true)` 让粒子
-不提交任何片元，光强只由 `lightLevel`、`lightIntensity` 和 `CurveChannel.LIGHT` 决定，
-**不再乘透明度和尺寸**——所以不用再拿 0.0001 尺寸的不透明精灵去骗过衰减：
-
-```kotlin
-manager.create().position(pos).lifetime(-1)
-    .lightLevel(15)             // 灯有多亮
-    .lightIntensity(0.7f)       // 静态乘数，调光用
-    .lightOnly(true)            // 只发光，不画
-    .spawn()
-```
-
-锚定、插值、视距同步、`remove()` 清理都照常；普通特效不传这个选项，仍按透明度和尺寸淡出。
-命令侧是 `appearance light_only true`（或旧的 `key=value` 参数写法 `light_only`）。
-
-#### 光影包兼容
-
-PD 把粒子光写进**客户端光图**（亮度 mixin 那条路）。所以能不能看到，取决于光影包从哪儿取光：
-
-- 直接读光图的光影包（原版光照，以及只做后期、色调、水体这类改动的包）会继承粒子照明；
-- 自己维护体素追踪或手持照明的包（部分 iterationRP 版本、自带光追的包）一般只认自己的光源，
-  粒子光不会自动出现，需要在包侧显式集成。
-
-需要显式集成时用 `ParticleLights.snapshot()`：它给出当帧光源的插值世界坐标、有效强度和照射半径，
-筛选预算由使用方决定，PD 不假定具体的 uniform 名称、曝光或衰减算法。
-
-```kotlin
-val lights = ParticleLights.snapshot()          // 逐帧取用可用 snapshotInto(reusableList)
-for (light in lights) {
-    // light.x / light.y / light.z / light.intensity / light.range
-}
-```
+延迟生成的句柄在出生前暂无权威位置，运行时更新从出生后生效。
 
 ### 外观
 
-外观在 `spawn()` 那一次同步给客户端，之后不产生逐 tick 开销，要换外观就销毁后重新生成。Builder 上每个
-设置都有对应方法，也可以直接递一整份 `ParticleVisual`：
+贴图、UV、各向异性、朝向和混合方式随 `spawn()` 下发。要替换这些规格，调用 `remove()` 后重新生成。
+外观可通过 Builder 单独设置，也可传入 `ParticleVisual`。
 
 ```kotlin
 // 柔边圆点 + 免光照 + 加法混合
@@ -556,8 +411,8 @@ manager.create().position(mid).lifetime(40)
     .spawn()
 
 // 从图集里取一格（贴图像素坐标）并固定朝向
-manager.create().position(p).uv(16f, 0f, 32f, 16f)
-    .texture("mymod:sheet")
+manager.create().position(p).texture("mymod:sheet")
+    .uv(16f, 0f, 32f, 16f)
     .billboard(false)
     .spin(Math.PI / 3)             // 平面内 60°；三轴版本 spin(rx, ry, rz)
     .spawn()
@@ -582,11 +437,8 @@ manager.create().position(p).delay(20).spawn()
 ParticleManager.registerTexture("mymod:glow", pngBytes)   // 幂等，字节上限 1 MiB，名字上限 256 字符
 ```
 
-登记后字节自动同步到客户端：单机服务端线程只做逻辑登记，GPU 解码由客户端主线程排队完成；专用服务器在
-玩家进服时补发、运行中新登记的立即广播。`registerTexture` 返回 true 只表示登记已接受，不保证当前客户端
-纹理已经可用。逐粒子载荷只写贴图 id，5 万颗粒子共用一张贴图也只多 1 字节每颗。没登记过的名字不会丢粒子，
-只是渲染成纯白方块。贴图比粒子晚到货时先按 16px 计尺寸系数，到货后按贴图实际尺寸重算（只影响非 16px
-的贴图）。
+登记成功后自动同步 PNG。客户端主线程完成 GPU 解码，在线玩家收到新贴图，晚加入的玩家收到已登记的贴图。
+返回 `true` 表示登记已接受。客户端在贴图可用前用纯白方块和 16px 尺寸基准渲染，到达后按实际尺寸重算。
 
 内置形状不必登记，`ParticleStyle.SOFT_DOT` / `LINE` 在两端各自生成同一份像素；需要提前确认可用时调
 `ParticleManager.registerBuiltinTextures()`，它同样把生成排到客户端主线程，返回后不保证当帧已可用。两张内置贴图的可见尺寸比标称略小：
@@ -598,10 +450,36 @@ ParticleManager.registerTexture("mymod:glow", pngBytes)   // 幂等，字节上�
 
 `ParticleVisual` 是可变的链式对象，多颗粒子想共用一份外观再各改一点时用 `copy()`。
 
+### 原版与模组粒子贴图
+
+`particle:命名空间:粒子名称` 从客户端当前资源包的 `particles/<名称>.json` 中读取全部帧，
+合成为 PD 的帧图集。有限寿命按 `floor(年龄/寿命 × (帧数-1))` 选帧，和原版的年龄选帧口径一致；无限寿命默认
+每 60 tick 循环一次。时钟来自粒子的游戏年龄，暂停游戏会暂停换帧。
+
+可选后缀：`particle:minecraft:end_rod#3` 固定使用第 4 帧（从 0 开始），
+`particle:minecraft:end_rod@8` 则按 8 FPS 循环。显式帧率模式按经过时间选帧，寿命到点仍会销毁。
+资源包替换与 F3+T 重载会自动更新贴图。
+有贴图列表的其它模组粒子也使用同样的语法。
+整张资源贴图按标准图标尺寸计算，资源包的像素密度不会改变粒子大小；显式给 `uv` 时仍按像素取子矩形。
+
+这复用原版贴图序列与年龄选帧方式，不执行原版粒子工厂的随机漂移、颜色渐变或物理逻辑；颜色、尺寸、
+发光和淡入淡出继续使用 PD 的参数与编排。`end_rod` 的明亮外观配合 `glowing`，`light=0` 则避免向世界投光。
+没有贴图列表、帧号越界或客户端缺资源时，会显示紫黑错误贴图并记录具体原因。
+
+动态图集最多 256 帧、合计 16,777,216 像素，各帧需为相同尺寸。
+
+```kotlin
+val visual = ParticleVisual().particleTexture("minecraft:end_rod").anisoWorld(0.12f, 0.12f).glowing(true).lightLevel(0)
+Draw.circle(manager, center, 2.0, 80, visual = visual)
+
+// 同样适用于粒子构建器、发射器，以及可读外观 DSL
+val textureName = ParticleTextures.of("minecraft:end_rod", 3)
+val look = particleVisual { particleTexture("minecraft:end_rod"); fullBright = true }
+```
+
 ### 寿命曲线
 
-寿命内的淡出与收缩随生成包一次带到客户端，之后零逐帧带宽。曲线值是乘数（缺省 1.0），时刻从生成那一刻
-算起，单位 tick。
+淡出与收缩曲线随生成包下发。曲线值是乘数，缺省为 1。时刻从粒子出生起按 game tick 计算。
 
 ```kotlin
 // 拖尾颗粒：活 20 tick，最后 8 tick 淡出并缩到 0.2 倍
@@ -623,7 +501,7 @@ manager.create().position(p).lifetime(40)
     .spawn()
 ```
 
-- 通道：`ALPHA`、`SCALE`、`RED`、`GREEN`、`BLUE`；同一通道给多条曲线时相乘。
+- 通道包括 `ALPHA`、`SCALE`、`RED`、`GREEN`、`BLUE`、`LIGHT`。同一通道的多条曲线相乘。
 - `curve(channel, keys)` 是通用入口，`alphaCurve` / `sizeCurve` / `colorCurve` 是现成写法。
 - `fadeOut` / `shrinkTo` 锚在寿命末尾，需要有限寿命，`lifetime(-1)` 与它同用会明确报错。
 - 客户端按渲染帧刷新带曲线的粒子外观，只改颜色与缩放，不动位置。
@@ -786,7 +664,7 @@ trail.isActive()
 - 后进服、切维度、走进范围的玩家由 PD 补发声明，不会看到一条空尾迹。
 - 拖尾长度按格给、寿命等于长度除以速度、总强度倍率这类游戏语义仍由调用方计算，发射器只提供机制。
 
-### 低配机器上调参
+### 发射预算
 
 帧时间基本由「这一帧要处理多少颗粒子」决定。客户端配置（`config/particledrawing-client.toml`）里
 按下面的顺序降，足够救回大多数机器：
@@ -805,7 +683,7 @@ trail.isActive()
 `[PD-perf] fps=… avg=…ms worst=…ms | particles=… lights=…`，单刻推进超过 50ms 时还会多一行
 `[PD-perf] tick=…ms`。这两行能把「粒子太多」和「单刻求值太慢」区分开。
 
-### 配方是怎么跑起来的（影响写法）
+### 配方生命周期
 
 发射器的公式在启动时会被编译成一段直接读写寄存器的指令序列，逐粒子逐刻只做数组访问，
 不再按名字查表。写配方时留意两点，避免掉回慢路径（约慢 5～10 倍）：
@@ -839,436 +717,7 @@ trail.isActive()
 val custom = EasingType.custom(0.68, -0.55, 0.265, 1.55)   // (x1, y1, x2, y2)
 ```
 
-## 命令绘制与数据包
-
-持续生成、公式采样、条件曲面、图片转粒子和逐粒子运动使用 `particle emitter`。
-它按名称分步配置，支持状态、变量热更新、筛选修改和共享实体锚点，见[分步配置粒子生成器](particle-commands.md)。
-图片与完整曲面需要显式配置足够的 `max_alive` 和寿命；默认容量为 4096。该文档还提供桃心、旋转球面
-和动态曲臂的分步函数，可以复制后修改公式，或绑定同一实体锚点。
-数据包的目录、`pack.mcmeta` 和分层曼陀罗等完整函数见[命令函数示例](../examples/commands/README.md#安装到测试存档)。
-下方的 `group/add/program` 用于固定成员的组级编排。
-
-`/pdraw particle` 把公开绘图与 `ParticleGroup` 编排能力拆成可组合的命令，适合 `.mcfunction`、连锁
-命令方块和聊天调试。一个效果按三步构建：
-
-1. `group create` 或 `group reset` 建一个有名字的组；
-2. 用多条 `add` 把图元加全；
-3. 用多条 `program` 录制组动画，或用逐粒子表达式接管粒子状态。
-
-组名在当前维度内唯一，允许字母、数字、下划线、短横线、点和冒号，最长 64 字符。`reset` 会先移除
-同名旧组再创建，适合可重复触发的数据包函数。命名组只存在于本次服务器运行期，关卡卸载或服务器关闭时
-自动清理。
-
-下面的简写示例放在同一个 `.mcfunction` 中执行时，共用函数入口的坐标。拆到多个命令方块时，每个方块的
-`~` 都相对该方块自身；连锁执行不会继承前一个方块的执行位置。同组只共享编排，不会把不同 `add` 命令
-生成的图形自动移到同一个中心。简单示例见下方的[命令方块 sin 曲线](#命令方块简单用法sin-曲线)。
-
-```mcfunction
-# 建组并添加两个图元；~ 和 ^ 都按原版命令源解析
-pdraw particle group reset demo ~ ~1 ~
-pdraw particle add demo circle ~ ~1 ~ 3 96 color=#55ddff style=soft_dot additive glowing
-pdraw particle add demo hexagram ~ ~1 ~ 2.4 24 gradient=#ffffff:#5588ff style=soft_dot scale=0.35
-
-# 每条 program 只负责一个动作，按调用顺序接到同一时间线
-pdraw particle program demo fade_in 8 ease_out
-pdraw particle program demo spin 0 1 0 2
-pdraw particle program demo pulse 1.2 10 -1
-pdraw particle program demo delay 80
-pdraw particle program demo stop_continuous
-pdraw particle program demo fade_out 12 ease_in
-```
-
-### 命令方块简单用法：sin 曲线
-
-准备一个脉冲命令方块，接两个“无条件、始终活动”的连锁命令方块，箭头按顺序相连。每块各填一行：
-
-```mcfunction
-pdraw particle group reset sine ~ ~2 ~
-pdraw particle add sine field anchor 81 texture=particle:minecraft:end_rod size_world=0.12,0.12 glowing light=0 lifetime=80
-pdraw particle program sine expression local 0 u=i/(n-1);x=8*u;y=sin(2*PI*u-t*0.002);z=0;
-```
-
-触发第一块，即可在它上方 2 格处画出一条长 8 格、振幅 1 格、随时间起伏的 sin 曲线。
-`field` 提供 81 颗粒子，`i` 是从 0 开始的序号，`n` 是总数，`u` 把序号映射到 0..1。
-`field anchor` 在组锚点生成成员，`expression local` 把公式输出视为相对该锚点的偏移；移动效果只改
-第一条命令的坐标。曲线会向下延伸 1 格，建议把起点高度设在地面上方 2 格。清除时执行：
-
-```mcfunction
-pdraw particle group remove sine
-```
-
-`lifetime=80` 表示粒子存在 80 tick（4 秒），到点自动消失；默认未写寿命时永存。末地烛贴图会在这
-4 秒里按粒子年龄播放完整个帧序列。公式中的 `t` 是毫秒时间，控制波形运动；去掉 `-t*0.002` 可固定
-曲线形状，贴图仍会换帧。不需要重复命令方块每 tick 重画。
-
-要跟随实体，在最后一块公式命令之前插入一个连锁命令方块：
-
-```mcfunction
-pdraw particle program sine anchor entity @p 0 2 0 false
-```
-
-此时曲线相对目标实体脚下上方 2 格绘制。`false` 只跟随位置，改成 `true` 也会随实体朝向旋转；
-`@p` 也可换成玩家名或只选一个目标的实体选择器。
-
-`field` 的 `lifetime` 是粒子存在时间；`expression local 80 ...` 中的 80 只控制公式求值时长，不负责
-删除粒子。其它 Draw 图元默认永存，可用 `program <组> destroy_after 80` 在 4 秒后销毁整组。
-
-### 复用原版粒子贴图
-
-`texture=particle:命名空间:粒子名称` 从客户端当前资源包的 `particles/<名称>.json` 中读取全部帧，
-合成为 PD 的帧图集。有限寿命按 `floor(年龄/寿命 × (帧数-1))` 选帧，和原版的年龄选帧口径一致；无限寿命默认
-每 60 tick 循环一次。时钟来自粒子的游戏年龄，暂停游戏会暂停换帧。
-
-可选后缀：`texture=particle:minecraft:end_rod#3` 固定使用第 4 帧（从 0 开始），
-`texture=particle:minecraft:end_rod@8` 则按 8 FPS 循环。显式帧率模式按经过时间选帧，寿命到点仍会销毁。
-资源包替换与 F3+T 重载会自动更新贴图。
-有贴图列表的其它模组粒子也使用同样的语法。
-整张资源贴图按标准图标尺寸计算，资源包的像素密度不会改变粒子大小；显式给 `uv` 时仍按像素取子矩形。
-
-这复用原版贴图序列与年龄选帧方式，不执行原版粒子工厂的随机漂移、颜色渐变或物理逻辑；颜色、尺寸、
-发光和淡入淡出继续使用 PD 的参数与编排。`end_rod` 的明亮外观配合 `glowing`，`light=0` 则避免向世界投光。
-没有贴图列表、帧号越界或客户端缺资源时，会显示紫黑错误贴图并记录具体原因。
-
-代码 API 使用同一份贴图引用，无需登记 PNG 或访问服务端资源：
-
-```kotlin
-val visual = ParticleVisual().particleTexture("minecraft:end_rod").anisoWorld(0.12f, 0.12f).glowing(true).lightLevel(0)
-Draw.circle(manager, center, 2.0, 80, visual = visual)
-
-// 同样适用于粒子构建器、发射器，以及可读外观 DSL
-val textureName = ParticleTextures.of("minecraft:end_rod", 3)
-val look = particleVisual { particleTexture("minecraft:end_rod"); fullBright = true }
-```
-
-### 组与图元语法
-
-| 命令 | 作用 |
-| --- | --- |
-| `group create <组> <轴心>` | 新建组；同名已存在时报错 |
-| `group reset <组> <轴心>` | 移除同名旧组并重建，适合重复触发 |
-| `group list` | 列出当前维度的命名组 |
-| `group remove <组>` / `group clear` | 删除一个组或清空当前维度 |
-| `add <组> dot <位置>` | 单颗粒子 |
-| `add <组> field <位置> <数量>` | 同点粒子场，通常交给 `expression` 展开 |
-| `add <组> field anchor <数量>` | 在组当前锚点生成粒子场，无需重复写坐标 |
-| `add <组> line <起点> <终点> <数量>` | 粒子线段 |
-| `add <组> beam <起点> <终点>` | 一颗带方向和世界尺寸的贴图光束 |
-| `add <组> helix <中心> <半径> <高度> <圈数> <数量>` | 螺旋曲线 |
-| `add <组> circle <中心> <半径> <数量>` | 圆周 |
-| `add <组> disc <中心> <半径> <外圈数量> <层数>` | 实心圆盘 |
-| `add <组> triangle <中心> <半径> <每边数量>` | 三角形轮廓 |
-| `add <组> hexagram <中心> <半径> <每边数量>` | 六芒星轮廓 |
-| `add <组> rect <中心> <宽> <高> <密度>` | 矩形网格或边框 |
-| `add <组> sphere <中心> <半径> <数量>` | 斐波那契球面 |
-| `add <组> cuboid <中心> <宽> <高> <深> <密度>` | 长方体网格或外壳 |
-
-每条 `add` 后面可继续写空格分隔的 `key=value`。布尔项也可只写键名，例如 `additive` 等价于
-`additive=true`。颜色写 `#RRGGBB` 或 `#RRGGBBAA`，向量写 `x,y,z`，含空格的贴图名用双引号包住。
-不适用于当前图元的参数会直接报错。
-
-| 参数 | 说明 |
-| --- | --- |
-| `color=#RRGGBB` / `gradient=颜色:颜色` / `rainbow[=透明度]` | 三选一的着色方式 |
-| `scale=N`、`stagger=tick`、`taper` | 标量尺寸、逐颗错峰生成、线条收细 |
-| `axis=xz\|xy\|yz`、`hollow`、`thickness=N` | 平面、空心网格、光束宽度 |
-| `style=square\|soft_dot\|line`、`texture=名称`、`uv=u,v,w,h` | 内置形状、自定义贴图与 UV |
-| `size=w,h` / `size_world=w,h`、`billboard=true\|false` | 编辑器单位或世界格尺寸、是否面向摄像机 |
-| `spin=x,y,z`、`spin_space=local\|world` | 贴图欧拉角（度）及旋转空间 |
-| `additive`、`glowing`、`light=0..15`、`intensity=N`、`light_only` | 混合、全亮和动态光参数；`light_only` 只发光不画外观 |
-| `alpha_curve` / `size_curve` / `red_curve` 等 | `tick:value[:easing]`，多关键帧以逗号分隔 |
-| `lifetime=tick` | 所有图元：每颗粒子的存在刻数，未写时保留原来的无限寿命 |
-| `velocity=x,y,z`、`force=x,y,z`、`force_ticks=tick` | 仅 `field`：初速度和持续受力 |
-
-`stagger` 会让 `Draw` 逐颗生成成员。命令层会把紧随其后的 `program` 暂存到最后一颗成员入组之后，并
-保持多条编排命令的顺序，不需要数据包自行估算等待时间。一个命名组最多编排 8192 颗粒子，超过时应拆成
-多个组；开始执行第一条 `program` 后不能再追加图元。
-
-### 编排命令
-
-| 命令 | 作用 |
-| --- | --- |
-| `program <组> anchor fixed <位置>` | 绑定固定坐标锚点，解除已有的实体跟随 |
-| `program <组> anchor entity <实体> [x y z [local]]` | 绑定实体锚点及偏移；`local=true` 时偏移和整组随实体朝向旋转 |
-| `program <组> pivot <位置>` / `follow <实体> ...` | 上面两条锚点命令的兼容简写 |
-| `program <组> delay <tick>` | 推进该组时间线，后续动作从新时刻开始 |
-| `program <组> fade_in\|fade_out\|fade_out_keep <tick> [缓动]` | 淡入、淡出并删除、淡出但保留 |
-| `program <组> move <x> <y> <z> <tick> [缓动]` | 整组平移 |
-| `program <组> move_offset <倍率> <tick> [缓动]` | 每颗沿自身相对轴心方向散开 |
-| `program <组> move_path <tick> <x,y,z;x,y,z...> [缓动]` | 沿一组相对位移途经点移动 |
-| `program <组> rotate <轴x> <轴y> <轴z> <角度> <tick> [缓动]` | 绕轴心旋转一次，角度单位为度 |
-| `program <组> recolor <颜色> <tick> [缓动]` | 变色 |
-| `program <组> scale_by\|scale_to <倍率> <tick> [缓动]` | 相对缩放或缓动到绝对倍率 |
-| `program <组> spin <轴x> <轴y> <轴z> <每tick角度>` | 持续旋转 |
-| `program <组> pulse <峰值倍率> <半周期> [次数]` | 往复缩放，次数 `-1` 表示持续 |
-| `program <组> stop_continuous` | 在当前时间线时刻停止持续旋转和脉冲 |
-| `program <组> destroy_after <tick>` / `retire [余量]` | 定时销毁，或等有限程序完成后销毁 |
-| `program <组> entity <句柄> <实体>` | 在程序启动前注册公式实体句柄 |
-| `program <组> variable set <名称> <数字>` | 在程序启动前声明静态变量 |
-| `program <组> variable live <名称> <公式>` | 程序启动后立即更新变量 |
-| `program <组> variable ease <名称> <公式> <tick> [缓动]` | 程序启动后把变量缓动到公式结果 |
-| `program <组> expression <tick> <代码>` | 每颗每 tick 求值；`0` 表示持续 |
-| `program <组> expression local <tick> <代码>` | 输出相对组当前锚点，可直接跟随实体与局部朝向；`0` 表示持续 |
-
-缓动名支持 `linear`、`ease_in`、`ease_out`、`ease_in_out`，以及 `_quad`、`_cubic`、`_bounce`、
-`_elastic` 变体。命令补全会列出全部名称。
-
-实体锚点在命令执行时把选择器解析为一个实体 UUID，之后会持续跟随当时选中的同一个实体。默认偏移是
-`0 0 0`，按世界坐标解释；最后一个参数写 `true` 时，偏移和组内图形都会随实体的 yaw/pitch 转动。客户端
-暂时找不到该实体时会隐藏该组，实体重新进入客户端后继续显示。锚点通常放在淡入、旋转等动画命令之前：
-
-```mcfunction
-# 组轴心放在实体脚下，图形画在头顶 1.8 格，再用相同偏移绑定到该实体
-pdraw particle group reset halo ~ ~ ~
-pdraw particle add halo circle ~ ~1.8 ~ 0.7 48 color=#ffe080 style=soft_dot additive glowing
-pdraw particle program halo anchor entity @s 0 1.8 0 false
-pdraw particle program halo spin 0 1 0 3
-
-# 随实体朝向的前方施法环：局部 Z 偏移 1.2 格
-pdraw particle group reset cast_ring ~ ~ ~
-pdraw particle add cast_ring circle ~ ~1.2 ~1.2 1 56 axis=xy color=#70c8ff style=soft_dot additive glowing
-pdraw particle program cast_ring anchor entity @s 0 1.2 1.2 true
-```
-
-### 数据包法阵示例
-
-下面的效果把静态法阵和动态光点拆成两个组。静态组使用形状与组动画，动态组使用 192 颗同点粒子和
-逐粒子公式，运行时只下发声明，旋转、实体跟随、颜色和退场由客户端执行。
-
-入口需要保留实体与位置上下文：
-
-```mcfunction
-execute as @p at @s run function example:magic/start
-```
-
-`data/example/function/magic/start.mcfunction`：
-
-```mcfunction
-pdraw particle group reset spell_sigil ~ ~ ~
-pdraw particle add spell_sigil circle ~ ~0.06 ~ 3.2 112 color=#45d9ff style=soft_dot scale=0.32 additive glowing light=12 intensity=1.4
-pdraw particle add spell_sigil hexagram ~ ~0.06 ~ 2.55 22 gradient=#ffffff:#487dff style=soft_dot scale=0.28 additive glowing
-pdraw particle program spell_sigil anchor entity @s 0 0.06 0 false
-pdraw particle program spell_sigil fade_in 8 ease_out
-pdraw particle program spell_sigil spin 0 1 0 1.8
-pdraw particle program spell_sigil pulse 1.12 12 -1
-pdraw particle program spell_sigil delay 80
-pdraw particle program spell_sigil stop_continuous
-pdraw particle program spell_sigil fade_out 12 ease_in
-
-pdraw particle group reset spell_motes ~ ~1 ~
-pdraw particle add spell_motes field ~ ~1 ~ 192 color=#56dfff00 style=soft_dot size_world=0.07,0.07 additive glowing light=13 intensity=1.6
-pdraw particle program spell_motes entity caster @s
-pdraw particle program spell_motes variable set radius 3
-pdraw particle program spell_motes variable set presence 1
-pdraw particle program spell_motes expression 0 q=(i%64)/64;layer=floor(i/64);ang=q*2*PI+t*0.002*(1-2*(layer%2));rad=radius*(0.55+layer*0.2);x=get_entity_x(caster)+cos(ang)*rad;y=get_entity_y(caster)+0.08+sin(ang*3+t*0.004)*0.08;z=get_entity_z(caster)+sin(ang)*rad;sc=presence*(0.65+0.25*sin(t*0.006+i));a=presence;r=0.2;g=0.78;b=1;
-schedule function example:magic/end 4s replace
-```
-
-`data/example/function/magic/end.mcfunction`：
-
-```mcfunction
-pdraw particle program spell_motes variable ease presence 0 12 ease_in
-pdraw particle program spell_motes retire 2
-```
-
-表达式里的 `i` 是成员序号，`n` 是成员总数，`t` 是毫秒时间；旧式 `expression <tick>` 的 `x/y/z`
-是世界绝对坐标，`expression local <tick>` 则是相对当前组锚点的偏移，
-`r/g/b/a`、`sc` 控制外观，glowing/light 在 add 时设置；逐粒子运动和光照输出使用 emitter 的 birth/motion。
-组公式可以读取已注册实体和世界状态，完整 getter 表见
-[编排式动画](#编排式动画)。一个组用了 `expression` 后，公式会接管该组所有成员的位置和外观；需要同时
-保留静态图形时，应像示例一样拆组。
-
-拆成命令方块链时，统一每条命令的执行位置和实体上下文；入门见[命令方块 sin 曲线](#命令方块简单用法sin-曲线)。
-
-## 播放动画文件
-
-除了用代码实时绘制，也可以播放网页编辑器导出的 `.pdrawc` 动画并在运行期修改变量。服务端只把动画定义
-与指令下发给客户端。客户端逐 tick 求值，并按渲染帧更新插值和 `process`。函数对象派生粒子
-出生时继承 UV，后续 UV 公式在原播放时钟上更新已有粒子。
-
-### 播放与停止
-
-```kotlin
-import work.nekow.particledrawing.animation.AnimationLoader
-import work.nekow.particledrawing.animation.ServerAnimationManager
-
-// 按名称加载并播放已签名的 .pdrawc，返回本次播放 ID
-val animId = ServerAnimationManager.playByName(dim, level.players(), "magic_circle", origin) ?: return
-
-// 或把验签后的文件字节交给播放入口
-val bytes = AnimationLoader.load("magic_circle") ?: return
-ServerAnimationManager.play(dim, players, bytes, origin)
-
-ServerAnimationManager.stop(animId, players)      // 停止单次播放
-ServerAnimationManager.stopAll(dim, players)      // 停止整个维度
-```
-
-### 修改变量与查询状态
-
-```kotlin
-// 清空该变量的关键帧并把基值设为给定数值，下一 tick 生效；非数字字符串按 0 处理
-ServerAnimationManager.updateVariable(animId, "rad", "4", players)
-
-ServerAnimationManager.isActive(animId)          // 该次播放是否仍在进行
-ServerAnimationManager.activePlaybacks(dim)      // 维度内活跃播放 ID 快照
-ServerAnimationManager.activePlaybacksAll()      // 全部维度
-ServerAnimationManager.playbackPlayers(animId)   // 该次播放覆盖的玩家 ID
-```
-
-### 入场编排
-
-> 这些字段来自 `.pdrawc` 时间轴，单位是毫秒；代码 API 的 `delay` / `stagger` / `lifetime` /
-> `destroyAfter` 走 game tick，两者不要混用。
-
-每个粒子与函数对象可带 `st`（起始毫秒）：`t < st` 时粒子完全不生成，不是以透明度 0 渲染，
-到点瞬间出现；循环回卷后按各自 `st` 重放入场顺序。时长 `timelineLength()` 自动计入最晚的 `st`。
-
-静态粒子还可带 `life`（寿命毫秒，缺省 -1 表示无限），`t ≥ st+life` 后粒子回收消失，有限寿命同样计入
-`timelineLength()`。函数对象派生的粒子可在 `process` 中遍历 `this.particles`，用 `p.life = <毫秒>` 设定
-逐粒子寿命；其可见期由对象级 `st`、对象整体时长 `duration`（≤0 视为无上限）与逐粒子寿命三重门控决定。
-
-### 典型场景
-
-```kotlin
-fun castSkill(level: ServerLevel, caster: Player) {
-    val dim = ParticleUtils.dimensionUUID(level)
-    val origin = caster.position().add(0.0, 1.0, 0.0)
-    val id = ServerAnimationManager.playByName(dim, level.players(), "skill_burst", origin) ?: return
-
-    // 施法者移速越快，动画转速变量越大
-    val speed = caster.movementSpeed().toFloat()
-    ServerAnimationManager.updateVariable(id, "spin", speed.toString(), level.players())
-}
-```
-
-延迟收尾可配合任意服务端调度手段：
-
-```kotlin
-level.server.tell(object : TickTask(level.server.tickCount + 60) {
-    override fun run() {
-        if (ServerAnimationManager.isActive(id)) ServerAnimationManager.stop(id, level.players())
-    }
-})
-```
-
-客户端模组也可以在本地直调 `ClientAnimationManager.play/stop/updateVariable/reloadTextures`，仅限客户端
-环境。
-
-## 代码构建动画
-
-除了用 `Draw` 实时画形状或播放编辑器导出的文件，还可以用代码直接构建一个动画再下发播放。动画模型与
-`.pdrawc` 播放同构：粒子、轨道、组、函数对象、摄像机、贴图都可声明，播放走同一套服务端权威进度与客户端
-渲染链路。
-
-### Kotlin DSL
-
-```kotlin
-import work.nekow.particledrawing.api.*
-import work.nekow.particledrawing.animation.TrackPr
-import work.nekow.particledrawing.core.easing.EasingType
-import net.minecraft.world.phys.Vec3
-
-val anim = Animation.create {
-    loop = true
-
-    particle {
-        id = "p0"
-        pos = Vec3(0.0, 10.0, 0.0)
-        color = Color.CYAN
-        scale = 1f
-        life = -1
-    }
-
-    track {
-        pr = TrackPr.POS_X
-        ids = listOf("p0")
-        keyframe(0, 0.0, EasingType.LINEAR)
-        keyframe(1000, 5.0, EasingType.EASE_OUT)   // 关键帧时刻为毫秒
-    }
-
-    function {
-        id = "fx0"
-        center = Vec3(0.0, 10.0, 0.0)
-        duration = 10000                           // 时长毫秒，0 表示无上限
-        seed = 1
-        variable("rad", 3.0)
-        source = """
-            func setup() {
-              repeat(100) { this.spawn() }
-            }
-            func process() {
-              for (const p of this.particles) {
-                let th = p.index / this.particles.size() * 2 * PI
-                p.position = vec(cos(th) * rad, 0, sin(th) * rad)
-              }
-            }
-        """.trimIndent()
-    }
-}
-
-anim.play(level.players(), origin)
-    .updateVariable("rad", "4")
-    .isActive()
-```
-
-### Java Builder
-
-```java
-Animation anim = Animation.builder()
-    .loop(true)
-    .particle(p -> p.id("p0").pos(0, 10, 0).color(Color.CYAN).scale(1f).life(-1))
-    .track(t -> t.pr(TrackPr.POS_X).ids("p0")
-        .keyframe(0, 0.0, EasingType.LINEAR)
-        .keyframe(1000, 5.0, EasingType.EASE_OUT))
-    .function(f -> f.id("fx0").center(0, 10, 0).duration(10000).seed(1)
-        .variable("rad", 3.0)
-        .source("""
-            func setup() {
-              repeat(100) { this.spawn() }
-            }
-            func process() {
-              for (const p of this.particles) {
-                let th = p.index / this.particles.size() * 2 * PI;
-                p.position = vec(cos(th) * rad, 0, sin(th) * rad);
-              }
-            }
-            """))
-    .build();
-
-anim.play(level.players(), origin).updateVariable("rad", "4");
-```
-
-### TrackPr
-
-轨道的 `pr` 是类型安全的 `TrackPr` 枚举，与 `.pdrawc` 二进制里的分量序号一一对应。
-
-| 属性 | 枚举常量 |
-| --- | --- |
-| 位置 | `POS_X` `POS_Y` `POS_Z` |
-| 速度 | `VEL_X` `VEL_Y` `VEL_Z` |
-| 颜色 | `COL_R` `COL_G` `COL_B` `COL_A` |
-| 缩放 | `SCL_X` `SCL_Y` `SCL_Z` |
-| 公转 | `ROT_X` `ROT_Y` `ROT_Z` |
-| 自转 | `SPIN_X` `SPIN_Y` `SPIN_Z` |
-| 公转中心 | `CENTER_X` `CENTER_Y` `CENTER_Z` |
-| 摄像机 | `FOV` `TARGET_X` `TARGET_Y` `TARGET_Z` |
-| 音频（属主 `a:<资产id>`） | `VOL` `SPEED` `PAN` `FADE_IN` `FADE_OUT` |
-
-`TrackPr.FOV` 是标量分量，没有 `.x` / `.y` / `.z`。
-
-### 链式操作
-
-| 方法 | 说明 |
-| --- | --- |
-| `play(level, players, origin)` | 向指定玩家下发并开始播放，返回自身 |
-| `play(players, origin)` | 从首个玩家推导 `ServerLevel` 的便捷重载 |
-| `stop()` | 停止本次播放 |
-| `updateVariable(name, value)` | 运行期更新函数对象变量，下一 tick 生效 |
-| `isActive()` | 本次播放是否仍在进行 |
-
-代码生成的动画走独立的结构化网络载荷，不验签、不生成文件。播放记录同样支持维度切换、重生与重连后的
-自动重发，与其他玩家帧号保持一致。
-
-## 示例
+## 绘制示例
 
 ```kotlin
 // 上升的螺旋烟雾环
@@ -1304,10 +753,9 @@ fun ripples(m: ParticleManager, c: Vec3, waves: Int) {
 }
 ```
 
-## 可读编写接口
+## 单位、表达式与退场
 
-新代码可以完全不碰毫秒、裸索引和字符串拼接，旧 API 保持可用。单位值在 Kotlin 用扩展属性，
-Java 用同名静态工厂：
+Kotlin 使用扩展属性构造单位值，Java 使用同名静态工厂。
 
 ```kotlin
 val wait = 6.ticks              // 300ms
@@ -1356,7 +804,9 @@ batch.exit {
 
 ### 类型化表达式
 
-先在组上登记向量/方向参数，再用接收者 DSL 写公式；生成的是现有组标量表达式，不新增播放器：
+组公式输出位置、颜色和缩放，速度或光照由 `ParticleRecipe` 的出生和运动公式设置。
+位置应明确使用 `position.world` 或 `position.local`。组公式无法保留逐粒子的初始位置。
+先在组上声明向量和方向参数，再用 DSL 构建组公式。
 
 ```kotlin
 val origin = group.vectorParameter("origin", center).value
@@ -1486,38 +936,3 @@ p.setSides(6);
 p.setRadius(Length.blocks(1.0));
 Shape s = Draw.polygon(manager, p);
 ```
-
-## 注意事项
-
-1. 服务端 API 与其调度任务在服务端主线程执行。`ClientEffects` 是客户端本地播放入口。
-2. 粒子数量受 `maxParticlesPerDimension` 与 `maxParticlesPerPlayer` 约束，达到上限时 `spawn()` 返回 null。
-3. 引擎按视距自动增减同步给客户端的粒子，持续动画只对已追踪该组任一成员的玩家广播；程序保留完整成员顺序与
-   `i/n`，迟到/部分可见成员出生后按当前程序时间补挂，不重播入场。
-4. 无限动画（`durationTicks = -1`、`cycles = -1`）会持续占用客户端求值与渲染预算。用
-   `stopContinuous()` 或让组 `fadeOut()` / `destroyAfter()` 收尾。
-5. `stagger > 0` 时粒子陆续出现，期间 `group.size()` 会逐步增长。
-6. Java 调用方：绘制形状与部分链式方法带 `@JvmOverloads` 重载，其余带默认参数的方法要写全参数；
-   颜色来源用 `ColorSource` 接口或 lambda 实现。
-7. 单粒子句柄在生成时设置贴图、UV、各向异性、朝向与加色，运行时可改颜色、缩放、位置、发光等级与光强乘数。
-   要替换句柄的外观规格，先 `remove()` 再生成。动画文件中的 UV 和资源粒子帧序列按各自的时钟更新。
-8. `delay(n)` 期间粒子在 PD 侧还不存在，句柄上的操作一律无效，position() 读不到权威位置；
-   `ParticleBatch` 会把延迟成员留到到点。
-9. 发射器声明不随调用方消失，法术结束或投射物消亡时要 `stop()`，否则客户端会一直发下去。
-10. `ParticleManager.spawnAll` 内部按单包上限自动分段，不再截断第 257 条；返回值仍与入参等长，
-    容量拒绝为 null。需要拒绝原因时用 `spawnAllDetailed`，服务端再按每玩家上限裁剪。
-11. 光照结果按方块坐标、动态光版本与分摊超时缓存。动态光变化在后续渲染帧刷新；区块重建有每帧预算，
-    超出的部分排队分帧收敛。插拆火把、昼夜变化、区块重载这类没有版本号的世界光变化由每颗粒子各自
-    错开的 1 秒周期重采样兜住。
-12. `lifetime(n)` 是 n 个 game tick，关卡不 tick（单人按 Esc 暂停）时寿命与缓动都不流逝，恢复后从原处
-    继续。寿命曲线与光强按分数游戏年龄采样；末端为零的曲线会在寿命到点后多留一帧画零末端。
-13. 一个组是一段编排而不是粒子场：受控清单要一次发完，成员上限 8192，超了明确报错；指令按单包 512 条
-    拆段下发，组还没有成员时最多缓存 4096 条指令，超出丢弃并告警。
-14. 同时活跃的发射器上限 512，到顶时新声明被拒绝并打 ERROR，可用 `EmitterHandle.isActive()` 检测。
-15. 贴图名长度上限 256 字符，过长在调用点直接报错。
-16. 动态光照亮度 = `lightLevel × lightIntensity × LIGHT 曲线 × 透明度 × 尺寸包络`，因此出生、缩片、
-    淡出、表达式 `presence` 与正常退场都会连续收束；`lightIntensity(…, durationTicks)` 热更从当前
-    实际亮度接续。它不改变片元透明度、颜色或全亮标志。
-17. 诊断/录像要逐颗看普通全亮粒子的 alpha 时用 `ClientParticleEngine.forEachParticleSample(partialTick)`，
-    回调里的 `ParticleSample` 会在粒子间复用，只读且不要保存；它不新增光源、不提交顶点、不影响寿命。
-18. `resize(scale, durationTicks, easing)` 的目标只在缓动结束时落地；SCALE 寿命曲线乘的是当前缓动尺寸，
-    不是目标值。各向异性粒子按两轴比例收缩，缩放中只改颜色不会打断缩放。

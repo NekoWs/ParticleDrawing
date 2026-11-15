@@ -114,21 +114,14 @@ Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80)
 
 编排粒子组用 `group → add → program`。曲线采样、图片和持续发射用 `emitter` 分步配置，再用
 `burst` 或 `start` 触发。两种方式都可以在数据包函数和命令方块里使用。完整语法、
-参数表和可直接放进数据包的法阵示例见[使用指南](doc/guide.md#命令绘制与数据包)。
-命令方块入门可从[末地烛贴图的 sin 曲线](doc/guide.md#命令方块简单用法sin-曲线)开始；
+参数表和可直接放进数据包的法阵示例见[粒子命令](doc/particle-commands.md#命令绘制与数据包)。
+命令方块入门可从[末地烛贴图的 sin 曲线](doc/particle-commands.md#命令方块简单用法sin-曲线)开始；
 `texture=particle:minecraft:end_rod` 可在 PD 粒子上直接复用原版贴图。
 贴图默认按粒子年龄与寿命换帧；`field anchor` 与 `expression local` 可共用组锚点，`lifetime=80` 指定 4 秒寿命。 [数据包安装与函数示例](examples/commands/README.md)
 
 ## 文档
 
-| 文档 | 内容 |
-| --- | --- |
-| [getting-started.md](doc/getting-started.md) | 依赖引入、第一个效果、核心概念。 |
-| [guide.md](doc/guide.md) | 绘制形状、编排式动画、句柄、粒子集、发射器、动画。 |
-| [particle-commands.md](doc/particle-commands.md) | 分步配置发射器、公式与图片采样。 |
-| [api-reference.md](doc/api-reference.md) | 按包分类的类索引。 |
-| [known-issues.md](doc/known-issues.md) | 已知限制，以及与编辑器之间的行为差异。 |
-| [multiversion.md](doc/multiversion.md) | 核心边界、平台构建、发布坐标与类型迁移。 |
+[文档目录](doc/README.md)
 
 ## 从源码构建
 

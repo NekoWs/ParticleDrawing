@@ -1,4 +1,253 @@
-# 分步配置粒子生成器
+# 粒子命令
+
+`/pdraw particle` 支持聊天、命令方块与数据包函数，需要原版等级 2 命令权限。
+`group/add/program` 用于固定成员的组编排，`emitter` 用于按样本生成粒子和控制逐粒子运动。
+[组编排](#命令绘制与数据包) · [分步生成器](#分步配置粒子生成器) · [动画](animation.md#播放动画文件) · [光照](lighting.md#命令)
+
+## 命令绘制与数据包
+
+数据包目录与 `pack.mcmeta` 见[命令函数示例](../examples/commands/README.md#安装到测试存档)。
+
+`/pdraw particle` 把公开绘图与 `ParticleGroup` 编排能力拆成可组合的命令，适合 `.mcfunction`、连锁
+命令方块和聊天调试。一个效果按三步构建：
+
+1. `group create` 或 `group reset` 建一个有名字的组；
+2. 用多条 `add` 把图元加全；
+3. 用多条 `program` 录制组动画，或用逐粒子表达式接管粒子状态。
+
+组名在当前维度内唯一，允许字母、数字、下划线、短横线、点和冒号，最长 64 字符。`reset` 会先移除
+同名旧组再创建，适合可重复触发的数据包函数。命名组只存在于本次服务器运行期，关卡卸载或服务器关闭时
+自动清理。
+
+下面的简写示例放在同一个 `.mcfunction` 中执行时，共用函数入口的坐标。拆到多个命令方块时，每个方块的
+`~` 都相对该方块自身；连锁执行不会继承前一个方块的执行位置。同组只共享编排，不会把不同 `add` 命令
+生成的图形自动移到同一个中心。简单示例见下方的[命令方块 sin 曲线](#命令方块简单用法sin-曲线)。
+
+```mcfunction
+# 建组并添加两个图元；~ 和 ^ 都按原版命令源解析
+pdraw particle group reset demo ~ ~1 ~
+pdraw particle add demo circle ~ ~1 ~ 3 96 color=#55ddff style=soft_dot additive glowing
+pdraw particle add demo hexagram ~ ~1 ~ 2.4 24 gradient=#ffffff:#5588ff style=soft_dot scale=0.35
+
+# 每条 program 只负责一个动作，按调用顺序接到同一时间线
+pdraw particle program demo fade_in 8 ease_out
+pdraw particle program demo spin 0 1 0 2
+pdraw particle program demo pulse 1.2 10 -1
+pdraw particle program demo delay 80
+pdraw particle program demo stop_continuous
+pdraw particle program demo fade_out 12 ease_in
+```
+
+### 命令方块简单用法：sin 曲线
+
+准备一个脉冲命令方块，接两个“无条件、始终活动”的连锁命令方块，箭头按顺序相连。每块各填一行：
+
+```mcfunction
+pdraw particle group reset sine ~ ~2 ~
+pdraw particle add sine field anchor 81 texture=particle:minecraft:end_rod size_world=0.12,0.12 glowing light=0 lifetime=80
+pdraw particle program sine expression local 0 u=i/(n-1);x=8*u;y=sin(2*PI*u-t*0.002);z=0;
+```
+
+触发第一块，即可在它上方 2 格处画出一条长 8 格、振幅 1 格、随时间起伏的 sin 曲线。
+`field` 提供 81 颗粒子，`i` 是从 0 开始的序号，`n` 是总数，`u` 把序号映射到 0..1。
+`field anchor` 在组锚点生成成员，`expression local` 把公式输出视为相对该锚点的偏移；移动效果只改
+第一条命令的坐标。曲线会向下延伸 1 格，建议把起点高度设在地面上方 2 格。清除时执行：
+
+```mcfunction
+pdraw particle group remove sine
+```
+
+`lifetime=80` 表示粒子存在 80 tick（4 秒），到点自动消失；默认未写寿命时永存。末地烛贴图会在这
+4 秒里按粒子年龄播放完整个帧序列。公式中的 `t` 是毫秒时间，控制波形运动；去掉 `-t*0.002` 可固定
+曲线形状，贴图仍会换帧。不需要重复命令方块每 tick 重画。
+
+要跟随实体，在最后一块公式命令之前插入一个连锁命令方块：
+
+```mcfunction
+pdraw particle program sine anchor entity @p 0 2 0 false
+```
+
+此时曲线相对目标实体脚下上方 2 格绘制。`false` 只跟随位置，改成 `true` 也会随实体朝向旋转；
+`@p` 也可换成玩家名或只选一个目标的实体选择器。
+
+`field` 的 `lifetime` 是粒子存在时间；`expression local 80 ...` 中的 80 只控制公式求值时长，不负责
+删除粒子。所有 `add` 图元均可指定 `lifetime`。也可用 `program <组> destroy_after 80` 销毁整组。
+
+### 复用原版粒子贴图
+
+使用 `texture=particle:minecraft:end_rod` 播放原版粒子贴图序列，`#3` 固定为第 4 帧，`@8`
+按 8 FPS 循环。也可引用其他模组提供的粒子贴图。换帧与资源包规则见[粒子贴图](guide.md#原版与模组粒子贴图)。
+
+### 组与图元语法
+
+| 命令 | 作用 |
+| --- | --- |
+| `group create <组> <轴心>` | 新建组；同名已存在时报错 |
+| `group reset <组> <轴心>` | 移除同名旧组并重建，适合重复触发 |
+| `group list` | 列出当前维度的命名组 |
+| `group remove <组>` / `group clear` | 删除一个组或清空当前维度 |
+| `add <组> dot <位置>` | 单颗粒子 |
+| `add <组> field <位置> <数量>` | 同点粒子场，通常交给 `expression` 展开 |
+| `add <组> field anchor <数量>` | 在组当前锚点生成粒子场，无需重复写坐标 |
+| `add <组> line <起点> <终点> <数量>` | 粒子线段 |
+| `add <组> beam <起点> <终点>` | 一颗带方向和世界尺寸的贴图光束 |
+| `add <组> helix <中心> <半径> <高度> <圈数> <数量>` | 螺旋曲线 |
+| `add <组> circle <中心> <半径> <数量>` | 圆周 |
+| `add <组> disc <中心> <半径> <外圈数量> <层数>` | 实心圆盘 |
+| `add <组> triangle <中心> <半径> <每边数量>` | 三角形轮廓 |
+| `add <组> hexagram <中心> <半径> <每边数量>` | 六芒星轮廓 |
+| `add <组> rect <中心> <宽> <高> <密度>` | 矩形网格或边框 |
+| `add <组> sphere <中心> <半径> <数量>` | 斐波那契球面 |
+| `add <组> cuboid <中心> <宽> <高> <深> <密度>` | 长方体网格或外壳 |
+
+每条 `add` 后面可继续写空格分隔的 `key=value`。布尔项也可只写键名，例如 `additive` 等价于
+`additive=true`。颜色写 `#RRGGBB` 或 `#RRGGBBAA`，向量写 `x,y,z`，含空格的贴图名用双引号包住。
+不适用于当前图元的参数会直接报错。
+
+| 参数 | 说明 |
+| --- | --- |
+| `color=#RRGGBB` / `gradient=颜色:颜色` / `rainbow[=透明度]` | 三选一的着色方式 |
+| `scale=N`、`stagger=tick`、`taper` | 标量尺寸、逐颗错峰生成、线条收细 |
+| `axis=xz\|xy\|yz`、`hollow`、`thickness=N` | 平面、空心网格、光束宽度 |
+| `style=square\|soft_dot\|line`、`texture=名称`、`uv=u,v,w,h` | 内置形状、自定义贴图与 UV |
+| `size=w,h` / `size_world=w,h`、`billboard=true\|false` | 编辑器单位或世界格尺寸、是否面向摄像机 |
+| `spin=x,y,z`、`spin_space=local\|world` | 贴图欧拉角（度）及旋转空间 |
+| `additive`、`glowing`、`light=0..15`、`intensity=N`、`light_only` | 混合、全亮和动态光参数；`light_only` 只发光不画外观 |
+| `alpha_curve` / `size_curve` / `red_curve` 等 | `tick:value[:easing]`，多关键帧以逗号分隔 |
+| `lifetime=tick` | 所有图元：每颗粒子的存在刻数，未写时保留原来的无限寿命 |
+| `velocity=x,y,z`、`force=x,y,z`、`force_ticks=tick` | 仅 `field`：初速度和持续受力 |
+
+`stagger` 会让 `Draw` 逐颗生成成员。命令层会把紧随其后的 `program` 暂存到最后一颗成员入组之后，并
+保持多条编排命令的顺序，不需要数据包自行估算等待时间。一个命名组最多编排 8192 颗粒子，超过时应拆成
+多个组；开始执行第一条 `program` 后不能再追加图元。
+
+### 编排命令
+
+| 命令 | 作用 |
+| --- | --- |
+| `program <组> anchor fixed <位置>` | 绑定固定坐标锚点，解除已有的实体跟随 |
+| `program <组> anchor entity <实体> [x y z [local]]` | 绑定实体锚点及偏移；`local=true` 时偏移和整组随实体朝向旋转 |
+| `program <组> pivot <位置>` / `follow <实体> ...` | 上面两条锚点命令的兼容简写 |
+| `program <组> delay <tick>` | 推进该组时间线，后续动作从新时刻开始 |
+| `program <组> fade_in\|fade_out\|fade_out_keep <tick> [缓动]` | 淡入、淡出并删除、淡出但保留 |
+| `program <组> move <x> <y> <z> <tick> [缓动]` | 整组平移 |
+| `program <组> move_offset <倍率> <tick> [缓动]` | 每颗沿自身相对轴心方向散开 |
+| `program <组> move_path <tick> <x,y,z;x,y,z...> [缓动]` | 沿一组相对位移途经点移动 |
+| `program <组> rotate <轴x> <轴y> <轴z> <角度> <tick> [缓动]` | 绕轴心旋转一次，角度单位为度 |
+| `program <组> recolor <颜色> <tick> [缓动]` | 变色 |
+| `program <组> scale_by\|scale_to <倍率> <tick> [缓动]` | 相对缩放或缓动到绝对倍率 |
+| `program <组> spin <轴x> <轴y> <轴z> <每tick角度>` | 持续旋转 |
+| `program <组> pulse <峰值倍率> <半周期> [次数]` | 往复缩放，次数 `-1` 表示持续 |
+| `program <组> stop_continuous` | 在当前时间线时刻停止持续旋转和脉冲 |
+| `program <组> destroy_after <tick>` / `retire [余量]` | 定时销毁，或等有限程序完成后销毁 |
+| `program <组> entity <句柄> <实体>` | 在程序启动前注册公式实体句柄 |
+| `program <组> variable set <名称> <数字>` | 在程序启动前声明静态变量 |
+| `program <组> variable live <名称> <公式>` | 程序启动后立即更新变量 |
+| `program <组> variable ease <名称> <公式> <tick> [缓动]` | 程序启动后把变量缓动到公式结果 |
+| `program <组> expression <tick> <代码>` | 每颗每 tick 求值；`0` 表示持续 |
+| `program <组> expression local <tick> <代码>` | 输出相对组当前锚点，可直接跟随实体与局部朝向；`0` 表示持续 |
+
+缓动名支持 `linear`、`ease_in`、`ease_out`、`ease_in_out`，以及 `_quad`、`_cubic`、`_bounce`、
+`_elastic` 变体。命令补全会列出全部名称。
+
+实体锚点在命令执行时把选择器解析为一个实体 UUID，之后会持续跟随当时选中的同一个实体。默认偏移是
+`0 0 0`，按世界坐标解释；最后一个参数写 `true` 时，偏移和组内图形都会随实体的 yaw/pitch 转动。客户端
+暂时找不到该实体时会隐藏该组，实体重新进入客户端后继续显示。锚点通常放在淡入、旋转等动画命令之前：
+
+```mcfunction
+# 组轴心放在实体脚下，图形画在头顶 1.8 格，再用相同偏移绑定到该实体
+pdraw particle group reset halo ~ ~ ~
+pdraw particle add halo circle ~ ~1.8 ~ 0.7 48 color=#ffe080 style=soft_dot additive glowing
+pdraw particle program halo anchor entity @s 0 1.8 0 false
+pdraw particle program halo spin 0 1 0 3
+
+# 随实体朝向的前方施法环：局部 Z 偏移 1.2 格
+pdraw particle group reset cast_ring ~ ~ ~
+pdraw particle add cast_ring circle ~ ~1.2 ~1.2 1 56 axis=xy color=#70c8ff style=soft_dot additive glowing
+pdraw particle program cast_ring anchor entity @s 0 1.2 1.2 true
+```
+
+### 数据包法阵示例
+
+下面的效果把静态法阵和动态光点拆成两个组。静态组使用形状与组动画，动态组使用 192 颗同点粒子和
+逐粒子公式，运行时只下发声明，旋转、实体跟随、颜色和退场由客户端执行。
+
+入口需要保留实体与位置上下文：
+
+```mcfunction
+execute as @p at @s run function example:magic/start
+```
+
+`data/example/function/magic/start.mcfunction`：
+
+```mcfunction
+pdraw particle group reset spell_sigil ~ ~ ~
+pdraw particle add spell_sigil circle ~ ~0.06 ~ 3.2 112 color=#45d9ff style=soft_dot scale=0.32 additive glowing light=12 intensity=1.4
+pdraw particle add spell_sigil hexagram ~ ~0.06 ~ 2.55 22 gradient=#ffffff:#487dff style=soft_dot scale=0.28 additive glowing
+pdraw particle program spell_sigil anchor entity @s 0 0.06 0 false
+pdraw particle program spell_sigil fade_in 8 ease_out
+pdraw particle program spell_sigil spin 0 1 0 1.8
+pdraw particle program spell_sigil pulse 1.12 12 -1
+pdraw particle program spell_sigil delay 80
+pdraw particle program spell_sigil stop_continuous
+pdraw particle program spell_sigil fade_out 12 ease_in
+
+pdraw particle group reset spell_motes ~ ~1 ~
+pdraw particle add spell_motes field ~ ~1 ~ 192 color=#56dfff00 style=soft_dot size_world=0.07,0.07 additive glowing light=13 intensity=1.6
+pdraw particle program spell_motes entity caster @s
+pdraw particle program spell_motes variable set radius 3
+pdraw particle program spell_motes variable set presence 1
+pdraw particle program spell_motes expression 0 q=(i%64)/64;layer=floor(i/64);ang=q*2*PI+t*0.002*(1-2*(layer%2));rad=radius*(0.55+layer*0.2);x=get_entity_x(caster)+cos(ang)*rad;y=get_entity_y(caster)+0.08+sin(ang*3+t*0.004)*0.08;z=get_entity_z(caster)+sin(ang)*rad;sc=presence*(0.65+0.25*sin(t*0.006+i));a=presence;r=0.2;g=0.78;b=1;
+schedule function example:magic/end 4s replace
+```
+
+`data/example/function/magic/end.mcfunction`：
+
+```mcfunction
+pdraw particle program spell_motes variable ease presence 0 12 ease_in
+pdraw particle program spell_motes retire 2
+```
+
+表达式里的 `i` 是成员序号，`n` 是成员总数，`t` 是毫秒时间；旧式 `expression <tick>` 的 `x/y/z`
+是世界绝对坐标，`expression local <tick>` 则是相对当前组锚点的偏移，
+`r/g/b/a`、`sc` 控制外观，glowing/light 在 add 时设置；逐粒子运动和光照输出使用 emitter 的 birth/motion。
+组公式可以读取已注册实体和世界状态，完整 getter 表见
+[组公式与实体输入](guide.md#实体通道与公式)。一个组用了 `expression` 后，公式会接管该组所有成员的位置和外观；需要同时
+保留静态图形时，应像示例一样拆组。
+
+拆成命令方块链时，统一每条命令的执行位置和实体上下文；入门见[命令方块 sin 曲线](#命令方块简单用法sin-曲线)。
+
+### 让常驻粒子群变形到新编队
+
+`program <组> morph` 将现有成员移动到新槽位，默认采用最近邻分配。
+槽位用公式描述，变量 `i`/`n`/`u`，动态目标还能用 `t`。
+
+```mcfunction
+pdraw particle program demo morph slots 120 vec3(cos(u*6.2832)*3, 101.5, sin(u*6.2832)*3)
+pdraw particle program demo morph ticks 120
+pdraw particle program demo morph easing in_out_cubic
+pdraw particle program demo morph max_speed 0.5
+pdraw particle program demo morph loop -1
+pdraw particle program demo morph start
+```
+
+| 子命令 | 含义 |
+| --- | --- |
+| `morph slots <数量> <位置公式>` | 目标槽位；位置必须是 `vec3(...)` |
+| `morph yaw\|pitch\|size <公式>` | 槽位朝向与尺寸（默认不改粒子原值） |
+| `morph control1\|control2 <公式>` | 每颗粒子自己的路径控制点（二次/三次贝塞尔） |
+| `morph ticks\|stagger\|loop <整数>` | 时长、错峰、往返次数（`-1` 无限） |
+| `morph max_speed\|max_accel\|converge <数>` | 限速、限加速度、收敛阈值 |
+| `morph path straight\|quadratic\|cubic` | 直线或贝塞尔路径 |
+| `morph easing <名字>` | 缓动名，与 `move` 等命令同一套 |
+| `morph wobble <none\|bell\|noise\|vortex> [强度] [峰值]` | 过渡中段的扰动，收尾必衰减到 0 |
+| `morph allocation <nearest\|index\|angle>` | 分配策略 |
+| `morph dynamic\|keep_velocity\|attributes <true\|false>` | 动态目标、到达后继续飞、是否连朝向尺寸一起写 |
+| `morph start` / `inspect` / `reset` | 下发、查看配置、清空配置 |
+
+过渡中再次执行 `start`，从当前实际位置和速度接续。设有限速时会延长过短的过渡时长。
+
+## 分步配置粒子生成器
 
 `/pdraw particle emitter` 把采样、出生属性、运动与筛选分开配置。每个名称是一份可复用的配置，
 不代表固定形状。曲线、曲面、图片点阵都使用同一套公式与生命周期。
@@ -6,7 +255,7 @@
 生成器名称含冒号时使用双引号，例如 `emitter "spell:fire" burst`。
 贴图引用、图片路径和 bounds 保留完整文本，支持冒号、斜杠和逗号；含空格的图片路径可用双引号包住。
 
-## 第一个例子：会运动的 sin 曲线
+### 第一个例子：会运动的 sin 曲线
 
 以下内容可直接保存为 `.mcfunction`。命令方块里每行放一块：第一块脉冲、需要红石，后续连锁、
 无条件、始终活动；箭头依次相连。只触发一次，不要用循环方块反复执行配置。
@@ -38,7 +287,7 @@ pdraw particle emitter sine burst
 
 配置完成后可以只重复执行最后的 `burst`，多次触发的实例可以同时存在。持续生成则用 `start`。
 
-## 图片转粒子
+### 图片转粒子
 
 把静态 PNG 放进游戏或服务端工作目录的 `particleImages/`，例如 `particleImages/ring.png`。
 开发运行使用 `run/<目标>/<运行名>/particleImages/`，例如 26.3 单人的 `run/neoforge-26.3/client/particleImages/`。
@@ -84,7 +333,7 @@ pdraw particle emitter sigil image resource demo:images/ring.png
 不支持网络 URL。图片最多 8 MiB、边长 4096、总像素 1048576；有效样本最多 8192，超限会报错，
 请显式调整 `stride`，不会自动丢点或改变密度。
 
-## 参数曲线与动态曲面示例
+### 参数曲线与动态曲面示例
 
 [ColorBlock 作者网站的案例](https://mc.ecylt.top/#resource)使用参数方程、极坐标转换、空间条件筛选和
 逐粒子运动。它们可以用相同的底层步骤表达，不需要给每一种效果增加一个命令子项：
@@ -113,7 +362,7 @@ pdraw particle emitter sigil image resource demo:images/ring.png
 不照搬案例里接近正切极点的超远坐标。球面是表面点阵，体积填充可另用空间网格与球内条件。
 ColorBlock 的参数 t 在 PD 中对应采样参数 u；PD 的 t 专指发射器毫秒，不能直接整段复制原公式。
 
-### 四种常见模式怎么对应
+#### 四种常见模式怎么对应
 
 | ColorBlock | PD 写法 |
 | --- | --- |
@@ -150,7 +399,7 @@ pdraw particle emitter sphere anchor entity @p 0 3 0 false
 start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长期只保留同一批成员时，使用 lifetime=-1
 配合 burst，并按需删除淡出公式；用 remove 清除。
 
-## 采样和公式
+### 采样和公式
 
 | 命令（前缀 `pdraw particle emitter <名称>`） | 含义 |
 | --- | --- |
@@ -199,38 +448,8 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 需要多步计算时使用多条 `let`；`let` 可以保留数值、布尔、向量和矩阵，后续公式按 `.x/.y/.z` 取分量。
 `where` 在出生公式之后求值，用 `sx/sy/sz` 可以回到原始采样坐标；用 `x/y/z` 则看出生后的位置。
 
-### 让发射器沿轨迹移动
+#### 让发射器沿轨迹移动
 
-### 让常驻粒子群变形到新编队
-
-`group <组> morph` 是给**已有粒子群**用的：成员不重生、不销毁，按最近邻分配平滑地移到新槽位。
-槽位用公式描述，变量 `i`/`n`/`u`，动态目标还能用 `t`。
-
-```mcfunction
-pdraw particle program demo morph slots 120 vec3(cos(u*6.2832)*3, 101.5, sin(u*6.2832)*3)
-pdraw particle program demo morph ticks 120
-pdraw particle program demo morph easing in_out_cubic
-pdraw particle program demo morph max_speed 0.5
-pdraw particle program demo morph loop -1
-pdraw particle program demo morph start
-```
-
-| 子命令 | 含义 |
-| --- | --- |
-| `morph slots <数量> <位置公式>` | 目标槽位；位置必须是 `vec3(...)` |
-| `morph yaw\|pitch\|size <公式>` | 槽位朝向与尺寸（默认不改粒子原值） |
-| `morph control1\|control2 <公式>` | 每颗粒子自己的路径控制点（二次/三次贝塞尔） |
-| `morph ticks\|stagger\|loop <整数>` | 时长、错峰、往返次数（`-1` 无限） |
-| `morph max_speed\|max_accel\|converge <数>` | 限速、限加速度、收敛阈值 |
-| `morph path straight\|quadratic\|cubic` | 直线或贝塞尔路径 |
-| `morph easing <名字>` | 缓动名，与 `move` 等命令同一套 |
-| `morph wobble <none\|bell\|noise\|vortex> [强度] [峰值]` | 过渡中段的扰动，收尾必衰减到 0 |
-| `morph allocation <nearest\|index\|angle>` | 分配策略 |
-| `morph dynamic\|keep_velocity\|attributes <true\|false>` | 动态目标、到达后继续飞、是否连朝向尺寸一起写 |
-| `morph start` / `inspect` / `reset` | 下发、查看当前草稿、清空草稿 |
-
-过渡进行中再次 `start` 会以**当前实际位置与速度**为新起点重新分配，不会跳回旧起点；
-限速给定时若时长太短会自动延长，保证单帧位移不超上限。
 `orbit` 给锚点叠一条按时间求值的偏移，发射器原点就会动起来；已出生的粒子留在出生位置，
 配合 `rate`/`interval` 就能沿轨迹铺出粒子。公式只能引用 `t`（发射器运行毫秒）、`variable`、
 `state` 与 `let`，写样本级的 `u`/`i`/`age` 会直接报错。
@@ -246,9 +465,10 @@ pdraw particle emitter trail start
 ```
 
 上面这段让发射器沿半径 4 的圆匀速绕行，每刻发一颗，留下一条圆环。
-不能通过一条属性公式改变其它属性。
 
-每刻先检查寿命与 kill，再计算 motion，随后速度加上加速度、位置加上速度。
+#### 公式求值次序
+
+每条公式只写一个属性。每刻先检查寿命与 `kill`，再计算 motion，随后速度加上加速度、位置加上速度。
 显式输出了某个位置分量时，该分量直接采用公式结果，不再叠加对应速度。
 新生粒子保留完整的 age=0 首帧，下一刻才运行 motion。
 
@@ -264,9 +484,9 @@ pdraw particle emitter sigil motion z dx*sin(angle)+dz*cos(angle)
 矩阵按行向量构造，例如 `mat3(vec3(0,1,0),vec3(1,0,0),vec3(0,0,1))*vec3(x,y,z)`；
 用 `.x/.y/.z` 取分量。公式不执行赋值、循环、生成粒子或任意文件访问。
 未知符号在配置时拒绝；运行中遇到除零、非有限数或属性越界，会停止并清理对应实例，在客户端报告错误。
-修正配置后执行 remove，再 start/burst 重试；不会生成替代图形或偷偷使用默认值。
+修正配置后，执行 `remove`，再用 `start` 或 `burst` 重新生成。
 
-## 条件曲面
+### 条件曲面
 
 下面先采样空间，再保留球壳；球壳只是条件表达式的结果，不是内置特效。
 
@@ -289,7 +509,7 @@ pdraw particle emitter shell burst
 循环生成默认每刻最多 8 个样本；`rate` 允许 1..1024，`interval` 允许 1..72000 刻，`max_alive` 允许 1..8192。
 每轮样本最多 8192，网格按筛选前的采样点总数计算这个上限。
 
-## 锚点和联动
+### 锚点和联动
 
 ```mcfunction
 pdraw particle emitter shell anchor entity @p
@@ -312,7 +532,7 @@ pdraw particle emitter sigil anchor emitter shell
 此后只改 shell 的 anchor，sigil 会一起更新。允许多级引用，禁止循环引用和删除仍被引用的配置。
 也可用原版 marker 实体为多层特效提供共同锚点。
 
-## 筛选、修改、停止
+### 筛选、修改、停止
 
 ```mcfunction
 pdraw particle emitter shell select age>20 && y>0
@@ -350,32 +570,8 @@ pdraw particle emitter shell apply
 scale、uv、size、size_world、billboard、spin、spin_space、additive、glowing、light、intensity、
 spot、light_dir、light_range、light_falloff 与 `*_curve`。
 
-### 动态光与射灯
+光源属性和射灯示例见[动态光照](lighting.md#命令)。
 
-| 参数 | 含义 |
-| --- | --- |
-| `light=15` | 0–15 的对外光照等级，0 关灯 |
-| `intensity=0.75` | 非负强度倍数，最终亮度最高为 15 |
-| `spot=45,25,2` | 外锥半角、内锥半角、边缘锐度；可省略后两项。内锥默认是外锥的 60%，锐度默认 1，内外锥相等为硬边 |
-| `light_dir=0,-90` | 世界偏航与俯仰，单位为度。偏航 0 朝 +Z，俯仰 -90 朝下 |
-| `light_range=12` | 灯的照射半径，最大 64 格，0 沿用客户端默认半径 |
-| `light_falloff=smooth` | 径向衰减，支持 `constant`、`linear`（默认）、`smooth`、`inverse`、`inverse_square` |
-| `color=#ff5938` | 设置粒子颜色；已配置形状的光源也用它为地形新增亮度上色 |
-| `light_only=true` | 隐藏发光粒子的外观 |
-| `light_curve=0:1,8:0.2,16:1` | 按粒子存活刻数调光，可与锥角、衰减和亮度组合 |
-
-例如在顶面为 Y=-63 的平面上，从上方三格向下打光。
-
-```mcfunction
-pdraw particle group reset lamps 0.0 -60.0 0.0
-pdraw particle add lamps dot 0.0 -60.0 0.0 light=15 light_only=true color=#ff5938 spot=35,20 light_dir=0,-90 light_range=12 light_falloff=smooth
-```
-
-光源中心跟着粒子移动，朝向用世界坐标。多盏灯取最高亮度，地形颜色按各灯的照射贡献混合。
-客户端的 `maxDynamicLights` 和 `maxDynamicLightsPerCell` 分别限制总数与每 16 格立方区域的数量。
-`showSpotlightBeams` 可开启空气中的淡光束。它绘制最多 32 盏附近射灯，沿光轴遇到方块时收短。
-在单人平地测试世界可运行 `/pdraw light demo` 对比一盏点光与外锥半角为 20°、35°、50° 的斜射灯。该命令将执行者切到旁观模式、移动机位并把时间设到午夜。
-`/pdraw light` 在单人世界报告光源与地形覆盖数据。
 曲线写法仍是 `0:1,40:0:ease_out`。修改 spin_space 前先设置 spin。
 
 配置按维度保存在运行时内存中，重启或卸载维度后清空；建议在数据包的 load 函数里声明，技能函数只触发
@@ -383,12 +579,5 @@ burst 或更新参数。每维度最多 256 个配置，全服最多 256 个播�
 无限寿命实例需显式 remove/delete。持续生成的实例会给后来进入维度的玩家下发当前声明，从头开始生成，
 不补演历史拖尾；burst 只向触发时同维度在线的玩家播放，不对后来进入的玩家重复触发。
 
-## 与组命令、API 的关系
-
-`group/add/program` 仍用于固定成员的组级编排；`emitter` 用于出生和逐粒子行为。
-现有所有 `add` 图元都可以显式指定 `lifetime=80`，不再局限于 field；未写时仍保留原来的无限寿命。
-组 expression 仅输出位置、颜色和尺寸；向 vx/vy/vz/glow/light 赋值会报错，请使用生成器的 birth/motion。
-
-公开 API 为 `ParticleSampling`、`ParticleImageSampler`、`ParticleRecipe`、`RecipeAnchor`、
-`ParticleSources.start` 与 `ParticleSourceHandle`。API 与命令共用出生调度、运动求值和网络声明。
-`.pdrawc` 格式和编辑器脚本语义不变。
+代码入口为 `ParticleSampling`、`ParticleImageSampler`、`ParticleRecipe`、`RecipeAnchor` 和
+`ParticleSources.start`。[API 参考](api-reference.md#采样与运行时生成)

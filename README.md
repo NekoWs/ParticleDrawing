@@ -122,23 +122,16 @@ More in the [getting started guide](doc/getting-started.md).
 | `/pdraw texture reload`      | Reload particle textures from disk (client side only).          |
 
 Use `group → add → program` for choreographed groups. For sampled curves, images and continuous emitters,
-configure each step with `emitter`, then use `burst` or `start`. Both work in data pack functions and command blocks. See the [command guide](doc/guide.md#命令绘制与数据包) for the full
+configure each step with `emitter`, then use `burst` or `start`. Both work in data pack functions and command blocks. See the [command guide](doc/particle-commands.md#命令绘制与数据包) for the full
 syntax and a ready-to-use magic circle example.
-For a short command block example, see the [sin curve with the end rod texture](doc/guide.md#命令方块简单用法sin-曲线).
+For a short command block example, see the [sin curve with the end rod texture](doc/particle-commands.md#命令方块简单用法sin-曲线).
 Use `texture=particle:minecraft:end_rod` to reuse a vanilla texture while retaining PD animation controls.
 Frames follow particle age and lifetime. Use `field anchor` with `expression local` to share the group anchor,
 and `lifetime=80` for a four-second lifetime. [Data pack setup and example functions](examples/commands/README.md)
 
 ## Documentation
 
-| Document                                     | Contents                                                              |
-| -------------------------------------------- | --------------------------------------------------------------------- |
-| [getting-started.md](doc/getting-started.md) | Dependency setup, first effect, core concepts.                        |
-| [guide.md](doc/guide.md)                     | Drawing, choreographed groups, handles, batches, emitters, animations. |
-| [particle-commands.md](doc/particle-commands.md) | Step-by-step particle sources, formulas and image sampling. |
-| [api-reference.md](doc/api-reference.md)     | Class index grouped by package.                                       |
-| [known-issues.md](doc/known-issues.md)       | Known limitations and behavior differences against the editor.        |
-| [multiversion.md](doc/multiversion.md)       | Core boundaries, platform builds, coordinates and migration.           |
+[Documentation index](doc/README.md)
 
 ## Building from source
 
