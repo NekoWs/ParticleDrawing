@@ -7,6 +7,7 @@ import work.nekow.particledrawing.api.CurveChannel
 import work.nekow.particledrawing.api.ParticleLifeCurve
 import work.nekow.particledrawing.core.easing.EasingCurve
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.light.LightShape
 import work.nekow.particledrawing.util.rotateAround
 import java.util.UUID
 import kotlin.math.abs
@@ -64,6 +65,8 @@ class RenderParticle(
     emitsLight: Boolean = glowing,
     /** 只发光不画外观；光强不随透明度和尺寸衰减。 */
     private val lightOnly: Boolean = false,
+    /** 光源形状（射灯锥角、半径、衰减）；null = 点光。 */
+    private val lightShape: LightShape? = null,
 ) {
 
     // 位置 / 颜色 / 缩放（直接缓动）
@@ -176,6 +179,9 @@ class RenderParticle(
     /** 只发光不画外观；见 [ParticleVisual.lightOnly]。 */
     fun lightOnly(): Boolean = lightOnly
     fun lightLevel(): Int = lightLevel
+
+    /** 光源形状；null 表示按老行为（点光、线性衰减、全局半径）。 */
+    fun shape(): LightShape? = lightShape
 
     /**
      * 生成后经过的 tick 数（引擎时钟：关卡暂停时不增长）。

@@ -2,6 +2,8 @@ package work.nekow.particledrawing.core.network
 
 import net.minecraft.network.FriendlyByteBuf
 import work.nekow.particledrawing.api.ParticleVisual
+import work.nekow.particledrawing.light.LightFalloff
+import work.nekow.particledrawing.light.LightShape
 import work.nekow.particledrawing.core.TextureRegistry
 
 /**
@@ -25,6 +27,7 @@ internal object ParticleVisualCodec {
     private const val FLAG_LIGHT_INTENSITY = 1 shl 9
     private const val FLAG_EMITS_LIGHT = 1 shl 10
     private const val FLAG_LIGHT_ONLY = 1 shl 11
+    private const val FLAG_LIGHT_SHAPE = 1 shl 12
 
     fun write(buf: FriendlyByteBuf, visual: ParticleVisual?) {
         if (visual == null) {
@@ -55,6 +58,7 @@ internal object ParticleVisualCodec {
         if (visual.lightIntensity != 1f) flags = flags or FLAG_LIGHT_INTENSITY
         if (visual.emitsLight) flags = flags or FLAG_EMITS_LIGHT
         if (visual.lightOnly) flags = flags or FLAG_LIGHT_ONLY
+        if (visual.lightShape != null) flags = flags or FLAG_LIGHT_SHAPE
 
         buf.writeVarInt(flags)
         if (flags == 0) return
@@ -75,6 +79,15 @@ internal object ParticleVisualCodec {
             buf.writeFloat(visual.spinZDeg.toFloat())
         }
         if (visual.lightIntensity != 1f) buf.writeFloat(visual.lightIntensity)
+        visual.lightShape?.let {
+            buf.writeDouble(it.range)
+            buf.writeDouble(it.outerDeg)
+            buf.writeDouble(it.innerDeg)
+            buf.writeDouble(it.edge)
+            buf.writeDouble(it.yawDeg)
+            buf.writeDouble(it.pitchDeg)
+            buf.writeVarInt(it.falloff.ordinal)
+        }
     }
 
     fun read(buf: FriendlyByteBuf): ParticleVisual? {
@@ -112,6 +125,16 @@ internal object ParticleVisualCodec {
         }
         visual.emitsLight = flags and FLAG_EMITS_LIGHT != 0
         visual.lightOnly = flags and FLAG_LIGHT_ONLY != 0
+        if (flags and FLAG_LIGHT_SHAPE != 0) {
+            val range = buf.readDouble()
+            val outer = buf.readDouble()
+            val inner = buf.readDouble()
+            val edge = buf.readDouble()
+            val yaw = buf.readDouble()
+            val pitch = buf.readDouble()
+            val falloff = LightFalloff.entries.getOrNull(buf.readVarInt()) ?: LightFalloff.LINEAR
+            visual.lightShape = LightShape(range, outer, inner, edge, yaw, pitch, falloff).validated()
+        }
         return visual
     }
 }

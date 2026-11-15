@@ -9,6 +9,7 @@ import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleLifeCurve
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.light.LightShape
 import work.nekow.particledrawing.core.network.ParticleExitCompletePayload
 import work.nekow.particledrawing.util.AttachMath
 import java.util.*
@@ -77,7 +78,7 @@ class ClientParticleEngine {
                       additive: Boolean = false, scaleArray: FloatArray? = null,
                       lifeCurve: ParticleLifeCurve? = null, prev: Vec3? = null,
                       lightIntensity: Float = 1f, emitsLight: Boolean = glowing,
-                      lightOnly: Boolean = false) {
+                      lightOnly: Boolean = false, lightShape: LightShape? = null) {
         if (particles.size >= ParticleDrawingConfig.CLIENT.maxRenderParticles.get()) {
             noteRenderCapDrop()
             return
@@ -93,7 +94,7 @@ class ClientParticleEngine {
         val emits = emitsLight || lightOnly
         val rp = RenderParticle(id, Vec3(x, y, z),
             Color.of(r, g, b, a), scale, glowing, lightLevel, lifetimeTicks, uv, lifeCurve, prev, lightIntensity,
-            emits, lightOnly)
+            emits, lightOnly, lightShape)
         if (scaleArray != null) rp.setScaleArrayDirect(scaleArray)
         rp.captureSpawnSize()
         rp.markBorn(tickSequence)
@@ -142,7 +143,7 @@ class ClientParticleEngine {
             id, x, y, z, r, g, b, a, scale, lifetimeTicks, groupId, glowing, lightLevel,
             visual.uv, visual.billboard, visual.spin, visual.spinLocal, visual.additive,
             visual.scaleArray, lifeCurve, prev, visual.lightIntensity, visual.emitsLight || glowing,
-            visual.lightOnly,
+            visual.lightOnly, visual.lightShape,
         )
     }
 

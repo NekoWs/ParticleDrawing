@@ -10,6 +10,7 @@ import work.nekow.particledrawing.api.ParticleCurve
 import work.nekow.particledrawing.api.ParticleLifeCurve
 import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.api.ParticleVisual
+import work.nekow.particledrawing.light.LightFalloff
 import work.nekow.particledrawing.core.easing.EasingType
 
 /** `/pdraw particle add` 各图元共用的外观参数。 */
@@ -40,6 +41,7 @@ internal object ParticleCommandOptionParser {
         "thickness", "style", "texture", "uv", "size", "size_world", "billboard", "spin", "spin_space",
         "additive", "glowing", "light", "light_only", "intensity", "alpha_curve", "size_curve", "red_curve",
         "green_curve", "blue_curve", "light_curve", "velocity", "force", "force_ticks",
+        "spot", "light_dir", "light_range", "light_falloff",
     )
 
     fun parse(input: String): ParticleCommandOptions {
@@ -95,6 +97,28 @@ internal object ParticleCommandOptionParser {
             visual.lightLevel(level)
         }
         values["intensity"]?.let { visual.lightIntensity(float(it, "intensity")) }
+
+        // 光源形状：spot=外锥[,内锥[,锐度]]，light_dir=偏航,俯仰，light_range=半径，light_falloff=曲线名
+        val spot = values["spot"]?.let { optionalFloats(it, 3, "spot") }
+        val range = values["light_range"]?.let { float(it, "light_range") } ?: 0f
+        require(range >= 0f) { "light_range 不能为负" }
+        if (spot != null) {
+            val outer = spot[0].toDouble()
+            val inner = spot.getOrElse(1) { 0f }.toDouble()
+            val edge = spot.getOrElse(2) { 1f }.toDouble()
+            visual.spotlight(range.toDouble(), outer, inner, edge)
+        } else if (range > 0f) {
+            visual.lightFalloff(LightFalloff.LINEAR, range.toDouble())
+        }
+        values["light_dir"]?.let {
+            val n = floats(it, 2, "light_dir")
+            visual.lightDirection(n[0].toDouble(), n[1].toDouble())
+        }
+        values["light_falloff"]?.let {
+            val curve = LightFalloff.byName(it)
+                ?: throw IllegalArgumentException("未知衰减曲线 '$it'")
+            visual.lightFalloff(curve, range.toDouble())
+        }
         values["light_only"]?.let { visual.lightOnly(bool(it, "light_only")) }
 
         var curves = ParticleLifeCurve.EMPTY
@@ -241,6 +265,13 @@ internal object ParticleCommandOptionParser {
 
     private fun int(raw: String, key: String): Int =
         raw.toIntOrNull() ?: throw IllegalArgumentException("$key 需要整数")
+
+    /** 允许省略尾部数字：`spot=30`、`spot=30,15`、`spot=30,15,2` 都成立。 */
+    private fun optionalFloats(raw: String, max: Int, key: String): FloatArray {
+        val p = raw.split(',')
+        require(p.size in 1..max) { "$key 最多 $max 个逗号分隔的数字" }
+        return FloatArray(p.size) { float(p[it], key) }
+    }
 
     private fun floats(raw: String, count: Int, key: String): FloatArray {
         val p = raw.split(',')

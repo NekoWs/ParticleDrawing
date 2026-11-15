@@ -8,6 +8,8 @@ import net.minecraft.core.SectionPos
 import net.minecraft.world.level.BlockAndLightGetter
 import work.nekow.particledrawing.api.LightSample
 import work.nekow.particledrawing.config.ParticleDrawingConfig
+import work.nekow.particledrawing.light.LightFalloff
+import work.nekow.particledrawing.light.LightMath
 import work.nekow.particledrawing.core.client.ClientParticleEngine
 import work.nekow.particledrawing.core.client.RenderParticle
 import java.util.LinkedHashSet
@@ -66,6 +68,11 @@ object DynamicLightManager {
 
     /** 每帧最大区块重建数量。 */
     private const val MAX_REBUILDS_PER_FRAME = 1024
+
+    /** 单盏灯允许的最大半径（格）：防止一个写错的参数把整片地形卷进重建。 */
+    private const val MAX_LIGHT_RANGE = 64.0
+
+    private val TRIPLE_ZERO = Triple(0.0, 0.0, 0.0)
 
     /** 光源最大照射半径（格），每帧从配置刷新，默认 16。 */
     @Volatile
@@ -159,7 +166,13 @@ object DynamicLightManager {
     internal class LightSource(
         val id: UUID,
         val x: Double, val y: Double, val z: Double,
-        val luminance: Double
+        val luminance: Double,
+        /** 这盏灯实际生效的照射半径（已按全局上限夹过）。 */
+        val range: Double = lightRadius,
+        val dirX: Double = 0.0, val dirY: Double = 0.0, val dirZ: Double = 0.0,
+        val innerCos: Double = 1.0, val outerCos: Double = -1.0,
+        val edge: Double = 1.0,
+        val falloff: LightFalloff = LightFalloff.LINEAR,
     ) {
         /** 光图写入精度是 1/16 级；签名与烘焙比较都按这个精度量化。 */
         val lightQ: Int get() = quantizeLuminance(luminance)
@@ -218,16 +231,30 @@ object DynamicLightManager {
         val radius = ParticleDrawingConfig.CLIENT.dynamicLightMaxDistance.get().coerceAtLeast(1.0)
         val newRange = ceil(radius / 16.0).toInt().coerceAtLeast(1)
         val oldRange = cellRange
-        val radiusChanged = radius != lightRadius || newRange != oldRange
+        var radiusChanged = radius != lightRadius || newRange != oldRange
         lightRadius = radius
         lightRadiusSquared = radius * radius
         cellRange = newRange
 
         val renderDistance = mc.options.effectiveRenderDistance * 16.0
         val newSources = collectSources(engine, player.x, player.y, player.z, renderDistance, partialTick)
+        // 逐灯半径可能比全局配置更大：搜索范围按本帧最大的那盏灯铺开，
+        // 否则外圈的光源会因为所在 cell 压根没被访问而完全不生效。
+        var maxRange = radius
+        for (src in newSources) if (src.range > maxRange) maxRange = src.range
+        if (maxRange > lightRadius) {
+            lightRadius = maxRange
+            lightRadiusSquared = maxRange * maxRange
+            val widened = ceil(maxRange / 16.0).toInt().coerceAtLeast(1)
+            if (widened != cellRange) {
+                cellRange = widened
+                radiusChanged = true
+            }
+        }
+
         // 对外快照：这一帧实际参与照明的光源，坐标已按 partialTick 插值
         frameSources = newSources.toTypedArray()
-        frameRadius = radius
+        frameRadius = maxRange
 
         // 光场变了就抬版本号：位置、亮度、数量或照射半径任一变化都算
         var signature = signatureOf(newSources)
@@ -342,13 +369,26 @@ object DynamicLightManager {
             if (luminance <= 0.0) continue
             val score = lightScore(dx, dy, dz, luminance)
             val key = cellKey(cellCoord(x), cellCoord(y), cellCoord(z))
+            // 形状是每颗粒子自带的外观参数：射灯给出锥角与朝向，点光拿到的是零向量。
+            val shape = p.shape()
+            val spot = shape != null && shape.isSpot
+            val dir = if (spot) shape.direction() else TRIPLE_ZERO
+            val src = LightSource(
+                p.id(), x, y, z, luminance,
+                range = (shape?.range?.takeIf { it > 0.0 } ?: lightRadius).coerceIn(1.0, MAX_LIGHT_RANGE),
+                dirX = dir.first, dirY = dir.second, dirZ = dir.third,
+                innerCos = if (spot) shape.innerCos() else 1.0,
+                outerCos = if (spot) shape.outerCos() else -1.0,
+                edge = shape?.edge ?: 1.0,
+                falloff = shape?.falloff ?: LightFalloff.LINEAR,
+            )
             // 同分时按 id 定序：光源集合的遍历顺序抖动不应让预算裁剪在相邻帧换人
             val heap = cellHeaps.getOrPut(key) { PriorityQueue(CANDIDATE_ORDER) }
             if (heap.size < perCell) {
-                heap.add(Candidate(score, LightSource(p.id(), x, y, z, luminance)))
+                heap.add(Candidate(score, src))
             } else if (score > heap.peek().score) {
                 heap.poll()
-                heap.add(Candidate(score, LightSource(p.id(), x, y, z, luminance)))
+                heap.add(Candidate(score, src))
             }
         }
 
@@ -460,12 +500,13 @@ object DynamicLightManager {
                     for (dz in -range..range) {
                         val cell = cellIndex[cellKey(cx + dx, cy + dy, cz + dz)] ?: continue
                         for (src in cell) {
-                            val ox = x - src.x
-                            val oy = y - src.y
-                            val oz = z - src.z
-                            val distSq = ox * ox + oy * oy + oz * oz
-                            if (distSq > lightRadiusSquared) continue
-                            val light = src.luminance * (1.0 - sqrt(distSq) / lightRadius)
+                            // 点光与射灯走同一套求值：朝向为零向量时锥体权重恒为 1。
+                            val light = LightMath.contributionOf(
+                                x, y, z, src.x, src.y, src.z,
+                                src.luminance, src.range,
+                                src.dirX, src.dirY, src.dirZ,
+                                src.innerCos, src.outerCos, src.falloff, src.edge,
+                            )
                             if (light > result) result = light
                         }
                     }

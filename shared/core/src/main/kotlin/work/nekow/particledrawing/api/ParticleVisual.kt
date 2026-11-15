@@ -1,5 +1,8 @@
 package work.nekow.particledrawing.api
 
+import work.nekow.particledrawing.light.LightFalloff
+import work.nekow.particledrawing.light.LightShape
+
 import work.nekow.particledrawing.math.Vec3
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.util.VisualMath
@@ -72,6 +75,31 @@ class ParticleVisual {
      * [ParticleHandle.lightIntensity]，不会改片元透明度或全亮标志。
      */
     var lightIntensity: Float = 1f
+
+    /**
+     * 光源形状：半径、锥角、朝向、衰减曲线；null = 老行为（点光、线性、全局半径）。
+     *
+     * 只影响「向世界投光」，不影响片元本身的颜色，[lightOnly] 的粒子靠它决定光斑形状。
+     */
+    var lightShape: LightShape? = null
+
+    /** 在当前形状上改几个字段；没设过就从默认点光起改。 */
+    private fun withShape(edit: LightShape.() -> LightShape): ParticleVisual {
+        lightShape = (lightShape ?: LightShape.POINT).edit().validated()
+        return this
+    }
+
+    /** 设成射灯：半径、外锥半角、内锥半角（0 = 自动 60%）、边缘锐度。 */
+    fun spotlight(range: Double, outerDeg: Double, innerDeg: Double = 0.0, edge: Double = 1.0): ParticleVisual =
+        withShape { LightShape(range, outerDeg, innerDeg, edge, yawDeg, pitchDeg, falloff) }
+
+    /** 设射灯朝向（度）：偏航绕 Y，俯仰向下为负。 */
+    fun lightDirection(yawDeg: Double, pitchDeg: Double): ParticleVisual =
+        withShape { LightShape(range, outerDeg, innerDeg, edge, yawDeg, pitchDeg, falloff) }
+
+    /** 设衰减曲线；[range] 不传就保持现状（0 = 沿用全局半径）。 */
+    fun lightFalloff(falloff: LightFalloff, range: Double = lightShape?.range ?: 0.0): ParticleVisual =
+        withShape { LightShape(range, outerDeg, innerDeg, edge, yawDeg, pitchDeg, falloff) }
 
     /** 用整张贴图（[name] 见 [texture]）；会清掉之前设的子矩形 UV。 */
     fun texture(name: String): ParticleVisual {
@@ -221,6 +249,7 @@ class ParticleVisual {
         c.emitsLight = emitsLight
         c.lightOnly = lightOnly
         c.lightIntensity = lightIntensity
+        c.lightShape = lightShape
         return c
     }
 
@@ -233,7 +262,7 @@ class ParticleVisual {
      */
     fun isPristine(): Boolean = texture == null && uvRect == null && !hasAniso() &&
         billboard && spinXDeg == 0.0 && spinYDeg == 0.0 && spinZDeg == 0.0 && spinLocal &&
-        !additive && !glowing && !emitsLight && !lightOnly && lightIntensity == 1f
+        !additive && !glowing && !emitsLight && !lightOnly && lightIntensity == 1f && lightShape == null
 
     /**
      * 解析成渲染用的 UV，由客户端调用。[texW]/[texH] 是已注册贴图的像素尺寸，未知传 0。

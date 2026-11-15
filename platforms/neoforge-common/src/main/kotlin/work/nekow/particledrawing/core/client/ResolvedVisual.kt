@@ -2,6 +2,7 @@ package work.nekow.particledrawing.core.client
 
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.ParticleVisual
+import work.nekow.particledrawing.light.LightShape
 
 // 外观规格的客户端解析：把协议侧的 ParticleVisual（贴图名 / 子矩形 / 各向异性 / 朝向 / 加色）
 // 翻成渲染层要的形态。网络来的 spawn 包与客户端本地发射器共用这段解析。
@@ -22,6 +23,8 @@ internal class ResolvedVisual(
     val lightIntensity: Float,
     val emitsLight: Boolean,
     val lightOnly: Boolean,
+    /** 光源形状（射灯锥角、半径、衰减）；null = 点光。 */
+    val lightShape: LightShape? = null,
 ) {
     companion object {
         /** 无外观规格：纯白方块、广告牌、无自转、原始光强、不独立投光。 */
@@ -46,6 +49,7 @@ internal class ResolvedVisual(
                 visual.lightIntensity,
                 visual.emitsLight,
                 visual.lightOnly,
+                visual.lightShape,
             )
         }
     }
