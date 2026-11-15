@@ -71,7 +71,9 @@ object ParticleDrawCommands {
                 .then(animation)
                 .then(Commands.literal("texture")
                     .then(Commands.literal("reload").executes(::reloadTextures)))
-                .then(Commands.literal("light").executes(::lightProbe))
+                .then(Commands.literal("light")
+                    .executes(::lightProbe)
+                    .then(Commands.literal("demo").executes(::lightDemo)))
         )
     }
 
@@ -121,6 +123,53 @@ object ParticleDrawCommands {
         // 同时进服务端日志，自动化排查时直接 grep 即可，不必依赖聊天栏截图
         org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").info("[PD-light] {}", line)
         ctx.source.sendSuccess({ Component.literal(line) }, false)
+        return 1
+    }
+
+    /** 演示用的三盏灯：位置、外锥、内锥。 */
+    private val LIGHT_DEMO = listOf(
+        Triple(-6.0, 20.0, 10.0),
+        Triple(0.0, 45.0, 25.0),
+        Triple(6.0, 65.0, 40.0),
+    )
+
+    /**
+     * 一条命令搭出射灯演示：摆机位、建三盏不同锥角的灯。
+     *
+     * 内部直接转发 `particle group/create/add` 这些已有命令，复用它们的参数校验与下发路径，
+     * 不另写一套建灯逻辑。验收时只要 `/pdraw light demo`，不用再拼数据包。
+     */
+    private fun lightDemo(ctx: CommandContext<CommandSourceStack>): Int {
+        val server = ctx.source.server
+        val commands = server.commands
+        val baseY = -61.0
+        fun run(command: String) {
+            try {
+                commands.performPrefixedCommand(ctx.source, command)
+            } catch (error: Exception) {
+                org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing")
+                    .warn("[PD-demo] 命令失败: {} ({})", command, error.message)
+            }
+        }
+
+        run("gamemode spectator @s")
+        run("time set midnight")
+        run("particle group clear")
+        LIGHT_DEMO.forEachIndexed { index, spec ->
+            val (x, outer, inner) = spec
+            val name = "lightdemo$index"
+            run("particle group create $name $x $baseY 0")
+            run(
+                "particle add $name circle $x $baseY 0 0.35 ${8 + index * 2} " +
+                    "glowing=true size_world=0.08,0.08 light=15 light_range=26 " +
+                    "spot=$outer,$inner light_dir=0,-90",
+            )
+        }
+        run("tp @s 0 ${baseY + 2.5} 9 facing 0 ${baseY - 1} 0")
+        ctx.source.sendSuccess(
+            { Component.literal("射灯演示：三盏灯锥角 20°/45°/65°，向下照射；/pdraw light 可查看光场数据") },
+            false,
+        )
         return 1
     }
 
