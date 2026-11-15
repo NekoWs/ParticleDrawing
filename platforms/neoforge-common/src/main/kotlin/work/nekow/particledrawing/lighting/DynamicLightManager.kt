@@ -197,13 +197,19 @@ object DynamicLightManager {
         if (dynamic > 0.0) bakePositive++
         if (overridden) bakeOverrides++
         // 烘焙位置离最近光源多远：用来判断「灯下方那些区块到底有没有被重建」。
+        // sources 是写锁保护的列表，烘焙在 worker 线程上跑，必须持读锁遍历，否则会撞并发修改。
         var best = Double.MAX_VALUE
-        for (src in sources) {
-            val dx = src.x - x
-            val dy = src.y - y
-            val dz = src.z - z
-            val d = sqrt(dx * dx + dy * dy + dz * dz)
-            if (d < best) best = d
+        LOCK.readLock().lock()
+        try {
+            for (src in sources) {
+                val dx = src.x - x
+                val dy = src.y - y
+                val dz = src.z - z
+                val d = sqrt(dx * dx + dy * dy + dz * dz)
+                if (d < best) best = d
+            }
+        } finally {
+            LOCK.readLock().unlock()
         }
         if (best < terrainNearestDist) terrainNearestDist = best
         if (terrainSamples < 2) {
