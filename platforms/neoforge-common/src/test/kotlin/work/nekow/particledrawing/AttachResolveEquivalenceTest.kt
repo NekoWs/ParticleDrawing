@@ -1,21 +1,16 @@
 package work.nekow.particledrawing
 
 import net.minecraft.world.phys.Vec3
+import org.joml.Quaternionf
+import org.joml.Vector3f
 import work.nekow.particledrawing.util.AttachMath
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-/**
- * 锚点求解的两条实现必须给出同一个世界坐标。
- *
- * [AttachMath.resolve] 是原来的 Vec3 版本（建 Quaternionf + Vector3f）；
- * [AttachMath.resolveInto] 是逐粒子同步换上的原地版本（三角函数展开、不建对象）。
- * 客户端同步整条路径改成后者，这里把两者的数值钉在一起，避免朝向或叠加顺序被改坏。
- */
 class AttachResolveEquivalenceTest {
 
     @Test
-    fun `原地求解与 Vec3 版本逐点一致`() {
+    fun `两个入口都符合四元数朝向，并给出同一坐标`() {
         val yaws = floatArrayOf(0f, 37f, -90f, 180f, 271.5f, 359.9f)
         val pitches = floatArrayOf(0f, 22.5f, -60f, 90f, -90f, 5.2f)
         val offsets = listOf(
@@ -33,13 +28,14 @@ class AttachResolveEquivalenceTest {
                 for (pitch in pitches) {
                     for (offset in offsets) {
                         for (local in booleanArrayOf(true, false)) {
-                            val expected = AttachMath.resolve(origin, yaw, pitch, offset, local)
+                            val expected = quaternionReference(origin, yaw, pitch, offset, local)
+                            val resolved = AttachMath.resolve(origin, yaw, pitch, offset, local)
                             AttachMath.resolveInto(
                                 origin.x, origin.y, origin.z, yaw, pitch,
                                 offset.x, offset.y, offset.z, local, out,
                             )
                             val where = "origin=$origin yaw=$yaw pitch=$pitch offset=$offset local=$local"
-                            // 原版用 float 四元数，这里用 float 三角函数，容差按世界坐标量级取 1e-4
+                            assertEquals(resolved, Vec3(out[0], out[1], out[2]))
                             assertEquals(expected.x, out[0], 1e-4, "X 不一致：$where")
                             assertEquals(expected.y, out[1], 1e-4, "Y 不一致：$where")
                             assertEquals(expected.z, out[2], 1e-4, "Z 不一致：$where")
@@ -48,6 +44,15 @@ class AttachResolveEquivalenceTest {
                 }
             }
         }
+    }
+
+    private fun quaternionReference(origin: Vec3, yaw: Float, pitch: Float, offset: Vec3, local: Boolean): Vec3 {
+        if (!local) return origin.add(offset)
+        val rotation = Quaternionf().rotationYXZ(
+            -Math.toRadians(yaw.toDouble()).toFloat(), Math.toRadians(pitch.toDouble()).toFloat(), 0f,
+        )
+        val vector = Vector3f(offset.x.toFloat(), offset.y.toFloat(), offset.z.toFloat()).rotate(rotation)
+        return origin.add(vector.x.toDouble(), vector.y.toDouble(), vector.z.toDouble())
     }
 
     @Test

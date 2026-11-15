@@ -38,16 +38,14 @@ class UvData(
         return maxOf(1, minOf(mf, autoFrames))
     }
 
-    /** 自动帧数：沿 x/y 方向各能放几格（行末换行 flipbook 布局）。 */
-    fun autoFrames(texW: Int, texH: Int): Int {
-        val w = if (texW > 0) texW else 1
-        val h = if (texH > 0) texH else 1
-        val sx = uvStart[0]
-        val sy = uvStart[1]
-        val stepx = uvStep[0]
-        val stepy = uvStep[1]
-        val nx = if (stepx > 0 && sx < w) (w - 1 - sx) / stepx + 1 else 1
-        val ny = if (stepy > 0 && sy < h) (h - 1 - sy) / stepy + 1 else 1
-        return maxOf(1, nx * ny)
+    private fun axisFrames(size: Int, start: Int, step: Int): Int {
+        val limit = size.coerceAtLeast(1)
+        return if (step > 0 && start < limit) (limit - 1 - start) / step + 1 else 1
     }
+
+    internal fun frameColumns(texW: Int): Int = axisFrames(texW, uvStart[0], uvStep[0])
+
+    /** 自动帧数：沿 x/y 方向各能放几格（行末换行 flipbook 布局）。 */
+    fun autoFrames(texW: Int, texH: Int): Int =
+        maxOf(1, frameColumns(texW) * axisFrames(texH, uvStart[1], uvStep[1]))
 }

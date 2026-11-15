@@ -1,6 +1,6 @@
-package work.nekow.particledrawing.core.client
+package work.nekow.particledrawing.animation.emitter
 
-import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.math.Vec3
 
 // 发射器的推进逻辑：纯数学，不碰渲染与网络，便于单测。
 // 里程口径按段内插值发射，因为要的是一颗正好落在段中间的位置。

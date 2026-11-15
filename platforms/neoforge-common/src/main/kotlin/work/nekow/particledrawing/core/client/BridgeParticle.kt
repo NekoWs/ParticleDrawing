@@ -10,6 +10,7 @@ import net.minecraft.data.AtlasIds
 import net.minecraft.resources.Identifier
 import net.minecraft.util.Mth
 import org.joml.Quaternionf
+import work.nekow.particledrawing.animation.ParticleUvRegion
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleVisual
@@ -40,7 +41,7 @@ class BridgeParticle(
 
     // flipbook 计时起点（墙钟）
     private val animStartNanos: Long = System.nanoTime()
-    private var texturePartialTick = 0f
+    private val uvRegion = ParticleUvRegion()
 
     // 贴图大小缩放因子：取景框最长边 / 16（基准 16px）。
     // 贴图可能晚于粒子到货（运行时登记），重解析时要跟着更新，所以是 var。
@@ -296,7 +297,8 @@ class BridgeParticle(
         // 只发光的外观不产生片元；光照收集走 RenderParticle.lightIntensity，与本方法无关
         if (lightOnly) return
         val f = frameFactor(partialTick)
-        texturePartialTick = f
+        refreshTextureIfStale()
+        texEntry?.let { uvRegion.updateFromTexture(it, uv, animStartNanos, textureClock, age, f) }
         if (f <= 0f) {
             super.extract(state, camera, partialTick)
             return
@@ -387,78 +389,10 @@ class BridgeParticle(
     // 与编辑器 scene.js 的 flipY=false 同一口径：像素行与纹理 v 都自顶向下，不做翻转；
     // 原版 quad 上边缘取 v0、下边缘取 v1（QuadParticleRenderState.renderRotatedQuad）。
 
-    private fun currentFrameIndex(): Int {
-        val u = uv ?: return 0
-        if (u.mode != UvData.Mode.ANIMATED) return 0
-        val tex = texEntry ?: return 0
-        val total = u.effectiveMaxFrame(u.autoFrames(tex.width, tex.height))
-        if (total <= 1) return 0
-        val fps = u.fps.coerceAtLeast(0.001f)
-        val elapsed = (System.nanoTime() - animStartNanos) / 1_000_000_000.0
-        val raw = (elapsed * fps).toLong()
-        return if (u.loop) (raw % total).toInt() else minOf(raw, (total - 1).toLong()).toInt()
-    }
-
-    /** 当前帧的 UV 起点像素 (x, y)，含 flipbook 偏移（行末换行步进）。 */
-    private fun currentUvStart(texW: Int, texH: Int): IntArray {
-        val u = uv ?: return intArrayOf(0, 0)
-        if (u.mode == UvData.Mode.FILL) return intArrayOf(0, 0)
-        var sx = u.uvStart[0]
-        var sy = u.uvStart[1]
-        if (u.mode == UvData.Mode.ANIMATED) {
-            val frame = currentFrameIndex()
-            if (frame > 0) {
-                val stepx = u.uvStep[0]
-                val stepy = u.uvStep[1]
-                // 行内格数（x 方向能放几格）；行末换行
-                val cols = if (stepx > 0 && sx < texW) (texW - 1 - sx) / stepx + 1 else 1
-                if (cols > 0) {
-                    sx += (frame % cols) * stepx
-                    sy += (frame / cols) * stepy
-                }
-            }
-        }
-        texEntry?.animation?.let { animation ->
-            val ageTicks = textureClock?.ageTicks(texturePartialTick)?.toDouble() ?: (age + texturePartialTick).toDouble()
-            sy += animation.frameAt(ageTicks, textureClock?.lifetimeTicks() ?: -1) * animation.frameHeight
-        }
-        return intArrayOf(sx, sy)
-    }
-
-    override fun getU0(): Float {
-        val entry = texEntry ?: return super.getU0()
-        val u = uv ?: return 0f // 默认全白纹理：整图 UV
-        if (u.mode == UvData.Mode.FILL) return 0f
-        val sx = currentUvStart(entry.width, entry.height)[0]
-        return (sx.toFloat() / entry.width).coerceIn(0f, 1f)
-    }
-
-    override fun getU1(): Float {
-        val entry = texEntry ?: return super.getU1()
-        val u = uv ?: return 1f // 默认全白纹理：整图 UV
-        if (u.mode == UvData.Mode.FILL) return 1f
-        val sx = currentUvStart(entry.width, entry.height)[0]
-        val w = if (u.uvSize[0] > 0) u.uvSize[0] else entry.width
-        return ((sx + w).toFloat() / entry.width).coerceIn(0f, 1f)
-    }
-
-    override fun getV0(): Float {
-        val entry = texEntry ?: return super.getV0()
-        val u = uv ?: return 0f // 默认全白纹理：整图 UV
-        if (u.mode == UvData.Mode.FILL) return 0f
-        val sy = currentUvStart(entry.width, entry.height)[1]
-        // v 坐标直接取 sy/H：MC 纹理 v=0 对应图顶（行 0），无需再翻转
-        return (sy.toFloat() / entry.height).coerceIn(0f, 1f)
-    }
-
-    override fun getV1(): Float {
-        val entry = texEntry ?: return super.getV1()
-        val u = uv ?: return 1f // 默认全白纹理：整图 UV
-        if (u.mode == UvData.Mode.FILL) return 1f
-        val sy = currentUvStart(entry.width, entry.height)[1]
-        val h = if (u.uvSize[1] > 0) u.uvSize[1] else entry.animation?.frameHeight ?: entry.height
-        return ((sy + h).toFloat() / entry.height).coerceIn(0f, 1f)
-    }
+    override fun getU0(): Float = if (texEntry == null) super.getU0() else uvRegion.u0
+    override fun getU1(): Float = if (texEntry == null) super.getU1() else uvRegion.u1
+    override fun getV0(): Float = if (texEntry == null) super.getV0() else uvRegion.v0
+    override fun getV1(): Float = if (texEntry == null) super.getV1() else uvRegion.v1
 
     // 光照查询缓存：原版 getLightCoords 每渲染帧都要查世界光照，粒子在同一方块内可复用缓存。
     //
@@ -509,16 +443,8 @@ class BridgeParticle(
          * 自转欧拉（度）→ 四元数写入 [out]。local = intrinsic XYZ（Rx·Ry·Rz）；world = extrinsic（Rz·Ry·Rx）。
          */
         @JvmStatic
-        fun orientationQuaternion(spinDeg: DoubleArray, spinLocal: Boolean, out: Quaternionf) {
-            val rx = Math.toRadians(spinDeg[0]).toFloat()
-            val ry = Math.toRadians(spinDeg[1]).toFloat()
-            val rz = Math.toRadians(spinDeg[2]).toFloat()
-            if (spinLocal) {
-                out.rotationXYZ(rx, ry, rz)
-            } else {
-                out.rotationZ(rz).mul(Quaternionf().rotationY(ry)).mul(Quaternionf().rotationX(rx))
-            }
-        }
+        fun orientationQuaternion(spinDeg: DoubleArray, spinLocal: Boolean, out: Quaternionf) =
+            particleOrientationQuaternion(spinDeg, spinLocal, out)
 
         /**
          * 无贴图粒子使用的默认精灵（原版粒子图集 generic_0），渲染时由颜色染色为纯色方块。

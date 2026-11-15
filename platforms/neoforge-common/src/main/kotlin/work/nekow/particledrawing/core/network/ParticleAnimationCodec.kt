@@ -17,7 +17,6 @@ import work.nekow.particledrawing.animation.TrackPr
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.animation.script.Keyframe
 import work.nekow.particledrawing.api.Color
-import work.nekow.particledrawing.core.easing.EasingType
 
 /**
  * 代码生成 [ParticleAnimation] 的网络编解码：手写二进制，与 .pdrawc 无关，不签名。
@@ -195,7 +194,7 @@ internal object ParticleAnimationCodec {
         for (kf in tr.keyframes) {
             buf.writeVarInt(kf.ms)
             buf.writeDouble(kf.value)
-            writeEasing(buf, kf.easing)
+            writeEasingCompact(buf, kf.easing)
         }
     }
 
@@ -210,7 +209,7 @@ internal object ParticleAnimationCodec {
         val kfCount = buf.readVarInt()
         val keyframes = ArrayList<AnimKeyframe>(kfCount)
         repeat(kfCount) {
-            keyframes.add(AnimKeyframe(buf.readVarInt(), buf.readDouble(), readEasing(buf)))
+            keyframes.add(AnimKeyframe(buf.readVarInt(), buf.readDouble(), readEasingCompact(buf, strict = true)))
         }
         return AnimTrack(pr, ids, keyframes, mode)
     }
@@ -231,7 +230,7 @@ internal object ParticleAnimationCodec {
             for (kf in v.kf) {
                 buf.writeDouble(kf.ms)
                 buf.writeDouble(kf.value)
-                writeEasing(buf, kf.easing)
+                writeEasingCompact(buf, kf.easing)
             }
         }
         buf.writeVarInt(fx.duration)
@@ -259,7 +258,7 @@ internal object ParticleAnimationCodec {
             val kfCount = buf.readVarInt()
             val kf = ArrayList<Keyframe>(kfCount)
             repeat(kfCount) {
-                kf.add(Keyframe(buf.readDouble(), buf.readDouble(), readEasing(buf)))
+                kf.add(Keyframe(buf.readDouble(), buf.readDouble(), readEasingCompact(buf, strict = true)))
             }
             vars[varName] = FunctionVar(base, kf)
         }
@@ -531,34 +530,6 @@ internal object ParticleAnimationCodec {
 
     private fun readNullableEnt(buf: FriendlyByteBuf): Entrance? =
         if (buf.readBoolean()) Entrance(buf.readUtf(), buf.readVarInt()) else null
-
-    private fun writeEasing(buf: FriendlyByteBuf, easing: EasingType) {
-        when {
-            easing.isStep() -> buf.writeByte(2)
-            easing.isPreset() -> {
-                buf.writeByte(0)
-                buf.writeVarInt(easing.ordinal)
-            }
-            else -> {
-                buf.writeByte(1)
-                buf.writeDouble(easing.curve.x1)
-                buf.writeDouble(easing.curve.y1)
-                buf.writeDouble(easing.curve.x2)
-                buf.writeDouble(easing.curve.y2)
-            }
-        }
-    }
-
-    private fun readEasing(buf: FriendlyByteBuf): EasingType = when (buf.readByte().toInt()) {
-        0 -> {
-            val idx = buf.readVarInt()
-            if (idx !in EasingType.PRESETS.indices) throw IllegalArgumentException("缓动预设越界: $idx")
-            EasingType.PRESETS[idx]
-        }
-        1 -> EasingType.custom(buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readDouble())
-        2 -> EasingType.NONE
-        else -> throw IllegalArgumentException("未知缓动类型")
-    }
 
     private fun writeBoolMap(buf: FriendlyByteBuf, map: Map<String, Boolean>) {
         buf.writeVarInt(map.size)

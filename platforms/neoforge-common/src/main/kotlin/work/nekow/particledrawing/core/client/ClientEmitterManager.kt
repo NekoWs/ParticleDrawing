@@ -3,11 +3,16 @@ package work.nekow.particledrawing.core.client
 import net.minecraft.client.Minecraft
 import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.animation.emitter.DistanceAdvance
+import work.nekow.particledrawing.animation.emitter.EmitterSampling
+import work.nekow.particledrawing.animation.emitter.TimeAdvance
 import work.nekow.particledrawing.api.Anchor
 import work.nekow.particledrawing.api.EmitMode
 import work.nekow.particledrawing.core.network.EmitterParams
 import work.nekow.particledrawing.core.network.EmitterSpawnPayload
 import work.nekow.particledrawing.core.network.EmitterUpdatePayload
+import work.nekow.particledrawing.math.Vec3 as CoreVec3
+import work.nekow.particledrawing.platform.toCore
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -35,10 +40,10 @@ internal object ClientEmitterManager {
         val samples = MovableAnchorSamples()
 
         /** 上一帧的锚点位置，即里程口径的段起点；null = 还没建立基准。 */
-        var lastPos: Vec3? = null
+        var lastPos: CoreVec3? = null
 
         /** 上一帧的运动方向，时间口径的抖动平面用它。 */
-        var lastDir: Vec3 = Vec3(0.0, 0.0, 1.0)
+        var lastDir: CoreVec3 = CoreVec3(0.0, 0.0, 1.0)
 
         /** 已发射的颗数，逐颗抖动的确定性哈希用它。 */
         var emissionIndex: Long = 0L
@@ -47,7 +52,7 @@ internal object ClientEmitterManager {
         val alive = ArrayDeque<Long>()
 
         /** 一帧内要发射的位置；复用列表，避免每帧分配。 */
-        val scratch = ArrayList<Vec3>(8)
+        val scratch = ArrayList<CoreVec3>(8)
     }
 
     private val emitters = ConcurrentHashMap<UUID, Active>()
@@ -138,7 +143,7 @@ internal object ClientEmitterManager {
 
     private fun emitFrame(active: Active, engine: ClientParticleEngine, level: ClientLevel,
                           partialTick: Float, deltaMs: Double, now: Long) {
-        val pos = resolveAnchor(active, level, partialTick, now) ?: return
+        val pos = resolveAnchor(active, level, partialTick, now)?.toCore() ?: return
         val prev = active.lastPos
         active.lastPos = pos
         if (prev == null) return // 第一帧只建立基准，不从上次位置补发
@@ -160,7 +165,7 @@ internal object ClientEmitterManager {
     }
 
     /** 本帧的运动方向：优先用锚点这一帧的位移，位移退化时沿用上一帧，原地发射也要有稳定的抖动平面。 */
-    private fun frameDirection(active: Active, pos: Vec3, prev: Vec3): Vec3 {
+    private fun frameDirection(active: Active, pos: CoreVec3, prev: CoreVec3): CoreVec3 {
         val delta = pos.subtract(prev)
         val dir = if (delta.lengthSqr() > 1e-10) delta.normalize() else active.lastDir
         active.lastDir = dir
@@ -186,8 +191,8 @@ internal object ClientEmitterManager {
     private fun emitOne(
         active: Active,
         engine: ClientParticleEngine,
-        pos: Vec3,
-        dir: Vec3,
+        pos: CoreVec3,
+        dir: CoreVec3,
         partialTick: Float,
     ) {
         val p = active.params

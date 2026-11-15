@@ -1,8 +1,8 @@
 package work.nekow.particledrawing
 
-import net.minecraft.world.phys.Vec3
-import work.nekow.particledrawing.core.client.DistanceAdvance
-import work.nekow.particledrawing.core.client.TimeAdvance
+import work.nekow.particledrawing.math.Vec3
+import work.nekow.particledrawing.animation.emitter.DistanceAdvance
+import work.nekow.particledrawing.animation.emitter.TimeAdvance
 import kotlin.math.sqrt
 import kotlin.test.Test
 import kotlin.test.assertEquals

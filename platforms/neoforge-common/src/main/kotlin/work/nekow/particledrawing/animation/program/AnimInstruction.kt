@@ -7,6 +7,7 @@ import work.nekow.particledrawing.api.ParticleMorphSlot
 import work.nekow.particledrawing.animation.morph.MorphSpec
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.network.AnimationProgramCodecs
+import work.nekow.particledrawing.core.network.StreamCodecs
 import java.util.UUID
 
 // 客户端动画程序：编排式动画（ParticleGroup 链式调用）录制成的声明式指令流，服务端下发一次，客户端本地求值直写渲染，持续动画零带宽。
@@ -458,7 +459,7 @@ sealed class AnimInstruction {
             buf.writeByte(targetType)
             if (slots != null) {
                 for (slot in slots) {
-                    AnimationProgramCodecs.writeVec(buf, slot.position)
+                    StreamCodecs.writeVec(buf, slot.position)
                     if (targetType == MORPH_APPEARANCE) {
                         buf.writeDouble(slot.yaw ?: Double.NaN)
                         buf.writeDouble(slot.pitch ?: Double.NaN)
@@ -504,7 +505,7 @@ private fun readMorph(startMs: Int, buf: FriendlyByteBuf): AnimInstruction.Morph
         require(count in 1..AnimationProgramCodecs.MAX_PROGRAM_MEMBERS) { "位置槽位数量越界: $count" }
         fun readOptionalDouble() = buf.readDouble().takeUnless { it.isNaN() }
         List(count) {
-            val position = AnimationProgramCodecs.readVec(buf)
+            val position = StreamCodecs.readVec(buf)
             if (targetType == MORPH_APPEARANCE) {
                 ParticleMorphSlot(position, readOptionalDouble(), readOptionalDouble(), readOptionalDouble())
             } else ParticleMorphSlot(position)

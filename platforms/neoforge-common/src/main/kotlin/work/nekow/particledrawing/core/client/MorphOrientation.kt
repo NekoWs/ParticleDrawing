@@ -1,7 +1,7 @@
 package work.nekow.particledrawing.core.client
 
-import net.minecraft.util.Mth
 import org.joml.Quaternionf
+import work.nekow.particledrawing.math.shortestAngleDeltaDegrees
 
 /** 朝向的相邻两个刻端点，渲染时按分数刻取最短角差。 */
 internal class MorphOrientation(yaw: Double, pitch: Double) {
@@ -27,10 +27,21 @@ internal class MorphOrientation(yaw: Double, pitch: Double) {
         angles[0] = pitchAt(fraction)
         angles[1] = yawAt(fraction)
         angles[2] = roll
-        BridgeParticle.orientationQuaternion(angles, local, rotation)
+        particleOrientationQuaternion(angles, local, rotation)
         return if (camera == null) rotation else combined.set(camera).mul(rotation)
     }
 
     private fun interpolate(from: Double, to: Double, fraction: Float): Double =
-        from % 360.0 + Mth.wrapDegrees(to % 360.0 - from % 360.0) * fraction
+        from % 360.0 + shortestAngleDeltaDegrees(from, to) * fraction
+}
+
+internal fun particleOrientationQuaternion(spinDeg: DoubleArray, spinLocal: Boolean, out: Quaternionf) {
+    val rx = Math.toRadians(spinDeg[0]).toFloat()
+    val ry = Math.toRadians(spinDeg[1]).toFloat()
+    val rz = Math.toRadians(spinDeg[2]).toFloat()
+    if (spinLocal) {
+        out.rotationXYZ(rx, ry, rz)
+    } else {
+        out.rotationZ(rz).mul(Quaternionf().rotationY(ry)).mul(Quaternionf().rotationX(rx))
+    }
 }

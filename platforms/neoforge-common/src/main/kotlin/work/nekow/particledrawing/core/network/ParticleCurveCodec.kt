@@ -31,10 +31,16 @@ internal fun writeEasingCompact(buf: FriendlyByteBuf, easing: EasingType) {
     }
 }
 
-internal fun readEasingCompact(buf: FriendlyByteBuf): EasingType = when (buf.readByte().toInt()) {
-    EASE_STEP -> EasingType.NONE
-    EASE_CUSTOM -> EasingType.custom(buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readDouble())
-    else -> EasingType.PRESETS.getOrElse(buf.readVarInt()) { EasingType.LINEAR }
+internal fun readEasingCompact(buf: FriendlyByteBuf, strict: Boolean = false): EasingType {
+    val type = buf.readByte().toInt()
+    if (type == EASE_STEP) return EasingType.NONE
+    if (type == EASE_CUSTOM) return EasingType.custom(buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readDouble())
+    require(!strict || type == EASE_PRESET) { "未知缓动类型" }
+    val index = buf.readVarInt()
+    return EasingType.PRESETS.getOrElse(index) {
+        require(!strict) { "缓动预设越界: $index" }
+        EasingType.LINEAR
+    }
 }
 
 /**

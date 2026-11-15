@@ -1,6 +1,7 @@
 package work.nekow.particledrawing.animation.morph
 
 import work.nekow.particledrawing.math.Vec3
+import work.nekow.particledrawing.math.shortestAngleDeltaDegrees
 import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -483,8 +484,7 @@ class MorphRuntime(
     private fun blendAngle(from: Double, to: Double, raw: Double, eased: Double): Double {
         if (raw >= 1.0) return to
         if (from.isNaN()) return Double.NaN
-        val delta = (to % 360.0 - from % 360.0 + 900.0) % 360.0 - 180.0
-        return from + delta * eased
+        return from + shortestAngleDeltaDegrees(from, to) * eased
     }
 
     private fun lerp(a: Double, b: Double, t: Double) = a + (b - a) * t

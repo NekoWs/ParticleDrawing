@@ -1,5 +1,7 @@
 package work.nekow.particledrawing.api
 
+import work.nekow.particledrawing.core.easing.EasingType
+
 // 命名寿命曲线门面：关键帧仍是现有 ParticleCurve；easing 归属为“上一帧 → 目标帧”。
 
 /** 单通道曲线构建器。 */
@@ -32,7 +34,7 @@ class CurveChannelBuilder internal constructor(private val channel: CurveChannel
         require(started) { "${channel.name} 曲线必须先调用 start" }
         val t = until.requireNonNegative("保持时间").ticks.toFloat()
         require(t > lastTime() + 1e-6f) { "${channel.name} 保持时间必须递增（目标 ${until.ticks}t）" }
-        keys.add(CurveKey.at(t, keys.last().value, EasingTypeCompat.step()))
+        keys.add(CurveKey.at(t, keys.last().value, EasingType.NONE))
         return this
     }
 
@@ -44,10 +46,6 @@ class CurveChannelBuilder internal constructor(private val channel: CurveChannel
 private fun finiteNumber(value: Double, what: String): Double {
     require(value.isFinite()) { "$what 必须是有限值" }
     return value
-}
-
-private object EasingTypeCompat {
-    fun step() = work.nekow.particledrawing.core.easing.EasingType.NONE
 }
 
 /** 整套寿命曲线构建器；多个通道或同通道多条曲线会按原有规则相乘。 */

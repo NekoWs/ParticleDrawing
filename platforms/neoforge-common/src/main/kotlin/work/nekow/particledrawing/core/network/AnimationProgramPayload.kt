@@ -87,11 +87,6 @@ internal object AnimationProgramCodecs {
         return out
     }
 
-    fun writeVec(buf: FriendlyByteBuf, v: Vec3) {
-        buf.writeDouble(v.x); buf.writeDouble(v.y); buf.writeDouble(v.z)
-    }
-
-    fun readVec(buf: FriendlyByteBuf): Vec3 = Vec3(buf.readDouble(), buf.readDouble(), buf.readDouble())
 }
 
 /**
@@ -141,7 +136,7 @@ data class AnimationProgramPayload(
                         AnimationProgramCodecs.readUuidList(buf),
                         buf.readLong(),
                         buf.readLong(),
-                        AnimationProgramCodecs.readVec(buf),
+                        StreamCodecs.readVec(buf),
                         AnimationProgramCodecs.readEntityBindings(buf),
                         AnimationProgramCodecs.readVars(buf),
                         AnimationProgramCodecs.readInstructionList(buf),
@@ -152,7 +147,7 @@ data class AnimationProgramPayload(
                     AnimationProgramCodecs.writeUuidList(buf, p.particleIds)
                     buf.writeLong(p.anchorGameTime)
                     buf.writeLong(p.programStartGameTime)
-                    AnimationProgramCodecs.writeVec(buf, p.initialPivot)
+                    StreamCodecs.writeVec(buf, p.initialPivot)
                     AnimationProgramCodecs.writeEntityBindings(buf, p.entityBindings)
                     AnimationProgramCodecs.writeVars(buf, p.vars)
                     AnimationProgramCodecs.writeInstructionList(buf, p.instructions)
