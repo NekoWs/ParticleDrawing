@@ -62,7 +62,7 @@ data class MorphSpec(
     }
 }
 
-/** 预设缓动到名字的反查，序列化用；自定义缓动回退成 linear。 */
+/** 预设缓动到网络名称的映射。 */
 private fun MorphEasing.nameOf(): String = when (this) {
     MorphEasing.LINEAR -> "linear"
     MorphEasing.IN_QUAD -> "in_quad"
@@ -71,5 +71,5 @@ private fun MorphEasing.nameOf(): String = when (this) {
     MorphEasing.OUT_CUBIC -> "out_cubic"
     MorphEasing.IN_OUT_CUBIC -> "in_out_cubic"
     MorphEasing.OUT_BACK -> "out_back"
-    else -> "linear"
+    else -> throw IllegalArgumentException("组形变只支持可同步的 MorphEasing 预设")
 }

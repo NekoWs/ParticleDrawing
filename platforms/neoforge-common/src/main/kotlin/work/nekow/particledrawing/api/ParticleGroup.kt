@@ -11,7 +11,6 @@ import work.nekow.particledrawing.animation.program.PivotRef
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.network.AnimationProgramAppendPayload
 import work.nekow.particledrawing.core.network.AnimationProgramCodecs
-import work.nekow.particledrawing.core.network.BatchChunking
 import work.nekow.particledrawing.core.network.AnimationProgramPayload
 import work.nekow.particledrawing.core.network.ProgramAnchorPayload
 import work.nekow.particledrawing.core.server.ServerExitCompletion
@@ -429,7 +428,7 @@ class ParticleGroup(
 
     /** 给单个玩家补发完整程序（含已下发的追加段），用于迟到可见成员。 */
     private fun sendFullProgram(player: net.minecraft.server.level.ServerPlayer) {
-        val head = deliveredInstructions.take(MAX_INSTRUCTIONS_PER_PAYLOAD)
+        val head = AnimationProgramCodecs.instructionChunks(deliveredInstructions).firstOrNull().orEmpty()
         PacketDistributor.sendToPlayer(
             player,
             AnimationProgramPayload(
@@ -443,13 +442,13 @@ class ParticleGroup(
                 head,
             ),
         )
-        val rest = deliveredInstructions.drop(MAX_INSTRUCTIONS_PER_PAYLOAD)
+        val rest = deliveredInstructions.drop(head.size)
         if (rest.isNotEmpty()) sendAppends(rest, listOf(player))
     }
 
     /** 追加指令：按单包上限拆段后下发。 */
     private fun sendAppends(batch: List<AnimInstruction>, players: Collection<net.minecraft.server.level.ServerPlayer>) {
-        for (chunk in BatchChunking.chunks(batch, MAX_INSTRUCTIONS_PER_PAYLOAD)) {
+        for (chunk in AnimationProgramCodecs.instructionChunks(batch)) {
             for (player in players) {
                 PacketDistributor.sendToPlayer(player, AnimationProgramAppendPayload(id, chunk))
             }
@@ -562,12 +561,30 @@ class ParticleGroup(
         control2: String? = null,
         dynamicSlots: Boolean = false,
     ): ParticleGroup {
-        // 先在服务端解析一遍公式，配置写错时立刻报错，而不是等到客户端求值时静默失败。
+        require(!expressionMode) { "组表达式已接管位置，请在独立粒子组上使用 morph" }
         MorphSlotFormulas(slotCount, position, yaw, pitch, size, control1, control2).build(0.0)
         emit(
             AnimInstruction.Morph(
                 cursorMs, slotCount, position, yaw, pitch, size, control1, control2,
                 MorphSpec.of(options, dynamicSlots),
+            ),
+        )
+        return this
+    }
+
+    /**
+     * 把成员过渡到一组静态的世界坐标。适用于字形、图片或模型采样得到的槽位。
+     * 列表会被复制。粒子多于槽位时，多出来的成员留在调用时的位置。
+     */
+    @JvmOverloads
+    fun morph(points: List<Vec3>, options: MorphOptions = MorphOptions()): ParticleGroup {
+        require(!expressionMode) { "组表达式已接管位置，请在独立粒子组上使用 morph" }
+        require(!options.writeAttributes) { "位置槽位列表只支持位置形变" }
+        val targets = points.toList()
+        emit(
+            AnimInstruction.Morph(
+                cursorNow(), targets.size, position = "",
+                spec = MorphSpec.of(options, dynamicSlots = false), points = targets,
             ),
         )
         return this
@@ -796,9 +813,6 @@ class ParticleGroup(
     override fun toString() = "ParticleGroup{$id size=${size()}}"
 
     companion object {
-        /** 单包指令条数上限：超出就拆成多个追加包（与载荷里的常量同源）。 */
-        private const val MAX_INSTRUCTIONS_PER_PAYLOAD = AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD
-
         /** 一个组的成员上限：受控清单要一次发完，超出会被拒绝。 */
         private const val MAX_MEMBERS_PER_PROGRAM = AnimationProgramCodecs.MAX_PROGRAM_MEMBERS
 

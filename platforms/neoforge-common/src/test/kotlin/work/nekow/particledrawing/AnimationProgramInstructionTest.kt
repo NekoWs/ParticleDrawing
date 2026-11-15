@@ -3,14 +3,17 @@ package work.nekow.particledrawing
 import io.netty.buffer.Unpooled
 import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.animation.morph.MorphSpec
 import work.nekow.particledrawing.animation.program.AnimInstruction
 import work.nekow.particledrawing.animation.program.PivotRef
 import work.nekow.particledrawing.animation.program.finiteDurationMs
 import work.nekow.particledrawing.api.Orient
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.network.AnimationProgramCodecs
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -42,6 +45,11 @@ class AnimationProgramInstructionTest {
         AnimInstruction.Expression(30, "x=1;y=2;z=3;", 1000, local = true),
         AnimInstruction.MoveEach(0, 0.35f, 12, EasingType.EASE_OUT),
         AnimInstruction.ScaleTo(0, 0.01f, 12, EasingType.EASE_IN_OUT),
+        AnimInstruction.Morph(50, 32, "vec3(i, t, 0)", control1 = "vec3(3, 1, 0)", spec = MorphSpec(dynamicSlots = true)),
+        AnimInstruction.Morph(
+            100, 2, "", spec = MorphSpec(easing = "in_out_cubic"),
+            points = listOf(Vec3(0.5, 64.25, -2.125), Vec3(10000.01, 65.0, 0.0)),
+        ),
     )
 
     @Test
@@ -53,6 +61,26 @@ class AnimationProgramInstructionTest {
 
         assertEquals(sample, decoded, "指令编解码必须逐字段对称（改指令布局就要同时改双端）")
         assertEquals(0, buf.readableBytes(), "解码后不该剩下字节")
+    }
+
+    @Test
+    fun `坐标列表独立分包且保持指令顺序`() {
+        val fade = AnimInstruction.FadeIn(0, 20, EasingType.LINEAR)
+        val count = AnimationProgramCodecs.MAX_PROGRAM_MEMBERS
+        val morph = AnimInstruction.Morph(100, count, "", points = List(count) { Vec3(it.toDouble(), 64.0, 0.0) })
+        val before = List(AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD + 1) { fade }
+        val instructions = before + listOf(morph, morph.copy(startMs = 200), fade)
+        val chunks = AnimationProgramCodecs.instructionChunks(instructions).toList()
+        assertEquals(listOf(512, 1, 1, 1, 1), chunks.map { it.size })
+        assertEquals(instructions, chunks.flatten())
+    }
+
+    @Test
+    fun `坐标形变拒绝非有限坐标与空列表`() {
+        assertFailsWith<IllegalArgumentException> {
+            AnimInstruction.Morph(0, 1, "", points = listOf(Vec3(Double.NaN, 0.0, 0.0)))
+        }
+        assertFailsWith<IllegalArgumentException> { AnimInstruction.Morph(0, 0, "", points = emptyList()) }
     }
 
     @Test

@@ -9,7 +9,7 @@ KDoc。只在特定包中提供的类型单独注明。代码示例见[使用指
 | --- | --- |
 | `ParticleManager` | 按维度创建粒子、粒子组和发射器，登记并同步贴图 |
 | `ParticleHandle.Builder`、`ParticleHandle` | 设置出生规格和延迟，运行时控制单颗粒子 |
-| `ParticleGroup` | 绑定轴心，录制组动画、公式、变量和退场 |
+| `ParticleGroup` | 绑定轴心，录制组动画、公式、编队形变和退场 |
 | `ParticleBatch` | 管理可逐刻增删的粒子集，批量移动、施力和清理 |
 | `ParticleSpawnSpec`、`SpawnResult`、`SpawnRejection` | 描述出生属性与初始运动，读取 `spawnAllDetailed` 按输入下标返回的结果 |
 | `Draw`、`ColorSource`、`Color` | 绘制预设或参数形状，指定 RGBA、渐变、彩虹或自定义颜色函数 |

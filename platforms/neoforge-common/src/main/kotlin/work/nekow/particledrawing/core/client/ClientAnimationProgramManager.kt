@@ -5,6 +5,11 @@ import net.minecraft.client.Minecraft
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.animation.morph.MorphParticle
+import work.nekow.particledrawing.animation.morph.MorphRuntime
+import work.nekow.particledrawing.animation.morph.MorphSlot
+import work.nekow.particledrawing.animation.morph.MorphSlotFormulas
+import work.nekow.particledrawing.math.Vec3 as CoreVec3
 import work.nekow.particledrawing.platform.toCore
 import work.nekow.particledrawing.platform.toMinecraft
 import net.neoforged.api.distmarker.Dist
@@ -132,10 +137,8 @@ internal object ClientAnimationProgramManager {
         var anchorHidden = false
         var expressionStartMs = 0L
 
-        /** 正在进行的编队变换；每次新的形变指令到点都重建一次。 */
-        var morph: work.nekow.particledrawing.animation.morph.MorphRuntime? = null
-        /** 已经生效的形变指令起点，用来识别"更新的那一条"。 */
-        var morphStartMs: Int = Int.MIN_VALUE
+        var morph: MorphRuntime? = null
+        var activeMorph: AnimInstruction.Morph? = null
 
         /** 表达式自己的有限时长终点（程序相对毫秒）；-1 = 一直求值。 */
         var expressionEndMs: Long = -1L
@@ -730,43 +733,40 @@ internal object ClientAnimationProgramManager {
         out[5] = regs[6]; out[6] = regs[7]; out[7] = regs[8]   // r g b
     }
 
-    /**
-     * 到点就为这个程序建立一次编队变换：以每颗粒子当前落地位置为起点，
-     * 槽位由公式现算；[work.nekow.particledrawing.animation.morph.MorphSpec.dynamicSlots]
-     * 为真时每 tick 重算，目标可以自己动。
-     */
+    /** 应用最新到点的形变指令，同一时刻调用多次时采用最后一条。 */
     private fun ensureMorph(p: Program, engine: ClientParticleEngine, now: Long) {
-        // 同一个程序可以有多次形变：只认比当前生效那条更晚的指令，到点就按当时的
-        // 实际位置与速度重建，于是"心形 → 星形 → 结"这种链条能一段接一段地跑。
-        val ins: AnimInstruction.Morph = p.slots.firstNotNullOfOrNull { slot ->
-            val candidate = slot.ins
-            if (candidate is AnimInstruction.Morph && now >= candidate.startMs && candidate.startMs > p.morphStartMs) {
-                candidate
-            } else {
-                null
+        var latest: AnimInstruction.Morph? = null
+        for (slot in p.slots) {
+            val candidate = slot.ins as? AnimInstruction.Morph ?: continue
+            if (candidate.startMs <= now && candidate.startMs >= (latest?.startMs ?: Int.MIN_VALUE)) {
+                latest = candidate
             }
-        } ?: return
-        p.morphStartMs = ins.startMs
-        val formulas = try {
-            work.nekow.particledrawing.animation.morph.MorphSlotFormulas(
-                ins.slotCount, ins.position, ins.yaw, ins.pitch, ins.size, ins.control1, ins.control2,
-            )
-        } catch (e: RuntimeException) {
-            org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing")
-                .error("编队变换的槽位公式无法解析: {}", e.message)
-            return
         }
-        val particles = p.states.keys.mapIndexed { index, uuid ->
-            work.nekow.particledrawing.animation.morph.MorphParticle(
-                uuid, (engine.positionOf(uuid) ?: p.initialPivot).toCore(), work.nekow.particledrawing.math.Vec3.ZERO, index,
-            )
+        val ins = latest ?: return
+        if (p.activeMorph === ins) return
+
+        val particles = p.particleIds.mapIndexedNotNull { index, id ->
+            if (id !in p.states) return@mapIndexedNotNull null
+            val position = engine.positionOf(id) ?: return@mapIndexedNotNull null
+            MorphParticle(id, position.toCore(), p.morph?.velocityOf(id) ?: CoreVec3.ZERO, index)
         }
         if (particles.isEmpty()) return
-        val provider: ((Double) -> List<work.nekow.particledrawing.animation.morph.MorphSlot>)? =
-            if (ins.spec.dynamicSlots) { t -> formulas.build(t) } else null
-        p.morph = work.nekow.particledrawing.animation.morph.MorphRuntime(
-            particles, formulas.build(0.0), ins.spec.toOptions(), provider,
-        )
+        p.activeMorph = ins
+
+        try {
+            val points = ins.points
+            if (points != null) {
+                p.morph = MorphRuntime(particles, points.map { MorphSlot(it.toCore()) }, ins.spec.toOptions())
+            } else {
+                val formulas = MorphSlotFormulas(ins.slotCount, ins.position, ins.yaw, ins.pitch, ins.size, ins.control1, ins.control2)
+                p.morph = MorphRuntime(
+                    particles, formulas.build(0.0), ins.spec.toOptions(),
+                    if (ins.spec.dynamicSlots) formulas::build else null,
+                )
+            }
+        } catch (e: IllegalArgumentException) {
+            LOGGER.error("编队变换的槽位无法求值: {}", e.message)
+        }
     }
 
     private fun sugarFrame(p: Program, engine: ClientParticleEngine, now: Long) {
@@ -788,7 +788,12 @@ internal object ClientAnimationProgramManager {
 
         ensureMorph(p, engine, now)
         val morph = p.morph
-        morph?.tick(1.0)
+        try {
+            morph?.tick(1.0)
+        } catch (e: IllegalArgumentException) {
+            morph?.cancel()
+            LOGGER.error("编队变换已停止，动态槽位无法求值: {}", e.message)
+        }
 
         for ((uuid, st) in p.states) {
             val r: Float; val g: Float; val b: Float; val aBase: Float
@@ -807,7 +812,7 @@ internal object ClientAnimationProgramManager {
             // 沿各自偏移方向外移：方向用当前的 rel（跟着旋转一起转），幅度 = 倍率 × 偏移长度
             val shifted = if (driftScale == 0f) local else local.add(st.rel.scale(driftScale.toDouble()))
             engine.applyProgramFrame(
-                uuid, if (morph != null && morph.slotOf(uuid) != null) morph.positionOf(uuid)!!.toMinecraft() else pivot.apply(p.pathOffset.add(shifted)),
+                uuid, morph?.positionOf(uuid)?.toMinecraft() ?: pivot.apply(p.pathOffset.add(shifted)),
                 r, g, b, alpha, scale, anchorSnap,
             )
         }

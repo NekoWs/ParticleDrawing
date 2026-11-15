@@ -284,6 +284,34 @@ group.expression("""
 交给同一个表达式解释器；`i/n/t`、`[x,y,z] = ...` 这些写法保持不变。用到什么取什么，
 `get_entity_*` / `get_world_*` 在需要处调用，不必预先声明属性。
 
+### 字幕与形状切换
+
+`ParticleGroup.morph(points, options)` 接收 `List<Vec3>` 世界坐标，可直接使用文字、图片或模型的采样点。
+单次可传 1–8192 个目标，粒子与目标等量时，每个目标恰好分到一颗。多余的粒子停在当前点。
+
+[SubtitleMorph.kt](../examples/api/SubtitleMorph.kt) 用 602 颗粒子绘制「粒子字幕」和「变换形状」，
+还提供立方体表面和球面。把示例复制到调用方，在服务端主线程生成。字幕在 XY 平面，从 +Z 一侧观看。
+
+```kotlin
+import examples.SubtitleMorph
+import examples.SubtitleMorph.Target
+import work.nekow.particledrawing.api.ParticleManager
+
+// 创建时显示「粒子字幕」。level 是 ServerLevel，center 是世界坐标 Vec3。
+val effect = SubtitleMorph.spawn(ParticleManager.of(level), center)
+
+// 在命令回调或延时任务中调用，过渡到立方体。
+effect.show(Target.CUBE)
+```
+
+也可以传入 `Target.SECOND_CAPTION`、`Target.SPHERE` 或 `Target.FIRST_CAPTION` 切换到另一句字幕、球面或初始字幕。
+每次切换计划用 48 刻缓动和至多 8 刻错峰，限速时会延长。中途调用会从当前布局接续。示例复用同一组粒子，
+结束时调用 `effect.remove()`。Java 可调用 `group.morph(List<Vec3>, MorphOptions)`。
+动态目标仍可使用 `morph(slotCount, position, options, ..., dynamicSlots = true)`。
+组表达式会接管位置，使用形变的成员应放在专用粒子组里。
+
+### 脚本层形变
+
 脚本可通过 `morph(slots, options)` 让本层存活粒子移动到槽位。先生成粒子，再在 `setup` 或换目标时调用一次：
 
 ```js

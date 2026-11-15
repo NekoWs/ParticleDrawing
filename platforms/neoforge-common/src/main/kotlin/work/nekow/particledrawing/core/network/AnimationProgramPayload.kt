@@ -21,6 +21,23 @@ internal object AnimationProgramCodecs {
 
     /** 一个组的成员上限：受控清单一次发完。 */
     const val MAX_PROGRAM_MEMBERS = 8192
+
+    // 一个坐标列表可占近 200 KiB，单独分包以免多段形变挤进同一份载荷。
+    fun instructionChunks(instructions: List<AnimInstruction>): Sequence<List<AnimInstruction>> = sequence {
+        var start = 0
+        for ((index, instruction) in instructions.withIndex()) {
+            if (instruction is AnimInstruction.Morph && instruction.points != null) {
+                if (start < index) yield(instructions.subList(start, index))
+                yield(listOf(instruction))
+                start = index + 1
+            } else if (index - start + 1 == MAX_INSTRUCTIONS_PER_PAYLOAD) {
+                yield(instructions.subList(start, index + 1))
+                start = index + 1
+            }
+        }
+        if (start < instructions.size) yield(instructions.subList(start, instructions.size))
+    }
+
     fun writeInstructionList(buf: FriendlyByteBuf, list: List<AnimInstruction>) {
         buf.writeVarInt(list.size)
         for (ins in list) ins.write(buf)

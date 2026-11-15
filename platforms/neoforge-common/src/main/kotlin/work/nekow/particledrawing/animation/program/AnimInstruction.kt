@@ -5,6 +5,7 @@ import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.Orient
 import work.nekow.particledrawing.animation.morph.MorphSpec
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.network.AnimationProgramCodecs
 import java.util.UUID
 
 // 客户端动画程序：编排式动画（ParticleGroup 链式调用）录制成的声明式指令流，服务端下发一次，客户端本地求值直写渲染，持续动画零带宽。
@@ -430,14 +431,31 @@ sealed class AnimInstruction {
         val control1: String? = null,
         val control2: String? = null,
         val spec: MorphSpec = MorphSpec(),
+        val points: List<Vec3>? = null,
     ) : AnimInstruction() {
         override val type get() = InstructionType.MORPH
+
+        init {
+            if (points != null) {
+                require(points.size == slotCount && slotCount in 1..AnimationProgramCodecs.MAX_PROGRAM_MEMBERS) {
+                    "位置槽位数量必须在 1 到 ${AnimationProgramCodecs.MAX_PROGRAM_MEMBERS} 之间"
+                }
+                require(points.all { it.x.isFinite() && it.y.isFinite() && it.z.isFinite() }) { "槽位坐标必须是有限数" }
+                require(!spec.dynamicSlots) { "位置槽位列表只支持静态目标" }
+            }
+        }
+
         override fun writeBody(buf: FriendlyByteBuf) {
             buf.writeVarInt(slotCount)
-            buf.writeUtf(position)
-            for (s in arrayOf(yaw, pitch, size, control1, control2)) {
-                buf.writeBoolean(s != null)
-                if (s != null) buf.writeUtf(s)
+            buf.writeBoolean(points != null)
+            if (points != null) {
+                for (point in points) AnimationProgramCodecs.writeVec(buf, point)
+            } else {
+                buf.writeUtf(position)
+                for (s in arrayOf(yaw, pitch, size, control1, control2)) {
+                    buf.writeBoolean(s != null)
+                    if (s != null) buf.writeUtf(s)
+                }
             }
             buf.writeVarInt(spec.ticks)
             buf.writeVarInt(spec.staggerTicks)
@@ -460,26 +478,34 @@ sealed class AnimInstruction {
 }
 
 private fun readMorph(startMs: Int, buf: FriendlyByteBuf): AnimInstruction.Morph {
-        val count = buf.readVarInt()
-        val position = buf.readUtf()
-        fun opt(): String? = if (buf.readBoolean()) buf.readUtf() else null
-        val yaw = opt(); val pitch = opt(); val size = opt(); val c1 = opt(); val c2 = opt()
-        val spec = MorphSpec(
-            ticks = buf.readVarInt(),
-            staggerTicks = buf.readVarInt(),
-            maxSpeed = buf.readDouble(),
-            maxAccel = buf.readDouble(),
-            path = buf.readVarInt(),
-            easing = buf.readUtf(),
-            wobble = buf.readVarInt(),
-            wobbleStrength = buf.readDouble(),
-            wobblePeaks = buf.readDouble(),
-            convergeEps = buf.readDouble(),
-            loop = buf.readVarInt(),
-            allocation = buf.readVarInt(),
-            keepVelocity = buf.readBoolean(),
-            writeAttributes = buf.readBoolean(),
-            dynamicSlots = buf.readBoolean(),
-        )
-    return AnimInstruction.Morph(startMs, count, position, yaw, pitch, size, c1, c2, spec)
+    val count = buf.readVarInt()
+    val points = if (buf.readBoolean()) {
+        require(count in 1..AnimationProgramCodecs.MAX_PROGRAM_MEMBERS) { "位置槽位数量越界: $count" }
+        List(count) { AnimationProgramCodecs.readVec(buf) }
+    } else null
+    val position = if (points == null) buf.readUtf() else ""
+    fun readFormula(): String? = if (points == null && buf.readBoolean()) buf.readUtf() else null
+    val yaw = readFormula()
+    val pitch = readFormula()
+    val size = readFormula()
+    val control1 = readFormula()
+    val control2 = readFormula()
+    val spec = MorphSpec(
+        ticks = buf.readVarInt(),
+        staggerTicks = buf.readVarInt(),
+        maxSpeed = buf.readDouble(),
+        maxAccel = buf.readDouble(),
+        path = buf.readVarInt(),
+        easing = buf.readUtf(),
+        wobble = buf.readVarInt(),
+        wobbleStrength = buf.readDouble(),
+        wobblePeaks = buf.readDouble(),
+        convergeEps = buf.readDouble(),
+        loop = buf.readVarInt(),
+        allocation = buf.readVarInt(),
+        keepVelocity = buf.readBoolean(),
+        writeAttributes = buf.readBoolean(),
+        dynamicSlots = buf.readBoolean(),
+    )
+    return AnimInstruction.Morph(startMs, count, position, yaw, pitch, size, control1, control2, spec, points)
 }

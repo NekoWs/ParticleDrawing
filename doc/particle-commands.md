@@ -220,7 +220,7 @@ pdraw particle program spell_motes retire 2
 ### 让常驻粒子群变形到新编队
 
 `program <组> morph` 将现有成员移动到新槽位，默认采用最近邻分配。
-槽位用公式描述，变量 `i`/`n`/`u`，动态目标还能用 `t`。
+位置公式输出世界坐标。`i` 是槽位序号，`n` 是总数，`u` 是 0–1 的进度，动态目标还能读取毫秒 `t`。
 
 ```mcfunction
 pdraw particle program demo morph slots 120 vec3(cos(u*6.2832)*3, 101.5, sin(u*6.2832)*3)
@@ -234,7 +234,7 @@ pdraw particle program demo morph start
 | 子命令 | 含义 |
 | --- | --- |
 | `morph slots <数量> <位置公式>` | 目标槽位；位置必须是 `vec3(...)` |
-| `morph yaw\|pitch\|size <公式>` | 槽位朝向与尺寸（默认不改粒子原值） |
+| `morph yaw\|pitch\|size <公式>` | 槽位朝向与尺寸的公式；当前组渲染仅应用位置 |
 | `morph control1\|control2 <公式>` | 每颗粒子自己的路径控制点（二次/三次贝塞尔） |
 | `morph ticks\|stagger\|loop <整数>` | 时长、错峰、往返次数（`-1` 无限） |
 | `morph max_speed\|max_accel\|converge <数>` | 限速、限加速度、收敛阈值 |
@@ -242,10 +242,11 @@ pdraw particle program demo morph start
 | `morph easing <名字>` | 缓动名，与 `move` 等命令同一套 |
 | `morph wobble <none\|bell\|noise\|vortex> [强度] [峰值]` | 过渡中段的扰动，收尾必衰减到 0 |
 | `morph allocation <nearest\|index\|angle>` | 分配策略 |
-| `morph dynamic\|keep_velocity\|attributes <true\|false>` | 动态目标、到达后继续飞、是否连朝向尺寸一起写 |
+| `morph dynamic\|keep_velocity\|attributes <true\|false>` | 动态目标、到达后继续飞、槽位属性开关（组渲染暂未接入） |
 | `morph start` / `inspect` / `reset` | 下发、查看配置、清空配置 |
 
 过渡中再次执行 `start`，从当前实际位置和速度接续。设有限速时会延长过短的过渡时长。
+用代码绘制字幕并切换到几何形状，见[字幕与形状切换](guide.md#字幕与形状切换)。
 
 ## 分步配置粒子生成器
 

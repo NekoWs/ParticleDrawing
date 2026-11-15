@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.animation.morph
 
+import work.nekow.particledrawing.animation.script.ScriptException
 import work.nekow.particledrawing.animation.script.ScriptRuntime
 import work.nekow.particledrawing.animation.script.Vec3 as ScriptVec3
 import work.nekow.particledrawing.math.Vec3
@@ -7,7 +8,7 @@ import work.nekow.particledrawing.math.Vec3
 /**
  * 用公式描述的一整套槽位。
  *
- * 每个槽位按序号求值：变量 `i`（序号）、`n`（总数）、`u`（i/n）、`t`（形变毫秒）。
+ * 每个槽位按序号求值：变量 `i`（序号）、`n`（总数）、`u`（i/(n-1)）、`t`（形变毫秒）。
  * 位置必须是能取三个分量的向量（`vec3(...)`）；朝向、尺寸、控制点可选。
  * [build] 可以被每 tick 调用（动态目标），也可以只在开始时调一次（静态快照）。
  */
@@ -46,15 +47,19 @@ class MorphSlotFormulas(
             values["n"] = n
             values["u"] = u
             values["t"] = tMs
-            val p = vec(posRunner.evalAny(ctx), "position")
-            out += MorphSlot(
-                position = p,
-                yaw = yawRunner?.let { scalar(it.eval(ctx)) } ?: Double.NaN,
-                pitch = pitchRunner?.let { scalar(it.eval(ctx)) } ?: Double.NaN,
-                size = sizeRunner?.let { scalar(it.eval(ctx)) } ?: Double.NaN,
-                control1 = c1Runner?.let { vec(it.evalAny(ctx), "control1") },
-                control2 = c2Runner?.let { vec(it.evalAny(ctx), "control2") },
-            )
+            try {
+                val p = vec(posRunner.evalAny(ctx), "position")
+                out += MorphSlot(
+                    position = p,
+                    yaw = yawRunner?.let { scalar(it.eval(ctx)) } ?: Double.NaN,
+                    pitch = pitchRunner?.let { scalar(it.eval(ctx)) } ?: Double.NaN,
+                    size = sizeRunner?.let { scalar(it.eval(ctx)) } ?: Double.NaN,
+                    control1 = c1Runner?.let { vec(it.evalAny(ctx), "control1") },
+                    control2 = c2Runner?.let { vec(it.evalAny(ctx), "control2") },
+                )
+            } catch (e: ScriptException) {
+                throw IllegalArgumentException("槽位 $i 无法求值: ${e.message}", e)
+            }
         }
         return out
     }
@@ -73,18 +78,21 @@ class MorphSlotFormulas(
         return v
     }
 
-    private fun vec(v: Any?, field: String): Vec3 = when (v) {
-        is Vec3 -> v
-        // 脚本表达式里的 vec3(...) 是脚本值类型，跨到核心模型要转一次。
-        is ScriptVec3 -> Vec3(v.x, v.y, v.z)
-        is List<*> -> {
-            require(v.size >= 3) { "槽位字段 '$field' 的列表至少要有三个分量" }
-            Vec3(
-                (v[0] as? Number)?.toDouble() ?: throw IllegalArgumentException("槽位字段 '$field' 的第 1 个分量不是数"),
-                (v[1] as? Number)?.toDouble() ?: throw IllegalArgumentException("槽位字段 '$field' 的第 2 个分量不是数"),
-                (v[2] as? Number)?.toDouble() ?: throw IllegalArgumentException("槽位字段 '$field' 的第 3 个分量不是数"),
-            )
+    private fun vec(v: Any?, field: String): Vec3 {
+        val point = when (v) {
+            is Vec3 -> v
+            is ScriptVec3 -> Vec3(v.x, v.y, v.z)
+            is List<*> -> {
+                require(v.size >= 3) { "槽位字段 '$field' 的列表至少要有三个分量" }
+                Vec3(
+                    (v[0] as? Number)?.toDouble() ?: throw IllegalArgumentException("槽位字段 '$field' 的第 1 个分量不是数"),
+                    (v[1] as? Number)?.toDouble() ?: throw IllegalArgumentException("槽位字段 '$field' 的第 2 个分量不是数"),
+                    (v[2] as? Number)?.toDouble() ?: throw IllegalArgumentException("槽位字段 '$field' 的第 3 个分量不是数"),
+                )
+            }
+            else -> throw IllegalArgumentException("槽位字段 '$field' 需要 vec3(...) 形式的三维向量")
         }
-        else -> throw IllegalArgumentException("槽位字段 '$field' 需要 vec3(...) 形式的三维向量")
+        require(point.x.isFinite() && point.y.isFinite() && point.z.isFinite()) { "槽位字段 '$field' 需要有限坐标" }
+        return point
     }
 }
