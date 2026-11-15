@@ -2,6 +2,7 @@ package work.nekow.particledrawing
 
 import io.netty.buffer.Unpooled
 import net.minecraft.network.FriendlyByteBuf
+import net.minecraft.network.codec.StreamCodec
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.ParticleMorphSlot
 import work.nekow.particledrawing.animation.morph.MorphSpec
@@ -10,7 +11,9 @@ import work.nekow.particledrawing.animation.program.PivotRef
 import work.nekow.particledrawing.animation.program.finiteDurationMs
 import work.nekow.particledrawing.api.Orient
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.network.AnimationProgramAppendPayload
 import work.nekow.particledrawing.core.network.AnimationProgramCodecs
+import work.nekow.particledrawing.core.network.AnimationProgramPayload
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -74,6 +77,50 @@ class AnimationProgramInstructionTest {
         val chunks = AnimationProgramCodecs.instructionChunks(instructions).toList()
         assertEquals(listOf(512, 1, 1, 1, 1), chunks.map { it.size })
         assertEquals(instructions, chunks.flatten())
+    }
+
+    @Test
+    fun `完整包排队后保留原指令顺序与迟到时钟`() {
+        val original = sample.dropLast(1)
+        val delivered = ArrayList(original)
+        val programId = UUID.randomUUID()
+        val packet = AnimationProgramPayload(
+            programId, listOf(UUID.randomUUID()), 240L, 120L, Vec3.ZERO, emptyList(), emptyMap(),
+            AnimationProgramCodecs.instructionChunks(delivered).first(),
+        )
+
+        delivered.add(sample.last())
+
+        val decoded = roundTrip(AnimationProgramPayload.STREAM_CODEC, packet)
+        assertEquals(programId, decoded.programId)
+        assertEquals(original, decoded.instructions)
+        assertEquals(240L, decoded.anchorGameTime)
+        assertEquals(120L, decoded.programStartGameTime)
+    }
+
+    @Test
+    fun `追加包排队后保留原指令顺序`() {
+        val original = listOf(sample.last(), sample.first())
+        val batch = ArrayList(original)
+        val programId = UUID.randomUUID()
+        val packet = AnimationProgramAppendPayload(programId, batch)
+
+        batch.reverse()
+        batch.add(sample[1])
+
+        val decoded = roundTrip(AnimationProgramAppendPayload.STREAM_CODEC, packet)
+        assertEquals(programId, decoded.programId)
+        assertEquals(original, decoded.instructions)
+    }
+
+    private fun <T : Any> roundTrip(codec: StreamCodec<FriendlyByteBuf, T>, packet: T): T {
+        val buf = FriendlyByteBuf(Unpooled.buffer())
+        try {
+            codec.encode(buf, packet)
+            return codec.decode(buf).also { assertEquals(0, buf.readableBytes()) }
+        } finally {
+            buf.release()
+        }
     }
 
     @Test

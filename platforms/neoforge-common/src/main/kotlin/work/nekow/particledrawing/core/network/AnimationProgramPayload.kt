@@ -40,6 +40,14 @@ internal object AnimationProgramCodecs {
         if (start < instructions.size) yield(instructions.subList(start, instructions.size))
     }
 
+    fun snapshotInstructions(instructions: List<AnimInstruction>): List<AnimInstruction> {
+        requireLocalized(instructions.size <= MAX_INSTRUCTIONS_PER_PAYLOAD) {
+            translation("error.packet.instruction_limit", instructions.size, MAX_INSTRUCTIONS_PER_PAYLOAD)
+        }
+        // Netty 可能在服务端继续追加指令后才编码这个包。
+        return java.util.List.copyOf(instructions)
+    }
+
     fun writeInstructionList(buf: FriendlyByteBuf, list: List<AnimInstruction>) {
         buf.writeVarInt(list.size)
         for (ins in list) ins.write(buf)
@@ -103,7 +111,7 @@ internal object AnimationProgramCodecs {
  * @param vars 程序初始变量
  * @param instructions 初始指令流
  */
-data class AnimationProgramPayload(
+class AnimationProgramPayload(
     val programId: UUID,
     val particleIds: List<UUID>,
     val anchorGameTime: Long,
@@ -111,13 +119,12 @@ data class AnimationProgramPayload(
     val initialPivot: Vec3,
     val entityBindings: List<EntityBinding>,
     val vars: Map<String, Double>,
-    val instructions: List<AnimInstruction>,
+    instructions: List<AnimInstruction>,
 ) : CustomPacketPayload {
 
+    val instructions: List<AnimInstruction> = AnimationProgramCodecs.snapshotInstructions(instructions)
+
     init {
-        requireLocalized(instructions.size <= AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD) {
-            translation("error.packet.instruction_limit", instructions.size, AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD)
-        }
         requireLocalized(particleIds.size <= AnimationProgramCodecs.MAX_PROGRAM_MEMBERS) {
             translation("error.packet.program_members", particleIds.size, AnimationProgramCodecs.MAX_PROGRAM_MEMBERS)
         }
@@ -161,17 +168,12 @@ data class AnimationProgramPayload(
 }
 
 /** 追加指令到已激活程序（增量、保序）。 */
-data class AnimationProgramAppendPayload(
+class AnimationProgramAppendPayload(
     val programId: UUID,
-    val instructions: List<AnimInstruction>,
+    instructions: List<AnimInstruction>,
 ) : CustomPacketPayload {
 
-    init {
-        // 超限直接报错，发送端按 MAX_INSTRUCTIONS_PER_PAYLOAD 拆段后下发
-        requireLocalized(instructions.size <= AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD) {
-            translation("error.packet.instruction_limit", instructions.size, AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD)
-        }
-    }
+    val instructions: List<AnimInstruction> = AnimationProgramCodecs.snapshotInstructions(instructions)
 
     companion object {
         @JvmField
