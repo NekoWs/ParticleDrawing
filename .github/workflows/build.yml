@@ -52,5 +52,13 @@ jobs:
       - name: Build with Gradle
         run: ./gradlew -p platforms/${{ matrix.target }} build --console=plain
 
-      - name: Start GameTest server
-        run: ./gradlew -p platforms/${{ matrix.target }} runGameTestServer --console=plain
+      - name: Run required GameTests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test_log="$(mktemp)"
+          ./gradlew -p platforms/${{ matrix.target }} runGameTestServer --console=plain 2>&1 | tee "$test_log"
+          if ! grep -Eq '\[minecraft/GameTestServer\]: All [1-9][0-9]* required tests passed' "$test_log"; then
+            echo "::error::GameTest server did not report a successful run of required tests"
+            exit 1
+          fi
