@@ -160,6 +160,11 @@ object DynamicLightManager {
     @Volatile
     private var stateLogged = false
 
+    /** 地形烘焙位置到最近光源的最小距离；用来判断灯下方区块有没有被重建。 */
+    @Volatile
+    var terrainNearestDist: Double = Double.MAX_VALUE
+        private set
+
     @Volatile
     private var maxDynamicSeen: Double = 0.0
 
@@ -191,17 +196,27 @@ object DynamicLightManager {
         terrainCalls++
         if (dynamic > 0.0) bakePositive++
         if (overridden) bakeOverrides++
-        if (terrainSamples < 3) {
+        // 烘焙位置离最近光源多远：用来判断「灯下方那些区块到底有没有被重建」。
+        var best = Double.MAX_VALUE
+        for (src in sources) {
+            val dx = src.x - x
+            val dy = src.y - y
+            val dz = src.z - z
+            val d = sqrt(dx * dx + dy * dy + dz * dz)
+            if (d < best) best = d
+        }
+        if (best < terrainNearestDist) terrainNearestDist = best
+        if (terrainSamples < 2) {
             terrainSamples++
             org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing")
-                .info("[PD-terrain] pos=({}, {}, {}) dynamic={} overridden={}", x, y, z, dynamic, overridden)
+                .info("[PD-terrain] pos=({}, {}, {}) dynamic={} 最近光源={} 覆盖={}", x, y, z, dynamic, best, overridden)
         }
     }
 
     @JvmStatic
     fun diagnostics(): String =
         "烘焙调用=$bakeCalls 覆盖=$bakeOverrides 读到光=$bakePositive 峰值=${"%.2f".format(maxDynamicSeen)}@$maxDynamicAt " +
-            "地形烘焙=$terrainCalls 脏区块提交=$sectionsMarked"
+            "地形烘焙=$terrainCalls 最近烘焙距离=${"%.1f".format(terrainNearestDist)} 脏区块提交=$sectionsMarked"
 
     /**
      * 动态光照版本号：光源集合、位置、亮度或开关有任何变化就自增。
