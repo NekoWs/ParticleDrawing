@@ -1,26 +1,26 @@
 # API 参考
 
-按包分类的类索引。`work.nekow.particledrawing.api` 是公开 API；其余包属于内部实现，可能随版本改动。
+按包分类的类索引。`work.nekow.particledrawing.api` 与 `light` 包里的 `LightShape`、`LightFalloff` 是公开 API。其余包属于内部实现，可能随版本改动。
 字段、参数与边界语义写在对应类的 KDoc 里，用法与示例见 [guide.md](guide.md)。
 
 核心模型使用 `work.nekow.particledrawing.math.Vec3` 与 `ResourceId`，游戏入口仍接受原生类型。
 模型构造器和位置字段的 JVM 类型已变化，依赖方需要重新编译；转换方法与兼容范围见
 [多版本架构](multiversion.md#类型与原生服务)。`animation` 包横跨核心和平台，
 按名称读取或控制游戏内播放的类位于平台。`.pdrawc` 版本为 18，动画载荷编解码版本为 9，
-NeoForge 载荷注册版本为 16。
+NeoForge 载荷注册版本为 18，联机两端需要使用相同的载荷注册版本。
 
 ## api：公开 API
 
 | 类 | 作用 |
 | --- | --- |
 | `ParticleManager` | 维度级入口：创建粒子与粒子组、声明运行时发射器、批量生成 `spawnAll` / `spawnAllDetailed`、批量指令 `trackAll` / `setVelocityAll` / `applyForceAll`、程序化贴图登记 `registerTexture` / `registerBuiltinTextures`；贴图返回 true 只表示逻辑登记已接受，GPU 解码由客户端主线程排队完成 |
-| `ParticleHandle` | 单粒子句柄：移动、速度、力、实体锚点、重着色、缩放、光强热更、销毁、只读查询 `position()` / `velocity()` |
+| `ParticleHandle` | 单粒子句柄：移动、速度、力、实体锚点、重着色、缩放、光强与光源形状热更、销毁、只读查询 `position()` / `velocity()` |
 | `ParticleHandle.Builder` | 粒子生成参数：位置、颜色、缩放、寿命、外观规格、寿命曲线、首帧插值端点、逐粒子延迟 |
 | `ParticleGroup` | 粒子组与编排动画：轴心绑定、一次性变换、持续运动、变量热更、表达式指令、可更新阶段 `phaseParameter`、完成信号；`add(existing)` 会改挂既有/延迟成员，程序按玩家可见成员投递，迟到成员补挂到同一原起点时间轴 |
 | `ParticleBatch` | 程序化粒子集：成员逐 tick 增删、批量位置/速度/力、条件回收、补齐到 N |
 | `ParticleSpawnSpec` | 批量生成的单颗粒子规格（纯数据，字段与 `Builder` 对应，含出生速度/加速度配对） |
 | `ParticleEmitter` | 运行时发射器的构建器：口径（里程或间隔）、寿命、外观、曲线、抖动 |
-| `EmitterHandle` | 已声明发射器的句柄：改锚点、口径、参数与外观，停止与状态查询 |
+| `EmitterHandle` | 已声明发射器的句柄：改锚点、口径及后续粒子的参数与外观（含光源形状），停止与状态查询 |
 | `ParticleRecipe`、`ParticleSeed` | 可组合的出生样本、出生/运动公式、条件、状态、寿命和外观声明；t 为毫秒，age/life 为刻。maxAlive 默认 4096，满额时等待空位；完整点阵需足够容量和寿命 |
 | `ParticleSampling` | 参数数量、参数范围与空间网格采样；只提供样本，不预设效果 |
 | `ParticleImageSampler` | CPU 读取单帧图片并采样为独立粒子，保留颜色/透明度；可配置像素步幅、世界间距、平面与 alpha 阈值 |
@@ -30,7 +30,8 @@ NeoForge 载荷注册版本为 16。
 | `ParticleCurve`、`CurveKey`、`CurveChannel` | 逐粒子寿命曲线的单通道关键帧（透明度、尺寸、RGB、对外光强），同一通道多条相乘 |
 | `ParticleLifeCurve` | 一条粒子的全部寿命曲线，随生成包下发 |
 | `ParticleVisual` | 逐粒子外观规格：贴图、子矩形 UV、各向异性尺寸、朝向、加法混合、免光照、向外照明、光强乘数、只发光不画外观 `lightOnly`、光源形状 `spotlight` / `lightDirection` / `lightFalloff` |
-| `ParticleLights`、`LightSample` | 动态光源的只读入口：`snapshot()` / `snapshotInto(out)` 给出当帧光源的插值坐标、有效强度与照射半径，供第三方按自己的预算接光影包 |
+| `LightShape`、`LightFalloff` | 可复用的点光与射灯配置（`work.nekow.particledrawing.light` 包）。`point` / `spot` 创建形状，`withDirection` / `withFocus` / `withFalloff` 返回改过的副本。单颗、批量、发射器与 `Light.withShape` 共用。 |
+| `ParticleLights`、`LightSample` | 动态光源的只读入口。`snapshot()` / `snapshotInto(out)` 给出当帧光源的插值坐标、有效强度、照射半径、形状与 RGB，供第三方接入光影包。 |
 | `ParticleStyle` | 内置外观形状：`SQUARE`、`SOFT_DOT`、`LINE`，客户端按需生成 16px 贴图 |
 | `ParticleTextures` | `of(名称)` 按年龄/寿命播放资源贴图序列，`of(名称, 帧号)` 指定静态帧，`animated(名称, FPS)` 固定帧率循环；`ParticleVisual.particleTexture` 与可读外观 Builder 共用 |
 | `ParticleGroup.expressionLocal` | 公式输出相对当前组锚点，支持实体跟随与局部朝向；类型化 `position.local` 和 Java `positionLocal` 复用同一后端 |

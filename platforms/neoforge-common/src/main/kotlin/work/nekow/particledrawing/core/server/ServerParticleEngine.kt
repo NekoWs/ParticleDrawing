@@ -20,6 +20,7 @@ import work.nekow.particledrawing.core.network.ParticleForcePayload
 import work.nekow.particledrawing.core.network.ParticleForceBatchPayload
 import work.nekow.particledrawing.core.network.ParticleLightIntensityPayload
 import work.nekow.particledrawing.core.network.ParticleLightLevelPayload
+import work.nekow.particledrawing.core.network.ParticleLightShapePayload
 import work.nekow.particledrawing.core.network.ParticleRotationPayload
 import work.nekow.particledrawing.core.network.ParticleSetPositionPayload
 import work.nekow.particledrawing.core.network.ParticleSpawnBatchPayload
@@ -31,6 +32,7 @@ import work.nekow.particledrawing.core.network.ParticleUpdatePayload
 import work.nekow.particledrawing.core.network.ParticleVelocityPayload
 import work.nekow.particledrawing.core.network.ParticleVelocityBatchPayload
 import work.nekow.particledrawing.util.AttachMath
+import work.nekow.particledrawing.light.LightShape
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import org.apache.logging.log4j.LogManager
@@ -454,6 +456,13 @@ class ServerParticleEngine(
 
         val payload = ParticleLightIntensityPayload(id, multiplier, durationTicks, easing)
         sendToVisible(playersInDimension, data.position(), payload)
+    }
+
+    internal fun setLightShape(id: UUID, shape: LightShape?, playersInDimension: Collection<ServerPlayer>) {
+        val data = particles[id] ?: return
+        if (data.visual()?.lightShape == shape) return
+        data.setLightShape(shape)
+        sendToTracked(playersInDimension, listOf(id), ParticleLightShapePayload(id, shape))
     }
 
     /**

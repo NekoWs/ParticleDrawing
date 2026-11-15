@@ -44,6 +44,20 @@ data class LightShape(
         return this
     }
 
+    /** 改世界坐标中的偏航和俯仰，单位为度。 */
+    fun withDirection(yawDeg: Double, pitchDeg: Double): LightShape =
+        copy(yawDeg = yawDeg, pitchDeg = pitchDeg).validated()
+
+    /** 改锥半角。省略内锥时取外锥的 60%，省略锐度时沿用当前值。 */
+    @JvmOverloads
+    fun withFocus(outerDeg: Double, innerDeg: Double = 0.0, edge: Double = this.edge): LightShape =
+        copy(outerDeg = outerDeg, innerDeg = innerDeg, edge = edge).validated()
+
+    /** 改距离衰减。半径省略时沿用当前值。 */
+    @JvmOverloads
+    fun withFalloff(falloff: LightFalloff, range: Double = this.range): LightShape =
+        copy(falloff = falloff, range = range).validated()
+
     /** 方向向量。 */
     fun direction(): Triple<Double, Double, Double> {
         if (!isSpot) return Triple(0.0, 0.0, 0.0)
@@ -64,7 +78,16 @@ data class LightShape(
         val POINT = LightShape()
         const val MAX_RANGE = 64.0
 
+        /** 彩色点光。半径为 0 时使用客户端默认值。 */
+        @JvmStatic
+        @JvmOverloads
+        fun point(range: Double = 0.0, falloff: LightFalloff = LightFalloff.LINEAR): LightShape =
+            LightShape(range = range, falloff = falloff).validated()
+
+        /** 射灯，默认垂直朝下。 */
+        @JvmStatic
+        @JvmOverloads
         fun spot(range: Double, outerDeg: Double, innerDeg: Double = 0.0, edge: Double = 1.0): LightShape =
-            LightShape(range = range, outerDeg = outerDeg, innerDeg = innerDeg, edge = edge)
+            LightShape(range = range, outerDeg = outerDeg, innerDeg = innerDeg, edge = edge).validated()
     }
 }

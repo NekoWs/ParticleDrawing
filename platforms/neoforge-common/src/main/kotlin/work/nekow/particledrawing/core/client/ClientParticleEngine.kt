@@ -397,6 +397,13 @@ class ClientParticleEngine {
         if (nowLight) lightIds.add(id) else lightIds.remove(id)
     }
 
+    internal fun setLightShape(id: UUID, shape: LightShape?) {
+        val rp = particles[id] ?: return
+        val wasLight = lightsUp(rp)
+        rp.setLightShape(shape)
+        refreshLightIndex(id, wasLight, lightsUp(rp))
+    }
+
     /**
      * 运行时改对外光强乘数。时长 > 0 时从当前实际亮度接续，不重置成满光；
      * 0 = 立即生效。只影响动态光照，不动片元透明度与全亮标志。

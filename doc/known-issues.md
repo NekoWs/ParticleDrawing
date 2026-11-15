@@ -80,7 +80,7 @@ JVM 回归中的 LWJGL 3.4.3 内存后端会触发 JDK 25 的 Unsafe 弃用提�
 - 退场完成使用客户端尺寸端点回报。没有同时追踪全部成员的玩家时走兜底清理。
 
 组局部坐标使用字符串 API `expressionLocal` 或命令 `expression local`；`expression` 输出世界坐标。
-当前载荷注册版本为 `16`，含局部坐标标志和采样源声明。
+当前载荷注册版本见 [API 参考](api-reference.md)。
 
 数值文本已统一展开为普通十进制，求值器也接受科学计数法；角速度表达式与运行时阶段控制已补齐。
 修复记录与游戏内验收范围见[消费迁移](issues/readable-api-migration.md)。

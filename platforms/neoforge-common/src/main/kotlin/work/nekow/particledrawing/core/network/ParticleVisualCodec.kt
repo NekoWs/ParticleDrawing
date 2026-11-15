@@ -11,7 +11,7 @@ import work.nekow.particledrawing.core.TextureRegistry
  *
  * 全默认外观与「没有外观」编码相同，解码后统一为 null，两者语义一致。
  * 贴图按 id 引用（登记时分配，见 [TextureRegistry]），服务端未登记该名字时退回内联名字。
- * 外观在生成时定死，没有对应的更新载荷。
+ * 光源形状也通过 [ParticleLightShapePayload] 同步。
  */
 internal object ParticleVisualCodec {
 
@@ -79,15 +79,7 @@ internal object ParticleVisualCodec {
             buf.writeFloat(visual.spinZDeg.toFloat())
         }
         if (visual.lightIntensity != 1f) buf.writeFloat(visual.lightIntensity)
-        visual.lightShape?.let {
-            buf.writeDouble(it.range)
-            buf.writeDouble(it.outerDeg)
-            buf.writeDouble(it.innerDeg)
-            buf.writeDouble(it.edge)
-            buf.writeDouble(it.yawDeg)
-            buf.writeDouble(it.pitchDeg)
-            buf.writeVarInt(it.falloff.ordinal)
-        }
+        visual.lightShape?.let { writeLightShape(buf, it) }
     }
 
     fun read(buf: FriendlyByteBuf): ParticleVisual? {
@@ -125,16 +117,28 @@ internal object ParticleVisualCodec {
         }
         visual.emitsLight = flags and FLAG_EMITS_LIGHT != 0
         visual.lightOnly = flags and FLAG_LIGHT_ONLY != 0
-        if (flags and FLAG_LIGHT_SHAPE != 0) {
-            val range = buf.readDouble()
-            val outer = buf.readDouble()
-            val inner = buf.readDouble()
-            val edge = buf.readDouble()
-            val yaw = buf.readDouble()
-            val pitch = buf.readDouble()
-            val falloff = LightFalloff.entries.getOrNull(buf.readVarInt()) ?: LightFalloff.LINEAR
-            visual.lightShape = LightShape(range, outer, inner, edge, yaw, pitch, falloff).validated()
-        }
+        if (flags and FLAG_LIGHT_SHAPE != 0) visual.lightShape = readLightShape(buf)
         return visual
+    }
+
+    fun writeLightShape(buf: FriendlyByteBuf, shape: LightShape) {
+        buf.writeDouble(shape.range)
+        buf.writeDouble(shape.outerDeg)
+        buf.writeDouble(shape.innerDeg)
+        buf.writeDouble(shape.edge)
+        buf.writeDouble(shape.yawDeg)
+        buf.writeDouble(shape.pitchDeg)
+        buf.writeVarInt(shape.falloff.ordinal)
+    }
+
+    fun readLightShape(buf: FriendlyByteBuf): LightShape {
+        val range = buf.readDouble()
+        val outer = buf.readDouble()
+        val inner = buf.readDouble()
+        val edge = buf.readDouble()
+        val yaw = buf.readDouble()
+        val pitch = buf.readDouble()
+        val falloff = LightFalloff.entries[buf.readVarInt()]
+        return LightShape(range, outer, inner, edge, yaw, pitch, falloff).validated()
     }
 }

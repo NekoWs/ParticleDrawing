@@ -416,12 +416,53 @@ manager.create().position(p).scale(3f).lifetime(20)
 
 ### 白光与动态射灯
 
-射灯可在同一份外观上设置 `.spotlight(12.0, 35.0, 20.0)`、
-`.lightDirection(0.0, -90.0)` 与 `.lightFalloff(LightFalloff.SMOOTH)`。
-锥角使用半角，方向采用世界坐标。设 `color=#ffffff` 或在脚本里用 `[1, 1, 1, 1]`，
-照明会保留材质原有的颜色，画面仍受原版光图与环境光影响。
+调用 `manager.create().position(pos).spotlight(12.0, 35.0).spawn()` 就可以生成一盏
+白色射灯，默认垂直朝下。半径和角度参数为 `Double`。
+`lightOnly(true)` 隐藏灯的粒子外观。返回的句柄可以直接更新当前光源。
 
-脚本可在同一个 `process` 里移动粒子、旋转光轴、调节强度并改变聚焦范围：
+```java
+ParticleHandle lamp = manager.create().position(pos)
+    .spotlight(12, 35).lightDirection(25, -35).lightOnly(true).spawn();
+if (lamp != null) {
+    lamp.lightDirection(70, -45).lightFocus(24).lightIntensity(0.4f, 8);
+    lamp.move(target, 8, EasingType.LINEAR);
+}
+```
+
+在单颗、批量或发射器间复用配置时，用 `work.nekow.particledrawing.light.LightShape`。
+同一时刻要改多个形状参数时，可先组合再用一次 `lightShape(shape)` 提交。
+
+```kotlin
+val beam = LightShape.spot(12.0, 35.0, 20.0, 1.5)
+    .withDirection(25.0, -35.0)
+    .withFalloff(LightFalloff.SMOOTH)
+
+val lamp = manager.create().position(pos).lightShape(beam).lightOnly(true).spawn() ?: return
+val batchSpec = ParticleSpawnSpec().position(pos).lightShape(beam).lightOnly(true)
+val emitter = manager.emitter(pos.x, pos.y, pos.z).interval(4).lightShape(beam).spawn()
+val narrowed = beam.withDirection(70.0, -45.0).withFocus(24.0)
+lamp.lightShape(narrowed)
+emitter.lightShape(narrowed)
+```
+
+命名外观 DSL 用 `particleVisual { light = Light.only(15, 0.6f).withShape(beam) }`。
+Java 可写 `ParticleAppearance.builder().light(Light.only(15, 0.6f).withShape(beam)).build()`。
+
+| 参数 | 配置方法与单位 |
+| --- | --- |
+| 半径与衰减 | `withFalloff(falloff, range)` 或 `lamp.lightFalloff(falloff, range)`。半径 0–64 格，0 用客户端默认值。衰减可选 `CONSTANT`、`LINEAR`、`SMOOTH`、`INVERSE`、`INVERSE_SQUARE`。 |
+| 朝向 | `withDirection(yaw, pitch)` 或 `lamp.lightDirection(yaw, pitch)`。世界坐标，偏航 0° 朝 +Z，+90° 朝 −X，负俯仰向下。 |
+| 聚焦与边缘 | `withFocus(outer, inner, edge)` 或 `lamp.lightFocus(outer, inner, edge)`。锥角均为半角，内锥省略时取外锥的 60%，内外相等使用硬边。锐度从 1 起，越大越硬。 |
+| 光色 | 射灯与 `LightShape.point()` 使用粒子 RGB，`Color.WHITE` 为白光。出生时用 `color(...)`，单颗运行期用 `recolor(...)`。 |
+| 亮度与移动 | `lightLevel(0..15)`，0 关灯。`lightIntensity(乘数, 时长)` 与 `move(target, 时长, easing)` 支持过渡，`track(target)` 适合每刻跟随。 |
+
+单颗灯的形状更新即时生效。`lightDirection`、`lightFocus` 和 `lightFalloff` 基于当前
+显式形状；连续扫光时可逐刻提交新形状。用 `lightShape(LightShape.point())` 切换成彩色点光。
+`lightShape(null)` 清除显式形状，已有全亮或独立照明标记的粒子恢复为默认白色点光。
+发射器的配置更新应用于接下来出生的粒子。光束显示由客户端 `showSpotlightBeams` 控制，
+光源预算由 `maxDynamicLights` 和 `maxDynamicLightsPerCell` 控制。
+
+脚本也可用白色 `[1, 1, 1, 1]`，并在同一个 `process` 里同步驱动移动、旋转、调光和聚焦：
 
 ```js
 func setup() {

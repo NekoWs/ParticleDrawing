@@ -2,6 +2,7 @@ package work.nekow.particledrawing.api
 
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.light.LightShape
 import java.util.UUID
 
 /**
@@ -107,6 +108,12 @@ class EmitterHandle internal constructor(
 
     /** 对外光强静态乘数（>= 0；1 = 原始亮度），只影响之后生成的粒子。 */
     fun lightIntensity(multiplier: Float): EmitterHandle = params { it.lightIntensity(multiplier) }
+
+    /** 修改后续生成粒子的光源形状。 */
+    fun lightShape(shape: LightShape?): EmitterHandle = params { it.lightShape(shape) }
+
+    /** 后续生成的粒子只向外照明，隐藏外观。 */
+    fun lightOnly(enabled: Boolean): EmitterHandle = params { it.lightOnly(enabled) }
 
     /** 同时存活的粒子上限。 */
     fun maxAlive(count: Int): EmitterHandle = params { it.maxAlive(count) }

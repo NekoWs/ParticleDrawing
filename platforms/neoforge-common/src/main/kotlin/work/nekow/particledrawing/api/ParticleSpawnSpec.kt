@@ -5,6 +5,7 @@ import work.nekow.particledrawing.platform.toMinecraft
 
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.light.LightShape
 
 /**
  * 一次批量生成里的一颗粒子。
@@ -83,10 +84,16 @@ class ParticleSpawnSpec {
 
     fun lightLevel(level: Int): ParticleSpawnSpec = apply { this.lightLevel = level.coerceIn(0, 15) }
 
+    private fun spec(): ParticleVisual = visual ?: ParticleVisual().also { visual = it }
+
     /** 对外光强静态乘数（>= 0；1 = 原始亮度）。只影响动态光照，不改片元外观。 */
-    fun lightIntensity(multiplier: Float): ParticleSpawnSpec = apply {
-        (visual ?: ParticleVisual().also { visual = it }).lightIntensity(multiplier)
-    }
+    fun lightIntensity(multiplier: Float): ParticleSpawnSpec = apply { spec().lightIntensity(multiplier) }
+
+    /** 配置对外照明的形状。 */
+    fun lightShape(shape: LightShape?): ParticleSpawnSpec = apply { spec().lightShape(shape) }
+
+    /** 只向外照明，隐藏粒子外观。 */
+    fun lightOnly(enabled: Boolean): ParticleSpawnSpec = apply { spec().lightOnly(enabled) }
 
     /** 外观规格（贴图 / UV / 各向异性 / 朝向 / 加色）；按拷贝存。 */
     fun visual(visual: ParticleVisual): ParticleSpawnSpec = apply {

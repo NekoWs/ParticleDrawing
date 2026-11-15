@@ -2,13 +2,24 @@ package work.nekow.particledrawing
 
 import io.netty.buffer.Unpooled
 import net.minecraft.network.FriendlyByteBuf
+import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.api.Light
+import work.nekow.particledrawing.api.ParticleSpawnSpec
 import work.nekow.particledrawing.api.ParticleVisual
+import work.nekow.particledrawing.api.particleVisual
+import work.nekow.particledrawing.core.client.RenderParticle
+import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.network.ParticleLightShapePayload
 import work.nekow.particledrawing.core.network.ParticleVisualCodec
+import work.nekow.particledrawing.core.server.ParticleData
 import work.nekow.particledrawing.light.LightFalloff
 import work.nekow.particledrawing.light.LightShape
+import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -144,5 +155,73 @@ class LightShapeTest {
         assertFailsWith<IllegalArgumentException> {
             work.nekow.particledrawing.command.ParticleCommandOptionParser.parse("light_falloff=weird")
         }
+    }
+
+    @Test
+    fun `光源配置可在批量和外观 DSL 之间复用`() {
+        val beam = LightShape.spot(12.0, 35.0, 20.0, 2.0)
+            .withDirection(-45.0, -35.0)
+            .withFalloff(LightFalloff.SMOOTH)
+        val focused = beam.withFocus(18.0)
+        assertEquals(beam.copy(outerDeg = 18.0, innerDeg = 0.0), focused)
+        assertEquals(10.8, focused.effectiveInnerDeg, 1e-9)
+
+        val spec = ParticleSpawnSpec().lightShape(beam).lightOnly(true).lightIntensity(0.6f)
+        val dsl = particleVisual { light = Light.only(15, 0.6f).withShape(beam) }
+        assertEquals(beam, spec.visual?.lightShape)
+        assertEquals(beam, dsl.lightShape)
+        assertTrue(dsl.lightOnly)
+        assertEquals(0.6f, dsl.lightIntensity)
+        assertFalse(dsl.glowing)
+    }
+
+    @Test
+    fun `形状更新完整过网络且支持清除`() {
+        val id = UUID.randomUUID()
+        val beam = LightShape.spot(12.0, 35.0, 20.0, 2.0)
+            .withDirection(17.5, -42.5)
+            .withFalloff(LightFalloff.INVERSE_SQUARE)
+        for (shape in listOf(beam, LightShape.point(6.0), null)) {
+            val payload = ParticleLightShapePayload(id, shape)
+            val out = FriendlyByteBuf(Unpooled.buffer())
+            try {
+                ParticleLightShapePayload.STREAM_CODEC.encode(out, payload)
+                assertEquals(payload, ParticleLightShapePayload.STREAM_CODEC.decode(out))
+                assertEquals(0, out.readableBytes())
+            } finally {
+                out.release()
+            }
+        }
+    }
+
+    @Test
+    fun `形状热更不污染复用外观并保留已开始的光强缓动`() {
+        val beam = LightShape.spot(12.0, 35.0)
+        val original = ParticleVisual().lightShape(beam).lightIntensity(0.8f)
+        val id = UUID.randomUUID()
+        val data = ParticleData.create(id, Vec3.ZERO, Color.WHITE, 1f, -1, null, false, 15, null, original)
+        val render = RenderParticle(
+            id, Vec3.ZERO, Color.WHITE, 1f, false, 15, -1, null, null, null,
+            lightIntensity = 0.8f, lightShape = beam,
+        ).also { it.captureSpawnSize() }
+
+        val turned = beam.withDirection(75.0, -25.0).withFocus(18.0)
+        data.setLightIntensity(0.4f)
+        data.setLightShape(turned)
+        render.applyLightIntensity(0.4f, 1000L, EasingType.LINEAR)
+        render.setLightShape(turned)
+        assertEquals(turned, data.visual()?.lightShape)
+        assertEquals(turned, render.shape())
+        assertEquals(0.4f, data.visual()?.lightIntensity)
+        assertEquals(beam, original.lightShape)
+        assertEquals(12f, render.lightIntensity(), 1e-5f)
+        repeat(20) { render.advanceEngine() }
+        assertEquals(6f, render.lightIntensity(), 1e-5f)
+
+        data.setLightShape(null)
+        render.setLightShape(null)
+        assertNull(data.visual()?.lightShape)
+        assertFalse(render.emitsLight())
+        assertEquals(0f, render.lightIntensity())
     }
 }

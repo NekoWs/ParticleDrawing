@@ -4,6 +4,7 @@ import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleLifeCurve
 import work.nekow.particledrawing.api.ParticleVisual
+import work.nekow.particledrawing.light.LightShape
 import work.nekow.particledrawing.util.AttachMath
 import java.util.UUID
 
@@ -48,7 +49,7 @@ class ParticleData(
     fun lightLevel(): Int = lightLevel
     fun offsetFromPivot(): Vec3 = offsetFromPivot
 
-    /** 生成时定死的外观规格（贴图 / UV / 各向异性 / 朝向 / 加色）；null = 默认外观。 */
+    /** 当前外观快照；null = 默认外观。 */
     fun visual(): ParticleVisual? = visual
 
     /**
@@ -59,6 +60,11 @@ class ParticleData(
         val visual = this.visual?.copy() ?: ParticleVisual()
         visual.lightIntensity(multiplier)
         this.visual = visual
+    }
+
+    /** 更新形状快照，供稍后进入视距的玩家使用。 */
+    internal fun setLightShape(shape: LightShape?) {
+        visual = (visual?.copy() ?: ParticleVisual()).lightShape(shape)
     }
 
     /** 生成时定死的寿命曲线（颜色/尺寸随寿命的乘数）；null = 恒定外观。 */

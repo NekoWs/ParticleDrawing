@@ -4,6 +4,7 @@ import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.network.EmitterParams
 import work.nekow.particledrawing.core.network.EmitterUpdatePayload
+import work.nekow.particledrawing.light.LightShape
 
 /**
  * 发射口径：按锚点走过的里程发射，还是按时间发射。
@@ -111,11 +112,17 @@ class ParticleEmitter internal constructor(
     /** 每颗粒子是否发光（免光照）。 */
     fun glowing(glowing: Boolean): ParticleEmitter = apply { this.glowing = glowing }
 
-    /** 发光粒子向外发出的光照等级 (0-15)，仅当 [glowing] 为 true 时生效。 */
+    /** 向外发出的光照等级 (0-15)，0 关闭照明。 */
     fun lightLevel(level: Int): ParticleEmitter = apply { this.lightLevel = level.coerceIn(0, 15) }
 
     /** 对外光强静态乘数（>= 0；1 = 原始亮度）。只影响动态光照，不改片元外观。 */
     fun lightIntensity(multiplier: Float): ParticleEmitter = apply { spec().lightIntensity(multiplier) }
+
+    /** 设置后续生成粒子的光源形状。 */
+    fun lightShape(shape: LightShape?): ParticleEmitter = apply { spec().lightShape(shape) }
+
+    /** 后续生成的粒子只向外照明，隐藏外观。 */
+    fun lightOnly(enabled: Boolean): ParticleEmitter = apply { spec().lightOnly(enabled) }
 
     /** 外观规格；给的是拷贝，全亮/照明标记也一并采用，之后改原对象不影响。 */
     fun visual(visual: ParticleVisual): ParticleEmitter = apply {

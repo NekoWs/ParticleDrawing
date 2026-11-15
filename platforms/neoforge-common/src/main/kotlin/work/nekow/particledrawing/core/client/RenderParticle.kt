@@ -183,8 +183,12 @@ class RenderParticle(
     /** 光源形状；null 表示按老行为（点光、线性衰减、全局半径）。 */
     fun shape(): LightShape? = lightShape
 
-    fun setScriptLight(shape: LightShape?, intensity: Float) {
+    internal fun setLightShape(shape: LightShape?) {
         lightShape = shape
+    }
+
+    fun setScriptLight(shape: LightShape?, intensity: Float) {
+        setLightShape(shape)
         baseLightIntensity = intensity
     }
 

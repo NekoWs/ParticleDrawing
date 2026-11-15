@@ -12,8 +12,7 @@ import kotlin.math.roundToInt
 /**
  * 逐粒子外观规格：贴图 / 子矩形 UV / 各向异性尺寸 / 朝向 / 加法混合 / 免光照。
  *
- * 外观在生成时定死并同步给客户端，之后改不了，要换外观就销毁重生成。
- * 唯一例外是光强乘数：运行期可用 [ParticleHandle.lightIntensity] 热更。
+ * 外观在生成时同步给客户端。对外光强和光源形状可在运行期通过单粒子句柄修改。
  *
  * 尺寸口径二选一：编辑器单位（默认，渲染整宽 = 值 × 0.2 格 × 贴图尺寸系数）或世界格（[anisoWorld]）。
  *
@@ -83,23 +82,22 @@ class ParticleVisual {
      */
     var lightShape: LightShape? = null
 
-    /** 在当前形状上改几个字段；没设过就从默认点光起改。 */
-    private fun withShape(edit: LightShape.() -> LightShape): ParticleVisual {
-        lightShape = (lightShape ?: LightShape.POINT).edit().validated()
-        return this
-    }
+    /** 配置对外照明的形状。null 清除显式形状。 */
+    fun lightShape(shape: LightShape?): ParticleVisual = apply { lightShape = shape?.validated() }
 
     /** 设成射灯：半径、外锥半角、内锥半角（0 = 自动 60%）、边缘锐度。 */
+    @JvmOverloads
     fun spotlight(range: Double, outerDeg: Double, innerDeg: Double = 0.0, edge: Double = 1.0): ParticleVisual =
-        withShape { LightShape(range, outerDeg, innerDeg, edge, yawDeg, pitchDeg, falloff) }
+        lightShape((lightShape ?: LightShape.POINT).copy(range = range, outerDeg = outerDeg, innerDeg = innerDeg, edge = edge))
 
     /** 设射灯朝向（度）：偏航绕 Y，俯仰向下为负。 */
     fun lightDirection(yawDeg: Double, pitchDeg: Double): ParticleVisual =
-        withShape { LightShape(range, outerDeg, innerDeg, edge, yawDeg, pitchDeg, falloff) }
+        lightShape((lightShape ?: LightShape.POINT).withDirection(yawDeg, pitchDeg))
 
     /** 设衰减曲线；[range] 不传就保持现状（0 = 沿用全局半径）。 */
+    @JvmOverloads
     fun lightFalloff(falloff: LightFalloff, range: Double = lightShape?.range ?: 0.0): ParticleVisual =
-        withShape { LightShape(range, outerDeg, innerDeg, edge, yawDeg, pitchDeg, falloff) }
+        lightShape((lightShape ?: LightShape.POINT).withFalloff(falloff, range))
 
     /** 用整张贴图（[name] 见 [texture]）；会清掉之前设的子矩形 UV。 */
     fun texture(name: String): ParticleVisual {

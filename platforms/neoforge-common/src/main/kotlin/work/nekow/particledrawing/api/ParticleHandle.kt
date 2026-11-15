@@ -9,6 +9,8 @@ import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.server.AnimationScheduler
 import work.nekow.particledrawing.core.server.ParticleData
 import work.nekow.particledrawing.util.AttachMath
+import work.nekow.particledrawing.light.LightFalloff
+import work.nekow.particledrawing.light.LightShape
 import java.util.UUID
 
 /**
@@ -270,6 +272,44 @@ class ParticleHandle(
         return this
     }
 
+    /** 当前的显式光源形状；未配置或粒子已移除时返回 null。 */
+    fun lightShape(): LightShape? = data()?.visual()?.lightShape
+
+    /**
+     * 立即更新这颗粒子的光源形状。
+     * null 清除显式形状；切换为彩色点光用 [LightShape.point]。
+     */
+    fun lightShape(shape: LightShape?): ParticleHandle = apply {
+        manager.getEngine().setLightShape(id, shape, manager.getPlayers())
+    }
+
+    /** 修改已配置光源的世界朝向（度）。 */
+    fun lightDirection(yawDeg: Double, pitchDeg: Double): ParticleHandle =
+        editLightShape { it.withDirection(yawDeg, pitchDeg) }
+
+    /** 修改锥半角。省略内锥时取外锥的 60%，省略锐度时沿用当前值。 */
+    @JvmOverloads
+    fun lightFocus(outerDeg: Double, innerDeg: Double = 0.0): ParticleHandle =
+        editLightShape { it.withFocus(outerDeg, innerDeg) }
+
+    /** 修改锥半角与边缘锐度。 */
+    fun lightFocus(outerDeg: Double, innerDeg: Double, edge: Double): ParticleHandle =
+        editLightShape { it.withFocus(outerDeg, innerDeg, edge) }
+
+    /** 修改距离衰减和半径。 */
+    fun lightFalloff(falloff: LightFalloff, range: Double): ParticleHandle =
+        editLightShape { it.withFalloff(falloff, range) }
+
+    /** 修改距离衰减，沿用当前半径。 */
+    fun lightFalloff(falloff: LightFalloff): ParticleHandle =
+        editLightShape { it.withFalloff(falloff) }
+
+    private inline fun editLightShape(edit: (LightShape) -> LightShape): ParticleHandle {
+        val data = data() ?: return this
+        val shape = checkNotNull(data.visual()?.lightShape) { "请先用 lightShape 设置光源形状" }
+        return lightShape(edit(shape))
+    }
+
     /**
      * 使用缓动改变粒子颜色。
      * @param color 目标颜色
@@ -411,7 +451,7 @@ class ParticleHandle(
         fun glowing(glowing: Boolean) = apply { this.glowing = glowing }
 
         /**
-         * 设置向外发出的光照等级 (0-15)，仅当 [glowing] 为 true 时生效。
+         * 设置向外发出的光照等级 (0-15)，0 关闭照明。
          */
         fun lightLevel(level: Int) = apply { this.lightLevel = level.coerceIn(0, 15) }
 
@@ -420,6 +460,20 @@ class ParticleHandle(
          * 需要随时间变化时用 [curve] 的 [CurveChannel.LIGHT] 通道。
          */
         fun lightIntensity(multiplier: Float) = apply { spec().lightIntensity(multiplier) }
+
+        /** 配置对外照明的形状；射灯和显式点光使用粒子 RGB。 */
+        fun lightShape(shape: LightShape?) = apply { spec().lightShape(shape) }
+
+        /** 配置射灯。半径用格，锥角用半角（度）。 */
+        @JvmOverloads
+        fun spotlight(range: Double, outerDeg: Double, innerDeg: Double = 0.0, edge: Double = 1.0) =
+            apply { spec().spotlight(range, outerDeg, innerDeg, edge) }
+
+        /** 配置光轴的世界朝向（度）。 */
+        fun lightDirection(yawDeg: Double, pitchDeg: Double) = apply { spec().lightDirection(yawDeg, pitchDeg) }
+
+        /** 只向外照明，隐藏粒子外观。 */
+        fun lightOnly(enabled: Boolean) = apply { spec().lightOnly(enabled) }
 
         /** 设置相对组轴心的偏移。 */
         fun offsetFromPivot(offset: Vec3) = apply { this.offsetFromPivot = offset }

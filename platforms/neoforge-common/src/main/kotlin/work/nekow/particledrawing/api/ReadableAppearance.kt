@@ -1,5 +1,7 @@
 package work.nekow.particledrawing.api
 
+import work.nekow.particledrawing.light.LightShape
+
 // 命名外观门面：把“世界尺寸 / 全亮 / 对外照明 / 混合 / 朝向”一次写清，
 // 单颗、批量、Draw 与发射器都还是同一份 ParticleVisual，不新增渲染模型。
 
@@ -10,7 +12,11 @@ class Light private constructor(
     val emits: Boolean,
     /** 只发光、不画外观：光强不随透明度和尺寸衰减。 */
     val only: Boolean = false,
+    val shape: LightShape? = null,
 ) {
+
+    /** 附加射灯或点光的形状，沿用等级、强度和可见性。 */
+    fun withShape(shape: LightShape?): Light = Light(level, intensity, emits, only, shape?.validated())
 
     override fun toString(): String = when {
         only -> "Light(level=$level, intensity=$intensity, only=true)"
@@ -149,6 +155,7 @@ class ParticleVisualBuilder {
         visual.lightIntensity = light.intensity
         visual.emitsLight = light.emits || light.only
         visual.lightOnly = light.only
+        visual.lightShape = light.shape
         visual.additive = blend == Blend.ADDITIVE
         visual.billboard = facing == Facing.BILLBOARD
         visual.spinXDeg = 0.0

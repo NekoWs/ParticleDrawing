@@ -197,6 +197,12 @@ internal object ClientPayloadHandler {
         }
     }
 
+    internal fun handleLightShape(payload: ParticleLightShapePayload, context: IPayloadContext) {
+        context.enqueueWork {
+            ClientParticleEngine.instance()?.setLightShape(payload.particleId, payload.shape)
+        }
+    }
+
     // 运行时发射器：客户端按渲染帧自己发射
 
     fun handleEmitterSpawn(payload: EmitterSpawnPayload, context: IPayloadContext) {
