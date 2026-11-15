@@ -2,7 +2,7 @@
 
 ## Minecraft 26.2 与 26.3
 
-当前提供独立的 26.2 和 26.3 适配器。26.3 最低 NeoForge 为 26.3.0.102，26.2 为 26.2.0.59。
+当前提供独立的 26.2 和 26.3 适配器。26.3 最低 NeoForge 为 26.3.0.101，26.2 为 26.2.0.59。
 游戏适配器使用 Java 25，共享核心使用 Java 21；见[多版本架构](multiversion.md)。
 NeoGradle 使用 7.1.39，修复 26.3 开发环境重编译 HolderSet 时的访问权限问题，见
 [上游问题](https://github.com/neoforged/NeoGradle/issues/327)。

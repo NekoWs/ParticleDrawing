@@ -40,7 +40,7 @@ evaluated on the client, so a running effect costs little to no per-tick bandwid
 | Minecraft | Minimum NeoForge | Java |
 | --- | --- | --- |
 | 26.2 | 26.2.0.59 | 25 |
-| 26.3 | 26.3.0.102 | 25 |
+| 26.3 | 26.3.0.101 | 25 |
 | 1.21.1 | 21.1.235 | 21 |
 
 Downloads cover 26.2, 26.3 and 1.21.1.
