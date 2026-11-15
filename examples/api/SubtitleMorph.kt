@@ -7,6 +7,7 @@ import work.nekow.particledrawing.animation.morph.MorphWobble
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleGroup
 import work.nekow.particledrawing.api.ParticleManager
+import work.nekow.particledrawing.api.ParticleMorphSlot
 import work.nekow.particledrawing.api.ParticleSpawnSpec
 import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.api.ParticleVisual
@@ -20,7 +21,7 @@ class SubtitleMorph private constructor(val group: ParticleGroup, private val ce
     enum class Target { FIRST_CAPTION, SECOND_CAPTION, CUBE, SPHERE }
 
     fun show(target: Target): SubtitleMorph = apply {
-        group.morph(slots(target, center), transition)
+        group.morphSlots(slots(target, center), transition)
     }
 
     fun remove() = group.remove()
@@ -29,6 +30,7 @@ class SubtitleMorph private constructor(val group: ParticleGroup, private val ce
         private const val glyphSize = 16
         private const val letterStep = 19
         private const val pixelStep = 0.151
+        private const val captionSize = 0.82
         private const val cubeSide = 11
         private const val count = cubeSide * cubeSide * cubeSide - (cubeSide - 2) * (cubeSide - 2) * (cubeSide - 2)
         private val transition = MorphOptions(
@@ -41,10 +43,10 @@ class SubtitleMorph private constructor(val group: ParticleGroup, private val ce
         )
 
         fun spawn(manager: ParticleManager, center: Vec3): SubtitleMorph {
-            val appearance = ParticleVisual().style(ParticleStyle.SOFT_DOT)
-            val particles = manager.spawnAll(slots(Target.FIRST_CAPTION, center).map { point ->
-                ParticleSpawnSpec().position(point).visual(appearance)
-                    .color(Color.ofInt(136, 229, 255, 255)).scale(0.48f).glowing(true).lightLevel(0)
+            val appearance = ParticleVisual().style(ParticleStyle.SOFT_DOT).billboard(false)
+            val particles = manager.spawnAll(slots(Target.FIRST_CAPTION, center).map { slot ->
+                ParticleSpawnSpec().position(slot.position).visual(appearance)
+                    .color(Color.ofInt(136, 229, 255, 255)).scale(captionSize.toFloat()).glowing(true).lightLevel(0)
             })
             if (particles.any { it == null }) {
                 particles.forEach { it?.remove() }
@@ -55,11 +57,15 @@ class SubtitleMorph private constructor(val group: ParticleGroup, private val ce
             return SubtitleMorph(group, center)
         }
 
-        private fun slots(target: Target, center: Vec3): List<Vec3> = when (target) {
-            Target.FIRST_CAPTION -> caption("粒子字幕", center)
-            Target.SECOND_CAPTION -> caption("变换形状", center)
-            Target.CUBE -> cube(center)
-            Target.SPHERE -> sphere(center)
+        private fun slots(target: Target, center: Vec3): List<ParticleMorphSlot> = when (target) {
+            Target.FIRST_CAPTION -> caption("粒子字幕", center).map { ParticleMorphSlot(it, 0.0, 0.0, captionSize) }
+            Target.SECOND_CAPTION -> caption("变换形状", center).map { ParticleMorphSlot(it, 0.0, 0.0, captionSize) }
+            Target.CUBE -> cube(center).map { point ->
+                val yaw = 54.0 + 8.0 * (point.x - center.x)
+                val size = 1.8 + 0.25 * (point.y - center.y)
+                ParticleMorphSlot(point, yaw, -32.0, size)
+            }
+            Target.SPHERE -> sphere(center).map { ParticleMorphSlot(it, -28.0, 36.0, 0.68) }
         }
 
         private fun caption(text: String, center: Vec3): List<Vec3> {

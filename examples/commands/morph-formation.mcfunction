@@ -4,6 +4,9 @@ pdraw particle group reset morphdemo 0 100 0
 pdraw particle add morphdemo circle 0 100 0 3 120 glowing=true size_world=0.18,0.18
 
 pdraw particle program morphdemo morph slots 120 vec3(cos(u*6.2832)*(0.6+2.4*u), 100.2+u*3.4, sin(u*6.2832)*(0.6+2.4*u))
+pdraw particle program morphdemo morph yaw 50
+pdraw particle program morphdemo morph pitch -25
+pdraw particle program morphdemo morph size 1+0.5*u
 pdraw particle program morphdemo morph ticks 120
 pdraw particle program morphdemo morph easing in_out_cubic
 pdraw particle program morphdemo morph max_speed 0.5

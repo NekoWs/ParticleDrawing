@@ -40,7 +40,7 @@ class MorphRuntime(
         var arrived = false
         var posX = startX; var posY = startY; var posZ = startZ
         var velX = startVX; var velY = startVY; var velZ = startVZ
-        var yaw = startYaw; var pitch = startPitch; var size = startSize
+        var yaw = Double.NaN; var pitch = Double.NaN; var size = Double.NaN
     }
 
     private val tracks = ArrayList<Track>(particles.size)
@@ -117,7 +117,7 @@ class MorphRuntime(
                 p.velocity.x, p.velocity.y, p.velocity.z,
                 slotIndex, delay, duration,
                 slot?.control1, slot?.control2,
-                NO_ANGLE, NO_ANGLE, NO_SIZE,
+                p.yaw, p.pitch, p.size,
             )
             tracks += track
             byId[p.id] = track
@@ -210,8 +210,8 @@ class MorphRuntime(
 
     private fun advance(t: Track, dt: Double): Boolean {
         if (t.slotIndex < 0) return false
-        val slot = slots.getOrNull(t.slotIndex) ?: return false
-        val target = targetOf(t)
+        val slot = slotFor(t) ?: return false
+        val target = slot.position
         // 到达后保留速度：不再沿路径求值，直接按当前速度继续飞。
         if (t.arrived && options.keepVelocity) {
             t.posX += t.velX * dt
@@ -283,10 +283,16 @@ class MorphRuntime(
         t.velY = (y - prevY) * inv
         t.velZ = (z - prevZ) * inv
 
-        if (options.writeAttributes && raw >= 1.0) {
-            if (!slot.yaw.isNaN()) t.yaw = slot.yaw
-            if (!slot.pitch.isNaN()) t.pitch = slot.pitch
-            if (!slot.size.isNaN()) t.size = slot.size
+        if (options.writeAttributes) {
+            if (!slot.yaw.isNaN()) t.yaw = blendAngle(t.startYaw, slot.yaw, raw, eased)
+            if (!slot.pitch.isNaN()) t.pitch = blendAngle(t.startPitch, slot.pitch, raw, eased)
+            if (!slot.size.isNaN()) {
+                t.size = when {
+                    raw >= 1.0 -> slot.size
+                    t.startSize.isNaN() -> Double.NaN
+                    else -> lerp(t.startSize, slot.size, eased).coerceIn(0.0, Float.MAX_VALUE.toDouble())
+                }
+            }
         }
 
         if (raw >= 1.0) {
@@ -313,30 +319,36 @@ class MorphRuntime(
 
     private fun pingPong() {
         if (loopsLeft > 0) loopsLeft--
-        val nextStarts = ArrayList<Vec3>(tracks.size)
         for (t in tracks) {
             if (t.slotIndex < 0) continue
-            val slot = slots.getOrNull(t.slotIndex) ?: continue
-            nextStarts += Vec3(t.startX, t.startY, t.startZ)
+            val slot = slotFor(t) ?: continue
+            val next = slot.copy(
+                position = Vec3(t.startX, t.startY, t.startZ),
+                yaw = t.startYaw.takeUnless { slot.yaw.isNaN() } ?: Double.NaN,
+                pitch = t.startPitch.takeUnless { slot.pitch.isNaN() } ?: Double.NaN,
+                size = t.startSize.takeUnless { slot.size.isNaN() } ?: Double.NaN,
+            )
             // 目标换成“上一次的起点”，起点换成当前位置。
             t.startX = t.posX; t.startY = t.posY; t.startZ = t.posZ
             t.startVX = t.velX; t.startVY = t.velY; t.startVZ = t.velZ
             t.elapsed = 0.0
             t.arrived = false
-            t.duration = durationTicksFor(Vec3(t.startX, t.startY, t.startZ), slot.copy(position = nextStarts.last()), t.order)
-            // 直接把目标换成旧起点：借用一个临时槽位对象。
-            slotOverrides[t.id] = nextStarts.last()
+            if (!t.yaw.isNaN()) t.startYaw = t.yaw
+            if (!t.pitch.isNaN()) t.startPitch = t.pitch
+            if (!t.size.isNaN()) t.startSize = t.size
+            t.duration = durationTicksFor(Vec3(t.startX, t.startY, t.startZ), next, t.order)
+            slotOverrides[t.id] = next
         }
         ticksElapsed = 0.0
         completed = false
         if (loopsLeft == 0 && options.loop > 0) loopsLeft = 0
     }
 
-    /** 往返时被临时替换的目标位置；正常过渡里为空。 */
-    private val slotOverrides = HashMap<UUID, Vec3>()
+    private val slotOverrides = HashMap<UUID, MorphSlot>()
 
-    private fun targetOf(t: Track): Vec3 =
-        slotOverrides[t.id] ?: slots.getOrNull(t.slotIndex)?.position ?: Vec3(t.posX, t.posY, t.posZ)
+    private fun slotFor(t: Track): MorphSlot? = slotOverrides[t.id] ?: slots.getOrNull(t.slotIndex)
+
+    private fun targetOf(t: Track): Vec3 = slotFor(t)?.position ?: Vec3(t.posX, t.posY, t.posZ)
 
     // ── 扰动 ──────────────────────────────────────────────────────────────────
 
@@ -468,6 +480,13 @@ class MorphRuntime(
 
     // ── 数学 ──────────────────────────────────────────────────────────────────
 
+    private fun blendAngle(from: Double, to: Double, raw: Double, eased: Double): Double {
+        if (raw >= 1.0) return to
+        if (from.isNaN()) return Double.NaN
+        val delta = (to % 360.0 - from % 360.0 + 900.0) % 360.0 - 180.0
+        return from + delta * eased
+    }
+
     private fun lerp(a: Double, b: Double, t: Double) = a + (b - a) * t
 
     private fun quad(a: Double, c: Double, b: Double, t: Double): Double {
@@ -485,7 +504,5 @@ class MorphRuntime(
 
     private companion object {
         const val MIN_DURATION = 1e-6
-        const val NO_ANGLE = Double.NaN
-        const val NO_SIZE = Double.NaN
     }
 }

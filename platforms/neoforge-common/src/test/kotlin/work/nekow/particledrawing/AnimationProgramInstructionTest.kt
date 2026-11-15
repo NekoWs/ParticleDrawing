@@ -3,6 +3,7 @@ package work.nekow.particledrawing
 import io.netty.buffer.Unpooled
 import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.api.ParticleMorphSlot
 import work.nekow.particledrawing.animation.morph.MorphSpec
 import work.nekow.particledrawing.animation.program.AnimInstruction
 import work.nekow.particledrawing.animation.program.PivotRef
@@ -48,7 +49,7 @@ class AnimationProgramInstructionTest {
         AnimInstruction.Morph(50, 32, "vec3(i, t, 0)", control1 = "vec3(3, 1, 0)", spec = MorphSpec(dynamicSlots = true)),
         AnimInstruction.Morph(
             100, 2, "", spec = MorphSpec(easing = "in_out_cubic"),
-            points = listOf(Vec3(0.5, 64.25, -2.125), Vec3(10000.01, 65.0, 0.0)),
+            slots = listOf(ParticleMorphSlot(Vec3(0.5, 64.25, -2.125)), ParticleMorphSlot(Vec3(10000.01, 65.0, 0.0))),
         ),
     )
 
@@ -67,7 +68,7 @@ class AnimationProgramInstructionTest {
     fun `坐标列表独立分包且保持指令顺序`() {
         val fade = AnimInstruction.FadeIn(0, 20, EasingType.LINEAR)
         val count = AnimationProgramCodecs.MAX_PROGRAM_MEMBERS
-        val morph = AnimInstruction.Morph(100, count, "", points = List(count) { Vec3(it.toDouble(), 64.0, 0.0) })
+        val morph = AnimInstruction.Morph(100, count, "", slots = List(count) { ParticleMorphSlot(Vec3(it.toDouble(), 64.0, 0.0)) })
         val before = List(AnimationProgramCodecs.MAX_INSTRUCTIONS_PER_PAYLOAD + 1) { fade }
         val instructions = before + listOf(morph, morph.copy(startMs = 200), fade)
         val chunks = AnimationProgramCodecs.instructionChunks(instructions).toList()
@@ -76,11 +77,25 @@ class AnimationProgramInstructionTest {
     }
 
     @Test
+    fun `带外观的槽位保留角度、零尺寸和缺省属性`() {
+        val morph = AnimInstruction.Morph(
+            50, 2, "", spec = MorphSpec(writeAttributes = true),
+            slots = listOf(ParticleMorphSlot(Vec3.ZERO, 170.0, -25.0, 0.0), ParticleMorphSlot(Vec3(1.0, 2.0, 3.0), pitch = 45.0)),
+        )
+        val buf = FriendlyByteBuf(Unpooled.buffer())
+        morph.write(buf)
+        assertEquals(morph, AnimInstruction.read(buf))
+        assertEquals(0, buf.readableBytes())
+        assertFailsWith<IllegalArgumentException> { ParticleMorphSlot(Vec3.ZERO, yaw = Double.POSITIVE_INFINITY) }
+        assertFailsWith<IllegalArgumentException> { ParticleMorphSlot(Vec3.ZERO, size = -1.0) }
+    }
+
+    @Test
     fun `坐标形变拒绝非有限坐标与空列表`() {
         assertFailsWith<IllegalArgumentException> {
-            AnimInstruction.Morph(0, 1, "", points = listOf(Vec3(Double.NaN, 0.0, 0.0)))
+            ParticleMorphSlot(Vec3(Double.NaN, 0.0, 0.0))
         }
-        assertFailsWith<IllegalArgumentException> { AnimInstruction.Morph(0, 0, "", points = emptyList()) }
+        assertFailsWith<IllegalArgumentException> { AnimInstruction.Morph(0, 0, "", slots = emptyList()) }
     }
 
     @Test

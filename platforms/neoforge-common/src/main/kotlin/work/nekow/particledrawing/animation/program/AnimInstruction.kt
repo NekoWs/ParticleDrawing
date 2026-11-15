@@ -3,6 +3,7 @@ package work.nekow.particledrawing.animation.program
 import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.Orient
+import work.nekow.particledrawing.api.ParticleMorphSlot
 import work.nekow.particledrawing.animation.morph.MorphSpec
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.network.AnimationProgramCodecs
@@ -431,25 +432,39 @@ sealed class AnimInstruction {
         val control1: String? = null,
         val control2: String? = null,
         val spec: MorphSpec = MorphSpec(),
-        val points: List<Vec3>? = null,
+        val slots: List<ParticleMorphSlot>? = null,
     ) : AnimInstruction() {
         override val type get() = InstructionType.MORPH
 
         init {
-            if (points != null) {
-                require(points.size == slotCount && slotCount in 1..AnimationProgramCodecs.MAX_PROGRAM_MEMBERS) {
+            if (slots != null) {
+                require(slots.size == slotCount && slotCount in 1..AnimationProgramCodecs.MAX_PROGRAM_MEMBERS) {
                     "位置槽位数量必须在 1 到 ${AnimationProgramCodecs.MAX_PROGRAM_MEMBERS} 之间"
                 }
-                require(points.all { it.x.isFinite() && it.y.isFinite() && it.z.isFinite() }) { "槽位坐标必须是有限数" }
                 require(!spec.dynamicSlots) { "位置槽位列表只支持静态目标" }
+                require(spec.writeAttributes || slots.none { it.yaw != null || it.pitch != null || it.size != null }) {
+                    "带外观的槽位必须启用属性"
+                }
             }
         }
 
         override fun writeBody(buf: FriendlyByteBuf) {
             buf.writeVarInt(slotCount)
-            buf.writeBoolean(points != null)
-            if (points != null) {
-                for (point in points) AnimationProgramCodecs.writeVec(buf, point)
+            val targetType = when {
+                slots == null -> MORPH_FORMULAS
+                spec.writeAttributes -> MORPH_APPEARANCE
+                else -> MORPH_POINTS
+            }
+            buf.writeByte(targetType)
+            if (slots != null) {
+                for (slot in slots) {
+                    AnimationProgramCodecs.writeVec(buf, slot.position)
+                    if (targetType == MORPH_APPEARANCE) {
+                        buf.writeDouble(slot.yaw ?: Double.NaN)
+                        buf.writeDouble(slot.pitch ?: Double.NaN)
+                        buf.writeDouble(slot.size ?: Double.NaN)
+                    }
+                }
             } else {
                 buf.writeUtf(position)
                 for (s in arrayOf(yaw, pitch, size, control1, control2)) {
@@ -477,14 +492,26 @@ sealed class AnimInstruction {
 
 }
 
+private const val MORPH_FORMULAS = 0
+private const val MORPH_POINTS = 1
+private const val MORPH_APPEARANCE = 2
+
 private fun readMorph(startMs: Int, buf: FriendlyByteBuf): AnimInstruction.Morph {
     val count = buf.readVarInt()
-    val points = if (buf.readBoolean()) {
+    val targetType = buf.readUnsignedByte().toInt()
+    require(targetType in MORPH_FORMULAS..MORPH_APPEARANCE) { "未知形变槽位类型: $targetType" }
+    val slots = if (targetType == MORPH_FORMULAS) null else {
         require(count in 1..AnimationProgramCodecs.MAX_PROGRAM_MEMBERS) { "位置槽位数量越界: $count" }
-        List(count) { AnimationProgramCodecs.readVec(buf) }
-    } else null
-    val position = if (points == null) buf.readUtf() else ""
-    fun readFormula(): String? = if (points == null && buf.readBoolean()) buf.readUtf() else null
+        fun readOptionalDouble() = buf.readDouble().takeUnless { it.isNaN() }
+        List(count) {
+            val position = AnimationProgramCodecs.readVec(buf)
+            if (targetType == MORPH_APPEARANCE) {
+                ParticleMorphSlot(position, readOptionalDouble(), readOptionalDouble(), readOptionalDouble())
+            } else ParticleMorphSlot(position)
+        }
+    }
+    val position = if (slots == null) buf.readUtf() else ""
+    fun readFormula(): String? = if (slots == null && buf.readBoolean()) buf.readUtf() else null
     val yaw = readFormula()
     val pitch = readFormula()
     val size = readFormula()
@@ -507,5 +534,5 @@ private fun readMorph(startMs: Int, buf: FriendlyByteBuf): AnimInstruction.Morph
         writeAttributes = buf.readBoolean(),
         dynamicSlots = buf.readBoolean(),
     )
-    return AnimInstruction.Morph(startMs, count, position, yaw, pitch, size, control1, control2, spec, points)
+    return AnimInstruction.Morph(startMs, count, position, yaw, pitch, size, control1, control2, spec, slots)
 }

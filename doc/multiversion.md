@@ -53,7 +53,7 @@ OGG 解码通过 `ScriptWavePcm.OggReader` 服务接口接入，NeoForge 目标�
   客户端渲染、Mixin 注入与服务端加载应分别验证。
 
 各目标共用动画格式与网络载荷。当前 `.pdrawc` 格式为 18，动画网络编解码版本为 9，NeoForge 载荷注册
-版本为 20。联机双方应采用匹配构建。平台功能差异见[已知限制](known-issues.md)。
+版本为 21。联机双方应采用匹配构建。平台功能差异见[已知限制](known-issues.md)。
 
 ## 发布
 

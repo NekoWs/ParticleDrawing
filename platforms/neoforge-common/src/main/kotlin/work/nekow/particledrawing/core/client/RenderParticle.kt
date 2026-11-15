@@ -728,14 +728,16 @@ class RenderParticle(
     }
 
     /** 直接设置缩放（标量）。 */
-    fun setScaleDirect(scale: Float) {
+    fun setScaleDirect(scale: Float) = setScaleDirect(scale, scale)
+
+    internal fun setScaleDirect(scale: Float, height: Float) {
         scaleEase.startMs = -1L
         lastScaleCompletionMs = engineMs
         scaleFromX = scale
-        scaleFromY = scale
+        scaleFromY = height
         scaleToX = scale
-        scaleToY = scale
-        setScaleTriple(scale, scale, 1f)
+        scaleToY = height
+        setScaleTriple(scale, height, 1f)
         scl.start = scale
         scl.cur = scale
         scl.tgt = scale

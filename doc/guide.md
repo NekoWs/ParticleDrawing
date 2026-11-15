@@ -288,6 +288,9 @@ group.expression("""
 
 `ParticleGroup.morph(points, options)` 接收 `List<Vec3>` 世界坐标，可直接使用文字、图片或模型的采样点。
 单次可传 1–8192 个目标，粒子与目标等量时，每个目标恰好分到一颗。多余的粒子停在当前点。
+给每个落点配置外观时，使用 `morphSlots(List<ParticleMorphSlot>, MorphOptions)`，Java 和 Kotlin 均可调用。
+`yaw` 和 `pitch` 以度为单位，分别绕 Y 轴和 X 轴走最短角差。面向摄像机的粒子相对相机旋转，固定朝向的粒子以世界 +Z 为基准。
+`size` 使用 `ParticleSpawnSpec.scale` 的单位，等比缩放粒子。省略的属性沿用当前值。
 
 [SubtitleMorph.kt](../examples/api/SubtitleMorph.kt) 用 602 颗粒子绘制「粒子字幕」和「变换形状」，
 还提供立方体表面和球面。把示例复制到调用方，在服务端主线程生成。字幕在 XY 平面，从 +Z 一侧观看。
@@ -306,8 +309,10 @@ effect.show(Target.CUBE)
 
 也可以传入 `Target.SECOND_CAPTION`、`Target.SPHERE` 或 `Target.FIRST_CAPTION` 切换到另一句字幕、球面或初始字幕。
 每次切换计划用 48 刻缓动和至多 8 刻错峰，限速时会延长。中途调用会从当前布局接续。示例复用同一组粒子，
-结束时调用 `effect.remove()`。Java 可调用 `group.morph(List<Vec3>, MorphOptions)`。
-动态目标仍可使用 `morph(slotCount, position, options, ..., dynamicSlots = true)`。
+结束时调用 `effect.remove()`。示例的立方体槽位按坐标设置不同的 yaw 和 size，同时将 pitch 过渡到 −32°。
+
+公式重载通过 `MorphOptions(writeAttributes = true)` 配合 `yaw`、`pitch`、`size` 公式使用。
+需要每刻更新目标时，可同时启用 `dynamicSlots`。
 组表达式会接管位置，使用形变的成员应放在专用粒子组里。
 
 ### 脚本层形变

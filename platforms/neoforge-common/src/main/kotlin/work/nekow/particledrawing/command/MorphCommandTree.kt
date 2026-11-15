@@ -14,14 +14,13 @@ import work.nekow.particledrawing.animation.morph.MorphAllocation
 import work.nekow.particledrawing.animation.morph.MorphEasing
 import work.nekow.particledrawing.animation.morph.MorphOptions
 import work.nekow.particledrawing.animation.morph.MorphPath
-import work.nekow.particledrawing.animation.morph.MorphSlotFormulas
 import work.nekow.particledrawing.animation.morph.MorphWobble
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.UUID
 
 /**
- * `pdraw particle group <组> morph …` 的命令树。
+ * `pdraw particle program <组> morph …` 的命令树。
  *
  * 形变参数多，逐个下发不现实，所以先攒在一个草稿里，`morph start` 时才真正下发；
  * 草稿按「维度 + 组名」分开存，不会互相污染。
@@ -49,7 +48,7 @@ object MorphCommandTree {
         var loop: Int = 0
         var allocation: MorphAllocation = MorphAllocation.NEAREST
         var keepVelocity: Boolean = false
-        var attributes: Boolean = false
+        var attributes: Boolean? = null
         var dynamic: Boolean = false
 
         fun options(): MorphOptions = MorphOptions(
@@ -66,11 +65,10 @@ object MorphCommandTree {
             loop = loop,
             allocation = allocation,
             keepVelocity = keepVelocity,
-            writeAttributes = attributes,
+            writeAttributes = attributes ?: (yaw != null || pitch != null || size != null),
         )
     }
 
-    private val drafts = HashMap<UUID, Draft>()
     private val draftNames = HashMap<UUID, MutableMap<String, Draft>>()
 
     private fun draft(ctx: CommandContext<CommandSourceStack>): Draft {
@@ -290,8 +288,6 @@ object MorphCommandTree {
                 safe(ctx) {
                     val d = draft(ctx)
                     require(d.position.isNotBlank()) { "还没有设置槽位：先 morph slots <数量> <位置公式>" }
-                    // 先在服务端解析一遍，公式写错立刻报错。
-                    MorphSlotFormulas(d.slotCount, d.position, d.yaw, d.pitch, d.size, d.control1, d.control2).build(0.0)
                     val e = entry(ctx)
                     e.group.morph(
                         d.slotCount, d.position, d.options(),

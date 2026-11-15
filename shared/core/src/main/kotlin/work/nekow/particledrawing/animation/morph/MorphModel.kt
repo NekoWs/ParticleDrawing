@@ -20,12 +20,15 @@ data class MorphSlot(
 )
 
 /** 一次形变的输入粒子：身份、当前位置与当前速度。 */
-data class MorphParticle(
+data class MorphParticle @JvmOverloads constructor(
     val id: UUID,
     val position: Vec3,
     val velocity: Vec3 = Vec3.ZERO,
     /** 调用方给的稳定序号，用于按序号分配与噪声；缺省用列表下标。 */
     val order: Int = -1,
+    val yaw: Double = Double.NaN,
+    val pitch: Double = Double.NaN,
+    val size: Double = Double.NaN,
 )
 
 /** 路径形态。 */

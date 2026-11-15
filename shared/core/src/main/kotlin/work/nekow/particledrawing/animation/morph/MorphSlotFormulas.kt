@@ -53,7 +53,11 @@ class MorphSlotFormulas(
                     position = p,
                     yaw = yawRunner?.let { scalar(it.eval(ctx)) } ?: Double.NaN,
                     pitch = pitchRunner?.let { scalar(it.eval(ctx)) } ?: Double.NaN,
-                    size = sizeRunner?.let { scalar(it.eval(ctx)) } ?: Double.NaN,
+                    size = sizeRunner?.let {
+                        val value = scalar(it.eval(ctx))
+                        require(value in 0.0..Float.MAX_VALUE.toDouble()) { "槽位 size 必须是非负的有效尺寸" }
+                        value
+                    } ?: Double.NaN,
                     control1 = c1Runner?.let { vec(it.evalAny(ctx), "control1") },
                     control2 = c2Runner?.let { vec(it.evalAny(ctx), "control2") },
                 )

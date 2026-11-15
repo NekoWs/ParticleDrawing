@@ -70,11 +70,28 @@ class BridgeParticle(
     // 自转只在同步时变，不能在那里现算三角函数
     private val orientQ = Quaternionf()
     private var orientDirty = true
+    private var morphOrientation: MorphOrientation? = null
+
+    internal fun yawAt(partialTick: Float): Double =
+        morphOrientation?.yawAt(frameFactor(partialTick)) ?: if (billboard) 0.0 else spinDeg[1]
+
+    internal fun pitchAt(partialTick: Float): Double =
+        morphOrientation?.pitchAt(frameFactor(partialTick)) ?: if (billboard) 0.0 else spinDeg[0]
+
+    internal fun syncMorphOrientation(yaw: Double?, pitch: Double?, snap: Boolean) {
+        // 始终推进已有端点，未指定的轴保持当前位置。
+        val orientation = morphOrientation ?: run {
+            if (yaw == null && pitch == null) return
+            MorphOrientation(yawAt(1f), pitchAt(1f)).also { morphOrientation = it }
+        }
+        orientation.set(yaw, pitch, snap)
+    }
 
     /** 同步朝向（广告牌/自转；billboard=true 时自转被忽略）。 */
     fun syncOrientation(billboard: Boolean, spin: DoubleArray, spinLocal: Boolean) {
         if (this.billboard != billboard || this.spinLocal != spinLocal) orientDirty = true
         else if (spin.size >= 3 && (spinDeg[0] != spin[0] || spinDeg[1] != spin[1] || spinDeg[2] != spin[2])) orientDirty = true
+        morphOrientation = null
         this.billboard = billboard
         this.spinLocal = spinLocal
         if (spin.size >= 3) {
@@ -193,9 +210,11 @@ class BridgeParticle(
     /**
      * 同步粒子缩放（标量，均匀）。
      */
-    fun syncScale(scale: Float, snap: Boolean = false) {
-        baseScaleW = scale
-        baseScaleH = scale
+    fun syncScale(scale: Float, snap: Boolean = false) = syncScale(scale, scale, snap)
+
+    internal fun syncScale(width: Float, height: Float, snap: Boolean) {
+        baseScaleW = width
+        baseScaleH = height
         applyScale(snap)
     }
 
@@ -311,7 +330,10 @@ class BridgeParticle(
         partialTick: Float
     ) {
         // 非广告牌：用自转四元数替换相机朝向旋转（四边形固定朝世界 +Z）
-        val q = if (billboard) rotation else orientationQuaternion()
+        val q = morphOrientation?.rotationAt(
+            frameFactor(partialTick), if (billboard) 0.0 else spinDeg[2], billboard || spinLocal,
+            if (billboard) rotation else null,
+        ) ?: if (billboard) rotation else orientationQuaternion()
         // 非等宽：把宽度交给渲染状态，顶点生成时按 (长, 宽) 各自缩放（add() 里消费掉）
         if (state is OrientedQuadRenderState) {
             val w = frameWidth(partialTick)

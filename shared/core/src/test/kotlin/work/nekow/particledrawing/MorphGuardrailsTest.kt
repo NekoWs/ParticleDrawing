@@ -218,6 +218,47 @@ class MorphGuardrailsTest {
     }
 
     @Test
+    fun `朝向与尺寸共享位置缓动并可从中间值接续`() {
+        val id = UUID(0, 1)
+        val particle = MorphParticle(id, Vec3.ZERO, yaw = 170.0, pitch = 10.0, size = 1.0)
+        val options = MorphOptions(ticks = 4, easing = MorphEasing.IN_QUAD, writeAttributes = true)
+        val first = MorphRuntime(listOf(particle), listOf(MorphSlot(Vec3(4.0, 0.0, 0.0), -170.0, 50.0, 3.0)), options)
+        repeat(2) { first.tick() }
+        assertEquals(Vec3(1.0, 0.0, 0.0), first.positionOf(id))
+        assertEquals(175.0, first.yawOf(id))
+        assertEquals(20.0, first.pitchOf(id))
+        assertEquals(1.5, first.sizeOf(id))
+
+        val current = particle.copy(
+            position = first.positionOf(id)!!, yaw = first.yawOf(id)!!,
+            pitch = first.pitchOf(id)!!, size = first.sizeOf(id)!!,
+        )
+        val second = MorphRuntime(listOf(current), listOf(MorphSlot(Vec3(5.0, 0.0, 0.0), 135.0, size = 0.5)), options)
+        second.tick()
+        assertEquals(Vec3(1.25, 0.0, 0.0), second.positionOf(id))
+        assertEquals(172.5, second.yawOf(id))
+        assertNull(second.pitchOf(id))
+        assertEquals(1.4375, second.sizeOf(id))
+    }
+
+    @Test
+    fun `往返形变沿原缓动回到起始外观`() {
+        val id = UUID(0, 1)
+        val particle = MorphParticle(id, Vec3.ZERO, yaw = 10.0, pitch = -20.0, size = 1.0)
+        val slot = MorphSlot(Vec3(1.0, 0.0, 0.0), 50.0, 20.0, 3.0)
+        val runtime = MorphRuntime(listOf(particle), listOf(slot), MorphOptions(ticks = 2, loop = 1, writeAttributes = true))
+        repeat(3) { runtime.tick() }
+        assertEquals(30.0, runtime.yawOf(id))
+        assertEquals(0.0, runtime.pitchOf(id))
+        assertEquals(2.0, runtime.sizeOf(id))
+        runtime.tick()
+        assertEquals(Vec3.ZERO, runtime.positionOf(id))
+        assertEquals(10.0, runtime.yawOf(id))
+        assertEquals(-20.0, runtime.pitchOf(id))
+        assertEquals(1.0, runtime.sizeOf(id))
+    }
+
+    @Test
     fun `G7 显式开启后写入朝向与尺寸`() {
         val slots = ringSlots(8).map { it.copy(yaw = 45.0, pitch = 5.0, size = 0.7) }
         val runtime = MorphRuntime(ringParticles(8), slots, MorphOptions(ticks = 5, writeAttributes = true))

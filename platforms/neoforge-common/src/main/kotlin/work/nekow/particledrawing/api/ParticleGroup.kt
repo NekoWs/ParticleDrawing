@@ -547,7 +547,8 @@ class ParticleGroup(
      *
      * 槽位用公式描述（变量 `i`、`n`、`u`，动态目标还能用 `t`），与命令、脚本共用同一套写法；
      * 每颗粒子按 [MorphOptions.allocation] 选槽位，过渡只改位置，不重生也不销毁成员。
-     * 过渡进行中再次调用会按当前实际位置与速度重新开始，不回退起点。
+     * [MorphOptions.writeAttributes] 开启时，yaw、pitch（度）和 size（粒子 scale 单位）与位置一起缓动。
+     * 过渡进行中再次调用会按当前实际位置、速度和外观重新开始。
      */
     @JvmOverloads
     fun morph(
@@ -580,11 +581,21 @@ class ParticleGroup(
     fun morph(points: List<Vec3>, options: MorphOptions = MorphOptions()): ParticleGroup {
         require(!expressionMode) { "组表达式已接管位置，请在独立粒子组上使用 morph" }
         require(!options.writeAttributes) { "位置槽位列表只支持位置形变" }
-        val targets = points.toList()
+        return morphSlotsInternal(points.map(::ParticleMorphSlot), options)
+    }
+
+    /** 把成员过渡到带可选朝向与尺寸的静态槽位，自动启用槽位属性。 */
+    @JvmOverloads
+    fun morphSlots(slots: List<ParticleMorphSlot>, options: MorphOptions = MorphOptions()): ParticleGroup {
+        require(!expressionMode) { "组表达式已接管位置，请在独立粒子组上使用 morph" }
+        return morphSlotsInternal(slots.toList(), options.copy(writeAttributes = true))
+    }
+
+    private fun morphSlotsInternal(targets: List<ParticleMorphSlot>, options: MorphOptions): ParticleGroup {
         emit(
             AnimInstruction.Morph(
                 cursorNow(), targets.size, position = "",
-                spec = MorphSpec.of(options, dynamicSlots = false), points = targets,
+                spec = MorphSpec.of(options, dynamicSlots = false), slots = targets,
             ),
         )
         return this

@@ -4,6 +4,9 @@ import work.nekow.particledrawing.platform.PlatformCompat
 import net.minecraft.client.Minecraft
 import net.minecraft.client.particle.ParticleEngine
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.animation.morph.MorphParticle
+import work.nekow.particledrawing.math.Vec3 as CoreVec3
+import work.nekow.particledrawing.platform.toCore
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleLifeCurve
@@ -797,16 +800,29 @@ class ClientParticleEngine {
     /** 粒子是否还在；比 [snapshot] 便宜，不构造快照。 */
     fun containsParticle(id: UUID): Boolean = particles.containsKey(id)
 
-    /** 粒子当前落地位置；不存在返回 null。编队变换读取起点用。 */
-    fun positionOf(id: UUID): net.minecraft.world.phys.Vec3? = particles[id]?.currentPosition()
+    /** 粒子当前落地位置；不存在返回 null。 */
+    fun positionOf(id: UUID): Vec3? = particles[id]?.currentPosition()
+
+    /** 读取本刻落地的状态，供形变中途换目标。 */
+    internal fun morphParticle(id: UUID, order: Int, velocity: CoreVec3): MorphParticle? {
+        val particle = particles[id] ?: return null
+        val bridge = bridges[id]
+        return MorphParticle(
+            id, particle.currentPosition().toCore(), velocity, order,
+            bridge?.yawAt(1f) ?: 0.0, bridge?.pitchAt(1f) ?: 0.0, particle.scaleArray()[0].toDouble(),
+        )
+    }
 
     /** 粒子当前视觉快照（动画程序 arm 时初始化基态用）。 */
-    class Snapshot(val position: Vec3, val r: Float, val g: Float, val b: Float, val a: Float, val scale: Float)
+    class Snapshot @JvmOverloads constructor(
+        val position: Vec3, val r: Float, val g: Float, val b: Float, val a: Float, val scale: Float,
+        val height: Float = scale,
+    )
 
     /** 读取粒子当前视觉状态；不存在时返回 null。 */
     fun snapshot(id: UUID): Snapshot? {
         val rp = particles[id] ?: return null
-        return Snapshot(rp.targetPosition(), rp.r(), rp.g(), rp.b(), rp.a(), rp.scale())
+        return Snapshot(rp.targetPosition(), rp.r(), rp.g(), rp.b(), rp.a(), rp.scaleArray()[0], rp.scaleArray()[1])
     }
 
     /**
@@ -853,7 +869,7 @@ class ClientParticleEngine {
      */
     @JvmOverloads
     fun applyProgramFrame(id: UUID, pos: Vec3, r: Float, g: Float, b: Float, a: Float, scale: Float,
-                          snap: Boolean = false) {
+                          snap: Boolean = false, height: Float = scale, yaw: Double? = null, pitch: Double? = null) {
         val rp = particles[id] ?: return
         val firstTakeover = !takeover.hasPosition(id)
         takeover.markAppearance(id)
@@ -861,13 +877,14 @@ class ClientParticleEngine {
         trackBuffers.remove(id) // 程序接管位置，丢开 track 缓冲
         rp.setPositionDirect(pos)
         rp.setColorDirect(Color.of(r, g, b, a))
-        rp.setScaleDirect(scale)
+        rp.setScaleDirect(scale, height)
         val atomic = firstTakeover || snap
         bridges[id]?.let {
             // 首次接管与显式瞬移必须原子：位置、宽高、颜色/透明度一起落地
             it.syncPosition(pos.x, pos.y, pos.z, atomic)
             it.syncColor(r, g, b, a, atomic)
-            it.syncScale(scale, atomic)
+            it.syncScale(scale, height, atomic)
+            it.syncMorphOrientation(yaw, pitch, atomic)
         }
     }
 

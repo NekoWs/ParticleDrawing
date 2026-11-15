@@ -5,7 +5,6 @@ import net.minecraft.client.Minecraft
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.phys.Vec3
-import work.nekow.particledrawing.animation.morph.MorphParticle
 import work.nekow.particledrawing.animation.morph.MorphRuntime
 import work.nekow.particledrawing.animation.morph.MorphSlot
 import work.nekow.particledrawing.animation.morph.MorphSlotFormulas
@@ -80,7 +79,10 @@ internal object ClientAnimationProgramManager {
         val baseR: Float, val baseG: Float, val baseB: Float, val baseA: Float,
         val baseScale: Float,
         var rel: Vec3,
-    )
+        val heightRatio: Float,
+    ) {
+        var morphSize: Float? = null
+    }
 
     /** 指令槽位：首用快照。 */
     private class Slot(val ins: AnimInstruction) {
@@ -262,7 +264,8 @@ internal object ClientAnimationProgramManager {
 
     private fun addState(p: Program, engine: ClientParticleEngine, particleId: UUID): Boolean {
         val s = engine.snapshot(particleId) ?: return false
-        val st = PState(s.r, s.g, s.b, s.a, s.scale, s.position.subtract(p.initialPivot))
+        val ratio = if (s.scale > 0f) s.height / s.scale else 1f
+        val st = PState(s.r, s.g, s.b, s.a, s.scale, s.position.subtract(p.initialPivot), ratio)
         for (slot in p.slots) {
             val axis = slot.rotationAxis ?: continue
             if (slot.rotationTotal != 0.0) {
@@ -747,16 +750,17 @@ internal object ClientAnimationProgramManager {
 
         val particles = p.particleIds.mapIndexedNotNull { index, id ->
             if (id !in p.states) return@mapIndexedNotNull null
-            val position = engine.positionOf(id) ?: return@mapIndexedNotNull null
-            MorphParticle(id, position.toCore(), p.morph?.velocityOf(id) ?: CoreVec3.ZERO, index)
+            engine.morphParticle(id, index, p.morph?.velocityOf(id) ?: CoreVec3.ZERO)
         }
         if (particles.isEmpty()) return
         p.activeMorph = ins
 
         try {
-            val points = ins.points
-            if (points != null) {
-                p.morph = MorphRuntime(particles, points.map { MorphSlot(it.toCore()) }, ins.spec.toOptions())
+            val slots = ins.slots
+            if (slots != null) {
+                p.morph = MorphRuntime(particles, slots.map {
+                    MorphSlot(it.position.toCore(), it.yaw ?: Double.NaN, it.pitch ?: Double.NaN, it.size ?: Double.NaN)
+                }, ins.spec.toOptions())
             } else {
                 val formulas = MorphSlotFormulas(ins.slotCount, ins.position, ins.yaw, ins.pitch, ins.size, ins.control1, ins.control2)
                 p.morph = MorphRuntime(
@@ -807,13 +811,16 @@ internal object ClientAnimationProgramManager {
 
             val alpha = (aBase * fadeIn * (1f - fadeOut)).coerceIn(0f, 1f)
             // 倍率可以到 0：0 = 完全收起，不画
-            val scale = (st.baseScale * p.scaleMul * p.pulseMul).coerceAtLeast(0f)
+            morph?.sizeOf(uuid)?.let { st.morphSize = it.toFloat() }
+            val scale = st.morphSize ?: (st.baseScale * p.scaleMul * p.pulseMul).coerceAtLeast(0f)
             val local = radialRel(st.rel, p.scaleMul, p.pulseMul)
             // 沿各自偏移方向外移：方向用当前的 rel（跟着旋转一起转），幅度 = 倍率 × 偏移长度
             val shifted = if (driftScale == 0f) local else local.add(st.rel.scale(driftScale.toDouble()))
             engine.applyProgramFrame(
                 uuid, morph?.positionOf(uuid)?.toMinecraft() ?: pivot.apply(p.pathOffset.add(shifted)),
                 r, g, b, alpha, scale, anchorSnap,
+                height = (scale * st.heightRatio).coerceAtMost(Float.MAX_VALUE),
+                yaw = morph?.yawOf(uuid), pitch = morph?.pitchOf(uuid),
             )
         }
     }
