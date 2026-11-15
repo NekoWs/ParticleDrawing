@@ -624,10 +624,8 @@ object DynamicLightManager {
 
         val block = PlatformCompat.lightBlock(lightmap)
         if (dynamic <= block) return lightmap
-
-        val scaled = (dynamic * 16.0).toInt()
-        // 清除方块光照字段（bit 0-19），保留天空光照字段（bit 20+）。
-        return (lightmap and -0x100000) or scaled
+        // 只叠加方块光通道，天空光原样保留；布局与进位都交给原版工具。
+        return PlatformCompat.lightAddEmission(lightmap, (dynamic - block).toFloat())
     }
 
     /**
