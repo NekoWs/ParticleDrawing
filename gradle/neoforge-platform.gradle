@@ -161,6 +161,10 @@ runs {
         if (project.hasProperty('pdQuickConnect')) {
             arguments '--quickPlayMultiplayer', project.property('pdQuickConnect').toString()
         }
+        // -PpdDemo 让客户端进世界后自动跑一次射灯演示，验收时不必依赖数据包。
+        if (project.hasProperty('pdDemo')) {
+            systemProperty 'pd.demo', '1'
+        }
     }
 
     server {
