@@ -298,6 +298,19 @@ group.expression("""
 交给同一个表达式解释器；`i/n/t`、`[x,y,z] = ...` 这些写法保持不变。用到什么取什么，
 `get_entity_*` / `get_world_*` 在需要处调用，不必预先声明属性。
 
+脚本可通过 `morph(slots, options)` 让本层存活粒子移动到槽位。先生成粒子，再在 `setup` 或换目标时调用一次：
+
+```js
+func setup() {
+  this.spawn({ position: [-2, 0, 0] })
+  this.spawn({ position: [2, 0, 0] })
+  morph([vec3(0, 2, -1), vec3(0, 2, 1)], { ticks: 20, easing: "in_out_quad" })
+}
+```
+
+20 刻为 1 秒。形变按动画时钟推进，渲染帧在整刻之间取样。后续调用从当时的位置重新分配；途中可以通过
+`allocation`、`stagger`、`max_speed` 与 `wobble` 组合分配、错峰、限速与扰动。
+
 | getter | 含义 |
 | --- | --- |
 | `get_entity_x/_y/_z(h)` | 实体坐标分量 |

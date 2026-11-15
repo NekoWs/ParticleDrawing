@@ -4,7 +4,6 @@ import work.nekow.particledrawing.animation.script.ParticleHost
 import work.nekow.particledrawing.animation.script.ScriptException
 import work.nekow.particledrawing.animation.script.ScriptRuntime
 import work.nekow.particledrawing.animation.script.parseProgram
-import work.nekow.particledrawing.animation.script.tickMorph
 import kotlin.test.*
 
 /** 脚本内建 `morph(slots, options)` 的行为契约。 */
@@ -26,7 +25,7 @@ class ScriptMorphBuiltinTest {
         override fun kill() = Unit
     }
 
-    private fun run(source: String, hosts: List<Host>, frames: Int): ScriptRuntime.ScriptCtx {
+    private fun run(source: String, hosts: List<Host>, frames: Int): ScriptRuntime.ObjectState {
         val program = parseProgram(source)
         val obj = ScriptRuntime.createObjectState(0)
         val ctx = ScriptRuntime.ScriptCtx(
@@ -34,14 +33,14 @@ class ScriptMorphBuiltinTest {
             { hosts.first() }, 0.0, false, {},
         )
         ScriptRuntime.runSpawnSetup(program, obj, ctx)
-        repeat(frames) { tickMorph(ctx) }
-        return ctx
+        obj.morph?.apply(frames * 50.0, ctx.particles)
+        return obj
     }
 
     @Test
     fun `morph 把粒子拉到目标槽位`() {
         val hosts = (0 until 6).map { Host(it, it * 1.0) }
-        val ctx = run(
+        val obj = run(
             """
             func setup() {
                 morph([
@@ -53,8 +52,7 @@ class ScriptMorphBuiltinTest {
             hosts,
             frames = 14,
         )
-        assertNotNull(ctx.morph, "内建应当挂上一次编队变换")
-        assertTrue(ctx.morph!!.isDone(), "14 帧后应当完成")
+        assertNotNull(obj.morph)
         for (h in hosts) {
             assertEquals(5.0, h.pos[1], 1e-6, "粒子 ${h.index} 没有到达目标高度")
         }
@@ -77,8 +75,8 @@ class ScriptMorphBuiltinTest {
         )
         ScriptRuntime.runSpawnSetup(program, obj, ctx)
         var last = hosts[0].pos[0]
-        repeat(60) {
-            tickMorph(ctx)
+        repeat(60) { frame ->
+            obj.morph?.apply((frame + 1) * 50.0, ctx.particles)
             val now = hosts[0].pos[0]
             assertTrue(now - last <= 0.5 + 1e-6, "单帧位移 ${now - last} 超过限速")
             last = now

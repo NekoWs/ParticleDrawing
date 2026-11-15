@@ -4,6 +4,7 @@ import work.nekow.particledrawing.light.LightShape
 import work.nekow.particledrawing.math.Vec3
 import work.nekow.particledrawing.animation.script.AudioValue
 import work.nekow.particledrawing.animation.script.ParticleHost
+import work.nekow.particledrawing.animation.script.ScriptMorph
 import work.nekow.particledrawing.animation.script.ScriptException
 import work.nekow.particledrawing.animation.script.ScriptProgram
 import work.nekow.particledrawing.animation.script.ScriptRuntime
@@ -171,8 +172,8 @@ class ClientAnimationPlayer(
 
     /** 该函数对象的脚本有没有随时间跑的阶段（tick / process）；解析失败按没有算。 */
     private fun hasTimePhase(fx: FunctionObject): Boolean {
-        val program = fxRuntimes[fx.id]?.program ?: return false
-        return program.process.isNotEmpty() || program.tick.isNotEmpty()
+        val runtime = fxRuntimes[fx.id] ?: return false
+        return runtime.program.process.isNotEmpty() || runtime.program.tick.isNotEmpty() || runtime.objState.morph != null
     }
 
     // 预构建求值索引，避免每 tick 线性扫描轨道 / 组 / 粒子
@@ -260,8 +261,6 @@ class ClientAnimationPlayer(
         val objState: ScriptRuntime.ObjectState,
     ) {
         val particles = ArrayList<ParticleHost>()
-        /** 脚本发起的编队变换，跨帧保存。 */
-        var morph: work.nekow.particledrawing.animation.morph.MorphRuntime? = null
         var spawnSerial = 0
         var cursorMs = 0.0
         var curMs = 0.0
@@ -330,6 +329,7 @@ class ClientAnimationPlayer(
             val randState: Int,
             val viewScale: Double,
             val viewOffset: DoubleArray,
+            val morph: ScriptMorph?,
         )
 
         class HostSnapshot(
@@ -380,6 +380,7 @@ class ClientAnimationPlayer(
             randState = objState.rand.a,
             viewScale = view.scale,
             viewOffset = view.offset.copyOf(),
+            morph = objState.morph?.copy(),
         )
 
         fun captureLoopSnapshot() {
@@ -440,6 +441,7 @@ class ClientAnimationPlayer(
             objState.rand.a = s.randState
             view.scale = s.viewScale
             s.viewOffset.copyInto(view.offset)
+            objState.morph = s.morph?.copy()
         }
     }
 
@@ -480,6 +482,7 @@ class ClientAnimationPlayer(
         rt.objState.globals.clear()
         rt.objState.constGlobals.clear()
         rt.objState.topLevelDone = false
+        rt.objState.morph = null
         rt.objState.rand.a = fx.seed
         rt.view.reset()
         // 重建后第一个 process/tick 的 this.delta 记 0。
@@ -512,7 +515,6 @@ class ClientAnimationPlayer(
             st = fx.st.toDouble(),
             maxMs = maxMs.toDouble(),
             view = rt.view,
-            // 编队变换跨帧保存：交出去的时候把已有实例塞进 ctx，帧末再收回。
             // this.get(名称)：查找键是资产名称（与编辑器一致），id 只是轨道属主/编解码的内部键。
             get = { name ->
                 animation.texts.firstOrNull { it.name == name }?.let { TextValue(it) }
@@ -749,7 +751,10 @@ class ClientAnimationPlayer(
     fun isDerivedId(id: String): Boolean = particleFunction(id) != null
 
     /** 该派生粒子所属函数对象是否开启帧级同步（false=按 game tick 同步，与普通粒子渲染一致）。 */
-    fun isFrameSyncDerived(id: String): Boolean = particleFunction(id)?.frameSync == true
+    fun isFrameSyncDerived(id: String): Boolean {
+        val fx = particleFunction(id) ?: return false
+        return fx.frameSync || fxRuntimes[fx.id]?.objState?.morph != null
+    }
 
     fun stop() { finished = true }
 
@@ -982,13 +987,11 @@ class ClientAnimationPlayer(
                 decrementLifeMs(fx, rt, rt.curMs, b)
                 rt.curMs = b
                 rt.cursorMs = b
+                rt.objState.morph?.apply(b, rt.particles)
                 if (rt.program.tick.isNotEmpty()) {
                     try {
                         val frameCtx = makeCtx(fx, rt, b)
-                        frameCtx.morph = rt.morph
                         ScriptRuntime.runTickFrame(rt.program, rt.objState, frameCtx)
-                        rt.morph = frameCtx.morph
-                        work.nekow.particledrawing.animation.script.tickMorph(frameCtx)
                         // 跑过的阶段才算「上一次」，this.delta 从它起算。
                         rt.lastPhaseMs = b
                     } catch (e: Throwable) {
@@ -1005,15 +1008,13 @@ class ClientAnimationPlayer(
 
             decrementLifeMs(fx, rt, rt.curMs, t)
             rt.curMs = t
+            rt.objState.morph?.apply(t, rt.particles)
             if (rt.skipProcessOnce) {
                 rt.skipProcessOnce = false
             } else if (rt.program.process.isNotEmpty()) {
                 try {
                     val frameCtx = makeCtx(fx, rt, t)
-                    frameCtx.morph = rt.morph
                     ScriptRuntime.runProcessFrame(rt.program, rt.objState, frameCtx)
-                    rt.morph = frameCtx.morph
-                    work.nekow.particledrawing.animation.script.tickMorph(frameCtx)
                     rt.lastPhaseMs = t
                 } catch (e: Throwable) {
                     println("[pdrawc] 函数对象 ${fx.id} process 求值失败：${e.message}")
