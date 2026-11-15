@@ -25,6 +25,9 @@ class StereoSourcePanTest {
     /** 与 OpenAlSink 内部同一组常量。 */
     private val panningEnabledSoft = 0x19EC
 
+    private fun sourcePanningAvailable(): Boolean =
+        AL10.alIsExtensionPresent("AL_SOFT_source_panning") || AL10.alIsExtensionPresent("AL_SOFTX_source_panning")
+
     /** 左声道 1kHz、右声道 3kHz：一次渲染能分别量左右。 */
     private fun stereoPair(): ShortArray {
         val pcm = ShortArray(rate * 2)
@@ -38,7 +41,7 @@ class StereoSourcePanTest {
     @Test
     fun `source panning gives a real balance through the production sink`() {
         OpenAlLoopback.withDevice(rate) { device ->
-            assumeTrue("OpenAL 没有 source panning 扩展", OpenAlSink().panningAvailable())
+            assumeTrue("OpenAL 没有 source panning 扩展", sourcePanningAvailable())
 
             val pcm = stereoPair()
             fun measure(pan: Float): FloatArray = OpenAlLoopback.renderPcm(
@@ -86,12 +89,15 @@ class StereoSourcePanTest {
     fun `the fallback path is the old AL_POSITION behaviour and does not error`() {
         OpenAlLoopback.withDevice(rate) { device ->
             val pcm = stereoPair()
-            // 强制没有扩展：退回 AL_POSITION（立体声下无效），不能抛错
+            // Loopback 已配置相对位置；新声源还未启用平衡声像。
             fun measure(pan: Float): Pair<Double, Double> {
                 val y = OpenAlLoopback.renderPcm(device, pcm, rate, rate, stereoBuffer = true) { src ->
-                    val sink = OpenAlSink(panningOverride = false)
-                    sink.prepareSource(src, rate, 2)
-                    sink.setPan(src, pan)
+                    OpenAlSink().setPan(src, pan)
+                    MemoryStack.stackPush().use { stack ->
+                        val position = stack.mallocFloat(3)
+                        AL10.alGetSourcefv(src, AL10.AL_POSITION, position)
+                        assertEquals(pan, position.get(0))
+                    }
                 }
                 return OpenAlLoopback.toneDb(y, leftFreq, 0, rate) to
                     OpenAlLoopback.toneDb(y, rightFreq, 1, rate)
@@ -144,7 +150,7 @@ class StereoSourcePanTest {
     @Test
     fun `enabling source panning takes the source off position based panning`() {
         OpenAlLoopback.withDevice(rate) { device ->
-            assumeTrue("OpenAL 没有 source panning 扩展", OpenAlSink().panningAvailable())
+            assumeTrue("OpenAL 没有 source panning 扩展", sourcePanningAvailable())
             val pcm = stereoPair()
             val pinned = OpenAlLoopback.renderPcm(device, pcm, rate, rate, stereoBuffer = true) { src ->
                 val sink = OpenAlSink()

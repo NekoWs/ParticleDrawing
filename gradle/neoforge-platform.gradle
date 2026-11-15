@@ -99,6 +99,15 @@ sourceSets {
     }
 }
 
+def gameTestSource = new File(targetSource, 'gameTest')
+if (gameTestSource.isDirectory()) {
+    sourceSets.create('gameTest') {
+        java.setSrcDirs([new File(gameTestSource, 'java')])
+        resources.setSrcDirs([new File(gameTestSource, 'resources')])
+    }
+    configurations.gameTestImplementation.extendsFrom(configurations.implementation)
+}
+
 tasks.named('wrapper', Wrapper).configure {
     distributionType = Wrapper.DistributionType.BIN
 }
@@ -208,6 +217,14 @@ dependencies {
     testImplementation(testFixtures(project(':pdraw-core')))
 }
 
+
+if (gameTestSource.isDirectory()) {
+    // GameTest 与模组共用 NeoForge 运行时。
+    def gameTests = sourceSets.gameTest
+    gameTests.extensions.getByName('runtimeDefinition').set(sourceSets.main.extensions.getByName('runtimeDefinition'))
+    gameTests.compileClasspath += sourceSets.main.output
+    runs.gameTestServer.modSources.add(mod_id, gameTests)
+}
 
 tasks.withType(ProcessResources).configureEach {
     var replaceProperties = [

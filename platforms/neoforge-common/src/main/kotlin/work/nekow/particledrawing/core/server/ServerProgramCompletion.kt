@@ -92,9 +92,6 @@ object ServerProgramCompletion {
         entries.clear()
     }
 
-    /** 当前登记数（调试用）。 */
-    fun size(): Int = entries.size
-
     /**
      * 排一次兜底：带上当前版本，只有「排它之后账本没再变过」的那个任务才作数。
      *

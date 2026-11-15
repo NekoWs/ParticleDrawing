@@ -208,7 +208,7 @@ class ParticleBatchTest {
 
         assertTrue(a.destroyed, "存活成员应被销毁")
         assertTrue(!dead.destroyed, "已不存在的成员不该再发销毁包")
-        assertEquals(0, h.core.rawSize())
+        assertEquals(0, h.core.members().size)
     }
 
     @Test
@@ -231,13 +231,13 @@ class ParticleBatchTest {
         assertEquals(2, h.core.size(), "延迟成员在到点前仍应算成员")
         h.core.forEach { _, _, _, _ -> }   // 遍历时跳过（还没有权威状态）
         h.core.track(delayed, Vec3(1.0, 0.0, 0.0))
-        assertEquals(2, h.core.rawSize(), "延迟成员不该被摘掉")
+        assertEquals(2, h.core.members().size, "延迟成员不该被摘掉")
         assertEquals(0, h.sent.size, "没有权威状态时不发位置指令")
 
         // 到点后仍不存在 → 按普通已死成员摘掉
         delayed.pending = false
         assertEquals(1, h.core.evictDead())
-        assertEquals(1, h.core.rawSize())
+        assertEquals(1, h.core.members().size)
     }
 
     @Test
@@ -247,6 +247,6 @@ class ParticleBatchTest {
         h.core.add(dead)
         h.core.track(dead, Vec3(1.0, 0.0, 0.0))
         assertEquals(0, h.sent.size, "失效成员不该发包")
-        assertEquals(0, h.core.rawSize())
+        assertEquals(0, h.core.members().size)
     }
 }

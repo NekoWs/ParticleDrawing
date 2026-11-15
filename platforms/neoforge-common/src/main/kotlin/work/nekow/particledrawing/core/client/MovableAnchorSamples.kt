@@ -18,14 +18,7 @@ internal class MovableAnchorSamples {
     private var cur: Vec3? = null
     private var lastSampleNanos: Long = 0L
 
-    /** 最近一条样本的速度方向，抖动平面与朝向用它；零向量时保留上一次。 */
-    var direction: Vec3 = Vec3(0.0, 0.0, 1.0)
-        private set
-
-    /** 是否已有样本；还没有时发射器先不发射，等第一条位置。 */
-    fun hasSample(): Boolean = cur != null
-
-    fun onSample(pos: Vec3, velocity: Vec3, nowNanos: Long) {
+    fun onSample(pos: Vec3, nowNanos: Long) {
         val c = cur
         val stale = nowNanos - lastSampleNanos > STALE_NANOS
         prev = when {
@@ -36,7 +29,6 @@ internal class MovableAnchorSamples {
         }
         cur = pos
         lastSampleNanos = nowNanos
-        if (velocity.lengthSqr() > 1e-12) direction = velocity.normalize()
     }
 
     /** 本帧的锚点位置；[partialTick] 为渲染帧在相邻两个 tick 之间的进度。 */
@@ -49,12 +41,6 @@ internal class MovableAnchorSamples {
             p.y + (c.y - p.y) * partialTick,
             p.z + (c.z - p.z) * partialTick,
         )
-    }
-
-    fun clear() {
-        prev = null
-        cur = null
-        lastSampleNanos = 0L
     }
 
     companion object {

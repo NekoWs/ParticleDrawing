@@ -130,7 +130,7 @@ class RenderParticle(
     /** 已经活过的引擎 tick 数。 */
     private var ticksAlive: Int = 0
 
-    /** 出生时的引擎 tick 序号；Long.MIN_VALUE = 直接调用、不做出生 tick 过滤（测试用）。 */
+    /** 出生时的引擎 tick 序号。 */
     private var bornSequence: Long = Long.MIN_VALUE
 
     /** 出生在本 tick 的哪个渲染进度（0..1）；渲染帧内生成的粒子用它把起点对齐到出生那一刻。 */
@@ -512,7 +512,7 @@ class RenderParticle(
      * 出生在同一序号里的粒子先跳过一帧，下一 tick 才开始计年龄。
      */
     fun shouldAdvance(previousSequence: Long): Boolean =
-        bornSequence == Long.MIN_VALUE || bornSequence < previousSequence
+        bornSequence < previousSequence
 
     /**
      * 推进一个引擎 tick：寿命与缓动时钟一起走。引擎时钟在关卡暂停时不推进，

@@ -37,6 +37,7 @@ OGG 解码通过 `ScriptWavePcm.OggReader` 服务接口接入，NeoForge 目标�
 ```
 
 `build` 执行回归测试与打包检查，`runGameTestServer` 启动服务端并运行 GameTest。
+1.21.1 的射灯用例和结构模板位于该目标的 `src/gameTest/`，由测试服加载。
 客户端可用 `runClient`，专服可用 `runServer`。游戏目录为 `run/<目标>/<运行名>/`，动画、粒子图片和存档
 放在相应目标的运行目录内。[CI 矩阵](../.github/workflows/build.yml)
 

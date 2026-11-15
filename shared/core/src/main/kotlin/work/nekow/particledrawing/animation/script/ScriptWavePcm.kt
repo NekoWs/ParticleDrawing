@@ -46,11 +46,6 @@ object ScriptWavePcm {
     fun peakAt(a: AudioAsset, ms: Double, windowMs: Double, ch: Int): Double =
         pcmOf(a)?.peakAt(ms, windowMs, ch) ?: 0.0
 
-    /** 测试用：清掉采样缓存。 */
-    fun clearCache() {
-        synchronized(cache) { cache.clear() }
-    }
-
     private fun pcmOf(a: AudioAsset): Pcm? {
         synchronized(cache) {
             if (cache.containsKey(a)) return cache[a]
@@ -208,7 +203,7 @@ object ScriptWavePcm {
         fun read(data: ByteArray, startFrame: Int, frameCount: Int, channels: Int): FloatArray?
     }
 
-    var oggReader: OggReader = java.util.ServiceLoader.load(OggReader::class.java).firstOrNull() ?: MissingOggReader
+    val oggReader: OggReader = java.util.ServiceLoader.load(OggReader::class.java).firstOrNull() ?: MissingOggReader
 
     private class OggPcm(private val data: ByteArray, private val info: OggInfo) :
         Pcm(info.rate, info.channels, info.frames) {

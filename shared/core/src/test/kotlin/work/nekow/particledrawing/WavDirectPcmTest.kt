@@ -156,7 +156,7 @@ class WavDirectPcmTest {
         val fake = FakeOgg(rate = 1000, channels = 1, samples = samples)
         val a = audioAsset("ogg1", fmt = 0, data = ByteArray(8) { 1 })
 
-        withOggReader(fake) {
+        TestOggReader.withReader(fake) {
             assertEquals(1000, ScriptWavePcm.rate(a))
             assertEquals(1, ScriptWavePcm.channels(a))
             assertTrue(ScriptWavePcm.ready(a))
@@ -194,7 +194,7 @@ class WavDirectPcmTest {
         val fake = FakeOgg(rate = 1000, channels = 1, samples = samples)
         val a = audioAsset("ogg2", fmt = 0, data = ByteArray(8) { 1 })
 
-        withOggReader(fake) {
+        TestOggReader.withReader(fake) {
             // 窗口 [7999, 9999) 跨第 0/1 两个解码窗口，各解一次
             assertEquals(0.9, ScriptWavePcm.peakAt(a, 7999.0, 2000.0, 0), 1e-6)
             assertEquals(listOf(0, 8000), fake.reads)
@@ -205,7 +205,7 @@ class WavDirectPcmTest {
     fun `ogg that cannot be opened stays not ready`() {
         val a = audioAsset("ogg3", fmt = 0, data = ByteArray(4))
 
-        withOggReader(NullOgg) {
+        TestOggReader.withReader(NullOgg) {
             assertFalse(ScriptWavePcm.ready(a))
             assertEquals(0, ScriptWavePcm.rate(a))
             assertEquals(0, ScriptWavePcm.channels(a))
@@ -240,7 +240,7 @@ class WavDirectPcmTest {
     fun `script audio handle reports unready ogg as silent`() {
         val a = audioAsset("bgm", fmt = 0, data = ByteArray(4), name = "bgm")
 
-        withOggReader(NullOgg) {
+        TestOggReader.withReader(NullOgg) {
             // 未就绪时按静音回 0、不报错，声道号不做范围校验
             val out = runAudioScript(
                 "func process() { let a = this.get(\"bgm\"); " +
@@ -369,16 +369,6 @@ class WavDirectPcmTest {
     private object NullOgg : ScriptWavePcm.OggReader {
         override fun info(data: ByteArray): ScriptWavePcm.OggInfo? = null
         override fun read(data: ByteArray, startFrame: Int, frameCount: Int, channels: Int): FloatArray? = null
-    }
-
-    private fun <T> withOggReader(reader: ScriptWavePcm.OggReader, body: () -> T): T {
-        val old = ScriptWavePcm.oggReader
-        ScriptWavePcm.oggReader = reader
-        try {
-            return body()
-        } finally {
-            ScriptWavePcm.oggReader = old
-        }
     }
 
     /** 跑一段只读音频句柄的 process，返回脚本里的全局 out。 */

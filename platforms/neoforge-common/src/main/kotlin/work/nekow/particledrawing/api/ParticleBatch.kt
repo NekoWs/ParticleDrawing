@@ -175,9 +175,6 @@ internal class BatchCore<T>(
 
     fun members(): List<T> = members.toList()
 
-    /** 不去重、不判活的成员数。 */
-    fun rawSize(): Int = members.size
-
     fun add(member: T): T {
         members.add(member)
         return member

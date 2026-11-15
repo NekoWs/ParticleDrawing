@@ -71,9 +71,7 @@ object ParticleDrawCommands {
                 .then(animation)
                 .then(Commands.literal("texture")
                     .then(Commands.literal("reload").executes(::reloadTextures)))
-                .then(Commands.literal("light")
-                    .executes(::lightProbe)
-                    .then(Commands.literal("demo").requires(PlatformCompat.gamemastersOnly()).executes(::lightDemo)))
+                .then(Commands.literal("light").executes(::lightProbe))
         )
     }
 
@@ -126,40 +124,6 @@ object ParticleDrawCommands {
             "下方=${"%.2f".format(below)} 上方=${"%.2f".format(above)} | $diag | $detail"
         org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").info("[PD-light] {}", line)
         ctx.source.sendSuccess({ Component.literal(line) }, false)
-        return 1
-    }
-
-    private data class DemoLamp(val x: Double, val color: String, val outer: Int = 0, val inner: Int = 0)
-
-    private val LIGHT_DEMO = listOf(
-        DemoLamp(-13.5, "#ff7955"),
-        DemoLamp(-5.0, "#ff7955", 20, 12),
-        DemoLamp(2.5, "#78ff85", 35, 21),
-        DemoLamp(10.0, "#738dff", 50, 30),
-    )
-
-    /** 在顶面为 Y=-63 的平地上，对照一盏点光与三盏斜射的灯。 */
-    private fun lightDemo(ctx: CommandContext<CommandSourceStack>): Int {
-        val commands = ctx.source.server.commands
-        fun run(command: String) = commands.performPrefixedCommand(ctx.source, command)
-
-        run("gamemode spectator @s")
-        run("time set midnight")
-        LIGHT_DEMO.forEachIndexed { index, lamp ->
-            val group = "lightdemo$index"
-            val pos = "${lamp.x} -59.0 0.5"
-            val spotlight = if (lamp.outer > 0) " spot=${lamp.outer},${lamp.inner} light_dir=-70,-53" else ""
-            run("pdraw particle group reset $group $pos")
-            run(
-                "pdraw particle add $group dot $pos color=${lamp.color} glowing=true size_world=0.16,0.16 " +
-                    "light=15 light_range=9 light_falloff=smooth$spotlight",
-            )
-        }
-        run("tp @s 0.0 -51.0 21.0 facing 0.0 -63.0 2.0")
-        ctx.source.sendSuccess(
-            { Component.literal("从左到右：点光、斜射灯 20°、35°、50°（外锥半角）") },
-            false,
-        )
         return 1
     }
 

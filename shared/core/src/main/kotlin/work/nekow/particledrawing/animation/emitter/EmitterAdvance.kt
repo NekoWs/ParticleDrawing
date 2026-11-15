@@ -19,9 +19,6 @@ internal class DistanceAdvance(private val spacing: Double) {
 
     private var carry = 0.0
 
-    /** 未满一格攒下的里程，诊断与测试用。 */
-    fun carry(): Double = carry
-
     /** 沿 [from] → [to] 推进，返回本帧要发射的位置（0..n 个，按先后顺序）。 */
     fun advance(from: Vec3, to: Vec3, out: MutableList<Vec3>) {
         val dx = to.x - from.x
@@ -61,8 +58,6 @@ internal class TimeAdvance(private val intervalMs: Double, private val maxPerFra
     }
 
     private var carry = 0.0
-
-    fun carry(): Double = carry
 
     /** 推进 [deltaMs] 毫秒，返回本帧应发射的颗数；上限 [maxPerFrame]，超出部分舍弃而不记账堆积。 */
     fun advance(deltaMs: Double): Int {

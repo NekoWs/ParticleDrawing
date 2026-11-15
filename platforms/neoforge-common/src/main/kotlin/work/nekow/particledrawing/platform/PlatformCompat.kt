@@ -48,12 +48,6 @@ object PlatformCompat {
         return LightCoordsUtil.smoothPack(block, LightCoordsUtil.smoothSky(packed))
     }
 
-    /**
-     * 清掉地形取光的顶点缓存；光场变了必须清，否则重建出来的网格还是旧亮度。
-     * 26.x 的实现在平台侧混入里，这里只留一个可被覆盖的入口。
-     */
-    fun clearLightCache() {}
-
     /** 玩家所在服务端关卡。1.21.1 的 `Entity.level()` 静态类型是 `Level`，需要下转。 */
     fun serverLevelOf(player: ServerPlayer): ServerLevel = player.level()
 

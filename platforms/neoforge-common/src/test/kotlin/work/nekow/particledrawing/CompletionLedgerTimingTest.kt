@@ -93,8 +93,13 @@ class CompletionLedgerTimingTest {
 
     @Test
     fun `没登记过的组重排兜底是空操作`() {
+        val existing = UUID.randomUUID()
+        var completed = 0
+        ServerProgramCompletion.onComplete(existing, UUID.randomUUID(), fallbackTicks = 50) { completed++ }
         ServerProgramCompletion.rescheduleFallback(UUID.randomUUID(), fallbackTicks = 3)
         repeat(30) { AnimationScheduler.tick() }
-        assertEquals(0, ServerProgramCompletion.size())
+        assertEquals(0, completed)
+        ServerProgramCompletion.complete(existing)
+        assertEquals(1, completed)
     }
 }

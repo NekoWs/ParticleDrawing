@@ -97,8 +97,7 @@ pdraw particle group reset lamps ~ ~3 ~
 pdraw particle add lamps dot ~ ~3 ~ light=15 light_only=true color=#ff5938 spot=35,20 light_dir=0,-90 light_range=12 light_falloff=smooth
 ```
 
-`/pdraw light` 在单人世界显示光源和地形覆盖数据。`/pdraw light demo` 会在玩家附近布置一盏点光和
-三盏斜射灯，将执行者切换到旁观模式并设定机位与时间。
+`/pdraw light` 在单人世界显示光源和地形覆盖数据。
 
 ## 编辑器脚本
 

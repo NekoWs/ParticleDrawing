@@ -68,7 +68,7 @@ internal object ClientEmitterManager {
             payload.anchor,
         )
         (payload.anchor as? Anchor.Movable)?.let {
-            active.samples.onSample(it.pos, it.velocity, System.nanoTime())
+            active.samples.onSample(it.pos, System.nanoTime())
         }
         emitters[payload.emitterId] = active
     }
@@ -81,7 +81,7 @@ internal object ClientEmitterManager {
         payload.anchor?.let { anchor ->
             active.anchor = anchor
             if (anchor is Anchor.Movable) {
-                active.samples.onSample(anchor.pos, anchor.velocity, now)
+                active.samples.onSample(anchor.pos, now)
             }
         }
 
@@ -112,9 +112,6 @@ internal object ClientEmitterManager {
         emitters.clear()
         lastFrameNanos = 0L
     }
-
-    /** 当前活跃发射器数量，调试用。 */
-    fun activeCount(): Int = emitters.size
 
     /**
      * 每渲染帧推进一次，由 `ParticleRenderHandler.onRenderFrame` 调用。

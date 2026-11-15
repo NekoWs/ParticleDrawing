@@ -298,10 +298,7 @@ internal interface AudioSink {
 }
 
 /** [AudioSink] 的真实实现：复用 Minecraft 当前 context 的 OpenAL。 */
-internal class OpenAlSink(
-    /** 测试用：强制「本机有没有 source panning 扩展」，null = 运行时探测。 */
-    private val panningOverride: Boolean? = null,
-) : AudioSink {
+internal class OpenAlSink : AudioSink {
 
     private var resampler = UNPROBED
     private var panning = UNPROBED
@@ -419,12 +416,8 @@ internal class OpenAlSink(
         }
     }
 
-    /** 本机有没有 source panning 扩展（测试用来决定这条用例跑不跑）。 */
-    internal fun panningAvailable(): Boolean = panningSupported()
-
     /** 本机有没有 source panning 扩展；只探一次。 */
     private fun panningSupported(): Boolean {
-        panningOverride?.let { return it }
         if (panning != UNPROBED) return panning == 1
         val present = try {
             AL10.alIsExtensionPresent(EXT_PANNING) || AL10.alIsExtensionPresent(EXT_PANNING_DRAFT)

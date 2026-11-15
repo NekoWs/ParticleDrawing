@@ -39,7 +39,8 @@ class EmitterAdvanceTest {
         val third = emitAlong(advance, Vec3(0.4, 0.0, 0.0), Vec3(0.6, 0.0, 0.0))
         assertEquals(1, third.size)
         assertEquals(0.5, third[0].x, 1e-9, "第一颗必须落在累计 0.5 格处，而不是段终点")
-        assertEquals(0.1, advance.carry(), 1e-9, "余量留到下一帧")
+        val next = emitAlong(advance, Vec3(0.6, 0.0, 0.0), Vec3(1.1, 0.0, 0.0))
+        assertEquals(1.0, next.single().x, 1e-9, "余量留到下一帧")
     }
 
     @Test
@@ -59,10 +60,10 @@ class EmitterAdvanceTest {
     fun `时间口径：按毫秒累积、单帧补齐多颗但不超过上限`() {
         val advance = TimeAdvance(10.0)
         assertEquals(0, advance.advance(4.0))
-        assertEquals(4.0, advance.carry(), 1e-9)
         assertEquals(1, advance.advance(7.0), "累计 11ms → 1 颗")
-        assertEquals(1.0, advance.carry(), 1e-9, "余 1ms 留到下一帧")
-        assertEquals(3, advance.advance(30.0), "累计 31ms → 3 颗")
+        assertEquals(0, advance.advance(8.0))
+        assertEquals(1, advance.advance(1.0), "余 1ms 留到下一帧")
+        assertEquals(3, advance.advance(30.0), "一次补齐 3 颗")
 
         val capped = TimeAdvance(1.0, maxPerFrame = 5)
         assertEquals(5, capped.advance(1000.0), "掉帧补发有上限，不堆积成一帧炸出几百颗")
