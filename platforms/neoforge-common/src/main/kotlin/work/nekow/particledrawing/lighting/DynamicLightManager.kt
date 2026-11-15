@@ -293,6 +293,8 @@ object DynamicLightManager {
     @JvmStatic
     @JvmOverloads
     fun renderDynamicLights(engine: ClientParticleEngine, partialTick: Float = 0f) {
+        // 每帧都会走到这里，用它当验收钩子的入口比玩家 tick 可靠（暂停/失焦都不影响）。
+        work.nekow.particledrawing.core.client.ClientAnimationProgramManager.maybeRunDemo()
         if (!isEnabled()) {
             clear()
             applyPendingSections()

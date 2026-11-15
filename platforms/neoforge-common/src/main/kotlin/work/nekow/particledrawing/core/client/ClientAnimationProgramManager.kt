@@ -653,8 +653,21 @@ internal object ClientAnimationProgramManager {
     private var demoFired = false
     private var demoCountdown = 60
 
-    private fun maybeRunDemo() {
-        if (demoFired || System.getProperty("pd.demo") == null) return
+    private var demoLogged = false
+
+    internal fun maybeRunDemo() {
+        if (demoFired) return
+        val flag = System.getProperty("pd.demo")
+        if (!demoLogged) {
+            demoLogged = true
+            org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").info(
+                "[PD-demo] 钩子检查: 属性={} level={} connection={}",
+                flag,
+                Minecraft.getInstance().level != null,
+                Minecraft.getInstance().connection != null,
+            )
+        }
+        if (flag == null) return
         // 等世界真正就绪再演示：进服瞬间 tp 与分组命令还落不了地。
         if (Minecraft.getInstance().level == null) return
         if (demoCountdown > 0) {
