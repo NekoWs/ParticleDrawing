@@ -39,6 +39,7 @@ internal class ResolvedVisual(
             } else {
                 ClientParticleEngine.ZERO_SPIN
             }
+
             return ResolvedVisual(
                 uv,
                 visual.billboard,

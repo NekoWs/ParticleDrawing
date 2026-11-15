@@ -35,10 +35,12 @@ internal object ParticleDrawParticleCommands {
     private val CURVE_OPTIONS = setOf(
         "alpha_curve", "size_curve", "red_curve", "green_curve", "blue_curve", "light_curve",
     )
+    /** 光源形状参数：任何能投光的粒子都该能设，所以并进视觉选项。 */
+    private val LIGHT_OPTIONS = setOf("spot", "light_dir", "light_range", "light_falloff")
     private val VISUAL_OPTIONS = setOf(
         "style", "texture", "uv", "size", "size_world", "billboard", "spin", "spin_space",
-        "additive", "glowing", "light", "intensity",
-    )
+        "additive", "glowing", "light", "light_only", "intensity",
+    ) + LIGHT_OPTIONS
     private val SHAPE_OPTIONS = COLOR_OPTIONS + CURVE_OPTIONS + VISUAL_OPTIONS + setOf("scale", "stagger", "lifetime")
     private val FIELD_OPTIONS = (SHAPE_OPTIONS - "stagger") + setOf("lifetime", "velocity", "force", "force_ticks")
     private val BEAM_OPTIONS = COLOR_OPTIONS + CURVE_OPTIONS + setOf(
