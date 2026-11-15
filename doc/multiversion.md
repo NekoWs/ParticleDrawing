@@ -124,7 +124,8 @@ Kotlin 会为别名文件生成空 facade 类，这些类会把 `net.minecraft.*
 
 ### 打包与运行
 
-1.21.1 是纯 Java 版，不像 26.x 自带 Kotlin 标准库。目标把 `kotlin-stdlib` 解包进编译输出目录，
+26.3 的发布 JAR 通过 NeoForge Jar-in-Jar 提供 Kotlin 标准库，供独立游戏环境加载。
+1.21.1 把 `kotlin-stdlib` 解包进编译输出目录，
 使 `kotlin` 包归属模组自身模块，开发运行与发布 JAR 都自带运行时；编译前清理该目录，避免污染增量编译。
 `neoforge.mods.toml` 与 `particledrawing.mixins.json` 也下沉到各目标，1.21.1 的清单需要
 `modLoader="javafml"` 与 `loaderVersion`，Mixin 兼容级别为 `JAVA_21`。

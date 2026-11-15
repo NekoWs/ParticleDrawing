@@ -186,15 +186,22 @@ configurations {
     runtimeClasspath.extendsFrom localRuntime
 }
 
-// 1.21.1 是纯 Java 版，不像 26.x 自带 Kotlin 标准库；模组必须自己带上，见 compileKotlin 的 doLast。
+// 1.21.1 把 Kotlin 标准库并入模组类输出，见 compileKotlin 的 doLast。
 def bundleKotlin = targetProperties.getProperty('bundle_kotlin', '') == 'true'
 if (bundleKotlin) {
     configurations { kotlinStdlib121 { transitive = false } }
     dependencies { kotlinStdlib121 'org.jetbrains.kotlin:kotlin-stdlib:2.4.10' }
 }
 
+def jarJarKotlin = targetProperties.getProperty('jarjar_kotlin', '') == 'true'
+
 dependencies {
     implementation "net.neoforged:neoforge:${neo_version}"
+    if (jarJarKotlin) {
+        jarJar('org.jetbrains.kotlin:kotlin-stdlib:[2.4.10,3)') {
+            version { prefer '2.4.10' }
+        }
+    }
     compileOnly project(':pdraw-core')
     testImplementation project(':pdraw-core')
     testImplementation 'org.jetbrains.kotlin:kotlin-test'
@@ -279,11 +286,22 @@ tasks.named('test') { dependsOn ':pdraw-core:test' }
 tasks.named('cleanTest') { dependsOn ':pdraw-core:cleanTest' }
 tasks.named('check') { dependsOn ':pdraw-core:check' }
 
+def modJar = tasks.named(jarJarKotlin ? 'jarJar' : 'jar', Jar)
+if (jarJarKotlin) {
+    // 发布流程与 Maven 消费者都使用包含标准库的主 JAR。
+    tasks.named('jar', Jar) { destinationDirectory = layout.buildDirectory.dir('intermediates/jar') }
+    modJar.configure { archiveClassifier.set('') }
+    configurations.named('apiElements') {
+        outgoing.artifacts.clear()
+        outgoing.artifact(modJar)
+    }
+}
+
 tasks.register('verifyPackagedCore') {
-    dependsOn tasks.named('jar')
-    inputs.file(tasks.named('jar', Jar).flatMap { it.archiveFile })
+    dependsOn modJar
+    inputs.file(modJar.flatMap { it.archiveFile })
     doLast {
-        def archive = new java.util.zip.ZipFile(tasks.named('jar', Jar).get().archiveFile.get().asFile)
+        def archive = new java.util.zip.ZipFile(modJar.get().archiveFile.get().asFile)
         try {
             [
                 'work/nekow/particledrawing/animation/ClientAnimationPlayer.class',
@@ -294,6 +312,17 @@ tasks.register('verifyPackagedCore') {
                 'META-INF/services/work.nekow.particledrawing.animation.script.ScriptWavePcm$OggReader',
             ].each { path ->
                 if (archive.getEntry(path) == null) throw new GradleException("模组 JAR 缺少核心或宿主实现: $path")
+            }
+            if (jarJarKotlin) {
+                def metadataEntry = archive.getEntry('META-INF/jarjar/metadata.json')
+                if (metadataEntry == null) throw new GradleException('模组 JAR 缺少 Jar-in-Jar 元数据')
+                def metadata = new groovy.json.JsonSlurper().parse(archive.getInputStream(metadataEntry))
+                def stdlib = metadata.jars.find {
+                    it.identifier.group == 'org.jetbrains.kotlin' && it.identifier.artifact == 'kotlin-stdlib'
+                }
+                if (stdlib == null || archive.getEntry(stdlib.path) == null) {
+                    throw new GradleException('模组 JAR 缺少 Kotlin 标准库')
+                }
             }
         } finally { archive.close() }
     }
