@@ -115,8 +115,9 @@ object ParticleDrawCommands {
             "首个光源 pos=(${"%.1f".format(first.x)}, ${"%.1f".format(first.y)}, ${"%.1f".format(first.z)}) " +
                 "强度=${"%.2f".format(first.intensity)} 半径=${"%.1f".format(first.range)}"
         }
+        val diag = work.nekow.particledrawing.lighting.DynamicLightManager.diagnostics()
         val line = "动态光: 启用=$enabled 源=$count 版本=$version | 脚下=${"%.2f".format(here)} " +
-            "下方=${"%.2f".format(below)} 上方=${"%.2f".format(ahead)} | $detail"
+            "下方=${"%.2f".format(below)} 上方=${"%.2f".format(ahead)} | $diag | $detail"
         // 同时进服务端日志，自动化排查时直接 grep 即可，不必依赖聊天栏截图
         org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").info("[PD-light] {}", line)
         ctx.source.sendSuccess({ Component.literal(line) }, false)

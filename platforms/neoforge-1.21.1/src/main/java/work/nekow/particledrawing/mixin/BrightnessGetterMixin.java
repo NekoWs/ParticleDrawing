@@ -28,6 +28,8 @@ public abstract class BrightnessGetterMixin {
             return original;
         }
         // 地形表面本身就是实体方块：这一判会把地面排除在动态光之外，只剩空气格受光。
-        return DynamicLightManager.getLightmapWithDynamicLight(level, pos, original);
+        int merged = DynamicLightManager.getLightmapWithDynamicLight(level, pos, original);
+        DynamicLightManager.noteBakeCall(merged != original);
+        return merged;
     }
 }

@@ -50,6 +50,7 @@ object PlatformCompat {
     /** 标记区块 section 需要重建。26.x 走 `Minecraft.levelExtractor`。 */
     fun markSectionDirty(sectionX: Int, sectionY: Int, sectionZ: Int) {
         Minecraft.getInstance().levelExtractor.setSectionDirty(sectionX, sectionY, sectionZ)
+        work.nekow.particledrawing.lighting.DynamicLightManager.noteSectionMarked()
     }
 
     /** FOV 覆盖：26.x 的 fov 字段是 float。 */

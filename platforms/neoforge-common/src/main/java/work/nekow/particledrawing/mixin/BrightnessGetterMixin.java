@@ -28,6 +28,8 @@ public interface BrightnessGetterMixin {
         }
         // 不能再排除实体方块：地形表面本身就是实体方块，之前这一判把地面全挡在动态光之外，
         // 结果只有空气格拿到光，画面上一片漆黑。动态光只抬不压，实体内壁也不会被看见。
-        return DynamicLightManager.getLightmapWithDynamicLight(level, pos, original);
+        int merged = DynamicLightManager.getLightmapWithDynamicLight(level, pos, original);
+        DynamicLightManager.noteBakeCall(merged != original);
+        return merged;
     }
 }

@@ -136,6 +136,73 @@ object DynamicLightManager {
     @JvmStatic
     fun sourceCount(): Int = sourceCountSnapshot
 
+    // ── 诊断计数：只增不减，用来判断「光有没有真的写进地形」 ──
+    /** 区块烘焙时走到亮度混入的次数。 */
+    @Volatile
+    var bakeCalls: Long = 0L
+        private set
+
+    /** 混入里判定为「动态光更亮、要覆盖」的次数。 */
+    @Volatile
+    var bakeOverrides: Long = 0L
+        private set
+
+    /** 向渲染器提交脏 section 的次数。 */
+    @Volatile
+    var sectionsMarked: Long = 0L
+        private set
+
+    /** 烘焙时读到过动态光的次数，以及读到过的最大值与其位置。 */
+    @Volatile
+    var bakePositive: Long = 0L
+        private set
+
+    @Volatile
+    private var stateLogged = false
+
+    @Volatile
+    private var maxDynamicSeen: Double = 0.0
+
+    @Volatile
+    private var maxDynamicAt: String = "-"
+
+    /** 烘焙混入回调用：记一次调用，并按需记一次覆盖。 */
+    @JvmStatic
+    fun noteBakeCall(overridden: Boolean) {
+        bakeCalls++
+        if (overridden) bakeOverrides++
+    }
+
+    @JvmStatic
+    fun noteSectionMarked() {
+        sectionsMarked++
+    }
+
+    /** 地形烘焙入口的调用次数（与实体取光分开计）。 */
+    @Volatile
+    var terrainCalls: Long = 0L
+        private set
+
+    @Volatile
+    private var terrainSamples = 0
+
+    @JvmStatic
+    fun noteTerrainCall(x: Double, y: Double, z: Double, dynamic: Double, overridden: Boolean) {
+        terrainCalls++
+        if (dynamic > 0.0) bakePositive++
+        if (overridden) bakeOverrides++
+        if (terrainSamples < 3) {
+            terrainSamples++
+            org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing")
+                .info("[PD-terrain] pos=({}, {}, {}) dynamic={} overridden={}", x, y, z, dynamic, overridden)
+        }
+    }
+
+    @JvmStatic
+    fun diagnostics(): String =
+        "烘焙调用=$bakeCalls 覆盖=$bakeOverrides 读到光=$bakePositive 峰值=${"%.2f".format(maxDynamicSeen)}@$maxDynamicAt " +
+            "地形烘焙=$terrainCalls 脏区块提交=$sectionsMarked"
+
     /**
      * 动态光照版本号：光源集合、位置、亮度或开关有任何变化就自增。
      *
@@ -533,6 +600,26 @@ object DynamicLightManager {
     @JvmStatic
     fun getLightmapWithDynamicLight(lightmap: Int, x: Double, y: Double, z: Double): Int {
         val dynamic = getDynamicLightLevel(x, y, z)
+        if (dynamic > 0.0) bakePositive++
+        if (!stateLogged && hasLights) {
+            stateLogged = true
+            val nearest = sources.minByOrNull { s ->
+                val dx = s.x - x; val dy = s.y - y; val dz = s.z - z
+                dx * dx + dy * dy + dz * dz
+            }
+            val dist = nearest?.let { s ->
+                val dx = s.x - x; val dy = s.y - y; val dz = s.z - z
+                sqrt(dx * dx + dy * dy + dz * dz)
+            } ?: -1.0
+            org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").info(
+                "[PD-state] 有光源时首次烘焙: pos=({}, {}, {}) dynamic={} 源数={} cellRange={} 最近距离={} 线程={}",
+                x, y, z, dynamic, sources.size, cellRange, dist, Thread.currentThread().name,
+            )
+        }
+        if (dynamic > maxDynamicSeen) {
+            maxDynamicSeen = dynamic
+            maxDynamicAt = "(${"%.1f".format(x)}, ${"%.1f".format(y)}, ${"%.1f".format(z)})"
+        }
         if (dynamic <= 0.0) return lightmap
 
         val block = PlatformCompat.lightBlock(lightmap)
