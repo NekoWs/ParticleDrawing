@@ -4,6 +4,7 @@ import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.*
+import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
@@ -14,7 +15,20 @@ import work.nekow.particledrawing.i18n.translation
 
 /** 维度内命名的配置草稿；运行句柄与草稿分开，复制配置不会复制正在播放的粒子。 */
 internal object CommandParticleRecipes {
-    enum class Sampling { PARAMETER, GRID, IMAGE }
+    enum class Sampling { PARAMETER, GRID, IMAGE, MESH }
+
+    data class SampleAsset(val name: String, val resource: Boolean) {
+        fun open(level: ServerLevel, directory: String, missing: String): InputStream {
+            if (resource) {
+                return level.server.resourceManager.getResource(Identifier.parse(name))
+                    .orElseThrow { LocalizedArgumentException(translation(missing, name)) }.open()
+            }
+            val root = Path.of(directory).toAbsolutePath().normalize()
+            val target = safeAssetPath(root, name)
+            requireLocalized(Files.isRegularFile(target)) { translation(missing, target) }
+            return Files.newInputStream(target)
+        }
+    }
     data class Draft(
         var anchor: RecipeAnchor,
         var anchorLink: String? = null,
@@ -24,8 +38,10 @@ internal object CommandParticleRecipes {
         var min: Vec3 = Vec3(-1.0, -1.0, -1.0),
         var max: Vec3 = Vec3(1.0, 1.0, 1.0),
         var step: Double = 0.25,
-        var image: String? = null,
-        var imageResource: Boolean = false,
+        var image: SampleAsset? = null,
+        var mesh: SampleAsset? = null,
+        var meshCount: Int = 256,
+        var meshSeed: Int = 0,
         var imageOptions: ParticleImageSampler.Options = ParticleImageSampler.Options(),
         var recipe: ParticleRecipe = ParticleRecipe(ParticleSampling.count(1)),
         var selector: String = "true",
@@ -38,17 +54,13 @@ internal object CommandParticleRecipes {
             Sampling.PARAMETER -> range?.let { ParticleSampling.range(it.first, it.second, it.third) } ?: ParticleSampling.count(count)
             Sampling.GRID -> ParticleSampling.grid(min, max, step)
             Sampling.IMAGE -> {
-                val name = requireNotNullLocalized(image) { translation("error.recipe.image_source") }
-                val input = if (imageResource) {
-                    val resource = level.server.resourceManager.getResource(Identifier.parse(name)).orElseThrow { LocalizedArgumentException(translation("error.image.missing", name)) }
-                    resource.open()
-                } else {
-                    val root = Path.of("particleImages").toAbsolutePath().normalize()
-                    val target = safeImagePath(root, name)
-                    requireLocalized(Files.isRegularFile(target)) { translation("error.image.missing", target) }
-                    Files.newInputStream(target)
-                }
-                input.use { ParticleImageSampler.sample(it, imageOptions) }
+                val source = requireNotNullLocalized(image) { translation("error.recipe.image_source") }
+                source.open(level, "particleImages", "error.image.missing").use { ParticleImageSampler.sample(it, imageOptions) }
+            }
+            Sampling.MESH -> {
+                val source = requireNotNullLocalized(mesh) { translation("error.mesh.source") }
+                val triangles = source.open(level, "particleMeshes", "error.mesh.missing").use(ParticleMeshSampler::readObj)
+                ParticleMeshSampler.surface(triangles, meshCount, meshSeed)
             }
         }
 
@@ -150,12 +162,12 @@ internal object CommandParticleRecipes {
         requireLocalized(name !in setOf("create", "reset", "copy", "list", "help")) { translation("error.recipe.reserved_name", name) }
     }
 
-    internal fun safeImagePath(root: Path, name: String): Path {
-        requireLocalized(!Path.of(name).isAbsolute) { translation("error.image.relative_path") }
+    internal fun safeAssetPath(root: Path, name: String): Path {
+        requireLocalized(!Path.of(name).isAbsolute) { translation("error.asset.relative_path", root.fileName) }
         val base = root.toAbsolutePath().normalize()
         val target = base.resolve(name).normalize()
-        requireLocalized(target.startsWith(base) && target != base) { translation("error.image.outside_directory") }
-        if (Files.exists(target)) requireLocalized(target.toRealPath().startsWith(base.toRealPath())) { translation("error.image.outside_directory") }
+        requireLocalized(target.startsWith(base) && target != base) { translation("error.asset.outside_directory", root.fileName) }
+        if (Files.exists(target)) requireLocalized(target.toRealPath().startsWith(base.toRealPath())) { translation("error.asset.outside_directory", root.fileName) }
         return target
     }
 }

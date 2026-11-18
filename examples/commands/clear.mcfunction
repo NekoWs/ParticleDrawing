@@ -26,3 +26,4 @@ pdraw particle emitter reset soft_demo
 pdraw particle emitter reset ribbon_demo
 pdraw particle emitter reset rain_contact
 pdraw particle emitter reset rain_splash
+pdraw particle emitter reset mesh_surface

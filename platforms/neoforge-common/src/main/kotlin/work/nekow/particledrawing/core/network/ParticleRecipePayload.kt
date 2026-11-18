@@ -7,6 +7,7 @@ import net.minecraft.resources.Identifier
 import work.nekow.particledrawing.animation.recipe.RecipeCollision
 import work.nekow.particledrawing.api.*
 import work.nekow.particledrawing.math.ResourceId
+import work.nekow.particledrawing.platform.toCore
 import java.util.UUID
 import work.nekow.particledrawing.i18n.LocalizedArgumentException
 import work.nekow.particledrawing.i18n.requireLocalized
@@ -68,6 +69,8 @@ internal object RecipeCodec {
             StreamCodecs.writeVec(buf, seed.position)
             buf.writeFloat(seed.color.r); buf.writeFloat(seed.color.g); buf.writeFloat(seed.color.b); buf.writeFloat(seed.color.a)
             buf.writeDouble(seed.u)
+            buf.writeBoolean(seed.normal != null)
+            seed.normal?.let { StreamCodecs.writeVec(buf, it) }
         }
         buf.writeVarInt(r.rate); buf.writeVarInt(r.interval); buf.writeVarInt(r.lifetime); buf.writeVarInt(r.maxAlive)
         buf.writeBoolean(r.follow)
@@ -83,6 +86,7 @@ internal object RecipeCodec {
             buf.writeVarInt(it.count); buf.writeVarInt(it.lifetime)
             buf.writeDouble(it.speed); buf.writeDouble(it.scale)
         }
+        buf.writeDouble(r.spacing)
         requireLocalized(allowChildren || r.emissions.isEmpty()) { translation("error.packet.recipe_size") }
         buf.writeVarInt(r.emissions.size)
         for (rule in r.emissions) {
@@ -99,7 +103,8 @@ internal object RecipeCodec {
 
     private fun readLevel(buf: FriendlyByteBuf, allowChildren: Boolean): ParticleRecipe {
         val seeds = List(count(buf, if (allowChildren) ParticleRecipe.MAX_SEEDS else RecipeEmission.MAX_CHILD_SEEDS)) {
-            ParticleSeed(StreamCodecs.readVec(buf), Color.of(buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat()), buf.readDouble())
+            ParticleSeed(StreamCodecs.readVec(buf).toCore(), Color.of(buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat()), buf.readDouble(),
+                if (buf.readBoolean()) StreamCodecs.readVec(buf).toCore() else null)
         }
         val recipe = ParticleRecipe(seeds, buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean(),
             readNumbers(buf), readNumbers(buf), readStrings(buf), readStrings(buf), readStrings(buf),
@@ -115,6 +120,7 @@ internal object RecipeCodec {
         } else {
             null
         }
+        val spacing = buf.readDouble()
         val maxRules = if (allowChildren) RecipeEmission.MAX_RULES else 0
         val emissions = List(count(buf, maxRules)) {
             val event = ParticleEvent.entries[count(buf, ParticleEvent.entries.lastIndex)]
@@ -129,6 +135,7 @@ internal object RecipeCodec {
             friction = friction,
             subEmit = subEmit,
             emissions = emissions,
+            spacing = spacing,
         )
     }
 

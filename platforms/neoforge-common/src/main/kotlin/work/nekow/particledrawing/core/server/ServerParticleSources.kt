@@ -33,6 +33,7 @@ internal object ServerParticleSources {
 
     fun start(level: ServerLevel, recipe: ParticleRecipe, anchor: RecipeAnchor, burst: Boolean): UUID {
         recipe.validate()
+        RecipeRuntime.requireCadence(recipe, burst)
         requireLocalized(entries.size < 256) { translation("error.recipe.active_limit") }
         val id = UUID.randomUUID()
         val entry = Entry(ParticleUtils.dimensionUUID(level), freeze(recipe), anchor, burst)
@@ -44,6 +45,7 @@ internal object ServerParticleSources {
     fun update(id: UUID, recipe: ParticleRecipe, level: ServerLevel) {
         recipe.validate()
         val e = requireNotNullLocalized(entries[id]) { translation("error.recipe.ended") }
+        RecipeRuntime.requireCadence(recipe, e.burst)
         requireLocalized(e.recipe.state.keys == recipe.state.keys) { translation("error.recipe.state_change") }
         e.updated(recipe)
         e.recipe = freeze(recipe)

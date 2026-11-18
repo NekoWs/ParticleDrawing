@@ -19,7 +19,7 @@ data class RecipeEmission(
             translation("error.recipe.event_contact")
         }
         requireLocalized(child.emissions.isEmpty() && child.subEmit == null && child.lifetime in 1..MAX_CHILD_LIFETIME &&
-            child.seeds.size <= MAX_CHILD_SEEDS && !child.follow && child.orbit.isBlank()) {
+            child.seeds.size <= MAX_CHILD_SEEDS && child.spacing == 0.0 && !child.follow && child.orbit.isBlank()) {
             translation("error.recipe.event_child", MAX_CHILD_SEEDS, MAX_CHILD_LIFETIME)
         }
         child.validate()

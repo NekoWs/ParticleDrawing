@@ -51,9 +51,9 @@ class ParticleImageSamplingTest {
     @Test fun `路径不会越过图片根目录`() {
         val root = Files.createTempDirectory("pd-image-path")
         try {
-            assertEquals(root.resolve("a.png"), CommandParticleRecipes.safeImagePath(root, "a.png"))
-            assertFailsWith<IllegalArgumentException> { CommandParticleRecipes.safeImagePath(root, "../outside.png") }
-            assertFailsWith<IllegalArgumentException> { CommandParticleRecipes.safeImagePath(root, root.resolve("a.png").toString()) }
+            assertEquals(root.resolve("a.png"), CommandParticleRecipes.safeAssetPath(root, "a.png"))
+            assertFailsWith<IllegalArgumentException> { CommandParticleRecipes.safeAssetPath(root, "../outside.png") }
+            assertFailsWith<IllegalArgumentException> { CommandParticleRecipes.safeAssetPath(root, root.resolve("a.png").toString()) }
         } finally { Files.delete(root) }
     }
 

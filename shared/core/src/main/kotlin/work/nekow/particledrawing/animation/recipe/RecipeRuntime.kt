@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.animation.recipe
 
+import work.nekow.particledrawing.animation.emitter.DistanceAdvance
 import work.nekow.particledrawing.animation.script.Reg
 import work.nekow.particledrawing.api.ParticleEvent
 import work.nekow.particledrawing.api.RecipeEmission
@@ -56,6 +57,9 @@ class RecipeRuntime(
     private val triggers = arrayListOf<Trigger>()
     internal val events: List<Trigger> get() = triggers
     private val listens = BooleanArray(ParticleEvent.entries.size)
+    private var distance = distanceAdvance(recipe)
+    private var previousOrigin: Vec3? = null
+    private val spawnPositions = arrayListOf<Vec3>()
     var ticks = 0L
         private set
     var cursor = 0L
@@ -80,15 +84,21 @@ class RecipeRuntime(
     private var checkNames: Array<String> = arrayOf()
 
     init {
+        requireCadence(recipe, burst)
         rebuildLayout()
     }
 
     fun update(next: ParticleRecipe) {
         next.validate()
+        requireCadence(next, burst)
         requireLocalized(next.state.keys == recipe.state.keys) { translation("error.recipe.state_change") }
         val ordered = next.copy(state = recipe.state.keys.associateWith(next.state::getValue))
         val compiled = RecipeExpressions(ordered, preferFast)
         if (next.emissions != recipe.emissions) for (particle in particles) particle.triggered = 0
+        if (recipe.spacing != ordered.spacing) {
+            distance = distanceAdvance(ordered)
+            previousOrigin = null
+        }
         recipe = ordered
         expressions = compiled
         inputs = RecipeInputReader(compiled, world)
@@ -152,19 +162,45 @@ class RecipeRuntime(
         if (listens[ParticleEvent.DEATH.ordinal]) for (particle in removed) {
             trigger(ParticleEvent.DEATH, particle, frameOf(particle))
         }
-        if (emitting && frame != null && ticks % recipe.interval == 0L) {
-            var attempt = 0
-            while (attempt < recipe.rate) {
-                if (!emitting || particles.size >= recipe.maxAlive) break
-                val seed = recipe.seeds[(cursor % recipe.seeds.size).toInt()]
-                spawn(seed, frame)
-                cursor++
-                if (burst && cursor >= recipe.seeds.size) emitting = false
-                attempt++
-            }
-        }
+        if (emitting) emitScheduled(frame)
         ticks++
     }
+
+    private fun emitScheduled(frame: RecipeFrame?) {
+        if (frame == null) {
+            previousOrigin = null
+            distance?.reset()
+            return
+        }
+        val cadence = distance
+        if (cadence == null) {
+            if (ticks % recipe.interval == 0L) emitBatch(frame, recipe.rate)
+            return
+        }
+        val previous = previousOrigin
+        previousOrigin = frame.origin
+        if (previous == null || previous.distanceToSqr(frame.origin) > MAX_EMISSION_STEP * MAX_EMISSION_STEP) {
+            cadence.reset()
+            return
+        }
+
+        spawnPositions.clear()
+        cadence.advance(previous, frame.origin, spawnPositions, ParticleRecipe.MAX_RATE / recipe.rate)
+        for (position in spawnPositions) emitBatch(frame.at(position), recipe.rate, frame)
+    }
+
+    private fun emitBatch(frame: RecipeFrame, attempts: Int, followerFrame: RecipeFrame = frame) {
+        repeat(attempts) {
+            if (!emitting || particles.size >= recipe.maxAlive) return
+            val seed = recipe.seeds[(cursor % recipe.seeds.size).toInt()]
+            spawn(seed, frame, followerFrame = followerFrame)
+            cursor++
+            if (burst && cursor >= recipe.seeds.size) emitting = false
+        }
+    }
+
+    private fun distanceAdvance(recipe: ParticleRecipe) =
+        recipe.spacing.takeIf { it > 0.0 }?.let(::DistanceAdvance)
 
     /** 在事件位置尝试一轮样本。调用方负责总预算，现存粒子照常推进。 */
     internal fun emitAt(frame: RecipeFrame, event: EventInput, budget: Int): Int {
@@ -178,7 +214,9 @@ class RecipeRuntime(
         return attempts
     }
 
-    private fun spawn(seed: ParticleSeed, frame: RecipeFrame, event: EventInput? = null) {
+    private fun spawn(
+        seed: ParticleSeed, frame: RecipeFrame, event: EventInput? = null, followerFrame: RecipeFrame = frame,
+    ) {
         val fast = expressions.fast
         val regs = fast?.newRegs() ?: DoubleArray(regSize())
         initRegs(regs, seed, cursor)
@@ -190,8 +228,19 @@ class RecipeRuntime(
         if (world != null && recipe.follow && recipe.collision != RecipeCollision.NONE) {
             particle.previousWorldPosition = frame.position(particle.x, particle.y, particle.z)
         }
-        particles += particle
         if (listens[ParticleEvent.BIRTH.ordinal]) trigger(ParticleEvent.BIRTH, particle, frame)
+        if (recipe.follow && followerFrame !== frame) {
+            val worldPosition = frame.position(particle.x, particle.y, particle.z)
+            val local = followerFrame.localPosition(worldPosition)
+            regs[Reg.X] = local.x
+            regs[Reg.Y] = local.y
+            regs[Reg.Z] = local.z
+            regs[RecipeExpressions.DX] = local.x
+            regs[RecipeExpressions.DY] = local.y
+            regs[RecipeExpressions.DZ] = local.z
+            particle.initialPosition = local
+        }
+        particles += particle
     }
 
     private fun inputFrame(particle: Particle): RecipeFrame? =
@@ -474,6 +523,11 @@ class RecipeRuntime(
 
     companion object {
         private const val MAX_EVENTS_PER_TICK = 64
+        private const val MAX_EMISSION_STEP = 64.0
+
+        internal fun requireCadence(recipe: ParticleRecipe, burst: Boolean) {
+            requireLocalized(!burst || recipe.spacing == 0.0) { translation("error.recipe.distance_burst") }
+        }
 
         /** 假定全部样本通过，计入存活上限和发射间隔，给服务端一个安全回收上界。 */
         fun retirementBudget(r: ParticleRecipe): Long {

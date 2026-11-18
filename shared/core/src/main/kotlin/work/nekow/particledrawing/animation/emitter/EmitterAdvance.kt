@@ -22,7 +22,9 @@ internal class DistanceAdvance(private val spacing: Double) {
     private var carry = 0.0
 
     /** 沿 [from] → [to] 推进，返回本帧要发射的位置（0..n 个，按先后顺序）。 */
-    fun advance(from: Vec3, to: Vec3, out: MutableList<Vec3>) {
+    fun reset() { carry = 0.0 }
+
+    fun advance(from: Vec3, to: Vec3, out: MutableList<Vec3>, limit: Int = Int.MAX_VALUE) {
         val dx = to.x - from.x
         val dy = to.y - from.y
         val dz = to.z - from.z
@@ -37,14 +39,14 @@ internal class DistanceAdvance(private val spacing: Double) {
         // 本段里第一颗的位置：距段起点 (spacing - carry) 格，之后每 spacing 格一颗
         var offset = spacing - carry
         var emitted = 0
-        while (offset <= dist) {
+        while (offset <= dist && emitted < limit) {
             val f = offset / dist
             out.add(Vec3(from.x + dx * f, from.y + dy * f, from.z + dz * f))
             emitted++
             offset += spacing
         }
         // 余下的里程留到下一帧，恒 < spacing
-        carry = total - emitted * spacing
+        carry = if (offset <= dist) total % spacing else (total - emitted * spacing).coerceIn(0.0, spacing)
     }
 }
 

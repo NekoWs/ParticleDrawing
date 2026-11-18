@@ -421,6 +421,8 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 | `image spacing <格数>` | 原始像素的世界间距 |
 | `image alpha <阈值>` | 透明像素筛选阈值，0..1 |
 | `image plane xy\|xz\|yz` | 图片所在平面 |
+| `mesh file <路径>` / `mesh resource <ID>` | 以三角化 OBJ 为采样源，文件在 `particleMeshes/` 内 |
+| `mesh count <数量>` / `mesh seed <整数>` | 采样数量和种子；按三角面面积抽样 |
 | `variable <名称> <数值>` | 可热更新的数值输入，适合多条命令控制同一效果 |
 | `state <名称> <初值>` | 每颗粒子独立保存的状态 |
 | `let <名称> <公式>` | 中间计算量，按声明顺序求值 |
@@ -468,6 +470,19 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 需要多步计算时使用多条 `let`；`let` 可以保留数值、布尔、向量和矩阵，后续公式按 `.x/.y/.z` 取分量。
 `where` 在出生公式之后求值，用 `sx/sy/sz` 可以回到原始采样坐标；用 `x/y/z` 则看出生后的位置。
 
+#### 从模型表面发射
+
+文件放入服务端工作目录的 `particleMeshes/`，或作为数据包资源提供。OBJ 需要先三角化。
+模型坐标以格为单位，粒子按三角面面积分布。`sample_nx/ny/nz` 是采样面的模型局部法线，
+非网格样本的三个分量为 0。命令、Kotlin 和 Java 共用 `ParticleMeshSampler`。
+
+```mcfunction
+pdraw particle emitter shell mesh file shell.obj
+pdraw particle emitter shell mesh count 256
+pdraw particle emitter shell mesh seed 42
+pdraw particle emitter shell birth velocity vec3(sample_nx*0.1,sample_ny*0.1,sample_nz*0.1)
+```
+
 #### 让发射器沿轨迹移动
 
 `orbit` 给锚点叠一条按时间求值的偏移，发射器原点就会动起来；已出生的粒子留在出生位置，
@@ -485,6 +500,8 @@ pdraw particle emitter trail start
 ```
 
 上面这段让发射器沿半径 4 的圆匀速绕行，每刻发一颗，留下一条圆环。
+
+用 `spacing 0.5` 搭配 `start`，可让锚点每走 0.5 格发射一批。出生公式以实际经过的路点为锚点，可继续组合参数、图片或网格采样。锚点丢失或单刻跳变超过 64 格时清空剩余里程。每个配方每刻最多尝试发射 1024 颗，超出时后续从当前锚点继续。
 
 #### 子发射
 
@@ -653,7 +670,8 @@ pdraw particle emitter shell apply
 | `emitter <名称> remove` | 立即清除该配置产生的全部实例，保留配置 |
 | `emitter <名称> delete` | 清除实例并删除配置 |
 | `emitter <名称> lifetime <刻数>` | 每颗寿命，默认 80，1..72000；显式 -1 为无限 |
-| `emitter <名称> rate <数量>` / `interval <刻数>` | 每隔 interval 刻尝试出生 rate 颗 |
+| `emitter <名称> rate <数量>` / `interval <刻数>` | 按时间发射时，每隔 interval 刻尝试出生 rate 颗 |
+| `emitter <名称> spacing <0 或 0.05..64>` | 锚点每移动指定距离尝试出生 rate 颗；0 恢复按时间发射 |
 | `emitter <名称> max_alive <数量>` | 单个播放实例的同时存活上限 |
 
 出生、运动、变量、let、条件、寿命、速率和锚点支持热更新，保留现存粒子的年龄与状态。

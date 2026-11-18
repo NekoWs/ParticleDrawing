@@ -80,11 +80,16 @@ internal object ParticleRecipeCommands {
         name.then(anchorTree())
         name.then(sampleTree())
         name.then(imageTree())
+        name.then(meshTree())
         name.then(eventTree())
         for (key in listOf("rate", "interval", "lifetime", "max_alive")) name.then(Commands.literal(key)
             .then(Commands.argument("value", IntegerArgumentType.integer()).executes { ctx -> configure(ctx) { d ->
                 val v = IntegerArgumentType.getInteger(ctx, "value")
                 d.update(when (key) { "rate" -> d.recipe.copy(rate = v); "interval" -> d.recipe.copy(interval = v); "lifetime" -> d.recipe.copy(lifetime = v); else -> d.recipe.copy(maxAlive = v) })
+            } }))
+        name.then(Commands.literal("spacing").then(Commands.argument("distance", DoubleArgumentType.doubleArg(0.0, ParticleRecipe.MAX_SPACING))
+            .executes { ctx -> configure(ctx) { d ->
+                d.update(d.recipe.copy(spacing = DoubleArgumentType.getDouble(ctx, "distance")))
             } }))
         name.then(Commands.literal("follow").then(Commands.argument("enabled", BoolArgumentType.bool()).executes { ctx -> configure(ctx) { d -> d.update(d.recipe.copy(follow = BoolArgumentType.getBool(ctx, "enabled"))) } }))
 
@@ -270,10 +275,7 @@ internal object ParticleRecipeCommands {
     }
 
     private fun imageTree(): LiteralArgumentBuilder<CommandSourceStack> {
-        val root = Commands.literal("image")
-        for (kind in listOf("file", "resource")) root.then(Commands.literal(kind).then(Commands.argument("path", ParticleCommandArguments.textType()).executes { ctx -> sampleConfig(ctx) { d ->
-            d.sampling = CommandParticleRecipes.Sampling.IMAGE; d.image = ParticleCommandArguments.text(word(ctx, "path")); d.imageResource = kind == "resource"
-        } }))
+        val root = samplingAssetTree("image", CommandParticleRecipes.Sampling.IMAGE) { draft, asset -> draft.image = asset }
         root.then(Commands.literal("stride").then(Commands.argument("stride", IntegerArgumentType.integer(1, 256)).executes { ctx -> sampleConfig(ctx) { d -> d.imageOptions = d.imageOptions.copy(stride = IntegerArgumentType.getInteger(ctx, "stride")) } }))
         for (key in listOf("spacing", "alpha")) root.then(Commands.literal(key).then(Commands.argument("value", DoubleArgumentType.doubleArg()).executes { ctx -> sampleConfig(ctx) { d ->
             val v = DoubleArgumentType.getDouble(ctx, "value")
@@ -284,6 +286,31 @@ internal object ParticleRecipeCommands {
             .executes { ctx -> sampleConfig(ctx) { d -> d.imageOptions = d.imageOptions.copy(plane = ParticleImageSampler.Plane.valueOf(word(ctx, "plane").uppercase(Locale.ROOT))) } }))
         return root
     }
+
+    private fun samplingAssetTree(
+        name: String, sampling: CommandParticleRecipes.Sampling,
+        assign: (CommandParticleRecipes.Draft, CommandParticleRecipes.SampleAsset) -> Unit,
+    ): LiteralArgumentBuilder<CommandSourceStack> {
+        val root = Commands.literal(name)
+        for (kind in listOf("file", "resource")) {
+            root.then(Commands.literal(kind).then(Commands.argument("path", ParticleCommandArguments.textType())
+                .executes { ctx -> sampleConfig(ctx) { draft ->
+                    val path = ParticleCommandArguments.text(word(ctx, "path"))
+                    assign(draft, CommandParticleRecipes.SampleAsset(path, kind == "resource"))
+                    draft.sampling = sampling
+                } }))
+        }
+        return root
+    }
+
+    private fun meshTree(): LiteralArgumentBuilder<CommandSourceStack> =
+        samplingAssetTree("mesh", CommandParticleRecipes.Sampling.MESH) { draft, asset -> draft.mesh = asset }
+            .then(Commands.literal("count")
+                .then(Commands.argument("count", IntegerArgumentType.integer(1, ParticleRecipe.MAX_SEEDS))
+                    .executes { ctx -> sampleConfig(ctx) { it.meshCount = IntegerArgumentType.getInteger(ctx, "count") } }))
+            .then(Commands.literal("seed")
+                .then(Commands.argument("seed", IntegerArgumentType.integer())
+                    .executes { ctx -> sampleConfig(ctx) { it.meshSeed = IntegerArgumentType.getInteger(ctx, "seed") } }))
 
     private fun appearance(d: CommandParticleRecipes.Draft, key: String, value: String) {
         requireLocalized(key in ParticleCommandOptionParser.appearanceKeys) { translation("error.recipe.appearance_key", key) }

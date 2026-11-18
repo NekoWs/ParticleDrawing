@@ -49,6 +49,8 @@ function pdraw_test:subemit-burst
 function pdraw_test:rain-contact
 ```
 
+运行 `mesh-surface` 前，把 [mesh-surface.obj](mesh-surface.obj) 放入服务端工作目录的 `particleMeshes/`，再执行 `function pdraw_test:mesh-surface`。
+
 在聊天栏执行时加前缀 `/`。锚点相对函数执行位置，命令方块执行时可以用
 `execute positioned ~ ~2 ~ run function ...` 调整整幅图形的位置。
 执行 `function pdraw_test:clear` 可以清除所有示例粒子并重置对应配置。

@@ -8,7 +8,12 @@ import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.translation
 
 /** 一颗出生样本；位置是锚点相对坐标，颜色可来自图片像素。 */
-data class ParticleSeed(val position: Vec3, val color: Color = Color.WHITE, val u: Double = 0.0)
+data class ParticleSeed(
+    val position: Vec3,
+    val color: Color = Color.WHITE,
+    val u: Double = 0.0,
+    val normal: Vec3? = null,
+)
 
 /**
  * 子发射：粒子正常死亡时在原地炸出一批短寿命粒子。
@@ -94,10 +99,15 @@ data class ParticleRecipe(
     /** 子发射；null = 死亡后什么都不留。 */
     val subEmit: SubEmit? = null,
     val emissions: List<RecipeEmission> = emptyList(),
+    /** 每走多少格执行一次发射；0 时按 [interval] 刻发射。 */
+    val spacing: Double = 0.0,
 ) {
     fun validate() {
         requireLocalized(seeds.isNotEmpty() && seeds.size <= MAX_SEEDS) { translation("error.recipe.seed_count", MAX_SEEDS) }
         requireLocalized(rate in 1..MAX_RATE && interval in 1..72000) { translation("error.recipe.cadence", MAX_RATE) }
+        requireLocalized(spacing == 0.0 || spacing in MIN_SPACING..MAX_SPACING) {
+            translation("error.recipe.spacing", MIN_SPACING, MAX_SPACING)
+        }
         requireLocalized(lifetime == -1 || lifetime in 1..MAX_LIFETIME) { translation("error.recipe.lifetime", MAX_LIFETIME) }
         requireLocalized(maxAlive in 1..MAX_SEEDS) { translation("error.recipe.max_alive", MAX_SEEDS) }
         requireLocalized(listOf(variables, state, lets, birth, motion).all { it.size <= MAX_FIELDS }) { translation("error.recipe.fields_limit", MAX_FIELDS) }
@@ -106,6 +116,9 @@ data class ParticleRecipe(
         requireLocalized(friction in 0.0..1.0) { translation("error.recipe.friction") }
         for (s in seeds) {
             requireLocalized(listOf(s.position.x, s.position.y, s.position.z, s.u).all(Double::isFinite)) { translation("error.recipe.seed_finite") }
+            s.normal?.let { normal ->
+                requireLocalized(listOf(normal.x, normal.y, normal.z).all(Double::isFinite)) { translation("error.mesh.finite") }
+            }
             requireLocalized(listOf(s.color.r, s.color.g, s.color.b, s.color.a).all { it.isFinite() && it in 0f..1f }) { translation("error.recipe.seed_color") }
         }
         subEmit?.validate()
@@ -117,6 +130,8 @@ data class ParticleRecipe(
     companion object {
         const val MAX_SEEDS = 8192
         const val MAX_RATE = 1024
+        const val MIN_SPACING = 0.05
+        const val MAX_SPACING = 64.0
         const val MAX_LIFETIME = 72000
         const val MAX_FIELDS = 32
         const val MAX_EXPRESSION = 2048

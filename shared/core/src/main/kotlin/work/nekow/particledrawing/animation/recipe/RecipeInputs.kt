@@ -27,6 +27,9 @@ internal enum class RecipeInput(val key: String, val worldField: ParticleWorldFi
     ENTITY_X("entity_dx", ParticleWorldField.NEAREST_ENTITY),
     ENTITY_Y("entity_dy", ParticleWorldField.NEAREST_ENTITY),
     ENTITY_Z("entity_dz", ParticleWorldField.NEAREST_ENTITY),
+    SURFACE_NX("sample_nx"),
+    SURFACE_NY("sample_ny"),
+    SURFACE_NZ("sample_nz"),
     EVENT_X("event_x"),
     EVENT_Y("event_y"),
     EVENT_Z("event_z"),
@@ -39,7 +42,7 @@ internal enum class RecipeInput(val key: String, val worldField: ParticleWorldFi
 
     val needsWorld: Boolean get() = worldField != null || this == WORLD_LOADED
 
-    fun read(position: Vec3, sample: ParticleWorldSample, event: EventInput?): Double = when (this) {
+    fun read(position: Vec3, sample: ParticleWorldSample, event: EventInput?, normal: Vec3?): Double = when (this) {
         WORLD_X -> position.x
         WORLD_Y -> position.y
         WORLD_Z -> position.z
@@ -56,6 +59,9 @@ internal enum class RecipeInput(val key: String, val worldField: ParticleWorldFi
         ENTITY_X -> sample.nearestEntity?.x ?: 0.0
         ENTITY_Y -> sample.nearestEntity?.y ?: 0.0
         ENTITY_Z -> sample.nearestEntity?.z ?: 0.0
+        SURFACE_NX -> normal?.x ?: 0.0
+        SURFACE_NY -> normal?.y ?: 0.0
+        SURFACE_NZ -> normal?.z ?: 0.0
         EVENT_X -> event?.position?.x ?: 0.0
         EVENT_Y -> event?.position?.y ?: 0.0
         EVENT_Z -> event?.position?.z ?: 0.0
@@ -87,7 +93,7 @@ internal class RecipeInputReader(
         if (inputs.isEmpty()) return
         val position = frame?.position(particle.x, particle.y, particle.z) ?: Vec3.ZERO
         val sample = if (needsWorld && frame != null) world?.sample(position, fields) ?: unavailable else unavailable
-        for ((input, slot) in inputs) particle.regs[slot] = input.read(position, sample, particle.event)
+        for ((input, slot) in inputs) particle.regs[slot] = input.read(position, sample, particle.event, particle.seed.normal)
     }
 
     fun copyInputs(particle: RecipeRuntime.Particle, into: MutableMap<String, Double>) {
