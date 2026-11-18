@@ -9,6 +9,7 @@ import work.nekow.particledrawing.platform.toMinecraft
 import net.minecraft.client.Minecraft
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.recipe.RecipeRuntime
+import work.nekow.particledrawing.api.VelocityStretch
 import work.nekow.particledrawing.api.RecipeAnchor
 import work.nekow.particledrawing.core.network.ParticleRecipePayload
 import work.nekow.particledrawing.core.network.RecipeOperation
@@ -106,6 +107,20 @@ internal object ClientParticleSources {
                 engine.markSpawnedDuringRender(id, 0f)
                 member = Member(id, frame, look)
                 e.members[p] = member
+            }
+            // 速度拉丝：长轴对齐速度并按速度拉长，逐刻改写这颗粒子独占的朝向与尺寸副本。
+            if (member.visual.alignVelocity) {
+                val vx = p.regs[slots.slot("vx")]
+                val vy = p.regs[slots.slot("vy")]
+                val vz = p.regs[slots.slot("vz")]
+                if (VelocityStretch.spinDegrees(vx, vy, vz, member.visual.spin)) {
+                    val speed = kotlin.math.sqrt(vx * vx + vy * vy + vz * vz)
+                    val factor = VelocityStretch.lengthFactor(speed, member.visual.stretch)
+                    member.visual.scaleArray?.let {
+                        it[0] = factor.toFloat()
+                        it[1] = (1.0 / factor).toFloat()
+                    }
+                }
             }
             val current = if (e.runtime.recipe.follow) frame ?: member.frame else member.frame
             current.applyInto(p.x, p.y, p.z, posOut)

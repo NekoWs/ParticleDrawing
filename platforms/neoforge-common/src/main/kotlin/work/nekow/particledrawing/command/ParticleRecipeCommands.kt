@@ -259,5 +259,5 @@ internal object ParticleRecipeCommands {
     private fun help(ctx: CommandContext<CommandSourceStack>) = success(ctx,
         translation("command.recipe.usage"))
 
-    private val APPEARANCE = setOf("texture", "style", "color", "scale", "uv", "size", "size_world", "billboard", "spin", "spin_space", "additive", "glowing", "light", "light_only", "intensity", "spot", "light_dir", "light_range", "light_falloff", "alpha_curve", "size_curve", "red_curve", "green_curve", "blue_curve", "light_curve")
+    private val APPEARANCE = setOf("texture", "style", "color", "scale", "uv", "size", "size_world", "billboard", "spin", "spin_space", "additive", "glowing", "light", "light_only", "intensity", "spot", "light_dir", "light_range", "light_falloff", "alpha_curve", "size_curve", "red_curve", "green_curve", "blue_curve", "light_curve", "align_velocity", "stretch")
 }

@@ -84,6 +84,17 @@ class ParticleVisual {
      */
     var lightShape: LightShape? = null
 
+    /**
+     * 长轴自动对齐速度并按速度拉长，用于火花、雨线、彗尾这类「拉丝」效果。
+     *
+     * 对齐必须关掉广告牌：四边形的朝向由速度决定，不能再被相机覆盖。
+     * 需要各向异性尺寸才有「长轴」，所以打开时同时保证有一颗可写尺寸。
+     */
+    var alignVelocity: Boolean = false
+
+    /** 拉丝强度：长度系数 = 1 + stretch × 速度（格/刻），0 表示只对齐不拉长。 */
+    var stretch: Double = 0.6
+
     /** 配置对外照明的形状。null 清除显式形状。 */
     fun lightShape(shape: LightShape?): ParticleVisual = apply { lightShape = shape?.validated() }
 
@@ -250,6 +261,8 @@ class ParticleVisual {
         c.lightOnly = lightOnly
         c.lightIntensity = lightIntensity
         c.lightShape = lightShape
+        c.alignVelocity = alignVelocity
+        c.stretch = stretch
         return c
     }
 
@@ -262,7 +275,8 @@ class ParticleVisual {
      */
     fun isPristine(): Boolean = texture == null && uvRect == null && !hasAniso() &&
         billboard && spinXDeg == 0.0 && spinYDeg == 0.0 && spinZDeg == 0.0 && spinLocal &&
-        !additive && !glowing && !emitsLight && !lightOnly && lightIntensity == 1f && lightShape == null
+        !additive && !glowing && !emitsLight && !lightOnly && lightIntensity == 1f && lightShape == null &&
+        !alignVelocity
 
     /**
      * 解析成渲染用的 UV，由客户端调用。[texW]/[texH] 是已注册贴图的像素尺寸，未知传 0。

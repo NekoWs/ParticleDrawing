@@ -44,7 +44,7 @@ internal object ParticleCommandOptionParser {
         "thickness", "style", "texture", "uv", "size", "size_world", "billboard", "spin", "spin_space",
         "additive", "glowing", "light", "light_only", "intensity", "alpha_curve", "size_curve", "red_curve",
         "green_curve", "blue_curve", "light_curve", "velocity", "force", "force_ticks",
-        "spot", "light_dir", "light_range", "light_falloff",
+        "spot", "light_dir", "light_range", "light_falloff", "align_velocity", "stretch",
     )
 
     fun parse(input: String): ParticleCommandOptions {

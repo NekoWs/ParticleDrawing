@@ -28,6 +28,7 @@ internal object ParticleVisualCodec {
     private const val FLAG_EMITS_LIGHT = 1 shl 10
     private const val FLAG_LIGHT_ONLY = 1 shl 11
     private const val FLAG_LIGHT_SHAPE = 1 shl 12
+    private const val FLAG_ALIGN_VELOCITY = 1 shl 13
 
     fun write(buf: FriendlyByteBuf, visual: ParticleVisual?) {
         if (visual == null) {
@@ -59,6 +60,7 @@ internal object ParticleVisualCodec {
         if (visual.emitsLight) flags = flags or FLAG_EMITS_LIGHT
         if (visual.lightOnly) flags = flags or FLAG_LIGHT_ONLY
         if (visual.lightShape != null) flags = flags or FLAG_LIGHT_SHAPE
+        if (visual.alignVelocity) flags = flags or FLAG_ALIGN_VELOCITY
 
         buf.writeVarInt(flags)
         if (flags == 0) return
@@ -80,6 +82,7 @@ internal object ParticleVisualCodec {
         }
         if (visual.lightIntensity != 1f) buf.writeFloat(visual.lightIntensity)
         visual.lightShape?.let { writeLightShape(buf, it) }
+        if (visual.alignVelocity) buf.writeFloat(visual.stretch.toFloat())
     }
 
     fun read(buf: FriendlyByteBuf): ParticleVisual? {
@@ -118,6 +121,10 @@ internal object ParticleVisualCodec {
         visual.emitsLight = flags and FLAG_EMITS_LIGHT != 0
         visual.lightOnly = flags and FLAG_LIGHT_ONLY != 0
         if (flags and FLAG_LIGHT_SHAPE != 0) visual.lightShape = readLightShape(buf)
+        if (flags and FLAG_ALIGN_VELOCITY != 0) {
+            visual.alignVelocity = true
+            visual.stretch = buf.readFloat().toDouble()
+        }
         return visual
     }
 
