@@ -33,9 +33,9 @@ class ClientParticleEngine {
     // 动画本地播放直接同步的粒子：跳过 frameUpdate 的缓动轮转
     private val takeover = ParticleTakeover()
 
-    // 会发光的粒子索引（lightLevel > 0）：增量维护。动态光照每帧只扫这一批，
-    // 不再像以前那样遍历全部粒子；名字按用途叫 lightIds，别和「全亮渲染」混淆。
-    private val lightIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
+    // 会发光的粒子索引（lightLevel > 0）：增量维护，规则与集合在 ParticleLightIndex 里。
+    // 动态光照每帧只扫这一批，不再遍历全部粒子；别和「全亮渲染」混淆。
+    private val lightIndex = ParticleLightIndex()
 
     // 带速度的运动粒子索引：每 client tick 确定性积分一次，不参与缓动轮转
     private val motionIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
@@ -104,7 +104,7 @@ class ClientParticleEngine {
         rp.captureSpawnSize()
         rp.markBorn(tickSequence)
         particles[id] = rp
-        if (lightsUp(glowing, emits || lightShape != null, lightLevel)) lightIds.add(id)
+        if (lightsUp(glowing, emits || lightShape != null, lightLevel)) lightIndex.add(id)
         if (lifeCurve != null && !lifeCurve.isEmpty()) curveIds.add(id)
 
         val pe: ParticleEngine = Minecraft.getInstance().particleEngine
@@ -228,7 +228,7 @@ class ClientParticleEngine {
         val particle = particles[id] ?: return
         val wasLight = lightsUp(particle)
         particle.setScriptLight(shape, intensity)
-        refreshLightIndex(id, wasLight, lightsUp(particle))
+        lightIndex.refresh(id, wasLight, lightsUp(particle))
     }
 
     /** 动画求值后的 UV 同步到已有粒子，保留当前的出生与换帧时钟。 */
@@ -255,7 +255,7 @@ class ClientParticleEngine {
         if (scaleArray != null) rp.setScaleArrayDirect(scaleArray) else rp.setScaleDirect(scale)
         rp.setGlowing(glowing)
         rp.setLightLevel(lightLevel)
-        refreshLightIndex(id, wasLight, lightsUp(glowing, rp.emitsLight(), lightLevel))
+        lightIndex.refresh(id, wasLight, lightsUp(glowing, rp.emitsLight(), lightLevel))
         bridges[id]?.let {
             it.syncPosition(pos.x, pos.y, pos.z, snap)
             it.syncColor(color.r, color.g, color.b, color.a)
@@ -383,24 +383,9 @@ class ClientParticleEngine {
         val rp = particles[id] ?: return
         val wasLight = lightsUp(rp)
         rp.setLightLevel(level)
-        refreshLightIndex(id, wasLight, lightsUp(rp))
+        lightIndex.refresh(id, wasLight, lightsUp(rp))
     }
 
-    /**
-     * 「会发光」的判定只有这一处：全亮或显式发光，且光照等级 > 0。
-     * 动态光照索引与各处状态更新都按它走，避免三份条件各写一遍后漂移。
-     */
-    private fun lightsUp(glowing: Boolean, emitsLight: Boolean, lightLevel: Int): Boolean =
-        (glowing || emitsLight) && lightLevel > 0
-
-    private fun lightsUp(rp: RenderParticle): Boolean =
-        lightsUp(rp.glowing(), rp.emitsLight(), rp.lightLevel())
-
-    /** 状态变化后维持 [lightIds] 索引；只有判定结果翻转才动集合。 */
-    private fun refreshLightIndex(id: UUID, wasLight: Boolean, nowLight: Boolean) {
-        if (wasLight == nowLight) return
-        if (nowLight) lightIds.add(id) else lightIds.remove(id)
-    }
 
     internal fun setLightShape(
         id: UUID, shape: LightShape?, part: LightShapePart, durationTicks: Int, easing: EasingType,
@@ -408,7 +393,7 @@ class ClientParticleEngine {
         val rp = particles[id] ?: return
         val wasLight = lightsUp(rp)
         rp.applyLightShape(shape, part, durationTicks * 50L, easing)
-        refreshLightIndex(id, wasLight, lightsUp(rp))
+        lightIndex.refresh(id, wasLight, lightsUp(rp))
     }
 
     /**
@@ -437,7 +422,7 @@ class ClientParticleEngine {
         ClientAnimationProgramManager.onParticleRemoved(id)
         bridges.remove(id)?.remove()
         takeover.clear(id)
-        lightIds.remove(id)
+        lightIndex.remove(id)
         motionIds.remove(id)
         trackBuffers.remove(id)
         attachments.remove(id)
@@ -750,7 +735,7 @@ class ClientParticleEngine {
         bridges.clear()
         groups.clear()
         takeover.clearAll()
-        lightIds.clear()
+        lightIndex.clear()
         motionIds.clear()
         trackBuffers.clear()
         attachments.clear()
@@ -890,7 +875,7 @@ class ClientParticleEngine {
     }
 
     /** 当前有没有会发光的粒子；动态光照据此整段跳过，别为没有光的场面付收集成本。 */
-    fun hasLightEmitters(): Boolean = lightIds.isNotEmpty()
+    fun hasLightEmitters(): Boolean = !lightIndex.isEmpty
 
     /**
      * 所有发光粒子的列表（增量维护，不遍历全部粒子）。
@@ -898,8 +883,8 @@ class ClientParticleEngine {
      * 每渲染帧都要用的话改用 [lightEmittersInto]：它写进调用方的列表，不再每帧新建。
      */
     fun getGlowingParticles(): List<RenderParticle> {
-        if (lightIds.isEmpty()) return emptyList()
-        val glowing = ArrayList<RenderParticle>(lightIds.size)
+        if (lightIndex.isEmpty) return emptyList()
+        val glowing = ArrayList<RenderParticle>(lightIndex.size)
         lightEmittersInto(glowing)
         return glowing
     }
@@ -912,10 +897,10 @@ class ClientParticleEngine {
      */
     fun lightEmittersInto(out: MutableList<RenderParticle>) {
         out.clear()
-        if (lightIds.isEmpty()) return
-        for (id in lightIds) {
-            val p = particles[id] ?: continue
-            if (p.isAlive() || p.isExpiring()) out.add(p)
+        if (lightIndex.isEmpty) return
+        lightIndex.forEach { id ->
+            val p = particles[id]
+            if (p != null && (p.isAlive() || p.isExpiring())) out.add(p)
         }
     }
 
