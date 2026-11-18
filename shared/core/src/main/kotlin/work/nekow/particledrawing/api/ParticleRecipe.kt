@@ -2,6 +2,7 @@ package work.nekow.particledrawing.api
 
 import work.nekow.particledrawing.math.Vec3
 import work.nekow.particledrawing.animation.recipe.ParticleEntityQuery
+import work.nekow.particledrawing.animation.recipe.ParticleProbe
 import work.nekow.particledrawing.animation.recipe.RecipeCollision
 import work.nekow.particledrawing.animation.recipe.RecipeExpressions
 import java.util.UUID
@@ -107,6 +108,7 @@ data class ParticleRecipe(
     val collisionSteps: Int = 1,
     val entityQuery: ParticleEntityQuery = ParticleEntityQuery(),
     val neighborRadius: Double = 2.0,
+    val probe: ParticleProbe? = null,
 ) {
     fun validate() {
         requireLocalized(seeds.isNotEmpty() && seeds.size <= MAX_SEEDS) { translation("error.recipe.seed_count", MAX_SEEDS) }

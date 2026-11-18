@@ -114,6 +114,7 @@ pdraw particle program sine anchor entity @p 0 2 0 false
 | `spin=x,y,z`、`spin_space=local\|world` | 贴图欧拉角（度）及旋转空间 |
 | `align_velocity=true`、`stretch=0..10` | 朝位移方向拉长；只写 `stretch` 也启用对齐 |
 | `soft=0..4`、`trail=0..32` | 贴近方块碰撞面淡出的距离（格）、保留的拖尾长度（刻）；0 关闭 |
+| `trail_sides=0 或 3..12`、`model=资源ID` | 平面丝带或管状截面、实际三角网格外观 |
 | `additive`、`glowing`、`light=0..15`、`intensity=N`、`light_only` | 混合、全亮和动态光参数；`light_only` 只发光不画外观 |
 | `alpha_curve` / `size_curve` / `red_curve` 等 | `tick:value[:easing]`，多关键帧以逗号分隔 |
 | `lifetime=tick` | 所有图元：每颗粒子的存在刻数，未写时保留原来的无限寿命 |
@@ -473,6 +474,15 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 需要多步计算时使用多条 `let`；`let` 可以保留数值、布尔、向量和矩阵，后续公式按 `.x/.y/.z` 取分量。
 `where` 在出生公式之后求值，用 `sx/sy/sz` 可以回到原始采样坐标；用 `x/y/z` 则看出生后的位置。
 
+#### 以三维模型代替粒子四边形
+
+`appearance model particledrawing:builtin/octahedron` 使用内置八面体。`appearance billboard false` 让模型保留世界朝向；
+`appearance spin 25,35,0` 可设置自转，`appearance model none` 恢复四边形。
+
+也可指定客户端资源包中的三角化 OBJ，例如 `example:particle_models/shard.obj`，最多 128 个三角面。
+模型坐标会居中并归一化，粒子尺寸决定最终宽高；表面仍用粒子颜色、透明混合和光图。
+每个面使用粒子当前贴图的 UV 区域，OBJ 的材质和 UV 数据不参与绘制。
+
 #### 从模型表面发射
 
 文件放入服务端工作目录的 `particleMeshes/`，或作为数据包资源提供。OBJ 需要先三角化。
@@ -543,6 +553,11 @@ pdraw particle emitter sparks on clear
 
 绑定时复制子配方配置。子配方最多 64 个样本，寿命 1–1200 刻，用世界坐标轴，并从真实接触点法线外侧开始；每条规则共享子配方的 `max_alive`。客户端每刻尝试生成至多 256 颗事件粒子，超过预算的事件不会补发。子配方使用现有采样、筛选和公式，不再挂事件、自动子发射、跟随或轨道。事件公式可读 `event_x/y/z`（位置）、`event_nx/ny/nz`（接触法线）、`event_vx/vy/vz`（入射位移或生命周期事件时的速度）。位置、法线和速度均为世界坐标。
 
+可在接触规则末尾加 `decal <半宽>`，把子配方的外观投影到命中法线朝向的方块表面，例如
+`on contact scorch material "minecraft:stone" decal 0.6`。投影裁剪到实际方块碰撞形状，
+并在命中面法线方向的 ±0.6 格内跨平行的台阶面，每颗印记最多 64 个片段。建议子配方用一个样本，
+保持位置固定，用寿命和透明度控制消散。
+
 [雨滴与飞溅示例](../examples/commands/rain-contact.mcfunction)用世界条件筛选出生位置，在接触真实表面后执行溅水配方。
 
 #### 世界输入
@@ -557,6 +572,20 @@ pdraw particle emitter motes environment entity_radius 6
 pdraw particle emitter motes motion ax entity_dx*0.01
 pdraw particle emitter motes motion az entity_dz*0.01
 ```
+
+粒子可以在发生碰撞之前先探测前方。每次求值只查询一次首个命中，可探测方块、液体或实体。
+方向可使用配方坐标轴中的固定向量，也可沿粒子当前速度。范围为 0.01–32 格。
+
+```mcfunction
+pdraw particle emitter motes probe solid direction "0,0,1" 3 material minecraft:iron_block
+pdraw particle emitter motes motion r probe_matches
+pdraw particle emitter motes probe solid velocity 2
+```
+
+`probe_hit` 表示有命中。`probe_matches` 表示首个命中符合指定材质，未指定材质时与 `probe_hit` 相同。
+`probe_distance` 返回距离，未命中时返回配置的最大距离。`probe_nx/ny/nz` 是世界坐标下的命中法线，未命中时为 0。
+材质筛选只判断首个命中，其他表面仍会阻挡探测。沿速度探测时，静止粒子视为未命中。探测本身不会移动粒子。
+停用时先移除使用这些输入的公式，再执行 `probe off`。
 
 #### 在多个配方之间共享力场
 
@@ -580,7 +609,6 @@ Kotlin 和 Java 可用 `ParticleForceFields` 配置锚点、方向、距离衰�
 
 #### 碰撞与落地
 
-公式能算任意数学，但拿不到方块信息，所以「撞墙、落地」单独成一项配置。
 碰撞在客户端沿每刻的世界坐标线段查询方块或液体形状，停在首个碰撞面。锚点位移、局部旋转和公式
 显式写入的坐标都参与检测。开启碰撞后，单刻位移超过 64 格会报错。
 
@@ -606,7 +634,7 @@ pdraw particle emitter sparks start
 `bounce` 控制反射后的法线速度，`friction` 控制切向速度的保留比例。
 
 软粒子按粒子中心沿六个世界坐标轴到附近碰撞面的距离调整整颗粒子的透明度。拖尾复用粒子的贴图、颜色和
-混合模式，传送时从新落点重新记录。客户端 `maxParticleTrailQuads` 限制每帧拖尾四边形数，默认 200,000；耗尽后本帧继续绘制粒子本体。参见[软粒子示例](../examples/commands/soft-fade.mcfunction)和
+混合模式，传送时从新落点重新记录。客户端 `maxParticleGeometryQuads` 为拖尾和模型共用的每帧四边形预算，默认 200,000。参见[软粒子示例](../examples/commands/soft-fade.mcfunction)和
 [丝带示例](../examples/commands/ribbon-trail.mcfunction)。
 
 客户端配置 `particleLodDistance` 默认 `0`。设为正数后，该距离以内全量绘制，远处按距离平方反比

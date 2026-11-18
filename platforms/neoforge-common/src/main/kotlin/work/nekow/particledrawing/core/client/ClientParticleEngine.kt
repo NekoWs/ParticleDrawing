@@ -146,15 +146,20 @@ class ClientParticleEngine {
     internal fun spawnParticle(id: UUID, x: Double, y: Double, z: Double,
                       r: Float, g: Float, b: Float, a: Float, scale: Float,
                       lifetimeTicks: Int, groupId: UUID?, glowing: Boolean, lightLevel: Int,
-                      visual: ResolvedVisual, lifeCurve: ParticleLifeCurve? = null, prev: Vec3? = null) {
-        val previousBridge = if (visual.renderOptions.active) bridges[id] else null
+                      visual: ResolvedVisual, lifeCurve: ParticleLifeCurve? = null, prev: Vec3? = null, decal: ParticleModelRenderer.Model? = null) {
+        val previousBridge = if (visual.renderOptions.active || visual.model != null || decal != null) bridges[id] else null
+        val model = if (visual.lightOnly) null else decal ?: visual.model?.let(ParticleModelRenderer::model)
         spawnParticle(
             id, x, y, z, r, g, b, a, scale, lifetimeTicks, groupId, glowing, lightLevel,
             visual.uv, visual.billboard, visual.spin, visual.spinLocal, visual.additive,
             visual.scaleArray, lifeCurve, prev, visual.lightIntensity, visual.emitsLight || glowing,
             visual.lightOnly, visual.lightShape,
         )
-        if (visual.renderOptions.active && bridges[id] !== previousBridge) configureRenderEffects(id, visual.renderOptions, prev)
+        val bridge = bridges[id]
+        if (bridge != null && bridge !== previousBridge) {
+            if (model != null) bridge.model = model
+            if (visual.renderOptions.active) configureRenderEffects(id, visual.renderOptions, prev)
+        }
     }
 
     internal fun configureRenderEffects(id: UUID, options: ParticleRenderOptions, previous: Vec3? = null) {
@@ -274,19 +279,26 @@ class ClientParticleEngine {
         scaleEaseIds.remove(id) // 直写尺寸接管缓动
         trackBuffers.remove(id) // 动画直写接管位置，丢开 track 缓冲
         attachments.remove(id)
+        val bridge = bridges[id]
+        writeDirectState(rp, bridge, pos, color, glowing, lightLevel, snap, scale, scaleArray, resetEffects)
+        bridge?.syncOrientation(billboard, spin, spinLocal)
+    }
+
+    private fun writeDirectState(rp: RenderParticle, bridge: BridgeParticle?, pos: Vec3, color: Color,
+                                 glowing: Boolean, lightLevel: Int, snap: Boolean,
+                                 scale: Float, scaleArray: FloatArray?, resetEffects: Boolean) {
         val wasLight = lightsUp(rp)
         rp.setPositionDirect(pos, snap)
         rp.setColorDirect(color)
         if (scaleArray != null) rp.setScaleArrayDirect(scaleArray) else rp.setScaleDirect(scale)
         rp.setGlowing(glowing)
         rp.setLightLevel(lightLevel)
-        lightIndex.refresh(id, wasLight, lightsUp(glowing, rp.emitsLight(), lightLevel))
-        bridges[id]?.let {
+        lightIndex.refresh(rp.id(), wasLight, lightsUp(glowing, rp.emitsLight(), lightLevel))
+        bridge?.let {
             it.syncPosition(pos.x, pos.y, pos.z, snap, resetEffects)
             it.syncColor(color.r, color.g, color.b, color.a)
             if (scaleArray != null) it.syncScaleArray(scaleArray) else it.syncScale(scale)
             it.setGlowing(glowing)
-            it.syncOrientation(billboard, spin, spinLocal)
         }
     }
 
@@ -450,6 +462,7 @@ class ClientParticleEngine {
         takeover.clear(id)
         lightIndex.remove(id)
         motionIds.remove(id)
+        trailIds.remove(id)
         trackBuffers.remove(id)
         attachments.remove(id)
         curveIds.remove(id)
@@ -783,11 +796,23 @@ class ClientParticleEngine {
      */
     fun activeCount(): Int = particles.size
 
-    /** 生成声明接管位置和属性，寿命曲线仍按每颗粒子的年龄逐帧采样。 */
-    internal fun applyRecipeFrame(id: UUID, pos: Vec3, r: Float, g: Float, b: Float, a: Float,
-                                  scale: Float, glow: Boolean, light: Int, visual: ResolvedVisual) {
-        val base = visual.scaleArray
-        // 尺寸数组只被读写、不被持有，用复用缓冲即可；逐粒子每刻新建三元素数组纯属垃圾
+    internal class RecipeBinding(val particle: RenderParticle, val bridge: BridgeParticle?, val visual: ResolvedVisual)
+
+    /** 配方从出生起拥有粒子位置，寿命曲线仍由外观同步负责。 */
+    internal fun bindRecipeParticle(id: UUID, visual: ResolvedVisual): RecipeBinding? {
+        val particle = particles[id] ?: return null
+        takeover.markPosition(id)
+        particle.markBorn(tickSequence - 1)
+        particle.markSpawnedDuringRender(0f)
+        return RecipeBinding(particle, bridges[id], visual)
+    }
+
+    internal fun applyRecipeFrame(binding: RecipeBinding, pos: Vec3, color: Color, scale: Float, glow: Boolean, light: Int) {
+        val bridge = binding.bridge
+        // 已注销的桥接粒子不会再更新位置、外观或光照索引。
+        if (bridge != null && !bridge.isAlive) return
+        val rp = binding.particle
+        val base = binding.visual.scaleArray
         val sizes = frameSizes
         if (base == null) {
             sizes[0] = scale; sizes[1] = scale
@@ -795,12 +820,8 @@ class ClientParticleEngine {
             sizes[0] = base[0] * scale; sizes[1] = base[1] * scale
         }
         sizes[2] = 1f
-        updateParticleDirectArray(id, pos, Color.of(r, g, b, a), sizes, glow, light,
-            billboard = visual.billboard, spin = visual.spin, spinLocal = visual.spinLocal)
-        takeover.clear(id)
-        takeover.markPosition(id)
-        val rp = particles[id] ?: return
-        bridges[id]?.let { syncAppearanceToBridge(rp, it, 0f, snap = false) }
+        writeDirectState(rp, bridge, pos, color, glow, light, snap = false, scale = 0f, scaleArray = sizes, resetEffects = false)
+        if (bridge != null && rp.hasAppearanceCurve()) syncAppearanceToBridge(rp, bridge)
     }
 
     /** 逐粒子同步复用的尺寸缓冲：setScaleArrayDirect / syncScaleArray 都只读不存。 */

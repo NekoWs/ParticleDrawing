@@ -4,6 +4,7 @@ import io.netty.buffer.Unpooled
 import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.recipe.ParticleEntityQuery
+import work.nekow.particledrawing.animation.recipe.ParticleProbe
 import work.nekow.particledrawing.animation.recipe.RecipeCollision
 import work.nekow.particledrawing.api.*
 import work.nekow.particledrawing.core.network.*
@@ -104,11 +105,12 @@ class ParticleRecipeCodecTest {
     @Test fun `接触规则与子配方随声明往返`() {
         val seeds = ParticleSampling.count(3).map { it.copy(normal = CoreVec3(0.0, 1.0, 0.0)) }
         val child = ParticleRecipe(seeds, lifetime = 13, birth = mapOf("vy" to "event_ny * abs(event_vy)"))
-        val rule = RecipeEmission(ParticleEvent.CONTACT, child, ResourceId.parse("minecraft:iron_block"), removeParent = true)
+        val rule = RecipeEmission(ParticleEvent.CONTACT, child, ResourceId.parse("minecraft:iron_block"), removeParent = true, decalRadius = 0.5)
         val source = ParticleRecipe(
             seeds, collision = RecipeCollision.ALL, collisionHalfSize = 0.5, collisionSteps = 3,
             emissions = listOf(rule), spacing = 1.25, entityQuery = ParticleEntityQuery(6.0, ResourceId.parse("minecraft:bee")),
-            neighborRadius = 1.5,
+            neighborRadius = 1.5, probe = ParticleProbe(
+                6.0, RecipeCollision.SOLID, CoreVec3(1.0, 0.0, 0.0), ResourceId.parse("minecraft:iron_block")),
         )
         val payload = roundTrip(ParticleRecipePayload(UUID.randomUUID(), RecipeOperation.START, source, RecipeAnchor(Vec3.ZERO)))
         val recipe = assertNotNull(payload.recipe)
@@ -119,10 +121,12 @@ class ParticleRecipeCodecTest {
         assertEquals(3, recipe.collisionSteps)
         assertEquals(source.entityQuery, recipe.entityQuery)
         assertEquals(source.neighborRadius, recipe.neighborRadius)
+        assertEquals(source.probe, recipe.probe)
         assertEquals(1.25, recipe.spacing)
         assertEquals(rule.material, decoded.material)
         assertEquals(rule.event, decoded.event)
         assertTrue(decoded.removeParent)
+        assertEquals(0.5, decoded.decalRadius)
         assertEquals(child.birth, decoded.child.birth)
         assertEquals(child.seeds, decoded.child.seeds)
     }

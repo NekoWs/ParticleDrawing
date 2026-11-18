@@ -41,6 +41,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
         val known = (INPUTS + recipe.variables.keys + recipe.state.keys).toMutableSet()
         for ((name, expr) in recipe.lets) { validate(expr, known, used); known += name }
         for (expr in recipe.birth.values + recipe.motion.values + listOf(recipe.where, recipe.kill)) validate(expr, known, used)
+        requireLocalized(recipe.probe != null || used.none(RecipeInput::readsProbe)) { translation("error.recipe.probe_required") }
         externalInputs = used
         // 锚点偏移只认发射器级的量：u/i/age 这类样本级输入在求锚点时没有意义，写了要报错而不是静默取 0。
         recipe.orbit.takeIf(String::isNotBlank)?.let { validate(it, ANCHOR_INPUTS + recipe.variables.keys + recipe.state.keys + recipe.lets.keys) }
@@ -131,7 +132,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
     val slots: RecipeSlots = buildSlots(recipe)
 
     /** 本刻输入槽（u 起，共 14 项）之后接 state；再往后是各程序的临时槽。 */
-    private val base = Reg.VAR_START + INPUT_SLOTS.size + recipe.state.size
+    private val base = Reg.VAR_START + BUILTIN_INPUT_SLOTS.size + recipe.state.size + externalInputs.size
 
     /** 编译成功的热路径；null 表示该配方只能走解释器。 */
     val fast: RecipeFast? = if (preferFast) buildFast(recipe) else null
@@ -141,8 +142,9 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
         for ((name, slot) in Reg.ATTR_SLOTS) map[name] = slot
         map["ax"] = AX; map["ay"] = AY; map["az"] = AZ
         var s = Reg.VAR_START
-        for (name in INPUT_SLOTS) map[name] = s++
+        for (name in BUILTIN_INPUT_SLOTS) map[name] = s++
         for (name in recipe.state.keys) map[name] = s++
+        for (input in externalInputs) map[input.key] = s++
         return RecipeSlots(map)
     }
 
@@ -324,9 +326,10 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
 
     companion object {
         /** 每刻注入运行期输入的槽位顺序，紧跟寄存器里的属性之后。 */
-        val INPUT_SLOTS = listOf(
+        private val BUILTIN_INPUT_SLOTS = listOf(
             "u", "dt", "age", "life", "progress", "dx", "dy", "dz", "sx", "sy", "sz", "ax", "ay", "az",
-        ) + RecipeInput.byKey.keys
+        )
+        val INPUT_SLOTS = BUILTIN_INPUT_SLOTS + RecipeInput.byKey.keys
         const val U = Reg.VAR_START + 0
         const val DT = Reg.VAR_START + 1
         const val AGE = Reg.VAR_START + 2

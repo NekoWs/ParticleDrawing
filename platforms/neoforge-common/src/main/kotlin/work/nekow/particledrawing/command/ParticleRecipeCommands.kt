@@ -9,6 +9,7 @@ import com.mojang.brigadier.arguments.DoubleArgumentType
 import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.builder.LiteralArgumentBuilder
+import com.mojang.brigadier.builder.RequiredArgumentBuilder
 import com.mojang.brigadier.context.CommandContext
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
@@ -17,6 +18,7 @@ import net.minecraft.commands.arguments.EntityArgument
 import net.minecraft.commands.arguments.coordinates.Vec3Argument
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.math.ResourceId
+import work.nekow.particledrawing.animation.recipe.ParticleProbe
 import work.nekow.particledrawing.animation.recipe.RecipeCollision
 import work.nekow.particledrawing.animation.recipe.RecipeExpressions
 import work.nekow.particledrawing.api.*
@@ -25,6 +27,7 @@ import java.util.Locale
 import work.nekow.particledrawing.i18n.LocalizedArgumentException
 import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.translation
+import work.nekow.particledrawing.platform.toCore
 
 /** /pdraw particle emitter：每条命令配置一个职责，公式按属性拆开。 */
 internal object ParticleRecipeCommands {
@@ -83,6 +86,7 @@ internal object ParticleRecipeCommands {
         name.then(meshTree())
         name.then(eventTree())
         name.then(environmentTree())
+        name.then(probeTree())
         for (key in listOf("rate", "interval", "lifetime", "max_alive")) name.then(Commands.literal(key)
             .then(Commands.argument("value", IntegerArgumentType.integer()).executes { ctx -> configure(ctx) { d ->
                 val v = IntegerArgumentType.getInteger(ctx, "value")
@@ -120,18 +124,9 @@ internal object ParticleRecipeCommands {
             } }))
         name.then(Commands.literal("collide")
             .then(Commands.argument("mode", StringArgumentType.word())
-                .suggests { _, b -> SharedSuggestionProvider.suggest(listOf("none", "solid", "liquid", "both", "entity", "all"), b) }
+                .suggests { _, b -> SharedSuggestionProvider.suggest(collisionModes.keys, b) }
                 .executes { ctx -> configure(ctx) { d ->
-                    val mode = when (word(ctx, "mode")) {
-                        "solid" -> RecipeCollision.SOLID
-                        "liquid" -> RecipeCollision.LIQUID
-                        "both" -> RecipeCollision.SOLID_AND_LIQUID
-                        "entity" -> RecipeCollision.ENTITY
-                        "all" -> RecipeCollision.ALL
-                        "none" -> RecipeCollision.NONE
-                        else -> throw LocalizedArgumentException(translation("error.recipe.collision_mode"))
-                    }
-                    d.update(d.recipe.copy(collision = mode))
+                    d.update(d.recipe.copy(collision = collisionMode(ctx)))
                 } }))
         name.then(Commands.literal("collision_size")
             .then(Commands.argument("halfSize", DoubleArgumentType.doubleArg(0.0, ParticleRecipe.MAX_COLLISION_HALF_SIZE))
@@ -215,6 +210,42 @@ internal object ParticleRecipeCommands {
                 } }))
     }
 
+    private val collisionModes = mapOf(
+        "none" to RecipeCollision.NONE,
+        "solid" to RecipeCollision.SOLID,
+        "liquid" to RecipeCollision.LIQUID,
+        "both" to RecipeCollision.SOLID_AND_LIQUID,
+        "entity" to RecipeCollision.ENTITY,
+        "all" to RecipeCollision.ALL,
+    )
+
+    private fun collisionMode(ctx: CommandContext<CommandSourceStack>): RecipeCollision =
+        collisionModes[word(ctx, "mode")] ?: throw LocalizedArgumentException(translation("error.recipe.collision_mode"))
+
+    private fun probeTree(): LiteralArgumentBuilder<CommandSourceStack> {
+        fun range(fixed: Boolean): RequiredArgumentBuilder<CommandSourceStack, Double> {
+            fun apply(ctx: CommandContext<CommandSourceStack>, hasMaterial: Boolean) = configure(ctx) { draft ->
+                val direction = if (fixed) ParticleCommandArguments.vector(word(ctx, "direction")).toCore() else null
+                val material = if (hasMaterial) ResourceId.parse(ParticleCommandArguments.text(word(ctx, "probeMaterial"))) else null
+                val probe = ParticleProbe(DoubleArgumentType.getDouble(ctx, "range"), collisionMode(ctx), direction, material)
+                draft.update(draft.recipe.copy(probe = probe))
+            }
+            return Commands.argument("range", DoubleArgumentType.doubleArg(ParticleProbe.MIN_RANGE, ParticleProbe.MAX_RANGE))
+                .executes { ctx -> apply(ctx, hasMaterial = false) }
+                .then(Commands.literal("material")
+                    .then(Commands.argument("probeMaterial", ParticleCommandArguments.textType()).executes { ctx ->
+                        apply(ctx, hasMaterial = true)
+                    }))
+        }
+        return Commands.literal("probe")
+            .then(Commands.literal("off").executes { ctx -> configure(ctx) { it.update(it.recipe.copy(probe = null)) } })
+            .then(Commands.argument("mode", StringArgumentType.word())
+                .suggests { _, b -> SharedSuggestionProvider.suggest(collisionModes.keys.filter { it != "none" }, b) }
+                .then(Commands.literal("velocity").then(range(fixed = false)))
+                .then(Commands.literal("direction").then(Commands.argument("direction", StringArgumentType.string())
+                    .then(range(fixed = true)))))
+    }
+
     private fun eventTree(): LiteralArgumentBuilder<CommandSourceStack> {
         val root = Commands.literal("on")
         root.then(Commands.literal("clear").executes { ctx ->
@@ -229,12 +260,14 @@ internal object ParticleRecipeCommands {
                 for (option in listOf("remove_parent", "repeat")) target.then(Commands.literal(option).executes { ctx ->
                     addEvent(ctx, event, once = option != "repeat", removeParent = option == "remove_parent")
                 })
+                target.then(decalTree(event))
                 target.then(Commands.literal("material")
                     .then(Commands.argument("material", StringArgumentType.string())
                         .executes { ctx -> addEvent(ctx, event, material = eventMaterial(ctx)) }
                         .then(Commands.literal("remove_parent").executes { ctx ->
                             addEvent(ctx, event, material = eventMaterial(ctx), removeParent = true)
                         })
+                        .then(decalTree(event, ::eventMaterial))
                         .then(Commands.literal("repeat").executes { ctx ->
                             addEvent(ctx, event, material = eventMaterial(ctx), once = false)
                         })))
@@ -244,17 +277,23 @@ internal object ParticleRecipeCommands {
         return root
     }
 
+    private fun decalTree(
+        event: ParticleEvent, material: (CommandContext<CommandSourceStack>) -> ResourceId? = { null },
+    ): LiteralArgumentBuilder<CommandSourceStack> =
+        Commands.literal("decal").then(Commands.argument("radius", DoubleArgumentType.doubleArg(0.01, RecipeEmission.MAX_DECAL_RADIUS))
+            .executes { ctx -> addEvent(ctx, event, material(ctx), decalRadius = DoubleArgumentType.getDouble(ctx, "radius")) })
+
     private fun eventMaterial(ctx: CommandContext<CommandSourceStack>) =
         ResourceId.parse(word(ctx, "material"))
 
     private fun addEvent(
         ctx: CommandContext<CommandSourceStack>, event: ParticleEvent, material: ResourceId? = null,
-        once: Boolean = true, removeParent: Boolean = false,
+        once: Boolean = true, removeParent: Boolean = false, decalRadius: Double = 0.0,
     ) = configure(ctx) { draft ->
         val target = CommandParticleRecipes.get(dim(ctx), word(ctx, "child"))
         requireLocalized(target !== draft) { translation("error.recipe.event_self") }
         val snapshot = target.recipe.copy(seeds = target.samples(ctx.source.level), visual = target.recipe.visual.copy())
-        val rule = RecipeEmission(event, snapshot, material, once, removeParent)
+        val rule = RecipeEmission(event, snapshot, material, once, removeParent, decalRadius)
         draft.update(draft.recipe.copy(emissions = draft.recipe.emissions + rule))
     }
 

@@ -7,6 +7,7 @@ import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.api.ParticleVisual
+import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.core.TextureRegistry
 import work.nekow.particledrawing.core.network.ParticleSpawnPayload
 import java.util.UUID
@@ -167,6 +168,7 @@ class ParticleVisualCodecTest {
             softFade = 0.75
             trailTicks = 32
             trailSides = 6
+            model = ResourceId.parse("particledrawing:builtin/octahedron")
         }
         val decoded = roundTrip(visual).visual!!
         assertTrue(decoded.alignVelocity)
@@ -174,6 +176,7 @@ class ParticleVisualCodecTest {
         assertEquals(0.75, decoded.softFade)
         assertEquals(32, decoded.trailTicks)
         assertEquals(6, decoded.trailSides)
+        assertEquals(ResourceId.parse("particledrawing:builtin/octahedron"), decoded.model)
         assertEquals(0, roundTrip(ParticleVisual().billboard(false)).visual!!.trailTicks)
     }
 }

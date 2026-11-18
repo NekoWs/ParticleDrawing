@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.animation.recipe
 
+import work.nekow.particledrawing.animation.script.Reg
 import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.math.Vec3
 
@@ -8,6 +9,7 @@ internal data class EventInput(
     val velocity: Vec3,
     val normal: Vec3 = Vec3.ZERO,
     val material: ResourceId? = null,
+    val decalRadius: Double = 0.0,
 )
 
 internal enum class RecipeInput(val key: String, val worldField: ParticleWorldField? = null) {
@@ -37,6 +39,12 @@ internal enum class RecipeInput(val key: String, val worldField: ParticleWorldFi
     NEIGHBOR_VX("neighbor_vx"),
     NEIGHBOR_VY("neighbor_vy"),
     NEIGHBOR_VZ("neighbor_vz"),
+    PROBE_HIT("probe_hit"),
+    PROBE_MATCHES("probe_matches"),
+    PROBE_DISTANCE("probe_distance"),
+    PROBE_NX("probe_nx"),
+    PROBE_NY("probe_ny"),
+    PROBE_NZ("probe_nz"),
     SURFACE_NX("sample_nx"),
     SURFACE_NY("sample_ny"),
     SURFACE_NZ("sample_nz"),
@@ -51,10 +59,12 @@ internal enum class RecipeInput(val key: String, val worldField: ParticleWorldFi
     EVENT_VZ("event_vz");
 
     val readsNeighbors: Boolean get() = ordinal in NEIGHBOR_COUNT.ordinal..NEIGHBOR_VZ.ordinal
+    val readsProbe: Boolean get() = ordinal in PROBE_HIT.ordinal..PROBE_NZ.ordinal
     val needsWorld: Boolean get() = worldField != null || this == WORLD_LOADED
 
     fun read(
         position: Vec3, sample: ParticleWorldSample, event: EventInput?, normal: Vec3?, neighbors: ParticleNeighbors.Sample,
+        probe: ParticleProbe.Reading?,
     ): Double = when (this) {
         WORLD_X -> position.x
         WORLD_Y -> position.y
@@ -82,6 +92,12 @@ internal enum class RecipeInput(val key: String, val worldField: ParticleWorldFi
         NEIGHBOR_VX -> neighbors.velocity.x
         NEIGHBOR_VY -> neighbors.velocity.y
         NEIGHBOR_VZ -> neighbors.velocity.z
+        PROBE_HIT -> (probe?.hit != null).numeric()
+        PROBE_MATCHES -> (probe?.matches == true).numeric()
+        PROBE_DISTANCE -> requireNotNull(probe).distance
+        PROBE_NX -> probe?.hit?.normal?.x ?: 0.0
+        PROBE_NY -> probe?.hit?.normal?.y ?: 0.0
+        PROBE_NZ -> probe?.hit?.normal?.z ?: 0.0
         SURFACE_NX -> normal?.x ?: 0.0
         SURFACE_NY -> normal?.y ?: 0.0
         SURFACE_NZ -> normal?.z ?: 0.0
@@ -107,21 +123,34 @@ internal class RecipeInputReader(
     expressions: RecipeExpressions,
     private val world: ParticleWorld?,
     private val entities: ParticleEntityQuery,
+    probe: ParticleProbe?,
 ) {
     private val inputs = expressions.externalInputs.map { it to expressions.slots.slot(it.key) }
     private val fields = inputs.mapNotNull { (input, _) -> input.worldField }.toSet()
     private val needsWorld = inputs.any { (input, _) -> input.needsWorld }
     val readsNeighbors = inputs.any { (input, _) -> input.readsNeighbors }
+    private val activeProbe = probe?.takeIf { inputs.any { (input, _) -> input.readsProbe } }
     private val unavailable = ParticleWorldSample()
 
-    fun prepare(particle: RecipeRuntime.Particle, frame: RecipeFrame?, neighbors: ParticleNeighbors? = null) {
+    fun prepare(particle: RecipeRuntime.Particle, frame: RecipeFrame?, neighbors: ParticleNeighbors? = null) =
+        sample(particle, frame, neighbors) { _, slot, value -> particle.regs[slot] = value }
+
+    fun readInto(
+        particle: RecipeRuntime.Particle, frame: RecipeFrame?, neighbors: ParticleNeighbors?, into: MutableMap<String, Double>,
+    ) = sample(particle, frame, neighbors) { key, _, value -> into[key] = value }
+
+    private inline fun sample(
+        particle: RecipeRuntime.Particle, frame: RecipeFrame?, neighbors: ParticleNeighbors?,
+        store: (String, Int, Double) -> Unit,
+    ) {
         if (inputs.isEmpty()) return
         val position = frame?.position(particle.x, particle.y, particle.z) ?: Vec3.ZERO
         val sample = if (needsWorld && frame != null) world?.sample(position, fields, entities) ?: unavailable else unavailable
         val nearby = if (readsNeighbors && frame != null) neighbors?.at(particle, position) ?: ParticleNeighbors.EMPTY
             else ParticleNeighbors.EMPTY
+        val reading = activeProbe?.read(world, frame, position, Vec3(particle.regs[Reg.VX], particle.regs[Reg.VY], particle.regs[Reg.VZ]))
         for ((input, slot) in inputs) {
-            particle.regs[slot] = input.read(position, sample, particle.event, particle.seed.normal, nearby)
+            store(input.key, slot, input.read(position, sample, particle.event, particle.seed.normal, nearby, reading))
         }
     }
 

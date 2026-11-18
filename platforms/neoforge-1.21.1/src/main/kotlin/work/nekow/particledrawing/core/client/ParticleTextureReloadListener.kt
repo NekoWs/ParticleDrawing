@@ -19,7 +19,10 @@ object ParticleTextureReloadListener {
     @JvmStatic
     fun register(event: RegisterClientReloadListenersEvent) {
         event.registerReloadListener(
-            ResourceManagerReloadListener { TextureCache.clearParticleResources() },
+            ResourceManagerReloadListener {
+                TextureCache.clearParticleResources()
+                ParticleModelRenderer.clear()
+            },
         )
     }
 }

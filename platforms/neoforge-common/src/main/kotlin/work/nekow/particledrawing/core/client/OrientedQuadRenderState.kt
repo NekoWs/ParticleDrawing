@@ -19,10 +19,15 @@ class OrientedQuadRenderState : QuadParticleRenderState() {
     /** 单层的宽度队列：数组只增不减地复用，稳态零分配。 */
     private class Widths {
         var values = FloatArray(1024)
+        var models = arrayOfNulls<ParticleModelRenderer.Model>(1024)
         var count = 0
 
-        fun add(width: Float) {
-            if (count == values.size) values = values.copyOf(values.size * 2)
+        fun add(width: Float, model: ParticleModelRenderer.Model?) {
+            if (count == values.size) {
+                values = values.copyOf(values.size * 2)
+                models = models.copyOf(values.size)
+            }
+            models[count] = model
             values[count++] = width
         }
     }
@@ -37,12 +42,14 @@ class OrientedQuadRenderState : QuadParticleRenderState() {
     // 顶点生成的临时对象，只在渲染线程用，复用以免每颗粒子每帧分配
     private val scratchQ = Quaternionf()
     private val scratchV = Vector3f()
+    private val modelPosition = Vector3f()
 
     private var current: Widths? = null
     private var cursor = 0
 
     /** 下一次 add() 要记的四边形宽度，小于 0 表示均匀；由 BridgeParticle 提交前写入，add() 里消费掉。 */
     var pendingWidth: Float = -1f
+    internal var pendingModel: ParticleModelRenderer.Model? = null
 
     override fun add(
         layer: SingleQuadParticle.Layer,
@@ -53,7 +60,8 @@ class OrientedQuadRenderState : QuadParticleRenderState() {
     ) {
         val width = pendingWidth
         pendingWidth = -1f
-        widths.getOrPut(layer) { Widths() }.add(width)
+        widths.getOrPut(layer) { Widths() }.add(width, pendingModel)
+        pendingModel = null
         super.add(layer, x, y, z, xRot, yRot, zRot, wRot, scale, u0, u1, v0, v1, color, lightCoords)
     }
 
@@ -68,7 +76,10 @@ class OrientedQuadRenderState : QuadParticleRenderState() {
     /** 每帧开头原版会调用本方法清存储，宽度队列跟着一起清，没画到的层也不留陈旧数据。 */
     override fun clear() {
         super.clear()
-        for (w in widths.values) w.count = 0
+        for (w in widths.values) {
+            w.models.fill(null, 0, w.count)
+            w.count = 0
+        }
         for (ribbon in ribbons.values) ribbon.clear()
         current = null
         cursor = 0
@@ -88,6 +99,12 @@ class OrientedQuadRenderState : QuadParticleRenderState() {
         // 两万颗粒子就是每秒几百万个临时对象，是帧时间抖动的主因。
         val uniform = width < 0f || width == scale
         scratchQ.set(xRot, yRot, zRot, wRot)
+        val model = if (queue != null && index < queue.count) queue.models[index] else null
+        if (model != null) {
+            ParticleModelRenderer.draw(model, builder, modelPosition.set(x, y, z), scratchQ,
+                if (uniform) scale else width, scale, u0, u1, v0, v1, color, lightCoords)
+            return
+        }
         if (uniform) {
             vertex(builder, x, y, z, 1f, -1f, scale, scale, u1, v1, color, lightCoords)
             vertex(builder, x, y, z, 1f, 1f, scale, scale, u1, v0, color, lightCoords)

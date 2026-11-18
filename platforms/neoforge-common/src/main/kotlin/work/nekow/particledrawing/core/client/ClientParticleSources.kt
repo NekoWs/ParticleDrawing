@@ -5,6 +5,7 @@ import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.recipe.CollisionMath
 import work.nekow.particledrawing.animation.recipe.RecipeFrame
 import work.nekow.particledrawing.animation.recipe.RecipeRuntime
+import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.RecipeAnchor
 import work.nekow.particledrawing.api.RecipeEmission
 import work.nekow.particledrawing.api.SubEmit
@@ -12,18 +13,17 @@ import work.nekow.particledrawing.core.network.ParticleRecipePayload
 import work.nekow.particledrawing.core.network.RecipeOperation
 import work.nekow.particledrawing.i18n.component
 import work.nekow.particledrawing.i18n.diagnostic
-import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.localizedError
 import work.nekow.particledrawing.i18n.translation
 import work.nekow.particledrawing.platform.toCore
 import java.util.UUID
 
 /** 声明式采样器的客户端桥接；所有积分按游戏刻推进，暂停时不推进。 */
 internal object ClientParticleSources {
-    private class Member(val id: UUID, var position: Vec3, val visual: ResolvedVisual) {
-        var r = 0f
-        var g = 0f
-        var b = 0f
-        var scale = 1f
+    private class Member(
+        val binding: ClientParticleEngine.RecipeBinding, var position: Vec3, var color: Color, var scale: Float,
+    ) {
+        val id: UUID get() = binding.particle.id()
     }
     private class Entry(val runtime: RecipeRuntime, var anchor: RecipeAnchor) {
         val members = linkedMapOf<RecipeRuntime.Particle, Member>()
@@ -94,9 +94,6 @@ internal object ClientParticleSources {
         }
         if (dead.isNotEmpty()) engine.destroyParticles(dead.map { (_, member) -> member.id }.toTypedArray())
 
-        // 槽位在配方编译期固定，循环外取一次即可。
-        // 每颗每刻仍会新建一个 Vec3 与一个 Color：渲染粒子会持有这两个对象做插值端点，
-        // 要再省下去得把 RenderParticle 的位置/颜色换成基本类型字段。
         val slots = e.runtime.slots
         val sR = slots.slot("r"); val sG = slots.slot("g"); val sB = slots.slot("b"); val sA = slots.slot("a")
         val sSc = slots.slot("sc"); val sGlow = slots.slot("glow"); val sLight = slots.slot("light")
@@ -105,33 +102,46 @@ internal object ClientParticleSources {
             if (member == null && frame == null) continue
             val position = if (hidden && member != null) member.position else {
                 e.runtime.frameOf(p).positionInto(p.x, p.y, p.z, posOut)
-                Vec3(posOut[0], posOut[1], posOut[2])
+                val previous = member?.position
+                if (previous != null && previous.x == posOut[0] && previous.y == posOut[1] && previous.z == posOut[2]) previous
+                else Vec3(posOut[0], posOut[1], posOut[2])
             }
+            val r = p.regs[sR].toFloat(); val g = p.regs[sG].toFloat(); val b = p.regs[sB].toFloat()
+            val alpha = if (hidden) 0f else p.regs[sA].toFloat()
+            val scale = p.regs[sSc].toFloat()
+            val glow = p.regs[sGlow] != 0.0
+            val light = p.regs[sLight].toInt()
+            val previousColor = member?.color
+            val color = if (previousColor != null && previousColor.r == r && previousColor.g == g &&
+                previousColor.b == b && previousColor.a == alpha) previousColor else Color.of(r, g, b, alpha)
             if (member == null) {
                 val id = UUID.randomUUID()
                 val look = ResolvedVisual.of(e.runtime.recipe.visual, 1f)
-                engine.spawnParticle(id, position.x, position.y, position.z,
-                    p.regs[sR].toFloat(), p.regs[sG].toFloat(), p.regs[sB].toFloat(), p.regs[sA].toFloat(),
-                    p.regs[sSc].toFloat(), p.lifetime, null, p.regs[sGlow] != 0.0, p.regs[sLight].toInt(), look, e.runtime.recipe.lifeCurve)
-                if (!engine.containsParticle(id)) {
+                val event = p.event
+                val decal = if (event != null && event.decalRadius > 0.0) {
+                    ParticleModelRenderer.decal(position.toCore(), event.normal, event.decalRadius)
+                } else null
+                if (event != null && event.decalRadius > 0.0 && decal == null) {
+                    p.alive = false
+                    continue
+                }
+                engine.spawnParticle(id, position.x, position.y, position.z, r, g, b, alpha,
+                    scale, p.lifetime, null, glow, light, look, e.runtime.recipe.lifeCurve, decal = decal)
+                val binding = engine.bindRecipeParticle(id, look)
+                if (binding == null) {
                     if (allowCapacityDrop) {
                         p.alive = false
                         continue
                     }
-                    requireLocalized(false) { translation("error.recipe.client_limit") }
+                    localizedError(translation("error.recipe.client_limit"))
                 }
-                engine.markSpawnedDuringRender(id, 0f)
-                member = Member(id, position, look)
+                member = Member(binding, position, color, scale)
                 e.members[p] = member
             }
             member.position = position
-            member.r = p.regs[sR].toFloat()
-            member.g = p.regs[sG].toFloat()
-            member.b = p.regs[sB].toFloat()
-            member.scale = p.regs[sSc].toFloat()
-            val alpha = if (hidden) 0f else p.regs[sA].toFloat()
-            engine.applyRecipeFrame(member.id, position, member.r, member.g, member.b, alpha,
-                member.scale, p.regs[sGlow] != 0.0, p.regs[sLight].toInt(), member.visual)
+            member.color = color
+            member.scale = scale
+            engine.applyRecipeFrame(member.binding, position, color, scale, glow, light)
         }
 
         // 优先补主发射器的成员，余下的容量再给子粒子。
@@ -170,7 +180,8 @@ internal object ClientParticleSources {
         val scale = (member.scale * sub.scale).toFloat()
         sub.forEachVelocity(p.index, e.runtime.ticks) { velocity ->
             engine.spawnLocalEmitterParticle(
-                pos, velocity, member.r, member.g, member.b, 1f, scale, sub.lifetime, false, 0, member.visual,
+                pos, velocity, member.color.r, member.color.g, member.color.b, 1f,
+                scale, sub.lifetime, false, 0, member.binding.visual,
             )
         }
     }

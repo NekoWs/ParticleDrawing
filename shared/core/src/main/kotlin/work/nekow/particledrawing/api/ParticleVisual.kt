@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.api
 
+import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.light.LightFalloff
 import work.nekow.particledrawing.light.LightShape
 
@@ -110,6 +111,13 @@ class ParticleVisual {
     var trailTicks: Int = 0
         set(value) {
             ParticleRenderOptions.validateTrail(value)
+            field = value
+        }
+
+    /** 客户端资源包中的粒子模型。 */
+    var model: ResourceId? = null
+        set(value) {
+            requireLocalized(value == null || value.toString().length <= MAX_MODEL_ID) { translation("error.mesh.model_id", MAX_MODEL_ID) }
             field = value
         }
 
@@ -291,6 +299,7 @@ class ParticleVisual {
         c.softFade = softFade
         c.trailTicks = trailTicks
         c.trailSides = trailSides
+        c.model = model
         return c
     }
 
@@ -304,7 +313,7 @@ class ParticleVisual {
     fun isPristine(): Boolean = texture == null && uvRect == null && !hasAniso() &&
         billboard && spinXDeg == 0.0 && spinYDeg == 0.0 && spinZDeg == 0.0 && spinLocal &&
         !additive && !glowing && !emitsLight && !lightOnly && lightIntensity == 1f && lightShape == null &&
-        !alignVelocity && softFade == 0.0 && trailTicks == 0 && trailSides == 0
+        !alignVelocity && softFade == 0.0 && trailTicks == 0 && trailSides == 0 && model == null
 
     /**
      * 解析成渲染用的 UV，由客户端调用。[texW]/[texH] 是已注册贴图的像素尺寸，未知传 0。
@@ -360,6 +369,7 @@ class ParticleVisual {
 
     companion object {
         const val MAX_TRAIL_TICKS = 32
+        const val MAX_MODEL_ID = 256
         /** 贴图名长度上限（与 TextureRegistry 的登记上限一致）。 */
         const val MAX_TEXTURE_NAME = 256
 

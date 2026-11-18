@@ -110,6 +110,40 @@ class RecipeEventTest {
         assertTrue(runtime.finished)
     }
 
+    @Test fun `按粒子速度探测首个面并用材质和距离驱动公式`() {
+        var hits = 0
+        var material = iron
+        val world = ParticleWorld { mode, from, to ->
+            assertEquals(RecipeCollision.SOLID, mode)
+            assertEquals(4.0, from.distanceTo(to), 1e-10)
+            assertTrue(to.z > from.z)
+            hits++
+            SurfaceHit(from.lerp(to, 0.25), Vec3(0.0, 0.0, -1.0), material = material)
+        }
+        val probe = ParticleProbe(4.0, material = iron)
+        for (preferFast in listOf(true, false)) {
+            hits = 0
+            material = iron
+            val runtime = RecipeRuntime(ParticleRecipe(
+                seeds, probe = probe, birth = mapOf("vz" to "1"),
+                motion = mapOf("r" to "probe_matches * probe_distance", "g" to "abs(probe_nz)"),
+            ), burst = true, world = world, preferFast = preferFast)
+            runtime.tick()
+            runtime.tick()
+            assertTrue(hits > 0)
+            val particle = runtime.particles.single()
+            assertEquals(1.0, particle.value("r"))
+            assertEquals(1.0, particle.value("g"))
+            material = ResourceId.parse("minecraft:stone")
+            runtime.tick()
+            assertEquals(0.0, particle.value("r"))
+            assertEquals(1.0, particle.value("g"))
+        }
+        hits = 0
+        RecipeRuntime(ParticleRecipe(seeds, probe = probe), burst = true, world = world).tick()
+        assertEquals(0, hits)
+    }
+
     @Test fun `递归和无界子配方被拒绝`() {
         val root = ParticleRecipe(seeds)
         for (child in listOf(childRecipe.copy(lifetime = -1),

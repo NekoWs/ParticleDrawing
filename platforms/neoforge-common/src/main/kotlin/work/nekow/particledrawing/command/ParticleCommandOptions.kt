@@ -13,6 +13,7 @@ import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.light.LightFalloff
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.translation
 
@@ -43,7 +44,7 @@ internal object ParticleCommandOptionParser {
         "color", "scale", "style", "texture", "uv", "size", "size_world", "billboard", "spin",
         "spin_space", "additive", "glowing", "light", "light_only", "intensity", "alpha_curve",
         "size_curve", "red_curve", "green_curve", "blue_curve", "light_curve", "spot",
-        "light_dir", "light_range", "light_falloff", "align_velocity", "stretch", "soft", "trail", "trail_sides",
+        "light_dir", "light_range", "light_falloff", "align_velocity", "stretch", "soft", "trail", "trail_sides", "model",
     )
     private val allowed = appearanceKeys + setOf(
         "gradient", "rainbow", "stagger", "lifetime", "axis", "taper", "hollow", "thickness",
@@ -129,6 +130,7 @@ internal object ParticleCommandOptionParser {
         values["soft"]?.let { visual.softFade = float(it, "soft").toDouble() }
         values["trail"]?.let { visual.trailTicks = int(it, "trail") }
         values["trail_sides"]?.let { visual.trailSides = int(it, "trail_sides") }
+        values["model"]?.let { if (it != "none") visual.model = ResourceId.parse(it) }
         values["stretch"]?.let { visual.stretch = float(it, "stretch").toDouble() }
         visual.alignVelocity = values["align_velocity"]?.let { bool(it, "align_velocity") }
             ?: ("stretch" in values && visual.stretch > 0.0)

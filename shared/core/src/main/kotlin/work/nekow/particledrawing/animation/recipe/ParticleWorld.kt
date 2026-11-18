@@ -4,6 +4,7 @@ import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.translation
 import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.math.Vec3
+import work.nekow.particledrawing.render.WorldBounds
 
 enum class RecipeCollision { NONE, SOLID, LIQUID, SOLID_AND_LIQUID, ENTITY, ALL }
 
@@ -26,6 +27,8 @@ fun interface ParticleWorld {
         return cast(sweep.mode, from, to)
     }
 
+    fun blockShapes(region: WorldBounds): List<WorldBounds> = emptyList()
+
     fun sample(position: Vec3, fields: Set<ParticleWorldField>): ParticleWorldSample = ParticleWorldSample()
 
     fun sample(position: Vec3, fields: Set<ParticleWorldField>, query: ParticleEntityQuery): ParticleWorldSample =
@@ -38,6 +41,7 @@ data class SurfaceHit(
     val inside: Boolean = false,
     val material: ResourceId? = null,
     val center: Vec3 = position,
+    val kind: RecipeCollision = RecipeCollision.SOLID,
 )
 
 data class ParticleEntityQuery(val radius: Double = 8.0, val type: ResourceId? = null) {

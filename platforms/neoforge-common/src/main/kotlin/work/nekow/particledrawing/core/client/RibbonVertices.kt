@@ -1,7 +1,6 @@
 package work.nekow.particledrawing.core.client
 
 import com.mojang.blaze3d.vertex.VertexConsumer
-import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.math.Vec3
 import work.nekow.particledrawing.render.RibbonHistory
 
@@ -23,8 +22,7 @@ internal class RibbonVertices {
         val alpha = color ushr 24
         if (alpha == 0 || history.size < 2 || width <= 0f) return
         val cost = (history.size - 1) * maxOf(1, sides)
-        if (cost > quadsRemaining) return
-        quadsRemaining -= cost
+        if (!ParticleGeometryBudget.reserve(cost)) return
         val rgb = color and 0xFFFFFF
         fun vertex(position: Vec3, u: Float, v: Float, progress: Float) {
             if (size == colors.size) {
@@ -80,11 +78,6 @@ internal class RibbonVertices {
 
     companion object {
         private const val STRIDE = 5
-        private var quadsRemaining = 200_000
-
-        fun beginFrame() {
-            quadsRemaining = ParticleDrawingConfig.CLIENT.maxParticleTrailQuads.get()
-        }
 
         fun color(r: Float, g: Float, b: Float, a: Float): Int =
             (a.coerceIn(0f, 1f) * 255).toInt().shl(24) or

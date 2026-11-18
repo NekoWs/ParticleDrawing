@@ -31,8 +31,10 @@ class RecipeRuntime(
         val seed: ParticleSeed,
         val lifetime: Int,
         var regs: DoubleArray,
-        val slots: RecipeSlots,
+        slots: RecipeSlots,
     ) {
+        var slots = slots
+            internal set
         var age = 0
         var alive = true
         var initialPosition: Vec3 = seed.position
@@ -53,7 +55,7 @@ class RecipeRuntime(
     internal data class Trigger(val rule: RecipeEmission, val input: EventInput)
 
     private var expressions = RecipeExpressions(recipe, preferFast)
-    private var inputs = RecipeInputReader(expressions, world, recipe.entityQuery)
+    private var inputs = RecipeInputReader(expressions, world, recipe.entityQuery, recipe.probe)
     private var neighbors = if (inputs.readsNeighbors) ParticleNeighbors(recipe.neighborRadius) else null
     private val triggers = arrayListOf<Trigger>()
     internal val events: List<Trigger> get() = triggers
@@ -102,13 +104,14 @@ class RecipeRuntime(
         }
         recipe = ordered
         expressions = compiled
-        inputs = RecipeInputReader(compiled, world, ordered.entityQuery)
+        inputs = RecipeInputReader(compiled, world, ordered.entityQuery, ordered.probe)
         neighbors = if (inputs.readsNeighbors) ParticleNeighbors(ordered.neighborRadius) else null
         rebuildLayout()
         // 新的临时槽可能更多：按需扩容已有粒子的寄存器
         val need = regSize()
         for (p in particles) {
             if (p.regs.size < need) p.regs = p.regs.copyOf(need)
+            p.slots = compiled.slots
         }
     }
 
@@ -267,13 +270,14 @@ class RecipeRuntime(
         if (!listens[kind.ordinal]) return
         for ((index, rule) in recipe.emissions.withIndex()) {
             if (rule.event != kind || (rule.material != null && surface?.material != rule.material)) continue
+            if (rule.decalRadius > 0.0 && surface?.kind != RecipeCollision.SOLID) continue
             val bit = 1 shl index
             if (rule.once && particle.triggered and bit != 0) continue
             if (triggers.size < MAX_EVENTS_PER_TICK) {
                 val position = surface?.position ?: space.position(particle.x, particle.y, particle.z)
                 val r = particle.regs
                 val velocity = incoming ?: space.velocity(Vec3(r[Reg.VX], r[Reg.VY], r[Reg.VZ]))
-                triggers += Trigger(rule, EventInput(position, velocity, surface?.normal ?: Vec3.ZERO, surface?.material))
+                triggers += Trigger(rule, EventInput(position, velocity, surface?.normal ?: Vec3.ZERO, surface?.material, rule.decalRadius))
                 particle.triggered = particle.triggered or bit
             }
             if (rule.removeParent) particle.alive = false
@@ -520,15 +524,14 @@ class RecipeRuntime(
         val plan = recipe.copy(lets = recipe.lets, birth = changes, motion = emptyMap(), where = predicate, kill = "false")
         plan.validate()
         val edit = RecipeExpressions(plan)
-        val editInputs = RecipeInputReader(edit, world, recipe.entityQuery)
+        val editInputs = RecipeInputReader(edit, world, recipe.entityQuery, recipe.probe)
         val editNeighbors = if (editInputs.readsNeighbors) ParticleNeighbors(recipe.neighborRadius).also(::snapshotNeighbors) else null
         val selected = arrayListOf<Pair<Particle, Map<String, Double>>>()
         val map = HashMap<String, Double>(32)
         for (p in particles) {
             map.clear()
             for ((name, slot) in persistent) map[name] = p.regs[slot]
-            editInputs.prepare(p, inputFrame(p), editNeighbors)
-            editInputs.copyInputs(p, map)
+            editInputs.readInto(p, inputFrame(p), editNeighbors, map)
             edit.prepare(
                 map,
                 p.index.toDouble(), recipe.seeds.size.toDouble(), p.seed.u, ticks * 50.0, 1.0,

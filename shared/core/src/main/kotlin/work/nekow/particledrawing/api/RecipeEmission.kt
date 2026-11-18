@@ -13,8 +13,12 @@ data class RecipeEmission(
     val material: ResourceId? = null,
     val once: Boolean = true,
     val removeParent: Boolean = false,
+    val decalRadius: Double = 0.0,
 ) {
     internal fun validate() {
+        requireLocalized(decalRadius in 0.0..MAX_DECAL_RADIUS && (decalRadius == 0.0 || event == ParticleEvent.CONTACT)) {
+            translation("error.recipe.event_decal", MAX_DECAL_RADIUS)
+        }
         requireLocalized(event == ParticleEvent.CONTACT || (material == null && !removeParent)) {
             translation("error.recipe.event_contact")
         }
@@ -27,6 +31,7 @@ data class RecipeEmission(
 
     companion object {
         const val MAX_RULES = 4
+        const val MAX_DECAL_RADIUS = 2.0
         const val MAX_CHILD_SEEDS = 64
         const val MAX_CHILD_LIFETIME = 1200
     }

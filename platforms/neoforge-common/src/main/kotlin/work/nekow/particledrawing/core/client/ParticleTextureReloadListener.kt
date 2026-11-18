@@ -17,7 +17,10 @@ object ParticleTextureReloadListener {
     fun register(event: AddClientReloadListenersEvent) {
         event.addListener(
             Identifier.fromNamespaceAndPath(ParticleDrawing.MODID, "particle_textures"),
-            ResourceManagerReloadListener { TextureCache.clearParticleResources() },
+            ResourceManagerReloadListener {
+                TextureCache.clearParticleResources()
+                ParticleModelRenderer.clear()
+            },
         )
     }
 }

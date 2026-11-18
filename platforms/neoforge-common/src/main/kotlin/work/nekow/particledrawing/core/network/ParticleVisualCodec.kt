@@ -2,6 +2,7 @@ package work.nekow.particledrawing.core.network
 
 import net.minecraft.network.FriendlyByteBuf
 import work.nekow.particledrawing.api.ParticleVisual
+import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.light.LightFalloff
 import work.nekow.particledrawing.light.LightShape
 import work.nekow.particledrawing.core.TextureRegistry
@@ -33,6 +34,7 @@ internal object ParticleVisualCodec {
 
     private const val FLAG_TRAIL = 1 shl 15
     private const val FLAG_TRAIL_SIDES = 1 shl 16
+    private const val FLAG_MODEL = 1 shl 17
 
     fun write(buf: FriendlyByteBuf, visual: ParticleVisual?) {
         if (visual == null) {
@@ -69,6 +71,7 @@ internal object ParticleVisualCodec {
 
         if (visual.trailTicks > 0) flags = flags or FLAG_TRAIL
         if (visual.trailSides > 0) flags = flags or FLAG_TRAIL_SIDES
+        if (visual.model != null) flags = flags or FLAG_MODEL
 
         buf.writeVarInt(flags)
         if (flags == 0) return
@@ -94,6 +97,7 @@ internal object ParticleVisualCodec {
         if (visual.softFade > 0.0) buf.writeFloat(visual.softFade.toFloat())
         if (visual.trailTicks > 0) buf.writeVarInt(visual.trailTicks)
         if (visual.trailSides > 0) buf.writeByte(visual.trailSides)
+        visual.model?.let { buf.writeUtf(it.toString(), ParticleVisual.MAX_MODEL_ID) }
     }
 
     fun read(buf: FriendlyByteBuf): ParticleVisual? {
@@ -139,6 +143,7 @@ internal object ParticleVisualCodec {
         if (flags and FLAG_SOFT_FADE != 0) visual.softFade = buf.readFloat().toDouble()
         if (flags and FLAG_TRAIL != 0) visual.trailTicks = buf.readVarInt()
         if (flags and FLAG_TRAIL_SIDES != 0) visual.trailSides = buf.readUnsignedByte().toInt()
+        if (flags and FLAG_MODEL != 0) visual.model = ResourceId.parse(buf.readUtf(ParticleVisual.MAX_MODEL_ID))
         return visual
     }
 

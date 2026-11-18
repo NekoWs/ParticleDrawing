@@ -5,10 +5,12 @@ import net.minecraft.network.codec.StreamCodec
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
 import work.nekow.particledrawing.animation.recipe.ParticleEntityQuery
+import work.nekow.particledrawing.animation.recipe.ParticleProbe
 import work.nekow.particledrawing.animation.recipe.RecipeCollision
 import work.nekow.particledrawing.api.*
 import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.platform.toCore
+import work.nekow.particledrawing.platform.toMinecraft
 import java.util.UUID
 import work.nekow.particledrawing.i18n.LocalizedArgumentException
 import work.nekow.particledrawing.i18n.requireLocalized
@@ -94,6 +96,15 @@ internal object RecipeCodec {
         buf.writeBoolean(r.entityQuery.type != null)
         r.entityQuery.type?.let { buf.writeUtf(it.toString(), MAX_MATERIAL_LENGTH) }
         buf.writeDouble(r.neighborRadius)
+        buf.writeBoolean(r.probe != null)
+        r.probe?.let { probe ->
+            buf.writeDouble(probe.range)
+            buf.writeVarInt(probe.mode.ordinal)
+            buf.writeBoolean(probe.direction != null)
+            probe.direction?.let { StreamCodecs.writeVec(buf, it.toMinecraft()) }
+            buf.writeBoolean(probe.material != null)
+            probe.material?.let { buf.writeUtf(it.toString(), MAX_MATERIAL_LENGTH) }
+        }
         requireLocalized(allowChildren || r.emissions.isEmpty()) { translation("error.packet.recipe_size") }
         buf.writeVarInt(r.emissions.size)
         for (rule in r.emissions) {
@@ -102,6 +113,7 @@ internal object RecipeCodec {
             rule.material?.let { buf.writeUtf(it.toString(), MAX_MATERIAL_LENGTH) }
             buf.writeBoolean(rule.once)
             buf.writeBoolean(rule.removeParent)
+            buf.writeDouble(rule.decalRadius)
             writeLevel(buf, rule.child, allowChildren = false)
         }
     }
@@ -133,13 +145,21 @@ internal object RecipeCodec {
         val entityRange = buf.readDouble()
         val entityType = if (buf.readBoolean()) ResourceId.parse(buf.readUtf(MAX_MATERIAL_LENGTH)) else null
         val neighborRadius = buf.readDouble()
+        val probe = if (buf.readBoolean()) {
+            val range = buf.readDouble()
+            val mode = RecipeCollision.entries[count(buf, RecipeCollision.entries.lastIndex)]
+            val direction = if (buf.readBoolean()) StreamCodecs.readVec(buf).toCore() else null
+            val material = if (buf.readBoolean()) ResourceId.parse(buf.readUtf(MAX_MATERIAL_LENGTH)) else null
+            ParticleProbe(range, mode, direction, material)
+        } else null
         val maxRules = if (allowChildren) RecipeEmission.MAX_RULES else 0
         val emissions = List(count(buf, maxRules)) {
             val event = ParticleEvent.entries[count(buf, ParticleEvent.entries.lastIndex)]
             val material = if (buf.readBoolean()) ResourceId.parse(buf.readUtf(MAX_MATERIAL_LENGTH)) else null
             val once = buf.readBoolean()
             val removeParent = buf.readBoolean()
-            RecipeEmission(event, readLevel(buf, allowChildren = false), material, once, removeParent)
+            val decalRadius = buf.readDouble()
+            RecipeEmission(event, readLevel(buf, allowChildren = false), material, once, removeParent, decalRadius)
         }
         return recipe.copy(
             collision = RecipeCollision.entries[modeOrdinal],
@@ -152,6 +172,7 @@ internal object RecipeCodec {
             collisionSteps = collisionSteps,
             entityQuery = ParticleEntityQuery(entityRange, entityType),
             neighborRadius = neighborRadius,
+            probe = probe,
         )
     }
 

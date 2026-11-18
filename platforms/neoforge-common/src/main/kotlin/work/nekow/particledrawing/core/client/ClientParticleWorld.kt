@@ -25,6 +25,7 @@ import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.math.Vec3
 import work.nekow.particledrawing.platform.toCore
 import work.nekow.particledrawing.platform.toMinecraft
+import work.nekow.particledrawing.render.WorldBounds
 
 /** 两种查询都使用实际形状，台阶上方的空半格仍然是空气。 */
 internal object ClientParticleWorld : ParticleWorld {
@@ -45,7 +46,8 @@ internal object ClientParticleWorld : ParticleWorld {
             }
             val result = if (sweep.halfSize > 0.0) traceExpanded(from, to, sweep.halfSize, shapeAt)
             else traceShape(from, to, shapeAt)?.let { it.blockPos to surface(it, null) }
-            val (pos, hit) = result ?: return null
+            val (pos, rawHit) = result ?: return null
+            val hit = if (solid) rawHit else rawHit.copy(kind = RecipeCollision.LIQUID)
             if (!sweep.includeMaterial) return hit
             val id = if (solid) BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).block)
             else BuiltInRegistries.FLUID.getKey(level.getFluidState(pos).type)
@@ -72,8 +74,8 @@ internal object ClientParticleWorld : ParticleWorld {
             if (BoxSweep.nearer(from, best, hit) !== hit) continue
             best = if (sweep.includeMaterial) {
                 val key = BuiltInRegistries.ENTITY_TYPE.getKey(entity.type)
-                hit.copy(material = ResourceId(key.namespace, key.path))
-            } else hit
+                hit.copy(material = ResourceId(key.namespace, key.path), kind = RecipeCollision.ENTITY)
+            } else hit.copy(kind = RecipeCollision.ENTITY)
         }
         return best
     }
@@ -106,6 +108,22 @@ internal object ClientParticleWorld : ParticleWorld {
 
     private fun sweepBox(from: Vec3, to: Vec3, box: AABB, halfSize: Double): SurfaceHit? =
         BoxSweep.first(from, to, Vec3(box.minX, box.minY, box.minZ), Vec3(box.maxX, box.maxY, box.maxZ), halfSize)
+
+    override fun blockShapes(region: WorldBounds): List<WorldBounds> {
+        val level = Minecraft.getInstance().level ?: return emptyList()
+        val low = BlockPos.containing(region.low.toMinecraft())
+        val high = BlockPos.containing(region.high.toMinecraft())
+        val shapes = ArrayList<WorldBounds>()
+        for (pos in BlockPos.betweenClosed(low, high)) {
+            if (!level.chunkSource.hasChunk(pos.x shr 4, pos.z shr 4)) continue
+            for (box in level.getBlockState(pos).getCollisionShape(level, pos).toAabbs()) {
+                val lower = Vec3(box.minX + pos.x, box.minY + pos.y, box.minZ + pos.z)
+                val upper = Vec3(box.maxX + pos.x, box.maxY + pos.y, box.maxZ + pos.z)
+                shapes += WorldBounds(lower, upper)
+            }
+        }
+        return shapes
+    }
 
     override fun sample(position: Vec3, fields: Set<ParticleWorldField>): ParticleWorldSample =
         sample(position, fields, defaultQuery)

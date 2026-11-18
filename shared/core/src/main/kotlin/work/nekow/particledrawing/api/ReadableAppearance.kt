@@ -1,6 +1,7 @@
 package work.nekow.particledrawing.api
 
 import work.nekow.particledrawing.light.LightShape
+import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.translation
 
@@ -85,6 +86,7 @@ class ParticleVisualBuilder {
     var softFade: Length = Length.blocks(0.0)
     var trailTicks: Int = 0
     var trailSides: Int = 0
+    var model: ResourceId? = null
 
     fun velocityStretch(gain: Double): ParticleVisualBuilder {
         alignVelocity = true
@@ -190,6 +192,7 @@ class ParticleVisualBuilder {
         visual.softFade = softFade.requireNonNegative(translation("field.length").resolve()).blocks
         visual.trailTicks = trailTicks
         visual.trailSides = trailSides
+        visual.model = model
         return visual
     }
 }

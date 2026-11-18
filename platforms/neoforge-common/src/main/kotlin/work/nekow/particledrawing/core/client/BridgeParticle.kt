@@ -181,6 +181,8 @@ class BridgeParticle(
 
     private var effects: ParticleRenderEffects? = null
 
+    internal var model: ParticleModelRenderer.Model? = null
+
     internal fun enableRenderEffects(visual: ParticleRenderOptions, previous: Vec3?) {
         val state = ParticleRenderEffects(visual, previous ?: Vec3(x, y, z))
         effects = state
@@ -383,6 +385,7 @@ class BridgeParticle(
             val w = frameWidth(partialTick)
             val h = frameHeight(partialTick)
             state.pendingWidth = if (w != h) w else -1f
+            state.pendingModel = model
         }
         super.extractRotatedQuad(state, camera, q, partialTick)
     }

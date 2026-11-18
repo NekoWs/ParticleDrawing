@@ -5,14 +5,17 @@ import net.minecraft.world.phys.Vec3
 import net.minecraft.world.phys.shapes.Shapes
 import org.joml.Vector3f
 import work.nekow.particledrawing.api.ParticleRenderOptions
+import work.nekow.particledrawing.api.ParticleTriangle
 import work.nekow.particledrawing.core.client.ClientParticleWorld
 import work.nekow.particledrawing.core.client.ParticleRenderEffects
+import work.nekow.particledrawing.core.client.ParticleModelRenderer
 import kotlin.test.Test
 import work.nekow.particledrawing.math.Vec3 as CoreVec3
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class PlatformParticleRenderEffectsTest {
     @Test
@@ -61,5 +64,21 @@ class PlatformParticleRenderEffectsTest {
         assertEquals(BlockPos.ZERO, block)
         assertEquals(CoreVec3(1.0, 0.5, 0.5), hit.position)
         assertEquals(CoreVec3(1.2, 0.75, 0.5), hit.center)
+    }
+
+    @Test
+    fun `网格粒子保留三维表面并把资源坐标归一化到渲染半径`() {
+        val shift = CoreVec3(8.0, 4.0, -20.0)
+        val a = shift.add(3.0, 0.0, 0.0)
+        val b = shift.add(0.0, 3.0, 0.0)
+        val c = shift.add(0.0, 0.0, 3.0)
+        val d = shift.add(-3.0, -3.0, -3.0)
+        val model = ParticleModelRenderer.normalize(listOf(
+            ParticleTriangle(a, b, c), ParticleTriangle(a, d, b), ParticleTriangle(b, d, c), ParticleTriangle(c, d, a),
+        ))
+        assertEquals(4, model.faces.size)
+        val vertices = model.faces.flatMap { listOf(it.triangle.a, it.triangle.b, it.triangle.c) }
+        assertEquals(1.0, vertices.maxOf { it.length() }, 1e-9)
+        assertTrue(vertices.map { it.z }.distinct().size > 1)
     }
 }

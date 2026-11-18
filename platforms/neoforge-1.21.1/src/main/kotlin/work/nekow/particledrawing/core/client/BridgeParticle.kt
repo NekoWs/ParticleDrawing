@@ -8,6 +8,7 @@ import net.minecraft.client.particle.SingleQuadParticle
 import net.minecraft.util.Mth
 import net.minecraft.world.phys.Vec3
 import org.joml.Quaternionf
+import org.joml.Vector3f
 import work.nekow.particledrawing.api.ParticleRenderOptions
 import work.nekow.particledrawing.animation.ParticleUvRegion
 import work.nekow.particledrawing.animation.UvData
@@ -173,6 +174,8 @@ class BridgeParticle(
 
     /** 同步粒子位置；snap = 跳变到目标位置，否则保留上一 tick 位置作为插值起点。 */
 
+    internal var model: ParticleModelRenderer.Model? = null
+
     internal fun enableRenderEffects(visual: ParticleRenderOptions, previous: Vec3?) {
         val state = ParticleRenderEffects(visual, previous ?: Vec3(x, y, z))
         effects = state
@@ -270,7 +273,7 @@ class BridgeParticle(
      * 并兜一个最小半边长，保证盒子始终合法。
      */
     override fun getRenderBoundingBox(partialTicks: Float): net.minecraft.world.phys.AABB {
-        val half = maxOf(frameWidth(partialTicks), frameHeight(partialTicks), 0.5f)
+        val half = maxOf(frameWidth(partialTicks), frameHeight(partialTicks), 0.5f, model?.fixedRadius ?: 0f)
         val px = sampledX(partialTicks)
         val py = sampledY(partialTicks)
         val pz = sampledZ(partialTicks)
@@ -338,6 +341,15 @@ class BridgeParticle(
         ) ?: if (billboard) rotation else orientationQuaternion()
         val w = frameWidth(partialTick)
         val h = frameHeight(partialTick)
+        model?.let { mesh ->
+            val cam = camera.position
+            val center = modelPosition.set(
+                (sampledX(partialTick) - cam.x).toFloat(), (sampledY(partialTick) - cam.y).toFloat(), (sampledZ(partialTick) - cam.z).toFloat(),
+            )
+            ParticleModelRenderer.draw(mesh, consumer, center, q, w, h,
+                getU0(), getU1(), getV0(), getV1(), RibbonVertices.color(rCol, gCol, bCol, alpha), getLightColor(partialTick))
+            return
+        }
         if (w == h) {
             super.renderRotatedQuad(consumer, camera, q, partialTick)
             return
@@ -430,6 +442,7 @@ class BridgeParticle(
     }
 
     companion object {
+        private val modelPosition = Vector3f()
         private val ribbonVertices = RibbonVertices()
         /** 编辑器 → Minecraft 世界单位的缩放因子。 */
         const val EDITOR_TO_MC_SCALE: Float = VisualMath.EDITOR_TO_MC_SCALE
