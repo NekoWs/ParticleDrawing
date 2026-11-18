@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -139,12 +140,12 @@ class ParticleVisualCodecTest {
 
     @Test
     fun `只发光不画外观往返一致`() {
-        val withOnly = roundTrip(ParticleVisual().additive(true).lightOnly(true))
-        val without = roundTrip(ParticleVisual().additive(true))
-        assertTrue(withOnly.visual!!.lightOnly, "lightOnly 必须过协议")
-        assertTrue(withOnly.visual!!.emitsLight, "开启 lightOnly 时照明位应一起下发")
-        assertFalse(without.visual!!.lightOnly)
-        assertFalse(without.visual!!.emitsLight)
+        val withOnly = assertNotNull(roundTrip(ParticleVisual().additive(true).lightOnly(true)).visual)
+        val without = assertNotNull(roundTrip(ParticleVisual().additive(true)).visual)
+        assertTrue(withOnly.lightOnly, "lightOnly 必须过协议")
+        assertTrue(withOnly.emitsLight, "开启 lightOnly 时照明位应一起下发")
+        assertFalse(without.lightOnly)
+        assertFalse(without.emitsLight)
     }
 
     @Test
@@ -156,5 +157,21 @@ class ParticleVisualCodecTest {
         ParticleSpawnPayload.STREAM_CODEC.encode(none, payload(null))
         // flags(1) + 内联名（1 字节长度 + 字节数）
         assertEquals(2 + v.texture!!.toByteArray(Charsets.UTF_8).size, b.readableBytes() - none.readableBytes())
+    }
+
+    @Test
+    fun `拉丝软化和拖尾可以同时过网络`() {
+        val visual = ParticleVisual().apply {
+            alignVelocity = true
+            stretch = 1.5
+            softFade = 0.75
+            trailTicks = 32
+        }
+        val decoded = roundTrip(visual).visual!!
+        assertTrue(decoded.alignVelocity)
+        assertEquals(1.5, decoded.stretch)
+        assertEquals(0.75, decoded.softFade)
+        assertEquals(32, decoded.trailTicks)
+        assertEquals(0, roundTrip(ParticleVisual().billboard(false)).visual!!.trailTicks)
     }
 }

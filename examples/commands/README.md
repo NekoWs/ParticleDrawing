@@ -108,6 +108,13 @@ speed 使用弧度/毫秒，tilt 使用弧度；这些示例的公式每刻读�
 拖尾里的滞后量，所以每个角度上有一列粒子。改 `sin(ph*3.1416)*2.6` 里的 2.6 就是改残影最长能拖多远，
 改 `rate 1024` 可让整组在更少刻内出生（两刻内出生完，动画才齐）。
 
+## 粒子外观示例
+
+| 函数 | 效果 | 配置名 |
+| --- | --- | --- |
+| soft-fade | 在平整地板上对照同高度下的两组粒子，右组靠近表面时淡出 | soft_reference、soft_demo |
+| ribbon-trail | 两颗绕锚点运动的粒子，各自保留 32 刻的渐隐丝带 | ribbon_demo |
+
 ## 图片示例
 
 image 示例需要把项目的 `platforms/neoforge-common/src/main/resources/icon.png` 复制为游戏工作目录的

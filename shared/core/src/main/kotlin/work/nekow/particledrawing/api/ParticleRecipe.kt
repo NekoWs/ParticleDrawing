@@ -33,6 +33,18 @@ data class SubEmit(
         requireLocalized(scale in 0.05..4.0) { translation("error.recipe.subemit_scale") }
     }
 
+    /** 每次爆发使用稳定的种子，方向在球面上均匀分布。 */
+    internal inline fun forEachVelocity(index: Long, tick: Long, action: (Vec3) -> Boolean) {
+        val next = work.nekow.particledrawing.animation.script.mulberry32((31L * index + tick).toInt())
+        repeat(count) {
+            val y = next() * 2.0 - 1.0
+            val angle = next() * Math.PI * 2.0
+            val ring = kotlin.math.sqrt(1.0 - y * y)
+            val velocity = Vec3(ring * kotlin.math.cos(angle), y, ring * kotlin.math.sin(angle)).scale(speed)
+            if (!action(velocity)) return
+        }
+    }
+
     companion object {
         const val MAX_COUNT = 64
         const val MAX_SPEED = 2.0

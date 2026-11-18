@@ -31,6 +31,8 @@ internal object ParticleVisualCodec {
     private const val FLAG_ALIGN_VELOCITY = 1 shl 13
     private const val FLAG_SOFT_FADE = 1 shl 14
 
+    private const val FLAG_TRAIL = 1 shl 15
+
     fun write(buf: FriendlyByteBuf, visual: ParticleVisual?) {
         if (visual == null) {
             buf.writeVarInt(0)
@@ -64,6 +66,8 @@ internal object ParticleVisualCodec {
         if (visual.alignVelocity) flags = flags or FLAG_ALIGN_VELOCITY
         if (visual.softFade > 0.0) flags = flags or FLAG_SOFT_FADE
 
+        if (visual.trailTicks > 0) flags = flags or FLAG_TRAIL
+
         buf.writeVarInt(flags)
         if (flags == 0) return
 
@@ -86,6 +90,7 @@ internal object ParticleVisualCodec {
         visual.lightShape?.let { writeLightShape(buf, it) }
         if (visual.alignVelocity) buf.writeFloat(visual.stretch.toFloat())
         if (visual.softFade > 0.0) buf.writeFloat(visual.softFade.toFloat())
+        if (visual.trailTicks > 0) buf.writeVarInt(visual.trailTicks)
     }
 
     fun read(buf: FriendlyByteBuf): ParticleVisual? {
@@ -129,6 +134,7 @@ internal object ParticleVisualCodec {
             visual.stretch = buf.readFloat().toDouble()
         }
         if (flags and FLAG_SOFT_FADE != 0) visual.softFade = buf.readFloat().toDouble()
+        if (flags and FLAG_TRAIL != 0) visual.trailTicks = buf.readVarInt()
         return visual
     }
 

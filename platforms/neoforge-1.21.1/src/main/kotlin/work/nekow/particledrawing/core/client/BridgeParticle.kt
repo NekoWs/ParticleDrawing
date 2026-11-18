@@ -13,6 +13,7 @@ import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.lighting.DynamicLightManager
+import work.nekow.particledrawing.math.Vec3 as CoreVec3
 import work.nekow.particledrawing.util.VisualMath
 
 /**
@@ -167,8 +168,25 @@ class BridgeParticle(
         isGlowing = glowing
     }
 
+    private var effects: ParticleRenderEffects? = null
+
     /** 同步粒子位置；snap = 跳变到目标位置，否则保留上一 tick 位置作为插值起点。 */
+
+    internal fun enableRenderEffects(visual: ResolvedVisual, previous: Vec3?) {
+        val state = ParticleRenderEffects(visual, previous ?: Vec3(x, y, z))
+        effects = state
+        if (previous != null) {
+            state.syncPosition(previous.x, previous.y, previous.z, x, y, z, snap = false)
+            state.record(x, y, z)
+        }
+    }
+
+    internal fun recordTrail() {
+        effects?.record(x, y, z)
+    }
+
     fun syncPosition(x: Double, y: Double, z: Double, snap: Boolean = false) {
+        effects?.syncPosition(this.x, this.y, this.z, x, y, z, snap)
         if (snap) {
             this.xo = x; this.yo = y; this.zo = z
         } else {
@@ -233,13 +251,15 @@ class BridgeParticle(
     }
 
     fun sampledAlpha(partialTick: Float): Float = blend.alphaAt(frameFactor(partialTick))
-    fun sampledWidth(partialTick: Float): Float = blend.widthAt(frameFactor(partialTick))
-    fun sampledHeight(partialTick: Float): Float = blend.heightAt(frameFactor(partialTick))
+    fun sampledWidth(partialTick: Float): Float =
+        blend.widthAt(frameFactor(partialTick)) * (effects?.stretchFactor ?: 1f)
+    fun sampledHeight(partialTick: Float): Float =
+        blend.heightAt(frameFactor(partialTick)) / (effects?.stretchFactor ?: 1f)
 
-    override fun getQuadSize(partialTick: Float): Float = blend.heightAt(frameFactor(partialTick))
+    override fun getQuadSize(partialTick: Float): Float = sampledHeight(partialTick)
 
-    private fun frameWidth(partialTick: Float): Float = blend.widthAt(frameFactor(partialTick))
-    private fun frameHeight(partialTick: Float): Float = blend.heightAt(frameFactor(partialTick))
+    private fun frameWidth(partialTick: Float): Float = sampledWidth(partialTick)
+    private fun frameHeight(partialTick: Float): Float = sampledHeight(partialTick)
 
     /**
      * 渲染剔除用的包围盒。
@@ -253,6 +273,7 @@ class BridgeParticle(
         val px = sampledX(partialTicks)
         val py = sampledY(partialTicks)
         val pz = sampledZ(partialTicks)
+        effects?.let { if (it.trail != null) return it.bounds(px, py, pz, half) }
         return net.minecraft.world.phys.AABB(px - half, py - half, pz - half, px + half, py + half, pz + half)
     }
 
@@ -268,17 +289,33 @@ class BridgeParticle(
     override fun render(consumer: VertexConsumer, camera: Camera, partialTick: Float) {
         if (lightOnly) return
         val f = frameFactor(partialTick)
+        val cam = camera.position
+        if (!ParticleRenderEffects.visible(particleId, cam, x, y, z)) return
         refreshTextureIfStale()
         texEntry?.let { uvRegion.updateFromTexture(it, uv, animStartNanos, textureClock, age, f) }
-        val cr = rCol; val cg = gCol; val cb = bCol; val ca = alpha
+        val cr = rCol
+        val cg = gCol
+        val cb = bCol
+        val ca = alpha
         if (f > 0f) {
             rCol = blend.redAt(f)
             gCol = blend.greenAt(f)
             bCol = blend.blueAt(f)
             alpha = blend.alphaAt(f)
         }
+        alpha *= effects?.alpha(x, y, z, f) ?: 1f
         try {
+            if (alpha <= 0f && effects != null) return
             super.render(consumer, camera, partialTick)
+            effects?.trail?.let { trail ->
+                ribbonVertices.clear()
+                ribbonVertices.append(
+                    trail, CoreVec3(sampledX(f), sampledY(f), sampledZ(f)),
+                    CoreVec3(cam.x, cam.y, cam.z), frameHeight(f), f,
+                    getU0(), getU1(), getV0(), getV1(), RibbonVertices.color(rCol, gCol, bCol, alpha), getLightColor(f),
+                )
+                ribbonVertices.writeTo(consumer)
+            }
         } finally {
             rCol = cr; gCol = cg; bCol = cb; alpha = ca
         }
@@ -293,7 +330,7 @@ class BridgeParticle(
         rotation: Quaternionf,
         partialTick: Float,
     ) {
-        val q = morphOrientation?.rotationAt(
+        val q = effects?.orientation() ?: morphOrientation?.rotationAt(
             frameFactor(partialTick), if (billboard) 0.0 else spinDeg[2], billboard || spinLocal,
             if (billboard) rotation else null,
         ) ?: if (billboard) rotation else orientationQuaternion()
@@ -337,7 +374,7 @@ class BridgeParticle(
 
     override fun getRenderType(): ParticleRenderType {
         refreshTextureIfStale()
-        val translucent = additive || alpha < 1.0f
+        val translucent = additive || alpha < 1.0f || effects?.translucent == true
         val cached = renderTypeCache
         if (cached != null && translucent == renderTypeTranslucent) return cached
         val entry = texEntry
@@ -391,6 +428,7 @@ class BridgeParticle(
     }
 
     companion object {
+        private val ribbonVertices = RibbonVertices()
         /** 编辑器 → Minecraft 世界单位的缩放因子。 */
         const val EDITOR_TO_MC_SCALE: Float = VisualMath.EDITOR_TO_MC_SCALE
 

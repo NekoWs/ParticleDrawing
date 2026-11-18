@@ -13,7 +13,7 @@ pdraw particle emitter meteor subemit lifetime 14
 pdraw particle emitter meteor subemit speed 0.22
 pdraw particle emitter meteor subemit scale 0.45
 pdraw particle emitter meteor appearance scale 2.2
-pdraw particle emitter meteor appearance color 1,0.72,0.3,1
+pdraw particle emitter meteor appearance color #ffb84d
 pdraw particle emitter meteor appearance glowing true
 pdraw particle emitter meteor appearance light 15
 pdraw particle emitter meteor lifetime 26

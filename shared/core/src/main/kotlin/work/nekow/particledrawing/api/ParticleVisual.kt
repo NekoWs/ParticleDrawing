@@ -94,9 +94,28 @@ class ParticleVisual {
 
     /** 拉丝强度：长度系数 = 1 + stretch × 速度（格/刻），0 表示只对齐不拉长。 */
     var stretch: Double = 0.6
+        set(value) {
+            requireLocalized(value in 0.0..VelocityStretch.MAX_STRETCH) {
+                translation("error.visual.stretch", VelocityStretch.MAX_STRETCH.toInt())
+            }
+            field = value
+        }
 
     /** 软粒子采样半径（格）：>0 时粒子贴近方块会淡出，消除插进地面的硬边。 */
     var softFade: Double = 0.0
+        set(value) {
+            requireLocalized(value in 0.0..SoftFade.MAX_DISTANCE) {
+                translation("error.visual.soft_fade", SoftFade.MAX_DISTANCE.toInt())
+            }
+            field = value
+        }
+
+    /** 拖尾历史长度（刻），0 关闭。 */
+    var trailTicks: Int = 0
+        set(value) {
+            requireLocalized(value in 0..MAX_TRAIL_TICKS) { translation("error.visual.trail_ticks", MAX_TRAIL_TICKS) }
+            field = value
+        }
 
     /** 配置对外照明的形状。null 清除显式形状。 */
     fun lightShape(shape: LightShape?): ParticleVisual = apply { lightShape = shape?.validated() }
@@ -267,6 +286,7 @@ class ParticleVisual {
         c.alignVelocity = alignVelocity
         c.stretch = stretch
         c.softFade = softFade
+        c.trailTicks = trailTicks
         return c
     }
 
@@ -280,7 +300,7 @@ class ParticleVisual {
     fun isPristine(): Boolean = texture == null && uvRect == null && !hasAniso() &&
         billboard && spinXDeg == 0.0 && spinYDeg == 0.0 && spinZDeg == 0.0 && spinLocal &&
         !additive && !glowing && !emitsLight && !lightOnly && lightIntensity == 1f && lightShape == null &&
-        !alignVelocity && softFade <= 0.0
+        !alignVelocity && softFade == 0.0 && trailTicks == 0
 
     /**
      * 解析成渲染用的 UV，由客户端调用。[texW]/[texH] 是已注册贴图的像素尺寸，未知传 0。
@@ -335,6 +355,7 @@ class ParticleVisual {
     }
 
     companion object {
+        const val MAX_TRAIL_TICKS = 32
         /** 贴图名长度上限（与 TextureRegistry 的登记上限一致）。 */
         const val MAX_TEXTURE_NAME = 256
 

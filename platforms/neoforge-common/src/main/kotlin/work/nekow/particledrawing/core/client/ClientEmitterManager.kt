@@ -201,17 +201,12 @@ internal object ClientEmitterManager {
         val offset = EmitterSampling.offset(active.seed, index, dir, p.jitter, p.offsetAlong)
         val spawnPos = if (offset.lengthSqr() == 0.0) pos else pos.add(offset)
 
-        val id = UUID.randomUUID()
-        engine.spawnParticle(
-            id, spawnPos.x, spawnPos.y, spawnPos.z,
-            p.r, p.g, p.b, p.a, p.scale, p.lifetimeTicks,
-            null, p.glowing, p.lightLevel, active.visual, p.lifeCurve,
-        )
-        // 本帧刚出生：下一 tick 就计年龄，曲线从出生那一刻的 partialTick 起算
-        engine.markSpawnedDuringRender(id, partialTick)
-        active.alive.addLast(nowTick + p.lifetimeTicks)
-        if (p.velocity.x != 0.0 || p.velocity.y != 0.0 || p.velocity.z != 0.0) {
-            engine.setVelocity(id, p.velocity.x, p.velocity.y, p.velocity.z)
+        if (engine.spawnLocalEmitterParticle(
+                spawnPos, p.velocity.toCore(), p.r, p.g, p.b, p.a, p.scale, p.lifetimeTicks,
+                p.glowing, p.lightLevel, active.visual, p.lifeCurve, partialTick,
+            )
+        ) {
+            active.alive.addLast(nowTick + p.lifetimeTicks)
         }
     }
 }

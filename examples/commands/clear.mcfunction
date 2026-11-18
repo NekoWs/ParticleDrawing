@@ -21,3 +21,6 @@ pdraw particle emitter reset levelup_a
 pdraw particle emitter reset levelup_b
 pdraw particle emitter reset levelup_c
 pdraw particle emitter reset waist_light
+pdraw particle emitter reset soft_reference
+pdraw particle emitter reset soft_demo
+pdraw particle emitter reset ribbon_demo

@@ -39,12 +39,15 @@ internal data class ParticleCommandOptions(
  */
 internal object ParticleCommandOptionParser {
     private val booleanFlags = setOf("additive", "glowing", "taper", "hollow", "rainbow", "light_only")
-    private val allowed = setOf(
-        "color", "gradient", "rainbow", "scale", "stagger", "lifetime", "axis", "taper", "hollow",
-        "thickness", "style", "texture", "uv", "size", "size_world", "billboard", "spin", "spin_space",
-        "additive", "glowing", "light", "light_only", "intensity", "alpha_curve", "size_curve", "red_curve",
-        "green_curve", "blue_curve", "light_curve", "velocity", "force", "force_ticks",
-        "spot", "light_dir", "light_range", "light_falloff", "align_velocity", "stretch", "soft",
+    val appearanceKeys = setOf(
+        "color", "scale", "style", "texture", "uv", "size", "size_world", "billboard", "spin",
+        "spin_space", "additive", "glowing", "light", "light_only", "intensity", "alpha_curve",
+        "size_curve", "red_curve", "green_curve", "blue_curve", "light_curve", "spot",
+        "light_dir", "light_range", "light_falloff", "align_velocity", "stretch", "soft", "trail",
+    )
+    private val allowed = appearanceKeys + setOf(
+        "gradient", "rainbow", "stagger", "lifetime", "axis", "taper", "hollow", "thickness",
+        "velocity", "force", "force_ticks",
     )
 
     fun parse(input: String): ParticleCommandOptions {
@@ -123,24 +126,11 @@ internal object ParticleCommandOptionParser {
             visual.lightFalloff(curve, range.toDouble())
         }
         values["light_only"]?.let { visual.lightOnly(bool(it, "light_only")) }
-        values["soft"]?.let { visual.softFade = float(it, "soft").toDouble().coerceIn(0.0, 4.0) }
-        // 速度拉丝：长轴对齐速度并按速度拉长。对齐必须关掉广告牌，否则朝向被相机覆盖。
-        values["align_velocity"]?.let { raw ->
-            val on = raw.trim().lowercase()
-            val enabled = on == "true" || on == "on" || on == "1"
-            val gain = values["stretch"]?.let { float(it, "stretch").toDouble() } ?: visual.stretch
-            visual.alignVelocity = enabled
-            visual.stretch = gain.coerceAtLeast(0.0)
-            if (enabled) visual.billboard = false
-        }
-        if (values["align_velocity"] == null) {
-            values["stretch"]?.let { raw ->
-                val gain = float(raw, "stretch").toDouble().coerceAtLeast(0.0)
-                visual.alignVelocity = gain > 0.0
-                visual.stretch = gain
-                if (visual.alignVelocity) visual.billboard = false
-            }
-        }
+        values["soft"]?.let { visual.softFade = float(it, "soft").toDouble() }
+        values["trail"]?.let { visual.trailTicks = int(it, "trail") }
+        values["stretch"]?.let { visual.stretch = float(it, "stretch").toDouble() }
+        visual.alignVelocity = values["align_velocity"]?.let { bool(it, "align_velocity") }
+            ?: ("stretch" in values && visual.stretch > 0.0)
 
         var curves = ParticleLifeCurve.EMPTY
         fun curve(key: String, channel: CurveChannel) {

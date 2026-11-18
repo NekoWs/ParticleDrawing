@@ -1,21 +1,14 @@
 package work.nekow.particledrawing.api
 
-import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.sqrt
 
-/**
- * 速度对齐：把四边形的长轴（局部 X）转到速度方向。
- *
- * 渲染端按 `rotationXYZ(x, y, z)` 组合（先绕 X、再绕 Y、最后绕 Z），长轴是局部 X，
- * 所以只需要 Y 与 Z 两个角：
- * - 绕 Z 决定长轴在水平面上的朝向（抬头/低头）
- * - 绕 Y 决定长轴的水平方位
- * 绕 X 的自转不影响长轴方向，保持 0。
- */
+/** 将四边形的局部 X 轴转到世界速度方向。 */
 object VelocityStretch {
 
-    /** 速度低于这个值视为静止，不做对齐，避免慢速粒子乱转。 */
+    const val MAX_STRETCH = 10.0
+
+    /** 速度低于这个值时保留原朝向。 */
     const val MIN_SPEED = 1e-4
 
     /** 拉长后的上限系数，防止极快的粒子拉成一条贯穿屏幕的线。 */

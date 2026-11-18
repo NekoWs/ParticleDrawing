@@ -29,6 +29,10 @@ class OrientedQuadRenderState : QuadParticleRenderState() {
 
     // 按层排队：一次 buildLayer 只画一层，每层的加入顺序就是它顶点生成的顺序
     private val widths = HashMap<SingleQuadParticle.Layer, Widths>()
+    private val ribbons = HashMap<SingleQuadParticle.Layer, RibbonVertices>()
+
+    internal fun ribbonVertices(layer: SingleQuadParticle.Layer): RibbonVertices =
+        ribbons.getOrPut(layer) { RibbonVertices() }
 
     // 顶点生成的临时对象，只在渲染线程用，复用以免每颗粒子每帧分配
     private val scratchQ = Quaternionf()
@@ -57,6 +61,7 @@ class OrientedQuadRenderState : QuadParticleRenderState() {
         current = widths[layer]
         cursor = 0
         super.buildLayer(layer, bufferBuilder)
+        ribbons[layer]?.writeTo(bufferBuilder)
         current = null
     }
 
@@ -64,6 +69,7 @@ class OrientedQuadRenderState : QuadParticleRenderState() {
     override fun clear() {
         super.clear()
         for (w in widths.values) w.count = 0
+        for (ribbon in ribbons.values) ribbon.clear()
         current = null
         cursor = 0
     }

@@ -33,6 +33,8 @@ class RecipeRuntime(
         var age = 0
         var alive = true
         var initialPosition: Vec3 = seed.position
+        internal var birthFrame = RecipeFrame.IDENTITY
+        internal var previousWorldPosition: Vec3? = null
 
         /** 按字段名取当前值；命令、测试与慢路径用，热路径直接读 [regs]。 */
         fun value(name: String): Double = regs[slots.slot(name)]
@@ -50,6 +52,8 @@ class RecipeRuntime(
         private set
     var emitting = true
     val particles = arrayListOf<Particle>()
+    private val removed = arrayListOf<Particle>()
+    internal val removedParticles: List<Particle> get() = removed
     val finished get() = !emitting && particles.isEmpty()
 
     /** 当前配方的槽位表；渲染端同步时按它直接读寄存器。 */
@@ -59,7 +63,8 @@ class RecipeRuntime(
     private val attrMap = HashMap<String, Double>(32)
     private val motionOut = LinkedHashMap<String, Double>()
     private val birthOut = LinkedHashMap<String, Double>()
-    private val collisionState = DoubleArray(6)
+    internal var frame: RecipeFrame? = RecipeFrame.IDENTITY
+        private set
     private var persistent: Map<String, Int> = persistentSlots()
     private var checkSlots: IntArray = intArrayOf()
     private var checkNames: Array<String> = arrayOf()
@@ -121,17 +126,26 @@ class RecipeRuntime(
     private fun regSize(): Int = expressions.fast?.regCount ?: (expressions.slots.map.values.max() + 1)
 
     /** 旧粒子先推进，再生成本刻的新粒子；新生粒子保留 age=0 的完整首帧。 */
-    fun tick(allowBirth: Boolean = true) {
+    fun tick(allowBirth: Boolean = true) = tickInFrame(if (allowBirth) RecipeFrame.IDENTITY else null)
+
+    internal fun tickInFrame(frame: RecipeFrame?) {
+        this.frame = frame
         val fast = expressions.fast
         if (fast != null) advanceFast(fast) else advanceSlow()
-        particles.removeAll { !it.alive }
-        if (emitting && allowBirth && ticks % recipe.interval == 0L) {
+        collectRemoved()
+        if (emitting && frame != null && ticks % recipe.interval == 0L) {
             var attempt = 0
             while (attempt < recipe.rate) {
                 if (!emitting || particles.size >= recipe.maxAlive) break
                 val seed = recipe.seeds[(cursor % recipe.seeds.size).toInt()]
                 val p = if (fast != null) spawnFast(fast, seed) else spawnSlow(seed)
-                if (p != null) particles += p
+                if (p != null) {
+                    p.birthFrame = frame
+                    if (world != null && recipe.follow && recipe.collision != RecipeCollision.NONE) {
+                        p.previousWorldPosition = frame.position(p.x, p.y, p.z)
+                    }
+                    particles += p
+                }
                 cursor++
                 if (burst && cursor >= recipe.seeds.size) emitting = false
                 attempt++
@@ -157,9 +171,12 @@ class RecipeRuntime(
             r[Reg.T] = t
             r[RecipeExpressions.AGE] = p.age.toDouble()
             r[RecipeExpressions.PROGRESS] = if (p.lifetime > 0) p.age.toDouble() / p.lifetime else 0.0
+            val x = p.x
+            val y = p.y
+            val z = p.z
             program.exec(r, stack, null)
             if (r[killSlot] != 0.0) { p.alive = false; continue }
-            integrate(p, fast.writesX, fast.writesY, fast.writesZ)
+            integrate(p, x, y, z, fast.writesX, fast.writesY, fast.writesZ)
             validateFast(p)
         }
     }
@@ -206,8 +223,11 @@ class RecipeRuntime(
             prepare(p)
             if (expressions.kills()) { p.alive = false; continue }
             val outputs = expressions.evaluateInto(expressions.motion, motionOut)
+            val x = p.x
+            val y = p.y
+            val z = p.z
             storeOutputs(p, outputs)
-            integrateSlow(p, outputs)
+            integrate(p, x, y, z, "x" in outputs, "y" in outputs, "z" in outputs)
             validateSlow(p)
         }
     }
@@ -228,45 +248,47 @@ class RecipeRuntime(
         return p
     }
 
-    /** 一条轴的速度积分：先叠加加速度，再在公式没直接写位置时按速度推进。 */
-    private fun integrateSlow(p: Particle, outputs: Map<String, Double>) {
-        integrate(p, "x" in outputs, "y" in outputs, "z" in outputs)
-    }
+    internal fun frameOf(p: Particle): RecipeFrame = if (recipe.follow) frame ?: p.birthFrame else p.birthFrame
 
-    /**
-     * 速度积分与碰撞响应。快慢两条路径共用同一段，避免碰撞只在一侧生效。
-     *
-     * 显式写了某个位置分量时该轴不叠加速度，碰撞仍按实际位置判定。
-     */
-    private fun integrate(p: Particle, writesX: Boolean, writesY: Boolean, writesZ: Boolean) {
+    /** 快慢路径用同一积分，显式写位置的轴仍参与碰撞。 */
+    private fun integrate(
+        p: Particle, oldX: Double, oldY: Double, oldZ: Double,
+        writesX: Boolean, writesY: Boolean, writesZ: Boolean,
+    ) {
         val r = p.regs
         r[Reg.VX] += r[RecipeExpressions.AX]
         r[Reg.VY] += r[RecipeExpressions.AY]
         r[Reg.VZ] += r[RecipeExpressions.AZ]
-        val oldX = r[Reg.X]
-        val oldY = r[Reg.Y]
-        val oldZ = r[Reg.Z]
         if (!writesX) r[Reg.X] = oldX + r[Reg.VX]
         if (!writesY) r[Reg.Y] = oldY + r[Reg.VY]
         if (!writesZ) r[Reg.Z] = oldZ + r[Reg.VZ]
 
-        val mode = recipe.collision
-        if (mode == RecipeCollision.NONE) return
         val query = world ?: return
-        val state = collisionState
-        state[CollisionMath.POS_X] = r[Reg.X]
-        state[CollisionMath.POS_Y] = r[Reg.Y]
-        state[CollisionMath.POS_Z] = r[Reg.Z]
-        state[CollisionMath.VEL_X] = r[Reg.VX]
-        state[CollisionMath.VEL_Y] = r[Reg.VY]
-        state[CollisionMath.VEL_Z] = r[Reg.VZ]
-        if (!CollisionMath.resolve(mode, query, oldX, oldY, oldZ, state, recipe.bounce, recipe.friction)) return
-        r[Reg.X] = state[CollisionMath.POS_X]
-        r[Reg.Y] = state[CollisionMath.POS_Y]
-        r[Reg.Z] = state[CollisionMath.POS_Z]
-        r[Reg.VX] = state[CollisionMath.VEL_X]
-        r[Reg.VY] = state[CollisionMath.VEL_Y]
-        r[Reg.VZ] = state[CollisionMath.VEL_Z]
+        val mode = recipe.collision
+        if (mode == RecipeCollision.NONE) {
+            p.previousWorldPosition = null
+            return
+        }
+        if (recipe.follow && frame == null) {
+            p.previousWorldPosition = null
+            return
+        }
+
+        val space = frameOf(p)
+        val from = p.previousWorldPosition ?: space.position(oldX, oldY, oldZ)
+        val to = space.position(p.x, p.y, p.z)
+        val velocity = space.velocity(Vec3(r[Reg.VX], r[Reg.VY], r[Reg.VZ]))
+        val hit = CollisionMath.resolve(mode, query, from, to, velocity, recipe.bounce, recipe.friction)
+        p.previousWorldPosition = hit?.position ?: to
+        if (hit == null) return
+        val position = space.localPosition(hit.position)
+        val localVelocity = space.localVelocity(hit.velocity)
+        r[Reg.X] = position.x
+        r[Reg.Y] = position.y
+        r[Reg.Z] = position.z
+        r[Reg.VX] = localVelocity.x
+        r[Reg.VY] = localVelocity.y
+        r[Reg.VZ] = localVelocity.z
     }
 
     private fun storeOutputs(p: Particle, outputs: Map<String, Double>) {
@@ -362,11 +384,19 @@ class RecipeRuntime(
                 p.alive = false
             } else {
                 storeOutputs(p, outputs)
+                if ("x" in outputs || "y" in outputs || "z" in outputs) p.previousWorldPosition = null
                 validateSlow(p)
             }
         }
-        particles.removeAll { !it.alive }
+        collectRemoved()
         return selected.size
+    }
+
+    private fun collectRemoved() {
+        removed.clear()
+        particles.removeAll {
+            if (it.alive) false else removed.add(it)
+        }
     }
 
     companion object {

@@ -180,6 +180,8 @@ object ParticleRenderHandler {
     @Suppress("UNUSED_PARAMETER")
     fun onComputeFov(event: ViewportEvent.ComputeFov) {
         // 与 CameraMixin 的姿态插值同规则：按渲染 partialTick 在相邻 tick 之间插值，FOV 不逐 tick 跳变
+        // 26.3 返回 Float，旧版返回 Double。
+        @Suppress("REDUNDANT_CALL_OF_CONVERSION_METHOD")
         val fov = CameraController.currentFov(event.partialTick.toDouble()) ?: return
         PlatformCompat.applyFov(event, fov)
     }

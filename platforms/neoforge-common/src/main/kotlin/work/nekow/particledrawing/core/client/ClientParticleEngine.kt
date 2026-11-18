@@ -38,6 +38,8 @@ class ClientParticleEngine {
     private val lightIndex = ParticleLightIndex()
 
     // 带速度的运动粒子索引：每 client tick 确定性积分一次，不参与缓动轮转
+    private val trailIds = HashSet<UUID>()
+
     private val motionIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
 
     // track 的逐 tick 插值缓冲（网络线程写、客户端主线程每 tick 消费一条）
@@ -144,12 +146,34 @@ class ClientParticleEngine {
                       r: Float, g: Float, b: Float, a: Float, scale: Float,
                       lifetimeTicks: Int, groupId: UUID?, glowing: Boolean, lightLevel: Int,
                       visual: ResolvedVisual, lifeCurve: ParticleLifeCurve? = null, prev: Vec3? = null) {
+        val hasEffects = visual.alignVelocity || visual.softFade > 0.0 || visual.trailTicks > 0
+        val previousBridge = if (hasEffects) bridges[id] else null
         spawnParticle(
             id, x, y, z, r, g, b, a, scale, lifetimeTicks, groupId, glowing, lightLevel,
             visual.uv, visual.billboard, visual.spin, visual.spinLocal, visual.additive,
             visual.scaleArray, lifeCurve, prev, visual.lightIntensity, visual.emitsLight || glowing,
             visual.lightOnly, visual.lightShape,
         )
+        if (hasEffects && !visual.lightOnly) {
+            val bridge = bridges[id]
+            if (bridge != null && bridge !== previousBridge) {
+                bridge.enableRenderEffects(visual, prev)
+                if (visual.trailTicks > 0) trailIds.add(id)
+            }
+        }
+    }
+
+    internal fun spawnLocalEmitterParticle(
+        pos: CoreVec3, velocity: CoreVec3, r: Float, g: Float, b: Float, a: Float, scale: Float,
+        lifetime: Int, glowing: Boolean, lightLevel: Int, visual: ResolvedVisual,
+        lifeCurve: ParticleLifeCurve? = null, partialTick: Float = 0f,
+    ): Boolean {
+        val id = UUID.randomUUID()
+        spawnParticle(id, pos.x, pos.y, pos.z, r, g, b, a, scale, lifetime, null, glowing, lightLevel, visual, lifeCurve)
+        if (!containsParticle(id)) return false
+        markSpawnedDuringRender(id, partialTick)
+        if (velocity != CoreVec3.ZERO) setVelocity(id, velocity.x, velocity.y, velocity.z)
+        return true
     }
 
     /**
@@ -292,6 +316,7 @@ class ClientParticleEngine {
     fun attachParticle(id: UUID, entityId: Int, entityUuid: UUID?, ox: Double, oy: Double, oz: Double, local: Boolean) {
         takeover.markPosition(id)
         motionIds.remove(id)
+        trailIds.remove(id)
         trackBuffers.remove(id)
         attachments[id] = Attachment(entityId, entityUuid, Vec3(ox, oy, oz), local)
     }
@@ -476,6 +501,7 @@ class ClientParticleEngine {
         groups.values.removeIf { it.isEmpty() }
         checkExitWatches()
         ClientParticleSources.tick()
+        for (id in trailIds) bridges[id]?.recordTrail()
     }
 
     /** 接收一段退场观察；同一版本的分段合并，[last] 到达后才开始判定。 */
@@ -737,6 +763,7 @@ class ClientParticleEngine {
         takeover.clearAll()
         lightIndex.clear()
         motionIds.clear()
+        trailIds.clear()
         trackBuffers.clear()
         attachments.clear()
         curveIds.clear()
@@ -775,13 +802,6 @@ class ClientParticleEngine {
 
     /** 逐粒子同步复用的尺寸缓冲：setScaleArrayDirect / syncScaleArray 都只读不存。 */
     private val frameSizes = FloatArray(3)
-
-    /** 坐标直接给的版本：调用方已经算好世界坐标，省掉一层 Vec3 包装。 */
-    internal fun applyRecipeFrame(
-        id: UUID, x: Double, y: Double, z: Double,
-        r: Float, g: Float, b: Float, a: Float,
-        scale: Float, glow: Boolean, light: Int, visual: ResolvedVisual,
-    ) = applyRecipeFrame(id, Vec3(x, y, z), r, g, b, a, scale, glow, light, visual)
 
     /** 粒子是否还在；比 [snapshot] 便宜，不构造快照。 */
     fun containsParticle(id: UUID): Boolean = particles.containsKey(id)

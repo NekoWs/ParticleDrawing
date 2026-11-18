@@ -439,6 +439,21 @@ handle.remove()
 贴图、UV、各向异性、朝向和混合方式随 `spawn()` 下发。要替换这些规格，调用 `remove()` 后重新生成。
 外观可通过 Builder 单独设置，也可传入 `ParticleVisual`。
 
+速度拉丝、贴地软化和丝带共用粒子外观。可把同一个规格交给普通粒子、批量生成、发射器或 `ParticleRecipe`。
+
+```kotlin
+val cometAppearance = particleVisual {
+    style(ParticleStyle.SOFT_DOT)
+    worldSize(0.24.blocks, 0.1.blocks)
+    velocityStretch(0.8)
+    softFade(0.5.blocks)
+    trail(16)
+}
+manager.create().position(p).visual(cometAppearance).lifetime(80).spawn()
+```
+
+移动的粒子会保留最多 32 刻的尾迹。配置全量绘制距离 `particleLodDistance` 可减少远处实例的绘制量。
+
 ```kotlin
 // 柔边圆点 + 免光照 + 加法混合
 manager.create().position(p).scale(0.5f).lifetime(60)

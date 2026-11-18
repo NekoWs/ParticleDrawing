@@ -11,8 +11,8 @@ pdraw particle emitter sparks birth vz -0.04
 pdraw particle emitter sparks collide solid
 pdraw particle emitter sparks bounce 0.45
 pdraw particle emitter sparks friction 0.65
-pdraw particle emitter sparks appearance color 1,0.72,0.3,1
-pdraw particle emitter sparks appearance glow true
+pdraw particle emitter sparks appearance color #ffb84d
+pdraw particle emitter sparks appearance glowing true
 pdraw particle emitter sparks appearance light 15
 pdraw particle emitter sparks lifetime 240
 pdraw particle emitter sparks rate 4

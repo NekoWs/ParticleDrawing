@@ -91,11 +91,11 @@ class ParticleCommandOptionsTest {
         }
     }
     @Test
-    fun `拉丝选项写入外观并关掉广告牌`() {
+    fun `拉丝选项保留运动前的广告牌朝向`() {
         val visual = ParticleCommandOptionParser.parse("align_velocity=true stretch=2.5").visual
         assertTrue(visual.alignVelocity)
         assertEquals(2.5, visual.stretch, 1e-6)
-        assertFalse(visual.billboard, "对齐速度必须关闭广告牌，否则朝向会被相机覆盖")
+        assertTrue(visual.billboard)
     }
 
     @Test
@@ -108,5 +108,12 @@ class ParticleCommandOptionsTest {
     fun `软粒子半径被写入外观`() {
         val visual = ParticleCommandOptionParser.parse("soft=0.6").visual
         assertEquals(0.6, visual.softFade, 1e-6)
+    }
+
+    @Test
+    fun `拖尾长度使用世界刻且检查上下限`() {
+        assertEquals(24, ParticleCommandOptionParser.parse("trail=24").visual.trailTicks)
+        assertEquals(0, ParticleCommandOptionParser.parse("trail=0").visual.trailTicks)
+        assertFailsWith<IllegalArgumentException> { ParticleCommandOptionParser.parse("trail=33") }
     }
 }

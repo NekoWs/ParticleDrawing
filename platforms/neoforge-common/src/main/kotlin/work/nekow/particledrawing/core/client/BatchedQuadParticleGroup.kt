@@ -44,7 +44,7 @@ class BatchedQuadParticleGroup(
     override fun extractRenderState(frustum: Frustum, camera: Camera, partialTickTime: Float): ParticleGroupRenderState {
         for (particle in particles) {
             val bridge = particle as BridgeParticle
-            if (frustum.pointInFrustum(bridge.renderX(), bridge.renderY(), bridge.renderZ())) {
+            if (bridge.inFrustum(frustum, partialTickTime)) {
                 try {
                     bridge.extract(renderState, camera, partialTickTime)
                 } catch (t: Throwable) {

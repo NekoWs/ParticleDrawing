@@ -31,6 +31,7 @@ internal class ResolvedVisual(
     val stretch: Double = 0.0,
     /** 软粒子采样半径（格）；0 = 不做近几何淡出。 */
     val softFade: Double = 0.0,
+    val trailTicks: Int = 0,
 ) {
     companion object {
         /** 无外观规格：纯白方块、广告牌、无自转、原始光强、不独立投光。 */
@@ -40,8 +41,7 @@ internal class ResolvedVisual(
             if (visual == null) return DEFAULT
             val entry = visual.texture?.let { TextureCache.get(it) }
             val uv = visual.toUvData(entry?.width ?: 0, entry?.height ?: 0)
-            // 速度对齐要逐刻改写这份数组，所以必须是每颗粒子独占的可写副本。
-            val spin = if (!visual.billboard || visual.alignVelocity) {
+            val spin = if (!visual.billboard) {
                 doubleArrayOf(visual.spinXDeg, visual.spinYDeg, visual.spinZDeg)
             } else {
                 ClientParticleEngine.ZERO_SPIN
@@ -53,8 +53,7 @@ internal class ResolvedVisual(
                 spin,
                 visual.spinLocal,
                 visual.additive,
-                if (visual.alignVelocity) floatArrayOf(1f, 1f, 0f)
-                else visual.resolvedAniso(scale, ParticleVisual.texScaleOf(uv, entry?.width ?: 0, entry?.height ?: 0)),
+                visual.resolvedAniso(scale, ParticleVisual.texScaleOf(uv, entry?.width ?: 0, entry?.height ?: 0)),
                 visual.lightIntensity,
                 visual.emitsLight,
                 visual.lightOnly,
@@ -62,6 +61,7 @@ internal class ResolvedVisual(
                 visual.alignVelocity,
                 visual.stretch,
                 visual.softFade,
+                visual.trailTicks,
             )
         }
     }

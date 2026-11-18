@@ -80,6 +80,26 @@ class ParticleVisualBuilder {
     var facing: Facing = Facing.BILLBOARD
     var spin: Angle = Angle.radians(0.0)
     var spinLocal: Boolean = true
+    var alignVelocity: Boolean = false
+    var stretch: Double = 0.6
+    var softFade: Length = Length.blocks(0.0)
+    var trailTicks: Int = 0
+
+    fun velocityStretch(gain: Double): ParticleVisualBuilder {
+        alignVelocity = true
+        stretch = gain
+        return this
+    }
+
+    fun softFade(distance: Length): ParticleVisualBuilder {
+        softFade = distance
+        return this
+    }
+
+    fun trail(ticks: Int): ParticleVisualBuilder {
+        trailTicks = ticks
+        return this
+    }
 
     /** 世界格尺寸；只给宽度时高度同宽。 */
     fun worldSize(width: Length, height: Length = width): ParticleVisualBuilder {
@@ -164,6 +184,10 @@ class ParticleVisualBuilder {
         visual.spinYDeg = 0.0
         visual.spinZDeg = Math.toDegrees(spin.radians)
         visual.spinLocal = spinLocal
+        visual.alignVelocity = alignVelocity
+        visual.stretch = stretch
+        visual.softFade = softFade.requireNonNegative(translation("field.length").resolve()).blocks
+        visual.trailTicks = trailTicks
         return visual
     }
 }

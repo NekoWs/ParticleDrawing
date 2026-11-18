@@ -57,6 +57,7 @@ object ParticleDrawingConfig {
         val showSpotlightBeams: ModConfigSpec.BooleanValue
         val enableDynamicLights: ModConfigSpec.BooleanValue
         val maxRenderParticles: ModConfigSpec.IntValue
+        val particleLodDistance: ModConfigSpec.DoubleValue
         val particleBatchSize: ModConfigSpec.IntValue
         val debugLogFps: ModConfigSpec.BooleanValue
 
@@ -83,6 +84,9 @@ object ParticleDrawingConfig {
             maxRenderParticles = builder
                 .comment("The maximum number of particles the client keeps in its render pipeline.")
                 .defineInRange("maxRenderParticles", 50_000, 1, 200_000)
+            particleLodDistance = builder
+                .comment("Distance in blocks for full particle density. Density falls with squared distance, and particles beyond four times this range are hidden. Zero disables LOD.")
+                .defineInRange("particleLodDistance", 0.0, 0.0, 512.0)
             particleBatchSize = builder
                 .comment("The number of particles whose eased state is synchronized to the renderer per frame (fair round-robin batch).")
                 .defineInRange("particleBatchSize", 4096, 64, 65536)

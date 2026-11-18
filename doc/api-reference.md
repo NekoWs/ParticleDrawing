@@ -21,7 +21,7 @@ KDoc。只在特定包中提供的类型单独注明。代码示例见[使用指
 
 | 类型 | 用途 |
 | --- | --- |
-| `ParticleVisual`、`ParticleStyle`、`ParticleTextures` | 设置尺寸、朝向、混合方式、贴图及换帧 |
+| `ParticleVisual`、`ParticleStyle`、`ParticleTextures` | 设置尺寸、朝向、混合、贴图、换帧、速度拉丝、软化距离与丝带长度 |
 | `particleVisual`、`ParticleAppearance`、`Light`、`Blend`、`Facing` | Kotlin DSL 和 Java Builder，分别描述全亮与对外照明 |
 | `ParticleCurve`、`CurveKey`、`CurveChannel`、`ParticleLifeCurve` | 逐粒子的外观和光强寿命曲线 |
 | `lifeCurve`、`LifeCurves` | 用 DSL 或 Java 入口创建关键帧和淡出包络 |
@@ -37,7 +37,8 @@ KDoc。只在特定包中提供的类型单独注明。代码示例见[使用指
 | `ParticleEmitter`、`EmitterHandle` | 按距离或间隔沿锚点生成粒子，更新参数或停止生成 |
 | `ParticleSampling`、`ParticleImageSampler`、`ParticleSeed` | 计数、范围、网格和图片样本 |
 | `ParticleTextSampler` | 从字符串的字形笔画生成指定数量的坐标；用 `Draw.textPoints` 直接取得世界坐标 |
-| `ParticleRecipe`、`RecipeAnchor` | 用样本、公式、筛选和锚点声明出生与运动 |
+| `ParticleRecipe`、`RecipeAnchor` | 用样本、公式、筛选和锚点声明出生与运动，配置方块或液体碰撞 |
+| `SubEmit` | 在配方粒子自然到期或满足 `kill` 时沿球面方向发射一层子粒子 |
 | `ParticleSources`、`ParticleSourceHandle` | 启动单轮或持续生成，修改现有实例并停止或移除 |
 
 ## 单位、表达式与退场

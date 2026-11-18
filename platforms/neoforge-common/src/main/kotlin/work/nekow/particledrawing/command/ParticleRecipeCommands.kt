@@ -172,7 +172,7 @@ internal object ParticleRecipeCommands {
 
         name.then(Commands.literal("texture").then(Commands.argument("value", ParticleCommandArguments.textType()).executes { ctx -> configure(ctx) { appearance(it, "texture", ParticleCommandArguments.text(word(ctx, "value"))) } }))
         name.then(Commands.literal("appearance").then(Commands.argument("key", StringArgumentType.word())
-            .suggests { _, b -> SharedSuggestionProvider.suggest(APPEARANCE, b) }
+            .suggests { _, b -> SharedSuggestionProvider.suggest(ParticleCommandOptionParser.appearanceKeys, b) }
             .then(Commands.argument("value", StringArgumentType.greedyString()).executes { ctx -> configure(ctx) { appearance(it, word(ctx, "key"), word(ctx, "value")) } })))
         root.then(name)
         return root
@@ -241,7 +241,7 @@ internal object ParticleRecipeCommands {
     }
 
     private fun appearance(d: CommandParticleRecipes.Draft, key: String, value: String) {
-        requireLocalized(key in APPEARANCE) { translation("error.recipe.appearance_key", key) }
+        requireLocalized(key in ParticleCommandOptionParser.appearanceKeys) { translation("error.recipe.appearance_key", key) }
         val text = ParticleCommandArguments.text(value)
         val values = LinkedHashMap(d.appearance).apply { put(key, text) }
         val parsed = ParticleCommandOptionParser.parse(values.entries.joinToString(" ") {
@@ -280,5 +280,4 @@ internal object ParticleRecipeCommands {
     private fun help(ctx: CommandContext<CommandSourceStack>) = success(ctx,
         translation("command.recipe.usage"))
 
-    private val APPEARANCE = setOf("texture", "style", "color", "scale", "uv", "size", "size_world", "billboard", "spin", "spin_space", "additive", "glowing", "light", "light_only", "intensity", "spot", "light_dir", "light_range", "light_falloff", "alpha_curve", "size_curve", "red_curve", "green_curve", "blue_curve", "light_curve", "align_velocity", "stretch", "soft")
 }

@@ -9,6 +9,7 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite
 import net.minecraft.data.AtlasIds
 import net.minecraft.resources.Identifier
 import net.minecraft.util.Mth
+import net.minecraft.world.phys.Vec3
 import org.joml.Quaternionf
 import work.nekow.particledrawing.animation.ParticleUvRegion
 import work.nekow.particledrawing.animation.UvData
@@ -16,6 +17,7 @@ import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.lighting.DynamicLightManager
 import work.nekow.particledrawing.util.VisualMath
+import work.nekow.particledrawing.math.Vec3 as CoreVec3
 import java.util.UUID
 
 // 连接渲染粒子与 Minecraft 粒子系统的桥接粒子，把自定义粒子的位置/颜色/缩放同步进原版渲染管线。
@@ -176,11 +178,27 @@ class BridgeParticle(
         isGlowing = glowing
     }
 
+    private var effects: ParticleRenderEffects? = null
+
+    internal fun enableRenderEffects(visual: ResolvedVisual, previous: Vec3?) {
+        val state = ParticleRenderEffects(visual, previous ?: Vec3(x, y, z))
+        effects = state
+        if (previous != null) {
+            state.syncPosition(previous.x, previous.y, previous.z, x, y, z, snap = false)
+            state.record(x, y, z)
+        }
+    }
+
+    internal fun recordTrail() {
+        effects?.record(x, y, z)
+    }
+
     /**
      * 同步粒子位置。
      * @param snap true = 跳变到目标位置，false = 保留上一 tick 位置作为插值起点
      */
     fun syncPosition(x: Double, y: Double, z: Double, snap: Boolean = false) {
+        effects?.syncPosition(this.x, this.y, this.z, x, y, z, snap)
         if (snap) {
             this.xo = x
             this.yo = y
@@ -268,9 +286,11 @@ class BridgeParticle(
     fun sampledAlpha(partialTick: Float): Float = blend.alphaAt(frameFactor(partialTick))
 
     /** 本帧实际渲染的宽/高（渲染半宽，已含贴图尺寸系数），只读观察用。 */
-    fun sampledWidth(partialTick: Float): Float = blend.widthAt(frameFactor(partialTick))
+    fun sampledWidth(partialTick: Float): Float =
+        blend.widthAt(frameFactor(partialTick)) * (effects?.stretchFactor ?: 1f)
 
-    fun sampledHeight(partialTick: Float): Float = blend.heightAt(frameFactor(partialTick))
+    fun sampledHeight(partialTick: Float): Float =
+        blend.heightAt(frameFactor(partialTick)) / (effects?.stretchFactor ?: 1f)
 
     /**
      * 返回 quad 高度（原版唯一的尺寸口）。宽度由 OrientedQuadRenderState 单独记着，
@@ -278,12 +298,20 @@ class BridgeParticle(
      *
      * 按 partialTick 在上一 tick → 本 tick 之间插值。
      */
-    override fun getQuadSize(partialTick: Float): Float = blend.heightAt(frameFactor(partialTick))
+    override fun getQuadSize(partialTick: Float): Float = sampledHeight(partialTick)
 
     /** 本帧插值后的长轴/短轴半宽（渲染用，不写回字段）。 */
-    private fun frameWidth(partialTick: Float): Float = blend.widthAt(frameFactor(partialTick))
+    private fun frameWidth(partialTick: Float): Float = sampledWidth(partialTick)
 
-    private fun frameHeight(partialTick: Float): Float = blend.heightAt(frameFactor(partialTick))
+    private fun frameHeight(partialTick: Float): Float = sampledHeight(partialTick)
+
+    internal fun inFrustum(frustum: net.minecraft.client.renderer.culling.Frustum, partialTick: Float): Boolean {
+        val visual = effects
+        if (visual?.trail == null) return frustum.pointInFrustum(renderX(), renderY(), renderZ())
+        val half = maxOf(sampledWidth(partialTick), sampledHeight(partialTick), 0.5f)
+        val bounds = visual.bounds(sampledX(partialTick), sampledY(partialTick), sampledZ(partialTick), half)
+        return frustum.isVisible(bounds)
+    }
 
     /**
      * 顶点生成前的最后一站：把颜色/透明度换成帧插值后的值再交给原版。
@@ -294,12 +322,13 @@ class BridgeParticle(
         camera: net.minecraft.client.Camera,
         partialTick: Float
     ) {
-        // 只发光的外观不产生片元；光照收集走 RenderParticle.lightIntensity，与本方法无关
         if (lightOnly) return
         val f = frameFactor(partialTick)
+        val cam = camera.position()
+        if (!ParticleRenderEffects.visible(particleId, cam, x, y, z)) return
         refreshTextureIfStale()
         texEntry?.let { uvRegion.updateFromTexture(it, uv, animStartNanos, textureClock, age, f) }
-        if (f <= 0f) {
+        if (f <= 0f && effects == null) {
             super.extract(state, camera, partialTick)
             return
         }
@@ -307,12 +336,23 @@ class BridgeParticle(
         val cg = gCol
         val cb = bCol
         val ca = alpha
-        rCol = blend.redAt(f)
-        gCol = blend.greenAt(f)
-        bCol = blend.blueAt(f)
-        alpha = blend.alphaAt(f)
+        if (f > 0f) {
+            rCol = blend.redAt(f)
+            gCol = blend.greenAt(f)
+            bCol = blend.blueAt(f)
+            alpha = blend.alphaAt(f)
+        }
+        alpha *= effects?.alpha(x, y, z, f) ?: 1f
         try {
+            if (alpha <= 0f && effects != null) return
             super.extract(state, camera, partialTick)
+            if (state is OrientedQuadRenderState) effects?.trail?.let { trail ->
+                state.ribbonVertices(getLayer()).append(
+                    trail, CoreVec3(sampledX(f), sampledY(f), sampledZ(f)),
+                    CoreVec3(cam.x, cam.y, cam.z), frameHeight(f), f,
+                    getU0(), getU1(), getV0(), getV1(), RibbonVertices.color(rCol, gCol, bCol, alpha), getLightCoords(f),
+                )
+            }
         } finally {
             rCol = cr
             gCol = cg
@@ -332,7 +372,7 @@ class BridgeParticle(
         partialTick: Float
     ) {
         // 非广告牌：用自转四元数替换相机朝向旋转（四边形固定朝世界 +Z）
-        val q = morphOrientation?.rotationAt(
+        val q = effects?.orientation() ?: morphOrientation?.rotationAt(
             frameFactor(partialTick), if (billboard) 0.0 else spinDeg[2], billboard || spinLocal,
             if (billboard) rotation else null,
         ) ?: if (billboard) rotation else orientationQuaternion()
@@ -360,7 +400,7 @@ class BridgeParticle(
 
     override fun getLayer(): Layer {
         refreshTextureIfStale()
-        val translucent = additive || alpha < 1.0f
+        val translucent = additive || alpha < 1.0f || effects?.translucent == true
         val cached = layerCache
         if (cached != null && translucent == layerTranslucent) return cached
         val built = if (additive) {
