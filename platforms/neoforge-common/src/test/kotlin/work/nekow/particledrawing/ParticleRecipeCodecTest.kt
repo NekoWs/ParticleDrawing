@@ -82,4 +82,19 @@ class ParticleRecipeCodecTest {
         val r = assertNotNull(result.recipe)
         assertEquals(RecipeCollision.NONE, r.collision)
     }
+    @Test fun `子发射配置随配方往返`() {
+        val source = ParticleRecipe(listOf(ParticleSeed(Vec3.ZERO)), subEmit = SubEmit(count = 12, lifetime = 8, speed = 0.3, scale = 0.4))
+        val result = roundTrip(ParticleRecipePayload(UUID.randomUUID(), RecipeOperation.START, source, RecipeAnchor(Vec3.ZERO)))
+        val sub = assertNotNull(assertNotNull(result.recipe).subEmit)
+        assertEquals(12, sub.count)
+        assertEquals(8, sub.lifetime)
+        assertEquals(0.3, sub.speed, 1e-9)
+        assertEquals(0.4, sub.scale, 1e-9)
+    }
+
+    @Test fun `没有子发射时往返也是空`() {
+        val source = ParticleRecipe(listOf(ParticleSeed(Vec3.ZERO)))
+        val result = roundTrip(ParticleRecipePayload(UUID.randomUUID(), RecipeOperation.START, source, RecipeAnchor(Vec3.ZERO)))
+        assertEquals(null, assertNotNull(result.recipe).subEmit)
+    }
 }

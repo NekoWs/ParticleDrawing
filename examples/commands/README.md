@@ -45,6 +45,7 @@ function pdraw_test:sharp-star
 function pdraw_test:five-star
 function pdraw_test:spotlight
 function pdraw_test:collision-bounce
+function pdraw_test:subemit-burst
 ```
 
 在聊天栏执行时加前缀 `/`。锚点相对函数执行位置，命令方块执行时可以用
@@ -96,6 +97,7 @@ speed 使用弧度/毫秒，tilt 使用弧度；这些示例的公式每刻读�
 | blackhole | 三层吸积壳旋进黑洞，落进视界即被吞没后自动补位 | hole_a/b/c | 约 2 万 |
 | levelup | 脚下环向上划过，拖着由少到多再到少的残影 | levelup_a/b/c | 约 6100 |
 | light-only | 挂在实体上的常驻灯：粒子不可见，只往光图注入照明 | waist_light | 1 |
+| subemit-burst | 陨石落地时在原地炸出一批小火花 | meteor | 约 600 |
 | collision-bounce | 带初速的粒子落到地面后按 bounce/friction 反弹减速 | sparks | 约 400 |
 
 这两个示例专门用来压性能：黑洞带向心加速度、逐刻吞没判定和动态光，升级动画每刻重算位置、

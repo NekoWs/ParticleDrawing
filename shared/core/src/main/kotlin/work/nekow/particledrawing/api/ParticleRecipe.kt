@@ -10,6 +10,35 @@ import work.nekow.particledrawing.i18n.translation
 /** 一颗出生样本；位置是锚点相对坐标，颜色可来自图片像素。 */
 data class ParticleSeed(val position: Vec3, val color: Color = Color.WHITE, val u: Double = 0.0)
 
+/**
+ * 子发射：粒子正常死亡时在原地炸出一批短寿命粒子。
+ *
+ * 只做一层，子粒子不会再触发子发射——递归会让数量指数爆炸，也很难在客户端做预算。
+ * 子粒子沿用父配方外观，只是更小、更短命，用来表现碰撞火花、破碎、消散。
+ */
+data class SubEmit(
+    /** 每次爆发几颗。 */
+    val count: Int = 8,
+    /** 子粒子寿命（刻）。 */
+    val lifetime: Int = 12,
+    /** 初速（格/刻）；方向在球面上均匀分布。 */
+    val speed: Double = 0.12,
+    /** 尺寸相对父粒子的比例。 */
+    val scale: Double = 0.6,
+) {
+    fun validate() {
+        requireLocalized(count in 1..MAX_COUNT) { translation("error.recipe.subemit_count", MAX_COUNT) }
+        requireLocalized(lifetime in 1..ParticleRecipe.MAX_LIFETIME) { translation("error.recipe.subemit_lifetime", ParticleRecipe.MAX_LIFETIME) }
+        requireLocalized(speed in 0.0..MAX_SPEED) { translation("error.recipe.subemit_speed", MAX_SPEED) }
+        requireLocalized(scale in 0.05..4.0) { translation("error.recipe.subemit_scale") }
+    }
+
+    companion object {
+        const val MAX_COUNT = 64
+        const val MAX_SPEED = 2.0
+    }
+}
+
 /** 命令绘制的实体锚点以 UUID 为身份，网络 id 只用于快速查找。 */
 data class RecipeAnchor(
     val position: Vec3,
@@ -50,6 +79,8 @@ data class ParticleRecipe(
     val bounce: Double = 0.35,
     /** 撞到后切向速度的保留比例，越小越「黏地」。 */
     val friction: Double = 0.55,
+    /** 子发射；null = 死亡后什么都不留。 */
+    val subEmit: SubEmit? = null,
 ) {
     fun validate() {
         requireLocalized(seeds.isNotEmpty() && seeds.size <= MAX_SEEDS) { translation("error.recipe.seed_count", MAX_SEEDS) }
@@ -64,6 +95,7 @@ data class ParticleRecipe(
             requireLocalized(listOf(s.position.x, s.position.y, s.position.z, s.u).all(Double::isFinite)) { translation("error.recipe.seed_finite") }
             requireLocalized(listOf(s.color.r, s.color.g, s.color.b, s.color.a).all { it.isFinite() && it in 0f..1f }) { translation("error.recipe.seed_color") }
         }
+        subEmit?.validate()
         RecipeExpressions(this)
     }
 

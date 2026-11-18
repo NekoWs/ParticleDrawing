@@ -9,6 +9,7 @@ import work.nekow.particledrawing.platform.toMinecraft
 import net.minecraft.client.Minecraft
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.recipe.RecipeRuntime
+import work.nekow.particledrawing.api.SubEmit
 import work.nekow.particledrawing.api.VelocityStretch
 import work.nekow.particledrawing.api.RecipeAnchor
 import work.nekow.particledrawing.core.network.ParticleRecipePayload
@@ -75,10 +76,14 @@ internal object ClientParticleSources {
         // 反向清理：members 里 runtime 已不再持有的粒子
         livingSet.clear()
         for (p in e.runtime.particles) livingSet.add(p)
+        // 子发射：粒子正常消失时在原地炸一批更小更短命的粒子。
+        // 子粒子是普通渲染粒子，不会再触发子发射，所以不存在递归放大。
+        val subEmit = e.runtime.recipe.subEmit
         val dead = e.members.entries.iterator()
         while (dead.hasNext()) {
             val entry = dead.next()
             if (entry.key !in livingSet) {
+                if (subEmit != null) burst(e, entry.key, entry.value, subEmit)
                 deadIds.add(entry.value.id)
                 dead.remove()
             }
@@ -167,4 +172,33 @@ internal object ClientParticleSources {
     }
 
     fun clear() = sources.clear()
+
+    private val burstPos = DoubleArray(3)
+
+    /** 在粒子最后的位置炸出 [sub] 指定的那一批。方向按索引与刻号做确定性散开。 */
+    private fun burst(e: Entry, p: RecipeRuntime.Particle, member: Member, sub: SubEmit) {
+        val engine = ClientParticleEngine.instance() ?: return
+        member.frame.applyInto(p.x, p.y, p.z, burstPos)
+        val x = burstPos[0]; val y = burstPos[1]; val z = burstPos[2]
+        val slots = e.runtime.slots
+        val r = p.regs[slots.slot("r")].toFloat()
+        val g = p.regs[slots.slot("g")].toFloat()
+        val b = p.regs[slots.slot("b")].toFloat()
+        val scale = (p.regs[slots.slot("sc")] * sub.scale).toFloat()
+        val look = ResolvedVisual.of(e.runtime.recipe.visual, sub.scale.toFloat())
+        var seed = p.index * -7046029254386353131L xor (e.runtime.ticks * -4417276706812531889L)
+        repeat(sub.count) {
+            seed = seed * 6364136223846793005L + 1442695040888963407L
+            val u = ((seed ushr 11).toDouble() / (1L shl 53).toDouble()) * 2.0 - 1.0
+            seed = seed * 6364136223846793005L + 1442695040888963407L
+            val theta = ((seed ushr 11).toDouble() / (1L shl 53).toDouble()) * Math.PI * 2.0
+            val ring = kotlin.math.sqrt((1.0 - u * u).coerceAtLeast(0.0))
+            val vx = ring * kotlin.math.cos(theta) * sub.speed
+            val vy = u * sub.speed
+            val vz = ring * kotlin.math.sin(theta) * sub.speed
+            val id = java.util.UUID.randomUUID()
+            engine.spawnParticle(id, x, y, z, r, g, b, 1f, scale, sub.lifetime, null, false, 0, look)
+            engine.setVelocity(id, vx, vy, vz)
+        }
+    }
 }

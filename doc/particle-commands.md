@@ -431,6 +431,11 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 | `unset variable\|state\|let\|birth\|motion\|change <字段>` | 删除一项配置 |
 | `align_velocity true` | 长轴自动对齐速度（火花、雨线、彗尾），需配合 `stretch` 与各向异性尺寸 | 
 | `stretch <0..10>` | 拉长强度：长度 = 基础尺寸 × (1 + stretch × 速度)，默认 0.6 |
+| `subemit count <1..64>` | 粒子正常消失时在原地爆发的子粒子数量；不配置则什么都不留 | 
+| `subemit lifetime <1..200>` | 子粒子寿命（刻），默认 12 |
+| `subemit speed <0..2>` | 子粒子初速（格/刻），方向在球面上均匀散开，默认 0.12 |
+| `subemit scale <0.05..4>` | 子粒子相对父粒子的尺寸比例，默认 0.6 |
+| `subemit off` | 关闭子发射 |
 | `collide none\|solid\|liquid` | 与世界的碰撞方式，默认 `none`（自由穿过）；`solid` 撞方块，`liquid` 撞液体 |
 | `bounce <0..1>` | 撞到后法线方向保留的速度比例，0 直接停下，1 完全弹性，默认 0.35 |
 | `friction <0..1>` | 撞到后切向速度的保留比例，越小越「黏地」，默认 0.55 |
@@ -477,6 +482,31 @@ pdraw particle emitter trail start
 
 上面这段让发射器沿半径 4 的圆匀速绕行，每刻发一颗，留下一条圆环。
 
+#### 子发射
+
+粒子消失时在原地炸一批更小、更短命的粒子，用来做撞击火花、破碎和消散。
+子粒子是普通渲染粒子，**不会再触发子发射**——只做一层，避免数量指数爆炸。
+
+```mcfunction
+pdraw particle emitter reset meteor
+pdraw particle emitter meteor anchor fixed ~ ~8 ~
+pdraw particle emitter meteor sample count 1
+pdraw particle emitter meteor birth position vec3((rand()-0.5)*8, 0, (rand()-0.5)*8)
+pdraw particle emitter meteor birth vy -0.45
+pdraw particle emitter meteor collide solid
+pdraw particle emitter meteor subemit count 10
+pdraw particle emitter meteor subemit lifetime 14
+pdraw particle emitter meteor subemit speed 0.22
+pdraw particle emitter meteor subemit scale 0.45
+pdraw particle emitter meteor appearance glow true
+pdraw particle emitter meteor appearance light 15
+pdraw particle emitter meteor lifetime 26
+pdraw particle emitter meteor rate 4
+pdraw particle emitter meteor start
+```
+
+上面的粒子落到地面后消失，每一颗在地面位置炸出 10 颗小火花。子粒子沿用父配方外观，
+只是按 `subemit scale` 缩小、按 `subemit lifetime` 提前消失。
 #### 碰撞与落地
 
 公式能算任意数学，但拿不到方块信息，所以「撞墙、落地」单独成一项配置。

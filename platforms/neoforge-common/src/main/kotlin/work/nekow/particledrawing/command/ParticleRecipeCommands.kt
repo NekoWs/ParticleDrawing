@@ -123,6 +123,27 @@ internal object ParticleRecipeCommands {
                     }
                     d.update(d.recipe.copy(collision = mode))
                 } }))
+        // 子发射：粒子正常死亡时在原地炸出一批更小更短命的粒子，只做一层防指数爆炸。
+        name.then(Commands.literal("subemit")
+            .then(Commands.literal("off").executes { ctx -> configure(ctx) { d ->
+                d.update(d.recipe.copy(subEmit = null))
+            } })
+            .then(Commands.literal("count").then(Commands.argument("value", IntegerArgumentType.integer(1, SubEmit.MAX_COUNT))
+                .executes { ctx -> configure(ctx) { d ->
+                    d.update(d.recipe.copy(subEmit = (d.recipe.subEmit ?: SubEmit()).copy(count = IntegerArgumentType.getInteger(ctx, "value"))))
+                } }))
+            .then(Commands.literal("lifetime").then(Commands.argument("value", IntegerArgumentType.integer(1, 200))
+                .executes { ctx -> configure(ctx) { d ->
+                    d.update(d.recipe.copy(subEmit = (d.recipe.subEmit ?: SubEmit()).copy(lifetime = IntegerArgumentType.getInteger(ctx, "value"))))
+                } }))
+            .then(Commands.literal("speed").then(Commands.argument("value", DoubleArgumentType.doubleArg(0.0, SubEmit.MAX_SPEED))
+                .executes { ctx -> configure(ctx) { d ->
+                    d.update(d.recipe.copy(subEmit = (d.recipe.subEmit ?: SubEmit()).copy(speed = DoubleArgumentType.getDouble(ctx, "value"))))
+                } }))
+            .then(Commands.literal("scale").then(Commands.argument("value", DoubleArgumentType.doubleArg(0.05, 4.0))
+                .executes { ctx -> configure(ctx) { d ->
+                    d.update(d.recipe.copy(subEmit = (d.recipe.subEmit ?: SubEmit()).copy(scale = DoubleArgumentType.getDouble(ctx, "value"))))
+                } })))
         for (field in listOf("bounce", "friction")) name.then(Commands.literal(field)
             .then(Commands.argument("value", DoubleArgumentType.doubleArg(0.0, 1.0)).executes { ctx -> configure(ctx) { d ->
                 val value = DoubleArgumentType.getDouble(ctx, "value")

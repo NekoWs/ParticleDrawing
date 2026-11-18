@@ -75,6 +75,11 @@ internal object RecipeCodec {
         buf.writeUtf(r.orbit, ParticleRecipe.MAX_EXPRESSION)
         buf.writeVarInt(r.collision.ordinal)
         buf.writeDouble(r.bounce); buf.writeDouble(r.friction)
+        buf.writeBoolean(r.subEmit != null)
+        r.subEmit?.let {
+            buf.writeVarInt(it.count); buf.writeVarInt(it.lifetime)
+            buf.writeDouble(it.speed); buf.writeDouble(it.scale)
+        }
     }
 
     fun read(buf: FriendlyByteBuf): ParticleRecipe {
@@ -88,10 +93,18 @@ internal object RecipeCodec {
             buf.readUtf(ParticleRecipe.MAX_EXPRESSION))
         val modeOrdinal = buf.readVarInt()
         requireLocalized(modeOrdinal in RecipeCollision.entries.indices) { translation("error.packet.recipe_size") }
+        val bounce = buf.readDouble()
+        val friction = buf.readDouble()
+        val subEmit = if (buf.readBoolean()) {
+            SubEmit(buf.readVarInt(), buf.readVarInt(), buf.readDouble(), buf.readDouble())
+        } else {
+            null
+        }
         return recipe.copy(
             collision = RecipeCollision.entries[modeOrdinal],
-            bounce = buf.readDouble(),
-            friction = buf.readDouble(),
+            bounce = bounce,
+            friction = friction,
+            subEmit = subEmit,
         )
     }
 
