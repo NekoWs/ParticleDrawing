@@ -123,6 +123,23 @@ internal object ParticleCommandOptionParser {
             visual.lightFalloff(curve, range.toDouble())
         }
         values["light_only"]?.let { visual.lightOnly(bool(it, "light_only")) }
+        // 速度拉丝：长轴对齐速度并按速度拉长。对齐必须关掉广告牌，否则朝向被相机覆盖。
+        values["align_velocity"]?.let { raw ->
+            val on = raw.trim().lowercase()
+            val enabled = on == "true" || on == "on" || on == "1"
+            val gain = values["stretch"]?.let { float(it, "stretch").toDouble() } ?: visual.stretch
+            visual.alignVelocity = enabled
+            visual.stretch = gain.coerceAtLeast(0.0)
+            if (enabled) visual.billboard = false
+        }
+        if (values["align_velocity"] == null) {
+            values["stretch"]?.let { raw ->
+                val gain = float(raw, "stretch").toDouble().coerceAtLeast(0.0)
+                visual.alignVelocity = gain > 0.0
+                visual.stretch = gain
+                if (visual.alignVelocity) visual.billboard = false
+            }
+        }
 
         var curves = ParticleLifeCurve.EMPTY
         fun curve(key: String, channel: CurveChannel) {

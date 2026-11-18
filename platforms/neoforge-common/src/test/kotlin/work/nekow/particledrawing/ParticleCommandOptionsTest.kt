@@ -90,4 +90,18 @@ class ParticleCommandOptionsTest {
             ParticleCommandOptionParser.parse("texture=\"unfinished")
         }
     }
+    @Test
+    fun `拉丝选项写入外观并关掉广告牌`() {
+        val visual = ParticleCommandOptionParser.parse("align_velocity=true stretch=2.5").visual
+        assertTrue(visual.alignVelocity)
+        assertEquals(2.5, visual.stretch, 1e-6)
+        assertFalse(visual.billboard, "对齐速度必须关闭广告牌，否则朝向会被相机覆盖")
+    }
+
+    @Test
+    fun `只给 stretch 也会打开对齐`() {
+        val visual = ParticleCommandOptionParser.parse("stretch=1.2").visual
+        assertTrue(visual.alignVelocity)
+        assertEquals(1.2, visual.stretch, 1e-6)
+    }
 }
