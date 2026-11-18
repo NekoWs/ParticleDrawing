@@ -27,6 +27,16 @@ internal enum class RecipeInput(val key: String, val worldField: ParticleWorldFi
     ENTITY_X("entity_dx", ParticleWorldField.NEAREST_ENTITY),
     ENTITY_Y("entity_dy", ParticleWorldField.NEAREST_ENTITY),
     ENTITY_Z("entity_dz", ParticleWorldField.NEAREST_ENTITY),
+    FIELD_AX("field_ax", ParticleWorldField.FORCE_FIELD),
+    FIELD_AY("field_ay", ParticleWorldField.FORCE_FIELD),
+    FIELD_AZ("field_az", ParticleWorldField.FORCE_FIELD),
+    NEIGHBOR_COUNT("neighbor_count"),
+    NEIGHBOR_X("neighbor_dx"),
+    NEIGHBOR_Y("neighbor_dy"),
+    NEIGHBOR_Z("neighbor_dz"),
+    NEIGHBOR_VX("neighbor_vx"),
+    NEIGHBOR_VY("neighbor_vy"),
+    NEIGHBOR_VZ("neighbor_vz"),
     SURFACE_NX("sample_nx"),
     SURFACE_NY("sample_ny"),
     SURFACE_NZ("sample_nz"),
@@ -40,9 +50,12 @@ internal enum class RecipeInput(val key: String, val worldField: ParticleWorldFi
     EVENT_VY("event_vy"),
     EVENT_VZ("event_vz");
 
+    val readsNeighbors: Boolean get() = ordinal in NEIGHBOR_COUNT.ordinal..NEIGHBOR_VZ.ordinal
     val needsWorld: Boolean get() = worldField != null || this == WORLD_LOADED
 
-    fun read(position: Vec3, sample: ParticleWorldSample, event: EventInput?, normal: Vec3?): Double = when (this) {
+    fun read(
+        position: Vec3, sample: ParticleWorldSample, event: EventInput?, normal: Vec3?, neighbors: ParticleNeighbors.Sample,
+    ): Double = when (this) {
         WORLD_X -> position.x
         WORLD_Y -> position.y
         WORLD_Z -> position.z
@@ -59,6 +72,16 @@ internal enum class RecipeInput(val key: String, val worldField: ParticleWorldFi
         ENTITY_X -> sample.nearestEntity?.x ?: 0.0
         ENTITY_Y -> sample.nearestEntity?.y ?: 0.0
         ENTITY_Z -> sample.nearestEntity?.z ?: 0.0
+        FIELD_AX -> sample.fieldAcceleration.x
+        FIELD_AY -> sample.fieldAcceleration.y
+        FIELD_AZ -> sample.fieldAcceleration.z
+        NEIGHBOR_COUNT -> neighbors.count.toDouble()
+        NEIGHBOR_X -> neighbors.offset.x
+        NEIGHBOR_Y -> neighbors.offset.y
+        NEIGHBOR_Z -> neighbors.offset.z
+        NEIGHBOR_VX -> neighbors.velocity.x
+        NEIGHBOR_VY -> neighbors.velocity.y
+        NEIGHBOR_VZ -> neighbors.velocity.z
         SURFACE_NX -> normal?.x ?: 0.0
         SURFACE_NY -> normal?.y ?: 0.0
         SURFACE_NZ -> normal?.z ?: 0.0
@@ -83,17 +106,23 @@ internal enum class RecipeInput(val key: String, val worldField: ParticleWorldFi
 internal class RecipeInputReader(
     expressions: RecipeExpressions,
     private val world: ParticleWorld?,
+    private val entities: ParticleEntityQuery,
 ) {
     private val inputs = expressions.externalInputs.map { it to expressions.slots.slot(it.key) }
     private val fields = inputs.mapNotNull { (input, _) -> input.worldField }.toSet()
     private val needsWorld = inputs.any { (input, _) -> input.needsWorld }
+    val readsNeighbors = inputs.any { (input, _) -> input.readsNeighbors }
     private val unavailable = ParticleWorldSample()
 
-    fun prepare(particle: RecipeRuntime.Particle, frame: RecipeFrame?) {
+    fun prepare(particle: RecipeRuntime.Particle, frame: RecipeFrame?, neighbors: ParticleNeighbors? = null) {
         if (inputs.isEmpty()) return
         val position = frame?.position(particle.x, particle.y, particle.z) ?: Vec3.ZERO
-        val sample = if (needsWorld && frame != null) world?.sample(position, fields) ?: unavailable else unavailable
-        for ((input, slot) in inputs) particle.regs[slot] = input.read(position, sample, particle.event, particle.seed.normal)
+        val sample = if (needsWorld && frame != null) world?.sample(position, fields, entities) ?: unavailable else unavailable
+        val nearby = if (readsNeighbors && frame != null) neighbors?.at(particle, position) ?: ParticleNeighbors.EMPTY
+            else ParticleNeighbors.EMPTY
+        for ((input, slot) in inputs) {
+            particle.regs[slot] = input.read(position, sample, particle.event, particle.seed.normal, nearby)
+        }
     }
 
     fun copyInputs(particle: RecipeRuntime.Particle, into: MutableMap<String, Double>) {

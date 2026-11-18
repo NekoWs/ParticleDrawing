@@ -29,7 +29,7 @@ internal object ParticleCommandArguments {
         return vector(parts[0]) to vector(parts[1])
     }
 
-    private fun vector(raw: String): Vec3 {
+    fun vector(raw: String): Vec3 {
         val n = raw.split(',').map { it.toDoubleOrNull() ?: throw LocalizedArgumentException(translation("error.command.coordinate_format")) }
         requireLocalized(n.size == 3 && n.all(Double::isFinite)) { translation("error.command.coordinate_format") }
         return Vec3(n[0], n[1], n[2])

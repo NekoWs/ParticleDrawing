@@ -15,8 +15,6 @@ import work.nekow.particledrawing.i18n.diagnostic
 import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.translation
 import work.nekow.particledrawing.platform.toCore
-import work.nekow.particledrawing.platform.toMinecraft
-import work.nekow.particledrawing.util.AttachMath
 import java.util.UUID
 
 /** 声明式采样器的客户端桥接；所有积分按游戏刻推进，暂停时不推进。 */
@@ -145,16 +143,9 @@ internal object ClientParticleSources {
     private val orbitOut = DoubleArray(3)
 
     private fun resolve(e: Entry): RecipeFrame? {
-        val a = e.anchor
-        val entity = if (a.entity == null) null else {
-            val level = Minecraft.getInstance().level ?: return null
-            level.getEntity(a.entityId)?.takeIf { it.uuid == a.entity }
-                ?: level.entitiesForRendering().firstOrNull { it.uuid == a.entity } ?: return null
-        }
-        val origin = if (entity == null) a.position.add(a.offset) else
-            AttachMath.resolve(entity.position(), entity.yRot, entity.xRot, a.offset.toMinecraft(), a.local).toCore()
-        val position = if (e.runtime.orbitOffset(orbitOut, 0f)) origin.add(orbitOut[0], orbitOut[1], orbitOut[2]) else origin
-        return RecipeFrame(position, entity?.yRot ?: 0f, entity?.xRot ?: 0f, entity != null && a.local)
+        val frame = resolveRecipeAnchor(e.anchor) ?: return null
+        if (!e.runtime.orbitOffset(orbitOut, 0f)) return frame
+        return frame.at(frame.origin.add(orbitOut[0], orbitOut[1], orbitOut[2]))
     }
 
     private fun error(id: UUID, e: RuntimeException) {

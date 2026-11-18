@@ -1,6 +1,8 @@
 package work.nekow.particledrawing
 
 import work.nekow.particledrawing.animation.recipe.*
+import work.nekow.particledrawing.api.ForceFieldKind
+import work.nekow.particledrawing.api.ParticleForceField
 import work.nekow.particledrawing.api.ParticleEvent
 import work.nekow.particledrawing.api.ParticleRecipe
 import work.nekow.particledrawing.api.ParticleSampling
@@ -116,5 +118,66 @@ class RecipeEventTest {
                 root.copy(emissions = listOf(RecipeEmission(ParticleEvent.BIRTH, child))).validate()
             }
         }
+    }
+
+    @Test fun `邻域速度取本刻快照 结果与粒子推进顺序无关`() {
+        val recipe = ParticleRecipe(
+            ParticleSampling.count(3), rate = 3, birth = mapOf(
+                "x" to "i == 2 ? 8 : i",
+                "vx" to "i + 1",
+            ),
+            state = mapOf("seen" to 0.0),
+            motion = mapOf("vx" to "neighbor_vx", "seen" to "neighbor_count"),
+            neighborRadius = 1.5,
+        )
+        for (preferFast in listOf(true, false)) {
+            val runtime = RecipeRuntime(recipe, burst = true, preferFast = preferFast)
+            runtime.tick()
+            runtime.tick()
+            assertEquals(listOf(2.0, 1.0, 0.0), runtime.particles.map { it.value("vx") })
+            assertEquals(listOf(1.0, 1.0, 0.0), runtime.particles.map { it.value("seen") })
+        }
+    }
+
+    @Test fun `实体查询把半径和类型交给世界适配器`() {
+        val selection = ParticleEntityQuery(4.0, ResourceId.parse("minecraft:bee"))
+        val world = object : ParticleWorld {
+            override fun cast(mode: RecipeCollision, from: Vec3, to: Vec3): SurfaceHit? = null
+            override fun sample(position: Vec3, fields: Set<ParticleWorldField>, query: ParticleEntityQuery): ParticleWorldSample {
+                assertEquals(selection, query)
+                assertEquals(setOf(ParticleWorldField.NEAREST_ENTITY), fields)
+                return ParticleWorldSample(loaded = true, nearestEntity = Vec3(1.5, 0.0, 0.0))
+            }
+        }
+        val runtime = RecipeRuntime(ParticleRecipe(
+            seeds, birth = mapOf("vx" to "entity_dx"), where = "entity_near", entityQuery = selection,
+        ), burst = true, world = world)
+        runtime.tick()
+        assertEquals(1.5, runtime.particles.single().value("vx"))
+    }
+
+    @Test fun `多个配方在同一个场中按世界位置受力`() {
+        val wind = ParticleForceField(ForceFieldKind.WIND, radius = 10.0, strength = 2.0, direction = Vec3(1.0, 0.0, 0.0))
+        val attraction = ParticleForceField(ForceFieldKind.ATTRACT, radius = 10.0, strength = 1.0)
+        assertEquals(-0.5, attraction.acceleration(Vec3(5.0, 0.0, 0.0)).x)
+        val world = object : ParticleWorld {
+            override fun cast(mode: RecipeCollision, from: Vec3, to: Vec3): SurfaceHit? = null
+            override fun sample(position: Vec3, fields: Set<ParticleWorldField>): ParticleWorldSample {
+                assertEquals(setOf(ParticleWorldField.FORCE_FIELD), fields)
+                return ParticleWorldSample(loaded = true, fieldAcceleration = wind.acceleration(position).add(attraction.acceleration(position)))
+            }
+        }
+        val recipe = ParticleRecipe(seeds, motion = mapOf("ax" to "field_ax"))
+
+        fun tickAt(x: Double, fast: Boolean): Double {
+            val runtime = RecipeRuntime(recipe, burst = true, preferFast = fast, world = world)
+            val frame = RecipeFrame(Vec3(x, 0.0, 0.0))
+            runtime.tickInFrame(frame)
+            runtime.tickInFrame(frame)
+            return runtime.particles.single().value("vx")
+        }
+        assertEquals(0.5, tickAt(5.0, true))
+        assertEquals(0.5, tickAt(5.0, false))
+        assertEquals(0.0, tickAt(11.0, true))
     }
 }

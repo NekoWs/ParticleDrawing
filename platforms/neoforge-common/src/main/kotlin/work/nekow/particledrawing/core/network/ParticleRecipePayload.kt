@@ -4,6 +4,7 @@ import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.codec.StreamCodec
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
+import work.nekow.particledrawing.animation.recipe.ParticleEntityQuery
 import work.nekow.particledrawing.animation.recipe.RecipeCollision
 import work.nekow.particledrawing.api.*
 import work.nekow.particledrawing.math.ResourceId
@@ -87,6 +88,12 @@ internal object RecipeCodec {
             buf.writeDouble(it.speed); buf.writeDouble(it.scale)
         }
         buf.writeDouble(r.spacing)
+        buf.writeDouble(r.collisionHalfSize)
+        buf.writeVarInt(r.collisionSteps)
+        buf.writeDouble(r.entityQuery.radius)
+        buf.writeBoolean(r.entityQuery.type != null)
+        r.entityQuery.type?.let { buf.writeUtf(it.toString(), MAX_MATERIAL_LENGTH) }
+        buf.writeDouble(r.neighborRadius)
         requireLocalized(allowChildren || r.emissions.isEmpty()) { translation("error.packet.recipe_size") }
         buf.writeVarInt(r.emissions.size)
         for (rule in r.emissions) {
@@ -121,6 +128,11 @@ internal object RecipeCodec {
             null
         }
         val spacing = buf.readDouble()
+        val collisionHalfSize = buf.readDouble()
+        val collisionSteps = buf.readVarInt()
+        val entityRange = buf.readDouble()
+        val entityType = if (buf.readBoolean()) ResourceId.parse(buf.readUtf(MAX_MATERIAL_LENGTH)) else null
+        val neighborRadius = buf.readDouble()
         val maxRules = if (allowChildren) RecipeEmission.MAX_RULES else 0
         val emissions = List(count(buf, maxRules)) {
             val event = ParticleEvent.entries[count(buf, ParticleEvent.entries.lastIndex)]
@@ -136,6 +148,10 @@ internal object RecipeCodec {
             subEmit = subEmit,
             emissions = emissions,
             spacing = spacing,
+            collisionHalfSize = collisionHalfSize,
+            collisionSteps = collisionSteps,
+            entityQuery = ParticleEntityQuery(entityRange, entityType),
+            neighborRadius = neighborRadius,
         )
     }
 

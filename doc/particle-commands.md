@@ -442,7 +442,9 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 | `subemit speed <0..2>` | 子粒子初速（格/刻），方向在球面上均匀散开，默认 0.12 |
 | `subemit scale <0.05..4>` | 子粒子相对父粒子的尺寸比例，默认 0.6 |
 | `subemit off` | 关闭子发射 |
-| `collide none\|solid\|liquid\|both` | 默认 `none`。可检测方块、液体或两者中的首个接触面 |
+| `collide none\|solid\|liquid\|both\|entity\|all` | 可检测方块、液体和实体的首个接触面；`both` 检测方块与液体 |
+| `collision_size <0..1>` | 碰撞盒的半宽（格），默认 0 为中心点碰撞 |
+| `collision_steps <1..4>` | 一刻内可处理的接触次数，默认 1。设为 2 或以上时按剩余时间继续反弹 |
 | `bounce <0..1>` | 撞到后法线方向保留的速度比例，0 直接停下，1 完全弹性，默认 0.35 |
 | `friction <0..1>` | 撞到后切向速度的保留比例，越小越「黏地」，默认 0.55 |
 
@@ -530,7 +532,7 @@ pdraw particle emitter meteor start
 只是按 `subemit scale` 缩小、按 `subemit lifetime` 提前消失。
 #### 用事件启动子配方
 
-`on birth <子配方>`、`on death <子配方>` 和 `on contact <子配方>` 把一轮子配方放到父粒子的出生、死亡或接触点。手动移除不触发死亡事件。接触默认每条规则、每颗粒子触发一次；加 `repeat` 可在每次入射接触时触发，加 `remove_parent` 可在命中后移除父粒子。可选 `material "<资源 ID>"` 筛选方块或液体，放在末尾选项之前。
+`on birth <子配方>`、`on death <子配方>` 和 `on contact <子配方>` 把一轮子配方放到父粒子的出生、死亡或接触点。手动移除不触发死亡事件。接触默认每条规则、每颗粒子触发一次；加 `repeat` 可在每次入射接触时触发，加 `remove_parent` 可在命中后移除父粒子。可选 `material "<资源 ID>"` 筛选方块、液体或实体类型，放在末尾选项之前。
 
 ```mcfunction
 pdraw particle emitter sparks on contact metal_sparks material "minecraft:iron_block" remove_parent
@@ -544,7 +546,36 @@ pdraw particle emitter sparks on clear
 
 #### 世界输入
 
-`world_x/y/z` 是当前求值点的世界坐标。`world_loaded` 为 1 时表示客户端已收到该位置的区块。`block_light` 和 `sky_light` 返回 0–15；`open_sky`、`in_solid`、`in_fluid` 返回 0 或 1；`flow_x/y/z` 为该点液体流向。`entity_near` 表示 8 格内有活跃非旁观实体，`entity_dx/dy/dz` 为最近实体相对粒子的位置。区块未加载时环境量为 0。出生公式查询初始样本的位置，`where` 和出生阶段的 `kill` 查询应用出生公式后的位置，逐刻公式查询推进前的位置。锚点 `orbit` 使用发射器级输入。
+`world_x/y/z` 是当前求值点的世界坐标。`world_loaded` 为 1 时表示客户端已收到该位置的区块。`block_light` 和 `sky_light` 返回 0–15；`open_sky`、`in_solid`、`in_fluid` 返回 0 或 1；`flow_x/y/z` 为该点液体流向。`entity_near` 表示范围内有活跃非旁观实体，`entity_dx/dy/dz` 为最近实体相对粒子的世界坐标偏移。用 `environment entity_radius <0..32>` 设置半径（默认 8，0 禁用），用 `environment entity_type <资源 ID 或 any>` 筛选实体类型。区块未加载时环境量为 0。出生公式查询初始样本的位置，`where` 和出生阶段的 `kill` 查询应用出生公式后的位置，逐刻公式查询推进前的位置。锚点 `orbit` 使用发射器级输入。
+
+`neighbor_count`、`neighbor_dx/dy/dz` 和 `neighbor_vx/vy/vz` 分别给出同配方实例内邻居的数量、平均世界坐标偏移和平均世界速度。用 `environment neighbor_radius <0.05..16>` 设置半径（默认 2 格）。查询读取整刻推进前的状态，排除粒子本身。密集区域会在每个空间格均匀抽取至多 24 名候选邻居。
+
+```mcfunction
+pdraw particle emitter motes environment entity_type minecraft:bee
+pdraw particle emitter motes environment entity_radius 6
+pdraw particle emitter motes motion ax entity_dx*0.01
+pdraw particle emitter motes motion az entity_dz*0.01
+```
+
+#### 在多个配方之间共享力场
+
+`pdraw particle field` 在当前维度管理力场。以命令执行位置作为中心，可重绑到固定坐标或实体；
+风场方向和旋涡轴随绑定实体转向。每个配方可读取 `field_ax/ay/az`，得到所在位置上所有力场
+加速度的和。单个场的范围为 0.05–128 格，强度为 -4 到 4。
+
+```mcfunction
+pdraw particle field wind courtyard 12 0.02 1,0,0
+pdraw particle field attract beacon 6 0.04
+pdraw particle field vortex vortex_demo 8 0.03 0,1,0
+pdraw particle field turbulence turbulent_air 12 0.015
+pdraw particle field anchor beacon entity @s
+pdraw particle emitter motes motion acceleration vec3(field_ax,field_ay,field_az)
+pdraw particle field list
+pdraw particle field remove courtyard
+```
+
+吸引场的负强度会排斥。查询结果的坐标轴是世界轴；局部旋转的配方应按自己的坐标变换使用这些分量。
+Kotlin 和 Java 可用 `ParticleForceFields` 配置锚点、方向、距离衰减与湍流种子。
 
 #### 碰撞与落地
 

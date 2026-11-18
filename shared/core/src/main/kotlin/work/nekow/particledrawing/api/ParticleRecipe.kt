@@ -1,6 +1,7 @@
 package work.nekow.particledrawing.api
 
 import work.nekow.particledrawing.math.Vec3
+import work.nekow.particledrawing.animation.recipe.ParticleEntityQuery
 import work.nekow.particledrawing.animation.recipe.RecipeCollision
 import work.nekow.particledrawing.animation.recipe.RecipeExpressions
 import java.util.UUID
@@ -101,6 +102,11 @@ data class ParticleRecipe(
     val emissions: List<RecipeEmission> = emptyList(),
     /** 每走多少格执行一次发射；0 时按 [interval] 刻发射。 */
     val spacing: Double = 0.0,
+    /** 粒子碰撞盒的世界格半宽。0 使用中心点。 */
+    val collisionHalfSize: Double = 0.0,
+    val collisionSteps: Int = 1,
+    val entityQuery: ParticleEntityQuery = ParticleEntityQuery(),
+    val neighborRadius: Double = 2.0,
 ) {
     fun validate() {
         requireLocalized(seeds.isNotEmpty() && seeds.size <= MAX_SEEDS) { translation("error.recipe.seed_count", MAX_SEEDS) }
@@ -112,6 +118,11 @@ data class ParticleRecipe(
         requireLocalized(maxAlive in 1..MAX_SEEDS) { translation("error.recipe.max_alive", MAX_SEEDS) }
         requireLocalized(listOf(variables, state, lets, birth, motion).all { it.size <= MAX_FIELDS }) { translation("error.recipe.fields_limit", MAX_FIELDS) }
         requireLocalized(orbit.length <= MAX_EXPRESSION) { translation("error.recipe.anchor_length", MAX_EXPRESSION) }
+        requireLocalized(collisionHalfSize in 0.0..MAX_COLLISION_HALF_SIZE) {
+            translation("error.recipe.sweep_size", MAX_COLLISION_HALF_SIZE)
+        }
+        requireLocalized(collisionSteps in 1..MAX_COLLISION_STEPS) { translation("error.recipe.collision_iterations", MAX_COLLISION_STEPS) }
+        requireLocalized(neighborRadius in 0.05..16.0) { translation("error.recipe.neighbor_radius") }
         requireLocalized(bounce in 0.0..1.0) { translation("error.recipe.bounce") }
         requireLocalized(friction in 0.0..1.0) { translation("error.recipe.friction") }
         for (s in seeds) {
@@ -132,6 +143,8 @@ data class ParticleRecipe(
         const val MAX_RATE = 1024
         const val MIN_SPACING = 0.05
         const val MAX_SPACING = 64.0
+        const val MAX_COLLISION_HALF_SIZE = 1.0
+        const val MAX_COLLISION_STEPS = 4
         const val MAX_LIFETIME = 72000
         const val MAX_FIELDS = 32
         const val MAX_EXPRESSION = 2048

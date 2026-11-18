@@ -49,4 +49,17 @@ class PlatformParticleRenderEffectsTest {
         assertEquals(surface.y, hitAtStart.position.y, 1e-9)
         assertNull(sweep(surface, start))
     }
+
+    @Test
+    fun `扫掠半宽能碰到中心线相邻的台阶方块`() {
+        val slab = Shapes.box(0.0, 0.0, 0.0, 1.0, 0.5, 1.0)
+        val start = CoreVec3(1.2, 1.0, 0.5)
+        val end = CoreVec3(1.2, 0.0, 0.5)
+        val (block, hit) = assertNotNull(ClientParticleWorld.traceExpanded(start, end, 0.25) {
+            if (it == BlockPos.ZERO) slab else Shapes.empty()
+        })
+        assertEquals(BlockPos.ZERO, block)
+        assertEquals(CoreVec3(1.0, 0.5, 0.5), hit.position)
+        assertEquals(CoreVec3(1.2, 0.75, 0.5), hit.center)
+    }
 }

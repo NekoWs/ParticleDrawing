@@ -82,6 +82,7 @@ internal object ParticleRecipeCommands {
         name.then(imageTree())
         name.then(meshTree())
         name.then(eventTree())
+        name.then(environmentTree())
         for (key in listOf("rate", "interval", "lifetime", "max_alive")) name.then(Commands.literal(key)
             .then(Commands.argument("value", IntegerArgumentType.integer()).executes { ctx -> configure(ctx) { d ->
                 val v = IntegerArgumentType.getInteger(ctx, "value")
@@ -119,17 +120,25 @@ internal object ParticleRecipeCommands {
             } }))
         name.then(Commands.literal("collide")
             .then(Commands.argument("mode", StringArgumentType.word())
-                .suggests { _, b -> SharedSuggestionProvider.suggest(listOf("none", "solid", "liquid", "both"), b) }
+                .suggests { _, b -> SharedSuggestionProvider.suggest(listOf("none", "solid", "liquid", "both", "entity", "all"), b) }
                 .executes { ctx -> configure(ctx) { d ->
                     val mode = when (word(ctx, "mode")) {
                         "solid" -> RecipeCollision.SOLID
                         "liquid" -> RecipeCollision.LIQUID
                         "both" -> RecipeCollision.SOLID_AND_LIQUID
+                        "entity" -> RecipeCollision.ENTITY
+                        "all" -> RecipeCollision.ALL
                         "none" -> RecipeCollision.NONE
                         else -> throw LocalizedArgumentException(translation("error.recipe.collision_mode"))
                     }
                     d.update(d.recipe.copy(collision = mode))
                 } }))
+        name.then(Commands.literal("collision_size")
+            .then(Commands.argument("halfSize", DoubleArgumentType.doubleArg(0.0, ParticleRecipe.MAX_COLLISION_HALF_SIZE))
+                .executes { ctx -> configure(ctx) { it.update(it.recipe.copy(collisionHalfSize = DoubleArgumentType.getDouble(ctx, "halfSize"))) } }))
+        name.then(Commands.literal("collision_steps")
+            .then(Commands.argument("steps", IntegerArgumentType.integer(1, ParticleRecipe.MAX_COLLISION_STEPS))
+                .executes { ctx -> configure(ctx) { it.update(it.recipe.copy(collisionSteps = IntegerArgumentType.getInteger(ctx, "steps"))) } }))
         // 子发射：粒子正常死亡时在原地炸出一批更小更短命的粒子，只做一层防指数爆炸。
         name.then(Commands.literal("subemit")
             .then(Commands.literal("off").executes { ctx -> configure(ctx) { d ->
@@ -183,6 +192,27 @@ internal object ParticleRecipeCommands {
             .then(Commands.argument("value", StringArgumentType.greedyString()).executes { ctx -> configure(ctx) { appearance(it, word(ctx, "key"), word(ctx, "value")) } })))
         root.then(name)
         return root
+    }
+
+    private fun environmentTree(): LiteralArgumentBuilder<CommandSourceStack> {
+        return Commands.literal("environment")
+            .then(Commands.literal("entity_radius")
+                .then(Commands.argument("radius", DoubleArgumentType.doubleArg(0.0, 32.0)).executes { ctx -> configure(ctx) { draft ->
+                    val query = draft.recipe.entityQuery.copy(radius = DoubleArgumentType.getDouble(ctx, "radius"))
+                    draft.update(draft.recipe.copy(entityQuery = query))
+                } }))
+            .then(Commands.literal("entity_type")
+                .then(Commands.literal("any").executes { ctx -> configure(ctx) { draft ->
+                    draft.update(draft.recipe.copy(entityQuery = draft.recipe.entityQuery.copy(type = null)))
+                } })
+                .then(Commands.argument("type", ParticleCommandArguments.textType()).executes { ctx -> configure(ctx) { draft ->
+                    val type = ResourceId.parse(ParticleCommandArguments.text(word(ctx, "type")))
+                    draft.update(draft.recipe.copy(entityQuery = draft.recipe.entityQuery.copy(type = type)))
+                } }))
+            .then(Commands.literal("neighbor_radius")
+                .then(Commands.argument("radius", DoubleArgumentType.doubleArg(0.05, 16.0)).executes { ctx -> configure(ctx) { draft ->
+                    draft.update(draft.recipe.copy(neighborRadius = DoubleArgumentType.getDouble(ctx, "radius")))
+                } }))
     }
 
     private fun eventTree(): LiteralArgumentBuilder<CommandSourceStack> {

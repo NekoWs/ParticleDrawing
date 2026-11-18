@@ -63,6 +63,7 @@ internal object ParticleDrawParticleCommands {
         .then(addTree())
         .then(programTree())
         .then(ParticleRecipeCommands.tree())
+        .then(ParticleFieldCommands.tree())
 
     private fun groupTree(): LiteralArgumentBuilder<CommandSourceStack> = Commands.literal("group")
         .executes(::groupHelp)

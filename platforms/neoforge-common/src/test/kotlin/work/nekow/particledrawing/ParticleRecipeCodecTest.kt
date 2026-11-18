@@ -3,6 +3,7 @@ package work.nekow.particledrawing
 import io.netty.buffer.Unpooled
 import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.animation.recipe.ParticleEntityQuery
 import work.nekow.particledrawing.animation.recipe.RecipeCollision
 import work.nekow.particledrawing.api.*
 import work.nekow.particledrawing.core.network.*
@@ -104,12 +105,20 @@ class ParticleRecipeCodecTest {
         val seeds = ParticleSampling.count(3).map { it.copy(normal = CoreVec3(0.0, 1.0, 0.0)) }
         val child = ParticleRecipe(seeds, lifetime = 13, birth = mapOf("vy" to "event_ny * abs(event_vy)"))
         val rule = RecipeEmission(ParticleEvent.CONTACT, child, ResourceId.parse("minecraft:iron_block"), removeParent = true)
-        val source = ParticleRecipe(seeds, collision = RecipeCollision.SOLID_AND_LIQUID, emissions = listOf(rule), spacing = 1.25)
+        val source = ParticleRecipe(
+            seeds, collision = RecipeCollision.ALL, collisionHalfSize = 0.5, collisionSteps = 3,
+            emissions = listOf(rule), spacing = 1.25, entityQuery = ParticleEntityQuery(6.0, ResourceId.parse("minecraft:bee")),
+            neighborRadius = 1.5,
+        )
         val payload = roundTrip(ParticleRecipePayload(UUID.randomUUID(), RecipeOperation.START, source, RecipeAnchor(Vec3.ZERO)))
         val recipe = assertNotNull(payload.recipe)
         recipe.validate()
         val decoded = recipe.emissions.single()
-        assertEquals(RecipeCollision.SOLID_AND_LIQUID, recipe.collision)
+        assertEquals(RecipeCollision.ALL, recipe.collision)
+        assertEquals(0.5, recipe.collisionHalfSize)
+        assertEquals(3, recipe.collisionSteps)
+        assertEquals(source.entityQuery, recipe.entityQuery)
+        assertEquals(source.neighborRadius, recipe.neighborRadius)
         assertEquals(1.25, recipe.spacing)
         assertEquals(rule.material, decoded.material)
         assertEquals(rule.event, decoded.event)

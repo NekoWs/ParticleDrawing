@@ -1,5 +1,6 @@
 package work.nekow.particledrawing
 
+import work.nekow.particledrawing.animation.recipe.BoxSweep
 import work.nekow.particledrawing.animation.recipe.CollisionMath
 import work.nekow.particledrawing.animation.recipe.ParticleWorld
 import work.nekow.particledrawing.animation.recipe.RecipeCollision
@@ -85,6 +86,35 @@ class ParticleCollisionTest {
         runtime.tickInFrame(RecipeFrame(Vec3(0.0, 1.0, 0.0)))
         runtime.tickInFrame(RecipeFrame(Vec3(0.0, -1.0, 0.0)))
         assertEquals(1.0 + CollisionMath.SURFACE_MARGIN, runtime.particles.single().y, 1e-9)
+    }
+
+    @Test
+    fun `有体积的粒子先于中心接触并提供真实表面点`() {
+        val start = Vec3(1.2, 2.0, 0.5)
+        val end = Vec3(1.2, 0.0, 0.5)
+        val upper = Vec3(1.0, 1.0, 1.0)
+        assertNull(BoxSweep.first(start, end, Vec3.ZERO, upper, 0.0))
+        val touch = assertNotNull(BoxSweep.first(start, end, Vec3.ZERO, upper, 0.25))
+        assertEquals(Vec3(1.0, 1.0, 0.5), touch.position)
+        assertEquals(Vec3(1.2, 1.25, 0.5), touch.center)
+    }
+
+    @Test
+    fun `单刻多次接触会推进反弹后的剩余时间`() {
+        val world = ParticleWorld { _, from, to ->
+            val left = BoxSweep.first(from, to, Vec3(-1.0, -1.0, -1.0), Vec3(0.0, 1.0, 1.0), 0.0)
+            val right = BoxSweep.first(from, to, Vec3(1.0, -1.0, -1.0), Vec3(2.0, 1.0, 1.0), 0.0)
+            BoxSweep.nearer(from, left, right)
+        }
+        val recipe = ParticleRecipe(
+            listOf(ParticleSeed(Vec3(0.5, 0.0, 0.0))), collision = RecipeCollision.SOLID,
+            birth = mapOf("vx" to "3"), bounce = 1.0, friction = 1.0, collisionSteps = 4,
+        )
+        val runtime = RecipeRuntime(recipe, burst = true, world = world)
+        runtime.tick()
+        runtime.tick()
+        assertEquals(0.5, runtime.particles.single().x, 5e-4)
+        assertEquals(-3.0, runtime.particles.single().value("vx"), 1e-9)
     }
 
     @Test

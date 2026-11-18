@@ -53,7 +53,8 @@ class RecipeRuntime(
     internal data class Trigger(val rule: RecipeEmission, val input: EventInput)
 
     private var expressions = RecipeExpressions(recipe, preferFast)
-    private var inputs = RecipeInputReader(expressions, world)
+    private var inputs = RecipeInputReader(expressions, world, recipe.entityQuery)
+    private var neighbors = if (inputs.readsNeighbors) ParticleNeighbors(recipe.neighborRadius) else null
     private val triggers = arrayListOf<Trigger>()
     internal val events: List<Trigger> get() = triggers
     private val listens = BooleanArray(ParticleEvent.entries.size)
@@ -101,7 +102,8 @@ class RecipeRuntime(
         }
         recipe = ordered
         expressions = compiled
-        inputs = RecipeInputReader(compiled, world)
+        inputs = RecipeInputReader(compiled, world, ordered.entityQuery)
+        neighbors = if (inputs.readsNeighbors) ParticleNeighbors(ordered.neighborRadius) else null
         rebuildLayout()
         // 新的临时槽可能更多：按需扩容已有粒子的寄存器
         val need = regSize()
@@ -156,6 +158,7 @@ class RecipeRuntime(
     internal fun tickInFrame(frame: RecipeFrame?) {
         this.frame = frame
         triggers.clear()
+        neighbors?.let(::snapshotNeighbors)
         val fast = expressions.fast
         if (fast != null) advanceFast(fast) else advanceSlow()
         collectRemoved()
@@ -164,6 +167,17 @@ class RecipeRuntime(
         }
         if (emitting) emitScheduled(frame)
         ticks++
+    }
+
+    private fun snapshotNeighbors(target: ParticleNeighbors) {
+        target.clear()
+        for (particle in particles) {
+            if (!particle.alive) continue
+            val space = inputFrame(particle) ?: continue
+            val r = particle.regs
+            val velocity = space.velocity(Vec3(r[Reg.VX], r[Reg.VY], r[Reg.VZ]))
+            target.add(particle, space.position(particle.x, particle.y, particle.z), velocity)
+        }
     }
 
     private fun emitScheduled(frame: RecipeFrame?) {
@@ -286,7 +300,7 @@ class RecipeRuntime(
             val x = p.x
             val y = p.y
             val z = p.z
-            inputs.prepare(p, inputFrame(p))
+            inputs.prepare(p, inputFrame(p), neighbors)
             program.exec(r, stack, null)
             if (r[killSlot] != 0.0) { p.alive = false; continue }
             integrate(p, x, y, z, fast.writesX, fast.writesY, fast.writesZ)
@@ -296,7 +310,7 @@ class RecipeRuntime(
 
     private fun spawnFast(fast: RecipeFast, p: Particle): Boolean {
         val regs = p.regs
-        inputs.prepare(p, p.birthFrame)
+        inputs.prepare(p, p.birthFrame, neighbors)
         fast.birth.program.exec(regs, fast.birthStack, null)
         validateFast(p)
         p.initialPosition = p.position
@@ -304,7 +318,7 @@ class RecipeRuntime(
         regs[RecipeExpressions.DY] = p.initialPosition.y
         regs[RecipeExpressions.DZ] = p.initialPosition.z
         // 出生后的筛选与销毁：where 在 base，kill 在 base+1
-        inputs.prepare(p, p.birthFrame)
+        inputs.prepare(p, p.birthFrame, neighbors)
         fast.check.program.exec(regs, fast.checkStack, null)
         return regs[fast.base] != 0.0 && regs[fast.base + 1] == 0.0
     }
@@ -386,26 +400,50 @@ class RecipeRuntime(
         val space = frameOf(p)
         val from = p.previousWorldPosition ?: space.position(oldX, oldY, oldZ)
         val to = space.position(p.x, p.y, p.z)
-        val velocity = space.velocity(Vec3(r[Reg.VX], r[Reg.VY], r[Reg.VZ]))
-        val hit = CollisionMath.resolve(
-            mode, query, from, to, velocity, recipe.bounce, recipe.friction, listens[ParticleEvent.CONTACT.ordinal],
-        )
-        p.previousWorldPosition = hit?.position ?: to
-        if (hit == null) return
-        val position = space.localPosition(hit.position)
-        val localVelocity = space.localVelocity(hit.velocity)
+        val incoming = space.velocity(Vec3(r[Reg.VX], r[Reg.VY], r[Reg.VZ]))
+        val contact = solveMovement(p, query, space, from, to, incoming)
+        p.previousWorldPosition = contact?.position ?: to
+        if (contact == null) return
+        val position = space.localPosition(contact.position)
+        val localVelocity = space.localVelocity(contact.velocity)
         r[Reg.X] = position.x
         r[Reg.Y] = position.y
         r[Reg.Z] = position.z
         r[Reg.VX] = localVelocity.x
         r[Reg.VY] = localVelocity.y
         r[Reg.VZ] = localVelocity.z
-        if (listens[ParticleEvent.CONTACT.ordinal]) {
-            val displacement = to.subtract(from)
-            if (displacement.dot(hit.surface.normal) < 0.0) {
-                trigger(ParticleEvent.CONTACT, p, space, hit.surface, displacement)
+    }
+
+    private fun solveMovement(
+        particle: Particle, world: ParticleWorld, space: RecipeFrame,
+        from: Vec3, to: Vec3, incoming: Vec3,
+    ): CollisionMath.Response? {
+        var start = from
+        var end = to
+        var speed = incoming
+        var remaining = 1.0
+        var last: CollisionMath.Response? = null
+        val reportsContacts = listens[ParticleEvent.CONTACT.ordinal]
+        repeat(recipe.collisionSteps) {
+            val hit = CollisionMath.resolve(
+                recipe.collision, world, start, end, speed, recipe.bounce, recipe.friction,
+                includeMaterial = reportsContacts, halfSize = recipe.collisionHalfSize,
+            ) ?: return last?.copy(position = end)
+            last = hit
+            val delta = end.subtract(start)
+            if (reportsContacts && delta.dot(hit.surface.normal) < 0.0) {
+                trigger(ParticleEvent.CONTACT, particle, space, hit.surface, delta.scale(1.0 / remaining))
+                if (!particle.alive) return hit
             }
+            if (recipe.collisionSteps == 1) return hit
+            val fraction = (start.distanceTo(hit.surface.center) / delta.length()).coerceIn(0.0, 1.0)
+            remaining *= 1.0 - fraction
+            speed = hit.velocity
+            start = hit.position
+            end = start.add(speed.scale(remaining))
+            if (remaining < 1e-8 || speed.lengthSqr() == 0.0) return hit
         }
+        return last
     }
 
     private fun storeOutputs(p: Particle, outputs: Map<String, Double>) {
@@ -421,7 +459,7 @@ class RecipeRuntime(
 
     private fun prepare(p: Particle, space: RecipeFrame? = inputFrame(p)) {
         loadPersistent(p)
-        inputs.prepare(p, space)
+        inputs.prepare(p, space, neighbors)
         inputs.copyInputs(p, attrMap)
         expressions.prepare(
             attrMap,
@@ -482,13 +520,14 @@ class RecipeRuntime(
         val plan = recipe.copy(lets = recipe.lets, birth = changes, motion = emptyMap(), where = predicate, kill = "false")
         plan.validate()
         val edit = RecipeExpressions(plan)
-        val editInputs = RecipeInputReader(edit, world)
+        val editInputs = RecipeInputReader(edit, world, recipe.entityQuery)
+        val editNeighbors = if (editInputs.readsNeighbors) ParticleNeighbors(recipe.neighborRadius).also(::snapshotNeighbors) else null
         val selected = arrayListOf<Pair<Particle, Map<String, Double>>>()
         val map = HashMap<String, Double>(32)
         for (p in particles) {
             map.clear()
             for ((name, slot) in persistent) map[name] = p.regs[slot]
-            editInputs.prepare(p, inputFrame(p))
+            editInputs.prepare(p, inputFrame(p), editNeighbors)
             editInputs.copyInputs(p, map)
             edit.prepare(
                 map,

@@ -9,6 +9,7 @@ import net.neoforged.neoforge.event.level.LevelEvent
 import net.neoforged.neoforge.event.server.ServerStoppingEvent
 import net.neoforged.neoforge.event.tick.ServerTickEvent
 import work.nekow.particledrawing.ParticleDrawing
+import work.nekow.particledrawing.api.ParticleForceFields
 import work.nekow.particledrawing.animation.ServerAnimationManager
 import work.nekow.particledrawing.animation.ServerEffectManager
 import work.nekow.particledrawing.command.CommandParticleGroups
@@ -58,6 +59,7 @@ object ServerParticleHandler {
             CommandParticleGroups.discard(dim)
             work.nekow.particledrawing.command.CommandParticleRecipes.discard(dim)
             ServerParticleSources.discard(dim)
+            ParticleForceFields.discard(dim)
             // 只清这个维度排的任务：别的维度还有刚排的编排要跑
             AnimationScheduler.clearDimension(dim)
         }
@@ -73,6 +75,7 @@ object ServerParticleHandler {
         CommandParticleGroups.discardAll()
         work.nekow.particledrawing.command.CommandParticleRecipes.clear()
         ServerParticleSources.clear()
+        ParticleForceFields.clear()
     }
 
     // 维度切换 / 重生 / 登录后，客户端会重建 ClientLevel 与原版 ParticleEngine，
@@ -83,6 +86,7 @@ object ServerParticleHandler {
         (event.entity as? ServerPlayer)?.let {
             ServerAnimationManager.syncPlaybacksToPlayer(it)
             ServerEffectManager.syncPlaybacksToPlayer(it)
+            ParticleForceFields.sync(it)
             ServerEmitterManager.syncToPlayer(it)
         }
     }
@@ -91,6 +95,7 @@ object ServerParticleHandler {
     @JvmStatic
     fun onPlayerRespawn(event: PlayerEvent.PlayerRespawnEvent) {
         (event.entity as? ServerPlayer)?.let {
+            ParticleForceFields.sync(it)
             ServerAnimationManager.syncPlaybacksToPlayer(it)
             ServerEffectManager.syncPlaybacksToPlayer(it)
             ServerEmitterManager.syncToPlayer(it)
@@ -101,6 +106,7 @@ object ServerParticleHandler {
     @JvmStatic
     fun onPlayerLoggedIn(event: PlayerEvent.PlayerLoggedInEvent) {
         (event.entity as? ServerPlayer)?.let {
+            ParticleForceFields.sync(it)
             ServerAnimationManager.syncPlaybacksToPlayer(it)
             ServerEffectManager.syncPlaybacksToPlayer(it)
             ServerEmitterManager.syncToPlayer(it)

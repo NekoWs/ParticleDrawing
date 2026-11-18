@@ -501,6 +501,7 @@ class ClientParticleEngine {
 
         groups.values.removeIf { it.isEmpty() }
         checkExitWatches()
+        ClientParticleFields.refresh()
         ClientParticleSources.tick()
         for (id in trailIds) bridges[id]?.recordTrail()
     }
@@ -758,6 +759,7 @@ class ClientParticleEngine {
      */
     fun clearAll() {
         ClientParticleSources.clear()
+        ClientParticleFields.clear()
         particles.clear()
         bridges.clear()
         groups.clear()
