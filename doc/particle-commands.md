@@ -560,6 +560,14 @@ pdraw particle emitter sparks on clear
 
 [雨滴与飞溅示例](../examples/commands/rain-contact.mcfunction)用世界条件筛选出生位置，在接触真实表面后执行溅水配方。
 
+#### 模拟范围
+
+持续配方可用 `simulation_range <0..512>` 限制客户端模拟距离，默认 0 表示始终模拟。
+镜头离绑定锚点超过指定格数时，客户端回收该配方的现存粒子、事件子粒子和拖尾，停止推进公式；
+镜头回到该距离的 90% 时，从第一轮重新发射。测距使用绑定锚点，配方轨道偏移和离开锚点的粒子不参与测距。
+只对允许按观察者重启的特效开启。一次性发射与事件子配方要求此值为 0。
+回收不触发生命周期事件，和仅减少绘制的 `particleLodDistance` 客户端选项可以独立使用。
+
 #### 世界输入
 
 `world_x/y/z` 是当前求值点的世界坐标。`world_loaded` 为 1 时表示客户端已收到该位置的区块。`block_light` 和 `sky_light` 返回 0–15；`open_sky`、`in_solid`、`in_fluid` 返回 0 或 1；`flow_x/y/z` 为该点液体流向。`entity_near` 表示范围内有活跃非旁观实体，`entity_dx/dy/dz` 为最近实体相对粒子的世界坐标偏移。用 `environment entity_radius <0..32>` 设置半径（默认 8，0 禁用），用 `environment entity_type <资源 ID 或 any>` 筛选实体类型。区块未加载时环境量为 0。出生公式查询初始样本的位置，`where` 和出生阶段的 `kill` 查询应用出生公式后的位置，逐刻公式查询推进前的位置。锚点 `orbit` 使用发射器级输入。

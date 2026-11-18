@@ -569,6 +569,15 @@ class RecipeRuntime(
 
         internal fun requireCadence(recipe: ParticleRecipe, burst: Boolean) {
             requireLocalized(!burst || recipe.spacing == 0.0) { translation("error.recipe.distance_burst") }
+            requireLocalized(!burst || recipe.simulationRange == 0.0) { translation("error.recipe.simulation_burst") }
+        }
+
+        /** 进入范围时保留一段回差，避免镜头在边界来回抖动时频繁重建。 */
+        internal fun outsideSimulationRange(range: Double, anchor: Vec3?, observer: Vec3, suspended: Boolean): Boolean {
+            if (range == 0.0) return false
+            if (anchor == null) return suspended
+            val threshold = if (suspended) range * 0.9 else range
+            return anchor.distanceToSqr(observer) > threshold * threshold
         }
 
         /** 假定全部样本通过，计入存活上限和发射间隔，给服务端一个安全回收上界。 */

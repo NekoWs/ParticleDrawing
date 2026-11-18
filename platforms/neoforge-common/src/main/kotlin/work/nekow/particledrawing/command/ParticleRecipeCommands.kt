@@ -96,6 +96,11 @@ internal object ParticleRecipeCommands {
             .executes { ctx -> configure(ctx) { d ->
                 d.update(d.recipe.copy(spacing = DoubleArgumentType.getDouble(ctx, "distance")))
             } }))
+        name.then(Commands.literal("simulation_range")
+            .then(Commands.argument("distance", DoubleArgumentType.doubleArg(0.0, ParticleRecipe.MAX_SIMULATION_RANGE))
+                .executes { ctx -> configure(ctx) { d ->
+                    d.update(d.recipe.copy(simulationRange = DoubleArgumentType.getDouble(ctx, "distance")))
+                } }))
         name.then(Commands.literal("follow").then(Commands.argument("enabled", BoolArgumentType.bool()).executes { ctx -> configure(ctx) { d -> d.update(d.recipe.copy(follow = BoolArgumentType.getBool(ctx, "enabled"))) } }))
 
         for (kind in listOf("variable", "state")) name.then(Commands.literal(kind)

@@ -144,6 +144,20 @@ class RecipeEventTest {
         assertEquals(0, hits)
     }
 
+    @Test fun `持续配方离开模拟范围后在较近的边界重启`() {
+        val origin = Vec3.ZERO
+        val boundary = Vec3(19.0, 0.0, 0.0)
+        assertFalse(RecipeRuntime.outsideSimulationRange(20.0, origin, boundary, suspended = false))
+        assertTrue(RecipeRuntime.outsideSimulationRange(20.0, origin, Vec3(21.0, 0.0, 0.0), suspended = false))
+        assertTrue(RecipeRuntime.outsideSimulationRange(20.0, origin, boundary, suspended = true))
+        assertFalse(RecipeRuntime.outsideSimulationRange(20.0, origin, Vec3(18.0, 0.0, 0.0), suspended = true))
+        assertTrue(RecipeRuntime.outsideSimulationRange(20.0, null, boundary, suspended = true))
+        assertFalse(RecipeRuntime.outsideSimulationRange(0.0, null, boundary, suspended = true))
+        assertFailsWith<IllegalArgumentException> {
+            RecipeRuntime(ParticleRecipe(seeds, simulationRange = 20.0), burst = true)
+        }
+    }
+
     @Test fun `递归和无界子配方被拒绝`() {
         val root = ParticleRecipe(seeds)
         for (child in listOf(childRecipe.copy(lifetime = -1),

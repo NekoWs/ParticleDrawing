@@ -25,7 +25,7 @@
 | --- | --- |
 | 让网页编辑器导出的粒子在游戏中响应世界碰撞 | `.pdrawc` v20 可声明拉丝、软化、丝带和管状拖尾。动画的时间轴和脚本直接控制位置，仍缺少保存、重建世界交互状态的播放语义。见 [文件读取](../shared/core/src/main/kotlin/work/nekow/particledrawing/animation/PdrawcReader.kt)和[动画生成入口](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/client/ClientAnimationManager.kt)。 |
 | 晚进服的玩家看到和其他人处于同一阶段的碰撞粒子和尾迹 | 持续配方向迟到玩家发送当前配置，客户端从头模拟。已经触发的一次性配方也不会补发。真实碰撞轨迹取决于客户端当时看到的世界。见 [服务端配方同步](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/server/ServerParticleSources.kt)和[启动包](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/network/ParticleRecipePayload.kt)。 |
-| 十万颗粒子同时模拟和渲染、远离摄像机后释放模拟预算 | 客户端粒子登记上限默认 50,000，可调至 200,000。单个配方最多 8,192 个样本及存活粒子。距离 LOD 作用于绘制，模拟继续运行。26.3 的十万颗 CPU 模拟场景已实测，见下表。 |
+| 十万颗粒子同时模拟和渲染、远离摄像机后释放模拟预算 | 客户端粒子登记上限默认 50,000，可调至 200,000。单个配方最多 8,192 个样本及存活粒子。持续配方可按[模拟范围](particle-commands.md#模拟范围)在镜头远处释放模拟预算，并在返回后重启。对需要保留轨迹的特效，可采用只减少绘制的距离 LOD。26.3 的十万颗 CPU 模拟场景已实测，见下表。 |
 
 ### 26.3 开发客户端实测
 
@@ -49,6 +49,6 @@
 1. **世界输入和粒子事件。** 局部环境读取、接触事件和子配方已接通，可用[雨滴示例](../examples/commands/rain-contact.mcfunction)复现。碰撞盒已接入同一查询；移动实体使用客户端当前包围盒。
 2. **编辑器与运行时共用外观。** `.pdrawc` v20 的拉丝、软化、丝带和管状拖尾已复用命令粒子的渲染入口。实时碰撞另需明确预览与实际世界的输入和回放语义。
 3. **发射采样和渲染几何。** 配方已支持按距离发射和静态模型采样。三角网格可作为粒子外观绘制。动态采样和需要场景缓冲的材质仍可独立扩展。
-4. **规模化。** 四边形、碰撞和管状拖尾场景已测。管状拖尾、丝带与三角网格共用几何预算。模拟预算、实例绘制和 GPU 模拟仍待实现。
+4. **规模化。** 四边形、碰撞和管状拖尾场景已测。管状拖尾、丝带与三角网格共用几何预算，持续配方可限制模拟距离。保留历史的模拟分级、实例绘制和 GPU 模拟仍待实现。
 
 功能对照可参考 Unity 的[粒子事件和子发射](https://docs.unity3d.com/cn/current/ScriptReference/ParticleSystem.SubEmittersModule.html)和 Godot 的[粒子渲染、碰撞与轨迹](https://docs.godotengine.org/en/stable/classes/class_gpuparticles3d.html)、[可移动粒子力场](https://docs.godotengine.org/en/stable/classes/class_gpuparticlesattractor3d.html)。

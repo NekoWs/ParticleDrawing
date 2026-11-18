@@ -35,6 +35,8 @@ object PlatformCompat {
     /** 关卡时钟（世界时间）。26.x 是 `overworldClockTime`。 */
     fun clockTime(level: ClientLevel): Long = level.overworldClockTime
 
+    fun cameraPosition(mc: Minecraft): net.minecraft.world.phys.Vec3 = mc.gameRenderer.mainCamera().position()
+
     /** 取资源键的标识。26.x 是 `identifier()`，1.21.1 是 `location()`。 */
     fun keyId(key: ResourceKey<Level>): Identifier = key.identifier()
 

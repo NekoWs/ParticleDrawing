@@ -26,6 +26,7 @@ data class RecipeEmission(
             child.seeds.size <= MAX_CHILD_SEEDS && child.spacing == 0.0 && !child.follow && child.orbit.isBlank()) {
             translation("error.recipe.event_child", MAX_CHILD_SEEDS, MAX_CHILD_LIFETIME)
         }
+        requireLocalized(child.simulationRange == 0.0) { translation("error.recipe.simulation_burst") }
         child.validate()
     }
 

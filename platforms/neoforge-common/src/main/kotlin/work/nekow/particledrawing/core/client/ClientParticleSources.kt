@@ -15,6 +15,8 @@ import work.nekow.particledrawing.i18n.component
 import work.nekow.particledrawing.i18n.diagnostic
 import work.nekow.particledrawing.i18n.localizedError
 import work.nekow.particledrawing.i18n.translation
+import work.nekow.particledrawing.math.Vec3 as CoreVec3
+import work.nekow.particledrawing.platform.PlatformCompat
 import work.nekow.particledrawing.platform.toCore
 import java.util.UUID
 
@@ -25,9 +27,10 @@ internal object ClientParticleSources {
     ) {
         val id: UUID get() = binding.particle.id()
     }
-    private class Entry(val runtime: RecipeRuntime, var anchor: RecipeAnchor) {
+    private class Entry(var runtime: RecipeRuntime, var anchor: RecipeAnchor) {
         val members = linkedMapOf<RecipeRuntime.Particle, Member>()
         val children = linkedMapOf<RecipeEmission, Entry>()
+        var suspended = false
 
         fun particleIds(): List<UUID> = members.values.map { it.id } + children.values.flatMap(Entry::particleIds)
     }
@@ -45,7 +48,9 @@ internal object ClientParticleSources {
                 RecipeOperation.UPDATE -> sources[p.id]?.runtime?.update(requireNotNull(p.recipe))
                 RecipeOperation.ANCHOR -> sources[p.id]?.anchor = requireNotNull(p.anchor)
                 RecipeOperation.VARIABLE -> sources[p.id]?.runtime?.let { it.update(it.recipe.copy(variables = it.recipe.variables + p.variables)) }
-                RecipeOperation.STOP -> sources[p.id]?.runtime?.emitting = false
+                RecipeOperation.STOP -> sources[p.id]?.let {
+                    if (it.suspended) remove(p.id) else it.runtime.emitting = false
+                }
                 RecipeOperation.REMOVE -> remove(p.id)
                 RecipeOperation.EDIT -> sources[p.id]?.let {
                     it.runtime.edit(p.predicate, p.changes, p.deleteSelected)
@@ -57,9 +62,21 @@ internal object ClientParticleSources {
 
     fun tick() {
         var childBudget = CHILD_ATTEMPTS_PER_TICK
+        var camera: CoreVec3? = null
         for ((id, e) in sources.toList()) {
             try {
-                e.runtime.tickInFrame(resolve(e))
+                val anchor = resolveRecipeAnchor(e.anchor)
+                val range = e.runtime.recipe.simulationRange
+                if (range > 0.0) {
+                    val observer = camera ?: PlatformCompat.cameraPosition(Minecraft.getInstance()).toCore().also { camera = it }
+                    if (RecipeRuntime.outsideSimulationRange(range, anchor?.origin, observer, e.suspended)) {
+                        if (!e.runtime.emitting) remove(id)
+                        else if (!e.suspended) resetOutsideRange(e)
+                        continue
+                    }
+                }
+                e.suspended = false
+                e.runtime.tickInFrame(withOrbit(e, anchor))
                 sync(e)
                 for (child in e.children.values) child.runtime.tickInFrame(RecipeFrame.IDENTITY)
                 for ((rule, input) in e.runtime.events) {
@@ -152,10 +169,18 @@ internal object ClientParticleSources {
 
     private val orbitOut = DoubleArray(3)
 
-    private fun resolve(e: Entry): RecipeFrame? {
-        val frame = resolveRecipeAnchor(e.anchor) ?: return null
+    private fun withOrbit(e: Entry, frame: RecipeFrame?): RecipeFrame? {
+        if (frame == null) return null
         if (!e.runtime.orbitOffset(orbitOut, 0f)) return frame
         return frame.at(frame.origin.add(orbitOut[0], orbitOut[1], orbitOut[2]))
+    }
+
+    private fun resetOutsideRange(e: Entry) {
+        ClientParticleEngine.instance()?.destroyParticles(e.particleIds().toTypedArray())
+        e.members.clear()
+        e.children.clear()
+        e.runtime = RecipeRuntime(e.runtime.recipe, burst = false, world = ClientParticleWorld)
+        e.suspended = true
     }
 
     private fun error(id: UUID, e: RuntimeException) {

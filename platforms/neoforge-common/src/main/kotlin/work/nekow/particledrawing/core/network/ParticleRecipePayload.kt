@@ -96,6 +96,7 @@ internal object RecipeCodec {
         buf.writeBoolean(r.entityQuery.type != null)
         r.entityQuery.type?.let { buf.writeUtf(it.toString(), MAX_MATERIAL_LENGTH) }
         buf.writeDouble(r.neighborRadius)
+        buf.writeDouble(r.simulationRange)
         buf.writeBoolean(r.probe != null)
         r.probe?.let { probe ->
             buf.writeDouble(probe.range)
@@ -145,6 +146,7 @@ internal object RecipeCodec {
         val entityRange = buf.readDouble()
         val entityType = if (buf.readBoolean()) ResourceId.parse(buf.readUtf(MAX_MATERIAL_LENGTH)) else null
         val neighborRadius = buf.readDouble()
+        val simulationRange = buf.readDouble()
         val probe = if (buf.readBoolean()) {
             val range = buf.readDouble()
             val mode = RecipeCollision.entries[count(buf, RecipeCollision.entries.lastIndex)]
@@ -172,6 +174,7 @@ internal object RecipeCodec {
             collisionSteps = collisionSteps,
             entityQuery = ParticleEntityQuery(entityRange, entityType),
             neighborRadius = neighborRadius,
+            simulationRange = simulationRange,
             probe = probe,
         )
     }

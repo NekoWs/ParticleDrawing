@@ -34,6 +34,8 @@ object PlatformCompat {
     /** 关卡时钟（世界时间）。1.21.1 用 `dayTime`。 */
     fun clockTime(level: ClientLevel): Long = level.dayTime
 
+    fun cameraPosition(mc: Minecraft): net.minecraft.world.phys.Vec3 = mc.gameRenderer.mainCamera.position
+
     /** 取资源键的标识。1.21.1 是 `location()`。 */
     fun keyId(key: ResourceKey<Level>): Identifier = key.location()
 

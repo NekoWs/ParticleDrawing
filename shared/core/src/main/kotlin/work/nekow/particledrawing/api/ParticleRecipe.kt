@@ -109,6 +109,8 @@ data class ParticleRecipe(
     val entityQuery: ParticleEntityQuery = ParticleEntityQuery(),
     val neighborRadius: Double = 2.0,
     val probe: ParticleProbe? = null,
+    /** 持续配方离镜头超过该距离时回收全部粒子，回到范围时重新发射。0 表示始终模拟。 */
+    val simulationRange: Double = 0.0,
 ) {
     fun validate() {
         requireLocalized(seeds.isNotEmpty() && seeds.size <= MAX_SEEDS) { translation("error.recipe.seed_count", MAX_SEEDS) }
@@ -125,6 +127,9 @@ data class ParticleRecipe(
         }
         requireLocalized(collisionSteps in 1..MAX_COLLISION_STEPS) { translation("error.recipe.collision_iterations", MAX_COLLISION_STEPS) }
         requireLocalized(neighborRadius in 0.05..16.0) { translation("error.recipe.neighbor_radius") }
+        requireLocalized(simulationRange in 0.0..MAX_SIMULATION_RANGE) {
+            translation("error.recipe.simulation_range", MAX_SIMULATION_RANGE)
+        }
         requireLocalized(bounce in 0.0..1.0) { translation("error.recipe.bounce") }
         requireLocalized(friction in 0.0..1.0) { translation("error.recipe.friction") }
         for (s in seeds) {
@@ -147,6 +152,7 @@ data class ParticleRecipe(
         const val MAX_SPACING = 64.0
         const val MAX_COLLISION_HALF_SIZE = 1.0
         const val MAX_COLLISION_STEPS = 4
+        const val MAX_SIMULATION_RANGE = 512.0
         const val MAX_LIFETIME = 72000
         const val MAX_FIELDS = 32
         const val MAX_EXPRESSION = 2048

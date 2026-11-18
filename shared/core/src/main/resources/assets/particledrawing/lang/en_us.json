@@ -334,6 +334,8 @@
   "particledrawing.error.recipe.probe_mode": "Choose which surfaces or entities the probe detects.",
   "particledrawing.error.recipe.probe_direction": "Probe direction must be a finite nonzero vector.",
   "particledrawing.error.recipe.probe_required": "Configure a particle probe before using probe inputs in formulas.",
+  "particledrawing.error.recipe.simulation_range": "Simulation range must be 0..%1$s blocks.",
+  "particledrawing.error.recipe.simulation_burst": "Burst and event child recipes require a simulation range of 0.",
   "particledrawing.error.recipe.event_contact": "Only contact events support a material filter or parent removal.",
   "particledrawing.error.recipe.event_child": "Use a child recipe with at most %1$s samples and a lifetime of 1..%2$s ticks. Clear its events, sub-emitter, follow mode and orbit.",
   "particledrawing.error.recipe.event_limit": "Use at most %1$s event rules per recipe.",
