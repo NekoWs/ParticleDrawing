@@ -1,6 +1,8 @@
 package work.nekow.particledrawing.animation.recipe
 
 import work.nekow.particledrawing.animation.script.Reg
+import work.nekow.particledrawing.api.ParticleEvent
+import work.nekow.particledrawing.api.RecipeEmission
 import work.nekow.particledrawing.api.ParticleRecipe
 import work.nekow.particledrawing.api.ParticleSeed
 import work.nekow.particledrawing.math.Vec3
@@ -16,7 +18,7 @@ import work.nekow.particledrawing.i18n.translation
 class RecipeRuntime(
     var recipe: ParticleRecipe,
     val burst: Boolean,
-    preferFast: Boolean = true,
+    private val preferFast: Boolean = true,
     /** 碰撞查询；为 null 时即使配了碰撞也按自由运动处理（例如无世界的测试环境）。 */
     private val world: ParticleWorld? = null,
 ) {
@@ -34,6 +36,8 @@ class RecipeRuntime(
         var alive = true
         var initialPosition: Vec3 = seed.position
         internal var birthFrame = RecipeFrame.IDENTITY
+        internal var event: EventInput? = null
+        internal var triggered = 0
         internal var previousWorldPosition: Vec3? = null
 
         /** 按字段名取当前值；命令、测试与慢路径用，热路径直接读 [regs]。 */
@@ -45,7 +49,13 @@ class RecipeRuntime(
         val position: Vec3 get() = Vec3(regs[Reg.X], regs[Reg.Y], regs[Reg.Z])
     }
 
+    internal data class Trigger(val rule: RecipeEmission, val input: EventInput)
+
     private var expressions = RecipeExpressions(recipe, preferFast)
+    private var inputs = RecipeInputReader(expressions, world)
+    private val triggers = arrayListOf<Trigger>()
+    internal val events: List<Trigger> get() = triggers
+    private val listens = BooleanArray(ParticleEvent.entries.size)
     var ticks = 0L
         private set
     var cursor = 0L
@@ -76,9 +86,12 @@ class RecipeRuntime(
     fun update(next: ParticleRecipe) {
         next.validate()
         requireLocalized(next.state.keys == recipe.state.keys) { translation("error.recipe.state_change") }
-        val compiled = RecipeExpressions(next)
-        recipe = next
+        val ordered = next.copy(state = recipe.state.keys.associateWith(next.state::getValue))
+        val compiled = RecipeExpressions(ordered, preferFast)
+        if (next.emissions != recipe.emissions) for (particle in particles) particle.triggered = 0
+        recipe = ordered
         expressions = compiled
+        inputs = RecipeInputReader(compiled, world)
         rebuildLayout()
         // 新的临时槽可能更多：按需扩容已有粒子的寄存器
         val need = regSize()
@@ -88,6 +101,8 @@ class RecipeRuntime(
     }
 
     private fun rebuildLayout() {
+        listens.fill(false)
+        for (rule in recipe.emissions) listens[rule.event.ordinal] = true
         persistent = persistentSlots()
         val slots = expressions.slots
         val names = ArrayList<String>(slots.map.size)
@@ -130,28 +145,76 @@ class RecipeRuntime(
 
     internal fun tickInFrame(frame: RecipeFrame?) {
         this.frame = frame
+        triggers.clear()
         val fast = expressions.fast
         if (fast != null) advanceFast(fast) else advanceSlow()
         collectRemoved()
+        if (listens[ParticleEvent.DEATH.ordinal]) for (particle in removed) {
+            trigger(ParticleEvent.DEATH, particle, frameOf(particle))
+        }
         if (emitting && frame != null && ticks % recipe.interval == 0L) {
             var attempt = 0
             while (attempt < recipe.rate) {
                 if (!emitting || particles.size >= recipe.maxAlive) break
                 val seed = recipe.seeds[(cursor % recipe.seeds.size).toInt()]
-                val p = if (fast != null) spawnFast(fast, seed) else spawnSlow(seed)
-                if (p != null) {
-                    p.birthFrame = frame
-                    if (world != null && recipe.follow && recipe.collision != RecipeCollision.NONE) {
-                        p.previousWorldPosition = frame.position(p.x, p.y, p.z)
-                    }
-                    particles += p
-                }
+                spawn(seed, frame)
                 cursor++
                 if (burst && cursor >= recipe.seeds.size) emitting = false
                 attempt++
             }
         }
         ticks++
+    }
+
+    /** 在事件位置尝试一轮样本。调用方负责总预算，现存粒子照常推进。 */
+    internal fun emitAt(frame: RecipeFrame, event: EventInput, budget: Int): Int {
+        var attempts = 0
+        for (seed in recipe.seeds) {
+            if (attempts >= budget || particles.size >= recipe.maxAlive) break
+            spawn(seed, frame, event)
+            cursor++
+            attempts++
+        }
+        return attempts
+    }
+
+    private fun spawn(seed: ParticleSeed, frame: RecipeFrame, event: EventInput? = null) {
+        val fast = expressions.fast
+        val regs = fast?.newRegs() ?: DoubleArray(regSize())
+        initRegs(regs, seed, cursor)
+        val particle = Particle(cursor, seed, recipe.lifetime, regs, expressions.slots)
+        particle.birthFrame = frame
+        particle.event = event
+        val accepted = if (fast != null) spawnFast(fast, particle) else spawnSlow(particle)
+        if (!accepted) return
+        if (world != null && recipe.follow && recipe.collision != RecipeCollision.NONE) {
+            particle.previousWorldPosition = frame.position(particle.x, particle.y, particle.z)
+        }
+        particles += particle
+        if (listens[ParticleEvent.BIRTH.ordinal]) trigger(ParticleEvent.BIRTH, particle, frame)
+    }
+
+    private fun inputFrame(particle: Particle): RecipeFrame? =
+        if (recipe.follow) frame else particle.birthFrame
+
+    private fun trigger(
+        kind: ParticleEvent, particle: Particle, space: RecipeFrame,
+        surface: SurfaceHit? = null, incoming: Vec3? = null,
+    ) {
+        if (!listens[kind.ordinal]) return
+        for ((index, rule) in recipe.emissions.withIndex()) {
+            if (rule.event != kind || (rule.material != null && surface?.material != rule.material)) continue
+            val bit = 1 shl index
+            if (rule.once && particle.triggered and bit != 0) continue
+            if (triggers.size < MAX_EVENTS_PER_TICK) {
+                val position = surface?.position ?: space.position(particle.x, particle.y, particle.z)
+                val r = particle.regs
+                val velocity = incoming ?: space.velocity(Vec3(r[Reg.VX], r[Reg.VY], r[Reg.VZ]))
+                triggers += Trigger(rule, EventInput(position, velocity, surface?.normal ?: Vec3.ZERO, surface?.material))
+                particle.triggered = particle.triggered or bit
+            }
+            if (rule.removeParent) particle.alive = false
+        }
     }
 
     // ── 热路径 ────────────────────────────────────────────────────────────────
@@ -174,6 +237,7 @@ class RecipeRuntime(
             val x = p.x
             val y = p.y
             val z = p.z
+            inputs.prepare(p, inputFrame(p))
             program.exec(r, stack, null)
             if (r[killSlot] != 0.0) { p.alive = false; continue }
             integrate(p, x, y, z, fast.writesX, fast.writesY, fast.writesZ)
@@ -181,10 +245,9 @@ class RecipeRuntime(
         }
     }
 
-    private fun spawnFast(fast: RecipeFast, seed: ParticleSeed): Particle? {
-        val regs = fast.newRegs()
-        initRegs(regs, seed, cursor)
-        val p = Particle(cursor, seed, recipe.lifetime, regs, expressions.slots)
+    private fun spawnFast(fast: RecipeFast, p: Particle): Boolean {
+        val regs = p.regs
+        inputs.prepare(p, p.birthFrame)
         fast.birth.program.exec(regs, fast.birthStack, null)
         validateFast(p)
         p.initialPosition = p.position
@@ -192,9 +255,9 @@ class RecipeRuntime(
         regs[RecipeExpressions.DY] = p.initialPosition.y
         regs[RecipeExpressions.DZ] = p.initialPosition.z
         // 出生后的筛选与销毁：where 在 base，kill 在 base+1
+        inputs.prepare(p, p.birthFrame)
         fast.check.program.exec(regs, fast.checkStack, null)
-        if (regs[fast.base] == 0.0 || regs[fast.base + 1] != 0.0) return null
-        return p
+        return regs[fast.base] != 0.0 && regs[fast.base + 1] == 0.0
     }
 
     private fun validateFast(p: Particle) {
@@ -232,20 +295,17 @@ class RecipeRuntime(
         }
     }
 
-    private fun spawnSlow(seed: ParticleSeed): Particle? {
-        val regs = DoubleArray(regSize())
-        initRegs(regs, seed, cursor)
-        val p = Particle(cursor, seed, recipe.lifetime, regs, expressions.slots)
-        prepare(p)
+    private fun spawnSlow(p: Particle): Boolean {
+        val regs = p.regs
+        prepare(p, p.birthFrame)
         storeOutputs(p, expressions.evaluateInto(expressions.birth, birthOut))
         validateSlow(p)
         p.initialPosition = p.position
         regs[RecipeExpressions.DX] = p.initialPosition.x
         regs[RecipeExpressions.DY] = p.initialPosition.y
         regs[RecipeExpressions.DZ] = p.initialPosition.z
-        prepare(p)
-        if (!expressions.accepts() || expressions.kills()) return null
-        return p
+        prepare(p, p.birthFrame)
+        return expressions.accepts() && !expressions.kills()
     }
 
     internal fun frameOf(p: Particle): RecipeFrame = if (recipe.follow) frame ?: p.birthFrame else p.birthFrame
@@ -278,7 +338,9 @@ class RecipeRuntime(
         val from = p.previousWorldPosition ?: space.position(oldX, oldY, oldZ)
         val to = space.position(p.x, p.y, p.z)
         val velocity = space.velocity(Vec3(r[Reg.VX], r[Reg.VY], r[Reg.VZ]))
-        val hit = CollisionMath.resolve(mode, query, from, to, velocity, recipe.bounce, recipe.friction)
+        val hit = CollisionMath.resolve(
+            mode, query, from, to, velocity, recipe.bounce, recipe.friction, listens[ParticleEvent.CONTACT.ordinal],
+        )
         p.previousWorldPosition = hit?.position ?: to
         if (hit == null) return
         val position = space.localPosition(hit.position)
@@ -289,6 +351,12 @@ class RecipeRuntime(
         r[Reg.VX] = localVelocity.x
         r[Reg.VY] = localVelocity.y
         r[Reg.VZ] = localVelocity.z
+        if (listens[ParticleEvent.CONTACT.ordinal]) {
+            val displacement = to.subtract(from)
+            if (displacement.dot(hit.surface.normal) < 0.0) {
+                trigger(ParticleEvent.CONTACT, p, space, hit.surface, displacement)
+            }
+        }
     }
 
     private fun storeOutputs(p: Particle, outputs: Map<String, Double>) {
@@ -302,8 +370,10 @@ class RecipeRuntime(
         for ((name, slot) in persistent) attrMap[name] = p.regs[slot]
     }
 
-    private fun prepare(p: Particle) {
+    private fun prepare(p: Particle, space: RecipeFrame? = inputFrame(p)) {
         loadPersistent(p)
+        inputs.prepare(p, space)
+        inputs.copyInputs(p, attrMap)
         expressions.prepare(
             attrMap,
             p.index.toDouble(), recipe.seeds.size.toDouble(), p.seed.u, ticks * 50.0, 1.0,
@@ -363,11 +433,14 @@ class RecipeRuntime(
         val plan = recipe.copy(lets = recipe.lets, birth = changes, motion = emptyMap(), where = predicate, kill = "false")
         plan.validate()
         val edit = RecipeExpressions(plan)
+        val editInputs = RecipeInputReader(edit, world)
         val selected = arrayListOf<Pair<Particle, Map<String, Double>>>()
         val map = HashMap<String, Double>(32)
         for (p in particles) {
             map.clear()
             for ((name, slot) in persistent) map[name] = p.regs[slot]
+            editInputs.prepare(p, inputFrame(p))
+            editInputs.copyInputs(p, map)
             edit.prepare(
                 map,
                 p.index.toDouble(), recipe.seeds.size.toDouble(), p.seed.u, ticks * 50.0, 1.0,
@@ -400,6 +473,8 @@ class RecipeRuntime(
     }
 
     companion object {
+        private const val MAX_EVENTS_PER_TICK = 64
+
         /** 假定全部样本通过，计入存活上限和发射间隔，给服务端一个安全回收上界。 */
         fun retirementBudget(r: ParticleRecipe): Long {
             requireLocalized(r.lifetime > 0) { translation("error.recipe.unbounded_reclaim") }

@@ -14,7 +14,7 @@ data class ParticleSeed(val position: Vec3, val color: Color = Color.WHITE, val 
  * 子发射：粒子正常死亡时在原地炸出一批短寿命粒子。
  *
  * 只做一层，子粒子不会再触发子发射——递归会让数量指数爆炸，也很难在客户端做预算。
- * 子粒子沿用父配方外观，只是更小、更短命，用来表现碰撞火花、破碎、消散。
+ * 子粒子沿用父配方外观，只是更小、更短命，用来表现破碎或消散。
  */
 data class SubEmit(
     /** 每次爆发几颗。 */
@@ -93,6 +93,7 @@ data class ParticleRecipe(
     val friction: Double = 0.55,
     /** 子发射；null = 死亡后什么都不留。 */
     val subEmit: SubEmit? = null,
+    val emissions: List<RecipeEmission> = emptyList(),
 ) {
     fun validate() {
         requireLocalized(seeds.isNotEmpty() && seeds.size <= MAX_SEEDS) { translation("error.recipe.seed_count", MAX_SEEDS) }
@@ -108,6 +109,8 @@ data class ParticleRecipe(
             requireLocalized(listOf(s.color.r, s.color.g, s.color.b, s.color.a).all { it.isFinite() && it in 0f..1f }) { translation("error.recipe.seed_color") }
         }
         subEmit?.validate()
+        requireLocalized(emissions.size <= RecipeEmission.MAX_RULES) { translation("error.recipe.event_limit", RecipeEmission.MAX_RULES) }
+        emissions.forEach(RecipeEmission::validate)
         RecipeExpressions(this)
     }
 

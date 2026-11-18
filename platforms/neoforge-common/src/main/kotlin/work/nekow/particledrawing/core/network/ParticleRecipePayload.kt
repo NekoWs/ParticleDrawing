@@ -6,6 +6,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
 import work.nekow.particledrawing.animation.recipe.RecipeCollision
 import work.nekow.particledrawing.api.*
+import work.nekow.particledrawing.math.ResourceId
 import java.util.UUID
 import work.nekow.particledrawing.i18n.LocalizedArgumentException
 import work.nekow.particledrawing.i18n.requireLocalized
@@ -59,7 +60,9 @@ data class ParticleRecipePayload(
 }
 
 internal object RecipeCodec {
-    fun write(buf: FriendlyByteBuf, r: ParticleRecipe) {
+    fun write(buf: FriendlyByteBuf, r: ParticleRecipe) = writeLevel(buf, r, allowChildren = true)
+
+    private fun writeLevel(buf: FriendlyByteBuf, r: ParticleRecipe, allowChildren: Boolean) {
         buf.writeVarInt(r.seeds.size)
         for (seed in r.seeds) {
             StreamCodecs.writeVec(buf, seed.position)
@@ -80,10 +83,22 @@ internal object RecipeCodec {
             buf.writeVarInt(it.count); buf.writeVarInt(it.lifetime)
             buf.writeDouble(it.speed); buf.writeDouble(it.scale)
         }
+        requireLocalized(allowChildren || r.emissions.isEmpty()) { translation("error.packet.recipe_size") }
+        buf.writeVarInt(r.emissions.size)
+        for (rule in r.emissions) {
+            buf.writeVarInt(rule.event.ordinal)
+            buf.writeBoolean(rule.material != null)
+            rule.material?.let { buf.writeUtf(it.toString(), MAX_MATERIAL_LENGTH) }
+            buf.writeBoolean(rule.once)
+            buf.writeBoolean(rule.removeParent)
+            writeLevel(buf, rule.child, allowChildren = false)
+        }
     }
 
-    fun read(buf: FriendlyByteBuf): ParticleRecipe {
-        val seeds = List(count(buf, ParticleRecipe.MAX_SEEDS)) {
+    fun read(buf: FriendlyByteBuf): ParticleRecipe = readLevel(buf, allowChildren = true)
+
+    private fun readLevel(buf: FriendlyByteBuf, allowChildren: Boolean): ParticleRecipe {
+        val seeds = List(count(buf, if (allowChildren) ParticleRecipe.MAX_SEEDS else RecipeEmission.MAX_CHILD_SEEDS)) {
             ParticleSeed(StreamCodecs.readVec(buf), Color.of(buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat()), buf.readDouble())
         }
         val recipe = ParticleRecipe(seeds, buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean(),
@@ -100,11 +115,20 @@ internal object RecipeCodec {
         } else {
             null
         }
+        val maxRules = if (allowChildren) RecipeEmission.MAX_RULES else 0
+        val emissions = List(count(buf, maxRules)) {
+            val event = ParticleEvent.entries[count(buf, ParticleEvent.entries.lastIndex)]
+            val material = if (buf.readBoolean()) ResourceId.parse(buf.readUtf(MAX_MATERIAL_LENGTH)) else null
+            val once = buf.readBoolean()
+            val removeParent = buf.readBoolean()
+            RecipeEmission(event, readLevel(buf, allowChildren = false), material, once, removeParent)
+        }
         return recipe.copy(
             collision = RecipeCollision.entries[modeOrdinal],
             bounce = bounce,
             friction = friction,
             subEmit = subEmit,
+            emissions = emissions,
         )
     }
 
@@ -133,6 +157,8 @@ internal object RecipeCodec {
     fun readNumbers(buf: FriendlyByteBuf): Map<String, Double> = linkedMapOf<String, Double>().apply {
         repeat(count(buf, ParticleRecipe.MAX_FIELDS)) { val k = buf.readUtf(48); require(k !in this); put(k, buf.readDouble()) }
     }
+
+    private const val MAX_MATERIAL_LENGTH = 256
 
     private fun count(buf: FriendlyByteBuf, max: Int) = buf.readVarInt().also { requireLocalized(it in 0..max) { translation("error.packet.recipe_size") } }
 }

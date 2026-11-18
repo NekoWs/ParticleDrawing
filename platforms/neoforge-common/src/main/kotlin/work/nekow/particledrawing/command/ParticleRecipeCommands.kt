@@ -16,6 +16,7 @@ import net.minecraft.commands.SharedSuggestionProvider
 import net.minecraft.commands.arguments.EntityArgument
 import net.minecraft.commands.arguments.coordinates.Vec3Argument
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.animation.recipe.RecipeCollision
 import work.nekow.particledrawing.animation.recipe.RecipeExpressions
 import work.nekow.particledrawing.api.*
@@ -79,6 +80,7 @@ internal object ParticleRecipeCommands {
         name.then(anchorTree())
         name.then(sampleTree())
         name.then(imageTree())
+        name.then(eventTree())
         for (key in listOf("rate", "interval", "lifetime", "max_alive")) name.then(Commands.literal(key)
             .then(Commands.argument("value", IntegerArgumentType.integer()).executes { ctx -> configure(ctx) { d ->
                 val v = IntegerArgumentType.getInteger(ctx, "value")
@@ -110,16 +112,16 @@ internal object ParticleRecipeCommands {
             .then(Commands.argument("formula", StringArgumentType.greedyString()).executes { ctx -> configure(ctx) { d ->
                 d.update(d.recipe.copy(orbit = word(ctx, "formula")))
             } }))
-        // 碰撞：公式拿不到方块信息，撞墙落地这类行为交给平台层的世界查询。
-        // 默认 none，显式打开才发生响应。
         name.then(Commands.literal("collide")
             .then(Commands.argument("mode", StringArgumentType.word())
-                .suggests { _, b -> SharedSuggestionProvider.suggest(listOf("none", "solid", "liquid"), b) }
+                .suggests { _, b -> SharedSuggestionProvider.suggest(listOf("none", "solid", "liquid", "both"), b) }
                 .executes { ctx -> configure(ctx) { d ->
                     val mode = when (word(ctx, "mode")) {
                         "solid" -> RecipeCollision.SOLID
                         "liquid" -> RecipeCollision.LIQUID
-                        else -> RecipeCollision.NONE
+                        "both" -> RecipeCollision.SOLID_AND_LIQUID
+                        "none" -> RecipeCollision.NONE
+                        else -> throw LocalizedArgumentException(translation("error.recipe.collision_mode"))
                     }
                     d.update(d.recipe.copy(collision = mode))
                 } }))
@@ -176,6 +178,49 @@ internal object ParticleRecipeCommands {
             .then(Commands.argument("value", StringArgumentType.greedyString()).executes { ctx -> configure(ctx) { appearance(it, word(ctx, "key"), word(ctx, "value")) } })))
         root.then(name)
         return root
+    }
+
+    private fun eventTree(): LiteralArgumentBuilder<CommandSourceStack> {
+        val root = Commands.literal("on")
+        root.then(Commands.literal("clear").executes { ctx ->
+            configure(ctx) { it.update(it.recipe.copy(emissions = emptyList())) }
+        })
+        for (event in ParticleEvent.entries) {
+            val target = Commands.argument("child", StringArgumentType.string())
+                .suggests { ctx, builder -> SharedSuggestionProvider.suggest(CommandParticleRecipes.names(dim(ctx))
+                    .filter { it != word(ctx, "name") }.map(StringArgumentType::escapeIfRequired), builder) }
+                .executes { ctx -> addEvent(ctx, event) }
+            if (event == ParticleEvent.CONTACT) {
+                for (option in listOf("remove_parent", "repeat")) target.then(Commands.literal(option).executes { ctx ->
+                    addEvent(ctx, event, once = option != "repeat", removeParent = option == "remove_parent")
+                })
+                target.then(Commands.literal("material")
+                    .then(Commands.argument("material", StringArgumentType.string())
+                        .executes { ctx -> addEvent(ctx, event, material = eventMaterial(ctx)) }
+                        .then(Commands.literal("remove_parent").executes { ctx ->
+                            addEvent(ctx, event, material = eventMaterial(ctx), removeParent = true)
+                        })
+                        .then(Commands.literal("repeat").executes { ctx ->
+                            addEvent(ctx, event, material = eventMaterial(ctx), once = false)
+                        })))
+            }
+            root.then(Commands.literal(event.name.lowercase()).then(target))
+        }
+        return root
+    }
+
+    private fun eventMaterial(ctx: CommandContext<CommandSourceStack>) =
+        ResourceId.parse(word(ctx, "material"))
+
+    private fun addEvent(
+        ctx: CommandContext<CommandSourceStack>, event: ParticleEvent, material: ResourceId? = null,
+        once: Boolean = true, removeParent: Boolean = false,
+    ) = configure(ctx) { draft ->
+        val target = CommandParticleRecipes.get(dim(ctx), word(ctx, "child"))
+        requireLocalized(target !== draft) { translation("error.recipe.event_self") }
+        val snapshot = target.recipe.copy(seeds = target.samples(ctx.source.level), visual = target.recipe.visual.copy())
+        val rule = RecipeEmission(event, snapshot, material, once, removeParent)
+        draft.update(draft.recipe.copy(emissions = draft.recipe.emissions + rule))
     }
 
     private fun anchorTree(): LiteralArgumentBuilder<CommandSourceStack> {

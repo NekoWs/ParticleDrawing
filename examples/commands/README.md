@@ -46,6 +46,7 @@ function pdraw_test:five-star
 function pdraw_test:spotlight
 function pdraw_test:collision-bounce
 function pdraw_test:subemit-burst
+function pdraw_test:rain-contact
 ```
 
 在聊天栏执行时加前缀 `/`。锚点相对函数执行位置，命令方块执行时可以用

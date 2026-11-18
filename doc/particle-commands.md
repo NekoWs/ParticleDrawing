@@ -440,7 +440,7 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 | `subemit speed <0..2>` | 子粒子初速（格/刻），方向在球面上均匀散开，默认 0.12 |
 | `subemit scale <0.05..4>` | 子粒子相对父粒子的尺寸比例，默认 0.6 |
 | `subemit off` | 关闭子发射 |
-| `collide none\|solid\|liquid` | 与世界的碰撞方式，默认 `none`（自由穿过）；`solid` 撞方块，`liquid` 撞液体 |
+| `collide none\|solid\|liquid\|both` | 默认 `none`。可检测方块、液体或两者中的首个接触面 |
 | `bounce <0..1>` | 撞到后法线方向保留的速度比例，0 直接停下，1 完全弹性，默认 0.35 |
 | `friction <0..1>` | 撞到后切向速度的保留比例，越小越「黏地」，默认 0.55 |
 
@@ -511,6 +511,24 @@ pdraw particle emitter meteor start
 
 上面的粒子落到地面后消失，每一颗在地面位置炸出 10 颗小火花。子粒子沿用父配方外观，
 只是按 `subemit scale` 缩小、按 `subemit lifetime` 提前消失。
+#### 用事件启动子配方
+
+`on birth <子配方>`、`on death <子配方>` 和 `on contact <子配方>` 把一轮子配方放到父粒子的出生、死亡或接触点。手动移除不触发死亡事件。接触默认每条规则、每颗粒子触发一次；加 `repeat` 可在每次入射接触时触发，加 `remove_parent` 可在命中后移除父粒子。可选 `material "<资源 ID>"` 筛选方块或液体，放在末尾选项之前。
+
+```mcfunction
+pdraw particle emitter sparks on contact metal_sparks material "minecraft:iron_block" remove_parent
+pdraw particle emitter sparks on contact stone_dust material "minecraft:stone"
+pdraw particle emitter sparks on clear
+```
+
+绑定时复制子配方配置。子配方最多 64 个样本，寿命 1–1200 刻，用世界坐标轴，并从真实接触点法线外侧开始；每条规则共享子配方的 `max_alive`。客户端每刻尝试生成至多 256 颗事件粒子，超过预算的事件不会补发。子配方使用现有采样、筛选和公式，不再挂事件、自动子发射、跟随或轨道。事件公式可读 `event_x/y/z`（位置）、`event_nx/ny/nz`（接触法线）、`event_vx/vy/vz`（入射位移或生命周期事件时的速度）。位置、法线和速度均为世界坐标。
+
+[雨滴与飞溅示例](../examples/commands/rain-contact.mcfunction)用世界条件筛选出生位置，在接触真实表面后执行溅水配方。
+
+#### 世界输入
+
+`world_x/y/z` 是当前求值点的世界坐标。`world_loaded` 为 1 时表示客户端已收到该位置的区块。`block_light` 和 `sky_light` 返回 0–15；`open_sky`、`in_solid`、`in_fluid` 返回 0 或 1；`flow_x/y/z` 为该点液体流向。`entity_near` 表示 8 格内有活跃非旁观实体，`entity_dx/dy/dz` 为最近实体相对粒子的位置。区块未加载时环境量为 0。出生公式查询初始样本的位置，`where` 和出生阶段的 `kill` 查询应用出生公式后的位置，逐刻公式查询推进前的位置。锚点 `orbit` 使用发射器级输入。
+
 #### 碰撞与落地
 
 公式能算任意数学，但拿不到方块信息，所以「撞墙、落地」单独成一项配置。

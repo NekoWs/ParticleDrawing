@@ -6,6 +6,7 @@ import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.recipe.RecipeCollision
 import work.nekow.particledrawing.api.*
 import work.nekow.particledrawing.core.network.*
+import work.nekow.particledrawing.math.ResourceId
 import java.util.UUID
 import kotlin.test.*
 
@@ -96,5 +97,22 @@ class ParticleRecipeCodecTest {
         val source = ParticleRecipe(listOf(ParticleSeed(Vec3.ZERO)))
         val result = roundTrip(ParticleRecipePayload(UUID.randomUUID(), RecipeOperation.START, source, RecipeAnchor(Vec3.ZERO)))
         assertEquals(null, assertNotNull(result.recipe).subEmit)
+    }
+
+    @Test fun `接触规则与子配方随声明往返`() {
+        val seeds = ParticleSampling.count(3)
+        val child = ParticleRecipe(seeds, lifetime = 13, birth = mapOf("vy" to "event_ny * abs(event_vy)"))
+        val rule = RecipeEmission(ParticleEvent.CONTACT, child, ResourceId.parse("minecraft:iron_block"), removeParent = true)
+        val source = ParticleRecipe(seeds, collision = RecipeCollision.SOLID_AND_LIQUID, emissions = listOf(rule))
+        val payload = roundTrip(ParticleRecipePayload(UUID.randomUUID(), RecipeOperation.START, source, RecipeAnchor(Vec3.ZERO)))
+        val recipe = assertNotNull(payload.recipe)
+        recipe.validate()
+        val decoded = recipe.emissions.single()
+        assertEquals(RecipeCollision.SOLID_AND_LIQUID, recipe.collision)
+        assertEquals(rule.material, decoded.material)
+        assertEquals(rule.event, decoded.event)
+        assertTrue(decoded.removeParent)
+        assertEquals(child.birth, decoded.child.birth)
+        assertEquals(child.seeds, decoded.child.seeds)
     }
 }

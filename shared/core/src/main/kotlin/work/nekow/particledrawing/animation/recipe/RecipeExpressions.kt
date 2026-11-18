@@ -24,7 +24,10 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
     private val orbitVariables = recipe.variables
     private val orbitState = recipe.state
 
+    internal val externalInputs: Set<RecipeInput>
+
     init {
+        val used = linkedSetOf<RecipeInput>()
         val names = recipe.variables.keys.toList() + recipe.state.keys.toList() + recipe.lets.keys.toList()
         requireLocalized(names.size == names.toSet().size) { translation("error.expression.name_overlap") }
         for (name in names) requireLocalized(NAME.matches(name) && name !in INPUTS && name !in FUNCTIONS &&
@@ -36,8 +39,9 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
         val outputs = ATTRIBUTES + VECTOR_OUTPUTS.keys + recipe.state.keys
         for (name in recipe.birth.keys + recipe.motion.keys) requireLocalized(name in outputs) { translation("error.expression.read_only", name) }
         val known = (INPUTS + recipe.variables.keys + recipe.state.keys).toMutableSet()
-        for ((name, expr) in recipe.lets) { validate(expr, known); known += name }
-        for (expr in recipe.birth.values + recipe.motion.values + listOf(recipe.where, recipe.kill)) validate(expr, known)
+        for ((name, expr) in recipe.lets) { validate(expr, known, used); known += name }
+        for (expr in recipe.birth.values + recipe.motion.values + listOf(recipe.where, recipe.kill)) validate(expr, known, used)
+        externalInputs = used
         // 锚点偏移只认发射器级的量：u/i/age 这类样本级输入在求锚点时没有意义，写了要报错而不是静默取 0。
         recipe.orbit.takeIf(String::isNotBlank)?.let { validate(it, ANCHOR_INPUTS + recipe.variables.keys + recipe.state.keys + recipe.lets.keys) }
     }
@@ -56,6 +60,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
         dx: Double, dy: Double, dz: Double,
         sx: Double, sy: Double, sz: Double,
         variables: Map<String, Double>,
+        external: Map<String, Double> = emptyMap(),
     ) {
         values.clear()
         for ((k, v) in attributes) values[k] = v
@@ -64,6 +69,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
         values["dx"] = dx; values["dy"] = dy; values["dz"] = dz
         values["sx"] = sx; values["sy"] = sy; values["sz"] = sz
         for ((k, v) in variables) values[k] = v
+        values.putAll(external)
         for ((name, runner) in lets) values[name] = finiteLet(name, runner.evalAny(ctx))
     }
 
@@ -289,11 +295,14 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
         return value as Any
     }
 
-    private fun validate(expr: String, known: Set<String>) {
+    private fun validate(expr: String, known: Set<String>, used: MutableSet<RecipeInput>? = null) {
         fun visit(node: Node) {
             when (node) {
                 is NumNode, is BoolNode -> Unit
-                is VarNode -> requireLocalized(node.name in known) { translation("error.expression.unknown_variable", node.name) }
+                is VarNode -> {
+                    requireLocalized(node.name in known) { translation("error.expression.unknown_variable", node.name) }
+                    RecipeInput.byKey[node.name]?.let { used?.add(it) }
+                }
                 is UnaryNode -> visit(node.operand)
                 is BinaryNode -> { visit(node.left); visit(node.right) }
                 is TernaryNode -> { visit(node.cond); visit(node.thenExpr); visit(node.elseExpr) }
@@ -317,7 +326,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
         /** 每刻注入运行期输入的槽位顺序，紧跟寄存器里的属性之后。 */
         val INPUT_SLOTS = listOf(
             "u", "dt", "age", "life", "progress", "dx", "dy", "dz", "sx", "sy", "sz", "ax", "ay", "az",
-        )
+        ) + RecipeInput.byKey.keys
         const val U = Reg.VAR_START + 0
         const val DT = Reg.VAR_START + 1
         const val AGE = Reg.VAR_START + 2
@@ -349,7 +358,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
         /** 可写字段全集，命令补全用。 */
         val OUTPUTS: Set<String> = ATTRIBUTES + VECTOR_OUTPUTS.keys
 
-        val INPUTS = ATTRIBUTES + setOf("i", "n", "u", "t", "age", "life", "progress", "dt", "dx", "dy", "dz", "sx", "sy", "sz")
+        val INPUTS = ATTRIBUTES + setOf("i", "n", "u", "t", "age", "life", "progress", "dt", "dx", "dy", "dz", "sx", "sy", "sz") + RecipeInput.byKey.keys
 
         /** 锚点偏移公式能用的输入：只有发射器级的量，没有样本。 */
         val ANCHOR_INPUTS = setOf("t", "dt")

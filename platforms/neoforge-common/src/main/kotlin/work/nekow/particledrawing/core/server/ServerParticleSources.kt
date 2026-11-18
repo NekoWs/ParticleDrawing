@@ -104,8 +104,9 @@ internal object ServerParticleSources {
     fun discard(dimension: UUID) { entries.entries.removeIf { it.value.dimension == dimension } }
     fun clear() = entries.clear()
 
-    private fun freeze(r: ParticleRecipe) = r.copy(seeds = r.seeds.toList(), visual = r.visual.copy(),
+    private fun freeze(r: ParticleRecipe): ParticleRecipe = r.copy(seeds = r.seeds.toList(), visual = r.visual.copy(),
         variables = LinkedHashMap(r.variables), state = LinkedHashMap(r.state), lets = LinkedHashMap(r.lets),
-        birth = LinkedHashMap(r.birth), motion = LinkedHashMap(r.motion))
+        birth = LinkedHashMap(r.birth), motion = LinkedHashMap(r.motion),
+        emissions = r.emissions.map { it.copy(child = freeze(it.child)) })
 
 }

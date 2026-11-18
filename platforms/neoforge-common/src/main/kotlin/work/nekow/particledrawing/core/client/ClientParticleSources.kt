@@ -2,9 +2,11 @@ package work.nekow.particledrawing.core.client
 
 import net.minecraft.client.Minecraft
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.animation.recipe.CollisionMath
 import work.nekow.particledrawing.animation.recipe.RecipeFrame
 import work.nekow.particledrawing.animation.recipe.RecipeRuntime
 import work.nekow.particledrawing.api.RecipeAnchor
+import work.nekow.particledrawing.api.RecipeEmission
 import work.nekow.particledrawing.api.SubEmit
 import work.nekow.particledrawing.core.network.ParticleRecipePayload
 import work.nekow.particledrawing.core.network.RecipeOperation
@@ -27,6 +29,9 @@ internal object ClientParticleSources {
     }
     private class Entry(val runtime: RecipeRuntime, var anchor: RecipeAnchor) {
         val members = linkedMapOf<RecipeRuntime.Particle, Member>()
+        val children = linkedMapOf<RecipeEmission, Entry>()
+
+        fun particleIds(): List<UUID> = members.values.map { it.id } + children.values.flatMap(Entry::particleIds)
     }
     private val sources = linkedMapOf<UUID, Entry>()
 
@@ -53,18 +58,32 @@ internal object ClientParticleSources {
     }
 
     fun tick() {
+        var childBudget = CHILD_ATTEMPTS_PER_TICK
         for ((id, e) in sources.toList()) {
             try {
                 e.runtime.tickInFrame(resolve(e))
                 sync(e)
-                if (e.runtime.finished) sources.remove(id)
+                for (child in e.children.values) child.runtime.tickInFrame(RecipeFrame.IDENTITY)
+                for ((rule, input) in e.runtime.events) {
+                    if (childBudget <= 0) break
+                    val child = e.children.getOrPut(rule) {
+                        Entry(RecipeRuntime(rule.child, burst = true, world = ClientParticleWorld), e.anchor).also {
+                            it.runtime.emitting = false
+                        }
+                    }
+                    val origin = input.position.add(input.normal.scale(CollisionMath.SURFACE_MARGIN))
+                    childBudget -= child.runtime.emitAt(RecipeFrame(origin), input, childBudget)
+                }
+                for (child in e.children.values) sync(child, allowCapacityDrop = true)
+                e.children.values.removeIf { it.runtime.finished }
+                if (e.runtime.finished && e.children.isEmpty()) sources.remove(id)
             } catch (ex: RuntimeException) { remove(id); error(id, ex) }
         }
     }
 
     private val posOut = DoubleArray(3)
 
-    private fun sync(e: Entry, emitChildren: Boolean = true) {
+    private fun sync(e: Entry, emitChildren: Boolean = true, allowCapacityDrop: Boolean = false) {
         val engine = ClientParticleEngine.instance() ?: return
         val frame = e.runtime.frame
         val hidden = e.runtime.recipe.follow && frame == null
@@ -96,7 +115,13 @@ internal object ClientParticleSources {
                 engine.spawnParticle(id, position.x, position.y, position.z,
                     p.regs[sR].toFloat(), p.regs[sG].toFloat(), p.regs[sB].toFloat(), p.regs[sA].toFloat(),
                     p.regs[sSc].toFloat(), p.lifetime, null, p.regs[sGlow] != 0.0, p.regs[sLight].toInt(), look, e.runtime.recipe.lifeCurve)
-                requireLocalized(engine.containsParticle(id)) { translation("error.recipe.client_limit") }
+                if (!engine.containsParticle(id)) {
+                    if (allowCapacityDrop) {
+                        p.alive = false
+                        continue
+                    }
+                    requireLocalized(false) { translation("error.recipe.client_limit") }
+                }
                 engine.markSpawnedDuringRender(id, 0f)
                 member = Member(id, position, look)
                 e.members[p] = member
@@ -142,10 +167,12 @@ internal object ClientParticleSources {
 
     private fun remove(id: UUID) {
         val e = sources.remove(id) ?: return
-        ClientParticleEngine.instance()?.destroyParticles(e.members.values.map { it.id }.toTypedArray())
+        ClientParticleEngine.instance()?.destroyParticles(e.particleIds().toTypedArray())
     }
 
     fun clear() = sources.clear()
+
+    private const val CHILD_ATTEMPTS_PER_TICK = 256
 
     private fun burst(engine: ClientParticleEngine, e: Entry, p: RecipeRuntime.Particle, member: Member, sub: SubEmit) {
         val pos = member.position.toCore()
