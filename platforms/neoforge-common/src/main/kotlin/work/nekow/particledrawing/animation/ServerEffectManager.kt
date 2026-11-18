@@ -169,7 +169,7 @@ object ServerEffectManager {
         val pb = playbacks[playbackId] ?: return false
         if (pb.options.authority() != Authority.SERVER) return false
         pb.clock.position = ms
-        sendClock(pb, players)
+        sendClock(pb, players, seek = true)
         return true
     }
 
@@ -200,8 +200,8 @@ object ServerEffectManager {
         return true
     }
 
-    private fun sendClock(pb: Playback, players: Collection<ServerPlayer>) {
-        val payload = ClockSyncPayload(pb.playbackId, pb.clock.position, pb.clock.playing, pb.clock.speed)
+    private fun sendClock(pb: Playback, players: Collection<ServerPlayer>, seek: Boolean = false) {
+        val payload = ClockSyncPayload(pb.playbackId, pb.clock.position, pb.clock.playing, pb.clock.speed, seek)
         for (p in players) {
             if (p.uuid in pb.playerIds) PacketDistributor.sendToPlayer(p, payload)
         }

@@ -1,6 +1,7 @@
 package work.nekow.particledrawing
 
 import work.nekow.particledrawing.animation.PdrawcReader
+import work.nekow.particledrawing.api.ParticleRenderOptions
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -20,6 +21,7 @@ class AdditiveFlagContractTest {
         val anim = PdrawcReader.parse(bytes)
         assertEquals(1, anim.functions.size, "夹具应恰好一个函数对象，additive 挂在它的 flags 上")
         assertTrue(anim.functions[0].additive, "flags bit7 应映射为 additive=true")
+        assertEquals(ParticleRenderOptions(true, 1.25, 0.5, 12), anim.functions[0].renderOptions)
     }
 
     @Test

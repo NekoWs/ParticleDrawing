@@ -338,7 +338,7 @@ internal object ClientPayloadHandler {
 
     fun handleClockSync(payload: ClockSyncPayload, context: IPayloadContext) {
         context.enqueueWork {
-            ClientAnimationManager.applyClockSync(payload.playbackId, payload.position, payload.playing, payload.speed)
+            ClientAnimationManager.applyClockSync(payload.playbackId, payload.position, payload.playing, payload.speed, payload.seek)
         }
     }
 

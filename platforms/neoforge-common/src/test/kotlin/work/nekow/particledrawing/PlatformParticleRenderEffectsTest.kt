@@ -4,10 +4,9 @@ import net.minecraft.core.BlockPos
 import net.minecraft.world.phys.Vec3
 import net.minecraft.world.phys.shapes.Shapes
 import org.joml.Vector3f
-import work.nekow.particledrawing.api.ParticleVisual
+import work.nekow.particledrawing.api.ParticleRenderOptions
 import work.nekow.particledrawing.core.client.ClientParticleWorld
 import work.nekow.particledrawing.core.client.ParticleRenderEffects
-import work.nekow.particledrawing.core.client.ResolvedVisual
 import kotlin.test.Test
 import work.nekow.particledrawing.math.Vec3 as CoreVec3
 import kotlin.test.assertEquals
@@ -18,16 +17,19 @@ import kotlin.test.assertNull
 class PlatformParticleRenderEffectsTest {
     @Test
     fun `同刻重复同步仍按整刻位移定向拉长且瞬移重置`() {
-        val visual = ParticleVisual().apply { alignVelocity = true; stretch = 1.0 }
-        val effects = ParticleRenderEffects(ResolvedVisual.of(visual, 1f), Vec3.ZERO)
+        val options = ParticleRenderOptions(alignVelocity = true, stretch = 1.0, trailTicks = 4)
+        val effects = ParticleRenderEffects(options, Vec3.ZERO)
         effects.syncPosition(0.0, 0.0, 0.0, 0.0, 2.0, 0.0, snap = false)
         effects.syncPosition(0.0, 2.0, 0.0, 0.0, 2.0, 0.0, snap = false)
         assertEquals(3f, effects.stretchFactor)
+        effects.record(0.0, 2.0, 0.0)
+        assertEquals(2, assertNotNull(effects.trail).size)
         val axis = assertNotNull(effects.orientation()).transform(Vector3f(1f, 0f, 0f))
         assertEquals(1f, axis.y, 1e-6f)
         effects.syncPosition(0.0, 2.0, 0.0, 20.0, 0.0, 0.0, snap = true)
         assertEquals(1f, effects.stretchFactor)
         assertNull(effects.orientation())
+        assertEquals(1, assertNotNull(effects.trail).size)
     }
 
     @Test

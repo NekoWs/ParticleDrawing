@@ -3,6 +3,7 @@ package work.nekow.particledrawing.animation
 import work.nekow.particledrawing.math.Vec3
 import work.nekow.particledrawing.animation.script.Keyframe
 import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.api.ParticleRenderOptions
 import work.nekow.particledrawing.core.easing.EasingType
 import java.io.ByteArrayInputStream
 import java.math.BigInteger
@@ -27,7 +28,8 @@ import work.nekow.particledrawing.i18n.translation
 object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
-    private const val VERSION = 18    // 音频资产含 5 个可关键帧的播放属性（vol/speed/pan/fadeIn/fadeOut）与轨道引用 kind=5
+    private const val MIN_VERSION = 18
+    private const val VERSION = 19
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 
@@ -63,7 +65,7 @@ object PdrawcReader {
 
         if (!r.bytes(4).contentEquals(MAGIC)) throw LocalizedArgumentException(translation("error.file.header"))
         val version = r.varint()
-        if (version != VERSION) throw LocalizedArgumentException(translation("error.file.version", version))
+        if (version !in MIN_VERSION..VERSION) throw LocalizedArgumentException(translation("error.file.version", version))
         r.bytes(PUB_LEN) // 公钥已用于验签，跳过
 
         val bodyBytes = inflateRaw(r.remainingBytes())
@@ -101,7 +103,9 @@ object PdrawcReader {
             val uv = if (flags and 2 != 0) readUV(br, texNames) else null
             val billboard = (flags and 16) == 0   // bit4=非广告牌
             val spinLocal = (flags and 32) == 0   // bit5=自转空间 world
-            particles.add(AnimParticle("p$i", color, scale, flags and 1 != 0, lightLevel, pos, vel, uv, st, ent, life, billboard, spinLocal))
+            val renderOptions = if (version >= 19) readRenderOptions(br) else ParticleRenderOptions.DEFAULT
+            particles.add(AnimParticle("p$i", color, scale, flags and 1 != 0, lightLevel, pos, vel, uv, st, ent, life,
+                billboard, spinLocal, renderOptions))
         }
 
         // 组（合成名 g0..gN，成员用粒子索引）
@@ -160,7 +164,9 @@ object PdrawcReader {
                 val kf = readVarKeyframes(br)
                 vars[name] = FunctionVar(base, kf)
             }
-            functions.add(FunctionObject("fx$fi", "fx$fi", center, source, seed, vars, duration, uv, st, ent, fastMath, spinLocal, rotLocal, frameSync, additive))
+            val renderOptions = if (version >= 19) readRenderOptions(br) else ParticleRenderOptions.DEFAULT
+            functions.add(FunctionObject("fx$fi", "fx$fi", center, source, seed, vars, duration, uv, st, ent, fastMath,
+                spinLocal, rotLocal, frameSync, additive, renderOptions))
         }
 
         // 摄像机对象：朝向 = target 目标点 + roll 翻滚角，旋转空间见 flags；
@@ -323,7 +329,7 @@ object PdrawcReader {
         val r = Reader(ByteBuffer.wrap(unsigned).order(ByteOrder.LITTLE_ENDIAN))
         return try {
             if (!r.bytes(4).contentEquals(MAGIC)) return null
-            if (r.varint() != VERSION) return null
+            if (r.varint() !in MIN_VERSION..VERSION) return null
             r.bytes(PUB_LEN)
         } catch (_: Exception) {
             null
@@ -333,6 +339,18 @@ object PdrawcReader {
     /** raw DEFLATE 解压。 */
     private fun inflateRaw(data: ByteArray): ByteArray =
         InflaterInputStream(ByteArrayInputStream(data), Inflater(true)).use { it.readBytes() }
+
+    private fun readRenderOptions(r: Reader): ParticleRenderOptions {
+        val fields = r.u8()
+        require(fields in 0..7)
+        if (fields == 0) return ParticleRenderOptions.DEFAULT
+        return ParticleRenderOptions(
+            alignVelocity = fields and 1 != 0,
+            stretch = if (fields and 1 != 0) r.f32().toDouble() else ParticleRenderOptions.DEFAULT.stretch,
+            softFade = if (fields and 2 != 0) r.f32().toDouble() else 0.0,
+            trailTicks = if (fields and 4 != 0) r.u8() else 0,
+        )
+    }
 
     private fun readUV(r: Reader, texNames: List<String>): UvData {
         val texIdx = r.varint()

@@ -95,25 +95,21 @@ class ParticleVisual {
     /** 拉丝强度：长度系数 = 1 + stretch × 速度（格/刻），0 表示只对齐不拉长。 */
     var stretch: Double = 0.6
         set(value) {
-            requireLocalized(value in 0.0..VelocityStretch.MAX_STRETCH) {
-                translation("error.visual.stretch", VelocityStretch.MAX_STRETCH.toInt())
-            }
+            ParticleRenderOptions.validateStretch(value)
             field = value
         }
 
     /** 软粒子采样半径（格）：>0 时粒子贴近方块会淡出，消除插进地面的硬边。 */
     var softFade: Double = 0.0
         set(value) {
-            requireLocalized(value in 0.0..SoftFade.MAX_DISTANCE) {
-                translation("error.visual.soft_fade", SoftFade.MAX_DISTANCE.toInt())
-            }
+            ParticleRenderOptions.validateSoftFade(value)
             field = value
         }
 
     /** 拖尾历史长度（刻），0 关闭。 */
     var trailTicks: Int = 0
         set(value) {
-            requireLocalized(value in 0..MAX_TRAIL_TICKS) { translation("error.visual.trail_ticks", MAX_TRAIL_TICKS) }
+            ParticleRenderOptions.validateTrail(value)
             field = value
         }
 

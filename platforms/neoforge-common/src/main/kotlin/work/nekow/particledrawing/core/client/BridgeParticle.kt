@@ -11,6 +11,7 @@ import net.minecraft.resources.Identifier
 import net.minecraft.util.Mth
 import net.minecraft.world.phys.Vec3
 import org.joml.Quaternionf
+import work.nekow.particledrawing.api.ParticleRenderOptions
 import work.nekow.particledrawing.animation.ParticleUvRegion
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
@@ -180,7 +181,7 @@ class BridgeParticle(
 
     private var effects: ParticleRenderEffects? = null
 
-    internal fun enableRenderEffects(visual: ResolvedVisual, previous: Vec3?) {
+    internal fun enableRenderEffects(visual: ParticleRenderOptions, previous: Vec3?) {
         val state = ParticleRenderEffects(visual, previous ?: Vec3(x, y, z))
         effects = state
         if (previous != null) {
@@ -197,8 +198,8 @@ class BridgeParticle(
      * 同步粒子位置。
      * @param snap true = 跳变到目标位置，false = 保留上一 tick 位置作为插值起点
      */
-    fun syncPosition(x: Double, y: Double, z: Double, snap: Boolean = false) {
-        effects?.syncPosition(this.x, this.y, this.z, x, y, z, snap)
+    fun syncPosition(x: Double, y: Double, z: Double, snap: Boolean = false, resetEffects: Boolean = snap) {
+        effects?.syncPosition(this.x, this.y, this.z, x, y, z, resetEffects)
         if (snap) {
             this.xo = x
             this.yo = y

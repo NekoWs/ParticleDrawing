@@ -25,7 +25,7 @@
 
 | 想实现的效果 | 当前边界 |
 | --- | --- |
-| 在网页编辑器导出的动画里使用拉丝、软化、丝带或世界碰撞 | `.pdrawc` 的粒子与函数对象没有这些声明字段；播放桥也没有将这几个外观字段交给共享渲染入口。可以通过关键帧或脚本手工画出已知轨迹，当前格式无法声明实时地形碰撞或原生拖尾。见 [文件读取](../shared/core/src/main/kotlin/work/nekow/particledrawing/animation/PdrawcReader.kt)和[动画生成入口](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/client/ClientAnimationManager.kt)。 |
+| 让网页编辑器导出的粒子在游戏中响应世界碰撞 | `.pdrawc` v19 可声明拉丝、软化和丝带。动画的时间轴和脚本直接控制位置，仍缺少保存、重建世界交互状态的播放语义。见 [文件读取](../shared/core/src/main/kotlin/work/nekow/particledrawing/animation/PdrawcReader.kt)和[动画生成入口](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/client/ClientAnimationManager.kt)。 |
 | 让带配方公式的空间采样和距离发射一起工作 | 普通发射器已有按距离发射，配方出生只按刻间隔和每次尝试数量调度，两者尚未组合。常规粒子也没有配方的碰撞与子发射设置。见 [发射器 API](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/api/ParticleEmitter.kt)和 [配方运行时](../shared/core/src/main/kotlin/work/nekow/particledrawing/animation/recipe/RecipeRuntime.kt)。 |
 | 晚进服的玩家看到和其他人处于同一阶段的碰撞粒子和尾迹 | 持续配方向迟到玩家发送当前配置，客户端从头模拟。已经触发的一次性配方也不会补发。真实碰撞轨迹取决于客户端当时看到的世界。见 [服务端配方同步](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/server/ServerParticleSources.kt)和[启动包](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/network/ParticleRecipePayload.kt)。 |
 | 十万颗粒子同时模拟和渲染、远离摄像机后释放模拟预算 | 客户端粒子登记上限默认 50,000，可调至 200,000。单个配方最多 8,192 个样本及存活粒子。现有路径逐颗 CPU 模拟和提交顶点，距离 LOD 只减少绘制，暂无基于实机基准的十万颗性能承诺。见 [客户端配置](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/config/ParticleDrawingConfig.kt)、[配方上限](../shared/core/src/main/kotlin/work/nekow/particledrawing/api/ParticleRecipe.kt)和[客户端引擎](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/client/ClientParticleEngine.kt)。 |
@@ -33,7 +33,7 @@
 ## 实现顺序
 
 1. **世界输入和粒子事件。** 局部环境读取、接触事件和子配方已接通，可用[雨滴示例](../examples/commands/rain-contact.mcfunction)复现。更广的实体、扫掠形状和邻域查询可沿同一契约扩展。
-2. **编辑器与运行时共用外观。** 先贯通 `.pdrawc`、动画状态和现有 `ParticleVisual` 渲染入口，让拉丝、软化和丝带可编辑、可导出。相同外观用命令和动画生成时应一致；丝带手动跳转时的历史处理也需要定义。实时碰撞另需明确预览与实际世界的输入和回放语义。
+2. **编辑器与运行时共用外观。** `.pdrawc` v19 的拉丝、软化和丝带已复用命令粒子的渲染入口。实时碰撞另需明确预览与实际世界的输入和回放语义。
 3. **发射采样和渲染几何。** 复用现有按时间、按距离的调度，给配方接入可更换的采样源。模型采样和模型绘制分别验证，其后再加管状轨迹、地表投影或需要场景缓冲的材质。
 4. **规模化。** 用普通粒子、带碰撞粒子和带丝带粒子分别测逐刻 CPU 时间、提交顶点和帧时间，再决定是否引入模拟预算、实例绘制或 GPU 模拟。
 

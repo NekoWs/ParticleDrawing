@@ -15,6 +15,7 @@ data class ClockSyncPayload(
     val position: Double,
     val playing: Boolean,
     val speed: Double,
+    val seek: Boolean = false,
 ) : CustomPacketPayload {
 
     companion object {
@@ -32,6 +33,7 @@ data class ClockSyncPayload(
                         buf.readDouble(),
                         buf.readBoolean(),
                         buf.readDouble(),
+                        buf.readBoolean(),
                     )
 
                 override fun encode(buf: FriendlyByteBuf, p: ClockSyncPayload) {
@@ -39,6 +41,7 @@ data class ClockSyncPayload(
                     buf.writeDouble(p.position)
                     buf.writeBoolean(p.playing)
                     buf.writeDouble(p.speed)
+                    buf.writeBoolean(p.seek)
                 }
             }
     }

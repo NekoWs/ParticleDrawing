@@ -2,6 +2,7 @@ package work.nekow.particledrawing.animation
 
 import work.nekow.particledrawing.math.Vec3
 import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.api.ParticleRenderOptions
 import work.nekow.particledrawing.animation.script.Keyframe
 import work.nekow.particledrawing.core.easing.EasingType
 
@@ -42,6 +43,7 @@ class FunctionObject(
     val frameSync: Boolean = false,
     /** true=加法混合（编辑器 blend=additive，容器 flags bit7）；渲染端选 ADDITIVE_PARTICLE 管线。 */
     val additive: Boolean = false,
+    val renderOptions: ParticleRenderOptions = ParticleRenderOptions.DEFAULT,
 )
 
 /** 函数对象变量：数值基值 + 关键帧（关键帧非空时按时间轴插值，忽略基值）。base/kf 可变，支持服务端下发变量更新。 */
@@ -71,6 +73,7 @@ class AnimParticle(
     val life: Int = -1,
     val billboard: Boolean = true,
     val spinLocal: Boolean = true,
+    val renderOptions: ParticleRenderOptions = ParticleRenderOptions.DEFAULT,
 )
 
 /** 一条分量轨道，作用于一组目标（按 id / "g:name" / "f:fxId"）的某个分量。SET=绝对值，OP=增量。 */

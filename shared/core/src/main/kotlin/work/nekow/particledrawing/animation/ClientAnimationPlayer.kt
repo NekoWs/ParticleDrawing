@@ -14,6 +14,7 @@ import work.nekow.particledrawing.animation.script.ViewTransform
 import work.nekow.particledrawing.animation.script.parseProgram
 import work.nekow.particledrawing.animation.script.tokenize
 import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.api.ParticleRenderOptions
 import work.nekow.particledrawing.util.rotateAround
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -54,6 +55,7 @@ class ClientAnimationPlayer(
         var additive: Boolean = false,
         var lightShape: LightShape? = null,
         var lightIntensity: Float = 1f,
+        val renderOptions: ParticleRenderOptions = ParticleRenderOptions.DEFAULT,
     ) {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -73,7 +75,7 @@ class ClientAnimationPlayer(
             if (billboard != other.billboard) return false
             if (!spin.contentEquals(other.spin)) return false
             if (spinLocal != other.spinLocal) return false
-            if (additive != other.additive) return false
+            if (additive != other.additive || renderOptions != other.renderOptions) return false
 
             return true
         }
@@ -94,6 +96,7 @@ class ClientAnimationPlayer(
             result = 31 * result + spin.contentHashCode()
             result = 31 * result + spinLocal.hashCode()
             result = 31 * result + additive.hashCode()
+            result = 31 * result + renderOptions.hashCode()
             return result
         }
     }
@@ -633,7 +636,7 @@ class ClientAnimationPlayer(
         for (p in animation.particles) {
             states[p.id] = ParticleState(
                 p.id, origin.add(p.pos), p.color, p.scale.copyOf(), p.glowing, p.lightLevel, resolveUV(p.id, p.uv),
-                billboard = p.billboard, spinLocal = p.spinLocal,
+                billboard = p.billboard, spinLocal = p.spinLocal, renderOptions = p.renderOptions,
             )
         }
         // 函数对象运行时已在字段初始化阶段构建（setup 各执行一次）；派生粒子状态由 advanceFunctions 的
@@ -1080,7 +1083,8 @@ class ClientAnimationPlayer(
             newIds.add(id)
             derivedHosts[id] = host
             val s = states.getOrPut(id) {
-                ParticleState(id, Vec3.ZERO, Color.WHITE, floatArrayOf(1f, 1f, 1f), false, 0, null, visible = true, derived = true, additive = fx.additive)
+                ParticleState(id, Vec3.ZERO, Color.WHITE, floatArrayOf(1f, 1f, 1f), false, 0, null, visible = true, derived = true, additive = fx.additive,
+                    renderOptions = fx.renderOptions)
             }
             s.additive = fx.additive   // 已在状态里时也保持跟随函数对象
             // 函数对象级视图变换（脚本 this.viewScale / this.viewOffset）：整条迹线的全局增益与偏移。

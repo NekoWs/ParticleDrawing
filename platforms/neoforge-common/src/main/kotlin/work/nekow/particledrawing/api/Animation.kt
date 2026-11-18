@@ -4,6 +4,7 @@ import work.nekow.particledrawing.platform.PlatformCompat
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.platform.toCore
 import work.nekow.particledrawing.animation.AnimCamera
 import work.nekow.particledrawing.animation.AnimKeyframe
 import work.nekow.particledrawing.animation.AnimParticle
@@ -221,6 +222,7 @@ class ParticleBuilder internal constructor() {
     internal var pst: Int = 0
     internal var pent: Entrance? = null
     internal var plife: Int = -1
+    internal var pRenderOptions = ParticleRenderOptions.DEFAULT
 
     /**
      * 设置粒子 id。
@@ -299,8 +301,11 @@ class ParticleBuilder internal constructor() {
      */
     fun life(life: Int): ParticleBuilder = apply { plife = life }
 
+    fun renderOptions(options: ParticleRenderOptions): ParticleBuilder = apply { pRenderOptions = options }
+
     internal fun build(defaultId: String): AnimParticle =
-        AnimParticle(pid ?: defaultId, pcolor, pscale, pglowing, plightLevel, ppos, pvel, puv, pst, pent, plife)
+        AnimParticle(pid ?: defaultId, pcolor, pscale, pglowing, plightLevel, ppos.toCore(), pvel.toCore(), puv, pst, pent, plife,
+            renderOptions = pRenderOptions)
 }
 
 @Suppress("unused")
@@ -367,6 +372,7 @@ class FunctionBuilder internal constructor() {
     internal var fspinLocal: Boolean = false
     internal var frotLocal: Boolean = false
     internal var fframeSync: Boolean = false
+    internal var fRenderOptions = ParticleRenderOptions.DEFAULT
 
     /**
      * 设置函数对象 id。
@@ -466,13 +472,15 @@ class FunctionBuilder internal constructor() {
      */
     fun variable(name: String): FunctionBuilder = variable(name, 0.0)
 
+    fun renderOptions(options: ParticleRenderOptions): FunctionBuilder = apply { fRenderOptions = options }
+
     internal fun build(defaultId: String): FunctionObject {
         val resolvedId = fid ?: defaultId
         return FunctionObject(
             resolvedId, fname ?: resolvedId,
             doubleArrayOf(fcenter.x, fcenter.y, fcenter.z),
             fsource, fseed, fvars, fduration,
-            fuv, fst, fent, ffastMath, fspinLocal, frotLocal, fframeSync,
+            fuv, fst, fent, ffastMath, fspinLocal, frotLocal, fframeSync, renderOptions = fRenderOptions,
         )
     }
 }
@@ -629,6 +637,10 @@ class AnimationDsl internal constructor() {
 
 @Suppress("unused")
 class ParticleDsl internal constructor(private val b: ParticleBuilder) {
+    var renderOptions: ParticleRenderOptions
+        get() = b.pRenderOptions
+        set(value) { b.renderOptions(value) }
+
     var id: String?
         get() = b.pid
         set(value) { b.pid = value }
@@ -689,6 +701,10 @@ class TrackDsl internal constructor(private val b: TrackBuilder) {
 
 @Suppress("unused")
 class FunctionDsl internal constructor(private val b: FunctionBuilder) {
+    var renderOptions: ParticleRenderOptions
+        get() = b.fRenderOptions
+        set(value) { b.renderOptions(value) }
+
     var id: String?
         get() = b.fid
         set(value) { b.fid = value }

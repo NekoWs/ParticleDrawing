@@ -17,8 +17,10 @@ import work.nekow.particledrawing.animation.TrackPr
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.animation.script.Keyframe
 import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.api.ParticleRenderOptions
 import work.nekow.particledrawing.i18n.LocalizedArgumentException
 import work.nekow.particledrawing.i18n.translation
+import work.nekow.particledrawing.platform.toCore
 
 /**
  * 代码生成 [ParticleAnimation] 的网络编解码：手写二进制，与 .pdrawc 无关，不签名。
@@ -27,7 +29,7 @@ import work.nekow.particledrawing.i18n.translation
  */
 internal object ParticleAnimationCodec {
 
-    const val VERSION = 9   // v9：音频资产含 vol/speed/pan/fadeIn/fadeOut
+    const val VERSION = 10
 
     fun write(buf: FriendlyByteBuf, anim: ParticleAnimation) {
         buf.writeVarInt(VERSION)
@@ -167,7 +169,8 @@ internal object ParticleAnimationCodec {
         writeNullableEnt(buf, p.ent)
         buf.writeVarInt(p.life)
         buf.writeBoolean(p.billboard)   // v8
-        buf.writeBoolean(p.spinLocal)   // v8
+        buf.writeBoolean(p.spinLocal)
+        writeRenderOptions(buf, p.renderOptions)
     }
 
     private fun readParticle(buf: FriendlyByteBuf): AnimParticle {
@@ -184,7 +187,7 @@ internal object ParticleAnimationCodec {
         val life = buf.readVarInt()
         val billboard = buf.readBoolean()   // v8
         val spinLocal = buf.readBoolean()   // v8
-        return AnimParticle(id, color, scale, glowing, lightLevel, pos, vel, uv, st, ent, life, billboard, spinLocal)
+        return AnimParticle(id, color, scale, glowing, lightLevel, pos.toCore(), vel.toCore(), uv, st, ent, life, billboard, spinLocal, readRenderOptions(buf))
     }
 
     private fun writeTrack(buf: FriendlyByteBuf, tr: AnimTrack) {
@@ -244,6 +247,7 @@ internal object ParticleAnimationCodec {
         buf.writeBoolean(fx.rotLocal)
         buf.writeBoolean(fx.frameSync)
         buf.writeBoolean(fx.additive)
+        writeRenderOptions(buf, fx.renderOptions)
     }
 
     private fun readFunction(buf: FriendlyByteBuf): FunctionObject {
@@ -273,8 +277,21 @@ internal object ParticleAnimationCodec {
         val rotLocal = buf.readBoolean()
         val frameSync = buf.readBoolean()
         val additive = buf.readBoolean()
-        return FunctionObject(id, name, center, source, seed, vars, duration, uv, st, ent, fastMath, spinLocal, rotLocal, frameSync, additive)
+        return FunctionObject(id, name, center, source, seed, vars, duration, uv, st, ent, fastMath, spinLocal, rotLocal, frameSync, additive, readRenderOptions(buf))
     }
+
+    private fun writeRenderOptions(buf: FriendlyByteBuf, options: ParticleRenderOptions) {
+        buf.writeBoolean(options.active)
+        if (!options.active) return
+        buf.writeBoolean(options.alignVelocity)
+        buf.writeDouble(options.stretch)
+        buf.writeDouble(options.softFade)
+        buf.writeByte(options.trailTicks)
+    }
+
+    private fun readRenderOptions(buf: FriendlyByteBuf): ParticleRenderOptions =
+        if (buf.readBoolean()) ParticleRenderOptions(buf.readBoolean(), buf.readDouble(), buf.readDouble(), buf.readUnsignedByte().toInt())
+        else ParticleRenderOptions.DEFAULT
 
     private fun writeCamera(buf: FriendlyByteBuf, cam: AnimCamera) {
         buf.writeUtf(cam.id)

@@ -46,7 +46,15 @@ object ClientAnimationManager {
         val audioPlayers: MutableMap<String, AudioStreamPlayer> = HashMap(),
         // 渲染帧 process 时刻的单调游标（防止 partialTick 与播放头口径不一致时往回跳）
         val processClock: ProcessClock = ProcessClock(),
-    )
+    ) {
+        var resetAtTick = false
+        var resetAtFrame = false
+
+        fun resetRenderHistory() {
+            resetAtTick = true
+            resetAtFrame = true
+        }
+    }
 
     private val entries = ConcurrentHashMap<UUID, Entry>()
 
@@ -212,8 +220,10 @@ object ClientAnimationManager {
 
     /** 应用服务端权威时钟同步（seek/暂停/变速）。 */
     @JvmStatic
-    fun applyClockSync(playbackId: UUID, position: Double, playing: Boolean, speed: Double) {
-        entries[playbackId]?.clock?.let {
+    fun applyClockSync(playbackId: UUID, position: Double, playing: Boolean, speed: Double, seek: Boolean = false) {
+        val entry = entries[playbackId] ?: return
+        entry.clock?.let {
+            if (seek) entry.resetRenderHistory()
             it.position = position
             it.playing = playing
             it.speed = speed
@@ -223,7 +233,10 @@ object ClientAnimationManager {
     /** 跳转到时间轴毫秒位置（纯本地）。 */
     @JvmStatic
     fun seekLocal(playbackId: UUID, ms: Double) {
-        entries[playbackId]?.clock?.position = ms
+        val entry = entries[playbackId] ?: return
+        val clock = entry.clock ?: return
+        clock.position = ms
+        entry.resetRenderHistory()
     }
 
     @JvmStatic
@@ -421,12 +434,14 @@ object ClientAnimationManager {
                     engine.updateParticleDirectArray(
                         uuid, pos, state.color, state.scale, state.glowing, state.lightLevel, snap = true,
                         billboard = state.billboard, spin = state.spin, spinLocal = state.spinLocal,
+                        resetEffects = entry.resetAtFrame,
                     )
                     engine.updateScriptLight(uuid, state.lightShape, state.lightIntensity)
                     engine.updateParticleUv(uuid, state.uv)
                 }
             }
         }
+        entry.resetAtFrame = false
         // 已消失的帧级同步派生粒子：销毁桥接粒子并清理索引
         val deadIds = entry.particleUuids.keys.filter { entry.player.isFrameSyncDerived(it) && it !in currentIds }
         if (deadIds.isNotEmpty()) {
@@ -467,7 +482,7 @@ object ClientAnimationManager {
         // 回卷标记仅用于重置；普通粒子的 xo 保留上一 tick 位置，原版渲染在 xo→x 间线性插值。
         // 派生粒子例外：位置由 process 逐渲染帧整体重写，插值会把相邻两幅迹线混成重影，一律 snap
         // （见 [snapDirectWrite]）；这里只处理未开启帧级同步的派生粒子。
-        entry.player.consumeJustLooped()
+        if (entry.player.consumeJustLooped()) entry.resetRenderHistory()
         val engine = ClientParticleEngine.instance() ?: return
         val currentIds = HashSet<String>()
         for (state in entry.player.currentStates()) {
@@ -500,14 +515,16 @@ object ClientAnimationManager {
                     engine.updateParticleDirectArray(
                         uuid, pos, state.color, state.scale, state.glowing, state.lightLevel,
                         // 派生粒子按帧重写的图形不做 tick 间插值
-                        snap = snapDirectWrite(state.derived),
+                        snap = snapDirectWrite(state.derived) || entry.resetAtTick,
                         billboard = state.billboard, spin = state.spin, spinLocal = state.spinLocal,
+                        resetEffects = entry.resetAtTick,
                     )
                     engine.updateScriptLight(uuid, state.lightShape, state.lightIntensity)
                     engine.updateParticleUv(uuid, state.uv)
                 }
             }
         }
+        entry.resetAtTick = false
         // 已不在当前状态中的粒子：销毁桥接粒子并清理索引（帧级同步派生粒子除外）
         val deadIds = entry.particleUuids.keys.filter { !entry.player.isFrameSyncDerived(it) && it !in currentIds }
         if (deadIds.isNotEmpty()) {
@@ -578,6 +595,7 @@ object ClientAnimationManager {
             state.billboard, state.spin, state.spinLocal, state.additive, state.scale,
             lightIntensity = state.lightIntensity, lightShape = state.lightShape,
         )
+        engine.configureRenderEffects(uuid, state.renderOptions)
     }
 
     private fun preloadTextures(animation: ParticleAnimation) {

@@ -1,6 +1,7 @@
 package work.nekow.particledrawing.core.client
 
 import work.nekow.particledrawing.animation.UvData
+import work.nekow.particledrawing.api.ParticleRenderOptions
 import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.light.LightShape
 
@@ -33,6 +34,9 @@ internal class ResolvedVisual(
     val softFade: Double = 0.0,
     val trailTicks: Int = 0,
 ) {
+    val renderOptions = if (alignVelocity || softFade > 0.0 || trailTicks > 0)
+        ParticleRenderOptions(alignVelocity, stretch, softFade, trailTicks) else ParticleRenderOptions.DEFAULT
+
     companion object {
         /** 无外观规格：纯白方块、广告牌、无自转、原始光强、不独立投光。 */
         val DEFAULT = ResolvedVisual(null, true, ClientParticleEngine.ZERO_SPIN, true, false, null, 1f, false, false)

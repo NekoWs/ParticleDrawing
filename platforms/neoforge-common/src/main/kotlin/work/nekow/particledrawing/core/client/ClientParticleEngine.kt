@@ -9,6 +9,7 @@ import work.nekow.particledrawing.math.Vec3 as CoreVec3
 import work.nekow.particledrawing.platform.toCore
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.api.ParticleRenderOptions
 import work.nekow.particledrawing.api.ParticleLifeCurve
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.easing.EasingType
@@ -146,21 +147,21 @@ class ClientParticleEngine {
                       r: Float, g: Float, b: Float, a: Float, scale: Float,
                       lifetimeTicks: Int, groupId: UUID?, glowing: Boolean, lightLevel: Int,
                       visual: ResolvedVisual, lifeCurve: ParticleLifeCurve? = null, prev: Vec3? = null) {
-        val hasEffects = visual.alignVelocity || visual.softFade > 0.0 || visual.trailTicks > 0
-        val previousBridge = if (hasEffects) bridges[id] else null
+        val previousBridge = if (visual.renderOptions.active) bridges[id] else null
         spawnParticle(
             id, x, y, z, r, g, b, a, scale, lifetimeTicks, groupId, glowing, lightLevel,
             visual.uv, visual.billboard, visual.spin, visual.spinLocal, visual.additive,
             visual.scaleArray, lifeCurve, prev, visual.lightIntensity, visual.emitsLight || glowing,
             visual.lightOnly, visual.lightShape,
         )
-        if (hasEffects && !visual.lightOnly) {
-            val bridge = bridges[id]
-            if (bridge != null && bridge !== previousBridge) {
-                bridge.enableRenderEffects(visual, prev)
-                if (visual.trailTicks > 0) trailIds.add(id)
-            }
-        }
+        if (visual.renderOptions.active && bridges[id] !== previousBridge) configureRenderEffects(id, visual.renderOptions, prev)
+    }
+
+    internal fun configureRenderEffects(id: UUID, options: ParticleRenderOptions, previous: Vec3? = null) {
+        if (!options.active) return
+        val bridge = bridges[id] ?: return
+        bridge.enableRenderEffects(options, previous)
+        if (options.trailTicks > 0) trailIds.add(id)
     }
 
     internal fun spawnLocalEmitterParticle(
@@ -244,8 +245,8 @@ class ClientParticleEngine {
     fun updateParticleDirectArray(id: UUID, pos: Vec3, color: Color, scaleArray: FloatArray,
                                   glowing: Boolean, lightLevel: Int, snap: Boolean = false,
                                   billboard: Boolean = true, spin: DoubleArray = ZERO_SPIN,
-                                  spinLocal: Boolean = true) {
-        applyDirect(id, pos, color, glowing, lightLevel, snap, 0f, scaleArray, billboard, spin, spinLocal)
+                                  spinLocal: Boolean = true, resetEffects: Boolean = snap) {
+        applyDirect(id, pos, color, glowing, lightLevel, snap, 0f, scaleArray, billboard, spin, spinLocal, resetEffects)
     }
 
     fun updateScriptLight(id: UUID, shape: LightShape?, intensity: Float) {
@@ -267,7 +268,7 @@ class ClientParticleEngine {
                             glowing: Boolean, lightLevel: Int, snap: Boolean,
                             scale: Float, scaleArray: FloatArray?,
                             billboard: Boolean = true, spin: DoubleArray = ZERO_SPIN,
-                            spinLocal: Boolean = true) {
+                            spinLocal: Boolean = true, resetEffects: Boolean = snap) {
         val rp = particles[id] ?: return
         takeover.markAppearance(id)
         scaleEaseIds.remove(id) // 直写尺寸接管缓动
@@ -281,7 +282,7 @@ class ClientParticleEngine {
         rp.setLightLevel(lightLevel)
         lightIndex.refresh(id, wasLight, lightsUp(glowing, rp.emitsLight(), lightLevel))
         bridges[id]?.let {
-            it.syncPosition(pos.x, pos.y, pos.z, snap)
+            it.syncPosition(pos.x, pos.y, pos.z, snap, resetEffects)
             it.syncColor(color.r, color.g, color.b, color.a)
             if (scaleArray != null) it.syncScaleArray(scaleArray) else it.syncScale(scale)
             it.setGlowing(glowing)

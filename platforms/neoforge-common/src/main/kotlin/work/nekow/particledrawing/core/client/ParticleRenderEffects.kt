@@ -3,6 +3,7 @@ package work.nekow.particledrawing.core.client
 import net.minecraft.world.phys.AABB
 import net.minecraft.world.phys.Vec3
 import org.joml.Quaternionf
+import work.nekow.particledrawing.api.ParticleRenderOptions
 import work.nekow.particledrawing.api.SoftFade
 import work.nekow.particledrawing.math.Vec3 as CoreVec3
 import work.nekow.particledrawing.api.VelocityStretch
@@ -14,7 +15,7 @@ import java.util.UUID
 import kotlin.math.sqrt
 
 /** 共用桥接粒子的附加外观。默认外观不分配状态。 */
-internal class ParticleRenderEffects(private val visual: ResolvedVisual, start: Vec3) {
+internal class ParticleRenderEffects(private val visual: ParticleRenderOptions, start: Vec3) {
     val trail = visual.trailTicks.takeIf { it > 0 }?.let { RibbonHistory(it, start.toCore()) }
     val translucent: Boolean get() = visual.softFade > 0.0 || trail != null
 
@@ -32,7 +33,7 @@ internal class ParticleRenderEffects(private val visual: ResolvedVisual, start: 
 
     fun syncPosition(oldX: Double, oldY: Double, oldZ: Double, x: Double, y: Double, z: Double, snap: Boolean) {
         if (snap) {
-            if (x != oldX || y != oldY || z != oldZ) resetPosition(x, y, z)
+            resetPosition(x, y, z)
             return
         }
         if (spin == null) return
