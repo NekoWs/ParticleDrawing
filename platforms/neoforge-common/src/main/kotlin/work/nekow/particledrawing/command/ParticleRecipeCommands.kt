@@ -16,6 +16,7 @@ import net.minecraft.commands.SharedSuggestionProvider
 import net.minecraft.commands.arguments.EntityArgument
 import net.minecraft.commands.arguments.coordinates.Vec3Argument
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.animation.recipe.RecipeCollision
 import work.nekow.particledrawing.animation.recipe.RecipeExpressions
 import work.nekow.particledrawing.api.*
 import work.nekow.particledrawing.util.ParticleUtils
@@ -108,6 +109,24 @@ internal object ParticleRecipeCommands {
             .then(Commands.literal("unset").executes { ctx -> configure(ctx) { d -> d.update(d.recipe.copy(orbit = "")) } })
             .then(Commands.argument("formula", StringArgumentType.greedyString()).executes { ctx -> configure(ctx) { d ->
                 d.update(d.recipe.copy(orbit = word(ctx, "formula")))
+            } }))
+        // 碰撞：公式拿不到方块信息，撞墙落地这类行为交给平台层的世界查询。
+        // 默认 none，显式打开才发生响应。
+        name.then(Commands.literal("collide")
+            .then(Commands.argument("mode", StringArgumentType.word())
+                .suggests { _, b -> SharedSuggestionProvider.suggest(listOf("none", "solid", "liquid"), b) }
+                .executes { ctx -> configure(ctx) { d ->
+                    val mode = when (word(ctx, "mode")) {
+                        "solid" -> RecipeCollision.SOLID
+                        "liquid" -> RecipeCollision.LIQUID
+                        else -> RecipeCollision.NONE
+                    }
+                    d.update(d.recipe.copy(collision = mode))
+                } }))
+        for (field in listOf("bounce", "friction")) name.then(Commands.literal(field)
+            .then(Commands.argument("value", DoubleArgumentType.doubleArg(0.0, 1.0)).executes { ctx -> configure(ctx) { d ->
+                val value = DoubleArgumentType.getDouble(ctx, "value")
+                d.update(if (field == "bounce") d.recipe.copy(bounce = value) else d.recipe.copy(friction = value))
             } }))
 
         for (kind in listOf("where", "kill", "select")) name.then(Commands.literal(kind)

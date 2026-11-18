@@ -322,6 +322,8 @@
   "particledrawing.error.recipe.anchor_cycle": "Remove the anchor reference cycle.",
   "particledrawing.error.recipe.anchor_in_use": "Change the linked emitters' anchors first.",
   "particledrawing.error.recipe.anchor_length": "Limit the anchor formula to %1$s characters.",
+  "particledrawing.error.recipe.bounce": "Use bounce in 0..1.",
+  "particledrawing.error.recipe.friction": "Use friction in 0..1.",
   "particledrawing.error.recipe.appearance_key": "Unknown appearance option %1$s.",
   "particledrawing.error.recipe.appearance_value": "Set one appearance option at a time.",
   "particledrawing.error.recipe.cadence": "Use rate 1..%1$s and interval 1..72000 ticks.",

@@ -3,6 +3,7 @@ package work.nekow.particledrawing
 import io.netty.buffer.Unpooled
 import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.animation.recipe.RecipeCollision
 import work.nekow.particledrawing.api.*
 import work.nekow.particledrawing.core.network.*
 import java.util.UUID
@@ -65,5 +66,20 @@ class ParticleRecipeCodecTest {
         val result = roundTrip(p)
         assertEquals(mapOf("radius" to 3.5), result.variables)
         assertNull(result.recipe)
+    }
+    @Test fun `碰撞配置随配方往返`() {
+        val source = ParticleRecipe(listOf(ParticleSeed(Vec3.ZERO)), collision = RecipeCollision.SOLID, bounce = 0.25, friction = 0.8)
+        val result = roundTrip(ParticleRecipePayload(UUID.randomUUID(), RecipeOperation.START, source, RecipeAnchor(Vec3.ZERO)))
+        val r = assertNotNull(result.recipe)
+        assertEquals(RecipeCollision.SOLID, r.collision)
+        assertEquals(0.25, r.bounce, 1e-9)
+        assertEquals(0.8, r.friction, 1e-9)
+    }
+
+    @Test fun `默认配方保持不碰撞`() {
+        val source = ParticleRecipe(listOf(ParticleSeed(Vec3.ZERO)))
+        val result = roundTrip(ParticleRecipePayload(UUID.randomUUID(), RecipeOperation.START, source, RecipeAnchor(Vec3.ZERO)))
+        val r = assertNotNull(result.recipe)
+        assertEquals(RecipeCollision.NONE, r.collision)
     }
 }

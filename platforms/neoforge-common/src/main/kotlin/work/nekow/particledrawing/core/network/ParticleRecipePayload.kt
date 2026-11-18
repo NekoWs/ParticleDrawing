@@ -4,6 +4,7 @@ import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.codec.StreamCodec
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
+import work.nekow.particledrawing.animation.recipe.RecipeCollision
 import work.nekow.particledrawing.api.*
 import java.util.UUID
 import work.nekow.particledrawing.i18n.LocalizedArgumentException
@@ -72,17 +73,26 @@ internal object RecipeCodec {
         buf.writeUtf(r.where, ParticleRecipe.MAX_EXPRESSION); buf.writeUtf(r.kill, ParticleRecipe.MAX_EXPRESSION)
         ParticleVisualCodec.write(buf, r.visual); ParticleCurveCodec.write(buf, r.lifeCurve)
         buf.writeUtf(r.orbit, ParticleRecipe.MAX_EXPRESSION)
+        buf.writeVarInt(r.collision.ordinal)
+        buf.writeDouble(r.bounce); buf.writeDouble(r.friction)
     }
 
     fun read(buf: FriendlyByteBuf): ParticleRecipe {
         val seeds = List(count(buf, ParticleRecipe.MAX_SEEDS)) {
             ParticleSeed(StreamCodecs.readVec(buf), Color.of(buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat()), buf.readDouble())
         }
-        return ParticleRecipe(seeds, buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean(),
+        val recipe = ParticleRecipe(seeds, buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean(),
             readNumbers(buf), readNumbers(buf), readStrings(buf), readStrings(buf), readStrings(buf),
             buf.readUtf(ParticleRecipe.MAX_EXPRESSION), buf.readUtf(ParticleRecipe.MAX_EXPRESSION),
             ParticleVisualCodec.read(buf) ?: ParticleVisual(), ParticleCurveCodec.read(buf),
             buf.readUtf(ParticleRecipe.MAX_EXPRESSION))
+        val modeOrdinal = buf.readVarInt()
+        requireLocalized(modeOrdinal in RecipeCollision.entries.indices) { translation("error.packet.recipe_size") }
+        return recipe.copy(
+            collision = RecipeCollision.entries[modeOrdinal],
+            bounce = buf.readDouble(),
+            friction = buf.readDouble(),
+        )
     }
 
     fun writeAnchor(buf: FriendlyByteBuf, a: RecipeAnchor) {

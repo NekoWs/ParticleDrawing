@@ -13,7 +13,13 @@ import work.nekow.particledrawing.i18n.translation
  * 粒子状态存成一条定长寄存器：[Reg.X]..[Reg.LIGHT] 是属性，之后是 state 与本刻输入，
  * 再往后是编译出来的临时槽。配方能编译时走寄存器直算，编不过才回退解释器。
  */
-class RecipeRuntime(var recipe: ParticleRecipe, val burst: Boolean, preferFast: Boolean = true) {
+class RecipeRuntime(
+    var recipe: ParticleRecipe,
+    val burst: Boolean,
+    preferFast: Boolean = true,
+    /** 碰撞查询；为 null 时即使配了碰撞也按自由运动处理（例如无世界的测试环境）。 */
+    private val world: ParticleWorld? = null,
+) {
     /**
      * 一颗粒子。热路径下推进一颗粒子只做几次数组读写，不再按名字查表、不再逐粒子分配。
      */
@@ -53,6 +59,7 @@ class RecipeRuntime(var recipe: ParticleRecipe, val burst: Boolean, preferFast: 
     private val attrMap = HashMap<String, Double>(32)
     private val motionOut = LinkedHashMap<String, Double>()
     private val birthOut = LinkedHashMap<String, Double>()
+    private val collisionState = DoubleArray(6)
     private var persistent: Map<String, Int> = persistentSlots()
     private var checkSlots: IntArray = intArrayOf()
     private var checkNames: Array<String> = arrayOf()
@@ -152,18 +159,7 @@ class RecipeRuntime(var recipe: ParticleRecipe, val burst: Boolean, preferFast: 
             r[RecipeExpressions.PROGRESS] = if (p.lifetime > 0) p.age.toDouble() / p.lifetime else 0.0
             program.exec(r, stack, null)
             if (r[killSlot] != 0.0) { p.alive = false; continue }
-            val ax = r[RecipeExpressions.AX]
-            val ay = r[RecipeExpressions.AY]
-            val az = r[RecipeExpressions.AZ]
-            val vx = r[Reg.VX] + ax
-            val vy = r[Reg.VY] + ay
-            val vz = r[Reg.VZ] + az
-            r[Reg.VX] = vx
-            r[Reg.VY] = vy
-            r[Reg.VZ] = vz
-            if (!fast.writesX) r[Reg.X] += vx
-            if (!fast.writesY) r[Reg.Y] += vy
-            if (!fast.writesZ) r[Reg.Z] += vz
+            integrate(p, fast.writesX, fast.writesY, fast.writesZ)
             validateFast(p)
         }
     }
@@ -234,14 +230,43 @@ class RecipeRuntime(var recipe: ParticleRecipe, val burst: Boolean, preferFast: 
 
     /** 一条轴的速度积分：先叠加加速度，再在公式没直接写位置时按速度推进。 */
     private fun integrateSlow(p: Particle, outputs: Map<String, Double>) {
+        integrate(p, "x" in outputs, "y" in outputs, "z" in outputs)
+    }
+
+    /**
+     * 速度积分与碰撞响应。快慢两条路径共用同一段，避免碰撞只在一侧生效。
+     *
+     * 显式写了某个位置分量时该轴不叠加速度，碰撞仍按实际位置判定。
+     */
+    private fun integrate(p: Particle, writesX: Boolean, writesY: Boolean, writesZ: Boolean) {
         val r = p.regs
-        val vx = r[Reg.VX] + r[RecipeExpressions.AX]
-        val vy = r[Reg.VY] + r[RecipeExpressions.AY]
-        val vz = r[Reg.VZ] + r[RecipeExpressions.AZ]
-        r[Reg.VX] = vx; r[Reg.VY] = vy; r[Reg.VZ] = vz
-        if ("x" !in outputs) r[Reg.X] += vx
-        if ("y" !in outputs) r[Reg.Y] += vy
-        if ("z" !in outputs) r[Reg.Z] += vz
+        r[Reg.VX] += r[RecipeExpressions.AX]
+        r[Reg.VY] += r[RecipeExpressions.AY]
+        r[Reg.VZ] += r[RecipeExpressions.AZ]
+        val oldX = r[Reg.X]
+        val oldY = r[Reg.Y]
+        val oldZ = r[Reg.Z]
+        if (!writesX) r[Reg.X] = oldX + r[Reg.VX]
+        if (!writesY) r[Reg.Y] = oldY + r[Reg.VY]
+        if (!writesZ) r[Reg.Z] = oldZ + r[Reg.VZ]
+
+        val mode = recipe.collision
+        if (mode == RecipeCollision.NONE) return
+        val query = world ?: return
+        val state = collisionState
+        state[CollisionMath.POS_X] = r[Reg.X]
+        state[CollisionMath.POS_Y] = r[Reg.Y]
+        state[CollisionMath.POS_Z] = r[Reg.Z]
+        state[CollisionMath.VEL_X] = r[Reg.VX]
+        state[CollisionMath.VEL_Y] = r[Reg.VY]
+        state[CollisionMath.VEL_Z] = r[Reg.VZ]
+        if (!CollisionMath.resolve(mode, query, oldX, oldY, oldZ, state, recipe.bounce, recipe.friction)) return
+        r[Reg.X] = state[CollisionMath.POS_X]
+        r[Reg.Y] = state[CollisionMath.POS_Y]
+        r[Reg.Z] = state[CollisionMath.POS_Z]
+        r[Reg.VX] = state[CollisionMath.VEL_X]
+        r[Reg.VY] = state[CollisionMath.VEL_Y]
+        r[Reg.VZ] = state[CollisionMath.VEL_Z]
     }
 
     private fun storeOutputs(p: Particle, outputs: Map<String, Double>) {

@@ -1,6 +1,7 @@
 package work.nekow.particledrawing.api
 
 import work.nekow.particledrawing.math.Vec3
+import work.nekow.particledrawing.animation.recipe.RecipeCollision
 import work.nekow.particledrawing.animation.recipe.RecipeExpressions
 import java.util.UUID
 import work.nekow.particledrawing.i18n.requireLocalized
@@ -43,6 +44,12 @@ data class ParticleRecipe(
      * 空串表示不偏移。只允许引用 `t`、variable、state 与 let。
      */
     val orbit: String = "",
+    /** 与世界的碰撞方式；NONE 时粒子按速度自由穿过。 */
+    val collision: RecipeCollision = RecipeCollision.NONE,
+    /** 撞到后法线方向保留的速度比例，0 = 直接停下，1 = 完全弹性。 */
+    val bounce: Double = 0.35,
+    /** 撞到后切向速度的保留比例，越小越「黏地」。 */
+    val friction: Double = 0.55,
 ) {
     fun validate() {
         requireLocalized(seeds.isNotEmpty() && seeds.size <= MAX_SEEDS) { translation("error.recipe.seed_count", MAX_SEEDS) }
@@ -51,6 +58,8 @@ data class ParticleRecipe(
         requireLocalized(maxAlive in 1..MAX_SEEDS) { translation("error.recipe.max_alive", MAX_SEEDS) }
         requireLocalized(listOf(variables, state, lets, birth, motion).all { it.size <= MAX_FIELDS }) { translation("error.recipe.fields_limit", MAX_FIELDS) }
         requireLocalized(orbit.length <= MAX_EXPRESSION) { translation("error.recipe.anchor_length", MAX_EXPRESSION) }
+        requireLocalized(bounce in 0.0..1.0) { translation("error.recipe.bounce") }
+        requireLocalized(friction in 0.0..1.0) { translation("error.recipe.friction") }
         for (s in seeds) {
             requireLocalized(listOf(s.position.x, s.position.y, s.position.z, s.u).all(Double::isFinite)) { translation("error.recipe.seed_finite") }
             requireLocalized(listOf(s.color.r, s.color.g, s.color.b, s.color.a).all { it.isFinite() && it in 0f..1f }) { translation("error.recipe.seed_color") }

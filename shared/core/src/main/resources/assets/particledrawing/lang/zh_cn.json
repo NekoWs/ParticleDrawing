@@ -322,6 +322,8 @@
   "particledrawing.error.recipe.anchor_cycle": "请解除锚点循环引用。",
   "particledrawing.error.recipe.anchor_in_use": "请先更改引用此锚点的生成器。",
   "particledrawing.error.recipe.anchor_length": "锚点公式最多 %1$s 个字符。",
+  "particledrawing.error.recipe.bounce": "bounce 取值应在 0..1。",
+  "particledrawing.error.recipe.friction": "friction 取值应在 0..1。",
   "particledrawing.error.recipe.appearance_key": "未知外观参数 %1$s。",
   "particledrawing.error.recipe.appearance_value": "每次只设置一个 appearance 参数。",
   "particledrawing.error.recipe.cadence": "设置 rate 1..%1$s、interval 1..72000 刻。",

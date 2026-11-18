@@ -429,6 +429,9 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 | `where <条件>` | 出生公式之后，只生成满足条件的样本 |
 | `kill <条件>` | 每刻及出生时判定，成立即真正销毁 |
 | `unset variable\|state\|let\|birth\|motion\|change <字段>` | 删除一项配置 |
+| `collide none\|solid\|liquid` | 与世界的碰撞方式，默认 `none`（自由穿过）；`solid` 撞方块，`liquid` 撞液体 |
+| `bounce <0..1>` | 撞到后法线方向保留的速度比例，0 直接停下，1 完全弹性，默认 0.35 |
+| `friction <0..1>` | 撞到后切向速度的保留比例，越小越「黏地」，默认 0.55 |
 
 每条命令只写一个公式，不加赋值符号或末尾分号，例如 `birth x cos(u)`。
 公式可以包含空格，不用再套引号。变量名区分大小写。
@@ -472,6 +475,31 @@ pdraw particle emitter trail start
 
 上面这段让发射器沿半径 4 的圆匀速绕行，每刻发一颗，留下一条圆环。
 
+#### 碰撞与落地
+
+公式能算任意数学，但拿不到方块信息，所以「撞墙、落地」单独成一项配置。
+碰撞在客户端判定，和渲染看到的世界一致；不配置 `collide` 时粒子按速度自由穿过。
+
+```mcfunction
+pdraw particle emitter reset sparks
+pdraw particle emitter sparks anchor fixed ~ ~6 ~
+pdraw particle emitter sparks sample count 1
+pdraw particle emitter sparks birth position vec3((rand()-0.5)*6, 0, (rand()-0.5)*6)
+pdraw particle emitter sparks birth vy -0.55
+pdraw particle emitter sparks birth vx 0.06
+pdraw particle emitter sparks birth vz -0.04
+pdraw particle emitter sparks collide solid
+pdraw particle emitter sparks bounce 0.45
+pdraw particle emitter sparks friction 0.65
+pdraw particle emitter sparks appearance glow true
+pdraw particle emitter sparks appearance light 15
+pdraw particle emitter sparks lifetime 240
+pdraw particle emitter sparks rate 4
+pdraw particle emitter sparks start
+```
+
+`solid` 按碰撞箱判定：台阶、栅栏、树叶都能挡住粒子。竖直方向优先处理，
+撞地时水平速度按 `friction` 衰减；撞墙时只有被挡的那个轴翻转。
 #### 公式求值次序
 
 每条公式只写一个属性。每刻先检查寿命与 `kill`，再计算 motion，随后速度加上加速度、位置加上速度。

@@ -38,7 +38,7 @@ internal object ClientParticleSources {
                     remove(p.id)
                     val recipe = requireNotNull(p.recipe)
                     recipe.validate()
-                    sources[p.id] = Entry(RecipeRuntime(recipe, p.burst), requireNotNull(p.anchor))
+                    sources[p.id] = Entry(RecipeRuntime(recipe, p.burst, world = ClientParticleWorld), requireNotNull(p.anchor))
                 }
                 RecipeOperation.UPDATE -> sources[p.id]?.runtime?.update(requireNotNull(p.recipe))
                 RecipeOperation.ANCHOR -> sources[p.id]?.anchor = requireNotNull(p.anchor)
