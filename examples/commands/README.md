@@ -43,6 +43,7 @@ function pdraw_test:cube
 function pdraw_test:seven-star
 function pdraw_test:sharp-star
 function pdraw_test:five-star
+function pdraw_test:spotlight
 ```
 
 在聊天栏执行时加前缀 `/`。锚点相对函数执行位置，命令方块执行时可以用
@@ -57,6 +58,7 @@ function pdraw_test:five-star
 | torus-knot | 倾斜旋转的三叶环面结，沿曲线流动的粉蓝渐变 | knot |
 | halo-aura | 脚底光环，加上从环里升起、循环爬升的竖条柱 | halo、aura |
 | morph-formation | 常驻粒子群在圆环与螺旋塔之间无限往返变形 | morphdemo |
+| spotlight | 三盏锥角与衰减各异的射灯照在脚前地面，可改成横向扫动的光斑 | lamps |
 | mobius | 绕中心旋转的莫比乌斯扭带，点阵呈现单面曲面的扭转 | mobius |
 
 三组均存在 240 刻（12 秒），最后 30 刻淡出，一次触发即可。mandala 共 2040 颗，另外两组分别

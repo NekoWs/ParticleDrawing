@@ -80,4 +80,52 @@ class ParticleLightsTest {
         assertTrue(sample.toString().contains("intensity=15.0"))
         assertTrue(sample.toString().contains("range=12.0"))
     }
+    @Test
+    fun `纯红光源保留红通道并压低绿蓝`() {
+        val material = 0xffffffff.toInt()
+        val block = 0
+        val brightest = 12.0
+        val weight = 12.0
+        // 光源只有红色分量：红通道应保持原值，绿蓝按新增光占比被压暗
+        val tinted = DynamicLightManager.tintTerrainColor(
+            material, block, brightest, weight, weight * 255, 0.0, 0.0,
+        )
+        assertEquals(255, (tinted shr 16) and 255, "红通道不该被红光照暗")
+        assertTrue(((tinted shr 8) and 255) < 255, "绿通道应当被压暗")
+        assertTrue((tinted and 255) < 255, "蓝通道应当被压暗")
+        assertEquals(255, (tinted ushr 24) and 255, "透明度必须保留")
+    }
+
+    @Test
+    fun `彩色光源与原材质相乘而不是整体覆盖`() {
+        // 半亮材质在橙光下：红分量高、蓝分量低，结果应体现材质自身的差异
+        val dark = 0xff404040.toInt()
+        val bright = 0xffc0c0c0.toInt()
+        val weight = 10.0
+        fun tint(color: Int) = DynamicLightManager.tintTerrainColor(
+            color, 0, 10.0, weight, weight * 255, weight * 128, 0.0,
+        )
+        val tintedDark = tint(dark)
+        val tintedBright = tint(bright)
+        assertTrue((tintedBright shr 16) and 255 > (tintedDark shr 16) and 255, "亮材质的红分量仍应更高")
+        assertTrue((tintedDark and 255) <= (dark and 255), "蓝通道不该被抬高")
+    }
+
+    @Test
+    fun `新增光越多颜色偏移越大`() {
+        val material = 0xffffffff.toInt()
+        val weight = 10.0
+        fun green(brightest: Double) =
+            (DynamicLightManager.tintTerrainColor(material, 0, brightest, weight, weight * 255, 0.0, 0.0) shr 8) and 255
+        val weak = green(2.0)
+        val strong = green(9.0)
+        assertTrue(strong <= weak, "光越强，非光源通道应被压得越低：weak=$weak strong=$strong")
+    }
+
+    @Test
+    fun `没有新增光时不改顶点颜色`() {
+        val material = 0xff123456.toInt()
+        // brightest 不超过原方块光：tint 为 0，颜色原样返回
+        assertEquals(material, DynamicLightManager.tintTerrainColor(material, 9, 9.0, 9.0, 9.0 * 255, 0.0, 0.0))
+    }
 }

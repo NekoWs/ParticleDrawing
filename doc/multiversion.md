@@ -13,6 +13,22 @@
 | `gradle/neoforge-platform.gradle` | 源码组合、工具链、开发运行和发布 |
 
 `verifyPlatformIndependence` 检查核心的源码、依赖、字节码引用和 Java 21 字节码上限。
+
+## 共享文件的替换与排除
+
+目标版本可以通过 `platforms/<目标>/target.properties` 把共享树里的个别文件换掉，两个属性语义不同：
+
+| 属性 | 含义 | 约束 |
+| --- | --- | --- |
+| `shared_replacements` | 这一版要用自己的实现代替共享那份 | 目标目录里**必须**有同名文件，缺了会让构建直接失败 |
+| `shared_exclusions` | 这一版完全不需要这个文件 | 共享那份不参与编译，目标目录里也不该有同名文件 |
+
+分成两个属性是为了避免一种很难发现的事故：把「换掉」和「不要」混在一起时，
+漏写或删掉目标文件不会报错，共享版本被排除、又没有替代品，类和测试就这么静默消失了。
+构建期会校验 `shared_replacements` 的每一项都能在目标源码树里找到对应文件。
+
+1.21.1 目前排除了 `BatchedQuadParticleGroup` 与 `OrientedQuadRenderState`（那是 26.x 渲染管线的类），
+以及依赖它们的两个几何测试。
 游戏侧 API、锚点与网络同步、贴图加载、顶点提交留在平台层。各版本渲染桥使用核心算出的 UV 矩形，
 发射器在解析锚点后用核心坐标步进。一次游戏构建将核心与平台源码归入同一个模组。
 
@@ -28,6 +44,15 @@ OGG 解码通过 `ScriptWavePcm.OggReader` 服务接口接入，NeoForge 目标�
 ## 构建与运行
 
 根目录的 `gradlew build` 默认构建 26.3。独立目标使用以下命令。
+
+三端还有一层共用的运行时自检：`-PpdSelfTest` 会让服务端在启动后跑一遍对外 API 契约
+（射灯创建、形状、转向与聚焦缓动、形状热更、移除、光照数学、语言表），通过时打印
+`[PD-SELFTEST] PASS`。CI 的 GameTest 步骤会检查这行标记——26.x 没有注解式 GameTest，
+只靠框架自带的计数无法证明我们的代码真的跑通。
+
+```powershell
+.\gradlew -p platforms/neoforge-26.3 runGameTestServer -PpdSelfTest
+```
 
 ```powershell
 .\gradlew.bat -p shared/core build

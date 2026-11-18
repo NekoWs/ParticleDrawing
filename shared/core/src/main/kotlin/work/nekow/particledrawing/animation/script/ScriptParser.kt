@@ -266,13 +266,11 @@ private val KEYWORDS = setOf(
 
 private val LIFECYCLE_FUNCS = setOf("setup", "tick", "process")
 private val CONSTANT_NAMES = setOf("TAU", "HALF_PI", "QUARTER_PI", "DEG2RAD", "RAD2DEG", "PI", "E")
-private val COMP_ALIAS = mapOf("x" to "x", "y" to "y", "z" to "z", "w" to "w", "r" to "x", "g" to "y", "b" to "z", "a" to "w", "alpha" to "w")
 private val COMP_NAMES = setOf("x", "y", "z", "w", "r", "g", "b", "a", "alpha")
 
 // 复合赋值运算符 → 对应的二元运算符。
 private val COMPOUND_ASSIGN = mapOf("+=" to "+", "-=" to "-", "*=" to "*", "/=" to "/", "%=" to "%", "^=" to "^")
 
-private const val CTX_NAME = "this"
 
 // 表达式/语句嵌套深度上限：超深嵌套在解析期报错，避免 StackOverflowError。
 private const val MAX_PARSE_DEPTH = 512

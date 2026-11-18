@@ -34,4 +34,10 @@ class LocalizedTextTest {
             .bufferedReader(Charsets.UTF_8).use { reader ->
                 JsonParser.parseReader(reader).asJsonObject.entrySet().associate { it.key to it.value.asString }
             }
+    @Test
+    fun missingKeyFallsBackToTheKeyInsteadOfThrowing() {
+        val text = LocalizedText("particledrawing.missing.key", emptyList())
+        assertTrue(text.resolve(Locale.ENGLISH).contains("missing.key"))
+        assertTrue(text.resolve(Locale.SIMPLIFIED_CHINESE).contains("missing.key"))
+    }
 }

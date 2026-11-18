@@ -20,13 +20,33 @@ def targetSource = new File(repositoryRoot, "platforms/$targetName/src")
 def generatedResources = new File(targetSource, 'generated/resources')
 // 目标可以在共享树里整份替换个别文件（1.21.1 的渲染与贴图要用另一代 API 重写）。
 // 只排除共享目录里的那一份：目标目录里的同名文件照常参与编译。
+//
+// 两个属性分开，是因为它们语义不同：
+// - shared_replacements：共享那份被目标版本自己的实现替代，所以目标里必须有同名文件。
+// - shared_exclusions：这一版根本不需要这个文件（例如只服务另一代渲染管线），共享那份直接不编。
+// 混在一起时，漏写或删掉目标是静默的：共享文件被排除、又没有替代品，类和测试就这么消失了。
 def replacedPaths = (targetProperties.getProperty('shared_replacements', '') ?: '')
         .split(',').collect { it.trim() }.findAll { it }
-if (!replacedPaths.isEmpty()) {
+def excludedOnlyPaths = (targetProperties.getProperty('shared_exclusions', '') ?: '')
+        .split(',').collect { it.trim() }.findAll { it }
+def existsInTarget = { String relative ->
+    ['main/kotlin', 'main/java', 'test/kotlin', 'test/java'].any { sub ->
+        new File(targetSource, "$sub/$relative").isFile()
+    }
+}
+def missingReplacements = replacedPaths.findAll { !existsInTarget(it) }
+if (!missingReplacements.isEmpty()) {
+    throw new GradleException(
+        "shared_replacements 里的文件在 platforms/$targetName/src 中不存在：${missingReplacements.join(', ')}。" +
+            "如果这一版确实不需要该文件，请改写到 shared_exclusions。"
+    )
+}
+def replacedOrExcluded = replacedPaths + excludedOnlyPaths
+if (!replacedOrExcluded.isEmpty()) {
     def excluded = [] as Set
     ['main/kotlin', 'main/java', 'test/kotlin', 'test/java'].each { sub ->
         def root = new File(commonSource, sub).absolutePath + File.separator
-        replacedPaths.each { excluded.add(root + it.replace('/', java.io.File.separator)) }
+        replacedOrExcluded.each { excluded.add(root + it.replace('/', java.io.File.separator)) }
     }
     [sourceSets.main.kotlin, sourceSets.main.java, sourceSets.test.kotlin, sourceSets.test.java].each { set ->
         set.exclude { element -> excluded.contains(element.file.absolutePath) }
@@ -104,13 +124,18 @@ sourceSets {
     }
 }
 
-def gameTestSource = new File(targetSource, 'gameTest')
-if (gameTestSource.isDirectory()) {
+// GameTest 源集：共享层放三端通用的契约测试，平台目录只放版本特有的一份（可缺省）。
+// 之前只在 1.21.1 建了这个目录，26.x 的 runGameTestServer 实际只跑到框架自带的测试，
+// CI 的「All N required tests passed」在三端是假门禁。
+def gameTestCommon = new File(commonSource, 'gameTest')
+def gameTestTarget = new File(targetSource, 'gameTest')
+if (gameTestCommon.isDirectory() || gameTestTarget.isDirectory()) {
     sourceSets.create('gameTest') {
-        java.setSrcDirs([new File(gameTestSource, 'java')])
-        resources.setSrcDirs([new File(gameTestSource, 'resources')])
+        java.setSrcDirs([new File(gameTestCommon, 'java'), new File(gameTestTarget, 'java')])
+        resources.setSrcDirs([new File(gameTestCommon, 'resources'), new File(gameTestTarget, 'resources')])
     }
     configurations.gameTestImplementation.extendsFrom(configurations.implementation)
+    project.ext.hasGameTests = true
 }
 
 tasks.named('wrapper', Wrapper).configure {
@@ -180,6 +205,10 @@ runs {
 
     gameTestServer {
         systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        // -PpdSelfTest 让服务端启动后跑一遍对外 API 自检，三端共用同一份断言。
+        if (project.hasProperty('pdSelfTest')) {
+            systemProperty 'pd.selftest', '1'
+        }
     }
 
     // 数据生成运行名随 NeoGradle 版本变化：26.x 是 clientData，1.21.1 是 data
@@ -223,7 +252,7 @@ dependencies {
 }
 
 
-if (gameTestSource.isDirectory()) {
+if (findProperty('hasGameTests') != null) {
     // GameTest 与模组共用 NeoForge 运行时。
     def gameTests = sourceSets.gameTest
     gameTests.extensions.getByName('runtimeDefinition').set(sourceSets.main.extensions.getByName('runtimeDefinition'))

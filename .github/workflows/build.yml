@@ -57,8 +57,15 @@ jobs:
         run: |
           set -euo pipefail
           test_log="$(mktemp)"
-          ./gradlew -p platforms/${{ matrix.target }} runGameTestServer --console=plain 2>&1 | tee "$test_log"
+          ./gradlew -p platforms/${{ matrix.target }} runGameTestServer -PpdSelfTest --console=plain 2>&1 | tee "$test_log"
           if ! grep -Eq '\[minecraft/GameTestServer\]: All [1-9][0-9]* required tests passed' "$test_log"; then
             echo "::error::GameTest server did not report a successful run of required tests"
+            exit 1
+          fi
+          # 26.x 没有注解式 GameTest，上面的计数只能统计到框架自带的那一个测试；
+          # 真正验证对外 API 的是三端共用的运行时自检，缺这一行就说明它没跑或没过。
+          if ! grep -q '\[PD-SELFTEST\] PASS' "$test_log"; then
+            echo "::error::Runtime self-test did not pass on this target"
+            grep '\[PD-SELFTEST\]' "$test_log" || true
             exit 1
           fi

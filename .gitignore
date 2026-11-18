@@ -37,3 +37,4 @@ repo/
 /particle-editor/test/zz-*
 /.freebuff/
 .kotlin/
+logs/

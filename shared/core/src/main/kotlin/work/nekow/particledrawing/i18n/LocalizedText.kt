@@ -6,7 +6,13 @@ import kotlin.contracts.ExperimentalContracts
 import kotlin.contracts.contract
 
 internal class LocalizedText(val key: String, val arguments: List<Any?>) {
-    fun englishTemplate(): String = English.entries.getValue(key)
+    /**
+     * 英文模板。
+     *
+     * 缺键时回退成键名本身，而不是抛异常：漏翻或拼错键只会让玩家看到一句不友好的原文，
+     * 不会把整条命令变成失败。键名以 `particledrawing.` 开头，一眼能看出是缺失的翻译。
+     */
+    fun englishTemplate(): String = English.entries[key] ?: key
 
     fun resolve(locale: Locale = Locale.getDefault()): String {
         val template = if (locale.language == "zh") Chinese.entries[key] ?: englishTemplate() else englishTemplate()
