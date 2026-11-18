@@ -29,6 +29,8 @@ internal class ResolvedVisual(
     val alignVelocity: Boolean = false,
     /** 拉丝强度；只在 [alignVelocity] 为真时使用。 */
     val stretch: Double = 0.0,
+    /** 软粒子采样半径（格）；0 = 不做近几何淡出。 */
+    val softFade: Double = 0.0,
 ) {
     companion object {
         /** 无外观规格：纯白方块、广告牌、无自转、原始光强、不独立投光。 */
@@ -59,6 +61,7 @@ internal class ResolvedVisual(
                 visual.lightShape,
                 visual.alignVelocity,
                 visual.stretch,
+                visual.softFade,
             )
         }
     }

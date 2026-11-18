@@ -44,7 +44,7 @@ internal object ParticleCommandOptionParser {
         "thickness", "style", "texture", "uv", "size", "size_world", "billboard", "spin", "spin_space",
         "additive", "glowing", "light", "light_only", "intensity", "alpha_curve", "size_curve", "red_curve",
         "green_curve", "blue_curve", "light_curve", "velocity", "force", "force_ticks",
-        "spot", "light_dir", "light_range", "light_falloff", "align_velocity", "stretch",
+        "spot", "light_dir", "light_range", "light_falloff", "align_velocity", "stretch", "soft",
     )
 
     fun parse(input: String): ParticleCommandOptions {
@@ -123,6 +123,7 @@ internal object ParticleCommandOptionParser {
             visual.lightFalloff(curve, range.toDouble())
         }
         values["light_only"]?.let { visual.lightOnly(bool(it, "light_only")) }
+        values["soft"]?.let { visual.softFade = float(it, "soft").toDouble().coerceIn(0.0, 4.0) }
         // 速度拉丝：长轴对齐速度并按速度拉长。对齐必须关掉广告牌，否则朝向被相机覆盖。
         values["align_velocity"]?.let { raw ->
             val on = raw.trim().lowercase()

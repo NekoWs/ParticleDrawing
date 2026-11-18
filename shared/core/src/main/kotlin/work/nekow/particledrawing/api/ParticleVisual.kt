@@ -95,6 +95,9 @@ class ParticleVisual {
     /** 拉丝强度：长度系数 = 1 + stretch × 速度（格/刻），0 表示只对齐不拉长。 */
     var stretch: Double = 0.6
 
+    /** 软粒子采样半径（格）：>0 时粒子贴近方块会淡出，消除插进地面的硬边。 */
+    var softFade: Double = 0.0
+
     /** 配置对外照明的形状。null 清除显式形状。 */
     fun lightShape(shape: LightShape?): ParticleVisual = apply { lightShape = shape?.validated() }
 
@@ -263,6 +266,7 @@ class ParticleVisual {
         c.lightShape = lightShape
         c.alignVelocity = alignVelocity
         c.stretch = stretch
+        c.softFade = softFade
         return c
     }
 
@@ -276,7 +280,7 @@ class ParticleVisual {
     fun isPristine(): Boolean = texture == null && uvRect == null && !hasAniso() &&
         billboard && spinXDeg == 0.0 && spinYDeg == 0.0 && spinZDeg == 0.0 && spinLocal &&
         !additive && !glowing && !emitsLight && !lightOnly && lightIntensity == 1f && lightShape == null &&
-        !alignVelocity
+        !alignVelocity && softFade <= 0.0
 
     /**
      * 解析成渲染用的 UV，由客户端调用。[texW]/[texH] 是已注册贴图的像素尺寸，未知传 0。

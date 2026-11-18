@@ -129,7 +129,11 @@ internal object ClientParticleSources {
             }
             val current = if (e.runtime.recipe.follow) frame ?: member.frame else member.frame
             current.applyInto(p.x, p.y, p.z, posOut)
-            val alpha = if (e.runtime.recipe.follow && frame == null) 0f else p.regs[sA].toFloat()
+            var alpha = if (e.runtime.recipe.follow && frame == null) 0f else p.regs[sA].toFloat()
+            // 软粒子：贴近方块时按被挡比例淡出，消掉插进地面的硬边。
+            if (member.visual.softFade > 0.0 && alpha > 0f) {
+                alpha *= softAlpha(member.visual, posOut[0], posOut[1], posOut[2])
+            }
             engine.applyRecipeFrame(member.id, posOut[0], posOut[1], posOut[2],
                 p.regs[sR].toFloat(), p.regs[sG].toFloat(), p.regs[sB].toFloat(), alpha,
                 p.regs[sSc].toFloat(), p.regs[sGlow] != 0.0, p.regs[sLight].toInt(), member.visual)
@@ -200,5 +204,21 @@ internal object ClientParticleSources {
             engine.spawnParticle(id, x, y, z, r, g, b, 1f, scale, sub.lifetime, null, false, 0, look)
             engine.setVelocity(id, vx, vy, vz)
         }
+    }
+
+    private val softOffsets = DoubleArray(work.nekow.particledrawing.api.SoftFade.FLOATS)
+
+    /** 在粒子周围采样方块，返回透明度系数（1 = 完全可见）。 */
+    private fun softAlpha(visual: ResolvedVisual, x: Double, y: Double, z: Double): Float {
+        val radius = work.nekow.particledrawing.api.SoftFade.radiusOf(visual.softFade)
+        if (radius <= 0.0) return 1f
+        work.nekow.particledrawing.api.SoftFade.sampleOffsets(radius, softOffsets)
+        var blocked = 0
+        var i = 0
+        while (i < softOffsets.size) {
+            if (ClientParticleWorld.isSolid(x + softOffsets[i], y + softOffsets[i + 1], z + softOffsets[i + 2])) blocked++
+            i += 3
+        }
+        return work.nekow.particledrawing.api.SoftFade.factor(blocked).toFloat()
     }
 }

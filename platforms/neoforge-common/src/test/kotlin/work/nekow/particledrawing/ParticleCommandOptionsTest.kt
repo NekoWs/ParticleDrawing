@@ -104,4 +104,9 @@ class ParticleCommandOptionsTest {
         assertTrue(visual.alignVelocity)
         assertEquals(1.2, visual.stretch, 1e-6)
     }
+    @Test
+    fun `软粒子半径被写入外观`() {
+        val visual = ParticleCommandOptionParser.parse("soft=0.6").visual
+        assertEquals(0.6, visual.softFade, 1e-6)
+    }
 }

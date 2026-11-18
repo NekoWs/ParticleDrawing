@@ -431,6 +431,7 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 | `unset variable\|state\|let\|birth\|motion\|change <字段>` | 删除一项配置 |
 | `align_velocity true` | 长轴自动对齐速度（火花、雨线、彗尾），需配合 `stretch` 与各向异性尺寸 | 
 | `stretch <0..10>` | 拉长强度：长度 = 基础尺寸 × (1 + stretch × 速度)，默认 0.6 |
+| `soft <0..4>` | 软粒子采样半径（格）：粒子周围被方块挡得越多越透明，消除插进地面的硬边；0 = 关闭 |
 | `subemit count <1..64>` | 粒子正常消失时在原地爆发的子粒子数量；不配置则什么都不留 | 
 | `subemit lifetime <1..200>` | 子粒子寿命（刻），默认 12 |
 | `subemit speed <0..2>` | 子粒子初速（格/刻），方向在球面上均匀散开，默认 0.12 |
