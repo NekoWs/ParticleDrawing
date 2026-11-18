@@ -347,11 +347,12 @@ class BridgeParticle(
         try {
             if (alpha <= 0f && effects != null) return
             super.extract(state, camera, partialTick)
-            if (state is OrientedQuadRenderState) effects?.trail?.let { trail ->
+            if (state is OrientedQuadRenderState) effects?.let { effect ->
+                val trail = effect.trail ?: return@let
                 state.ribbonVertices(getLayer()).append(
                     trail, CoreVec3(sampledX(f), sampledY(f), sampledZ(f)),
                     CoreVec3(cam.x, cam.y, cam.z), frameHeight(f), f,
-                    getU0(), getU1(), getV0(), getV1(), RibbonVertices.color(rCol, gCol, bCol, alpha), getLightCoords(f),
+                    getU0(), getU1(), getV0(), getV1(), RibbonVertices.color(rCol, gCol, bCol, alpha), getLightCoords(f), effect.trailSides,
                 )
             }
         } finally {

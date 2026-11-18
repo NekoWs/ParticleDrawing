@@ -15,7 +15,7 @@
 | --- | --- |
 | 粒子只被指定类型的活物影响，或按前方任意位置的方块类型改变路线 | 配方能按指定半径和实体类型读取最近目标，也能读求值点的光照、遮顶、碰撞形状及流体。仍缺少公式指定探测位置或方向的接口。见 [配方输入](../shared/core/src/main/kotlin/work/nekow/particledrawing/animation/recipe/RecipeExpressions.kt)和[组表达式属性](../shared/core/src/main/kotlin/work/nekow/particledrawing/api/GetterProps.kt)。 |
 | 粒子均匀地从任意模型或正在挥动的武器表面飞出 | 三角化 OBJ 可按面积采样并输出发射法线。动态骨骼和 Minecraft 当前渲染姿势仍没有采样源。见 [基础采样](../shared/core/src/main/kotlin/work/nekow/particledrawing/api/ParticleSampling.kt)和 [样本模型](../shared/core/src/main/kotlin/work/nekow/particledrawing/api/ParticleRecipe.kt)。 |
-| 每颗碎片是有厚度的 3D 模型，拖尾是一根圆管，火花在斜面上留下贴合地形的焦痕 | 可用固定朝向的四边形近似碎片或印记。粒子渲染提交四边形和面向镜头的丝带，缺少网格实例、管状轨迹和地表投影。现有丝带用头部颜色、宽度和贴图计算各段，父粒子移除时丝带一并消失。见 [四边形渲染](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/client/OrientedQuadRenderState.kt)、[丝带历史](../shared/core/src/main/kotlin/work/nekow/particledrawing/render/RibbonHistory.kt)和[丝带顶点](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/client/RibbonVertices.kt)。 |
+| 每颗碎片是有厚度的 3D 模型，火花在斜面上留下贴合地形的焦痕 | 可用固定朝向的四边形近似碎片或印记。粒子渲染提交四边形、面向镜头的丝带和管状拖尾，缺少网格实例和地表投影。现有丝带用头部颜色、宽度和贴图计算各段，父粒子移除时丝带一并消失。见 [四边形渲染](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/client/OrientedQuadRenderState.kt)、[丝带历史](../shared/core/src/main/kotlin/work/nekow/particledrawing/render/RibbonHistory.kt)和[丝带顶点](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/client/RibbonVertices.kt)。 |
 | 大烟团一半穿进地形时只软化交界，热浪扭曲烟团背后的画面 | `soft` 按粒子中心到碰撞面的距离调整整颗透明度。材质只有普通透明和加法混合，缺少采样场景深度或场景颜色的粒子管线。26.3 现有的顺序无关透明解决透明层合成。见 [软化限制](known-issues.md#方块表面软化)、[混合枚举](../shared/core/src/main/kotlin/work/nekow/particledrawing/api/ReadableAppearance.kt)和 [26.3 渲染管线](../platforms/neoforge-26.3/src/main/kotlin/work/nekow/particledrawing/core/client/AdditiveParticlePipeline.kt)。 |
 | 粒子的射灯被墙挡住并向地面投影 | 射灯可沿中心射线截短，地形受光按网格顶点采样。缺少逐点遮挡和投影。见 [动态光照限制](known-issues.md#动态光照)。 |
 
@@ -31,7 +31,7 @@
 
 1. **世界输入和粒子事件。** 局部环境读取、接触事件和子配方已接通，可用[雨滴示例](../examples/commands/rain-contact.mcfunction)复现。碰撞盒已接入同一查询；移动实体使用客户端当前包围盒。
 2. **编辑器与运行时共用外观。** `.pdrawc` v19 的拉丝、软化和丝带已复用命令粒子的渲染入口。实时碰撞另需明确预览与实际世界的输入和回放语义。
-3. **发射采样和渲染几何。** 配方已支持按距离发射和静态模型采样。动态采样、模型绘制、管状轨迹和需要场景缓冲的材质仍可独立扩展。
+3. **发射采样和渲染几何。** 配方已支持按距离发射和静态模型采样。动态采样、模型绘制和需要场景缓冲的材质仍可独立扩展。
 4. **规模化。** 用普通粒子、带碰撞粒子和带丝带粒子分别测逐刻 CPU 时间、提交顶点和帧时间，再决定是否引入模拟预算、实例绘制或 GPU 模拟。
 
 功能对照可参考 Unity 的[粒子事件和子发射](https://docs.unity3d.com/cn/current/ScriptReference/ParticleSystem.SubEmittersModule.html)和 Godot 的[粒子渲染、碰撞与轨迹](https://docs.godotengine.org/en/stable/classes/class_gpuparticles3d.html)、[可移动粒子力场](https://docs.godotengine.org/en/stable/classes/class_gpuparticlesattractor3d.html)。

@@ -29,7 +29,7 @@ import work.nekow.particledrawing.platform.toCore
  */
 internal object ParticleAnimationCodec {
 
-    const val VERSION = 10
+    const val VERSION = 11
 
     fun write(buf: FriendlyByteBuf, anim: ParticleAnimation) {
         buf.writeVarInt(VERSION)
@@ -287,10 +287,11 @@ internal object ParticleAnimationCodec {
         buf.writeDouble(options.stretch)
         buf.writeDouble(options.softFade)
         buf.writeByte(options.trailTicks)
+        buf.writeByte(options.trailSides)
     }
 
     private fun readRenderOptions(buf: FriendlyByteBuf): ParticleRenderOptions =
-        if (buf.readBoolean()) ParticleRenderOptions(buf.readBoolean(), buf.readDouble(), buf.readDouble(), buf.readUnsignedByte().toInt())
+        if (buf.readBoolean()) ParticleRenderOptions(buf.readBoolean(), buf.readDouble(), buf.readDouble(), buf.readUnsignedByte().toInt(), buf.readUnsignedByte().toInt())
         else ParticleRenderOptions.DEFAULT
 
     private fun writeCamera(buf: FriendlyByteBuf, cam: AnimCamera) {

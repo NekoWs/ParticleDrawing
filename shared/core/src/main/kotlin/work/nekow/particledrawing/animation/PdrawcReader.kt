@@ -29,7 +29,7 @@ object PdrawcReader {
 
     private val MAGIC = byteArrayOf(0x50, 0x44, 0x43, 0x31) // "PDC1"
     private const val MIN_VERSION = 18
-    private const val VERSION = 19
+    private const val VERSION = 20
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
 
@@ -103,7 +103,7 @@ object PdrawcReader {
             val uv = if (flags and 2 != 0) readUV(br, texNames) else null
             val billboard = (flags and 16) == 0   // bit4=非广告牌
             val spinLocal = (flags and 32) == 0   // bit5=自转空间 world
-            val renderOptions = if (version >= 19) readRenderOptions(br) else ParticleRenderOptions.DEFAULT
+            val renderOptions = if (version >= 19) readRenderOptions(br, version) else ParticleRenderOptions.DEFAULT
             particles.add(AnimParticle("p$i", color, scale, flags and 1 != 0, lightLevel, pos, vel, uv, st, ent, life,
                 billboard, spinLocal, renderOptions))
         }
@@ -164,7 +164,7 @@ object PdrawcReader {
                 val kf = readVarKeyframes(br)
                 vars[name] = FunctionVar(base, kf)
             }
-            val renderOptions = if (version >= 19) readRenderOptions(br) else ParticleRenderOptions.DEFAULT
+            val renderOptions = if (version >= 19) readRenderOptions(br, version) else ParticleRenderOptions.DEFAULT
             functions.add(FunctionObject("fx$fi", "fx$fi", center, source, seed, vars, duration, uv, st, ent, fastMath,
                 spinLocal, rotLocal, frameSync, additive, renderOptions))
         }
@@ -340,15 +340,16 @@ object PdrawcReader {
     private fun inflateRaw(data: ByteArray): ByteArray =
         InflaterInputStream(ByteArrayInputStream(data), Inflater(true)).use { it.readBytes() }
 
-    private fun readRenderOptions(r: Reader): ParticleRenderOptions {
+    private fun readRenderOptions(r: Reader, version: Int): ParticleRenderOptions {
         val fields = r.u8()
-        require(fields in 0..7)
+        require(fields in 0..(if (version >= 20) 15 else 7))
         if (fields == 0) return ParticleRenderOptions.DEFAULT
         return ParticleRenderOptions(
             alignVelocity = fields and 1 != 0,
             stretch = if (fields and 1 != 0) r.f32().toDouble() else ParticleRenderOptions.DEFAULT.stretch,
             softFade = if (fields and 2 != 0) r.f32().toDouble() else 0.0,
             trailTicks = if (fields and 4 != 0) r.u8() else 0,
+            trailSides = if (fields and 8 != 0) r.u8() else 0,
         )
     }
 

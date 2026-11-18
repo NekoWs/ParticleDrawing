@@ -166,12 +166,14 @@ class ParticleVisualCodecTest {
             stretch = 1.5
             softFade = 0.75
             trailTicks = 32
+            trailSides = 6
         }
         val decoded = roundTrip(visual).visual!!
         assertTrue(decoded.alignVelocity)
         assertEquals(1.5, decoded.stretch)
         assertEquals(0.75, decoded.softFade)
         assertEquals(32, decoded.trailTicks)
+        assertEquals(6, decoded.trailSides)
         assertEquals(0, roundTrip(ParticleVisual().billboard(false)).visual!!.trailTicks)
     }
 }

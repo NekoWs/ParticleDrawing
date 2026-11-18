@@ -84,6 +84,7 @@ class ParticleVisualBuilder {
     var stretch: Double = 0.6
     var softFade: Length = Length.blocks(0.0)
     var trailTicks: Int = 0
+    var trailSides: Int = 0
 
     fun velocityStretch(gain: Double): ParticleVisualBuilder {
         alignVelocity = true
@@ -188,6 +189,7 @@ class ParticleVisualBuilder {
         visual.stretch = stretch
         visual.softFade = softFade.requireNonNegative(translation("field.length").resolve()).blocks
         visual.trailTicks = trailTicks
+        visual.trailSides = trailSides
         return visual
     }
 }

@@ -113,6 +113,13 @@ class ParticleVisual {
             field = value
         }
 
+    /** 0 使用面向镜头的丝带；3..12 使用指定边数的管状截面。 */
+    var trailSides: Int = 0
+        set(value) {
+            ParticleRenderOptions.validateTrailSides(value)
+            field = value
+        }
+
     /** 配置对外照明的形状。null 清除显式形状。 */
     fun lightShape(shape: LightShape?): ParticleVisual = apply { lightShape = shape?.validated() }
 
@@ -283,6 +290,7 @@ class ParticleVisual {
         c.stretch = stretch
         c.softFade = softFade
         c.trailTicks = trailTicks
+        c.trailSides = trailSides
         return c
     }
 
@@ -296,7 +304,7 @@ class ParticleVisual {
     fun isPristine(): Boolean = texture == null && uvRect == null && !hasAniso() &&
         billboard && spinXDeg == 0.0 && spinYDeg == 0.0 && spinZDeg == 0.0 && spinLocal &&
         !additive && !glowing && !emitsLight && !lightOnly && lightIntensity == 1f && lightShape == null &&
-        !alignVelocity && softFade == 0.0 && trailTicks == 0
+        !alignVelocity && softFade == 0.0 && trailTicks == 0 && trailSides == 0
 
     /**
      * 解析成渲染用的 UV，由客户端调用。[texW]/[texH] 是已注册贴图的像素尺寸，未知传 0。

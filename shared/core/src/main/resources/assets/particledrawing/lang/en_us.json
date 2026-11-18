@@ -432,6 +432,7 @@
   "particledrawing.error.visual.soft_fade": "Soft fade distance must be between 0 and %1$s blocks.",
   "particledrawing.error.visual.stretch": "Stretch must be between 0 and %1$s.",
   "particledrawing.error.visual.style_texture": "Choose style or texture.",
+  "particledrawing.error.visual.trail_sides": "Use 0 or 3..12 for the trail cross-section.",
   "particledrawing.error.visual.trail_ticks": "Trail length must be between 0 and %1$s ticks.",
   "particledrawing.field.acceleration": "Acceleration",
   "particledrawing.field.angle": "Angle",

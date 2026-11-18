@@ -33,9 +33,10 @@ internal class ResolvedVisual(
     /** 软粒子采样半径（格）；0 = 不做近几何淡出。 */
     val softFade: Double = 0.0,
     val trailTicks: Int = 0,
+    val trailSides: Int = 0,
 ) {
     val renderOptions = if (alignVelocity || softFade > 0.0 || trailTicks > 0)
-        ParticleRenderOptions(alignVelocity, stretch, softFade, trailTicks) else ParticleRenderOptions.DEFAULT
+        ParticleRenderOptions(alignVelocity, stretch, softFade, trailTicks, trailSides) else ParticleRenderOptions.DEFAULT
 
     companion object {
         /** 无外观规格：纯白方块、广告牌、无自转、原始光强、不独立投光。 */
@@ -66,6 +67,7 @@ internal class ResolvedVisual(
                 visual.stretch,
                 visual.softFade,
                 visual.trailTicks,
+                visual.trailSides,
             )
         }
     }

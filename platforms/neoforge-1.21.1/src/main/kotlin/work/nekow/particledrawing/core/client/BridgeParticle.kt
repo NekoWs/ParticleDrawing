@@ -308,12 +308,13 @@ class BridgeParticle(
         try {
             if (alpha <= 0f && effects != null) return
             super.render(consumer, camera, partialTick)
-            effects?.trail?.let { trail ->
+            effects?.let { effect ->
+                val trail = effect.trail ?: return@let
                 ribbonVertices.clear()
                 ribbonVertices.append(
                     trail, CoreVec3(sampledX(f), sampledY(f), sampledZ(f)),
                     CoreVec3(cam.x, cam.y, cam.z), frameHeight(f), f,
-                    getU0(), getU1(), getV0(), getV1(), RibbonVertices.color(rCol, gCol, bCol, alpha), getLightColor(f),
+                    getU0(), getU1(), getV0(), getV1(), RibbonVertices.color(rCol, gCol, bCol, alpha), getLightColor(f), effect.trailSides,
                 )
                 ribbonVertices.writeTo(consumer)
             }

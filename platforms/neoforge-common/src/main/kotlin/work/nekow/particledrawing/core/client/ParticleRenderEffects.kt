@@ -16,6 +16,7 @@ import kotlin.math.sqrt
 
 /** 共用桥接粒子的附加外观。默认外观不分配状态。 */
 internal class ParticleRenderEffects(private val visual: ParticleRenderOptions, start: Vec3) {
+    val trailSides = visual.trailSides
     val trail = visual.trailTicks.takeIf { it > 0 }?.let { RibbonHistory(it, start.toCore()) }
     val translucent: Boolean get() = visual.softFade > 0.0 || trail != null
 

@@ -9,6 +9,7 @@ data class ParticleRenderOptions(
     val stretch: Double = 0.6,
     val softFade: Double = 0.0,
     val trailTicks: Int = 0,
+    val trailSides: Int = 0,
 ) {
     val active: Boolean get() = alignVelocity || softFade > 0.0 || trailTicks > 0
 
@@ -16,6 +17,7 @@ data class ParticleRenderOptions(
         validateStretch(stretch)
         validateSoftFade(softFade)
         validateTrail(trailTicks)
+        validateTrailSides(trailSides)
     }
 
     companion object {
@@ -31,6 +33,10 @@ data class ParticleRenderOptions(
             requireLocalized(value in 0.0..SoftFade.MAX_DISTANCE) {
                 translation("error.visual.soft_fade", SoftFade.MAX_DISTANCE.toInt())
             }
+        }
+
+        internal fun validateTrailSides(value: Int) {
+            requireLocalized(value == 0 || value in 3..12) { translation("error.visual.trail_sides") }
         }
 
         internal fun validateTrail(value: Int) {

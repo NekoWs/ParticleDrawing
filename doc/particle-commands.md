@@ -437,6 +437,7 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 | `appearance stretch <0..10>` | 启用速度对齐。长度乘以 `1 + stretch × 每刻位移`，最多 12 倍。默认强度 0.6 |
 | `appearance soft <0..4>` | 距附近方块碰撞面的淡出范围（格），0 关闭 |
 | `appearance trail <0..32>` | 保留最近几刻的世界位置，生成一条随镜头转向并沿尾端渐隐的丝带，0 关闭 |
+| `appearance trail_sides <0 或 3..12>` | 拖尾截面边数；与 `appearance trail` 配合使用 |
 | `subemit count <1..64>` | 粒子正常消失时在原地爆发的子粒子数量；不配置则什么都不留 | 
 | `subemit lifetime <1..200>` | 子粒子寿命（刻），默认 12 |
 | `subemit speed <0..2>` | 子粒子初速（格/刻），方向在球面上均匀散开，默认 0.12 |
@@ -605,7 +606,7 @@ pdraw particle emitter sparks start
 `bounce` 控制反射后的法线速度，`friction` 控制切向速度的保留比例。
 
 软粒子按粒子中心沿六个世界坐标轴到附近碰撞面的距离调整整颗粒子的透明度。拖尾复用粒子的贴图、颜色和
-混合模式，传送时从新落点重新记录。参见[软粒子示例](../examples/commands/soft-fade.mcfunction)和
+混合模式，传送时从新落点重新记录。客户端 `maxParticleTrailQuads` 限制每帧拖尾四边形数，默认 200,000；耗尽后本帧继续绘制粒子本体。参见[软粒子示例](../examples/commands/soft-fade.mcfunction)和
 [丝带示例](../examples/commands/ribbon-trail.mcfunction)。
 
 客户端配置 `particleLodDistance` 默认 `0`。设为正数后，该距离以内全量绘制，远处按距离平方反比

@@ -1,6 +1,7 @@
 package work.nekow.particledrawing.core.client
 
 import com.mojang.blaze3d.vertex.VertexConsumer
+import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.math.Vec3
 import work.nekow.particledrawing.render.RibbonHistory
 
@@ -17,10 +18,13 @@ internal class RibbonVertices {
 
     fun append(
         history: RibbonHistory, head: Vec3, camera: Vec3, width: Float, partialTick: Float,
-        u0: Float, u1: Float, v0: Float, v1: Float, color: Int, light: Int,
+        u0: Float, u1: Float, v0: Float, v1: Float, color: Int, light: Int, sides: Int = 0,
     ) {
         val alpha = color ushr 24
-        if (alpha == 0) return
+        if (alpha == 0 || history.size < 2 || width <= 0f) return
+        val cost = (history.size - 1) * maxOf(1, sides)
+        if (cost > quadsRemaining) return
+        quadsRemaining -= cost
         val rgb = color and 0xFFFFFF
         fun vertex(position: Vec3, u: Float, v: Float, progress: Float) {
             if (size == colors.size) {
@@ -40,6 +44,22 @@ internal class RibbonVertices {
             size++
         }
 
+        if (sides > 0) {
+            history.forEachTubeSegment(head, width, partialTick, sides) { a, b ->
+                val au = u0 + (u1 - u0) * a.progress
+                val bu = u0 + (u1 - u0) * b.progress
+                for (i in 0 until sides) {
+                    val next = (i + 1) % sides
+                    val low = v0 + (v1 - v0) * (i.toFloat() / sides)
+                    val high = v0 + (v1 - v0) * ((i + 1f) / sides)
+                    vertex(a.vertices[next], au, high, a.progress)
+                    vertex(a.vertices[i], au, low, a.progress)
+                    vertex(b.vertices[i], bu, low, b.progress)
+                    vertex(b.vertices[next], bu, high, b.progress)
+                }
+            }
+            return
+        }
         history.forEachSegment(head, camera, width, partialTick) { a, b ->
             val au = u0 + (u1 - u0) * a.progress
             val bu = u0 + (u1 - u0) * b.progress
@@ -60,6 +80,11 @@ internal class RibbonVertices {
 
     companion object {
         private const val STRIDE = 5
+        private var quadsRemaining = 200_000
+
+        fun beginFrame() {
+            quadsRemaining = ParticleDrawingConfig.CLIENT.maxParticleTrailQuads.get()
+        }
 
         fun color(r: Float, g: Float, b: Float, a: Float): Int =
             (a.coerceIn(0f, 1f) * 255).toInt().shl(24) or

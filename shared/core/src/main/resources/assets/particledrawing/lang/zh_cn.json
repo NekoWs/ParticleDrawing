@@ -432,6 +432,7 @@
   "particledrawing.error.visual.soft_fade": "软粒子距离必须在 0 到 %1$s 格之间。",
   "particledrawing.error.visual.stretch": "拉丝强度必须在 0 到 %1$s 之间。",
   "particledrawing.error.visual.style_texture": "style 与 texture 只能选一个。",
+  "particledrawing.error.visual.trail_sides": "拖尾截面边数应为 0 或 3..12。",
   "particledrawing.error.visual.trail_ticks": "拖尾长度必须在 0 到 %1$s 刻之间。",
   "particledrawing.field.acceleration": "加速度",
   "particledrawing.field.angle": "角度",

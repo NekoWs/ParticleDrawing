@@ -43,4 +43,23 @@ class ParticleRenderEffectsTest {
         assertFalse(ParticleDistanceLod.visible(1024.0, 8.0, 0.0))
         assertTrue(ParticleDistanceLod.visible(1024.0, 0.0, 0.99))
     }
+
+    @Test
+    fun `管状拖尾的截面保持垂直轨迹且沿尾端缩小`() {
+        val trail = RibbonHistory(4, Vec3.ZERO)
+        trail.record(Vec3(0.0, 0.0, 1.0))
+        trail.record(Vec3(0.0, 0.0, 2.0))
+        val sections = mutableListOf<Pair<RibbonHistory.Ring, RibbonHistory.Ring>>()
+        trail.forEachTubeSegment(Vec3(0.0, 0.0, 2.0), 0.5f, 0.5f, 6) { a, b -> sections += a to b }
+        assertEquals(2, sections.size)
+        val start = sections.first().first
+        val tail = sections.last().second
+        assertEquals(6, start.vertices.size)
+        for (corner in start.vertices) {
+            assertEquals(2.0, corner.z)
+            assertEquals(0.5, kotlin.math.hypot(corner.x, corner.y), 1e-6)
+        }
+        assertTrue(tail.progress < start.progress)
+        assertEquals(sections.first().second, sections.last().first)
+    }
 }
