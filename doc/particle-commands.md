@@ -429,6 +429,8 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 | `where <条件>` | 出生公式之后，只生成满足条件的样本 |
 | `kill <条件>` | 每刻及出生时判定，成立即真正销毁 |
 | `unset variable\|state\|let\|birth\|motion\|change <字段>` | 删除一项配置 |
+| `align_velocity true` | 长轴自动对齐速度（火花、雨线、彗尾），需配合 `stretch` 与各向异性尺寸 | 
+| `stretch <0..10>` | 拉长强度：长度 = 基础尺寸 × (1 + stretch × 速度)，默认 0.6 |
 | `collide none\|solid\|liquid` | 与世界的碰撞方式，默认 `none`（自由穿过）；`solid` 撞方块，`liquid` 撞液体 |
 | `bounce <0..1>` | 撞到后法线方向保留的速度比例，0 直接停下，1 完全弹性，默认 0.35 |
 | `friction <0..1>` | 撞到后切向速度的保留比例，越小越「黏地」，默认 0.55 |
