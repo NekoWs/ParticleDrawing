@@ -14,12 +14,15 @@ object ParticleVisibilityManager {
      * @return 在渲染距离内返回 true
      */
     @JvmStatic
-    fun isWithinViewDistance(player: ServerPlayer, particlePos: Vec3): Boolean {
+    fun isWithinViewDistance(player: ServerPlayer, particlePos: Vec3): Boolean =
+        isWithinViewDistance(player, particlePos.x, particlePos.y, particlePos.z)
+
+    internal fun isWithinViewDistance(player: ServerPlayer, x: Double, y: Double, z: Double): Boolean {
         val chunks = player.requestedViewDistance().coerceAtLeast(2)
         val radius = chunks * 16.0
-        val dx = player.x - particlePos.x
-        val dy = player.y - particlePos.y
-        val dz = player.z - particlePos.z
+        val dx = player.x - x
+        val dy = player.y - y
+        val dz = player.z - z
         return dx * dx + dy * dy + dz * dz <= radius * radius
     }
 }

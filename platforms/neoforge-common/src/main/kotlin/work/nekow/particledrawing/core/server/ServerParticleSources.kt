@@ -4,9 +4,11 @@ import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.neoforged.neoforge.network.PacketDistributor
+import org.apache.logging.log4j.LogManager
 import work.nekow.particledrawing.api.ParticleRecipe
 import work.nekow.particledrawing.api.RecipeAnchor
 import work.nekow.particledrawing.animation.recipe.RecipeRuntime
+import work.nekow.particledrawing.animation.recipe.SyncedRecipe
 import work.nekow.particledrawing.core.network.ParticleRecipePayload
 import work.nekow.particledrawing.core.network.RecipeOperation
 import work.nekow.particledrawing.util.ParticleUtils
@@ -15,9 +17,12 @@ import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.requireNotNullLocalized
 import work.nekow.particledrawing.i18n.translation
 
-/** 服务端主线程登记生成声明；客户端自行执行采样和运动，无逐颗逐刻广播。 */
+/** 服务端主线程管理配方，按选择下发运行声明或同步服务端模拟状态。 */
 internal object ServerParticleSources {
-    private class Entry(val dimension: UUID, var recipe: ParticleRecipe, var anchor: RecipeAnchor, val burst: Boolean) {
+    private class Entry(
+        val dimension: UUID, var recipe: ParticleRecipe, var anchor: RecipeAnchor, val burst: Boolean,
+        val synced: ServerSyncedRecipe?,
+    ) {
         val sent = hashSetOf<UUID>()
         var emitting = true
         var ticks = 0L
@@ -30,13 +35,23 @@ internal object ServerParticleSources {
         }
     }
     private val entries = linkedMapOf<UUID, Entry>()
+    private val logger = LogManager.getLogger("ParticleDrawing")
+    private const val MAX_SYNCED_SOURCES = 8
 
-    fun start(level: ServerLevel, recipe: ParticleRecipe, anchor: RecipeAnchor, burst: Boolean): UUID {
+    fun start(level: ServerLevel, recipe: ParticleRecipe, anchor: RecipeAnchor, burst: Boolean, synced: Boolean = false): UUID {
         recipe.validate()
         RecipeRuntime.requireCadence(recipe, burst)
         requireLocalized(entries.size < 256) { translation("error.recipe.active_limit") }
+        if (synced) {
+            SyncedRecipe.validate(recipe)
+            requireLocalized(entries.values.count { it.synced != null } < MAX_SYNCED_SOURCES) {
+                translation("error.recipe.synced_sources", MAX_SYNCED_SOURCES)
+            }
+        }
         val id = UUID.randomUUID()
-        val entry = Entry(ParticleUtils.dimensionUUID(level), freeze(recipe), anchor, burst)
+        val frozen = freeze(recipe)
+        val serverRecipe = if (synced) ServerSyncedRecipe(id, level, frozen, burst) else null
+        val entry = Entry(ParticleUtils.dimensionUUID(level), frozen, anchor, burst, serverRecipe)
         entries[id] = entry
         for (player in level.players()) sync(id, entry, player, true)
         return id
@@ -47,8 +62,13 @@ internal object ServerParticleSources {
         val e = requireNotNullLocalized(entries[id]) { translation("error.recipe.ended") }
         RecipeRuntime.requireCadence(recipe, e.burst)
         requireLocalized(e.recipe.state.keys == recipe.state.keys) { translation("error.recipe.state_change") }
-        e.updated(recipe)
-        e.recipe = freeze(recipe)
+        val frozen = freeze(recipe)
+        if (e.synced != null) {
+            SyncedRecipe.validate(frozen)
+            e.synced.simulation.runtime.update(frozen)
+        }
+        e.updated(frozen)
+        e.recipe = frozen
         send(e, level, ParticleRecipePayload(id, RecipeOperation.UPDATE, recipe = e.recipe))
     }
 
@@ -62,12 +82,20 @@ internal object ServerParticleSources {
         val e = requireNotNullLocalized(entries[id]) { translation("error.recipe.ended") }
         val next = e.recipe.copy(variables = e.recipe.variables + (name to value))
         next.validate()
+        e.synced?.simulation?.runtime?.update(next)
         e.recipe = next
         send(e, level, ParticleRecipePayload(id, RecipeOperation.VARIABLE, variables = mapOf(name to value)))
     }
 
     fun stop(id: UUID, level: ServerLevel, remove: Boolean) {
         val e = entries[id] ?: return
+        if (e.synced != null) {
+            if (remove) {
+                entries.remove(id)
+                e.synced.close()
+            } else e.synced.simulation.runtime.emitting = false
+            return
+        }
         e.emitting = false
         if (e.maxLifetime > 0) e.retireAt = e.ticks + e.maxLifetime + 2L
         send(e, level, ParticleRecipePayload(id, if (remove) RecipeOperation.REMOVE else RecipeOperation.STOP))
@@ -76,6 +104,11 @@ internal object ServerParticleSources {
 
     fun edit(id: UUID, predicate: String, changes: Map<String, String>, remove: Boolean, level: ServerLevel) {
         val e = requireNotNullLocalized(entries[id]) { translation("error.recipe.ended") }
+        val synced = e.synced
+        if (synced != null) {
+            synced.simulation.edit(predicate, changes, remove)
+            return
+        }
         e.recipe.copy(birth = changes, where = predicate).validate()
         send(e, level, ParticleRecipePayload(id, RecipeOperation.EDIT, predicate = predicate, changes = changes, deleteSelected = remove))
     }
@@ -87,28 +120,54 @@ internal object ServerParticleSources {
     }
 
     private fun sync(id: UUID, e: Entry, player: ServerPlayer, initial: Boolean = false) {
-        if ((e.burst && !initial) || e.dimension != ParticleUtils.dimensionUUID(player.level()) || !e.emitting || !e.sent.add(player.uuid)) return
+        if (e.synced != null || (e.burst && !initial) || e.dimension != ParticleUtils.dimensionUUID(player.level()) ||
+            !e.emitting || !e.sent.add(player.uuid)) return
         PacketDistributor.sendToPlayer(player, ParticleRecipePayload(id, RecipeOperation.START, e.recipe, e.anchor, e.burst))
     }
 
     fun sync(player: ServerPlayer) { for ((id, e) in entries) sync(id, e, player) }
-    fun forget(player: UUID) { entries.values.forEach { it.sent.remove(player) } }
+    fun forgetSynced(player: UUID) { entries.values.forEach { it.synced?.forget(player) } }
+    fun forget(player: UUID) {
+        entries.values.forEach { it.sent.remove(player) }
+        forgetSynced(player)
+    }
+
     fun tick(server: MinecraftServer) {
         val expired = arrayListOf<UUID>()
-        for ((id, e) in entries) if (++e.ticks >= e.retireAt) expired += id
+        for ((id, e) in entries) {
+            val synced = e.synced
+            if (synced == null) {
+                if (++e.ticks >= e.retireAt) expired += id
+                continue
+            }
+            try {
+                synced.tick(e.anchor)
+                if (synced.simulation.finished) expired += id
+            } catch (error: RuntimeException) {
+                logger.error(translation("log.recipe.instance").resolve(), id, error.message)
+                expired += id
+            }
+        }
         for (id in expired) {
             val e = entries.remove(id) ?: continue
+            if (e.synced != null) {
+                e.synced.close()
+                continue
+            }
             val level = server.allLevels.firstOrNull { ParticleUtils.dimensionUUID(it) == e.dimension } ?: continue
             send(e, level, ParticleRecipePayload(id, RecipeOperation.STOP))
         }
         for (player in server.playerList.players) sync(player)
     }
-    fun discard(dimension: UUID) { entries.entries.removeIf { it.value.dimension == dimension } }
+    fun discard(dimension: UUID) {
+        entries.values.filter { it.dimension == dimension }.forEach { it.synced?.close() }
+        entries.entries.removeIf { it.value.dimension == dimension }
+    }
     fun clear() = entries.clear()
 
     private fun freeze(r: ParticleRecipe): ParticleRecipe = r.copy(seeds = r.seeds.toList(), visual = r.visual.copy(),
         variables = LinkedHashMap(r.variables), state = LinkedHashMap(r.state), lets = LinkedHashMap(r.lets),
         birth = LinkedHashMap(r.birth), motion = LinkedHashMap(r.motion),
-        emissions = r.emissions.map { it.copy(child = freeze(it.child)) })
+        probes = r.probes.toList(), emissions = r.emissions.map { it.copy(child = freeze(it.child)) })
 
 }

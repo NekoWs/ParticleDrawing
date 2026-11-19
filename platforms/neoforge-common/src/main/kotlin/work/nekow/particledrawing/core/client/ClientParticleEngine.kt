@@ -520,6 +520,7 @@ class ClientParticleEngine {
         checkExitWatches()
         ClientParticleFields.refresh()
         ClientParticleSources.tick()
+        ClientSyncedRecipes.tick(this)
         for (id in trailIds) bridges[id]?.recordTrail()
     }
 
@@ -776,6 +777,7 @@ class ClientParticleEngine {
      */
     fun clearAll() {
         ClientParticleSources.clear()
+        ClientSyncedRecipes.clear()
         ClientParticleFields.clear()
         particles.clear()
         bridges.clear()
@@ -818,6 +820,12 @@ class ClientParticleEngine {
         particle.markBorn(tickSequence - 1)
         particle.markSpawnedDuringRender(0f)
         return RecipeBinding(particle, bridges[id], visual)
+    }
+
+    internal fun bindSyncedRecipeParticle(id: UUID, visual: ResolvedVisual): RecipeBinding? {
+        val binding = bindRecipeParticle(id, visual) ?: return null
+        trailIds.remove(id)
+        return binding
     }
 
     internal fun applyRecipeFrame(binding: RecipeBinding, pos: Vec3, color: Color, scale: Float, glow: Boolean, light: Int) {

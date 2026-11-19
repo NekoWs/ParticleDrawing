@@ -29,6 +29,21 @@ internal class RibbonHistory(private val ticks: Int, start: Vec3) {
 
     fun sample(age: Int): Vec3 = checkNotNull(samples[(newest - age + samples.size) % samples.size])
 
+    fun oldestFirst(): List<Vec3> = List(size) { sample(size - 1 - it) }
+
+    fun restore(points: List<Vec3>) {
+        require(points.size in 1..samples.size)
+        reset(points.first())
+        for (i in 1 until points.size) record(points[i])
+    }
+
+    fun copyFrom(history: RibbonHistory) {
+        require(history.samples.size == samples.size)
+        history.samples.copyInto(samples)
+        newest = history.newest
+        size = history.size
+    }
+
     data class Edge(val left: Vec3, val right: Vec3, val progress: Float)
     data class Ring(val vertices: List<Vec3>, val progress: Float)
 

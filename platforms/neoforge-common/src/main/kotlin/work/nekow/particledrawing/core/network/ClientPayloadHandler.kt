@@ -7,6 +7,7 @@ import work.nekow.particledrawing.core.client.ClientAnimationProgramManager
 import work.nekow.particledrawing.core.client.ClientAnimationSyncManager
 import work.nekow.particledrawing.core.client.ClientEmitterManager
 import work.nekow.particledrawing.core.client.ClientParticleEngine
+import work.nekow.particledrawing.core.client.ClientSyncedRecipes
 import work.nekow.particledrawing.core.client.ClientTextureSyncManager
 import work.nekow.particledrawing.core.client.ResolvedVisual
 
@@ -17,6 +18,10 @@ internal object ClientPayloadHandler {
 
     fun handleRecipe(payload: ParticleRecipePayload, context: IPayloadContext) {
         context.enqueueWork { work.nekow.particledrawing.core.client.ClientParticleSources.handle(payload) }
+    }
+
+    fun handleRecipeState(payload: ParticleRecipeStatePayload, context: IPayloadContext) {
+        context.enqueueWork { ClientSyncedRecipes.receive(payload) }
     }
 
     fun handleSpawn(payload: ParticleSpawnPayload, context: IPayloadContext) {

@@ -16,6 +16,7 @@ import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.lighting.DynamicLightManager
 import work.nekow.particledrawing.math.Vec3 as CoreVec3
+import work.nekow.particledrawing.render.RibbonHistory
 import work.nekow.particledrawing.util.VisualMath
 
 /**
@@ -188,6 +189,10 @@ class BridgeParticle(
 
     internal fun recordTrail() {
         effects?.record(x, y, z)
+    }
+
+    internal fun syncTrail(history: RibbonHistory) {
+        effects?.syncTrail(history)
     }
 
     fun syncPosition(x: Double, y: Double, z: Double, snap: Boolean = false, resetEffects: Boolean = snap) {

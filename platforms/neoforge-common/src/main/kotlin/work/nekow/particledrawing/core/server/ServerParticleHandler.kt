@@ -84,6 +84,7 @@ object ServerParticleHandler {
     @JvmStatic
     fun onPlayerChangedDimension(event: PlayerEvent.PlayerChangedDimensionEvent) {
         (event.entity as? ServerPlayer)?.let {
+            ServerParticleSources.forgetSynced(it.uuid)
             ServerAnimationManager.syncPlaybacksToPlayer(it)
             ServerEffectManager.syncPlaybacksToPlayer(it)
             ParticleForceFields.sync(it)
@@ -95,6 +96,7 @@ object ServerParticleHandler {
     @JvmStatic
     fun onPlayerRespawn(event: PlayerEvent.PlayerRespawnEvent) {
         (event.entity as? ServerPlayer)?.let {
+            ServerParticleSources.forgetSynced(it.uuid)
             ParticleForceFields.sync(it)
             ServerAnimationManager.syncPlaybacksToPlayer(it)
             ServerEffectManager.syncPlaybacksToPlayer(it)

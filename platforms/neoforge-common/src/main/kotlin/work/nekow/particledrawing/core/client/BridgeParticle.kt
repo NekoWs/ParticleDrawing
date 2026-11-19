@@ -19,6 +19,7 @@ import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.lighting.DynamicLightManager
 import work.nekow.particledrawing.util.VisualMath
 import work.nekow.particledrawing.math.Vec3 as CoreVec3
+import work.nekow.particledrawing.render.RibbonHistory
 import java.util.UUID
 
 // 连接渲染粒子与 Minecraft 粒子系统的桥接粒子，把自定义粒子的位置/颜色/缩放同步进原版渲染管线。
@@ -195,6 +196,10 @@ class BridgeParticle(
 
     internal fun recordTrail() {
         effects?.record(x, y, z)
+    }
+
+    internal fun syncTrail(history: RibbonHistory) {
+        effects?.syncTrail(history)
     }
 
     /**

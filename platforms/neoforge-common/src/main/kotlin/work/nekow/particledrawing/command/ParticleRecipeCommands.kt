@@ -58,10 +58,11 @@ internal object ParticleRecipeCommands {
                 r.lifetime, r.maxAlive, r.follow, d.handle != null, r.birth, r.motion, r.variables, r.lets, r.where, r.kill,
             ))
         } })
-        for (verb in listOf("start", "burst", "stop", "remove", "apply", "remove_selected")) name.then(Commands.literal(verb).executes { ctx -> safe(ctx) {
+        val startVerbs = setOf("start", "burst", "start_synced", "burst_synced")
+        for (verb in startVerbs + listOf("stop", "remove", "apply", "remove_selected")) name.then(Commands.literal(verb).executes { ctx -> safe(ctx) {
             val d = draft(ctx)
             when (verb) {
-                "start", "burst" -> d.start(ctx.source.level, verb == "burst")
+                in startVerbs -> d.start(ctx.source.level, verb.startsWith("burst"), verb.endsWith("_synced"))
                 "stop" -> d.handles().forEach { it.stop() }
                 "remove" -> d.removeParticles()
                 "apply" -> { requireLocalized(d.changes.isNotEmpty()) { translation("error.recipe.change_required") }; d.handles().forEach { it.changeWhere(d.selector, d.changes) } }
@@ -69,13 +70,13 @@ internal object ParticleRecipeCommands {
             }
             val emitter = word(ctx, "name")
             val message = when (verb) {
-                "start", "burst" -> {
+                in startVerbs -> {
                     val recipe = d.recipe
                     translation("command.recipe.started", emitter, verb, recipe.seeds.size, recipe.maxAlive)
                 }
                 else -> translation("command.recipe.action", emitter, verb)
             }
-            if ((verb == "start" || verb == "burst") && d.recipe.seeds.size > d.recipe.maxAlive) {
+            if (verb in startVerbs && d.recipe.seeds.size > d.recipe.maxAlive) {
                 ctx.source.sendSuccess({ translation("command.recipe.raise_limit").component() }, false)
             }
             success(ctx, message)

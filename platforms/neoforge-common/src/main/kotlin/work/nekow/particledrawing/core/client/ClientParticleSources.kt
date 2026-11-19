@@ -2,12 +2,10 @@ package work.nekow.particledrawing.core.client
 
 import net.minecraft.client.Minecraft
 import net.minecraft.world.phys.Vec3
-import work.nekow.particledrawing.animation.recipe.CollisionMath
-import work.nekow.particledrawing.animation.recipe.RecipeFrame
+import work.nekow.particledrawing.animation.recipe.RecipeChildren
 import work.nekow.particledrawing.animation.recipe.RecipeRuntime
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.RecipeAnchor
-import work.nekow.particledrawing.api.RecipeEmission
 import work.nekow.particledrawing.api.SubEmit
 import work.nekow.particledrawing.core.network.ParticleRecipePayload
 import work.nekow.particledrawing.core.network.RecipeOperation
@@ -29,10 +27,11 @@ internal object ClientParticleSources {
     }
     private class Entry(var runtime: RecipeRuntime, var anchor: RecipeAnchor) {
         val members = linkedMapOf<RecipeRuntime.Particle, Member>()
-        val children = linkedMapOf<RecipeEmission, Entry>()
+        val children = RecipeChildren(ClientParticleWorld)
+        val childViews = linkedMapOf<RecipeRuntime, Entry>()
         var suspended = false
 
-        fun particleIds(): List<UUID> = members.values.map { it.id } + children.values.flatMap(Entry::particleIds)
+        fun particleIds(): List<UUID> = members.values.map { it.id } + childViews.values.flatMap(Entry::particleIds)
     }
     private val sources = linkedMapOf<UUID, Entry>()
 
@@ -51,7 +50,10 @@ internal object ClientParticleSources {
                 RecipeOperation.STOP -> sources[p.id]?.let {
                     if (it.suspended) remove(p.id) else it.runtime.emitting = false
                 }
-                RecipeOperation.REMOVE -> remove(p.id)
+                RecipeOperation.REMOVE -> {
+                    remove(p.id)
+                    ClientSyncedRecipes.remove(p.id)
+                }
                 RecipeOperation.EDIT -> sources[p.id]?.let {
                     it.runtime.edit(p.predicate, p.changes, p.deleteSelected)
                     sync(it, emitChildren = false)
@@ -76,22 +78,13 @@ internal object ClientParticleSources {
                     }
                 }
                 e.suspended = false
-                e.runtime.tickInFrame(withOrbit(e, anchor))
+                e.runtime.tickInFrame(e.runtime.orbitFrame(anchor, orbitOut))
                 sync(e)
-                for (child in e.children.values) child.runtime.tickInFrame(RecipeFrame.IDENTITY)
-                for ((rule, input) in e.runtime.events) {
-                    if (childBudget <= 0) break
-                    val child = e.children.getOrPut(rule) {
-                        Entry(RecipeRuntime(rule.child, burst = true, world = ClientParticleWorld), e.anchor).also {
-                            it.runtime.emitting = false
-                        }
-                    }
-                    val origin = input.position.add(input.normal.scale(CollisionMath.SURFACE_MARGIN))
-                    childBudget -= child.runtime.emitAt(RecipeFrame(origin), input, childBudget)
-                }
-                for (child in e.children.values) sync(child, allowCapacityDrop = true)
-                e.children.values.removeIf { it.runtime.finished }
-                if (e.runtime.finished && e.children.isEmpty()) sources.remove(id)
+                childBudget -= e.children.tick(e.runtime.events, childBudget)
+                for (child in e.children.active) sync(e.childViews.getOrPut(child) { Entry(child, e.anchor) }, allowCapacityDrop = true)
+                e.children.prune()
+                e.childViews.keys.retainAll(e.children.active)
+                if (e.runtime.finished && e.children.active.isEmpty()) sources.remove(id)
             } catch (ex: RuntimeException) { remove(id); error(id, ex) }
         }
     }
@@ -169,21 +162,16 @@ internal object ClientParticleSources {
 
     private val orbitOut = DoubleArray(3)
 
-    private fun withOrbit(e: Entry, frame: RecipeFrame?): RecipeFrame? {
-        if (frame == null) return null
-        if (!e.runtime.orbitOffset(orbitOut, 0f)) return frame
-        return frame.at(frame.origin.add(orbitOut[0], orbitOut[1], orbitOut[2]))
-    }
-
     private fun resetOutsideRange(e: Entry) {
         ClientParticleEngine.instance()?.destroyParticles(e.particleIds().toTypedArray())
         e.members.clear()
         e.children.clear()
+        e.childViews.clear()
         e.runtime = RecipeRuntime(e.runtime.recipe, burst = false, world = ClientParticleWorld)
         e.suspended = true
     }
 
-    private fun error(id: UUID, e: RuntimeException) {
+    internal fun error(id: UUID, e: RuntimeException) {
         org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").error(translation("log.recipe.instance").resolve(), id, e.message)
         val detail = e.diagnostic()
         val message = if (detail == null) translation("error.recipe.stopped")

@@ -70,6 +70,8 @@ internal class ParticleRenderEffects(private val visual: ParticleRenderOptions, 
         trail?.record(CoreVec3(x, y, z))
     }
 
+    fun syncTrail(history: RibbonHistory) { trail?.copyFrom(history) }
+
     fun alpha(x: Double, y: Double, z: Double, partialTick: Float): Float {
         if (visual.softFade <= 0.0) return 1f
         val tick = ClientParticleEngine.tickSequence()

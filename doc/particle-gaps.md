@@ -24,7 +24,7 @@
 | 想实现的效果 | 当前边界 |
 | --- | --- |
 | 让网页编辑器导出的粒子在游戏中响应世界碰撞 | `.pdrawc` v20 可声明拉丝、软化、丝带和管状拖尾。动画的时间轴和脚本直接控制位置，仍缺少保存、重建世界交互状态的播放语义。见 [文件读取](../shared/core/src/main/kotlin/work/nekow/particledrawing/animation/PdrawcReader.kt)和[动画生成入口](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/client/ClientAnimationManager.kt)。 |
-| 晚进服的玩家看到和其他人处于同一阶段的碰撞粒子和尾迹 | 持续配方向迟到玩家发送当前配置，客户端从头模拟。已经触发的一次性配方也不会补发。真实碰撞轨迹取决于客户端当时看到的世界。见 [服务端配方同步](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/server/ServerParticleSources.kt)和[启动包](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/network/ParticleRecipePayload.kt)。 |
+| 晚进服的玩家看到和其他人处于同一阶段的碰撞粒子和尾迹 | `start_synced` 和 `burst_synced` 在服务端加载的世界中推进，晚入服或进视距时补发仍存活的主粒子、事件子粒子、年龄与尾迹。运行状态保留到维度卸载或重启。见[服务端同步](particle-commands.md#服务端同步)。 |
 | 十万颗粒子同时模拟和渲染、远离摄像机后释放模拟预算 | 客户端粒子登记上限默认 50,000，可调至 200,000。单个配方最多 8,192 个样本及存活粒子。持续配方可按[模拟范围](particle-commands.md#模拟范围)在镜头远处释放模拟预算，并在返回后重启。对需要保留轨迹的特效，可采用只减少绘制的距离 LOD。26.3 的十万颗 CPU 模拟场景已实测，见下表。 |
 
 ### 26.3 开发客户端实测

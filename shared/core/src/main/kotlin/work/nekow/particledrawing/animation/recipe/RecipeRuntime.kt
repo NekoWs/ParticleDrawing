@@ -152,13 +152,18 @@ class RecipeRuntime(
         return true
     }
 
+    internal fun orbitFrame(anchor: RecipeFrame?, out: DoubleArray): RecipeFrame? {
+        if (anchor == null || !orbitOffset(out, 0f)) return anchor
+        return anchor.at(anchor.origin.add(out[0], out[1], out[2]))
+    }
+
     /** 一颗粒子需要多少个寄存器：热路径含临时槽，慢路径只要固定槽。 */
     private fun regSize(): Int = expressions.fast?.regCount ?: (expressions.slots.map.values.max() + 1)
 
     /** 旧粒子先推进，再生成本刻的新粒子；新生粒子保留 age=0 的完整首帧。 */
     fun tick(allowBirth: Boolean = true) = tickInFrame(if (allowBirth) RecipeFrame.IDENTITY else null)
 
-    internal fun tickInFrame(frame: RecipeFrame?) {
+    internal fun tickInFrame(frame: RecipeFrame?, birthBudget: Int = ParticleRecipe.MAX_RATE) {
         this.frame = frame
         triggers.clear()
         neighbors?.let(::snapshotNeighbors)
@@ -168,7 +173,7 @@ class RecipeRuntime(
         if (listens[ParticleEvent.DEATH.ordinal]) for (particle in removed) {
             trigger(ParticleEvent.DEATH, particle, frameOf(particle))
         }
-        if (emitting) emitScheduled(frame)
+        if (emitting) emitScheduled(frame, birthBudget)
         ticks++
     }
 
@@ -183,7 +188,7 @@ class RecipeRuntime(
         }
     }
 
-    private fun emitScheduled(frame: RecipeFrame?) {
+    private fun emitScheduled(frame: RecipeFrame?, budget: Int) {
         if (frame == null) {
             previousOrigin = null
             distance?.reset()
@@ -191,7 +196,7 @@ class RecipeRuntime(
         }
         val cadence = distance
         if (cadence == null) {
-            if (ticks % recipe.interval == 0L) emitBatch(frame, recipe.rate)
+            if (ticks % recipe.interval == 0L) emitBatch(frame, minOf(recipe.rate, budget))
             return
         }
         val previous = previousOrigin
@@ -202,7 +207,7 @@ class RecipeRuntime(
         }
 
         spawnPositions.clear()
-        cadence.advance(previous, frame.origin, spawnPositions, ParticleRecipe.MAX_RATE / recipe.rate)
+        cadence.advance(previous, frame.origin, spawnPositions, budget / recipe.rate)
         for (position in spawnPositions) emitBatch(frame.at(position), recipe.rate, frame)
     }
 

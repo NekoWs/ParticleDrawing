@@ -52,6 +52,9 @@ object ParticleForceFields {
         PacketDistributor.sendToPlayer(player, ParticleFieldSnapshot(fields.values.toList()))
     }
 
+    internal fun placements(level: ServerLevel): Collection<FieldPlacement> =
+        dimensions[ParticleUtils.dimensionUUID(level)]?.values.orEmpty()
+
     internal fun discard(dimension: UUID) { dimensions.remove(dimension) }
 
     internal fun clear() = dimensions.clear()

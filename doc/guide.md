@@ -745,6 +745,11 @@ trail.isActive()
 
 ### 配方生命周期
 
+`ParticleSources.start` 启动客户端模拟。需要让晚进服的玩家看到已经发生的碰撞和仍在播放的尾迹时，调用
+`ParticleSources.startSynced(level, recipe, anchor)`。单轮播放传入 `burst = true`。服务端按同一套配方规则推进，
+进入视距的客户端从当前状态开始显示。配方的 `rate` 和 `maxAlive` 均须不超过 64。
+返回的句柄支持停止出生、更新变量与移除实例。详细限制见[服务端同步](particle-commands.md#服务端同步)。
+
 发射器的公式在启动时会被编译成一段直接读写寄存器的指令序列，逐粒子逐刻只做数组访问，
 不再按名字查表。写配方时留意两点，避免掉回慢路径（约慢 5～10 倍）：
 

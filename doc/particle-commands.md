@@ -580,9 +580,27 @@ pdraw particle emitter sparks on contact scorch decal 0.8 wrap
 只对允许按观察者重启的特效开启。一次性发射与事件子配方要求此值为 0。
 回收不触发生命周期事件，和仅减少绘制的 `particleLodDistance` 客户端选项可以独立使用。
 
+#### 服务端同步
+
+`start_synced` 持续生成，`burst_synced` 遍历一轮。服务端在已加载的区块里推进碰撞、探测、力场与事件子配方。
+玩家进服、切回维度或走进渲染距离时，收到仍存活的粒子、年龄、子粒子和已走过的拖尾。随后逐刻同步新的状态。
+同步期间用 `stop` 停止出生，仍存活的粒子会继续推进。`remove` 立即清除。
+
+```mcfunction
+pdraw particle emitter rain max_alive 64
+pdraw particle emitter rain rate 2
+pdraw particle emitter rain appearance trail 16
+pdraw particle emitter rain start_synced
+```
+
+同一服务器最多同时运行 8 个同步生成器。每个生成器的 `max_alive` 和每刻出生尝试最多 64，
+另有 64 个事件子粒子名额。超出子粒子配额的事件跳过。同步模式要求 `simulation_range 0`，
+用 `on death` 配置死亡子配方。单个生成器每刻超过 32,768 次世界查询时，停止该生成器并在服务端日志报错。
+同步状态随维度卸载或服务器重启释放。Java 和 Kotlin 可通过 `ParticleSources.startSynced` 使用同一入口。
+
 #### 世界输入
 
-`world_x/y/z` 是当前求值点的世界坐标。`world_loaded` 为 1 时表示客户端已收到该位置的区块。`block_light` 和 `sky_light` 返回 0–15；`open_sky`、`in_solid`、`in_fluid` 返回 0 或 1；`flow_x/y/z` 为该点液体流向。`entity_near` 表示范围内有活跃非旁观实体，`entity_dx/dy/dz` 为最近实体相对粒子的世界坐标偏移。用 `environment entity_radius <0..32>` 设置半径（默认 8，0 禁用），用 `environment entity_type <资源 ID 或 any>` 筛选实体类型。区块未加载时环境量为 0。出生公式查询初始样本的位置，`where` 和出生阶段的 `kill` 查询应用出生公式后的位置，逐刻公式查询推进前的位置。锚点 `orbit` 使用发射器级输入。
+`world_x/y/z` 是当前求值点的世界坐标。`world_loaded` 为 1 时表示执行模拟的客户端或服务端已加载该位置的区块。`block_light` 和 `sky_light` 返回 0–15；`open_sky`、`in_solid`、`in_fluid` 返回 0 或 1；`flow_x/y/z` 为该点液体流向。`entity_near` 表示范围内有活跃非旁观实体，`entity_dx/dy/dz` 为最近实体相对粒子的世界坐标偏移。用 `environment entity_radius <0..32>` 设置半径（默认 8，0 禁用），用 `environment entity_type <资源 ID 或 any>` 筛选实体类型。区块未加载时环境量为 0。出生公式查询初始样本的位置，`where` 和出生阶段的 `kill` 查询应用出生公式后的位置，逐刻公式查询推进前的位置。锚点 `orbit` 使用发射器级输入。
 
 `neighbor_count`、`neighbor_dx/dy/dz` 和 `neighbor_vx/vy/vz` 分别给出同配方实例内邻居的数量、平均世界坐标偏移和平均世界速度。用 `environment neighbor_radius <0.05..16>` 设置半径（默认 2 格）。查询读取整刻推进前的状态，排除粒子本身。密集区域会在每个空间格均匀抽取至多 24 名候选邻居。
 
@@ -787,6 +805,7 @@ pdraw particle emitter shell apply
 | `emitter list` / `emitter <名称> inspect` | 查询名称、参数、公式与条件 |
 | `emitter <名称> start` | 循环遍历样本持续出生 |
 | `emitter <名称> burst` | 只遍历一轮；同一配置可以反复触发 |
+| `emitter <名称> start_synced` / `burst_synced` | 由服务端持续生成或遍历一轮，向进服或进视距的玩家补发当前状态 |
 | `emitter <名称> stop` | 停止出生，现存成员继续运动直到寿命到点 |
 | `emitter <名称> remove` | 立即清除该配置产生的全部实例，保留配置 |
 | `emitter <名称> delete` | 清除实例并删除配置 |

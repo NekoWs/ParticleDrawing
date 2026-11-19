@@ -10,12 +10,18 @@ object ParticleSources {
     @JvmOverloads
     fun start(level: ServerLevel, recipe: ParticleRecipe, anchor: RecipeAnchor, burst: Boolean = false): ParticleSourceHandle =
         ParticleSourceHandle(ServerParticleSources.start(level, recipe, anchor, burst), level)
+
+    /** 服务端计算碰撞和事件，玩家进入视距时接收已运行的状态和尾迹。 */
+    @JvmStatic
+    @JvmOverloads
+    fun startSynced(level: ServerLevel, recipe: ParticleRecipe, anchor: RecipeAnchor, burst: Boolean = false): ParticleSourceHandle =
+        ParticleSourceHandle(ServerParticleSources.start(level, recipe, anchor, burst, synced = true), level)
 }
 
 class ParticleSourceHandle internal constructor(val id: UUID, private val level: ServerLevel) {
     fun update(recipe: ParticleRecipe) = apply { ServerParticleSources.update(id, recipe, level) }
     fun anchor(anchor: RecipeAnchor) = apply { ServerParticleSources.anchor(id, anchor, level) }
-    /** 单变量小包更新，不重新传输图片点阵与采样布局。 */
+    /** 修改一个变量，保留采样布局和现存粒子。 */
     fun variable(name: String, value: Double) = apply { ServerParticleSources.variable(id, name, value, level) }
     /** 停止出生，现有粒子继续运动并走完寿命。 */
     fun stop() = apply { ServerParticleSources.stop(id, level, false) }
