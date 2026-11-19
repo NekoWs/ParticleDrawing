@@ -127,6 +127,9 @@ func process() {
 
 `maxDynamicLights` 和 `maxDynamicLightsPerCell` 分别限制全局和每 16 格立方区域参与照明的光源数。
 `showSpotlightBeams` 可显示附近的射灯光束，光束沿光轴遇到方块时收短。
+`maxShadowedParticleLights` 允许最近的 0–4 盏粒子灯投射方块阴影，默认 0。
+该预算选择照射半径不超过 16 格的光源。方块碰撞形状作为遮挡体，客户端每 10 刻检查静止光源附近的形状变化，
+并把只读索引交给地形网格生成。地形顶点沿各自的光线计算遮挡。
 
 读取原版光图的光影包可继承标量亮度。独立计算体素追踪或手持光源的管线可用
 `ParticleLights.snapshotInto(out)` 读取当帧世界坐标、强度、半径、形状和 RGB。

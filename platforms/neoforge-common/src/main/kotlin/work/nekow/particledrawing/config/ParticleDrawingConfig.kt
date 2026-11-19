@@ -55,6 +55,7 @@ object ParticleDrawingConfig {
         val maxDynamicLightsPerCell: ModConfigSpec.IntValue
         val dynamicLightMaxDistance: ModConfigSpec.DoubleValue
         val showSpotlightBeams: ModConfigSpec.BooleanValue
+        val maxShadowedParticleLights: ModConfigSpec.IntValue
         val enableDynamicLights: ModConfigSpec.BooleanValue
         val maxRenderParticles: ModConfigSpec.IntValue
         val maxParticleGeometryQuads: ModConfigSpec.IntValue
@@ -70,6 +71,9 @@ object ParticleDrawingConfig {
             showSpotlightBeams = builder
                 .comment("Draw a faint beam for nearby spotlights.")
                 .define("showSpotlightBeams", false)
+            maxShadowedParticleLights = builder
+                .comment("Number of nearby particle lights with up to 16 blocks of range that cast terrain shadows. Zero disables occlusion.")
+                .defineInRange("maxShadowedParticleLights", 0, 0, 4)
             maxDynamicLights = builder
                 .comment("The maximum number of dynamic light sources active at once (global upper bound).")
                 .defineInRange("maxDynamicLights", 512, 0, 4096)

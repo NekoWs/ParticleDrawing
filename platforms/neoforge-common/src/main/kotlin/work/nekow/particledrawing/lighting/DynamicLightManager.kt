@@ -11,6 +11,7 @@ import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.light.LightFalloff
 import work.nekow.particledrawing.light.LightMath
 import work.nekow.particledrawing.light.LightShape
+import work.nekow.particledrawing.math.Vec3
 import work.nekow.particledrawing.core.client.ClientParticleEngine
 import work.nekow.particledrawing.core.client.RenderParticle
 import java.util.LinkedHashSet
@@ -190,6 +191,9 @@ object DynamicLightManager {
         val shape: LightShape? = null,
         val rgb: Int = 0xffffff,
     ) {
+        var occlusion: ClientLightOccluders.Snapshot? = null
+        val occlusionRevision: Long get() = occlusion?.revision ?: 0L
+
         /** 光图写入精度是 1/16 级；签名与烘焙比较都按这个精度量化。 */
         val lightQ: Int get() = quantizeLuminance(luminance)
     }
@@ -197,6 +201,7 @@ object DynamicLightManager {
     private class BakedState(
         val x: Double, val y: Double, val z: Double, val lightQ: Int,
         val range: Double, val shape: LightShape?, val rgb: Int,
+        val occlusionRevision: Long,
         var lastX: Double = x, var lastY: Double = y, var lastZ: Double = z,
     )
 
@@ -247,6 +252,9 @@ object DynamicLightManager {
         val radius = ParticleDrawingConfig.CLIENT.dynamicLightMaxDistance.get().coerceIn(1.0, LightShape.MAX_RANGE)
         val renderDistance = mc.options.effectiveRenderDistance * 16.0
         val newSources = collectSources(engine, player.x, player.y, player.z, renderDistance, partialTick, radius)
+        val shadowLimit = ParticleDrawingConfig.CLIENT.maxShadowedParticleLights.get()
+        if (shadowLimit == 0) ClientLightOccluders.clear()
+        else ClientLightOccluders.assign(level, newSources, Vec3(player.x, player.y, player.z), shadowLimit)
         val range = newSources.maxOfOrNull { it.range } ?: radius
         val newCellRange = ceil(range / 16.0).toInt()
 
@@ -261,10 +269,11 @@ object DynamicLightManager {
             val prev = lastBaked[src.id]
             if (prev == null) {
                 markSectionsAround(dirtySections, src.x, src.y, src.z, src.range)
-                nextBaked[src.id] = BakedState(src.x, src.y, src.z, src.lightQ, src.range, src.shape, src.rgb)
+                nextBaked[src.id] = BakedState(src.x, src.y, src.z, src.lightQ, src.range, src.shape, src.rgb, src.occlusionRevision)
                 continue
             }
-            if (prev.range != src.range || prev.shape != src.shape || prev.rgb != src.rgb || LightBakePolicy.shouldRebake(
+            if (prev.range != src.range || prev.shape != src.shape || prev.rgb != src.rgb ||
+                prev.occlusionRevision != src.occlusionRevision || LightBakePolicy.shouldRebake(
                     prev.x, prev.y, prev.z, prev.lightQ,
                     prev.lastX, prev.lastY, prev.lastZ,
                     src.x, src.y, src.z, src.lightQ,
@@ -272,7 +281,7 @@ object DynamicLightManager {
             ) {
                 markSectionsAround(dirtySections, prev.x, prev.y, prev.z, prev.range)
                 markSectionsAround(dirtySections, src.x, src.y, src.z, src.range)
-                nextBaked[src.id] = BakedState(src.x, src.y, src.z, src.lightQ, src.range, src.shape, src.rgb)
+                nextBaked[src.id] = BakedState(src.x, src.y, src.z, src.lightQ, src.range, src.shape, src.rgb, src.occlusionRevision)
             } else {
                 // 小位移继续累计在基准上，只记下这一帧看到的位置
                 prev.lastX = src.x
@@ -414,6 +423,7 @@ object DynamicLightManager {
      */
     @JvmStatic
     fun clear() {
+        ClientLightOccluders.clear()
         val oldSources = ArrayList<LightSource>()
         LOCK.writeLock().lock()
         try {
@@ -467,6 +477,7 @@ object DynamicLightManager {
             e = e * 31 + (src.shape?.hashCode() ?: 0)
             e = e * 31 + src.lightQ
             e = e * 31 + src.rgb
+            if (src.occlusionRevision != 0L) e = e * 31 + src.occlusionRevision
             h += e * -7046029254386353131L
         }
         return h
@@ -521,11 +532,15 @@ object DynamicLightManager {
         }
     }
 
-    private fun contribution(src: LightSource, x: Double, y: Double, z: Double, sampleRadius: Double): Double =
-        LightMath.contributionOf(
+    private fun contribution(src: LightSource, x: Double, y: Double, z: Double, sampleRadius: Double): Double {
+        val brightness = LightMath.contributionOf(
             x, y, z, src.x, src.y, src.z, src.luminance, src.range,
             src.dirX, src.dirY, src.dirZ, src.innerCos, src.outerCos, src.falloff, src.edge, sampleRadius,
         )
+        val shadow = src.occlusion
+        if (brightness > 0.0 && shadow != null && shadow.index.blocks(shadow.origin, x, y, z)) return 0.0
+        return brightness
+    }
 
     /** 只抬高方块光，保留原版天空光与已照亮的方块。 */
     @JvmStatic
@@ -611,6 +626,7 @@ object DynamicLightManager {
     private fun ensurePendingLevel(level: ClientLevel) {
         val previous = pendingLevel
         if (previous != null && previous !== level) {
+            ClientLightOccluders.clear()
             pendingSections.clear()
             lastTerrainSubmitNs = null
             lastBaked.clear()

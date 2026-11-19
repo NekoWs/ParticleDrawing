@@ -17,7 +17,7 @@
 | 粒子均匀地从任意模型或正在挥动的武器表面飞出 | API 可从自定义三角形提供者读取每次取样的姿势，按面积抽样并插值法线和 UV。静态 OBJ 使用同一 API。Minecraft 内置实体和手持物品的渲染姿势仍未接入。见[网格采样](../shared/core/src/main/kotlin/work/nekow/particledrawing/api/ParticleMeshSampler.kt)。 |
 | 让焦痕从地面绕到台阶的竖面 | `decal … wrap` 沿相连的方块碰撞表面展开并跨棱角保持 UV。默认仍可用平行面投影。拖尾用头部颜色、宽度和贴图计算各段，父粒子移除时拖尾一并消失。见[印记展开](../shared/core/src/main/kotlin/work/nekow/particledrawing/render/SurfaceDecalWrap.kt)和[丝带历史](../shared/core/src/main/kotlin/work/nekow/particledrawing/render/RibbonHistory.kt)。 |
 | 大烟团局部穿进地形时只软化交界，热浪扭曲背后画面 | 命令与 API 材质可读透明合成后的场景深度和颜色，逐像素淡出或按贴图折射。26.3 场景材质在 OIT 合成后绘制，同一帧的折射粒子共享底图。见[场景材质](particle-commands.md#读取场景的粒子外观)。 |
-| 粒子的射灯被墙挡住并向地面投影 | 射灯可沿中心射线截短，地形受光按网格顶点采样。缺少逐点遮挡和投影。见 [动态光照限制](known-issues.md#动态光照)。 |
+| 粒子的射灯被墙挡住并向地面投影 | 可为附近少量粒子灯开启方块遮挡，点光和射灯共用方块形状索引，逐个地形顶点测试光线。阴影精度取决于地形网格。见[光照预算](lighting.md#客户端配置与光影)。 |
 
 ## 入口与运行边界
 
