@@ -5,10 +5,12 @@ import work.nekow.particledrawing.animation.recipe.RecipeRuntime
 import work.nekow.particledrawing.api.ParticleMeshSampler
 import work.nekow.particledrawing.api.ParticleRecipe
 import work.nekow.particledrawing.api.ParticleSampling
+import work.nekow.particledrawing.api.ParticleTriangleProvider
 import work.nekow.particledrawing.math.Vec3
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class RecipeDistanceAndMeshTest {
@@ -65,6 +67,53 @@ class RecipeDistanceAndMeshTest {
                 burst = true, preferFast = preferFast)
             runtime.tick()
             assertEquals(1.0, runtime.particles.single().value("vy"))
+        }
+    }
+
+    @Test fun `每次取样读取新姿势并共用重心权重插值法线和 UV`() {
+        val original = ParticleMeshSampler.objProvider("""
+            v 0 0 0
+            v 4 0 0
+            v 0 2 0
+            vt 0 0
+            vt 1 0
+            vt 0 1
+            vn 0 0 1
+            vn 0 1 0
+            f 1/1/1 2/2/2 -1/-1/-2
+        """.trimIndent().byteInputStream()).triangles().single()
+        var pose = Vec3.ZERO
+        var snapshots = 0
+        val provider = ParticleTriangleProvider {
+            snapshots++
+            listOf(original.copy(a = original.a.add(pose), b = original.b.add(pose), c = original.c.add(pose)))
+        }
+        val before = ParticleMeshSampler.points(provider, 32, 15)
+        pose = Vec3(8.0, 4.0, -3.0)
+        val after = ParticleMeshSampler.points(provider, 32, 15)
+        assertEquals(2, snapshots)
+        for ((first, second) in before.zip(after)) {
+            val uv = assertNotNull(first.uv)
+            assertEquals(first.position.x / 4.0, uv.u, 1e-12)
+            assertEquals(first.position.y / 2.0, uv.v, 1e-12)
+            val expected = Vec3(0.0, uv.u, 1.0 - uv.u).normalize()
+            assertEquals(expected.y, first.normal.y, 1e-12)
+            assertEquals(expected.z, first.normal.z, 1e-12)
+            assertEquals(first.position.add(pose).x, second.position.x, 1e-12)
+            assertEquals(first.position.add(pose).y, second.position.y, 1e-12)
+            assertEquals(first.position.add(pose).z, second.position.z, 1e-12)
+            assertEquals(uv, second.uv)
+        }
+
+        val samples = ParticleMeshSampler.surface(provider, 1, 15)
+        val uv = assertNotNull(samples.single().meshUv)
+        for (preferFast in listOf(true, false)) {
+            val runtime = RecipeRuntime(ParticleRecipe(
+                samples, where = "sample_has_uv", birth = mapOf("r" to "sample_tex_u", "g" to "sample_tex_v"),
+            ), burst = true, preferFast = preferFast)
+            runtime.tick()
+            assertEquals(uv.u, runtime.particles.single().value("r"))
+            assertEquals(uv.v, runtime.particles.single().value("g"))
         }
     }
 

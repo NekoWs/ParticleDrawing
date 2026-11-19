@@ -334,21 +334,27 @@ internal object ParticleRecipeCommands {
 
     private fun decalTree(
         event: ParticleEvent, material: (CommandContext<CommandSourceStack>) -> ResourceId? = { null },
-    ): LiteralArgumentBuilder<CommandSourceStack> =
-        Commands.literal("decal").then(Commands.argument("radius", DoubleArgumentType.doubleArg(0.01, RecipeEmission.MAX_DECAL_RADIUS))
-            .executes { ctx -> addEvent(ctx, event, material(ctx), decalRadius = DoubleArgumentType.getDouble(ctx, "radius")) })
+    ): LiteralArgumentBuilder<CommandSourceStack> {
+        fun configureProjection(ctx: CommandContext<CommandSourceStack>, wrap: Boolean) = addEvent(
+            ctx, event, material(ctx), decalRadius = DoubleArgumentType.getDouble(ctx, "radius"), wrapDecal = wrap,
+        )
+        return Commands.literal("decal")
+            .then(Commands.argument("radius", DoubleArgumentType.doubleArg(0.01, RecipeEmission.MAX_DECAL_RADIUS))
+                .executes { ctx -> configureProjection(ctx, false) }
+                .then(Commands.literal("wrap").executes { ctx -> configureProjection(ctx, true) }))
+    }
 
     private fun eventMaterial(ctx: CommandContext<CommandSourceStack>) =
         ResourceId.parse(word(ctx, "material"))
 
     private fun addEvent(
         ctx: CommandContext<CommandSourceStack>, event: ParticleEvent, material: ResourceId? = null,
-        once: Boolean = true, removeParent: Boolean = false, decalRadius: Double = 0.0,
+        once: Boolean = true, removeParent: Boolean = false, decalRadius: Double = 0.0, wrapDecal: Boolean = false,
     ) = configure(ctx) { draft ->
         val target = CommandParticleRecipes.get(dim(ctx), word(ctx, "child"))
         requireLocalized(target !== draft) { translation("error.recipe.event_self") }
         val snapshot = target.recipe.copy(seeds = target.samples(ctx.source.level), visual = target.recipe.visual.copy())
-        val rule = RecipeEmission(event, snapshot, material, once, removeParent, decalRadius)
+        val rule = RecipeEmission(event, snapshot, material, once, removeParent, decalRadius, wrapDecal)
         draft.update(draft.recipe.copy(emissions = draft.recipe.emissions + rule))
     }
 

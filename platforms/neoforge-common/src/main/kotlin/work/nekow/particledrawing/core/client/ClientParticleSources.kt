@@ -136,7 +136,7 @@ internal object ClientParticleSources {
                 val look = ResolvedVisual.of(e.runtime.recipe.visual, 1f)
                 val event = p.event
                 val decal = if (event != null && event.decalRadius > 0.0) {
-                    ParticleModelRenderer.decal(position.toCore(), event.normal, event.decalRadius)
+                    ParticleModelRenderer.decal(position.toCore(), event.position, event.normal, event.decalRadius, event.wrapDecal)
                 } else null
                 if (event != null && event.decalRadius > 0.0 && decal == null) {
                     p.alive = false

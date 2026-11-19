@@ -74,6 +74,8 @@ internal object RecipeCodec {
             buf.writeDouble(seed.u)
             buf.writeBoolean(seed.normal != null)
             seed.normal?.let { StreamCodecs.writeVec(buf, it) }
+            buf.writeBoolean(seed.meshUv != null)
+            seed.meshUv?.let { uv -> buf.writeDouble(uv.u); buf.writeDouble(uv.v) }
         }
         buf.writeVarInt(r.rate); buf.writeVarInt(r.interval); buf.writeVarInt(r.lifetime); buf.writeVarInt(r.maxAlive)
         buf.writeBoolean(r.follow)
@@ -117,6 +119,7 @@ internal object RecipeCodec {
             buf.writeBoolean(rule.once)
             buf.writeBoolean(rule.removeParent)
             buf.writeDouble(rule.decalRadius)
+            buf.writeBoolean(rule.wrapDecal)
             writeLevel(buf, rule.child, allowChildren = false)
         }
     }
@@ -126,7 +129,8 @@ internal object RecipeCodec {
     private fun readLevel(buf: FriendlyByteBuf, allowChildren: Boolean): ParticleRecipe {
         val seeds = List(count(buf, if (allowChildren) ParticleRecipe.MAX_SEEDS else RecipeEmission.MAX_CHILD_SEEDS)) {
             ParticleSeed(StreamCodecs.readVec(buf).toCore(), Color.of(buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat()), buf.readDouble(),
-                if (buf.readBoolean()) StreamCodecs.readVec(buf).toCore() else null)
+                if (buf.readBoolean()) StreamCodecs.readVec(buf).toCore() else null,
+                if (buf.readBoolean()) ParticleMeshUv(buf.readDouble(), buf.readDouble()) else null)
         }
         val recipe = ParticleRecipe(seeds, buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean(),
             readNumbers(buf), readNumbers(buf), readStrings(buf), readStrings(buf), readStrings(buf),
@@ -165,7 +169,8 @@ internal object RecipeCodec {
             val once = buf.readBoolean()
             val removeParent = buf.readBoolean()
             val decalRadius = buf.readDouble()
-            RecipeEmission(event, readLevel(buf, allowChildren = false), material, once, removeParent, decalRadius)
+            val wrapDecal = buf.readBoolean()
+            RecipeEmission(event, readLevel(buf, allowChildren = false), material, once, removeParent, decalRadius, wrapDecal)
         }
         return recipe.copy(
             collision = RecipeCollision.entries[modeOrdinal],

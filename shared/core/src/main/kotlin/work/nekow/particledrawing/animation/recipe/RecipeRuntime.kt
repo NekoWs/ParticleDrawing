@@ -277,7 +277,9 @@ class RecipeRuntime(
                 val position = surface?.position ?: space.position(particle.x, particle.y, particle.z)
                 val r = particle.regs
                 val velocity = incoming ?: space.velocity(Vec3(r[Reg.VX], r[Reg.VY], r[Reg.VZ]))
-                triggers += Trigger(rule, EventInput(position, velocity, surface?.normal ?: Vec3.ZERO, surface?.material, rule.decalRadius))
+                triggers += Trigger(rule, EventInput(
+                    position, velocity, surface?.normal ?: Vec3.ZERO, surface?.material, rule.decalRadius, rule.wrapDecal,
+                ))
                 particle.triggered = particle.triggered or bit
             }
             if (rule.removeParent) particle.alive = false

@@ -59,8 +59,8 @@ internal object CommandParticleRecipes {
             }
             Sampling.MESH -> {
                 val source = requireNotNullLocalized(mesh) { translation("error.mesh.source") }
-                val triangles = source.open(level, "particleMeshes", "error.mesh.missing").use(ParticleMeshSampler::readObj)
-                ParticleMeshSampler.surface(triangles, meshCount, meshSeed)
+                val provider = source.open(level, "particleMeshes", "error.mesh.missing").use(ParticleMeshSampler::objProvider)
+                ParticleMeshSampler.surface(provider, meshCount, meshSeed)
             }
         }
 

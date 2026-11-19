@@ -103,9 +103,10 @@ class ParticleRecipeCodecTest {
     }
 
     @Test fun `接触规则与子配方随声明往返`() {
-        val seeds = ParticleSampling.count(3).map { it.copy(normal = CoreVec3(0.0, 1.0, 0.0)) }
+        val seeds = ParticleSampling.count(3).map { it.copy(normal = CoreVec3(0.0, 1.0, 0.0), meshUv = ParticleMeshUv(0.2, 0.65)) }
         val child = ParticleRecipe(seeds, lifetime = 13, birth = mapOf("vy" to "event_ny * abs(event_vy)"))
-        val rule = RecipeEmission(ParticleEvent.CONTACT, child, ResourceId.parse("minecraft:iron_block"), removeParent = true, decalRadius = 0.5)
+        val rule = RecipeEmission(ParticleEvent.CONTACT, child, ResourceId.parse("minecraft:iron_block"),
+            removeParent = true, decalRadius = 0.5, wrapDecal = true)
         val source = ParticleRecipe(
             seeds, collision = RecipeCollision.ALL, collisionHalfSize = 0.5, collisionSteps = 3,
             emissions = listOf(rule), spacing = 1.25, entityQuery = ParticleEntityQuery(6.0, ResourceId.parse("minecraft:bee")),
@@ -129,6 +130,7 @@ class ParticleRecipeCodecTest {
         assertEquals(rule.event, decoded.event)
         assertTrue(decoded.removeParent)
         assertEquals(0.5, decoded.decalRadius)
+        assertTrue(decoded.wrapDecal)
         assertEquals(child.birth, decoded.child.birth)
         assertEquals(child.seeds, decoded.child.seeds)
     }

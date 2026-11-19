@@ -13,6 +13,7 @@ import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.math.Vec3
 import work.nekow.particledrawing.platform.toMinecraft
 import work.nekow.particledrawing.render.SurfaceDecal
+import work.nekow.particledrawing.render.SurfaceDecalWrap
 import work.nekow.particledrawing.render.WorldBounds
 
 /** 三角网格共用粒子层的颜色、混合、贴图和光图。 */
@@ -70,10 +71,13 @@ internal object ParticleModelRenderer {
         }
     }
 
-    fun decal(position: Vec3, normal: Vec3, radius: Double): Model? {
+    fun decal(position: Vec3, hit: Vec3, normal: Vec3, radius: Double, wrap: Boolean): Model? {
         val range = radius + SurfaceDecal.DEPTH
-        val box = WorldBounds(position.add(-range, -range, -range), position.add(range, range, range))
-        val patches = SurfaceDecal.project(position, normal, radius, ClientParticleWorld.blockShapes(box))
+        val origin = if (wrap) hit else position
+        val box = WorldBounds(origin.add(-range, -range, -range), origin.add(range, range, range))
+        val shapes = ClientParticleWorld.blockShapes(box)
+        val patches = if (wrap) SurfaceDecalWrap.project(origin, normal, radius, shapes, position)
+            else SurfaceDecal.project(position, normal, radius, shapes)
         return if (patches.isEmpty()) null else Model(emptyList(), patches)
     }
 

@@ -14,9 +14,11 @@ data class RecipeEmission(
     val once: Boolean = true,
     val removeParent: Boolean = false,
     val decalRadius: Double = 0.0,
+    val wrapDecal: Boolean = false,
 ) {
     internal fun validate() {
-        requireLocalized(decalRadius in 0.0..MAX_DECAL_RADIUS && (decalRadius == 0.0 || event == ParticleEvent.CONTACT)) {
+        requireLocalized(decalRadius in 0.0..MAX_DECAL_RADIUS && (decalRadius == 0.0 || event == ParticleEvent.CONTACT) &&
+            (!wrapDecal || decalRadius > 0.0)) {
             translation("error.recipe.event_decal", MAX_DECAL_RADIUS)
         }
         requireLocalized(event == ParticleEvent.CONTACT || (material == null && !removeParent)) {

@@ -1,6 +1,7 @@
 package work.nekow.particledrawing.animation.recipe
 
 import work.nekow.particledrawing.animation.script.Reg
+import work.nekow.particledrawing.api.ParticleSeed
 import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.math.Vec3
 
@@ -10,6 +11,7 @@ internal data class EventInput(
     val normal: Vec3 = Vec3.ZERO,
     val material: ResourceId? = null,
     val decalRadius: Double = 0.0,
+    val wrapDecal: Boolean = false,
 )
 
 internal enum class RecipeInput(val key: String, val worldField: ParticleWorldField? = null) {
@@ -43,6 +45,9 @@ internal enum class RecipeInput(val key: String, val worldField: ParticleWorldFi
     SURFACE_NX("sample_nx"),
     SURFACE_NY("sample_ny"),
     SURFACE_NZ("sample_nz"),
+    SURFACE_HAS_UV("sample_has_uv"),
+    SURFACE_TEX_U("sample_tex_u"),
+    SURFACE_TEX_V("sample_tex_v"),
     EVENT_X("event_x"),
     EVENT_Y("event_y"),
     EVENT_Z("event_z"),
@@ -58,7 +63,7 @@ internal enum class RecipeInput(val key: String, val worldField: ParticleWorldFi
     val needsWorld: Boolean get() = worldField != null || this == WORLD_LOADED
 
     fun read(
-        position: Vec3, sample: ParticleWorldSample, event: EventInput?, normal: Vec3?, neighbors: ParticleNeighbors.Sample,
+        position: Vec3, sample: ParticleWorldSample, event: EventInput?, seed: ParticleSeed, neighbors: ParticleNeighbors.Sample,
     ): Double = when (this) {
         WORLD_X -> position.x
         WORLD_Y -> position.y
@@ -87,9 +92,12 @@ internal enum class RecipeInput(val key: String, val worldField: ParticleWorldFi
         NEIGHBOR_VY -> neighbors.velocity.y
         NEIGHBOR_VZ -> neighbors.velocity.z
 
-        SURFACE_NX -> normal?.x ?: 0.0
-        SURFACE_NY -> normal?.y ?: 0.0
-        SURFACE_NZ -> normal?.z ?: 0.0
+        SURFACE_NX -> seed.normal?.x ?: 0.0
+        SURFACE_NY -> seed.normal?.y ?: 0.0
+        SURFACE_NZ -> seed.normal?.z ?: 0.0
+        SURFACE_HAS_UV -> (seed.meshUv != null).numeric()
+        SURFACE_TEX_U -> seed.meshUv?.u ?: 0.0
+        SURFACE_TEX_V -> seed.meshUv?.v ?: 0.0
         EVENT_X -> event?.position?.x ?: 0.0
         EVENT_Y -> event?.position?.y ?: 0.0
         EVENT_Z -> event?.position?.z ?: 0.0
@@ -150,7 +158,7 @@ internal class RecipeInputReader(
             val nearby = if (readsNeighbors && frame != null) neighbors?.at(particle, position) ?: ParticleNeighbors.EMPTY
                 else ParticleNeighbors.EMPTY
             for ((input, slot) in inputs) {
-                store(input.key, slot, input.read(position, sample, particle.event, particle.seed.normal, nearby))
+                store(input.key, slot, input.read(position, sample, particle.event, particle.seed, nearby))
             }
         }
         if (probes.isNotEmpty()) {

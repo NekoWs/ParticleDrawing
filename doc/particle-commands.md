@@ -487,8 +487,12 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 #### 从模型表面发射
 
 文件放入服务端工作目录的 `particleMeshes/`，或作为数据包资源提供。OBJ 需要先三角化。
-模型坐标以格为单位，粒子按三角面面积分布。`sample_nx/ny/nz` 是采样面的模型局部法线，
-非网格样本的三个分量为 0。命令、Kotlin 和 Java 共用 `ParticleMeshSampler`。
+模型坐标以格为单位，粒子按三角面面积分布。`sample_nx/ny/nz` 是模型局部法线。
+OBJ 提供顶点法线时使用重心插值，其余三角面使用面法线。非网格样本的三个分量为 0。
+命令、Kotlin 和 Java 共用 `ParticleMeshSampler`。API 可提供来自当下模型姿势的 `ParticleTriangleProvider`；
+`points` 每次读取一份三角形快照，返回插值后的位置、法线和可选的原始 UV。
+配方可用 `sample_has_uv` 判断是否有坐标，并使用 `sample_tex_u`、`sample_tex_v` 读取坐标。
+样本缺少 UV 时这三项都是 0。
 
 ```mcfunction
 pdraw particle emitter shell mesh file shell.obj
@@ -558,6 +562,13 @@ pdraw particle emitter sparks on clear
 `on contact scorch material "minecraft:stone" decal 0.6`。投影裁剪到实际方块碰撞形状，
 并在命中面法线方向的 ±0.6 格内跨平行的台阶面，每颗印记最多 64 个片段。建议子配方用一个样本，
 保持位置固定，用寿命和透明度控制消散。
+
+在半宽后加 `wrap`，从实际命中点沿相连的外露面展开贴图，包括方块的竖面和台阶下层。
+半宽按展开后的表面距离计算，棱边两侧的 UV 连续。断开的地形面不会收到同一枚印记。
+
+```mcfunction
+pdraw particle emitter sparks on contact scorch decal 0.8 wrap
+```
 
 [雨滴与飞溅示例](../examples/commands/rain-contact.mcfunction)用世界条件筛选出生位置，在接触真实表面后执行溅水配方。
 

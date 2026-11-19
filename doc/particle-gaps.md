@@ -14,8 +14,8 @@
 | 想实现的效果 | 当前边界 |
 | --- | --- |
 | 让粒子根据前方的世界改变路线 | 配方支持多组探测：每组可单独配置起点偏移、方向、范围、模式、材质筛选与盒体扫掠半宽，结果按组号进公式（`probe_*`、`probe1_*`…）。见 [世界输入命令](particle-commands.md#世界输入)和[碰撞查询](../shared/core/src/main/kotlin/work/nekow/particledrawing/animation/recipe/ParticleWorld.kt)。 |
-| 粒子均匀地从任意模型或正在挥动的武器表面飞出 | 三角化 OBJ 可按面积采样并输出发射法线。动态骨骼和 Minecraft 当前渲染姿势仍没有采样源。见 [基础采样](../shared/core/src/main/kotlin/work/nekow/particledrawing/api/ParticleSampling.kt)和 [样本模型](../shared/core/src/main/kotlin/work/nekow/particledrawing/api/ParticleRecipe.kt)。 |
-| 让焦痕从地面绕到台阶的竖面 | 接触事件可投影印记并裁剪到多个平行的地形面。绕过棱角的投影仍缺少多方向展开。现有丝带用头部颜色、宽度和贴图计算各段，父粒子移除时丝带一并消失。见 [四边形渲染](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/client/OrientedQuadRenderState.kt)、[丝带历史](../shared/core/src/main/kotlin/work/nekow/particledrawing/render/RibbonHistory.kt)和[丝带顶点](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/client/RibbonVertices.kt)。 |
+| 粒子均匀地从任意模型或正在挥动的武器表面飞出 | API 可从自定义三角形提供者读取每次取样的姿势，按面积抽样并插值法线和 UV。静态 OBJ 使用同一 API。Minecraft 内置实体和手持物品的渲染姿势仍未接入。见[网格采样](../shared/core/src/main/kotlin/work/nekow/particledrawing/api/ParticleMeshSampler.kt)。 |
+| 让焦痕从地面绕到台阶的竖面 | `decal … wrap` 沿相连的方块碰撞表面展开并跨棱角保持 UV。默认仍可用平行面投影。拖尾用头部颜色、宽度和贴图计算各段，父粒子移除时拖尾一并消失。见[印记展开](../shared/core/src/main/kotlin/work/nekow/particledrawing/render/SurfaceDecalWrap.kt)和[丝带历史](../shared/core/src/main/kotlin/work/nekow/particledrawing/render/RibbonHistory.kt)。 |
 | 大烟团局部穿进地形时只软化交界，热浪扭曲背后画面 | 命令与 API 材质可读透明合成后的场景深度和颜色，逐像素淡出或按贴图折射。26.3 场景材质在 OIT 合成后绘制，同一帧的折射粒子共享底图。见[场景材质](particle-commands.md#读取场景的粒子外观)。 |
 | 粒子的射灯被墙挡住并向地面投影 | 射灯可沿中心射线截短，地形受光按网格顶点采样。缺少逐点遮挡和投影。见 [动态光照限制](known-issues.md#动态光照)。 |
 

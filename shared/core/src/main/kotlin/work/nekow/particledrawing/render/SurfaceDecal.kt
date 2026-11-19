@@ -9,7 +9,14 @@ internal object SurfaceDecal {
     data class Vertex(val position: Vec3, val u: Float, val v: Float)
     data class Patch(val vertices: List<Vertex>)
 
-    private data class Rectangle(val x0: Double, val y0: Double, val x1: Double, val y1: Double) {
+    internal data class Rectangle(val x0: Double, val y0: Double, val x1: Double, val y1: Double) {
+        fun intersects(other: Rectangle): Boolean =
+            minOf(x1, other.x1) > maxOf(x0, other.x0) && minOf(y1, other.y1) > maxOf(y0, other.y0)
+
+        fun clip(other: Rectangle): Rectangle? =
+            if (intersects(other)) Rectangle(maxOf(x0, other.x0), maxOf(y0, other.y0), minOf(x1, other.x1), minOf(y1, other.y1))
+            else null
+
         fun subtract(other: Rectangle): List<Rectangle> {
             val a = maxOf(x0, other.x0)
             val b = minOf(x1, other.x1)
@@ -54,18 +61,22 @@ internal object SurfaceDecal {
             }
             for (part in remaining) {
                 covered += part
-                fun point(x: Double, y: Double): Vertex {
-                    val position = axisX.scale(x).add(axisY.scale(y)).add(normal.scale(depth + SURFACE_OFFSET))
-                    return Vertex(position, ((x + radius) / (2.0 * radius)).toFloat(), ((y + radius) / (2.0 * radius)).toFloat())
-                }
-                patches += Patch(listOf(point(part.x0, part.y0), point(part.x1, part.y0), point(part.x1, part.y1), point(part.x0, part.y1)))
+                patches += patch(part, normal.scale(depth + SURFACE_OFFSET), axisX, axisY, radius)
                 if (patches.size == MAX_PATCHES) return patches
             }
         }
         return patches
     }
 
+    internal fun patch(rect: Rectangle, center: Vec3, axisX: Vec3, axisY: Vec3, radius: Double): Patch {
+        fun point(x: Double, y: Double): Vertex {
+            val position = center.add(axisX.scale(x)).add(axisY.scale(y))
+            return Vertex(position, ((x + radius) / (2.0 * radius)).toFloat(), ((y + radius) / (2.0 * radius)).toFloat())
+        }
+        return Patch(listOf(point(rect.x0, rect.y0), point(rect.x1, rect.y0), point(rect.x1, rect.y1), point(rect.x0, rect.y1)))
+    }
+
     const val DEPTH = 0.6
-    private const val SURFACE_OFFSET = 0.001
-    private const val MAX_PATCHES = 64
+    const val SURFACE_OFFSET = 0.001
+    const val MAX_PATCHES = 64
 }

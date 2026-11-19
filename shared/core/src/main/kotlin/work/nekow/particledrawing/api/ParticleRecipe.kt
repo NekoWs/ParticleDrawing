@@ -10,11 +10,12 @@ import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.translation
 
 /** 一颗出生样本；位置是锚点相对坐标，颜色可来自图片像素。 */
-data class ParticleSeed(
+data class ParticleSeed @JvmOverloads constructor(
     val position: Vec3,
     val color: Color = Color.WHITE,
     val u: Double = 0.0,
     val normal: Vec3? = null,
+    val meshUv: ParticleMeshUv? = null,
 )
 
 /**
@@ -137,6 +138,9 @@ data class ParticleRecipe(
             requireLocalized(listOf(s.position.x, s.position.y, s.position.z, s.u).all(Double::isFinite)) { translation("error.recipe.seed_finite") }
             s.normal?.let { normal ->
                 requireLocalized(listOf(normal.x, normal.y, normal.z).all(Double::isFinite)) { translation("error.mesh.finite") }
+            }
+            s.meshUv?.let { uv ->
+                requireLocalized(uv.u.isFinite() && uv.v.isFinite()) { translation("error.mesh.finite") }
             }
             requireLocalized(listOf(s.color.r, s.color.g, s.color.b, s.color.a).all { it.isFinite() && it in 0f..1f }) { translation("error.recipe.seed_color") }
         }
