@@ -115,6 +115,7 @@ pdraw particle program sine anchor entity @p 0 2 0 false
 | `align_velocity=true`、`stretch=0..10` | 朝位移方向拉长；只写 `stretch` 也启用对齐 |
 | `soft=0..4`、`trail=0..32` | 贴近方块碰撞面淡出的距离（格）、保留的拖尾长度（刻）；0 关闭 |
 | `trail_sides=0 或 3..12`、`model=资源ID` | 平面丝带或管状截面、实际三角网格外观 |
+| `depth_fade=0..16`、`distortion=0..32` | 逐像素按场景深度淡出（格）、按贴图折射场景颜色（像素） |
 | `additive`、`glowing`、`light=0..15`、`intensity=N`、`light_only` | 混合、全亮和动态光参数；`light_only` 只发光不画外观 |
 | `alpha_curve` / `size_curve` / `red_curve` 等 | `tick:value[:easing]`，多关键帧以逗号分隔 |
 | `lifetime=tick` | 所有图元：每颗粒子的存在刻数，未写时保留原来的无限寿命 |
@@ -618,6 +619,23 @@ pdraw particle emitter motes probe add solid direction "1,0,0" 4 material minecr
 
 方向可使用世界固定向量，也可沿粒子当前速度。范围为 0.01–32 格。沿速度探测时，静止粒子视为未命中。
 探测本身不会移动粒子。停用时先移除使用这些输入的公式，再执行 `probe clear`。
+
+#### 读取场景的粒子外观
+
+`depth_fade` 以格为单位。粒子片段和已写入深度的场景表面越接近，该片段的透明度越低。
+`distortion` 以像素为单位。贴图红、绿通道控制偏移方向，0.5 表示该轴无偏移，贴图透明度控制偏移幅度和混合。
+两个参数都可设为 0 关闭。游戏命令和 API 的默认材质保持原有绘制路径。
+
+```mcfunction
+pdraw particle emitter smoke appearance depth_fade 1.25
+pdraw particle emitter haze appearance style soft_dot
+pdraw particle emitter haze appearance distortion 16
+```
+
+两种效果使用普通场景透明合成后的同一份深度与颜色副本。26.3 开启 OIT 时，场景材质在 OIT 合成后绘制，
+可读取已合成的画面；场景材质之间按批次混合。透过不写深度的表面时，淡出使用深度缓冲记录的表面。
+多个折射粒子读取同一底图。逐像素淡出可以与已有的 `soft` 方块表面淡出叠用。
+Kotlin 和 Java 可设置 `ParticleVisual.sceneMaterial`。这些材质参数当前用于命令和 API。
 
 #### 在多个配方之间共享力场
 

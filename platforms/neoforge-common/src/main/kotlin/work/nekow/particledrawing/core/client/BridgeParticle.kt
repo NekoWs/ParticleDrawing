@@ -182,6 +182,7 @@ class BridgeParticle(
     private var effects: ParticleRenderEffects? = null
 
     internal var model: ParticleModelRenderer.Model? = null
+    internal var sceneMaterial = work.nekow.particledrawing.api.ParticleSceneMaterial.NONE
 
     internal fun enableRenderEffects(visual: ParticleRenderOptions, previous: Vec3?) {
         val state = ParticleRenderEffects(visual, previous ?: Vec3(x, y, z))

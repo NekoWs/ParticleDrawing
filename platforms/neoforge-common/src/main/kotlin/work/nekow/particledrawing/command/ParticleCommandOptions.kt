@@ -8,6 +8,7 @@ import work.nekow.particledrawing.api.CurveKey
 import work.nekow.particledrawing.api.Draw
 import work.nekow.particledrawing.api.ParticleCurve
 import work.nekow.particledrawing.api.ParticleLifeCurve
+import work.nekow.particledrawing.api.ParticleSceneMaterial
 import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.light.LightFalloff
@@ -45,6 +46,7 @@ internal object ParticleCommandOptionParser {
         "spin_space", "additive", "glowing", "light", "light_only", "intensity", "alpha_curve",
         "size_curve", "red_curve", "green_curve", "blue_curve", "light_curve", "spot",
         "light_dir", "light_range", "light_falloff", "align_velocity", "stretch", "soft", "trail", "trail_sides", "model",
+        "depth_fade", "distortion",
     )
     private val allowed = appearanceKeys + setOf(
         "gradient", "rainbow", "stagger", "lifetime", "axis", "taper", "hollow", "thickness",
@@ -128,6 +130,12 @@ internal object ParticleCommandOptionParser {
         }
         values["light_only"]?.let { visual.lightOnly(bool(it, "light_only")) }
         values["soft"]?.let { visual.softFade = float(it, "soft").toDouble() }
+        if ("depth_fade" in values || "distortion" in values) {
+            visual.sceneMaterial = ParticleSceneMaterial(
+                values["depth_fade"]?.let { float(it, "depth_fade") } ?: 0f,
+                values["distortion"]?.let { float(it, "distortion") } ?: 0f,
+            )
+        }
         values["trail"]?.let { visual.trailTicks = int(it, "trail") }
         values["trail_sides"]?.let { visual.trailSides = int(it, "trail_sides") }
         values["model"]?.let { if (it != "none") visual.model = ResourceId.parse(it) }

@@ -42,11 +42,13 @@ class BatchedQuadParticleGroup(
 
     /** 与原版 QuadParticleGroup 同一套提取逻辑（含崩溃归因），只换了渲染状态。 */
     override fun extractRenderState(frustum: Frustum, camera: Camera, partialTickTime: Float): ParticleGroupRenderState {
+        SceneParticleQuads.reset()
         for (particle in particles) {
             val bridge = particle as BridgeParticle
             if (bridge.inFrustum(frustum, partialTickTime)) {
                 try {
-                    bridge.extract(renderState, camera, partialTickTime)
+                    val destination = if (bridge.sceneMaterial.active) SceneParticleQuads.forMaterial(bridge.sceneMaterial) else renderState
+                    bridge.extract(destination, camera, partialTickTime)
                 } catch (t: Throwable) {
                     val report = CrashReport.forThrowable(t, "Rendering Particle")
                     val category = report.addCategory("Particle being rendered")

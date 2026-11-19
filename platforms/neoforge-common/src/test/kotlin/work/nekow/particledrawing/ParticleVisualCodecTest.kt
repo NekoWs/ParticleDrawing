@@ -6,6 +6,7 @@ import io.netty.buffer.Unpooled
 import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.ParticleStyle
+import work.nekow.particledrawing.api.ParticleSceneMaterial
 import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.core.TextureRegistry
@@ -53,6 +54,18 @@ class ParticleVisualCodecTest {
         ParticleSpawnPayload.STREAM_CODEC.encode(pristine, payload(ParticleVisual()))
         assertEquals(none.readableBytes(), pristine.readableBytes(), "全默认外观不该多占字节")
         assertNull(roundTrip(null).visual)
+    }
+
+    @Test
+    fun `场景材质与 CPU 表面淡出可独立复制和同步`() {
+        val original = ParticleVisual().apply {
+            sceneMaterial = ParticleSceneMaterial(1.25f, 16.5f)
+            softFade = 0.5
+        }
+        assertFalse(original.isPristine())
+        val decoded = assertNotNull(roundTrip(original.copy()).visual)
+        assertEquals(original.sceneMaterial, decoded.sceneMaterial)
+        assertEquals(original.softFade, decoded.softFade)
     }
 
     @Test

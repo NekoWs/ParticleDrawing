@@ -338,6 +338,8 @@
   "particledrawing.error.recipe.probe_required": "请先配置粒子探测，再在公式中引用探测输入。",
   "particledrawing.error.recipe.simulation_range": "模拟范围应在 0..%1$s 格。",
   "particledrawing.error.recipe.simulation_burst": "一次性发射和事件子配方要求模拟范围为 0。",
+  "particledrawing.error.visual.depth_fade": "粒子深度淡出距离应在 0..16 格。",
+  "particledrawing.error.visual.distortion": "粒子折射强度应在 0..32 像素。",
   "particledrawing.error.recipe.event_contact": "仅接触事件可按材质筛选或移除父粒子。",
   "particledrawing.error.recipe.event_child": "子配方最多 %1$s 个样本，寿命为 1..%2$s 刻。请关闭子配方的事件、子发射、跟随和轨道。",
   "particledrawing.error.recipe.event_limit": "每个配方最多配置 %1$s 条事件规则。",

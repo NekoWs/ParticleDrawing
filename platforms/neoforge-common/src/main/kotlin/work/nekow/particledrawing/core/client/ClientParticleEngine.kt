@@ -40,6 +40,7 @@ class ClientParticleEngine {
 
     // 带速度的运动粒子索引：每 client tick 确定性积分一次，不参与缓动轮转
     private val trailIds = HashSet<UUID>()
+    private val sceneIds = HashSet<UUID>()
 
     private val motionIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
 
@@ -147,7 +148,7 @@ class ClientParticleEngine {
                       r: Float, g: Float, b: Float, a: Float, scale: Float,
                       lifetimeTicks: Int, groupId: UUID?, glowing: Boolean, lightLevel: Int,
                       visual: ResolvedVisual, lifeCurve: ParticleLifeCurve? = null, prev: Vec3? = null, decal: ParticleModelRenderer.Model? = null) {
-        val previousBridge = if (visual.renderOptions.active || visual.model != null || decal != null) bridges[id] else null
+        val previousBridge = if (visual.renderOptions.active || visual.model != null || decal != null || visual.sceneMaterial.active) bridges[id] else null
         val model = if (visual.lightOnly) null else decal ?: visual.model?.let(ParticleModelRenderer::model)
         spawnParticle(
             id, x, y, z, r, g, b, a, scale, lifetimeTicks, groupId, glowing, lightLevel,
@@ -158,6 +159,8 @@ class ClientParticleEngine {
         val bridge = bridges[id]
         if (bridge != null && bridge !== previousBridge) {
             if (model != null) bridge.model = model
+            bridge.sceneMaterial = visual.sceneMaterial
+            if (visual.sceneMaterial.active && !visual.lightOnly) sceneIds.add(id)
             if (visual.renderOptions.active) configureRenderEffects(id, visual.renderOptions, prev)
         }
     }
@@ -330,6 +333,7 @@ class ClientParticleEngine {
         takeover.markPosition(id)
         motionIds.remove(id)
         trailIds.remove(id)
+        sceneIds.remove(id)
         trackBuffers.remove(id)
         attachments[id] = Attachment(entityId, entityUuid, Vec3(ox, oy, oz), local)
     }
@@ -780,6 +784,7 @@ class ClientParticleEngine {
         lightIndex.clear()
         motionIds.clear()
         trailIds.clear()
+        sceneIds.clear()
         trackBuffers.clear()
         attachments.clear()
         curveIds.clear()
@@ -795,6 +800,14 @@ class ClientParticleEngine {
      * 当前活跃粒子数量。
      */
     fun activeCount(): Int = particles.size
+
+    /** 旧版原版粒子通道无法延迟提交，按登记表直接读取使用场景材质的粒子。 */
+    internal fun forEachSceneParticle(action: (BridgeParticle) -> Unit) {
+        for (id in sceneIds) {
+            val bridge = bridges[id] ?: continue
+            if (bridge.isAlive) action(bridge)
+        }
+    }
 
     internal class RecipeBinding(val particle: RenderParticle, val bridge: BridgeParticle?, val visual: ResolvedVisual)
 

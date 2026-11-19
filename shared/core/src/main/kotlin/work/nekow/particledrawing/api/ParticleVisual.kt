@@ -107,6 +107,9 @@ class ParticleVisual {
             field = value
         }
 
+    /** 逐像素深度淡出与场景折射。 */
+    var sceneMaterial: ParticleSceneMaterial = ParticleSceneMaterial.NONE
+
     /** 拖尾历史长度（刻），0 关闭。 */
     var trailTicks: Int = 0
         set(value) {
@@ -297,6 +300,7 @@ class ParticleVisual {
         c.alignVelocity = alignVelocity
         c.stretch = stretch
         c.softFade = softFade
+        c.sceneMaterial = sceneMaterial
         c.trailTicks = trailTicks
         c.trailSides = trailSides
         c.model = model
@@ -313,7 +317,7 @@ class ParticleVisual {
     fun isPristine(): Boolean = texture == null && uvRect == null && !hasAniso() &&
         billboard && spinXDeg == 0.0 && spinYDeg == 0.0 && spinZDeg == 0.0 && spinLocal &&
         !additive && !glowing && !emitsLight && !lightOnly && lightIntensity == 1f && lightShape == null &&
-        !alignVelocity && softFade == 0.0 && trailTicks == 0 && trailSides == 0 && model == null
+        !alignVelocity && softFade == 0.0 && !sceneMaterial.active && trailTicks == 0 && trailSides == 0 && model == null
 
     /**
      * 解析成渲染用的 UV，由客户端调用。[texW]/[texH] 是已注册贴图的像素尺寸，未知传 0。

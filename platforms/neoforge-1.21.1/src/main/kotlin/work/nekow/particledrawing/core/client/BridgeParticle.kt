@@ -175,6 +175,7 @@ class BridgeParticle(
     /** 同步粒子位置；snap = 跳变到目标位置，否则保留上一 tick 位置作为插值起点。 */
 
     internal var model: ParticleModelRenderer.Model? = null
+    internal var sceneMaterial = work.nekow.particledrawing.api.ParticleSceneMaterial.NONE
 
     internal fun enableRenderEffects(visual: ParticleRenderOptions, previous: Vec3?) {
         val state = ParticleRenderEffects(visual, previous ?: Vec3(x, y, z))
@@ -387,6 +388,7 @@ class BridgeParticle(
     private var renderTypeTranslucent = false
 
     override fun getRenderType(): ParticleRenderType {
+        if (sceneMaterial.active) return ParticleRenderType.NO_RENDER
         refreshTextureIfStale()
         val translucent = additive || alpha < 1.0f || effects?.translucent == true
         val cached = renderTypeCache
@@ -401,6 +403,14 @@ class BridgeParticle(
         renderTypeTranslucent = translucent
         return built
     }
+
+    @Suppress("DEPRECATION") // 保留 1.21.1 原版粒子贴图的回退路径。
+    internal fun sceneTexture(): net.minecraft.resources.Identifier {
+        refreshTextureIfStale()
+        return texEntry?.id ?: net.minecraft.client.renderer.texture.TextureAtlas.LOCATION_PARTICLES
+    }
+
+    internal val sceneAdditive: Boolean get() = additive
 
     // UV 采样：贴图像素坐标 → 归一化 [0,1]。GPU 纹理第 0 行 = PNG 顶部，不做翻转；
     // 原版 quad 上边缘取 v0、下边缘取 v1。

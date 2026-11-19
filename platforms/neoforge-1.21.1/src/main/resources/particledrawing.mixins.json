@@ -6,7 +6,8 @@
   "client": [
     "BrightnessGetterMixin",
     "TerrainLightMixin",
-    "EntityRendererMixin"
+    "EntityRendererMixin",
+    "SceneParticlePassMixin"
   ],
   "injectors": {
     "defaultRequire": 1

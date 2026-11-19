@@ -84,6 +84,7 @@ class ParticleVisualBuilder {
     var alignVelocity: Boolean = false
     var stretch: Double = 0.6
     var softFade: Length = Length.blocks(0.0)
+    var sceneMaterial: ParticleSceneMaterial = ParticleSceneMaterial.NONE
     var trailTicks: Int = 0
     var trailSides: Int = 0
     var model: ResourceId? = null
@@ -190,6 +191,7 @@ class ParticleVisualBuilder {
         visual.alignVelocity = alignVelocity
         visual.stretch = stretch
         visual.softFade = softFade.requireNonNegative(translation("field.length").resolve()).blocks
+        visual.sceneMaterial = sceneMaterial
         visual.trailTicks = trailTicks
         visual.trailSides = trailSides
         visual.model = model
