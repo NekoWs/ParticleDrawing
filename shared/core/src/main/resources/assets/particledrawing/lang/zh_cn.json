@@ -331,6 +331,8 @@
   "particledrawing.error.recipe.appearance_value": "每次只设置一个 appearance 参数。",
   "particledrawing.error.recipe.event_decal": "地表印记仅由接触触发，投影半宽应在 0..%1$s 格。",
   "particledrawing.error.recipe.probe_range": "探测距离应在 %1$s..%2$s 格。",
+  "particledrawing.error.recipe.probe_count": "最多 %1$s 组探测。",
+  "particledrawing.error.recipe.probe_option": "未知的探测参数 %1$s。",
   "particledrawing.error.recipe.probe_mode": "请选择探测的表面或实体。",
   "particledrawing.error.recipe.probe_direction": "探测方向必须是有限的非零向量。",
   "particledrawing.error.recipe.probe_required": "请先配置粒子探测，再在公式中引用探测输入。",

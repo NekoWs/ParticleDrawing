@@ -109,8 +109,8 @@ class ParticleRecipeCodecTest {
         val source = ParticleRecipe(
             seeds, collision = RecipeCollision.ALL, collisionHalfSize = 0.5, collisionSteps = 3,
             emissions = listOf(rule), spacing = 1.25, entityQuery = ParticleEntityQuery(6.0, ResourceId.parse("minecraft:bee")),
-            neighborRadius = 1.5, probe = ParticleProbe(
-                6.0, RecipeCollision.SOLID, CoreVec3(1.0, 0.0, 0.0), ResourceId.parse("minecraft:iron_block")),
+            neighborRadius = 1.5, probes = listOf(ParticleProbe(
+                6.0, RecipeCollision.SOLID, CoreVec3(1.0, 0.0, 0.0), ResourceId.parse("minecraft:iron_block"))),
             simulationRange = 20.0,
         )
         val payload = roundTrip(ParticleRecipePayload(UUID.randomUUID(), RecipeOperation.START, source, RecipeAnchor(Vec3.ZERO)))
@@ -122,7 +122,7 @@ class ParticleRecipeCodecTest {
         assertEquals(3, recipe.collisionSteps)
         assertEquals(source.entityQuery, recipe.entityQuery)
         assertEquals(source.neighborRadius, recipe.neighborRadius)
-        assertEquals(source.probe, recipe.probe)
+        assertEquals(source.probes, recipe.probes)
         assertEquals(source.simulationRange, recipe.simulationRange)
         assertEquals(1.25, recipe.spacing)
         assertEquals(rule.material, decoded.material)

@@ -331,6 +331,8 @@
   "particledrawing.error.recipe.appearance_value": "Set one appearance option at a time.",
   "particledrawing.error.recipe.event_decal": "Project decals only on contact. Use a half-width of 0..%1$s blocks.",
   "particledrawing.error.recipe.probe_range": "Probe range must be %1$s..%2$s blocks.",
+  "particledrawing.error.recipe.probe_count": "Use at most %1$s probes.",
+  "particledrawing.error.recipe.probe_option": "Unknown probe option %1$s.",
   "particledrawing.error.recipe.probe_mode": "Choose which surfaces or entities the probe detects.",
   "particledrawing.error.recipe.probe_direction": "Probe direction must be a finite nonzero vector.",
   "particledrawing.error.recipe.probe_required": "Configure a particle probe before using probe inputs in formulas.",

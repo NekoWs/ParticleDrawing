@@ -581,19 +581,43 @@ pdraw particle emitter motes motion ax entity_dx*0.01
 pdraw particle emitter motes motion az entity_dz*0.01
 ```
 
-粒子可以在发生碰撞之前先探测前方。每次求值只查询一次首个命中，可探测方块、液体或实体。
-方向可使用配方坐标轴中的固定向量，也可沿粒子当前速度。范围为 0.01–32 格。
+粒子可以在发生碰撞之前先探测前方。一次求值可以同时查询多组探测，每组独立配置起点、方向、
+模式与材质筛选，结果按声明顺序编号。
 
 ```mcfunction
+pdraw particle emitter motes probe solid velocity 2
 pdraw particle emitter motes probe solid direction "0,0,1" 3 material minecraft:iron_block
 pdraw particle emitter motes motion r probe_matches
-pdraw particle emitter motes probe solid velocity 2
 ```
 
-`probe_hit` 表示有命中。`probe_matches` 表示首个命中符合指定材质，未指定材质时与 `probe_hit` 相同。
-`probe_distance` 返回距离，未命中时返回配置的最大距离。`probe_nx/ny/nz` 是世界坐标下的命中法线，未命中时为 0。
-材质筛选只判断首个命中，其他表面仍会阻挡探测。沿速度探测时，静止粒子视为未命中。探测本身不会移动粒子。
-停用时先移除使用这些输入的公式，再执行 `probe off`。
+每组的尾随参数是一段自由文本，按 `key value` 成对解析，顺序任意：
+
+| 参数 | 含义 |
+| --- | --- |
+| `origin x,y,z` | 相对粒子位置的起点偏移，默认 0,0,0 |
+| `halfsize <格>` | 大于 0 时按该半宽的盒体扫掠，避免高速或体积大的粒子漏检，上限 2 |
+| `material <资源 ID>` | 只把该方块或液体算作匹配，其他表面仍会阻挡探测 |
+
+多组探测用 `probe add` 追加（最多 4 组）、`probe set <序号>` 替换、`probe remove <序号>` 删除、
+`probe clear` 清空。不带序号的 `probe` 作用于第 0 组。
+
+```mcfunction
+pdraw particle emitter motes probe add solid velocity 3 origin "0,0,0" halfsize 0.3
+pdraw particle emitter motes probe add solid direction "1,0,0" 4 material minecraft:iron_block
+```
+
+第 0 组沿用不带序号的输入名，第 1 组起带序号：
+
+| 输入 | 含义 |
+| --- | --- |
+| `probe_hit`、`probe1_hit` … | 该组是否有命中 |
+| `probe_matches`、`probe1_matches` … | 首个命中的材质是否符合筛选，未指定材质时等同 `_hit` |
+| `probe_distance`、`probe1_distance` … | 命中距离；未命中时等于该组配置的最大距离 |
+| `probe_nx/ny/nz`、`probe1_nx…` | 世界坐标下的命中法线，未命中时为 0 |
+| `probe_px/py/pz`、`probe1_px…` | 命中点世界坐标，未命中时为 0 |
+
+方向可使用世界固定向量，也可沿粒子当前速度。范围为 0.01–32 格。沿速度探测时，静止粒子视为未命中。
+探测本身不会移动粒子。停用时先移除使用这些输入的公式，再执行 `probe clear`。
 
 #### 在多个配方之间共享力场
 

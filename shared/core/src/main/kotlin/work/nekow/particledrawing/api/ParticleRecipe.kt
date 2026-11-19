@@ -108,7 +108,8 @@ data class ParticleRecipe(
     val collisionSteps: Int = 1,
     val entityQuery: ParticleEntityQuery = ParticleEntityQuery(),
     val neighborRadius: Double = 2.0,
-    val probe: ParticleProbe? = null,
+    /** 世界探测组；按声明顺序编号，最多 [MAX_PROBES] 组。 */
+    val probes: List<ParticleProbe> = emptyList(),
     /** 持续配方离镜头超过该距离时回收全部粒子，回到范围时重新发射。0 表示始终模拟。 */
     val simulationRange: Double = 0.0,
 ) {
@@ -139,6 +140,7 @@ data class ParticleRecipe(
             }
             requireLocalized(listOf(s.color.r, s.color.g, s.color.b, s.color.a).all { it.isFinite() && it in 0f..1f }) { translation("error.recipe.seed_color") }
         }
+        requireLocalized(probes.size <= MAX_PROBES) { translation("error.recipe.probe_count", MAX_PROBES) }
         subEmit?.validate()
         requireLocalized(emissions.size <= RecipeEmission.MAX_RULES) { translation("error.recipe.event_limit", RecipeEmission.MAX_RULES) }
         emissions.forEach(RecipeEmission::validate)
@@ -146,7 +148,8 @@ data class ParticleRecipe(
     }
 
     companion object {
-        const val MAX_SEEDS = 8192
+        const val MAX_PROBES = 4
+    const val MAX_SEEDS = 8192
         const val MAX_RATE = 1024
         const val MIN_SPACING = 0.05
         const val MAX_SPACING = 64.0

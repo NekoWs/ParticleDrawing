@@ -39,12 +39,7 @@ internal enum class RecipeInput(val key: String, val worldField: ParticleWorldFi
     NEIGHBOR_VX("neighbor_vx"),
     NEIGHBOR_VY("neighbor_vy"),
     NEIGHBOR_VZ("neighbor_vz"),
-    PROBE_HIT("probe_hit"),
-    PROBE_MATCHES("probe_matches"),
-    PROBE_DISTANCE("probe_distance"),
-    PROBE_NX("probe_nx"),
-    PROBE_NY("probe_ny"),
-    PROBE_NZ("probe_nz"),
+
     SURFACE_NX("sample_nx"),
     SURFACE_NY("sample_ny"),
     SURFACE_NZ("sample_nz"),
@@ -59,12 +54,11 @@ internal enum class RecipeInput(val key: String, val worldField: ParticleWorldFi
     EVENT_VZ("event_vz");
 
     val readsNeighbors: Boolean get() = ordinal in NEIGHBOR_COUNT.ordinal..NEIGHBOR_VZ.ordinal
-    val readsProbe: Boolean get() = ordinal in PROBE_HIT.ordinal..PROBE_NZ.ordinal
+
     val needsWorld: Boolean get() = worldField != null || this == WORLD_LOADED
 
     fun read(
         position: Vec3, sample: ParticleWorldSample, event: EventInput?, normal: Vec3?, neighbors: ParticleNeighbors.Sample,
-        probe: ParticleProbe.Reading?,
     ): Double = when (this) {
         WORLD_X -> position.x
         WORLD_Y -> position.y
@@ -92,12 +86,7 @@ internal enum class RecipeInput(val key: String, val worldField: ParticleWorldFi
         NEIGHBOR_VX -> neighbors.velocity.x
         NEIGHBOR_VY -> neighbors.velocity.y
         NEIGHBOR_VZ -> neighbors.velocity.z
-        PROBE_HIT -> (probe?.hit != null).numeric()
-        PROBE_MATCHES -> (probe?.matches == true).numeric()
-        PROBE_DISTANCE -> requireNotNull(probe).distance
-        PROBE_NX -> probe?.hit?.normal?.x ?: 0.0
-        PROBE_NY -> probe?.hit?.normal?.y ?: 0.0
-        PROBE_NZ -> probe?.hit?.normal?.z ?: 0.0
+
         SURFACE_NX -> normal?.x ?: 0.0
         SURFACE_NY -> normal?.y ?: 0.0
         SURFACE_NZ -> normal?.z ?: 0.0
@@ -123,14 +112,26 @@ internal class RecipeInputReader(
     expressions: RecipeExpressions,
     private val world: ParticleWorld?,
     private val entities: ParticleEntityQuery,
-    probe: ParticleProbe?,
+    probes: List<ParticleProbe>,
 ) {
     private val inputs = expressions.externalInputs.map { it to expressions.slots.slot(it.key) }
     private val fields = inputs.mapNotNull { (input, _) -> input.worldField }.toSet()
     private val needsWorld = inputs.any { (input, _) -> input.needsWorld }
     val readsNeighbors = inputs.any { (input, _) -> input.readsNeighbors }
-    private val activeProbe = probe?.takeIf { inputs.any { (input, _) -> input.readsProbe } }
     private val unavailable = ParticleWorldSample()
+
+    /** 单次探测的结果缓冲：逐粒子遍历复用，避免每组每刻新建数组。 */
+    private val probeResult = DoubleArray(PROBE_INPUTS)
+
+    /** 每组探测的输入键与槽位；没有声明探测时为空，热路径多一次空列表遍历。 */
+    private val probes = probes.mapIndexed { index, spec ->
+        val offset = index * PROBE_INPUTS
+        ProbeReader(
+            spec,
+            expressions.probeKeys.subList(offset, offset + PROBE_INPUTS).toTypedArray(),
+            IntArray(PROBE_INPUTS) { i -> expressions.slots.slot(expressions.probeKeys[offset + i]) },
+        )
+    }
 
     fun prepare(particle: RecipeRuntime.Particle, frame: RecipeFrame?, neighbors: ParticleNeighbors? = null) =
         sample(particle, frame, neighbors) { _, slot, value -> particle.regs[slot] = value }
@@ -143,18 +144,53 @@ internal class RecipeInputReader(
         particle: RecipeRuntime.Particle, frame: RecipeFrame?, neighbors: ParticleNeighbors?,
         store: (String, Int, Double) -> Unit,
     ) {
-        if (inputs.isEmpty()) return
         val position = frame?.position(particle.x, particle.y, particle.z) ?: Vec3.ZERO
-        val sample = if (needsWorld && frame != null) world?.sample(position, fields, entities) ?: unavailable else unavailable
-        val nearby = if (readsNeighbors && frame != null) neighbors?.at(particle, position) ?: ParticleNeighbors.EMPTY
-            else ParticleNeighbors.EMPTY
-        val reading = activeProbe?.read(world, frame, position, Vec3(particle.regs[Reg.VX], particle.regs[Reg.VY], particle.regs[Reg.VZ]))
-        for ((input, slot) in inputs) {
-            store(input.key, slot, input.read(position, sample, particle.event, particle.seed.normal, nearby, reading))
+        if (inputs.isNotEmpty()) {
+            val sample = if (needsWorld && frame != null) world?.sample(position, fields, entities) ?: unavailable else unavailable
+            val nearby = if (readsNeighbors && frame != null) neighbors?.at(particle, position) ?: ParticleNeighbors.EMPTY
+                else ParticleNeighbors.EMPTY
+            for ((input, slot) in inputs) {
+                store(input.key, slot, input.read(position, sample, particle.event, particle.seed.normal, nearby))
+            }
+        }
+        if (probes.isNotEmpty()) {
+            val velocity = Vec3(particle.regs[Reg.VX], particle.regs[Reg.VY], particle.regs[Reg.VZ])
+            for (probe in probes) {
+                probe.readInto(world, frame, position, velocity, probeResult)
+                for (i in 0 until PROBE_INPUTS) store(probe.keys[i], probe.slots[i], probeResult[i])
+            }
         }
     }
 
     fun copyInputs(particle: RecipeRuntime.Particle, into: MutableMap<String, Double>) {
         for ((input, slot) in inputs) into[input.key] = particle.regs[slot]
+    }
+
+    companion object {
+        /** 每组探测暴露的输入数量：hit、matches、distance、法线三轴、命中点三轴。 */
+        const val PROBE_INPUTS = 9
+    }
+}
+
+/** 一组探测的结果：命中、材质匹配、距离、法线三轴、命中点三轴。 */
+private class ProbeReader(
+    private val spec: ParticleProbe,
+    val keys: Array<String>,
+    val slots: IntArray,
+) {
+    fun readInto(
+        world: ParticleWorld?, frame: RecipeFrame?, position: Vec3, velocity: Vec3, out: DoubleArray,
+    ) {
+        val reading = spec.read(world, frame, position, velocity)
+        val hit = reading.hit
+        out[0] = if (hit != null) 1.0 else 0.0
+        out[1] = if (reading.matches) 1.0 else 0.0
+        out[2] = reading.distance
+        out[3] = hit?.normal?.x ?: 0.0
+        out[4] = hit?.normal?.y ?: 0.0
+        out[5] = hit?.normal?.z ?: 0.0
+        out[6] = hit?.position?.x ?: 0.0
+        out[7] = hit?.position?.y ?: 0.0
+        out[8] = hit?.position?.z ?: 0.0
     }
 }

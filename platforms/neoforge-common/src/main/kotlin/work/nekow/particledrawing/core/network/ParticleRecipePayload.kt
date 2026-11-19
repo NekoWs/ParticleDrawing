@@ -97,14 +97,16 @@ internal object RecipeCodec {
         r.entityQuery.type?.let { buf.writeUtf(it.toString(), MAX_MATERIAL_LENGTH) }
         buf.writeDouble(r.neighborRadius)
         buf.writeDouble(r.simulationRange)
-        buf.writeBoolean(r.probe != null)
-        r.probe?.let { probe ->
+        buf.writeVarInt(r.probes.size)
+        for (probe in r.probes) {
             buf.writeDouble(probe.range)
             buf.writeVarInt(probe.mode.ordinal)
             buf.writeBoolean(probe.direction != null)
             probe.direction?.let { StreamCodecs.writeVec(buf, it.toMinecraft()) }
             buf.writeBoolean(probe.material != null)
             probe.material?.let { buf.writeUtf(it.toString(), MAX_MATERIAL_LENGTH) }
+            StreamCodecs.writeVec(buf, probe.origin.toMinecraft())
+            buf.writeDouble(probe.halfSize)
         }
         requireLocalized(allowChildren || r.emissions.isEmpty()) { translation("error.packet.recipe_size") }
         buf.writeVarInt(r.emissions.size)
@@ -147,13 +149,15 @@ internal object RecipeCodec {
         val entityType = if (buf.readBoolean()) ResourceId.parse(buf.readUtf(MAX_MATERIAL_LENGTH)) else null
         val neighborRadius = buf.readDouble()
         val simulationRange = buf.readDouble()
-        val probe = if (buf.readBoolean()) {
+        val probes = List(count(buf, ParticleRecipe.MAX_PROBES)) {
             val range = buf.readDouble()
             val mode = RecipeCollision.entries[count(buf, RecipeCollision.entries.lastIndex)]
             val direction = if (buf.readBoolean()) StreamCodecs.readVec(buf).toCore() else null
             val material = if (buf.readBoolean()) ResourceId.parse(buf.readUtf(MAX_MATERIAL_LENGTH)) else null
-            ParticleProbe(range, mode, direction, material)
-        } else null
+            val origin = StreamCodecs.readVec(buf).toCore()
+            val halfSize = buf.readDouble()
+            ParticleProbe(range, mode, direction, material, origin, halfSize)
+        }
         val maxRules = if (allowChildren) RecipeEmission.MAX_RULES else 0
         val emissions = List(count(buf, maxRules)) {
             val event = ParticleEvent.entries[count(buf, ParticleEvent.entries.lastIndex)]
@@ -175,7 +179,7 @@ internal object RecipeCodec {
             entityQuery = ParticleEntityQuery(entityRange, entityType),
             neighborRadius = neighborRadius,
             simulationRange = simulationRange,
-            probe = probe,
+            probes = probes,
         )
     }
 

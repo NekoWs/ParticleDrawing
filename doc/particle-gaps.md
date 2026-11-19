@@ -13,7 +13,7 @@
 
 | 想实现的效果 | 当前边界 |
 | --- | --- |
-| 让粒子根据前方的世界改变路线 | 配方能探测沿固定方向或当前速度的首个命中，公式可用命中材质、距离和世界法线作判断。探测从粒子当前求值点出发，暂不支持多个探测点或在公式中指定任意探测起点。见 [世界输入命令](particle-commands.md#世界输入)和[碰撞查询](../shared/core/src/main/kotlin/work/nekow/particledrawing/animation/recipe/ParticleWorld.kt)。 |
+| 让粒子根据前方的世界改变路线 | 配方支持多组探测：每组可单独配置起点偏移、方向、范围、模式、材质筛选与盒体扫掠半宽，结果按组号进公式（`probe_*`、`probe1_*`…）。见 [世界输入命令](particle-commands.md#世界输入)和[碰撞查询](../shared/core/src/main/kotlin/work/nekow/particledrawing/animation/recipe/ParticleWorld.kt)。 |
 | 粒子均匀地从任意模型或正在挥动的武器表面飞出 | 三角化 OBJ 可按面积采样并输出发射法线。动态骨骼和 Minecraft 当前渲染姿势仍没有采样源。见 [基础采样](../shared/core/src/main/kotlin/work/nekow/particledrawing/api/ParticleSampling.kt)和 [样本模型](../shared/core/src/main/kotlin/work/nekow/particledrawing/api/ParticleRecipe.kt)。 |
 | 让焦痕从地面绕到台阶的竖面 | 接触事件可投影印记并裁剪到多个平行的地形面。绕过棱角的投影仍缺少多方向展开。现有丝带用头部颜色、宽度和贴图计算各段，父粒子移除时丝带一并消失。见 [四边形渲染](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/client/OrientedQuadRenderState.kt)、[丝带历史](../shared/core/src/main/kotlin/work/nekow/particledrawing/render/RibbonHistory.kt)和[丝带顶点](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/client/RibbonVertices.kt)。 |
 | 大烟团一半穿进地形时只软化交界，热浪扭曲烟团背后的画面 | `soft` 按粒子中心到碰撞面的距离调整整颗透明度。材质只有普通透明和加法混合，缺少采样场景深度或场景颜色的粒子管线。26.3 现有的顺序无关透明解决透明层合成。见 [软化限制](known-issues.md#方块表面软化)、[混合枚举](../shared/core/src/main/kotlin/work/nekow/particledrawing/api/ReadableAppearance.kt)和 [26.3 渲染管线](../platforms/neoforge-26.3/src/main/kotlin/work/nekow/particledrawing/core/client/AdditiveParticlePipeline.kt)。 |
@@ -46,7 +46,7 @@
 
 ## 实现顺序
 
-1. **世界输入和粒子事件。** 局部环境读取、接触事件和子配方已接通，可用[雨滴示例](../examples/commands/rain-contact.mcfunction)复现。碰撞盒已接入同一查询；移动实体使用客户端当前包围盒。
+1. **世界输入和粒子事件。** 局部环境读取、接触事件和子配方已接通，可用[雨滴示例](../examples/commands/rain-contact.mcfunction)复现。碰撞盒已接入同一查询；移动实体使用客户端当前包围盒。多组探测与任意起点已接通（见[探测](particle-commands.md#探测)）。
 2. **编辑器与运行时共用外观。** `.pdrawc` v20 的拉丝、软化、丝带和管状拖尾已复用命令粒子的渲染入口。实时碰撞另需明确预览与实际世界的输入和回放语义。
 3. **发射采样和渲染几何。** 配方已支持按距离发射和静态模型采样。三角网格可作为粒子外观绘制。动态采样和需要场景缓冲的材质仍可独立扩展。
 4. **规模化。** 四边形、碰撞和管状拖尾场景已测。管状拖尾、丝带与三角网格共用几何预算，持续配方可限制模拟距离。保留历史的模拟分级、实例绘制和 GPU 模拟仍待实现。

@@ -8,6 +8,7 @@ import com.mojang.brigadier.arguments.BoolArgumentType
 import com.mojang.brigadier.arguments.DoubleArgumentType
 import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
+import com.mojang.brigadier.builder.ArgumentBuilder
 import com.mojang.brigadier.builder.LiteralArgumentBuilder
 import com.mojang.brigadier.builder.RequiredArgumentBuilder
 import com.mojang.brigadier.context.CommandContext
@@ -227,30 +228,79 @@ internal object ParticleRecipeCommands {
     private fun collisionMode(ctx: CommandContext<CommandSourceStack>): RecipeCollision =
         collisionModes[word(ctx, "mode")] ?: throw LocalizedArgumentException(translation("error.recipe.collision_mode"))
 
+    /**
+     * 探测组：`probe add/set` 追加或替换一组，`probe` 旧语法作用于第 0 组。
+     *
+     * 每组的尾随参数是一段自由文本，按 `key value` 成对解析，支持 `origin x,y,z`、
+     * `halfsize <格>`、`material <资源 ID>`，顺序任意。
+     */
     private fun probeTree(): LiteralArgumentBuilder<CommandSourceStack> {
-        fun range(fixed: Boolean): RequiredArgumentBuilder<CommandSourceStack, Double> {
-            fun apply(ctx: CommandContext<CommandSourceStack>, hasMaterial: Boolean) = configure(ctx) { draft ->
-                val direction = if (fixed) ParticleCommandArguments.vector(word(ctx, "direction")).toCore() else null
-                val material = if (hasMaterial) ResourceId.parse(ParticleCommandArguments.text(word(ctx, "probeMaterial"))) else null
-                val probe = ParticleProbe(DoubleArgumentType.getDouble(ctx, "range"), collisionMode(ctx), direction, material)
-                draft.update(draft.recipe.copy(probe = probe))
+        fun options(ctx: CommandContext<CommandSourceStack>, fixed: Boolean): ParticleProbe {
+            val direction = if (fixed) ParticleCommandArguments.vector(word(ctx, "direction")).toCore() else null
+            var origin = work.nekow.particledrawing.math.Vec3.ZERO
+            var halfSize = 0.0
+            var material: work.nekow.particledrawing.math.ResourceId? = null
+            val extra = runCatching { ctx.getArgument("extra", String::class.java) }.getOrNull()?.trim()
+            if (!extra.isNullOrEmpty()) {
+                val tokens = extra.split(Regex("\\s+"))
+                var i = 0
+                while (i < tokens.size) {
+                    val key = tokens[i].lowercase()
+                    val value = tokens.getOrNull(i + 1)
+                        ?: throw LocalizedArgumentException(translation("error.recipe.probe_option", tokens[i]))
+                    when (key) {
+                        "origin" -> origin = ParticleCommandArguments.vector(ParticleCommandArguments.text(value)).toCore()
+                        "halfsize" -> halfSize = value.toDoubleOrNull()
+                            ?: throw LocalizedArgumentException(translation("error.recipe.probe_option", tokens[i]))
+                        "material" -> material = work.nekow.particledrawing.math.ResourceId.parse(ParticleCommandArguments.text(value))
+                        else -> throw LocalizedArgumentException(translation("error.recipe.probe_option", key))
+                    }
+                    i += 2
+                }
             }
-            return Commands.argument("range", DoubleArgumentType.doubleArg(ParticleProbe.MIN_RANGE, ParticleProbe.MAX_RANGE))
-                .executes { ctx -> apply(ctx, hasMaterial = false) }
-                .then(Commands.literal("material")
-                    .then(Commands.argument("probeMaterial", ParticleCommandArguments.textType()).executes { ctx ->
-                        apply(ctx, hasMaterial = true)
-                    }))
+            return ParticleProbe(DoubleArgumentType.getDouble(ctx, "range"), collisionMode(ctx), direction, material, origin, halfSize)
         }
-        return Commands.literal("probe")
-            .then(Commands.literal("off").executes { ctx -> configure(ctx) { it.update(it.recipe.copy(probe = null)) } })
-            .then(Commands.argument("mode", StringArgumentType.word())
-                .suggests { _, b -> SharedSuggestionProvider.suggest(collisionModes.keys.filter { it != "none" }, b) }
-                .then(Commands.literal("velocity").then(range(fixed = false)))
-                .then(Commands.literal("direction").then(Commands.argument("direction", StringArgumentType.string())
-                    .then(range(fixed = true)))))
-    }
 
+        fun leaf(apply: (CommandContext<CommandSourceStack>, Boolean) -> Int, fixed: Boolean): RequiredArgumentBuilder<CommandSourceStack, Double> =
+            Commands.argument("range", DoubleArgumentType.doubleArg(ParticleProbe.MIN_RANGE, ParticleProbe.MAX_RANGE))
+                .executes { ctx -> apply(ctx, fixed) }
+                .then(Commands.argument("extra", StringArgumentType.greedyString()).executes { ctx -> apply(ctx, fixed) })
+
+        fun shape(apply: (CommandContext<CommandSourceStack>, Boolean) -> Int): ArgumentBuilder<CommandSourceStack, *> =
+            Commands.argument("mode", StringArgumentType.word())
+                .suggests { _, b -> SharedSuggestionProvider.suggest(collisionModes.keys.filter { it != "none" }, b) }
+                .then(Commands.literal("velocity").then(leaf(apply, fixed = false)))
+                .then(Commands.literal("direction").then(Commands.argument("direction", StringArgumentType.string())
+                    .then(leaf(apply, fixed = true))))
+
+        val root = Commands.literal("probe")
+        root.then(Commands.literal("clear").executes { ctx ->
+            configure(ctx) { d -> d.update(d.recipe.copy(probes = emptyList())) }
+        })
+        root.then(Commands.literal("remove").then(Commands.argument("index", IntegerArgumentType.integer(0, ParticleRecipe.MAX_PROBES - 1))
+            .executes { ctx ->
+                configure(ctx) { d ->
+                    val index = IntegerArgumentType.getInteger(ctx, "index")
+                    d.update(d.recipe.copy(probes = d.recipe.probes.filterIndexed { i, _ -> i != index }))
+                }
+            }))
+        root.then(Commands.literal("add").then(shape { ctx, fixed ->
+            configure(ctx) { d ->
+                requireLocalized(d.recipe.probes.size < ParticleRecipe.MAX_PROBES) {
+                    translation("error.recipe.probe_count", ParticleRecipe.MAX_PROBES)
+                }
+                d.update(d.recipe.copy(probes = d.recipe.probes + options(ctx, fixed)))
+            }
+        }))
+        root.then(shape { ctx, fixed ->
+            configure(ctx) { d ->
+                val probe = options(ctx, fixed)
+                val next = if (d.recipe.probes.isEmpty()) listOf(probe) else listOf(probe) + d.recipe.probes.drop(1)
+                d.update(d.recipe.copy(probes = next))
+            }
+        })
+        return root
+    }
     private fun eventTree(): LiteralArgumentBuilder<CommandSourceStack> {
         val root = Commands.literal("on")
         root.then(Commands.literal("clear").executes { ctx ->

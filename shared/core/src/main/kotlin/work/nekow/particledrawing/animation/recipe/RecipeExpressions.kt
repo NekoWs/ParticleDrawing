@@ -26,6 +26,9 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
 
     internal val externalInputs: Set<RecipeInput>
 
+    /** 探测结果输入键，按探测组顺序展开；第 0 组用不带序号的旧名。 */
+    internal val probeKeys: List<String> = buildProbeKeys(recipe.probes.size)
+
     init {
         val used = linkedSetOf<RecipeInput>()
         val names = recipe.variables.keys.toList() + recipe.state.keys.toList() + recipe.lets.keys.toList()
@@ -38,10 +41,9 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
         requireLocalized((recipe.variables.values + recipe.state.values).all(Double::isFinite)) { translation("error.expression.variable_value") }
         val outputs = ATTRIBUTES + VECTOR_OUTPUTS.keys + recipe.state.keys
         for (name in recipe.birth.keys + recipe.motion.keys) requireLocalized(name in outputs) { translation("error.expression.read_only", name) }
-        val known = (INPUTS + recipe.variables.keys + recipe.state.keys).toMutableSet()
+        val known = (INPUTS + recipe.variables.keys + recipe.state.keys + probeKeys).toMutableSet()
         for ((name, expr) in recipe.lets) { validate(expr, known, used); known += name }
         for (expr in recipe.birth.values + recipe.motion.values + listOf(recipe.where, recipe.kill)) validate(expr, known, used)
-        requireLocalized(recipe.probe != null || used.none(RecipeInput::readsProbe)) { translation("error.recipe.probe_required") }
         externalInputs = used
         // 锚点偏移只认发射器级的量：u/i/age 这类样本级输入在求锚点时没有意义，写了要报错而不是静默取 0。
         recipe.orbit.takeIf(String::isNotBlank)?.let { validate(it, ANCHOR_INPUTS + recipe.variables.keys + recipe.state.keys + recipe.lets.keys) }
@@ -132,10 +134,25 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
     val slots: RecipeSlots = buildSlots(recipe)
 
     /** 本刻输入槽（u 起，共 14 项）之后接 state；再往后是各程序的临时槽。 */
-    private val base = Reg.VAR_START + BUILTIN_INPUT_SLOTS.size + recipe.state.size + externalInputs.size
+    private val base = Reg.VAR_START + BUILTIN_INPUT_SLOTS.size + recipe.state.size + externalInputs.size + probeKeys.size
 
     /** 编译成功的热路径；null 表示该配方只能走解释器。 */
     val fast: RecipeFast? = if (preferFast) buildFast(recipe) else null
+
+    /** 每组的输入名；第 0 组保留 `probe_hit` 这类旧名，后续组带序号。 */
+    private fun buildProbeKeys(count: Int): List<String> {
+        if (count <= 0) return emptyList()
+        val keys = ArrayList<String>(count * 9)
+        for (i in 0 until count) {
+            val prefix = if (i == 0) "probe" else "probe$i"
+            keys += "${prefix}_hit"
+            keys += "${prefix}_matches"
+            keys += "${prefix}_distance"
+            keys += "${prefix}_nx"; keys += "${prefix}_ny"; keys += "${prefix}_nz"
+            keys += "${prefix}_px"; keys += "${prefix}_py"; keys += "${prefix}_pz"
+        }
+        return keys
+    }
 
     private fun buildSlots(recipe: ParticleRecipe): RecipeSlots {
         val map = LinkedHashMap<String, Int>(32)
@@ -145,6 +162,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
         for (name in BUILTIN_INPUT_SLOTS) map[name] = s++
         for (name in recipe.state.keys) map[name] = s++
         for (input in externalInputs) map[input.key] = s++
+        for (key in probeKeys) map[key] = s++
         return RecipeSlots(map)
     }
 

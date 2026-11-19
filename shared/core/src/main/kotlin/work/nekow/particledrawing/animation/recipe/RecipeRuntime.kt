@@ -55,7 +55,7 @@ class RecipeRuntime(
     internal data class Trigger(val rule: RecipeEmission, val input: EventInput)
 
     private var expressions = RecipeExpressions(recipe, preferFast)
-    private var inputs = RecipeInputReader(expressions, world, recipe.entityQuery, recipe.probe)
+    private var inputs = RecipeInputReader(expressions, world, recipe.entityQuery, recipe.probes)
     private var neighbors = if (inputs.readsNeighbors) ParticleNeighbors(recipe.neighborRadius) else null
     private val triggers = arrayListOf<Trigger>()
     internal val events: List<Trigger> get() = triggers
@@ -104,7 +104,7 @@ class RecipeRuntime(
         }
         recipe = ordered
         expressions = compiled
-        inputs = RecipeInputReader(compiled, world, ordered.entityQuery, ordered.probe)
+        inputs = RecipeInputReader(compiled, world, ordered.entityQuery, ordered.probes)
         neighbors = if (inputs.readsNeighbors) ParticleNeighbors(ordered.neighborRadius) else null
         rebuildLayout()
         // 新的临时槽可能更多：按需扩容已有粒子的寄存器
@@ -463,8 +463,8 @@ class RecipeRuntime(
 
     private fun prepare(p: Particle, space: RecipeFrame? = inputFrame(p)) {
         loadPersistent(p)
-        inputs.prepare(p, space, neighbors)
-        inputs.copyInputs(p, attrMap)
+        // 慢路径按名字求值：探测结果也写进这张表，公式才读得到。
+        inputs.readInto(p, space, neighbors, attrMap)
         expressions.prepare(
             attrMap,
             p.index.toDouble(), recipe.seeds.size.toDouble(), p.seed.u, ticks * 50.0, 1.0,
@@ -524,7 +524,7 @@ class RecipeRuntime(
         val plan = recipe.copy(lets = recipe.lets, birth = changes, motion = emptyMap(), where = predicate, kill = "false")
         plan.validate()
         val edit = RecipeExpressions(plan)
-        val editInputs = RecipeInputReader(edit, world, recipe.entityQuery, recipe.probe)
+        val editInputs = RecipeInputReader(edit, world, recipe.entityQuery, recipe.probes)
         val editNeighbors = if (editInputs.readsNeighbors) ParticleNeighbors(recipe.neighborRadius).also(::snapshotNeighbors) else null
         val selected = arrayListOf<Pair<Particle, Map<String, Double>>>()
         val map = HashMap<String, Double>(32)

@@ -125,7 +125,7 @@ class RecipeEventTest {
             hits = 0
             material = iron
             val runtime = RecipeRuntime(ParticleRecipe(
-                seeds, probe = probe, birth = mapOf("vz" to "1"),
+                seeds, probes = listOf(probe), birth = mapOf("vz" to "1"),
                 motion = mapOf("r" to "probe_matches * probe_distance", "g" to "abs(probe_nz)"),
             ), burst = true, world = world, preferFast = preferFast)
             runtime.tick()
@@ -140,7 +140,7 @@ class RecipeEventTest {
             assertEquals(1.0, particle.value("g"))
         }
         hits = 0
-        RecipeRuntime(ParticleRecipe(seeds, probe = probe), burst = true, world = world).tick()
+        RecipeRuntime(ParticleRecipe(seeds, probes = listOf(probe)), burst = true, world = world).tick()
         assertEquals(0, hits)
     }
 
