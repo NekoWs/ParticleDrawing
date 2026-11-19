@@ -1,31 +1,34 @@
 # 粒子能力缺口盘点
 
-以命令、公开 API 和 `.pdrawc` 播放链路为准。下表区分了需要底层支持的效果、不同入口之间的能力差异，以及可用现有公式组合的效果。
+以命令、公开 API 和编辑器导出的 `.pdrawc` 播放链路为准。
 
-## 现有能力
+## 仍待实现
 
-- 发射与采样支持参数曲线、空间网格、图片、文字点阵及三角化 OBJ 表面。普通发射器和配方都支持沿锚点行程等距发射。
-- 配方支持出生公式、逐刻公式、逐粒子状态、噪声、寿命与条件销毁。支持中心点或带半宽的碰撞盒，能检测方块、液体和实体当前包围盒，并在一刻内处理最多四次反弹。
-- 外观支持静态或动画 UV、广告牌和固定朝向、普通透明与加法混合、速度拉丝、贴近方块时整颗淡出、平面丝带、管状拖尾和低面数三角网格。接触事件可将贴图投影到附近的平行方块表面。点光和射灯可以影响地形光照。
-- 配方的出生、真实接触与死亡可触发一轮指定子配方；接触规则可按方块或液体的资源 ID 筛选。公式可读取局部环境、最近实体、邻居快照和维度共享力场。可选距离 LOD 降低远处的绘制密度，模拟继续运行。
-
-## 需要底层支持的效果
-
-| 想实现的效果 | 当前边界 |
+| 能力 | 当前进度与剩余工作 |
 | --- | --- |
-| 让粒子根据前方的世界改变路线 | 配方支持多组探测：每组可单独配置起点偏移、方向、范围、模式、材质筛选与盒体扫掠半宽，结果按组号进公式（`probe_*`、`probe1_*`…）。见 [世界输入命令](particle-commands.md#世界输入)和[碰撞查询](../shared/core/src/main/kotlin/work/nekow/particledrawing/animation/recipe/ParticleWorld.kt)。 |
-| 粒子均匀地从任意模型或正在挥动的武器表面飞出 | API 可从自定义三角形提供者读取每次取样的姿势，按面积抽样并插值法线和 UV。静态 OBJ 使用同一 API。Minecraft 内置实体和手持物品的渲染姿势仍未接入。见[网格采样](../shared/core/src/main/kotlin/work/nekow/particledrawing/api/ParticleMeshSampler.kt)。 |
-| 让焦痕从地面绕到台阶的竖面 | `decal … wrap` 沿相连的方块碰撞表面展开并跨棱角保持 UV。默认仍可用平行面投影。拖尾用头部颜色、宽度和贴图计算各段，父粒子移除时拖尾一并消失。见[印记展开](../shared/core/src/main/kotlin/work/nekow/particledrawing/render/SurfaceDecalWrap.kt)和[丝带历史](../shared/core/src/main/kotlin/work/nekow/particledrawing/render/RibbonHistory.kt)。 |
-| 大烟团局部穿进地形时只软化交界，热浪扭曲背后画面 | 命令与 API 材质可读透明合成后的场景深度和颜色，逐像素淡出或按贴图折射。26.3 场景材质在 OIT 合成后绘制，同一帧的折射粒子共享底图。见[场景材质](particle-commands.md#读取场景的粒子外观)。 |
-| 粒子的射灯被墙挡住并向地面投影 | 可为附近少量粒子灯开启方块遮挡，点光和射灯共用方块形状索引，逐个地形顶点测试光线。阴影精度取决于地形网格。见[光照预算](lighting.md#客户端配置与光影)。 |
+| `.pdrawc` 世界交互与定位回放 | 配方已有碰撞、探测、事件和服务端同步。动画仍由时间轴和脚本直接给出位置。两端需要约定关键帧位置与物理积分的关系、预览时的世界输入，以及跳转和循环时如何保存和重建碰撞、事件及尾迹状态。见[文件读取](../shared/core/src/main/kotlin/work/nekow/particledrawing/animation/PdrawcReader.kt)和[动画播放](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/client/ClientAnimationManager.kt)。 |
+| `.pdrawc` 场景材质和模型外观 | v20 可导出速度拉丝、方块表面淡出、丝带和管状拖尾。逐像素深度淡出、场景折射和三角网格外观已接入命令与 API，动画文件还需要对应的声明、预览与播放支持。见[场景材质](particle-commands.md#读取场景的粒子外观)。 |
+| 保留历史的模拟 LOD | 距离 LOD 只减少绘制。持续配方可用 `simulation_range` 回收远处的模拟状态，返回范围时从头发射。需要补上降低远处模拟开销后的状态保留和恢复，包括已发生的碰撞、事件和尾迹。见[模拟范围](particle-commands.md#模拟范围)。 |
+| 实例绘制 | 动画和配方已有复用的渲染桥接，丝带、管状拖尾与网格外观共用几何预算。要进一步降低大量同材质粒子的 CPU 顶点提交开销，还需要实例数据布局和各版本的绘制入口。 |
+| GPU 模拟 | 逐粒子公式、积分和世界查询目前在 CPU 推进。GPU 模拟需要定义可执行的公式子集、粒子状态布局与世界输入，才能接入常用的大规模场景。 |
+| 原生模型姿势采样（暂缓） | `ParticleTriangleProvider` 已支持从调用方提供的当前三角形按面积取样，并插值法线和 UV。静态 OBJ 复用同一接口。Minecraft 实体骨骼和手持物品的实际渲染姿势还需要逐版本适配。见[网格采样](../shared/core/src/main/kotlin/work/nekow/particledrawing/api/ParticleMeshSampler.kt)。 |
 
-## 入口与运行边界
+## 已接通的能力
 
-| 想实现的效果 | 当前边界 |
+| 能力 | 可用入口 |
 | --- | --- |
-| 让网页编辑器导出的粒子在游戏中响应世界碰撞 | `.pdrawc` v20 可声明拉丝、软化、丝带和管状拖尾。动画的时间轴和脚本直接控制位置，仍缺少保存、重建世界交互状态的播放语义。见 [文件读取](../shared/core/src/main/kotlin/work/nekow/particledrawing/animation/PdrawcReader.kt)和[动画生成入口](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/client/ClientAnimationManager.kt)。 |
-| 晚进服的玩家看到和其他人处于同一阶段的碰撞粒子和尾迹 | `start_synced` 和 `burst_synced` 在服务端加载的世界中推进，晚入服或进视距时补发仍存活的主粒子、事件子粒子、年龄与尾迹。运行状态保留到维度卸载或重启。见[服务端同步](particle-commands.md#服务端同步)。 |
-| 十万颗粒子同时模拟和渲染、远离摄像机后释放模拟预算 | 客户端粒子登记上限默认 50,000，可调至 200,000。单个配方最多 8,192 个样本及存活粒子。持续配方可按[模拟范围](particle-commands.md#模拟范围)在镜头远处释放模拟预算，并在返回后重启。对需要保留轨迹的特效，可采用只减少绘制的距离 LOD。26.3 的十万颗 CPU 模拟场景已实测，见下表。 |
+| 发射与局部世界输入 | 参数曲线、网格、图片、文字和 OBJ 采样。普通发射器和配方均可等距发射。配方公式可读取环境、邻居、实体及共享力场。最多四组探测，各自可设起点、方向、范围、材质和扫掠半宽。见[世界输入](particle-commands.md#世界输入)。 |
+| 碰撞与事件 | 配方支持点和盒体碰撞，查询方块、液体及实体包围盒，单刻最多四次反弹。出生、接触或死亡可触发一轮子配方，接触可按材质筛选。见[事件子配方](particle-commands.md#用事件启动子配方)。 |
+| 拖尾、网格与印记 | 支持速度拉丝、平面丝带、管状拖尾和三角网格外观。`decal … wrap` 沿相连的方块碰撞面展开，跨棱角保持 UV 连续。见[印记展开](../shared/core/src/main/kotlin/work/nekow/particledrawing/render/SurfaceDecalWrap.kt)。 |
+| 场景缓冲 | `depth_fade` 和 `distortion` 共用场景深度和颜色缓冲。前者按已写入的深度逐像素淡出，后者折射同一帧的场景底图。26.3 在 OIT 合成后绘制这类材质。见[场景材质](particle-commands.md#读取场景的粒子外观)。 |
+| 地形阴影 | 点光和射灯共用方块遮挡查询。开启后对附近有限数量的灯逐地形顶点计算遮挡，精度受地形网格分辨率限制。见[光照预算](lighting.md#客户端配置与光影)。 |
+| 晚加入的配方同步 | `start_synced`、`burst_synced` 与 `ParticleSources.startSynced` 由服务端推进已加载世界中的模拟。玩家进服或进入视距时得到仍存活的主粒子、事件子粒子、当前年龄和已有尾迹。26.3 实测覆盖晚进服和视距外触发一次性碰撞后返回。见[服务端同步](particle-commands.md#服务端同步)。 |
+
+## 当前运行边界
+
+- 服务端同步适用于小规模效果。每个同步生成器最多 64 个主粒子和 64 个事件子粒子，全服最多 8 个同步生成器。状态保存在运行时内存中，随维度卸载或服务器重启释放。跨重启续播仍需要持久化配方时钟、存活粒子、事件状态和尾迹。普通 `start` 与 `burst` 由客户端各自模拟。
+- 丝带和管状拖尾最多保留过去 32 刻的轨迹，整条拖尾共用粒子头部的颜色、贴图和宽度基准，随主粒子移除。独立拖尾寿命及沿长度配置的颜色和宽度曲线仍可补齐。见[拖尾几何](../platforms/neoforge-common/src/main/kotlin/work/nekow/particledrawing/core/client/RibbonVertices.kt)。
+- 客户端粒子登记上限默认 50,000，可调至 200,000。单个普通配方的样本数和存活数上限均为 8,192。登记上限和几何预算是配置值，实际帧率取决于场景。
 
 ### 26.3 开发客户端实测
 
@@ -44,11 +47,10 @@
 配方在粒子出生时绑定引擎与桥接状态，随后复用绑定和原有状态写入。50,000 颗场景切换后还出现过一次约 2.4 秒的长帧。
 十万颗场景约为 10 FPS。以上数据来自一台机器，其他场景还会受粒子体积、碰撞次数、拖尾几何和贴图覆盖影响。
 
-## 实现顺序
+## 接续顺序
 
-1. **世界输入和粒子事件。** 局部环境读取、接触事件和子配方已接通，可用[雨滴示例](../examples/commands/rain-contact.mcfunction)复现。碰撞盒已接入同一查询；移动实体使用客户端当前包围盒。多组探测与任意起点已接通（见[探测](particle-commands.md#探测)）。
-2. **编辑器与运行时共用外观。** `.pdrawc` v20 的拉丝、软化、丝带和管状拖尾已复用命令粒子的渲染入口。实时碰撞另需明确预览与实际世界的输入和回放语义。
-3. **发射采样和渲染几何。** 配方已支持按距离发射和静态模型采样。三角网格可作为粒子外观绘制。场景缓冲由深度淡出和折射共用，动态模型采样仍待接入。
-4. **规模化。** 四边形、碰撞和管状拖尾场景已测。管状拖尾、丝带与三角网格共用几何预算，持续配方可限制模拟距离。保留历史的模拟分级、实例绘制和 GPU 模拟仍待实现。
+1. 先约定 `.pdrawc` 的世界交互和回放状态，复用现有配方的世界查询与事件语义，再接编辑器预览和文件字段。场景材质与模型外观可独立复用当前渲染入口。
+2. 为远距离模拟定义要保留的状态，再接降低模拟频率或暂停后的恢复。服务端同步首帧已有显示所需的粒子和尾迹，恢复模拟还要保留积分与发射状态。
+3. 规模化验收沿用已有的四边形、碰撞和拖尾测试场景。先验证实例绘制降低的提交开销，再单独衡量 GPU 模拟的收益与支持范围。
 
 功能对照可参考 Unity 的[粒子事件和子发射](https://docs.unity3d.com/cn/current/ScriptReference/ParticleSystem.SubEmittersModule.html)和 Godot 的[粒子渲染、碰撞与轨迹](https://docs.godotengine.org/en/stable/classes/class_gpuparticles3d.html)、[可移动粒子力场](https://docs.godotengine.org/en/stable/classes/class_gpuparticlesattractor3d.html)。
