@@ -7,7 +7,8 @@
     "BrightnessGetterMixin",
     "TerrainLightMixin",
     "EntityRendererMixin",
-    "SceneParticlePassMixin"
+    "SceneParticlePassMixin",
+    "BackgroundMouseMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -110,6 +110,11 @@ sourceSets {
                 new File(targetSource, 'main/kotlin'),
         ])
         java.setSrcDirs([new File(commonSource, 'main/java'), new File(targetSource, 'main/java')])
+        if (project.hasProperty('pdCaptureDir')) {
+            def captureSources = new File(repositoryRoot, 'tools/framebuffer-capture')
+            java.srcDir(new File(captureSources, 'common'))
+            java.srcDir(new File(captureSources, targetProperties.getProperty('minecraft_version') == '1.21.1' ? 'legacy' : 'modern'))
+        }
         resources.setSrcDirs([
                 new File(repositoryRoot, 'shared/core/src/main/resources'),
                 new File(commonSource, 'main/resources'),
@@ -186,6 +191,16 @@ runs {
 
     client {
         systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        if (project.hasProperty('pdBackgroundCapture') || project.hasProperty('pdCaptureDir')) {
+            systemProperty 'pd.backgroundCapture', 'true'
+            if (targetProperties.getProperty('minecraft_version') == '26.3') {
+                environmentVariables.put('SDL_WINDOW_ACTIVATE_WHEN_SHOWN', '0')
+                environmentVariables.put('SDL_WINDOW_ACTIVATE_WHEN_RAISED', '0')
+            }
+        }
+        if (project.hasProperty('pdCaptureDir')) {
+            systemProperty 'pd.capture.directory', project.file(project.property('pdCaptureDir')).absolutePath
+        }
 
         arguments '--width', '1708', '--height', '960'
         // 验收用的直入钩子：不传属性时完全惰性，不影响正常启动。
