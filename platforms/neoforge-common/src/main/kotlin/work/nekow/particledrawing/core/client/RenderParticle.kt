@@ -132,6 +132,7 @@ class RenderParticle(
     /** 已经活过的引擎 tick 数。 */
     private var ticksAlive: Int = 0
     private var syncedAge = -1
+    private var previousSyncedAge = 0
 
     /** 出生时的引擎 tick 序号。 */
     private var bornSequence: Long = Long.MIN_VALUE
@@ -281,8 +282,11 @@ class RenderParticle(
      * [partialTick] 是渲染帧在上一 tick 与本 tick 之间的进度；曲线与动态光照用分数年龄采样，
      * 短寿命粒子才能在两 tick 之间走到中间值和零末端。
      */
-    fun ageTicks(partialTick: Float = 0f): Float =
-        (if (syncedAge >= 0) syncedAge.toFloat() else engineMs / 50.0f) + partialTick.coerceIn(0f, 1f) - spawnPartial
+    fun ageTicks(partialTick: Float = 0f): Float {
+        val fraction = partialTick.coerceIn(0f, 1f)
+        if (syncedAge >= 0) return previousSyncedAge + (syncedAge - previousSyncedAge) * fraction
+        return engineMs / 50.0f + fraction - spawnPartial
+    }
 
     /**
      * 当前寿命曲线的乘数，按 [CurveChannel] 顺序写进 [out] = `[r, g, b, a, scale, light]`；
@@ -497,7 +501,15 @@ class RenderParticle(
     fun interpolatedZ(partialTick: Float): Double = prevZ + (pos.cur.z - prevZ) * partialTick
 
     fun isAlive(): Boolean = syncedAge >= 0 || lifetimeTicks <= 0 || ticksAlive < lifetimeTicks
-    internal fun syncRecipeAge(age: Int) { syncedAge = age }
+    internal fun syncRecipeAge(age: Int, snap: Boolean) {
+        previousSyncedAge = if (snap || syncedAge < 0) age else syncedAge
+        syncedAge = age
+    }
+
+    internal fun holdRecipeFrame() {
+        previousSyncedAge = syncedAge
+        setPositionDirect(currentPosition(), snap = true)
+    }
     fun lifetimeTicks(): Int = lifetimeTicks
     fun isDead(): Boolean = !isAlive()
 

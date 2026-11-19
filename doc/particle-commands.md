@@ -584,6 +584,8 @@ pdraw particle emitter sparks on contact scorch decal 0.8 wrap
 
 `start_synced` 持续生成，`burst_synced` 遍历一轮。服务端在已加载的区块里推进碰撞、探测、力场与事件子配方。
 玩家进服、切回维度或走进渲染距离时，收到仍存活的粒子、年龄、子粒子和已走过的拖尾。随后逐刻同步新的状态。
+客户端用一刻的备用快照吸收短时到包抖动，每个渲染帧在相邻两刻间插值。缓冲耗尽时保持最后的状态。
+普通 `start` 和 `burst` 由客户端执行公式、碰撞和事件，服务端按配置变化下发声明。
 同步期间用 `stop` 停止出生，仍存活的粒子会继续推进。`remove` 立即清除。
 
 ```mcfunction
@@ -830,8 +832,8 @@ spot、light_dir、light_range、light_falloff、align_velocity、stretch、soft
 
 配置按维度保存在运行时内存中，重启或卸载维度后清空；建议在数据包的 load 函数里声明，技能函数只触发
 burst 或更新参数。每维度最多 256 个配置，全服最多 256 个播放实例。有限寿命 burst 与停止后的实例自动回收；
-无限寿命实例需显式 remove/delete。持续生成的实例会给后来进入维度的玩家下发当前声明，从头开始生成，
-不补演历史拖尾；burst 只向触发时同维度在线的玩家播放，不对后来进入的玩家重复触发。
+无限寿命实例需显式 remove/delete。普通 `start` 会给后来进入维度的玩家下发当前声明，从头开始生成。
+普通 `burst` 只向触发时同维度在线的玩家播放。需要补发当前粒子和尾迹时可使用[服务端同步](#服务端同步)。
 
 代码入口为 `ParticleSampling`、`ParticleImageSampler`、`ParticleRecipe`、`RecipeAnchor` 和
 `ParticleSources.start`。[API 参考](api-reference.md#采样与运行时生成)

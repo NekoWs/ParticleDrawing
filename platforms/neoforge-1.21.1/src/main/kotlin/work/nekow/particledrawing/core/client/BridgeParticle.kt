@@ -65,6 +65,7 @@ class BridgeParticle(
 
     // 外观插值端点（尺寸 / 颜色 / 透明度）：渲染帧按 partialTick 在「上一 tick → 本 tick」间插值
     private val blend = AppearanceBlend()
+    private var recipeFrameHeld = false
 
     // 非广告牌朝向：billboard=false 时四边形静止朝世界 +Z，再按 spin 旋转（spinLocal=局部轴）
     private var billboard = true
@@ -195,7 +196,14 @@ class BridgeParticle(
         effects?.syncTrail(history)
     }
 
+    internal fun holdRecipeFrame() {
+        xo = x; yo = y; zo = z
+        blend.hold()
+        recipeFrameHeld = true
+    }
+
     fun syncPosition(x: Double, y: Double, z: Double, snap: Boolean = false, resetEffects: Boolean = snap) {
+        recipeFrameHeld = false
         effects?.syncPosition(this.x, this.y, this.z, x, y, z, resetEffects)
         if (snap) {
             this.xo = x; this.yo = y; this.zo = z
@@ -243,7 +251,7 @@ class BridgeParticle(
         return ParticleVisual.texScaleOf(uv, entry?.width ?: 0, entry?.height ?: 0)
     }
 
-    private fun frameFactor(partialTick: Float): Float = partialTick.coerceIn(0f, 1f)
+    private fun frameFactor(partialTick: Float): Float = if (recipeFrameHeld) 1f else partialTick.coerceIn(0f, 1f)
 
     fun sampledX(partialTick: Float): Double {
         val f = frameFactor(partialTick).toDouble()

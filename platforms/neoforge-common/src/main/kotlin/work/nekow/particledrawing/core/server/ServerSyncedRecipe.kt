@@ -12,6 +12,7 @@ import work.nekow.particledrawing.core.network.ParticleRecipeStatePayload
 import work.nekow.particledrawing.core.network.ParticleRecipeStatePayload.Content
 import work.nekow.particledrawing.core.network.RecipeOperation
 import work.nekow.particledrawing.core.network.RecipeStateRow
+import work.nekow.particledrawing.math.Vec3
 import java.util.UUID
 
 /** 每刻发布在视距内的状态，第一次看到成员时附带它已走过的尾迹。 */
@@ -42,9 +43,8 @@ internal class ServerSyncedRecipe(
         val frame = simulation.snapshot(includeHistory = false)
         val activeLooks = frame.particles.mapTo(hashSetOf()) { it.look }
         looks.keys.retainAll(activeLooks)
-        val histories by lazy {
-            simulation.snapshot(includeHistory = true).particles.associate { it.id to it.history }
-        }
+        val trails by lazy(simulation::activeTrails)
+        val histories by lazy { hashMapOf<Long, List<Vec3>>() }
         for (player in players) {
             val previous = visible[player.uuid]
             val samples = frame.particles.filter { particle ->
@@ -52,7 +52,9 @@ internal class ServerSyncedRecipe(
                 ParticleVisibilityManager.isWithinViewDistance(player, pos.x, pos.y, pos.z)
             }
             if (samples.isEmpty()) {
-                if (visible.remove(player.uuid) != null) sendRemove(player)
+                if (visible.remove(player.uuid) != null) {
+                    PacketDistributor.sendToPlayer(player, ParticleRecipeStatePayload(id, Content.Frame(frame.tick, emptyList())))
+                }
                 continue
             }
             val particleIds = hashSetOf<Long>()
@@ -64,7 +66,7 @@ internal class ServerSyncedRecipe(
                 }
                 particleIds += sample.id
                 val history = if (sample.look.visual.trailTicks > 0 && previous?.particles?.contains(sample.id) != true) {
-                    histories.getValue(sample.id)
+                    histories.getOrPut(sample.id) { trails[sample.id]?.oldestFirst().orEmpty() }
                 } else emptyList()
                 RecipeStateRow(sample, lookId, history)
             }

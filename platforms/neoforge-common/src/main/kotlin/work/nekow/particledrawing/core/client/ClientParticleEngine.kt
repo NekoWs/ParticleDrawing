@@ -828,6 +828,11 @@ class ClientParticleEngine {
         return binding
     }
 
+    internal fun holdSyncedRecipeFrame(binding: RecipeBinding) {
+        binding.particle.holdRecipeFrame()
+        binding.bridge?.holdRecipeFrame()
+    }
+
     internal fun applyRecipeFrame(binding: RecipeBinding, pos: Vec3, color: Color, scale: Float, glow: Boolean, light: Int) {
         val bridge = binding.bridge
         // 已注销的桥接粒子不会再更新位置、外观或光照索引。

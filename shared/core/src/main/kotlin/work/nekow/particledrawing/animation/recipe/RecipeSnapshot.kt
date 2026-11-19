@@ -89,6 +89,13 @@ internal class SyncedRecipe(recipe: ParticleRecipe, burst: Boolean, world: Parti
         return RecipeSnapshot(runtime.ticks, samples)
     }
 
+    /** 服务端投递首帧时按需读取。历史仍归当前模拟线程所有。 */
+    fun activeTrails(): Map<Long, RibbonHistory> = buildMap {
+        for ((particle, member) in members) {
+            if (particle.alive && member.history != null) put(member.id, member.history)
+        }
+    }
+
     companion object {
         const val MAX_PARENT = 64
         const val MAX_CHILDREN = 64

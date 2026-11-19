@@ -65,6 +65,7 @@ class BridgeParticle(
     // 外观插值端点（尺寸 / 颜色 / 透明度）：渲染帧按 partialTick 在「上一 tick → 本 tick」间插值；
     // 出生后第一次同步原子落地（见 AppearanceBlend）。
     private val blend = AppearanceBlend()
+    private var recipeFrameHeld = false
 
     // 非广告牌朝向：billboard=false 时四边形静止朝世界 +Z，再按 spin 旋转（spinLocal=局部轴）
     private var billboard = true
@@ -202,11 +203,18 @@ class BridgeParticle(
         effects?.syncTrail(history)
     }
 
+    internal fun holdRecipeFrame() {
+        xo = x; yo = y; zo = z
+        blend.hold()
+        recipeFrameHeld = true
+    }
+
     /**
      * 同步粒子位置。
      * @param snap true = 跳变到目标位置，false = 保留上一 tick 位置作为插值起点
      */
     fun syncPosition(x: Double, y: Double, z: Double, snap: Boolean = false, resetEffects: Boolean = snap) {
+        recipeFrameHeld = false
         effects?.syncPosition(this.x, this.y, this.z, x, y, z, resetEffects)
         if (snap) {
             this.xo = x
@@ -273,7 +281,7 @@ class BridgeParticle(
     }
 
     /** 本帧的插值权重（渲染帧在相邻两个 tick 之间的进度）。 */
-    private fun frameFactor(partialTick: Float): Float = partialTick.coerceIn(0f, 1f)
+    private fun frameFactor(partialTick: Float): Float = if (recipeFrameHeld) 1f else partialTick.coerceIn(0f, 1f)
 
     /** 本帧实际渲染的世界坐标（含相邻 tick 插值与同步跳变），只读观察用。 */
     fun sampledX(partialTick: Float): Double {

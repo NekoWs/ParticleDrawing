@@ -11,10 +11,17 @@ import work.nekow.particledrawing.platform.toMinecraft
 import work.nekow.particledrawing.render.RibbonHistory
 import java.util.UUID
 
-/** 接收每刻的路径点，渲染时只把最新状态落到现有粒子引擎。 */
+/** 各生成器按服务器刻播放，桥接粒子按渲染帧采样相邻两刻。 */
 internal object ClientSyncedRecipes {
+    private data class Sample(val row: RecipeStateRow, val look: RecipeLook)
+    private data class Frame(val tick: Long, val samples: List<Sample>)
+
     private class Entry {
         var tick = -1L
+        var receivedTick = -1L
+        var lastEmptyTick = -1L
+        var held = false
+        val pending = TickFrameQueue<Frame>(capacity = 4, reserve = 1)
         val looks = hashMapOf<Long, RecipeLook>()
         val members = linkedMapOf<Long, Member>()
         val bindings = hashMapOf<Long, ClientParticleEngine.RecipeBinding>()
@@ -51,31 +58,44 @@ internal object ClientSyncedRecipes {
     }
 
     private fun receiveFrame(entry: Entry, frame: Content.Frame) {
-        if (frame.tick <= entry.tick) return
-        val present = hashSetOf<Long>()
+        if (frame.tick <= entry.receivedTick) return
         val looks = hashSetOf<Long>()
-        for (row in frame.rows) {
+        val samples = frame.rows.map { row ->
+            looks += row.lookId
+            Sample(row, requireNotNullLocalized(entry.looks[row.lookId]) { translation("error.packet.recipe_state") })
+        }
+        entry.looks.keys.retainAll(looks)
+        entry.receivedTick = frame.tick
+        if (samples.isEmpty()) entry.lastEmptyTick = frame.tick
+        // 跳过上屏的帧仍留下路径点和首次入场时的完整尾迹。
+        entry.pending.offer(Frame(frame.tick, samples))?.let { acceptFrame(entry, it) }
+    }
+
+    private fun acceptFrame(entry: Entry, frame: Frame) {
+        val present = hashSetOf<Long>()
+        for ((row, look) in frame.samples) {
             val existing = entry.members[row.id]
-            val member = existing ?: Member(
-                requireNotNullLocalized(entry.looks[row.lookId]) { translation("error.packet.recipe_state") }, row,
-            )
+            val member = existing ?: Member(look, row)
             requireLocalized(member.row.lookId == row.lookId) { translation("error.packet.recipe_state") }
             member.accept(row, existing != null)
             entry.members[row.id] = member
             present += row.id
-            looks += row.lookId
         }
         entry.members.keys.retainAll(present)
-        entry.looks.keys.retainAll(looks)
         entry.tick = frame.tick
     }
 
     fun tick(engine: ClientParticleEngine) {
-        for ((id, entry) in entries.toList()) {
+        val iterator = entries.iterator()
+        while (iterator.hasNext()) {
+            val (id, entry) = iterator.next()
             try {
+                entry.pending.advance(drain = entry.lastEmptyTick > entry.tick)?.let { acceptFrame(entry, it) }
                 sync(engine, entry)
+                if (entry.looks.isEmpty() && entry.members.isEmpty() && entry.pending.size == 0) iterator.remove()
             } catch (e: RuntimeException) {
-                remove(id)
+                iterator.remove()
+                destroy(engine, entry)
                 ClientParticleSources.error(id, e)
             }
         }
@@ -83,20 +103,29 @@ internal object ClientSyncedRecipes {
 
     private fun sync(engine: ClientParticleEngine, entry: Entry) {
         val changed = entry.tick != entry.appliedTick
+        val skipped = entry.appliedTick >= 0 && entry.tick - entry.appliedTick > 1
         if (changed) {
             val dead = entry.bindings.keys.filter { it !in entry.members }
             if (dead.isNotEmpty()) engine.destroyParticles(dead.mapNotNull { entry.bindings.remove(it)?.particle?.id() }.toTypedArray())
         }
         for ((id, member) in entry.members) {
             val previous = entry.bindings[id]?.takeIf { engine.containsParticle(it.particle.id()) }
-            if (previous != null && !changed) continue
+            if (previous != null && !changed) {
+                if (!entry.held) engine.holdSyncedRecipeFrame(previous)
+                continue
+            }
             val binding = previous ?: spawn(engine, member) ?: continue
             entry.bindings[id] = binding
-            member.history?.let { binding.bridge?.syncTrail(it) }
             val row = member.row
-            binding.particle.syncRecipeAge(row.age)
+            binding.particle.syncRecipeAge(row.age, snap = skipped || previous == null)
             engine.applyRecipeFrame(binding, row.position.toMinecraft(), row.color, row.scale, row.glowing, row.light)
+            if (member.history != null) {
+                if (previous == null || skipped || row.history.isNotEmpty()) binding.bridge?.syncTrail(member.history)
+                else binding.bridge?.recordTrail()
+            }
+            if (skipped) engine.holdSyncedRecipeFrame(binding)
         }
+        entry.held = !changed || skipped
         entry.appliedTick = entry.tick
     }
 
@@ -118,8 +147,11 @@ internal object ClientSyncedRecipes {
 
     fun remove(id: UUID) {
         val entry = entries.remove(id) ?: return
-        ClientParticleEngine.instance()?.destroyParticles(entry.bindings.values.map { it.particle.id() }.toTypedArray())
+        ClientParticleEngine.instance()?.let { destroy(it, entry) }
     }
+
+    private fun destroy(engine: ClientParticleEngine, entry: Entry) =
+        engine.destroyParticles(entry.bindings.values.map { it.particle.id() }.toTypedArray())
 
     fun clear() = entries.clear()
 }

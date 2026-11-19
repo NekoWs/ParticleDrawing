@@ -29,7 +29,7 @@ internal data class RecipeStateRow(
     )
 }
 
-/** 外观先于引用它的帧发送；新入视野的成员随帧携带尾迹。 */
+/** 外观在帧前发送。空帧结束视距内的播放，显式删除单独发送。 */
 internal data class ParticleRecipeStatePayload(val id: UUID, val content: Content) : CustomPacketPayload {
     sealed interface Content {
         data class Look(val id: Long, val look: RecipeLook) : Content

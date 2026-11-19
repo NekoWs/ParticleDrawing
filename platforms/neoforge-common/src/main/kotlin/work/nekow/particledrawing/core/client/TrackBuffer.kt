@@ -15,9 +15,9 @@ import net.minecraft.world.phys.Vec3
  * 队列由网络线程 [offer]、客户端主线程 [advance] 与 [clear] 操作，两者都加锁；
  * [current] 与 [previous] 只在 [advance] 里写、只在客户端主线程读。
  */
-class TrackBuffer(private val maxQueued: Int = 4) {
+class TrackBuffer(maxQueued: Int = 4) {
 
-    private val queue = ArrayDeque<Vec3>()
+    private val queue = TickFrameQueue<Vec3>(maxQueued)
 
     /** 最近一次消费的权威位置，渲染端点 x。 */
     var current: Vec3? = null
@@ -34,14 +34,13 @@ class TrackBuffer(private val maxQueued: Int = 4) {
     /** 收下一条权威位置；超过上限丢最旧的一条。 */
     @Synchronized
     fun offer(pos: Vec3) {
-        if (queue.size >= maxQueued) queue.removeFirst()
-        queue.addLast(pos)
+        queue.offer(pos)
     }
 
     /** 消费一条权威位置；返回 false 表示本 tick 没有新位置。 */
     @Synchronized
     fun advance(): Boolean {
-        val next = queue.removeFirstOrNull() ?: return false
+        val next = queue.advance() ?: return false
         previous = current
         current = next
         return true

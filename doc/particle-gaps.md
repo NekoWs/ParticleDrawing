@@ -22,7 +22,7 @@
 | 拖尾、网格与印记 | 支持速度拉丝、平面丝带、管状拖尾和三角网格外观。`decal … wrap` 沿相连的方块碰撞面展开，跨棱角保持 UV 连续。见[印记展开](../shared/core/src/main/kotlin/work/nekow/particledrawing/render/SurfaceDecalWrap.kt)。 |
 | 场景缓冲 | `depth_fade` 和 `distortion` 共用场景深度和颜色缓冲。前者按已写入的深度逐像素淡出，后者折射同一帧的场景底图。26.3 在 OIT 合成后绘制这类材质。见[场景材质](particle-commands.md#读取场景的粒子外观)。 |
 | 地形阴影 | 点光和射灯共用方块遮挡查询。开启后对附近有限数量的灯逐地形顶点计算遮挡，精度受地形网格分辨率限制。见[光照预算](lighting.md#客户端配置与光影)。 |
-| 晚加入的配方同步 | `start_synced`、`burst_synced` 与 `ParticleSources.startSynced` 由服务端推进已加载世界中的模拟。玩家进服或进入视距时得到仍存活的主粒子、事件子粒子、当前年龄和已有尾迹。26.3 实测覆盖晚进服和视距外触发一次性碰撞后返回。见[服务端同步](particle-commands.md#服务端同步)。 |
+| 晚加入的配方同步 | `start_synced`、`burst_synced` 与 `ParticleSources.startSynced` 由服务端推进已加载世界中的模拟。玩家进服或进入视距时得到仍存活的主粒子、事件子粒子、当前年龄和已有尾迹。客户端缓冲快照并逐渲染帧插值。26.3 实测覆盖晚进服和视距外触发一次性碰撞后返回。见[服务端同步](particle-commands.md#服务端同步)。 |
 
 ## 当前运行边界
 

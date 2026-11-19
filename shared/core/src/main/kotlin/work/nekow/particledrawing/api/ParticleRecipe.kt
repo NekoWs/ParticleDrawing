@@ -122,6 +122,7 @@ data class ParticleRecipe(
         }
         requireLocalized(lifetime == -1 || lifetime in 1..MAX_LIFETIME) { translation("error.recipe.lifetime", MAX_LIFETIME) }
         requireLocalized(maxAlive in 1..MAX_SEEDS) { translation("error.recipe.max_alive", MAX_SEEDS) }
+        requireLocalized(visual.lightLevel in 0..15) { translation("error.expression.light") }
         requireLocalized(listOf(variables, state, lets, birth, motion).all { it.size <= MAX_FIELDS }) { translation("error.recipe.fields_limit", MAX_FIELDS) }
         requireLocalized(orbit.length <= MAX_EXPRESSION) { translation("error.recipe.anchor_length", MAX_EXPRESSION) }
         requireLocalized(collisionHalfSize in 0.0..MAX_COLLISION_HALF_SIZE) {

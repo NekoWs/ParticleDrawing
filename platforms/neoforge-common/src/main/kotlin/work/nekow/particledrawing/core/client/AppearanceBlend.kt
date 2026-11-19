@@ -78,13 +78,17 @@ internal class AppearanceBlend(
 
     fun heightAt(f: Float): Float = lerp(prevH, curH, f)
 
+    fun hold() {
+        prevR = curR; prevG = curG; prevB = curB; prevA = curA
+        prevW = curW; prevH = curH
+    }
+
     /** 把当前值当作下一帧的上一帧端点（每 tick 至多一次）。 */
     private fun capturePrev() {
         val tick = tickSource()
         if (capturedTick == tick) return
         capturedTick = tick
-        prevR = curR; prevG = curG; prevB = curB; prevA = curA
-        prevW = curW; prevH = curH
+        hold()
     }
 
     private fun lerp(from: Float, to: Float, f: Float): Float = from + (to - from) * f

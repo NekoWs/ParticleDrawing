@@ -28,7 +28,8 @@ class ParticleRecipeCodecTest {
         val source = ParticleRecipe(listOf(ParticleSeed(Vec3(1.0, 2.0, 3.0), Color.CYAN, 0.7)), rate = 20, interval = 2,
             lifetime = 40, maxAlive = 100, follow = true, variables = linkedMapOf("radius" to 2.0), state = mapOf("phase" to 0.0),
             lets = linkedMapOf("a1" to "radius*2", "a2" to "a1+1"), birth = mapOf("x" to "u"), motion = mapOf("vx" to "-x*0.1"),
-            where = "x>0", kill = "age>30", visual = ParticleVisual().texture("particle:minecraft:end_rod").anisoWorld(0.1f, 0.2f).glowing(true),
+            where = "x>0", kill = "age>30",
+            visual = ParticleVisual().texture("particle:minecraft:end_rod").anisoWorld(0.1f, 0.2f).glowing(true).lightLevel(7),
             lifeCurve = ParticleLifeCurve.EMPTY.plus(ParticleCurve.alpha(CurveKey(0f, 1f), CurveKey(40f, 0f))))
         val id = UUID.randomUUID(); val entity = UUID.randomUUID()
         val result = roundTrip(ParticleRecipePayload(id, RecipeOperation.START, source, RecipeAnchor(Vec3.ZERO, entity, 42, Vec3(0.0, 2.0, 0.0), true), true))
@@ -39,6 +40,8 @@ class ParticleRecipeCodecTest {
         assertEquals(40, r.lifetime); assertEquals(2, r.interval); assertTrue(r.follow)
         assertEquals(entity, result.anchor?.entity); assertEquals(42, result.anchor?.entityId)
         assertEquals("particle:minecraft:end_rod", r.visual.texture)
+        assertTrue(r.visual.glowing)
+        assertEquals(7, r.visual.lightLevel)
         assertEquals(1, r.lifeCurve?.curves?.size)
     }
 
