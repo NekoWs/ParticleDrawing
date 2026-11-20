@@ -488,7 +488,8 @@ class BridgeParticle(
         refreshTextureIfStale()
         val translucent = additive || alpha < 1.0f || effects?.translucent == true
         // 光影包兼容：关掉自定义加法管线后，加法粒子退回原版半透明管线（没有加法混合和 OIT 加法阶段）。
-        val customBlend = additive && ParticleDrawingConfig.CLIENT.customAdditivePipeline.get()
+        val customBlend = additive && ParticleDrawingConfig.CLIENT.customAdditivePipeline.get() &&
+            !ShaderCompat.legacyPipelines()
         val cached = layerCache
         if (cached != null && translucent == layerTranslucent && customBlend == layerCustomBlend) return cached
         val built = if (additive) {
@@ -586,3 +587,4 @@ class BridgeParticle(
         }
     }
 }
+

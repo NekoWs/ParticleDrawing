@@ -64,7 +64,9 @@ object ParticleDrawingConfig {
         val customAdditivePipeline: ModConfigSpec.BooleanValue
         val sceneMaterials: ModConfigSpec.BooleanValue
         val terrainDynamicLights: ModConfigSpec.BooleanValue
+        val shaderCompat: ModConfigSpec.BooleanValue
         val debugLogFps: ModConfigSpec.BooleanValue
+        val forceLegacyPipelines: ModConfigSpec.BooleanValue
 
         init {
             builder.push("dynamic_lights")
@@ -104,6 +106,9 @@ object ParticleDrawingConfig {
             builder.pop()
 
             builder.push("compatibility")
+            shaderCompat = builder
+                .comment("When a shader pack (Iris) is in use, fall back to vanilla particle pipelines for the mod's own pipelines: additive blending, instanced recipes and scene materials degrade automatically. Turn this off to keep the mod's pipelines under a shader pack, accepting that the pack may not render them.")
+                .define("shaderCompat", true)
             customAdditivePipeline = builder
                 .comment("Draw additive particles with the mod's own blend pipeline. Turn this off when a shader pack overexposes or mis-sorts additive particles; they then use the vanilla translucent particle pipeline without additive blending.")
                 .define("customAdditivePipeline", true)
@@ -119,6 +124,9 @@ object ParticleDrawingConfig {
             debugLogFps = builder
                 .comment("Log render frame time and particle count every 5 seconds. Diagnostic switch; leave off in normal play.")
                 .define("debugLogFps", false)
+            forceLegacyPipelines = builder
+                .comment("Force the vanilla pipeline fallback even without a shader pack. Diagnostic switch for checking what shader compatibility looks like.")
+                .define("forceLegacyPipelines", false)
             builder.pop()
 
         }

@@ -45,7 +45,7 @@ class BatchedQuadParticleGroup(
     override fun extractRenderState(frustum: Frustum, camera: Camera, partialTickTime: Float): ParticleGroupRenderState {
         SceneParticleQuads.reset()
         // 光影包兼容：关掉场景材质粒子时改画普通四边形，不再抓本帧的颜色和深度副本。
-        val sceneMaterials = ParticleDrawingConfig.CLIENT.sceneMaterials.get()
+        val sceneMaterials = ParticleDrawingConfig.CLIENT.sceneMaterials.get() && !ShaderCompat.legacyPipelines()
         for (particle in particles) {
             val bridge = particle as BridgeParticle
             if (bridge.inFrustum(frustum, partialTickTime)) {
@@ -73,3 +73,4 @@ object ParticleGroupRegistrar {
         event.register(BATCHED_QUADS) { engine -> BatchedQuadParticleGroup(engine, BATCHED_QUADS) }
     }
 }
+

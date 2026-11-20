@@ -44,6 +44,8 @@ object SceneParticlePass {
     private data class Batch(val texture: Identifier, val additive: Boolean)
 
     @JvmStatic fun render(camera: Camera, partialTick: Float, frustum: Frustum, lightmap: LightTexture) {
+        // 光影包生效时场景材质拿不到可靠的颜色/深度副本，整段跳过；相关粒子已退回普通四边形。
+        if (ShaderCompat.legacyPipelines()) return
         ParticleInstancePass.render(camera.position, lightmap)
         val activeShader = shader ?: return
         val engine = ClientParticleEngine.instance() ?: return

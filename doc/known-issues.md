@@ -32,15 +32,18 @@
 ## 光影包
 
 模组不覆盖任何原版着色器文件，自建的 `particle_instances`、`scene_particle` 两个程序放在自己的命名空间下，
-光影包不会和它们抢文件。仍有三处会因为光影包的画法出现偏差，客户端配置的 `[compatibility]` 段各留一个开关，
-默认保持原有行为：
+光影包不会和它们抢文件。装了 Iris 并且正在使用光影包时，带自建管线的粒子会自动退回原版管线
+（`[compatibility]` 的 `shaderCompat`，默认开）：加法粒子改用原版半透明管线，实例化与 GPU 配方降级成普通粒子，
+`depth_fade` 与 `distortion` 按普通四边形绘制。这样光影包下不会出现「粒子整批不显示」，
+代价是加法混合、实例化批次与场景材质效果变弱。光影包关掉后自建管线立刻恢复。
 
 | 现象 | 原因 | 开关（默认 true） |
 | --- | --- | --- |
 | 加法粒子过亮、遮挡或排序不对 | 加法粒子复用原版 `core/particle` 程序，光影包替换它后，混合函数按直通 alpha 写的前提可能不成立 | `customAdditivePipeline` |
 | 逐像素淡出、折射的画面发灰或位置不对 | 这两项读本帧的颜色和深度副本，光影包可能更换渲染目标或改后处理顺序 | `sceneMaterials` |
-| 地面被粒子灯照得过曝 | 动态光会烘进地形顶点，光影包自己计算地形光照时容易叠加 | `terrainDynamicLights` |
+| 地面被粒子灯照得过曝 | 动态光会烘进地形顶点（Sodium 下并进它的方块光采样），光影包自己计算地形光照时容易叠加 | `terrainDynamicLights` |
 
+`[debug]` 段的 `forceLegacyPipelines` 能在没有光影包时预览上面这套降级效果。
 排查顺序：先关 `terrainDynamicLights`（地面过曝多半在这一路），再关 `customAdditivePipeline`，
 最后关 `sceneMaterials`。关掉后对应粒子退回原版管线或普通画法，效果会减弱，但不会再和光影包互相影响。
 

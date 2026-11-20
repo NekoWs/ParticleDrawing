@@ -62,6 +62,8 @@ internal object ParticleInstancePass {
                             val frame: SceneGpuBufferSlice, val data: SceneGpuBufferSlice, val count: Int)
 
     fun render() {
+        // 光影包生效时实例化粒子的管线不被识别，整批跳过；新生成的配方已按普通粒子降级。
+        if (ShaderCompat.legacyPipelines()) return
         if (!ParticleInstanceDraws.hasDraws()) return
         val mc = Minecraft.getInstance()
         val target = mc.gameRenderer.mainRenderTarget()
@@ -187,3 +189,4 @@ internal object ParticleInstancePass {
         usedGeometry.clear()
     }
 }
+

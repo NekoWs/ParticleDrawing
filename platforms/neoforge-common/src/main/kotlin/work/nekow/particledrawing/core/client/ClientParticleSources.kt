@@ -47,9 +47,11 @@ internal object ClientParticleSources {
                     val recipe = requireNotNull(p.recipe)
                     recipe.validate()
                     val anchor = requireNotNull(p.anchor)
-                    if (p.mode == ParticleRecipeMode.GPU) ClientGpuParticles.start(p.id, recipe, anchor)
+                    // 光影包兼容：实例化与 GPU 配方走模组自建管线，光影包生效时降级成普通粒子。
+                    val legacy = ShaderCompat.legacyPipelines()
+                    if (p.mode == ParticleRecipeMode.GPU && !legacy) ClientGpuParticles.start(p.id, recipe, anchor)
                     else sources[p.id] = Entry(p.id, RecipeRuntime(recipe, p.burst, world = ClientParticleWorld), anchor,
-                        p.mode == ParticleRecipeMode.INSTANCED)
+                        p.mode == ParticleRecipeMode.INSTANCED && !legacy)
                 }
                 RecipeOperation.UPDATE -> sources[p.id]?.runtime?.update(requireNotNull(p.recipe))
                 RecipeOperation.ANCHOR -> sources[p.id]?.anchor = requireNotNull(p.anchor)
@@ -248,3 +250,4 @@ internal object ClientParticleSources {
         }
     }
 }
+

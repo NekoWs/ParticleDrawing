@@ -43,6 +43,8 @@ internal object ParticleInstancePass {
     }
 
     fun render(camera: Vec3, lightmap: LightTexture) {
+        // 光影包生效时实例化粒子的管线不被识别，整批跳过；新生成的配方已按普通粒子降级。
+        if (ShaderCompat.legacyPipelines()) return
         try {
             val active = shader ?: return
             if (!ParticleInstanceDraws.hasDraws()) return
