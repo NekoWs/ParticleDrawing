@@ -70,15 +70,12 @@ object DynamicLightManager {
     private const val CELL_BITS = 4
     private const val CELL_MASK = 0x1FFFFF
 
-    /** 积压较多时每 50ms 提交一批，阴影每 25ms 优先提交；队列小的时候逐帧提交，移动光源才跟手。 */
-    private const val TERRAIN_REFRESH_NANOS = 50_000_000L
-    private const val SHADOW_REFRESH_NANOS = 25_000_000L
-    private const val MAX_REBUILDS_PER_BATCH = 1024
-    private const val MAX_SHADOW_REBUILDS_PER_BATCH = 128
-
-    /** 队列不超过这个数就不等间隔，直接每帧提交（移动光源产生的少量区块更新）。 */
-    private const val SMALL_QUEUE = 96
-    private const val SMALL_SHADOW_QUEUE = 48
+    /**
+     * 每帧提交的重建预算：脏区块一产生就按预算逐帧消化。
+     * 固定 50ms 分批会让移动光源的光斑隔几帧才动一次，看起来是一跳一跳的。
+     */
+    private const val MAX_REBUILDS_PER_FRAME = 64
+    private const val MAX_SHADOW_REBUILDS_PER_FRAME = 24
 
     private val TRIPLE_ZERO = Triple(0.0, 0.0, 0.0)
 
@@ -189,8 +186,6 @@ object DynamicLightManager {
 
     /** [pendingSections] 所属的关卡；换维后旧 section 键不能带到新世界。 */
     private var pendingLevel: ClientLevel? = null
-    private var lastTerrainSubmitNs: Long? = null
-    private var lastShadowSubmitNs: Long? = null
 
     internal class LightSource(
         val id: UUID,
@@ -599,7 +594,7 @@ object DynamicLightManager {
     internal fun tintTerrainColor(
         color: Int, block: Int, brightest: Double, weight: Double, red: Double, green: Double, blue: Double,
     ): Int {
-        val tint = (brightest - block).coerceAtLeast(0.0) / (brightest + 2.0)
+        val tint = (brightest - block).coerceAtLeast(0.0) / (brightest + 8.0) * 0.5
         fun channel(input: Int, total: Double): Int =
             (input * (1.0 - tint * (1.0 - total / (weight * 255.0)))).roundToInt().coerceIn(0, 255)
         val r = channel((color shr 16) and 255, red)
@@ -687,8 +682,6 @@ object DynamicLightManager {
     private fun resetPendingSections() {
         pendingSections.clear()
         pendingShadowSections.clear()
-        lastTerrainSubmitNs = null
-        lastShadowSubmitNs = null
     }
 
     /** 切关卡时丢掉上一关的 pending 键与基准；同一关则保留跨帧积压。 */
@@ -724,17 +717,9 @@ object DynamicLightManager {
             return
         }
 
-        val now = System.nanoTime()
-        val lastShadow = lastShadowSubmitNs
-        if (pendingShadowSections.isNotEmpty() && (pendingShadowSections.size <= SMALL_SHADOW_QUEUE || lastShadow == null || now - lastShadow >= SHADOW_REFRESH_NANOS)) {
-            lastShadowSubmitNs = now
-            submitSections(pendingShadowSections, pendingSections, MAX_SHADOW_REBUILDS_PER_BATCH)
-        }
-        val last = lastTerrainSubmitNs
-        if (pendingSections.isNotEmpty() && (pendingSections.size <= SMALL_QUEUE || last == null || now - last >= TERRAIN_REFRESH_NANOS)) {
-            lastTerrainSubmitNs = now
-            submitSections(pendingSections, pendingShadowSections, MAX_REBUILDS_PER_BATCH)
-        }
+        // 阴影优先：它决定影子边界，视觉上最敏感；两张队列都按每帧预算推进。
+        submitSections(pendingShadowSections, pendingSections, MAX_SHADOW_REBUILDS_PER_FRAME)
+        submitSections(pendingSections, pendingShadowSections, MAX_REBUILDS_PER_FRAME)
     }
 
     private fun submitSections(queue: MutableSet<Long>, other: MutableSet<Long>, max: Int) {
@@ -750,6 +735,8 @@ object DynamicLightManager {
         }
     }
 }
+
+
 
 
 
