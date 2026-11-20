@@ -749,6 +749,9 @@ trail.isActive()
 | `enableDynamicLights` | true | 还卡就整个关掉；没有发光粒子时这一整段本来就会每帧跳过 |
 | `particleBatchSize` | 4096 | 每 tick 同步多少颗粒子的缓动（公平轮转，掉到很小时缓动会变慢，不要先降它） |
 
+配合光影包时另有三处可单独关掉的兼容开关（`customAdditivePipeline`、`sceneMaterials`、`terrainDynamicLights`），
+见[光影包](known-issues.md#光影包)。
+
 粒子被截断时会看到日志里「渲染粒子上限已满」的提醒，说明是上限而不是效果没生成。
 
 想知道到底卡在哪一段，把 `debugLogFps` 打开（`[debug]` 段，默认关）：每 5 秒一行

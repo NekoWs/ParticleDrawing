@@ -61,6 +61,9 @@ object ParticleDrawingConfig {
         val maxParticleGeometryQuads: ModConfigSpec.IntValue
         val particleLodDistance: ModConfigSpec.DoubleValue
         val particleBatchSize: ModConfigSpec.IntValue
+        val customAdditivePipeline: ModConfigSpec.BooleanValue
+        val sceneMaterials: ModConfigSpec.BooleanValue
+        val terrainDynamicLights: ModConfigSpec.BooleanValue
         val debugLogFps: ModConfigSpec.BooleanValue
 
         init {
@@ -98,6 +101,18 @@ object ParticleDrawingConfig {
             particleBatchSize = builder
                 .comment("The number of particles whose eased state is synchronized to the renderer per frame (fair round-robin batch).")
                 .defineInRange("particleBatchSize", 4096, 64, 65536)
+            builder.pop()
+
+            builder.push("compatibility")
+            customAdditivePipeline = builder
+                .comment("Draw additive particles with the mod's own blend pipeline. Turn this off when a shader pack overexposes or mis-sorts additive particles; they then use the vanilla translucent particle pipeline without additive blending.")
+                .define("customAdditivePipeline", true)
+            sceneMaterials = builder
+                .comment("Let particles sample the frame's color and depth for depth_fade and distortion. Turn this off when a shader pack makes those particles look wrong; they then draw as ordinary particles.")
+                .define("sceneMaterials", true)
+            terrainDynamicLights = builder
+                .comment("Let particle lights brighten terrain vertices. Turn this off when a shader pack computes its own terrain lighting and the ground overexposes; entities and particles still receive dynamic light through the lightmap.")
+                .define("terrainDynamicLights", true)
             builder.pop()
 
             builder.push("debug")

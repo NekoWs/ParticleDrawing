@@ -135,3 +135,7 @@ func process() {
 读取原版光图的光影包可继承标量亮度。独立计算体素追踪或手持光源的管线可用
 `ParticleLights.snapshotInto(out)` 读取当帧世界坐标、强度、半径、形状和 RGB。
 读取时可复用目标列表，按自己的渲染预算选取光源。[渲染限制](known-issues.md#动态光照)
+
+客户端配置 `[compatibility]` 段的 `terrainDynamicLights`（默认 `true`）单独控制动态光是否烘进地形顶点。
+光影包自己计算地形光照、地面被粒子灯照得过曝时关掉它，实体和粒子仍然通过光图接收动态光。
+其余兼容开关见[光影包](known-issues.md#光影包)。

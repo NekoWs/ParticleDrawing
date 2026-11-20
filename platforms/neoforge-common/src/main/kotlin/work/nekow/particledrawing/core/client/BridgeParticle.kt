@@ -18,6 +18,7 @@ import work.nekow.particledrawing.animation.ParticleUvRegion
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleVisual
+import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.lighting.DynamicLightManager
 import work.nekow.particledrawing.util.VisualMath
 import work.nekow.particledrawing.math.Vec3 as CoreVec3
@@ -481,16 +482,19 @@ class BridgeParticle(
      */
     private var layerCache: Layer? = null
     private var layerTranslucent = false
+    private var layerCustomBlend = false
 
     override fun getLayer(): Layer {
         refreshTextureIfStale()
         val translucent = additive || alpha < 1.0f || effects?.translucent == true
+        // 光影包兼容：关掉自定义加法管线后，加法粒子退回原版半透明管线（没有加法混合和 OIT 加法阶段）。
+        val customBlend = additive && ParticleDrawingConfig.CLIENT.customAdditivePipeline.get()
         val cached = layerCache
-        if (cached != null && translucent == layerTranslucent) return cached
+        if (cached != null && translucent == layerTranslucent && customBlend == layerCustomBlend) return cached
         val built = if (additive) {
-            // 加法混合：始终走半透明通道 + ADDITIVE_PARTICLE 管线。
+            // 加法混合：默认走半透明通道 + ADDITIVE_PARTICLE 管线。
             // texEntry 恒非空（无贴图回退 defaultWhite），取它的 atlas id。
-            particleLayer(texEntry!!.id, true, true)
+            particleLayer(texEntry!!.id, true, customBlend)
         } else {
             val entry = texEntry
             if (entry != null) {
@@ -503,6 +507,7 @@ class BridgeParticle(
         }
         layerCache = built
         layerTranslucent = translucent
+        layerCustomBlend = customBlend
         return built
     }
 

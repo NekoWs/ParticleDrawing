@@ -493,12 +493,17 @@ object DynamicLightManager {
     @JvmStatic
     fun isEnabled(): Boolean = ParticleDrawingConfig.CLIENT.enableDynamicLights.get()
 
+    /** @return 动态光是否烘进地形顶点；光影包自己算地形光照时关掉这一路，实体仍走光图。 */
+    @JvmStatic
+    fun isTerrainEnabled(): Boolean =
+        ParticleDrawingConfig.CLIENT.terrainDynamicLights.get() && isEnabled()
+
     @JvmStatic
     fun hasActiveLights(): Boolean = lightBounds != null && isEnabled()
 
     @JvmStatic
     fun hasTerrainLightsAt(x: Int, y: Int, z: Int): Boolean =
-        lightBounds?.contains(x.toDouble(), y.toDouble(), z.toDouble(), margin = 2.0) == true && isEnabled()
+        lightBounds?.contains(x.toDouble(), y.toDouble(), z.toDouble(), margin = 2.0) == true && isTerrainEnabled()
 
     @JvmStatic
     fun getDynamicLightLevel(x: Double, y: Double, z: Double): Double {

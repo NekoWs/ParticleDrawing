@@ -698,6 +698,8 @@ pdraw particle emitter haze appearance distortion 16
 
 模组内置一张参考贴图 `particle:particledrawing:lens`：径向放大，直接写
 `texture particle:particledrawing:lens` 就能试。完整场景见[折射透镜示例](../examples/lens-demo/README.md)。
+客户端配置 `[compatibility]` 段的 `sceneMaterials`（默认 `true`）可以整段关掉这两项效果，
+改用普通画法，见[光影包](known-issues.md#光影包)。
 
 两种效果使用普通场景透明合成后的同一份深度与颜色副本。26.3 开启 OIT 时，场景材质在 OIT 合成后绘制，
 可读取已合成的画面；场景材质之间按批次混合。透过不写深度的表面时，淡出使用深度缓冲记录的表面。
