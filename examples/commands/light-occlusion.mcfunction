@@ -19,13 +19,16 @@ gamerule minecraft:advance_time false
 time set midnight
 weather clear
 
-# 唯一的斜射白光（横向移动）：从右上方斜着打向左边的墙角，在 X 方向来回扫（短寿命粒子持续重生成，光跟着走），
+# 唯一的斜射白光（横向移动）：从右上方斜着打向左边的墙角，在 X 方向来回扫（常驻粒子用 motion x 每刻更新位置，光平滑跟随），
 # 锥角 35°、锥内不衰减；墙和柱子会把光挡住，影子上方仍保留覆盖的光。
 pdraw particle emitter reset light_main
 pdraw particle emitter light_main anchor fixed ~ ~ ~
-pdraw particle emitter light_main birth position vec3(7+sin(t*0.00050)*4.5, 6.4, 13)
+pdraw particle emitter light_main birth position vec3(7, 6.4, 13)
+pdraw particle emitter light_main motion x 7+sin(t*0.00050)*4.5
+pdraw particle emitter light_main motion y 6.4
+pdraw particle emitter light_main motion z 13
 pdraw particle emitter light_main sample count 1
-pdraw particle emitter light_main lifetime 4
+pdraw particle emitter light_main lifetime -1
 pdraw particle emitter light_main appearance style soft_dot
 pdraw particle emitter light_main appearance color #ffffff
 pdraw particle emitter light_main appearance size_world 0.3,0.3
@@ -35,10 +38,11 @@ pdraw particle emitter light_main appearance spot 35,14
 pdraw particle emitter light_main appearance light_dir -35,-55
 pdraw particle emitter light_main appearance light_range 16
 pdraw particle emitter light_main appearance light_falloff smooth
-pdraw particle emitter light_main rate 2
+pdraw particle emitter light_main rate 1
 pdraw particle emitter light_main interval 1
-pdraw particle emitter light_main max_alive 2
+pdraw particle emitter light_main max_alive 1
 pdraw particle emitter light_main start
+
 
 
 
