@@ -82,8 +82,8 @@ object ParticleDrawingConfig {
                 .comment("Draw a faint beam for nearby spotlights.")
                 .define("showSpotlightBeams", false)
             maxShadowedParticleLights = builder
-                .comment("Number of nearby particle lights with up to 16 blocks of range that cast terrain shadows. Zero disables occlusion.")
-                .defineInRange("maxShadowedParticleLights", 0, 0, 4)
+                .comment("Number of nearby particle lights with up to 16 blocks of range that cast terrain shadows. Zero disables occlusion; raise it when several lights in a scene still bleed through blocks. Higher values cost more raycasts per frame.")
+                .defineInRange("maxShadowedParticleLights", 0, 0, 16)
             maxDynamicLights = builder
                 .comment("The maximum number of dynamic light sources active at once (global upper bound).")
                 .defineInRange("maxDynamicLights", 512, 0, 4096)
@@ -140,6 +140,7 @@ object ParticleDrawingConfig {
         }
     }
 }
+
 
 
 
