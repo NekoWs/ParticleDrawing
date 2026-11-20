@@ -686,6 +686,10 @@ pdraw particle emitter motes probe add solid direction "1,0,0" 4 material minecr
 `distortion` 以像素为单位。贴图红、绿通道控制偏移方向，0.5 表示该轴无偏移，贴图透明度控制偏移幅度和混合。
 两个参数都可设为 0 关闭。游戏命令和 API 的默认材质保持原有绘制路径。
 
+偏移按屏幕坐标计算：红通道大于 0.5 时采样点往右移，绿通道大于 0.5 时往上移。贴图第一行落在粒子顶端，
+所以红、绿两个方向在图像里并不对称。想让四周都朝粒子中心收（镜面放大），红通道要随列增大而减小，
+绿通道要随行增大而增大；按「绿通道指向图像上方」画的法线贴图，上下方向会反成缩小。
+
 ```mcfunction
 pdraw particle emitter smoke appearance depth_fade 1.25
 pdraw particle emitter haze appearance style soft_dot
@@ -694,6 +698,7 @@ pdraw particle emitter haze appearance distortion 16
 
 两种效果使用普通场景透明合成后的同一份深度与颜色副本。26.3 开启 OIT 时，场景材质在 OIT 合成后绘制，
 可读取已合成的画面；场景材质之间按批次混合。透过不写深度的表面时，淡出使用深度缓冲记录的表面。
+副本里已经包含此前绘制的普通粒子，折射会连它们一起采样，贴得近的粒子在镜内会出现一份影子。
 多个折射粒子读取同一底图。逐像素淡出可以与已有的 `soft` 方块表面淡出叠用。
 Kotlin 和 Java 可设置 `ParticleVisual.sceneMaterial`。这些材质参数当前用于命令和 API。
 
