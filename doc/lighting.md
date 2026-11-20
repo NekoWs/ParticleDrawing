@@ -136,6 +136,9 @@ func process() {
 `ParticleLights.snapshotInto(out)` 读取当帧世界坐标、强度、半径、形状和 RGB。
 读取时可复用目标列表，按自己的渲染预算选取光源。[渲染限制](known-issues.md#动态光照)
 
-客户端配置 `[compatibility]` 段的 `terrainDynamicLights`（默认 `true`）单独控制动态光是否烘进地形顶点。
+客户端配置 `[compatibility]` 段的 `terrainDynamicLights`（默认 `true`）单独控制动态光是否烘进地形。
+装 Sodium 时地形网格由它的区块构建器生成，这一路改为把动态光并进 Sodium 的方块光采样，再按方块位置
+给顶点上色，开关同时控制两条路；Sodium 下不发光四边形与流体不受影响。
 光影包自己计算地形光照、地面被粒子灯照得过曝时关掉它，实体和粒子仍然通过光图接收动态光。
 其余兼容开关见[光影包](known-issues.md#光影包)。
+

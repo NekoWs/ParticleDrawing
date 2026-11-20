@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "package": "work.nekow.particledrawing.mixin.sodium",
+  "compatibilityLevel": "JAVA_25",
+  "plugin": "work.nekow.particledrawing.mixin.sodium.SodiumMixinPlugin",
+  "mixins": [],
+  "client": [
+    "SodiumArrayLightDataCacheMixin",
+    "SodiumSingleBlockLightDataCacheMixin",
+    "SodiumBlockRendererMixin",
+    "SodiumMutableQuadMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

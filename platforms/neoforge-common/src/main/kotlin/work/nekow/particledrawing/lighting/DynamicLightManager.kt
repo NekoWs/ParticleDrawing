@@ -598,6 +598,44 @@ object DynamicLightManager {
         return (color and 0xff000000.toInt()) or (r shl 16) or (g shl 8) or b
     }
 
+    /**
+     * Sodium 的光数据：低 4 位是方块光等级。动态光更亮时抬高它，Sodium 自己的平滑光照与 AO
+     * 管线就会顺着采样算出更亮的顶点光照，不用再改地形顶点。
+     */
+    @JvmStatic
+    fun lightDataWithDynamicLight(lightData: Int, x: Int, y: Int, z: Int): Int {
+        if (!hasTerrainLightsAt(x, y, z)) return lightData
+        val level = getDynamicLightLevel(x + 0.5, y + 0.5, z + 0.5).roundToInt().coerceIn(0, 15)
+        if (level <= (lightData and 0x0F)) return lightData
+        terrainOverrides.increment()
+        return (lightData and 0x0F.inv()) or level
+    }
+
+    /**
+     * Sodium 不使用原版 QuadInstance，拿不到逐顶点光图，只能按当前方块位置给四边形顶点上色。
+     * 方块自身光照按 0 处理：光斑主要落在原本无光的地形上，与逐顶点着色结果接近。
+     */
+    @JvmStatic
+    fun tintSodiumQuadColor(color: Int, x: Double, y: Double, z: Double): Int {
+        if (!hasTerrainLightsAt(floor(x).toInt(), floor(y).toInt(), floor(z).toInt())) return color
+        var brightest = 0.0
+        var weight = 0.0
+        var red = 0.0
+        var green = 0.0
+        var blue = 0.0
+        visitContributions(x, y, z, TERRAIN_SAMPLE_RADIUS) { source, level ->
+            if (level > 0.0) {
+                if (level > brightest) brightest = level
+                weight += level
+                red += ((source.rgb shr 16) and 255) * level
+                green += ((source.rgb shr 8) and 255) * level
+                blue += (source.rgb and 255) * level
+            }
+        }
+        if (brightest <= 0.0) return color
+        return tintTerrainColor(color, 0, brightest, weight, red, green, blue)
+    }
+
     private fun packVertex(color: Int, lightmap: Int): Long =
         (color.toLong() shl 32) or (lightmap.toLong() and 0xffffffffL)
 

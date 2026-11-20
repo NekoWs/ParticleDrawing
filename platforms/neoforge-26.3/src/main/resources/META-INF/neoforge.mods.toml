@@ -28,6 +28,10 @@ A high-performance particle animation library.
 [[mixins]]
 config="${mod_id}.mixins.json"
 
+# Sodium 兼容（未安装 Sodium 时由配置插件跳过整组 mixin）。
+[[mixins]]
+config="${mod_id}.sodium.mixins.json"
+
 #[[accessTransformers]]
 #file="META-INF/accesstransformer.cfg"
 
