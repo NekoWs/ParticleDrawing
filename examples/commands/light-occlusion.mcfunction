@@ -33,12 +33,13 @@ pdraw particle emitter light_main appearance glowing true
 pdraw particle emitter light_main appearance light 15
 pdraw particle emitter light_main appearance spot 35,14
 pdraw particle emitter light_main appearance light_dir -35,-55
-pdraw particle emitter light_main appearance light_range 15
-pdraw particle emitter light_main appearance light_falloff constant
+pdraw particle emitter light_main appearance light_range 16
+pdraw particle emitter light_main appearance light_falloff smooth
 pdraw particle emitter light_main lifetime -1
 pdraw particle emitter light_main rate 1
 pdraw particle emitter light_main max_alive 1
 pdraw particle emitter light_main start
+
 
 
 

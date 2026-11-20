@@ -86,7 +86,7 @@ object DynamicLightManager {
 
     /** 光源最大照射半径（格），每帧从配置刷新，默认 16。 */
     private const val DEFAULT_RADIUS = 16.0
-    private const val TERRAIN_SAMPLE_RADIUS = 0.85
+    private const val TERRAIN_SAMPLE_RADIUS = 1.6
 
     /** 以 cell（16 格）为单位的邻近搜索半径，= ceil(lightRadius / 16)。 */
     @Volatile
@@ -571,9 +571,47 @@ object DynamicLightManager {
             x, y, z, src.x, src.y, src.z, src.luminance, src.range,
             src.dirX, src.dirY, src.dirZ, src.innerCos, src.outerCos, src.falloff, src.edge, sampleRadius,
         )
+        if (brightness <= 0.0) return 0.0
         val shadow = src.occlusion
-        if (brightness > 0.0 && shadow != null && shadow.index.blocks(shadow.origin, x, y, z)) return 0.0
+        if (shadow != null) {
+            val visibility = visibilityOf(shadow, x, y, z, sampleRadius)
+            if (visibility <= 0.0) return 0.0
+            return (brightness * visibility * lightScale).coerceAtMost(15.0)
+        }
         return (brightness * lightScale).coerceAtMost(15.0)
+    }
+
+    /**
+     * 遮挡可见度：0 = 全挡住，1 = 全亮。
+     *
+     * 地形顶点间距一格，单条射线会让影子边界整格跳动；这里沿垂直于视线的方向再取两点平均，
+     * 把影子边缘压成一条软过渡。采样半径 0（粒子/实体光图）仍走单点，省开销。
+     */
+    private fun visibilityOf(shadow: ClientLightOccluders.Snapshot, x: Double, y: Double, z: Double, sampleRadius: Double): Double {
+        val centerBlocked = if (shadow.index.blocks(shadow.origin, x, y, z)) 0.0 else 1.0
+        if (sampleRadius <= 0.0) return centerBlocked
+        val dx = x - shadow.origin.x
+        val dy = y - shadow.origin.y
+        val dz = z - shadow.origin.z
+        val len = sqrt(dx * dx + dy * dy + dz * dz)
+        if (len <= 1e-6) return centerBlocked
+        // 视线方向与一个辅助轴的叉积，得到与视线垂直的方向
+        val helperX = if (kotlin.math.abs(dy / len) < 0.9) 1.0 else 0.0
+        val helperY = if (kotlin.math.abs(dy / len) < 0.9) 0.0 else 1.0
+        var px = dy * 0.0 - dz * helperY
+        var py = dz * helperX - dx * 0.0
+        var pz = dx * helperY - dy * helperX
+        // 上面叉积等价于 view × (helperX, helperY, 0)，再归一化
+        val plen = sqrt(px * px + py * py + pz * pz)
+        if (plen <= 1e-6) return centerBlocked
+        val offset = sampleRadius * 0.6 / plen
+        px *= offset
+        py *= offset
+        pz *= offset
+        var visible = centerBlocked * 0.5
+        if (!shadow.index.blocks(shadow.origin, x + px, y + py, z + pz)) visible += 0.25
+        if (!shadow.index.blocks(shadow.origin, x - px, y - py, z - pz)) visible += 0.25
+        return visible
     }
 
     /** 只抬高方块光，保留原版天空光与已照亮的方块。 */
@@ -753,6 +791,7 @@ object DynamicLightManager {
         }
     }
 }
+
 
 
 
