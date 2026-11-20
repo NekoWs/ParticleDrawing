@@ -34,8 +34,8 @@ private fun quantizeLuminance(luminance: Double): Int = (luminance * 16.0).toInt
  */
 internal object LightBakePolicy {
 
-    private const val MOVE_THRESHOLD_SQUARED = 0.25 * 0.25
-    private const val SHADOW_MOVE_THRESHOLD_SQUARED = 0.0625 * 0.0625
+    private const val MOVE_THRESHOLD_SQUARED = 0.06 * 0.06
+    private const val SHADOW_MOVE_THRESHOLD_SQUARED = 0.03 * 0.03
 
     /** 上一帧位移小于该距离平方视为已停住。 */
     private const val SETTLE_EPSILON_SQUARED = 1e-12
@@ -70,11 +70,15 @@ object DynamicLightManager {
     private const val CELL_BITS = 4
     private const val CELL_MASK = 0x1FFFFF
 
-    /** 普通光源每 50ms 提交一批，阴影每 25ms 优先提交。 */
+    /** 积压较多时每 50ms 提交一批，阴影每 25ms 优先提交；队列小的时候逐帧提交，移动光源才跟手。 */
     private const val TERRAIN_REFRESH_NANOS = 50_000_000L
     private const val SHADOW_REFRESH_NANOS = 25_000_000L
     private const val MAX_REBUILDS_PER_BATCH = 1024
     private const val MAX_SHADOW_REBUILDS_PER_BATCH = 128
+
+    /** 队列不超过这个数就不等间隔，直接每帧提交（移动光源产生的少量区块更新）。 */
+    private const val SMALL_QUEUE = 96
+    private const val SMALL_SHADOW_QUEUE = 48
 
     private val TRIPLE_ZERO = Triple(0.0, 0.0, 0.0)
 
@@ -722,12 +726,12 @@ object DynamicLightManager {
 
         val now = System.nanoTime()
         val lastShadow = lastShadowSubmitNs
-        if (pendingShadowSections.isNotEmpty() && (lastShadow == null || now - lastShadow >= SHADOW_REFRESH_NANOS)) {
+        if (pendingShadowSections.isNotEmpty() && (pendingShadowSections.size <= SMALL_SHADOW_QUEUE || lastShadow == null || now - lastShadow >= SHADOW_REFRESH_NANOS)) {
             lastShadowSubmitNs = now
             submitSections(pendingShadowSections, pendingSections, MAX_SHADOW_REBUILDS_PER_BATCH)
         }
         val last = lastTerrainSubmitNs
-        if (pendingSections.isNotEmpty() && (last == null || now - last >= TERRAIN_REFRESH_NANOS)) {
+        if (pendingSections.isNotEmpty() && (pendingSections.size <= SMALL_QUEUE || last == null || now - last >= TERRAIN_REFRESH_NANOS)) {
             lastTerrainSubmitNs = now
             submitSections(pendingSections, pendingShadowSections, MAX_REBUILDS_PER_BATCH)
         }
@@ -746,6 +750,7 @@ object DynamicLightManager {
         }
     }
 }
+
 
 
 
