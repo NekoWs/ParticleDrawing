@@ -97,6 +97,10 @@ object DynamicLightManager {
     @Volatile
     private var lightBounds: LightBounds? = null
 
+    /** 粒子光整体亮度倍率，配置改动后下一次刷新光源时生效。 */
+    @Volatile
+    private var lightScale = 1.0
+
     private class LightBounds(
         val minX: Double, val minY: Double, val minZ: Double,
         val maxX: Double, val maxY: Double, val maxZ: Double,
@@ -244,6 +248,7 @@ object DynamicLightManager {
         // 最后一个光源消失的那一帧 sources 仍非空，会正常走完重建并把版本号抬起来。
         if (pendingSections.isEmpty() && pendingShadowSections.isEmpty() && sources.isEmpty() && !engine.hasLightEmitters()) return
 
+        lightScale = ParticleDrawingConfig.CLIENT.lightBrightness.get()
         val mc = Minecraft.getInstance()
         val player = mc.player
         val level = mc.level
@@ -544,13 +549,14 @@ object DynamicLightManager {
     }
 
     private fun contribution(src: LightSource, x: Double, y: Double, z: Double, sampleRadius: Double): Double {
+        if (lightScale <= 0.0) return 0.0
         val brightness = LightMath.contributionOf(
             x, y, z, src.x, src.y, src.z, src.luminance, src.range,
             src.dirX, src.dirY, src.dirZ, src.innerCos, src.outerCos, src.falloff, src.edge, sampleRadius,
         )
         val shadow = src.occlusion
         if (brightness > 0.0 && shadow != null && shadow.index.blocks(shadow.origin, x, y, z)) return 0.0
-        return brightness
+        return (brightness * lightScale).coerceAtMost(15.0)
     }
 
     /** 只抬高方块光，保留原版天空光与已照亮的方块。 */
@@ -740,6 +746,7 @@ object DynamicLightManager {
         }
     }
 }
+
 
 
 

@@ -57,6 +57,7 @@ object ParticleDrawingConfig {
         val showSpotlightBeams: ModConfigSpec.BooleanValue
         val maxShadowedParticleLights: ModConfigSpec.IntValue
         val enableDynamicLights: ModConfigSpec.BooleanValue
+        val lightBrightness: ModConfigSpec.DoubleValue
         val maxRenderParticles: ModConfigSpec.IntValue
         val maxParticleGeometryQuads: ModConfigSpec.IntValue
         val particleLodDistance: ModConfigSpec.DoubleValue
@@ -74,6 +75,9 @@ object ParticleDrawingConfig {
             enableDynamicLights = builder
                 .comment("Enable dynamic lighting from glowing particles.")
                 .define("enableDynamicLights", true)
+            lightBrightness = builder
+                .comment("Multiplier applied to the light level particle lights contribute. Lower it when many strong lights wash out the ground or blow out additive particles on bright surfaces.")
+                .defineInRange("lightBrightness", 1.0, 0.0, 2.0)
             showSpotlightBeams = builder
                 .comment("Draw a faint beam for nearby spotlights.")
                 .define("showSpotlightBeams", false)
@@ -136,5 +140,6 @@ object ParticleDrawingConfig {
         }
     }
 }
+
 
 
