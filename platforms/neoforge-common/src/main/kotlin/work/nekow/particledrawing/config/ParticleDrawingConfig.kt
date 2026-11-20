@@ -111,8 +111,8 @@ object ParticleDrawingConfig {
                 .comment("When a shader pack (Iris) is in use, fall back to vanilla particle pipelines for the mod's own pipelines: additive blending, instanced recipes and scene materials degrade automatically. Turn this off to keep the mod's pipelines under a shader pack, accepting that the pack may not render them.")
                 .define("shaderCompat", true)
             shaderLightPools = builder
-                .comment("Under a shader pack the ground usually ignores the mod's terrain light, so draw a soft light patch on the surface under each particle light instead. Only active together with shaderCompat.")
-                .define("shaderLightPools", true)
+                .comment("Optional fallback for shader packs that ignore the vanilla lightmap: draw a soft light patch on the surface under each particle light. Off by default because most packs read the lightmap, where the baked terrain light already shows up. Only active together with shaderCompat.")
+                .define("shaderLightPools", false)
             customAdditivePipeline = builder
                 .comment("Draw additive particles with the mod's own blend pipeline. Turn this off when a shader pack overexposes or mis-sorts additive particles; they then use the vanilla translucent particle pipeline without additive blending.")
                 .define("customAdditivePipeline", true)
@@ -136,4 +136,5 @@ object ParticleDrawingConfig {
         }
     }
 }
+
 

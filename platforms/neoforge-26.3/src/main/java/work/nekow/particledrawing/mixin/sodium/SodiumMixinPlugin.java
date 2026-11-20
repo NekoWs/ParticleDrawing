@@ -17,6 +17,7 @@ import java.util.Set;
  */
 public final class SodiumMixinPlugin implements IMixinConfigPlugin {
     private static final String SODIUM_ID = "sodium";
+    private static volatile boolean announced;
 
     @Override
     public void onLoad(String mixinPackage) {
@@ -29,7 +30,15 @@ public final class SodiumMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
-        return sodiumLoaded() && targetPresent(targetClassName);
+        // 只看目标类在不在：正式环境里模组列表在 mixin 准备阶段可能还没就绪，
+        // 用模组 id 判断会让整组兼容静默失效（开发环境反而正常）。
+        boolean present = targetPresent(targetClassName);
+        if (!announced) {
+            announced = true;
+            org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").info(
+                "[PD-compat] Sodium mixins {} (target {})", present ? "enabled" : "skipped", targetClassName);
+        }
+        return present;
     }
 
     @Override
@@ -71,3 +80,4 @@ public final class SodiumMixinPlugin implements IMixinConfigPlugin {
         return loader != null && loader.getResource(targetClassName.replace('.', '/') + ".class") != null;
     }
 }
+
