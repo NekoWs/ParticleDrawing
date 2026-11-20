@@ -88,8 +88,8 @@ object ParticleDrawingConfig {
                 .comment("The maximum number of dynamic light sources active at once (global upper bound).")
                 .defineInRange("maxDynamicLights", 512, 0, 4096)
             maxDynamicLightsPerCell = builder
-                .comment("The maximum number of dynamic light sources computed per 16x16x16 cell. Limits lights locally so each area keeps its brightest sources instead of being starved by distant ones.")
-                .defineInRange("maxDynamicLightsPerCell", 8, 1, 64)
+                .comment("The maximum number of dynamic light sources computed per 16x16x16 cell. Lights beyond this are dropped for that cell, which can look like a lamp switching off; raise it if that happens.")
+                .defineInRange("maxDynamicLightsPerCell", 32, 1, 128)
             dynamicLightMaxDistance = builder
                 .comment("Default range of particle lights without an explicit range.")
                 .defineInRange("dynamicLightMaxDistance", 16.0, 1.0, 64.0)
@@ -140,6 +140,7 @@ object ParticleDrawingConfig {
         }
     }
 }
+
 
 
 

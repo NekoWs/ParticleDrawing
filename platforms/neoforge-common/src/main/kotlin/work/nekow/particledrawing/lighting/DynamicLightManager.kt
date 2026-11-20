@@ -79,6 +79,11 @@ object DynamicLightManager {
 
     private val TRIPLE_ZERO = Triple(0.0, 0.0, 0.0)
 
+    /** 诊断开关：输出光源收集/遮挡/排队数量，排查“某个光源偶发不生效”。 */
+    private const val DEBUG_LIGHT_LOG = true
+    private var lastDebugNs = 0L
+    private var lastEmitterCount = 0
+
     /** 光源最大照射半径（格），每帧从配置刷新，默认 16。 */
     private const val DEFAULT_RADIUS = 16.0
     private const val TERRAIN_SAMPLE_RADIUS = 0.85
@@ -262,6 +267,7 @@ object DynamicLightManager {
         val radius = ParticleDrawingConfig.CLIENT.dynamicLightMaxDistance.get().coerceIn(1.0, LightShape.MAX_RANGE)
         val renderDistance = mc.options.effectiveRenderDistance * 16.0
         val newSources = collectSources(engine, player.x, player.y, player.z, renderDistance, partialTick, radius)
+        lastEmitterCount = candidates.size
         val shadowLimit = ParticleDrawingConfig.CLIENT.maxShadowedParticleLights.get()
         if (shadowLimit == 0) ClientLightOccluders.clear()
         else ClientLightOccluders.assign(level, newSources, Vec3(player.x, player.y, player.z), shadowLimit)
@@ -344,6 +350,18 @@ object DynamicLightManager {
         }
 
         applyPendingSections()
+        if (DEBUG_LIGHT_LOG) {
+            val now = System.nanoTime()
+            if (now - lastDebugNs >= 1_000_000_000L) {
+                lastDebugNs = now
+                val shadowed = sources.count { it.occlusion != null }
+                org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").info(
+                    "[PD-light] emitters={} sources={} shadowed={} pending={}/{} scale={}",
+                    lastEmitterCount, sources.size, shadowed,
+                    pendingSections.size, pendingShadowSections.size, lightScale,
+                )
+            }
+        }
     }
 
     /**

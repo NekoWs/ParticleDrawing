@@ -1,138 +1,132 @@
-# 方块遮挡 + 移动光源演示（斜射光 + 掠射光 + 横向扫光）。
-# 场地里有柱子、带缺口的矮墙和顶棚：上方两盏射灯斜着打下来（光斑斜跨地面与墙），
-# 一盏贴地掠射灯拖出长影，一盏射灯在顶棚下来回扫，两盏点光绕着柱子转。
-# 客户端需要：动态光照开、maxShadowedParticleLights 足够大（这里 6 盏灯都算遮挡），
-# showSpotlightBeams 开可看到光锥。
+# 白光源遮挡测试：只放普通白色光，不看颜色，只观察光是否稳定生效。
+# 场地里 3 根柱子 + 一道带缺口矮墙；5 盏固定白光 + 1 盏移动白光。
+# 关注点：某盏灯会不会整块不亮、过一阵又突然出现。
 tp @s ~ ~ ~ 0 10
 fill ~-15 ~-1 ~-5 ~15 ~12 ~23 minecraft:air
 fill ~-15 ~-1 ~-5 ~15 ~-1 ~23 minecraft:stone_bricks
-# 四周矮墙
 fill ~-15 ~ ~-5 ~15 ~2 ~-5 minecraft:stone_bricks
 fill ~-15 ~ ~23 ~15 ~2 ~23 minecraft:stone_bricks
 fill ~-15 ~ ~-5 ~-15 ~2 ~23 minecraft:stone_bricks
 fill ~15 ~ ~-5 ~15 ~2 ~23 minecraft:stone_bricks
-# 两根柱子
+# 柱子
 fill ~-6 ~ ~3 ~-5 ~4 ~4 minecraft:stone_bricks
 fill ~5 ~ ~7 ~6 ~5 ~8 minecraft:stone_bricks
+fill ~0 ~ ~11 ~1 ~3 ~12 minecraft:stone_bricks
 # 带缺口的矮墙
-fill ~-10 ~ ~15 ~10 ~3 ~15 minecraft:stone_bricks
-fill ~-2 ~ ~15 ~2 ~3 ~15 minecraft:air
-# 顶棚
-fill ~-8 ~7 ~9 ~8 ~7 ~17 minecraft:smooth_stone
+fill ~-10 ~ ~16 ~10 ~3 ~16 minecraft:stone_bricks
+fill ~-2 ~ ~16 ~2 ~3 ~16 minecraft:air
 
 gamerule minecraft:advance_time false
 time set midnight
 weather clear
 
-# 斜射灯 A：左上方斜着打向地面和矮墙，光斑斜跨一大片
-pdraw particle emitter reset occl_spot_a
-pdraw particle emitter occl_spot_a anchor fixed ~-6 ~6.4 ~9
-pdraw particle emitter occl_spot_a sample count 1
-pdraw particle emitter occl_spot_a birth position vec3(0,0,0)
-pdraw particle emitter occl_spot_a appearance style soft_dot
-pdraw particle emitter occl_spot_a appearance color #8ab4ff
-pdraw particle emitter occl_spot_a appearance size_world 0.28,0.28
-pdraw particle emitter occl_spot_a appearance glowing true
-pdraw particle emitter occl_spot_a appearance light 15
-pdraw particle emitter occl_spot_a appearance spot 30,10
-pdraw particle emitter occl_spot_a appearance light_dir 25,-50
-pdraw particle emitter occl_spot_a appearance light_range 15
-pdraw particle emitter occl_spot_a appearance light_falloff constant
-pdraw particle emitter occl_spot_a lifetime -1
-pdraw particle emitter occl_spot_a rate 1
-pdraw particle emitter occl_spot_a max_alive 1
-pdraw particle emitter occl_spot_a start
+# 白光 1：左上方斜射
+pdraw particle emitter reset light_a
+pdraw particle emitter light_a anchor fixed ~-6 ~6.4 ~9
+pdraw particle emitter light_a sample count 1
+pdraw particle emitter light_a birth position vec3(0,0,0)
+pdraw particle emitter light_a appearance style soft_dot
+pdraw particle emitter light_a appearance color #ffffff
+pdraw particle emitter light_a appearance size_world 0.3,0.3
+pdraw particle emitter light_a appearance glowing true
+pdraw particle emitter light_a appearance light 15
+pdraw particle emitter light_a appearance spot 30,10
+pdraw particle emitter light_a appearance light_dir 25,-50
+pdraw particle emitter light_a appearance light_range 15
+pdraw particle emitter light_a appearance light_falloff constant
+pdraw particle emitter light_a lifetime -1
+pdraw particle emitter light_a rate 1
+pdraw particle emitter light_a max_alive 1
+pdraw particle emitter light_a start
 
-# 斜射灯 B：右上方暖黄，斜照缺口矮墙
-pdraw particle emitter reset occl_spot_b
-pdraw particle emitter occl_spot_b anchor fixed ~7 ~6.4 ~13
-pdraw particle emitter occl_spot_b sample count 1
-pdraw particle emitter occl_spot_b birth position vec3(0,0,0)
-pdraw particle emitter occl_spot_b appearance style soft_dot
-pdraw particle emitter occl_spot_b appearance color #ffd28a
-pdraw particle emitter occl_spot_b appearance size_world 0.28,0.28
-pdraw particle emitter occl_spot_b appearance glowing true
-pdraw particle emitter occl_spot_b appearance light 15
-pdraw particle emitter occl_spot_b appearance spot 35,14
-pdraw particle emitter occl_spot_b appearance light_dir -35,-55
-pdraw particle emitter occl_spot_b appearance light_range 15
-pdraw particle emitter occl_spot_b appearance light_falloff constant
-pdraw particle emitter occl_spot_b lifetime -1
-pdraw particle emitter occl_spot_b rate 1
-pdraw particle emitter occl_spot_b max_alive 1
-pdraw particle emitter occl_spot_b start
+# 白光 2：右上方斜射
+pdraw particle emitter reset light_b
+pdraw particle emitter light_b anchor fixed ~7 ~6.4 ~13
+pdraw particle emitter light_b sample count 1
+pdraw particle emitter light_b birth position vec3(0,0,0)
+pdraw particle emitter light_b appearance style soft_dot
+pdraw particle emitter light_b appearance color #ffffff
+pdraw particle emitter light_b appearance size_world 0.3,0.3
+pdraw particle emitter light_b appearance glowing true
+pdraw particle emitter light_b appearance light 15
+pdraw particle emitter light_b appearance spot 35,14
+pdraw particle emitter light_b appearance light_dir -35,-55
+pdraw particle emitter light_b appearance light_range 15
+pdraw particle emitter light_b appearance light_falloff constant
+pdraw particle emitter light_b lifetime -1
+pdraw particle emitter light_b rate 1
+pdraw particle emitter light_b max_alive 1
+pdraw particle emitter light_b start
 
-# 掠射灯 C：贴着地面朝 +Z 掠过去，柱子拖出很长的影子
-pdraw particle emitter reset occl_rake
-pdraw particle emitter occl_rake anchor fixed ~-5.5 ~1.8 ~-1
-pdraw particle emitter occl_rake sample count 1
-pdraw particle emitter occl_rake birth position vec3(0,0,0)
-pdraw particle emitter occl_rake appearance style soft_dot
-pdraw particle emitter occl_rake appearance color #ffe08a
-pdraw particle emitter occl_rake appearance size_world 0.26,0.26
-pdraw particle emitter occl_rake appearance glowing true
-pdraw particle emitter occl_rake appearance light 15
-pdraw particle emitter occl_rake appearance spot 20,6
-pdraw particle emitter occl_rake appearance light_dir 0,-6
-pdraw particle emitter occl_rake appearance light_range 16
-pdraw particle emitter occl_rake appearance light_falloff constant
-pdraw particle emitter occl_rake lifetime -1
-pdraw particle emitter occl_rake rate 1
-pdraw particle emitter occl_rake max_alive 1
-pdraw particle emitter occl_rake start
+# 白光 3：贴地掠射
+pdraw particle emitter reset light_c
+pdraw particle emitter light_c anchor fixed ~-5.5 ~1.8 ~-1
+pdraw particle emitter light_c sample count 1
+pdraw particle emitter light_c birth position vec3(0,0,0)
+pdraw particle emitter light_c appearance style soft_dot
+pdraw particle emitter light_c appearance color #ffffff
+pdraw particle emitter light_c appearance size_world 0.3,0.3
+pdraw particle emitter light_c appearance glowing true
+pdraw particle emitter light_c appearance light 15
+pdraw particle emitter light_c appearance spot 20,6
+pdraw particle emitter light_c appearance light_dir 0,-6
+pdraw particle emitter light_c appearance light_range 16
+pdraw particle emitter light_c appearance light_falloff constant
+pdraw particle emitter light_c lifetime -1
+pdraw particle emitter light_c rate 1
+pdraw particle emitter light_c max_alive 1
+pdraw particle emitter light_c start
 
-# 扫描射灯：顶棚下方左右来回，光斑扫过缺口矮墙
-pdraw particle emitter reset occl_sweep
-pdraw particle emitter occl_sweep anchor fixed ~ ~ ~
-pdraw particle emitter occl_sweep sample count 1
-pdraw particle emitter occl_sweep birth position vec3(0,0,0)
-pdraw particle emitter occl_sweep motion position vec3(sin(t*0.00042)*5.5, 6.0, 12.5)
-pdraw particle emitter occl_sweep appearance style soft_dot
-pdraw particle emitter occl_sweep appearance color #ff5f8a
-pdraw particle emitter occl_sweep appearance size_world 0.3,0.3
-pdraw particle emitter occl_sweep appearance glowing true
-pdraw particle emitter occl_sweep appearance light 15
-pdraw particle emitter occl_sweep appearance spot 26,8
-pdraw particle emitter occl_sweep appearance light_dir 0,-90
-pdraw particle emitter occl_sweep appearance light_range 13
-pdraw particle emitter occl_sweep appearance light_falloff smooth
-pdraw particle emitter occl_sweep lifetime -1
-pdraw particle emitter occl_sweep rate 1
-pdraw particle emitter occl_sweep max_alive 1
-pdraw particle emitter occl_sweep start
+# 白光 4：场地中央点光
+pdraw particle emitter reset light_d
+pdraw particle emitter light_d anchor fixed ~-2 ~3.2 ~6
+pdraw particle emitter light_d sample count 1
+pdraw particle emitter light_d birth position vec3(0,0,0)
+pdraw particle emitter light_d appearance style soft_dot
+pdraw particle emitter light_d appearance color #ffffff
+pdraw particle emitter light_d appearance size_world 0.3,0.3
+pdraw particle emitter light_d appearance glowing true
+pdraw particle emitter light_d appearance light 15
+pdraw particle emitter light_d appearance light_range 12
+pdraw particle emitter light_d appearance light_falloff constant
+pdraw particle emitter light_d lifetime -1
+pdraw particle emitter light_d rate 1
+pdraw particle emitter light_d max_alive 1
+pdraw particle emitter light_d start
 
-# 环绕点光 A：绕左柱转，橙光，柱子周期性挡住它
-pdraw particle emitter reset occl_orbit_a
-pdraw particle emitter occl_orbit_a anchor fixed ~ ~ ~
-pdraw particle emitter occl_orbit_a sample count 1
-pdraw particle emitter occl_orbit_a birth position vec3(0,0,0)
-pdraw particle emitter occl_orbit_a orbit vec3(cos(t*0.00055)*7.5, 2.4, 5+sin(t*0.00055)*4.5)
-pdraw particle emitter occl_orbit_a appearance style soft_dot
-pdraw particle emitter occl_orbit_a appearance color #ff8a3d
-pdraw particle emitter occl_orbit_a appearance size_world 0.4,0.4
-pdraw particle emitter occl_orbit_a appearance glowing true
-pdraw particle emitter occl_orbit_a appearance light 15
-pdraw particle emitter occl_orbit_a appearance light_range 10
-pdraw particle emitter occl_orbit_a appearance light_falloff constant
-pdraw particle emitter occl_orbit_a lifetime -1
-pdraw particle emitter occl_orbit_a rate 1
-pdraw particle emitter occl_orbit_a max_alive 1
-pdraw particle emitter occl_orbit_a start
+# 白光 5：右侧点光
+pdraw particle emitter reset light_e
+pdraw particle emitter light_e anchor fixed ~8 ~3.2 ~10
+pdraw particle emitter light_e sample count 1
+pdraw particle emitter light_e birth position vec3(0,0,0)
+pdraw particle emitter light_e appearance style soft_dot
+pdraw particle emitter light_e appearance color #ffffff
+pdraw particle emitter light_e appearance size_world 0.3,0.3
+pdraw particle emitter light_e appearance glowing true
+pdraw particle emitter light_e appearance light 15
+pdraw particle emitter light_e appearance light_range 12
+pdraw particle emitter light_e appearance light_falloff constant
+pdraw particle emitter light_e lifetime -1
+pdraw particle emitter light_e rate 1
+pdraw particle emitter light_e max_alive 1
+pdraw particle emitter light_e start
 
-# 环绕点光 B：反向绕右柱，青光
-pdraw particle emitter reset occl_orbit_b
-pdraw particle emitter occl_orbit_b anchor fixed ~ ~ ~
-pdraw particle emitter occl_orbit_b sample count 1
-pdraw particle emitter occl_orbit_b birth position vec3(0,0,0)
-pdraw particle emitter occl_orbit_b orbit vec3(cos(-t*0.00042)*6, 3.1, 9+sin(-t*0.00042)*4)
-pdraw particle emitter occl_orbit_b appearance style soft_dot
-pdraw particle emitter occl_orbit_b appearance color #5ff0d8
-pdraw particle emitter occl_orbit_b appearance size_world 0.4,0.4
-pdraw particle emitter occl_orbit_b appearance glowing true
-pdraw particle emitter occl_orbit_b appearance light 15
-pdraw particle emitter occl_orbit_b appearance light_range 10
-pdraw particle emitter occl_orbit_b appearance light_falloff constant
-pdraw particle emitter occl_orbit_b lifetime -1
-pdraw particle emitter occl_orbit_b rate 1
-pdraw particle emitter occl_orbit_b max_alive 1
-pdraw particle emitter occl_orbit_b start
+# 移动白光：顶棚下方左右扫
+pdraw particle emitter reset light_move
+pdraw particle emitter light_move anchor fixed ~ ~ ~
+pdraw particle emitter light_move sample count 1
+pdraw particle emitter light_move birth position vec3(0,0,0)
+pdraw particle emitter light_move motion position vec3(sin(t*0.00042)*5.5, 6.0, 12.5)
+pdraw particle emitter light_move appearance style soft_dot
+pdraw particle emitter light_move appearance color #ffffff
+pdraw particle emitter light_move appearance size_world 0.3,0.3
+pdraw particle emitter light_move appearance glowing true
+pdraw particle emitter light_move appearance light 15
+pdraw particle emitter light_move appearance spot 26,8
+pdraw particle emitter light_move appearance light_dir 0,-90
+pdraw particle emitter light_move appearance light_range 13
+pdraw particle emitter light_move appearance light_falloff smooth
+pdraw particle emitter light_move lifetime -1
+pdraw particle emitter light_move rate 1
+pdraw particle emitter light_move max_alive 1
+pdraw particle emitter light_move start
