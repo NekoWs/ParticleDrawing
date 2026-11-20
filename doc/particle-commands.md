@@ -696,6 +696,9 @@ pdraw particle emitter haze appearance style soft_dot
 pdraw particle emitter haze appearance distortion 16
 ```
 
+模组内置一张参考贴图 `particle:particledrawing:lens`：径向放大，直接写
+`texture particle:particledrawing:lens` 就能试。完整场景见[折射透镜示例](../examples/lens-demo/README.md)。
+
 两种效果使用普通场景透明合成后的同一份深度与颜色副本。26.3 开启 OIT 时，场景材质在 OIT 合成后绘制，
 可读取已合成的画面；场景材质之间按批次混合。透过不写深度的表面时，淡出使用深度缓冲记录的表面。
 副本里已经包含此前绘制的普通粒子，折射会连它们一起采样，贴得近的粒子在镜内会出现一份影子。
