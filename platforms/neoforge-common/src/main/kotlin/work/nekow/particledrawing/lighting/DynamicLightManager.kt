@@ -34,8 +34,8 @@ private fun quantizeLuminance(luminance: Double): Int = (luminance * 16.0).toInt
  */
 internal object LightBakePolicy {
 
-    /** 光源相对基准移动超过该距离平方才重建；0.25 格。 */
-    const val MOVE_THRESHOLD_SQUARED = 0.0625
+    private const val MOVE_THRESHOLD_SQUARED = 0.25 * 0.25
+    private const val SHADOW_MOVE_THRESHOLD_SQUARED = 0.0625 * 0.0625
 
     /** 上一帧位移小于该距离平方视为已停住。 */
     private const val SETTLE_EPSILON_SQUARED = 1e-12
@@ -44,6 +44,7 @@ internal object LightBakePolicy {
         baseX: Double, baseY: Double, baseZ: Double, baseLightQ: Int,
         lastX: Double, lastY: Double, lastZ: Double,
         x: Double, y: Double, z: Double, lightQ: Int,
+        shadowed: Boolean = false,
     ): Boolean {
         val dx = x - baseX
         val dy = y - baseY
@@ -55,7 +56,8 @@ internal object LightBakePolicy {
         val lastDy = y - lastY
         val lastDz = z - lastZ
         val settled = lastDx * lastDx + lastDy * lastDy + lastDz * lastDz <= SETTLE_EPSILON_SQUARED
-        return movedSq > MOVE_THRESHOLD_SQUARED || lightQ != baseLightQ || settled
+        val threshold = if (shadowed) SHADOW_MOVE_THRESHOLD_SQUARED else MOVE_THRESHOLD_SQUARED
+        return movedSq > threshold || lightQ != baseLightQ || settled
     }
 }
 
@@ -68,9 +70,11 @@ object DynamicLightManager {
     private const val CELL_BITS = 4
     private const val CELL_MASK = 0x1FFFFF
 
-    /** 地形批次每 50ms 提交一次；光束、实体和粒子取光仍逐帧更新。 */
+    /** 普通光源每 50ms 提交一批，阴影每 25ms 优先提交。 */
     private const val TERRAIN_REFRESH_NANOS = 50_000_000L
+    private const val SHADOW_REFRESH_NANOS = 25_000_000L
     private const val MAX_REBUILDS_PER_BATCH = 1024
+    private const val MAX_SHADOW_REBUILDS_PER_BATCH = 128
 
     private val TRIPLE_ZERO = Triple(0.0, 0.0, 0.0)
 
@@ -173,10 +177,12 @@ object DynamicLightManager {
 
     /** 已排队的旧、新覆盖区；跨帧合并，防止快速扫过时遗漏要清掉的光斑。 */
     private val pendingSections = LinkedHashSet<Long>()
+    private val pendingShadowSections = LinkedHashSet<Long>()
 
     /** [pendingSections] 所属的关卡；换维后旧 section 键不能带到新世界。 */
     private var pendingLevel: ClientLevel? = null
     private var lastTerrainSubmitNs: Long? = null
+    private var lastShadowSubmitNs: Long? = null
 
     internal class LightSource(
         val id: UUID,
@@ -236,7 +242,7 @@ object DynamicLightManager {
         // 没有发光粒子、也没有上一帧留下的光源和待重建区块：整段跳过。
         // 省掉配置读取、关卡查询和每帧的光源收集，没有光效的场面（占大多数）不再付这份成本。
         // 最后一个光源消失的那一帧 sources 仍非空，会正常走完重建并把版本号抬起来。
-        if (pendingSections.isEmpty() && sources.isEmpty() && !engine.hasLightEmitters()) return
+        if (pendingSections.isEmpty() && pendingShadowSections.isEmpty() && sources.isEmpty() && !engine.hasLightEmitters()) return
 
         val mc = Minecraft.getInstance()
         val player = mc.player
@@ -263,10 +269,11 @@ object DynamicLightManager {
         val changed = signature != lastSignature || !lastEnabled
 
         // 计算需要重建的区块：新增、移动、移除的光源。
-        val dirtySections = LinkedHashSet<Long>()
         val nextBaked = HashMap<UUID, BakedState>(newSources.size)
         for (src in newSources) {
             val prev = lastBaked[src.id]
+            val shadowed = src.occlusionRevision != 0L
+            val dirtySections = sectionQueue(shadowed || (prev?.occlusionRevision ?: 0L) != 0L)
             if (prev == null) {
                 markSectionsAround(dirtySections, src.x, src.y, src.z, src.range)
                 nextBaked[src.id] = BakedState(src.x, src.y, src.z, src.lightQ, src.range, src.shape, src.rgb, src.occlusionRevision)
@@ -277,6 +284,7 @@ object DynamicLightManager {
                     prev.x, prev.y, prev.z, prev.lightQ,
                     prev.lastX, prev.lastY, prev.lastZ,
                     src.x, src.y, src.z, src.lightQ,
+                    shadowed,
                 )
             ) {
                 markSectionsAround(dirtySections, prev.x, prev.y, prev.z, prev.range)
@@ -294,13 +302,11 @@ object DynamicLightManager {
         for ((id, prev) in lastBaked) {
             if (!nextBaked.containsKey(id)) {
                 // 基准可能落后于最后看到的位置（小位移还没触发重建），两处都失效
+                val dirtySections = sectionQueue(prev.occlusionRevision != 0L)
                 markSectionsAround(dirtySections, prev.x, prev.y, prev.z, prev.range)
                 markSectionsAround(dirtySections, prev.lastX, prev.lastY, prev.lastZ, prev.range)
             }
         }
-
-        // 先排队再更新基准：预算不够时请求留在 pending 里，不会因基准提前更新而丢
-        pendingSections.addAll(dirtySections)
 
         lastBaked.clear()
         lastBaked.putAll(nextBaked)
@@ -439,10 +445,10 @@ object DynamicLightManager {
 
         // 光源没了也要把旧受光地形排进重建队列，否则关掉动态光后地形还亮着
         for (src in oldSources) {
-            markSectionsAround(pendingSections, src.x, src.y, src.z, src.range)
+            markSectionsAround(sectionQueue(src.occlusionRevision != 0L), src.x, src.y, src.z, src.range)
         }
         for (prev in lastBaked.values) {
-            markSectionsAround(pendingSections, prev.x, prev.y, prev.z, prev.range)
+            markSectionsAround(sectionQueue(prev.occlusionRevision != 0L), prev.x, prev.y, prev.z, prev.range)
         }
         lastBaked.clear()
 
@@ -622,13 +628,21 @@ object DynamicLightManager {
         }
     }
 
+    private fun sectionQueue(shadowed: Boolean) = if (shadowed) pendingShadowSections else pendingSections
+
+    private fun resetPendingSections() {
+        pendingSections.clear()
+        pendingShadowSections.clear()
+        lastTerrainSubmitNs = null
+        lastShadowSubmitNs = null
+    }
+
     /** 切关卡时丢掉上一关的 pending 键与基准；同一关则保留跨帧积压。 */
     private fun ensurePendingLevel(level: ClientLevel) {
         val previous = pendingLevel
         if (previous != null && previous !== level) {
             ClientLightOccluders.clear()
-            pendingSections.clear()
-            lastTerrainSubmitNs = null
+            resetPendingSections()
             lastBaked.clear()
         }
         pendingLevel = level
@@ -641,33 +655,42 @@ object DynamicLightManager {
      * 换关卡时旧 section 键作废，避免在新世界重建一批无关区块。
      */
     private fun applyPendingSections() {
-        if (pendingSections.isEmpty()) return
+        if (pendingSections.isEmpty() && pendingShadowSections.isEmpty()) return
         val mc = Minecraft.getInstance()
         val level = mc.level
         if (level == null) {
-            pendingSections.clear()
+            resetPendingSections()
             pendingLevel = null
-            lastTerrainSubmitNs = null
             return
         }
         val previous = pendingLevel
         pendingLevel = level
         if (previous != null && previous !== level) {
-            pendingSections.clear()
-            lastTerrainSubmitNs = null
+            resetPendingSections()
             return
         }
 
         val now = System.nanoTime()
+        val lastShadow = lastShadowSubmitNs
+        if (pendingShadowSections.isNotEmpty() && (lastShadow == null || now - lastShadow >= SHADOW_REFRESH_NANOS)) {
+            lastShadowSubmitNs = now
+            submitSections(pendingShadowSections, pendingSections, MAX_SHADOW_REBUILDS_PER_BATCH)
+        }
         val last = lastTerrainSubmitNs
-        if (last != null && now - last < TERRAIN_REFRESH_NANOS) return
-        lastTerrainSubmitNs = now
-        var budget = MAX_REBUILDS_PER_BATCH
-        val it = pendingSections.iterator()
+        if (pendingSections.isNotEmpty() && (last == null || now - last >= TERRAIN_REFRESH_NANOS)) {
+            lastTerrainSubmitNs = now
+            submitSections(pendingSections, pendingShadowSections, MAX_REBUILDS_PER_BATCH)
+        }
+    }
+
+    private fun submitSections(queue: MutableSet<Long>, other: MutableSet<Long>, max: Int) {
+        var budget = max
+        val it = queue.iterator()
         while (it.hasNext() && budget > 0) {
             val packed = it.next()
             PlatformCompat.markSectionDirty(SectionPos.x(packed), SectionPos.y(packed), SectionPos.z(packed))
             it.remove()
+            other.remove(packed)
             sectionsMarked++
             budget--
         }

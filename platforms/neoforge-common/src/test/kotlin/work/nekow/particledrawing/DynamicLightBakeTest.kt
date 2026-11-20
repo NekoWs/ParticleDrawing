@@ -19,10 +19,12 @@ class DynamicLightBakeTest {
         current: Double,
         baseLightQ: Int = 240,
         lightQ: Int = 240,
+        shadowed: Boolean = false,
     ): Boolean = LightBakePolicy.shouldRebake(
         base, 0.0, 0.0, baseLightQ,
         last, 0.0, 0.0,
         current, 0.0, 0.0, lightQ,
+        shadowed,
     )
 
     @Test
@@ -38,6 +40,13 @@ class DynamicLightBakeTest {
         assertTrue(rebake(base = 0.0, last = 0.2, current = 0.3), "0.3 格超过阈值")
         assertTrue(rebake(base = 0.0, last = 0.0, current = 0.26), "一次跳 0.26 格超过阈值")
         assertTrue(rebake(base = 0.0, last = 0.9, current = 1.0), "相对基准已经走很远")
+    }
+
+    @Test
+    fun `移动阴影更早请求重建，普通光源维持原阈值`() {
+        assertFalse(rebake(base = 0.0, last = 0.01, current = 0.05, shadowed = true))
+        assertTrue(rebake(base = 0.0, last = 0.05, current = 0.1, shadowed = true))
+        assertFalse(rebake(base = 0.0, last = 0.05, current = 0.1))
     }
 
     @Test
