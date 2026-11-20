@@ -16,11 +16,19 @@ internal typealias SceneVertexFormat = com.mojang.blaze3d.vertex.VertexFormat
 internal typealias SceneRenderPass = com.mojang.blaze3d.systems.RenderPass
 internal typealias SceneTextureView = com.mojang.blaze3d.textures.GpuTextureView
 internal typealias SceneSampler = com.mojang.blaze3d.textures.GpuSampler
+internal typealias SceneGpuBuffer = com.mojang.blaze3d.buffers.GpuBuffer
+internal typealias SceneGpuBufferSlice = com.mojang.blaze3d.buffers.GpuBufferSlice
 
 internal val sceneProjectionLayout get() = BindGroupLayouts.MATRICES_PROJECTION
 
 internal fun sceneSamplerLayout(): SceneBindGroupLayout =
     SceneBindGroupLayout.builder().withSampler("SceneDepth").withSampler("SceneColor").build()
+
+internal fun particleInstanceLayout(): SceneBindGroupLayout = SceneBindGroupLayout.builder()
+    .withSampler("Sampler0")
+    .withUniform("PDInstances", com.mojang.blaze3d.shaders.UniformType.UNIFORM_BUFFER)
+    .withUniform("PDFrame", com.mojang.blaze3d.shaders.UniformType.UNIFORM_BUFFER)
+    .build()
 
 internal fun com.mojang.blaze3d.pipeline.RenderPipeline.Builder.sceneDepthConvention() =
     withShaderDefine("PD_ZERO_TO_ONE", if (RenderSystem.getDevice().deviceInfo.isZZeroToOne) 1 else 0)

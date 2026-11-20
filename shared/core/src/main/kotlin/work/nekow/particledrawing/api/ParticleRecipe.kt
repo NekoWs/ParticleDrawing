@@ -113,6 +113,7 @@ data class ParticleRecipe(
     val probes: List<ParticleProbe> = emptyList(),
     /** 持续配方离镜头超过该距离时回收全部粒子，回到范围时重新发射。0 表示始终模拟。 */
     val simulationRange: Double = 0.0,
+    val preserveSimulation: Boolean = false,
 ) {
     fun validate() {
         requireLocalized(seeds.isNotEmpty() && seeds.size <= MAX_SEEDS) { translation("error.recipe.seed_count", MAX_SEEDS) }

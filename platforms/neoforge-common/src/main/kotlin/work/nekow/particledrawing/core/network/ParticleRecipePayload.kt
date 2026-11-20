@@ -29,6 +29,7 @@ data class ParticleRecipePayload(
     val changes: Map<String, String> = emptyMap(),
     val deleteSelected: Boolean = false,
     val variables: Map<String, Double> = emptyMap(),
+    val mode: ParticleRecipeMode = ParticleRecipeMode.STANDARD,
 ) : CustomPacketPayload {
     override fun type(): CustomPacketPayload.Type<out CustomPacketPayload> = TYPE
 
@@ -38,7 +39,12 @@ data class ParticleRecipePayload(
             override fun encode(buf: FriendlyByteBuf, p: ParticleRecipePayload) {
                 buf.writeUUID(p.id); buf.writeVarInt(p.operation.ordinal)
                 when (p.operation) {
-                    RecipeOperation.START -> { RecipeCodec.write(buf, requireNotNull(p.recipe)); RecipeCodec.writeAnchor(buf, requireNotNull(p.anchor)); buf.writeBoolean(p.burst) }
+                    RecipeOperation.START -> {
+                        RecipeCodec.write(buf, requireNotNull(p.recipe))
+                        RecipeCodec.writeAnchor(buf, requireNotNull(p.anchor))
+                        buf.writeBoolean(p.burst)
+                        buf.writeVarInt(p.mode.ordinal)
+                    }
                     RecipeOperation.UPDATE -> RecipeCodec.write(buf, requireNotNull(p.recipe))
                     RecipeOperation.ANCHOR -> RecipeCodec.writeAnchor(buf, requireNotNull(p.anchor))
                     RecipeOperation.EDIT -> { buf.writeUtf(p.predicate, ParticleRecipe.MAX_EXPRESSION); RecipeCodec.writeStrings(buf, p.changes); buf.writeBoolean(p.deleteSelected) }
@@ -51,7 +57,14 @@ data class ParticleRecipePayload(
                 val id = buf.readUUID()
                 val operation = RecipeOperation.entries.getOrNull(buf.readVarInt()) ?: throw LocalizedArgumentException(translation("error.packet.recipe_operation"))
                 return when (operation) {
-                    RecipeOperation.START -> ParticleRecipePayload(id, operation, RecipeCodec.read(buf), RecipeCodec.readAnchor(buf), buf.readBoolean())
+                    RecipeOperation.START -> {
+                        val recipe = RecipeCodec.read(buf)
+                        val anchor = RecipeCodec.readAnchor(buf)
+                        val burst = buf.readBoolean()
+                        val mode = ParticleRecipeMode.entries.getOrNull(buf.readVarInt())
+                            ?: throw LocalizedArgumentException(translation("error.packet.recipe_operation"))
+                        ParticleRecipePayload(id, operation, recipe, anchor, burst, mode = mode)
+                    }
                     RecipeOperation.UPDATE -> ParticleRecipePayload(id, operation, recipe = RecipeCodec.read(buf))
                     RecipeOperation.ANCHOR -> ParticleRecipePayload(id, operation, anchor = RecipeCodec.readAnchor(buf))
                     RecipeOperation.EDIT -> ParticleRecipePayload(id, operation, predicate = buf.readUtf(ParticleRecipe.MAX_EXPRESSION), changes = RecipeCodec.readStrings(buf), deleteSelected = buf.readBoolean())
@@ -101,6 +114,7 @@ internal object RecipeCodec {
         r.entityQuery.type?.let { buf.writeUtf(it.toString(), MAX_MATERIAL_LENGTH) }
         buf.writeDouble(r.neighborRadius)
         buf.writeDouble(r.simulationRange)
+        buf.writeBoolean(r.preserveSimulation)
         buf.writeVarInt(r.probes.size)
         for (probe in r.probes) {
             buf.writeDouble(probe.range)
@@ -155,6 +169,7 @@ internal object RecipeCodec {
         val entityType = if (buf.readBoolean()) ResourceId.parse(buf.readUtf(MAX_MATERIAL_LENGTH)) else null
         val neighborRadius = buf.readDouble()
         val simulationRange = buf.readDouble()
+        val preserveSimulation = buf.readBoolean()
         val probes = List(count(buf, ParticleRecipe.MAX_PROBES)) {
             val range = buf.readDouble()
             val mode = RecipeCollision.entries[count(buf, RecipeCollision.entries.lastIndex)]
@@ -186,6 +201,7 @@ internal object RecipeCodec {
             entityQuery = ParticleEntityQuery(entityRange, entityType),
             neighborRadius = neighborRadius,
             simulationRange = simulationRange,
+            preserveSimulation = preserveSimulation,
             probes = probes,
         )
     }

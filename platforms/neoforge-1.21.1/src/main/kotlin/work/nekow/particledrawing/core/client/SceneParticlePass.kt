@@ -44,6 +44,7 @@ object SceneParticlePass {
     private data class Batch(val texture: Identifier, val additive: Boolean)
 
     @JvmStatic fun render(camera: Camera, partialTick: Float, frustum: Frustum, lightmap: LightTexture) {
+        ParticleInstancePass.render(camera.position)
         val activeShader = shader ?: return
         val engine = ClientParticleEngine.instance() ?: return
         val batches = linkedMapOf<Batch, MutableList<BridgeParticle>>()
@@ -89,6 +90,7 @@ object SceneParticlePass {
     }
 
     @JvmStatic fun close() {
+        ParticleInstancePass.close()
         vertices?.close()
         vertices = null
         scene.close()

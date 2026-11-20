@@ -41,6 +41,7 @@ KDoc。只在特定包中提供的类型单独注明。代码示例见[使用指
 | `SubEmit` | 在配方粒子自然到期或满足 `kill` 时沿球面方向发射一层子粒子 |
 | `ParticleSources`、`ParticleSourceHandle` | 启动单轮或持续生成，修改现有实例并停止或移除 |
 | `ParticleSources.startSynced(level, recipe, anchor, burst)` | 由服务端推进配方。进入视距的玩家收到现存粒子、子粒子和尾迹。返回同一种运行句柄 |
+| `ParticleSources.startInstanced(level, recipe, anchor, burst)` / `burstGpu(level, recipe, anchor)` | 复用四边形实例批次，分别使用客户端配方模拟或 GPU 弹道 |
 
 ## 单位、表达式与退场
 

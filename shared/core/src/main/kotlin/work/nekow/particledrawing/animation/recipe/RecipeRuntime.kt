@@ -157,6 +157,13 @@ class RecipeRuntime(
         return anchor.at(anchor.origin.add(out[0], out[1], out[2]))
     }
 
+    /** 暂停期间经过的锚点行程不参与恢复首刻的扫掠或等距发射。 */
+    internal fun resumeSimulation() {
+        previousOrigin = null
+        distance?.reset()
+        if (recipe.follow) for (particle in particles) particle.previousWorldPosition = null
+    }
+
     /** 一颗粒子需要多少个寄存器：热路径含临时槽，慢路径只要固定槽。 */
     private fun regSize(): Int = expressions.fast?.regCount ?: (expressions.slots.map.values.max() + 1)
 
@@ -223,6 +230,16 @@ class RecipeRuntime(
 
     private fun distanceAdvance(recipe: ParticleRecipe) =
         recipe.spacing.takeIf { it > 0.0 }?.let(::DistanceAdvance)
+
+    /** 只求出生公式，刻时间和索引与普通单轮发射一致。 */
+    internal fun bakeBurstBirths(anchor: RecipeFrame): List<Particle> {
+        for (seed in recipe.seeds) {
+            ticks = cursor / recipe.rate * recipe.interval
+            spawn(seed, anchor)
+            cursor++
+        }
+        return particles
+    }
 
     /** 在事件位置尝试一轮样本。调用方负责总预算，现存粒子照常推进。 */
     internal fun emitAt(frame: RecipeFrame, event: EventInput, budget: Int): Int {

@@ -16,6 +16,15 @@ object ParticleSources {
     @JvmOverloads
     fun startSynced(level: ServerLevel, recipe: ParticleRecipe, anchor: RecipeAnchor, burst: Boolean = false): ParticleSourceHandle =
         ParticleSourceHandle(ServerParticleSources.start(level, recipe, anchor, burst, synced = true), level)
+
+    @JvmStatic
+    @JvmOverloads
+    fun startInstanced(level: ServerLevel, recipe: ParticleRecipe, anchor: RecipeAnchor, burst: Boolean = false): ParticleSourceHandle =
+        ParticleSourceHandle(ServerParticleSources.start(level, recipe, anchor, burst, mode = ParticleRecipeMode.INSTANCED), level)
+
+    @JvmStatic
+    fun burstGpu(level: ServerLevel, recipe: ParticleRecipe, anchor: RecipeAnchor): ParticleSourceHandle =
+        ParticleSourceHandle(ServerParticleSources.start(level, recipe, anchor, burst = true, mode = ParticleRecipeMode.GPU), level)
 }
 
 class ParticleSourceHandle internal constructor(val id: UUID, private val level: ServerLevel) {

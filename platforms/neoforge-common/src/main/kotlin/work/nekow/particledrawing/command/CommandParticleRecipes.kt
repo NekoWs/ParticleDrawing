@@ -64,12 +64,17 @@ internal object CommandParticleRecipes {
             }
         }
 
-        fun start(level: ServerLevel, burst: Boolean, synced: Boolean = false) {
+        fun start(level: ServerLevel, burst: Boolean, synced: Boolean = false, mode: ParticleRecipeMode = ParticleRecipeMode.STANDARD) {
             requireLocalized(burst || handle == null) { translation("error.recipe.running") }
             handles()
             val resolved = recipe.copy(seeds = samples(level))
             resolved.validate()
-            val next = if (synced) ParticleSources.startSynced(level, resolved, anchor, burst) else ParticleSources.start(level, resolved, anchor, burst)
+            val next = when {
+                synced -> ParticleSources.startSynced(level, resolved, anchor, burst)
+                mode == ParticleRecipeMode.INSTANCED -> ParticleSources.startInstanced(level, resolved, anchor, burst)
+                mode == ParticleRecipeMode.GPU -> ParticleSources.burstGpu(level, resolved, anchor)
+                else -> ParticleSources.start(level, resolved, anchor, burst)
+            }
             handle?.takeIf { it.isActive() }?.let(previousBursts::add)
             handle = next
             recipe = resolved

@@ -88,7 +88,7 @@ class ClientParticleEngine {
                       lifeCurve: ParticleLifeCurve? = null, prev: Vec3? = null,
                       lightIntensity: Float = 1f, emitsLight: Boolean = glowing,
                       lightOnly: Boolean = false, lightShape: LightShape? = null) {
-        if (particles.size >= ParticleDrawingConfig.CLIENT.maxRenderParticles.get()) {
+        if (activeCount() >= ParticleDrawingConfig.CLIENT.maxRenderParticles.get()) {
             noteRenderCapDrop()
             return
         }
@@ -496,6 +496,7 @@ class ClientParticleEngine {
 
         val deadIds = ArrayList<UUID>()
         for ((id, rp) in particles) {
+            if (rp.recipeSuspended) continue
             // 寿命与缓动都按引擎时钟（这里每 tick 推一次）：关卡暂停时不流逝。
             // 出生在本 tick 的粒子先跳过一帧，让渲染先看到 age 0；否则 1～2t 尾迹会在第一次
             // frameUpdate 里直接到点，中间值和零末端都没机会出现。
@@ -521,6 +522,7 @@ class ClientParticleEngine {
         ClientParticleFields.refresh()
         ClientParticleSources.tick()
         ClientSyncedRecipes.tick(this)
+        ClientGpuParticles.tick()
         for (id in trailIds) bridges[id]?.recordTrail()
     }
 
@@ -735,6 +737,7 @@ class ClientParticleEngine {
         if (curveIds.isEmpty()) return
         for (id in curveIds) {
             val rp = particles[id] ?: continue
+            if (rp.recipeSuspended) continue
             if (!rp.hasAppearanceCurve()) continue // 只有光强曲线：外观仍由原 tick 路径管
             if (takeover.hasAppearance(id)) continue // 动画/程序直写路径自己管外观
             val bp = bridges[id] ?: continue
@@ -778,6 +781,7 @@ class ClientParticleEngine {
     fun clearAll() {
         ClientParticleSources.clear()
         ClientSyncedRecipes.clear()
+        ClientGpuParticles.clear()
         ClientParticleFields.clear()
         particles.clear()
         bridges.clear()
@@ -801,7 +805,7 @@ class ClientParticleEngine {
     /**
      * 当前活跃粒子数量。
      */
-    fun activeCount(): Int = particles.size
+    fun activeCount(): Int = particles.size + ClientGpuParticles.reserved
 
     /** 旧版原版粒子通道无法延迟提交，按登记表直接读取使用场景材质的粒子。 */
     internal fun forEachSceneParticle(action: (BridgeParticle) -> Unit) {
@@ -831,6 +835,20 @@ class ClientParticleEngine {
     internal fun holdSyncedRecipeFrame(binding: RecipeBinding) {
         binding.particle.holdRecipeFrame()
         binding.bridge?.holdRecipeFrame()
+    }
+
+    internal fun setRecipeSuspended(binding: RecipeBinding, suspend: Boolean) {
+        val particle = binding.particle
+        if (particles[particle.id()] !== particle || particle.recipeSuspended == suspend) return
+        particle.recipeSuspended = suspend
+        if (suspend) {
+            lightIndex.remove(particle.id())
+            trailIds.remove(particle.id())
+            holdSyncedRecipeFrame(binding)
+        } else {
+            if (lightsUp(particle)) lightIndex.add(particle.id())
+            if (binding.visual.trailTicks > 0 && binding.bridge != null) trailIds.add(particle.id())
+        }
     }
 
     internal fun applyRecipeFrame(binding: RecipeBinding, pos: Vec3, color: Color, scale: Float, glow: Boolean, light: Int) {

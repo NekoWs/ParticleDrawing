@@ -16,12 +16,20 @@ internal typealias SceneVertexFormat = com.mojang.renderpearl.api.vertex.VertexF
 internal typealias SceneRenderPass = com.mojang.renderpearl.api.commands.RenderPass
 internal typealias SceneTextureView = com.mojang.renderpearl.api.textures.GpuTextureView
 internal typealias SceneSampler = com.mojang.renderpearl.api.textures.GpuSampler
+internal typealias SceneGpuBuffer = com.mojang.renderpearl.api.buffers.GpuBuffer
+internal typealias SceneGpuBufferSlice = com.mojang.renderpearl.api.buffers.GpuBufferSlice
 
 internal val sceneProjectionLayout get() = BindGroupLayouts.PROJECTION
 
 internal fun sceneSamplerLayout(): SceneBindGroupLayout = SceneBindGroupLayout.builder()
     .withUniform("SceneDepth", com.mojang.renderpearl.api.pipeline.UniformType.COMBINED_IMAGE_SAMPLER)
     .withUniform("SceneColor", com.mojang.renderpearl.api.pipeline.UniformType.COMBINED_IMAGE_SAMPLER)
+    .build()
+
+internal fun particleInstanceLayout(): SceneBindGroupLayout = SceneBindGroupLayout.builder()
+    .withUniform("Sampler0", com.mojang.renderpearl.api.pipeline.UniformType.COMBINED_IMAGE_SAMPLER)
+    .withUniform("PDInstances", com.mojang.renderpearl.api.pipeline.UniformType.UNIFORM_BUFFER)
+    .withUniform("PDFrame", com.mojang.renderpearl.api.pipeline.UniformType.UNIFORM_BUFFER)
     .build()
 
 internal fun com.mojang.renderpearl.api.pipeline.RenderPipeline.Builder.sceneDepthConvention() = this

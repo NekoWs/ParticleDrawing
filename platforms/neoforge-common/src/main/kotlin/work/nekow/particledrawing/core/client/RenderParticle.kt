@@ -133,6 +133,7 @@ class RenderParticle(
     private var ticksAlive: Int = 0
     private var syncedAge = -1
     private var previousSyncedAge = 0
+    internal var recipeSuspended = false
 
     /** 出生时的引擎 tick 序号。 */
     private var bornSequence: Long = Long.MIN_VALUE

@@ -65,6 +65,7 @@ class BridgeParticle(
     // 外观插值端点（尺寸 / 颜色 / 透明度）：渲染帧按 partialTick 在「上一 tick → 本 tick」间插值；
     // 出生后第一次同步原子落地（见 AppearanceBlend）。
     private val blend = AppearanceBlend()
+    internal var instanced = false
     private var recipeFrameHeld = false
 
     // 非广告牌朝向：billboard=false 时四边形静止朝世界 +Z，再按 spin 旋转（spinLocal=局部轴）
@@ -323,6 +324,7 @@ class BridgeParticle(
     private fun frameHeight(partialTick: Float): Float = sampledHeight(partialTick)
 
     internal fun inFrustum(frustum: net.minecraft.client.renderer.culling.Frustum, partialTick: Float): Boolean {
+        if (textureClock?.recipeSuspended == true) return false
         val visual = effects
         if (visual?.trail == null) return frustum.pointInFrustum(renderX(), renderY(), renderZ())
         val half = maxOf(sampledWidth(partialTick), sampledHeight(partialTick), 0.5f)
@@ -339,12 +341,18 @@ class BridgeParticle(
         camera: net.minecraft.client.Camera,
         partialTick: Float
     ) {
-        if (lightOnly) return
+        if (lightOnly || textureClock?.recipeSuspended == true) return
         val f = frameFactor(partialTick)
         val cam = camera.position()
         if (!ParticleRenderEffects.visible(particleId, cam, x, y, z)) return
         refreshTextureIfStale()
         texEntry?.let { uvRegion.updateFromTexture(it, uv, animStartNanos, textureClock, age, f) }
+        if (instanced) {
+            ParticleInstanceDraws.offer((texEntry ?: TextureCache.defaultWhite()).id,
+                sampledX(f) - cam.x, sampledY(f) - cam.y, sampledZ(f) - cam.z, frameWidth(f), frameHeight(f),
+                blend.redAt(f), blend.greenAt(f), blend.blueAt(f), blend.alphaAt(f), getU0(), getV0(), getU1(), getV1())
+            return
+        }
         if (f <= 0f && effects == null) {
             super.extract(state, camera, partialTick)
             return
@@ -405,6 +413,7 @@ class BridgeParticle(
     }
 
     override fun tick() {
+        if (textureClock?.recipeSuspended == true) return
         age++
         if (age >= lifetime) {
             remove()

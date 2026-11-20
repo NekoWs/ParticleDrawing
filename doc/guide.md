@@ -750,6 +750,10 @@ trail.isActive()
 进入视距的客户端从当前状态开始显示。配方的 `rate` 和 `maxAlive` 均须不超过 64。
 返回的句柄支持停止出生、更新变量与移除实例。详细限制见[服务端同步](particle-commands.md#服务端同步)。
 
+持续配方设置 `simulationRange` 与 `preserveSimulation = true` 后，可在相机远离时暂停并保留粒子状态。
+同材质的全亮加色四边形可通过 `ParticleSources.startInstanced` 批量绘制，弹道爆发可用
+`ParticleSources.burstGpu` 在 GPU 求匀加速运动。见[实例绘制与 GPU 弹道](particle-commands.md#实例绘制与-gpu-弹道)。
+
 发射器的公式在启动时会被编译成一段直接读写寄存器的指令序列，逐粒子逐刻只做数组访问，
 不再按名字查表。写配方时留意两点，避免掉回慢路径（约慢 5～10 倍）：
 

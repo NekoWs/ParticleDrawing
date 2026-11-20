@@ -32,10 +32,12 @@ class ParticleRecipeCodecTest {
             visual = ParticleVisual().texture("particle:minecraft:end_rod").anisoWorld(0.1f, 0.2f).glowing(true).lightLevel(7),
             lifeCurve = ParticleLifeCurve.EMPTY.plus(ParticleCurve.alpha(CurveKey(0f, 1f), CurveKey(40f, 0f))))
         val id = UUID.randomUUID(); val entity = UUID.randomUUID()
-        val result = roundTrip(ParticleRecipePayload(id, RecipeOperation.START, source, RecipeAnchor(Vec3.ZERO, entity, 42, Vec3(0.0, 2.0, 0.0), true), true))
+        val result = roundTrip(ParticleRecipePayload(id, RecipeOperation.START, source, RecipeAnchor(Vec3.ZERO, entity, 42, Vec3(0.0, 2.0, 0.0), true), true,
+            mode = ParticleRecipeMode.INSTANCED))
         val r = assertNotNull(result.recipe)
         r.validate()
         assertEquals(id, result.id); assertTrue(result.burst)
+        assertEquals(ParticleRecipeMode.INSTANCED, result.mode)
         assertEquals(source.seeds, r.seeds); assertEquals(source.motion, r.motion); assertEquals(source.lets.keys.toList(), r.lets.keys.toList())
         assertEquals(40, r.lifetime); assertEquals(2, r.interval); assertTrue(r.follow)
         assertEquals(entity, result.anchor?.entity); assertEquals(42, result.anchor?.entityId)
@@ -115,7 +117,7 @@ class ParticleRecipeCodecTest {
             emissions = listOf(rule), spacing = 1.25, entityQuery = ParticleEntityQuery(6.0, ResourceId.parse("minecraft:bee")),
             neighborRadius = 1.5, probes = listOf(ParticleProbe(
                 6.0, RecipeCollision.SOLID, CoreVec3(1.0, 0.0, 0.0), ResourceId.parse("minecraft:iron_block"))),
-            simulationRange = 20.0,
+            simulationRange = 20.0, preserveSimulation = true,
         )
         val payload = roundTrip(ParticleRecipePayload(UUID.randomUUID(), RecipeOperation.START, source, RecipeAnchor(Vec3.ZERO)))
         val recipe = assertNotNull(payload.recipe)
@@ -128,6 +130,7 @@ class ParticleRecipeCodecTest {
         assertEquals(source.neighborRadius, recipe.neighborRadius)
         assertEquals(source.probes, recipe.probes)
         assertEquals(source.simulationRange, recipe.simulationRange)
+        assertTrue(recipe.preserveSimulation)
         assertEquals(1.25, recipe.spacing)
         assertEquals(rule.material, decoded.material)
         assertEquals(rule.event, decoded.event)

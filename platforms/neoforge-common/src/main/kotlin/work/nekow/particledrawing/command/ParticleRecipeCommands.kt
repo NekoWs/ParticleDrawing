@@ -58,11 +58,18 @@ internal object ParticleRecipeCommands {
                 r.lifetime, r.maxAlive, r.follow, d.handle != null, r.birth, r.motion, r.variables, r.lets, r.where, r.kill,
             ))
         } })
-        val startVerbs = setOf("start", "burst", "start_synced", "burst_synced")
+        val startVerbs = setOf("start", "burst", "start_synced", "burst_synced", "start_instanced", "burst_instanced", "burst_gpu")
         for (verb in startVerbs + listOf("stop", "remove", "apply", "remove_selected")) name.then(Commands.literal(verb).executes { ctx -> safe(ctx) {
             val d = draft(ctx)
             when (verb) {
-                in startVerbs -> d.start(ctx.source.level, verb.startsWith("burst"), verb.endsWith("_synced"))
+                in startVerbs -> {
+                    val mode = when {
+                        verb.endsWith("_instanced") -> ParticleRecipeMode.INSTANCED
+                        verb == "burst_gpu" -> ParticleRecipeMode.GPU
+                        else -> ParticleRecipeMode.STANDARD
+                    }
+                    d.start(ctx.source.level, verb.startsWith("burst"), verb.endsWith("_synced"), mode)
+                }
                 "stop" -> d.handles().forEach { it.stop() }
                 "remove" -> d.removeParticles()
                 "apply" -> { requireLocalized(d.changes.isNotEmpty()) { translation("error.recipe.change_required") }; d.handles().forEach { it.changeWhere(d.selector, d.changes) } }
@@ -101,8 +108,11 @@ internal object ParticleRecipeCommands {
         name.then(Commands.literal("simulation_range")
             .then(Commands.argument("distance", DoubleArgumentType.doubleArg(0.0, ParticleRecipe.MAX_SIMULATION_RANGE))
                 .executes { ctx -> configure(ctx) { d ->
-                    d.update(d.recipe.copy(simulationRange = DoubleArgumentType.getDouble(ctx, "distance")))
-                } }))
+                    d.update(d.recipe.copy(simulationRange = DoubleArgumentType.getDouble(ctx, "distance"), preserveSimulation = false))
+                } }
+                .then(Commands.literal("preserve").executes { ctx -> configure(ctx) { d ->
+                    d.update(d.recipe.copy(simulationRange = DoubleArgumentType.getDouble(ctx, "distance"), preserveSimulation = true))
+                } })))
         name.then(Commands.literal("follow").then(Commands.argument("enabled", BoolArgumentType.bool()).executes { ctx -> configure(ctx) { d -> d.update(d.recipe.copy(follow = BoolArgumentType.getBool(ctx, "enabled"))) } }))
 
         for (kind in listOf("variable", "state")) name.then(Commands.literal(kind)

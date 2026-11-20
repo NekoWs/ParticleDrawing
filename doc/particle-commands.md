@@ -580,6 +580,32 @@ pdraw particle emitter sparks on contact scorch decal 0.8 wrap
 只对允许按观察者重启的特效开启。一次性发射与事件子配方要求此值为 0。
 回收不触发生命周期事件，和仅减少绘制的 `particleLodDistance` 客户端选项可以独立使用。
 
+使用 `simulation_range 48 preserve` 可保留历史。离开范围时暂停配方时钟、碰撞、子发射和绘制。
+返回 90% 范围后从原有粒子、年龄和拖尾继续。暂停期间的锚点行程不补算，保留的粒子仍占客户端容量。
+暂停中的配方收到 `stop` 时回收。该模式可用于普通持续配方和 `start_instanced`。
+
+#### 实例绘制与 GPU 弹道
+
+`start_instanced` 和 `burst_instanced` 沿用客户端公式、碰撞和事件，用一次绘制提交一批共用四边形的粒子。
+适用于全亮、加色、面向镜头的粒子。需要拖尾、拉丝、软化、三角网格、印记、场景材质或简易 `subemit` 时使用普通配方。
+事件子配方可使用与主配方兼容的四边形外观。
+
+`burst_gpu` 把有限寿命的匀加速弹道放到 GPU。客户端只求一次出生公式并上传初值，着色器在每帧求位置和年龄。
+需要固定锚点、静态贴图和 `appearance light 0`，并保证 `max_alive` 至少等于样本数。
+`motion` 可为 `ax`、`ay`、`az` 写数值常量。GPU 模式支持出生筛选，世界查询、碰撞、事件和寿命曲线使用普通配方。
+调整已经运行的 GPU 配方前，先移除原实例。
+
+```mcfunction
+pdraw particle emitter sparks appearance glowing true
+pdraw particle emitter sparks appearance additive true
+pdraw particle emitter sparks appearance light 0
+pdraw particle emitter sparks birth vx 0.2*cos(u*2*PI)
+pdraw particle emitter sparks birth vz 0.2*sin(u*2*PI)
+pdraw particle emitter sparks birth vy 0.3
+pdraw particle emitter sparks motion ay -0.02
+pdraw particle emitter sparks burst_gpu
+```
+
 #### 服务端同步
 
 `start_synced` 持续生成，`burst_synced` 遍历一轮。服务端在已加载的区块里推进碰撞、探测、力场与事件子配方。
@@ -807,6 +833,8 @@ pdraw particle emitter shell apply
 | `emitter list` / `emitter <名称> inspect` | 查询名称、参数、公式与条件 |
 | `emitter <名称> start` | 循环遍历样本持续出生 |
 | `emitter <名称> burst` | 只遍历一轮；同一配置可以反复触发 |
+| `emitter <名称> start_instanced` / `burst_instanced` | 实例绘制全亮加色四边形，保留客户端模拟 |
+| `emitter <名称> burst_gpu` | GPU 推进一轮匀加速弹道并用实例绘制 |
 | `emitter <名称> start_synced` / `burst_synced` | 由服务端持续生成或遍历一轮，向进服或进视距的玩家补发当前状态 |
 | `emitter <名称> stop` | 停止出生，现存成员继续运动直到寿命到点 |
 | `emitter <名称> remove` | 立即清除该配置产生的全部实例，保留配置 |

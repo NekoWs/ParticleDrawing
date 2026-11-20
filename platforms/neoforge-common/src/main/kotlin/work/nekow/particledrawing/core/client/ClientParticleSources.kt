@@ -6,6 +6,7 @@ import work.nekow.particledrawing.animation.recipe.RecipeChildren
 import work.nekow.particledrawing.animation.recipe.RecipeRuntime
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.RecipeAnchor
+import work.nekow.particledrawing.api.ParticleRecipeMode
 import work.nekow.particledrawing.api.SubEmit
 import work.nekow.particledrawing.core.network.ParticleRecipePayload
 import work.nekow.particledrawing.core.network.RecipeOperation
@@ -20,16 +21,18 @@ import java.util.UUID
 
 /** 声明式采样器的客户端桥接；所有积分按游戏刻推进，暂停时不推进。 */
 internal object ClientParticleSources {
+    private enum class Suspension { ACTIVE, RESET, PRESERVED }
+
     private class Member(
         val binding: ClientParticleEngine.RecipeBinding, var position: Vec3, var color: Color, var scale: Float,
     ) {
         val id: UUID get() = binding.particle.id()
     }
-    private class Entry(var runtime: RecipeRuntime, var anchor: RecipeAnchor) {
+    private class Entry(var runtime: RecipeRuntime, var anchor: RecipeAnchor, val instanced: Boolean) {
         val members = linkedMapOf<RecipeRuntime.Particle, Member>()
         val children = RecipeChildren(ClientParticleWorld)
         val childViews = linkedMapOf<RecipeRuntime, Entry>()
-        var suspended = false
+        var suspension = Suspension.ACTIVE
 
         fun particleIds(): List<UUID> = members.values.map { it.id } + childViews.values.flatMap(Entry::particleIds)
     }
@@ -40,23 +43,33 @@ internal object ClientParticleSources {
             when (p.operation) {
                 RecipeOperation.START -> {
                     remove(p.id)
+                    ClientGpuParticles.remove(p.id)
                     val recipe = requireNotNull(p.recipe)
                     recipe.validate()
-                    sources[p.id] = Entry(RecipeRuntime(recipe, p.burst, world = ClientParticleWorld), requireNotNull(p.anchor))
+                    val anchor = requireNotNull(p.anchor)
+                    if (p.mode == ParticleRecipeMode.GPU) ClientGpuParticles.start(p.id, recipe, anchor)
+                    else sources[p.id] = Entry(RecipeRuntime(recipe, p.burst, world = ClientParticleWorld), anchor,
+                        p.mode == ParticleRecipeMode.INSTANCED)
                 }
                 RecipeOperation.UPDATE -> sources[p.id]?.runtime?.update(requireNotNull(p.recipe))
                 RecipeOperation.ANCHOR -> sources[p.id]?.anchor = requireNotNull(p.anchor)
                 RecipeOperation.VARIABLE -> sources[p.id]?.runtime?.let { it.update(it.recipe.copy(variables = it.recipe.variables + p.variables)) }
-                RecipeOperation.STOP -> sources[p.id]?.let {
-                    if (it.suspended) remove(p.id) else it.runtime.emitting = false
+                RecipeOperation.STOP -> {
+                    ClientGpuParticles.stop(p.id)
+                    sources[p.id]?.let {
+                        if (it.suspension != Suspension.ACTIVE) remove(p.id) else it.runtime.emitting = false
+                    }
                 }
                 RecipeOperation.REMOVE -> {
                     remove(p.id)
                     ClientSyncedRecipes.remove(p.id)
+                    ClientGpuParticles.remove(p.id)
                 }
                 RecipeOperation.EDIT -> sources[p.id]?.let {
                     it.runtime.edit(p.predicate, p.changes, p.deleteSelected)
-                    sync(it, emitChildren = false)
+                    if (it.suspension == Suspension.PRESERVED) {
+                        ClientParticleEngine.instance()?.let { engine -> removeDead(engine, it) }
+                    } else sync(it, emitChildren = false)
                 }
             }
         } catch (e: RuntimeException) { remove(p.id); error(p.id, e) }
@@ -71,17 +84,26 @@ internal object ClientParticleSources {
                 val range = e.runtime.recipe.simulationRange
                 if (range > 0.0) {
                     val observer = camera ?: PlatformCompat.cameraPosition(Minecraft.getInstance()).toCore().also { camera = it }
-                    if (RecipeRuntime.outsideSimulationRange(range, anchor?.origin, observer, e.suspended)) {
+                    if (RecipeRuntime.outsideSimulationRange(range, anchor?.origin, observer, e.suspension != Suspension.ACTIVE)) {
                         if (!e.runtime.emitting) remove(id)
-                        else if (!e.suspended) resetOutsideRange(e)
+                        else if (e.runtime.recipe.preserveSimulation) {
+                            if (e.suspension == Suspension.ACTIVE) {
+                                setPresentationSuspended(e, true)
+                                e.suspension = Suspension.PRESERVED
+                            }
+                        } else if (e.suspension != Suspension.RESET) resetOutsideRange(e)
                         continue
                     }
                 }
-                e.suspended = false
+                if (e.suspension == Suspension.PRESERVED) {
+                    e.runtime.resumeSimulation()
+                    setPresentationSuspended(e, false)
+                }
+                e.suspension = Suspension.ACTIVE
                 e.runtime.tickInFrame(e.runtime.orbitFrame(anchor, orbitOut))
                 sync(e)
                 childBudget -= e.children.tick(e.runtime.events, childBudget)
-                for (child in e.children.active) sync(e.childViews.getOrPut(child) { Entry(child, e.anchor) }, allowCapacityDrop = true)
+                for (child in e.children.active) sync(e.childViews.getOrPut(child) { Entry(child, e.anchor, e.instanced) }, allowCapacityDrop = true)
                 e.children.prune()
                 e.childViews.keys.retainAll(e.children.active)
                 if (e.runtime.finished && e.children.active.isEmpty()) sources.remove(id)
@@ -96,13 +118,7 @@ internal object ClientParticleSources {
         val frame = e.runtime.frame
         val hidden = e.runtime.recipe.follow && frame == null
         val subEmit = e.runtime.recipe.subEmit
-        val dead = if (e.runtime.removedParticles.isEmpty()) emptyList() else {
-            e.runtime.removedParticles.mapNotNull { particle ->
-                val member = e.members.remove(particle) ?: return@mapNotNull null
-                particle to member
-            }
-        }
-        if (dead.isNotEmpty()) engine.destroyParticles(dead.map { (_, member) -> member.id }.toTypedArray())
+        val dead = removeDead(engine, e)
 
         val slots = e.runtime.slots
         val sR = slots.slot("r"); val sG = slots.slot("g"); val sB = slots.slot("b"); val sA = slots.slot("a")
@@ -145,6 +161,7 @@ internal object ClientParticleSources {
                     }
                     localizedError(translation("error.recipe.client_limit"))
                 }
+                binding.bridge?.instanced = e.instanced
                 member = Member(binding, position, color, scale)
                 e.members[p] = member
             }
@@ -162,13 +179,30 @@ internal object ClientParticleSources {
 
     private val orbitOut = DoubleArray(3)
 
+    private fun removeDead(engine: ClientParticleEngine, entry: Entry): List<Pair<RecipeRuntime.Particle, Member>> {
+        if (entry.runtime.removedParticles.isEmpty()) return emptyList()
+        val dead = entry.runtime.removedParticles.mapNotNull { particle ->
+            entry.members.remove(particle)?.let { particle to it }
+        }
+        if (dead.isNotEmpty()) engine.destroyParticles(dead.map { (_, member) -> member.id }.toTypedArray())
+        return dead
+    }
+
+    private fun setPresentationSuspended(entry: Entry, suspend: Boolean) {
+        val engine = ClientParticleEngine.instance() ?: return
+        for (member in entry.members.values) engine.setRecipeSuspended(member.binding, suspend)
+        for (child in entry.childViews.values) for (member in child.members.values) {
+            engine.setRecipeSuspended(member.binding, suspend)
+        }
+    }
+
     private fun resetOutsideRange(e: Entry) {
         ClientParticleEngine.instance()?.destroyParticles(e.particleIds().toTypedArray())
         e.members.clear()
         e.children.clear()
         e.childViews.clear()
         e.runtime = RecipeRuntime(e.runtime.recipe, burst = false, world = ClientParticleWorld)
-        e.suspended = true
+        e.suspension = Suspension.RESET
     }
 
     internal fun error(id: UUID, e: RuntimeException) {

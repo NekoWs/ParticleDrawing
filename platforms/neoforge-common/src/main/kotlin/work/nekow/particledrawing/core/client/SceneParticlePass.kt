@@ -45,6 +45,7 @@ object SceneParticlePass {
     private var vertices: StagedVertexBuffer? = null
 
     @JvmStatic fun render() {
+        ParticleInstancePass.render()
         val batches = SceneParticleQuads.batches
         if (batches.isEmpty()) return
         val mc = Minecraft.getInstance()
@@ -86,11 +87,13 @@ object SceneParticlePass {
     }
 
     @JvmStatic fun endFrame() {
+        ParticleInstancePass.endFrame()
         SceneParticleQuads.reset()
         vertices?.endFrame()
     }
 
     @JvmStatic fun close() {
+        ParticleInstancePass.close()
         SceneParticleQuads.reset()
         vertices?.close()
         vertices = null

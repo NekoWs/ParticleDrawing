@@ -80,6 +80,7 @@ object ParticleRenderHandler {
     fun onRenderFrame(event: RenderFrameEvent.Pre) {
         ParticleGeometryBudget.beginFrame()
         val partialTick = event.partialTick.getGameTimeDeltaPartialTick(false)
+        ClientGpuParticles.partialTick = partialTick
         ClientAnimationManager.frameTick(partialTick)
         // 运行时发射器：按渲染帧而不是 tick 推进里程/时间
         ClientEmitterManager.frameTick(partialTick)
