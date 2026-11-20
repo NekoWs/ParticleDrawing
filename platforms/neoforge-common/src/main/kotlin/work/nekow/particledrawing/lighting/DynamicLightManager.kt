@@ -8,6 +8,7 @@ import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.core.SectionPos
 import work.nekow.particledrawing.api.LightSample
 import work.nekow.particledrawing.config.ParticleDrawingConfig
+import work.nekow.particledrawing.core.client.ShaderCompat
 import work.nekow.particledrawing.light.LightFalloff
 import work.nekow.particledrawing.light.LightMath
 import work.nekow.particledrawing.light.LightShape
@@ -553,11 +554,18 @@ object DynamicLightManager {
         return brightness
     }
 
+    /**
+     * 光影包（尤其 ITRP）会把方块光 15 级当成“光源方块”特殊处理，反而比 14 级更暗。
+     * 光影包生效时把动态光封顶到 14，让它落在正常方块光区间里。
+     */
+    @JvmStatic
+    fun dynamicLightLevelCap(): Double = if (ShaderCompat.legacyPipelines()) 14.0 else 15.0
+
     /** 只抬高方块光，保留原版天空光与已照亮的方块。 */
     @JvmStatic
     fun getLightmapWithDynamicLight(lightmap: Int, x: Double, y: Double, z: Double): Int {
         if (!isEnabled()) return lightmap
-        val dynamic = getDynamicLightLevel(x, y, z)
+        val dynamic = getDynamicLightLevel(x, y, z).coerceAtMost(dynamicLightLevelCap())
         return PlatformCompat.lightWithMinimumBlock(lightmap, dynamic)
     }
 
@@ -578,10 +586,11 @@ object DynamicLightManager {
                 blue += (source.rgb and 255) * level
             }
         }
-        val merged = PlatformCompat.lightWithMinimumBlock(lightmap, brightest)
+        val shown = brightest.coerceAtMost(dynamicLightLevelCap())
+        val merged = PlatformCompat.lightWithMinimumBlock(lightmap, shown)
         if (merged == lightmap) return packVertex(color, lightmap)
         terrainOverrides.increment()
-        val tinted = tintTerrainColor(color, PlatformCompat.lightBlock(lightmap), brightest, weight, red, green, blue)
+        val tinted = tintTerrainColor(color, PlatformCompat.lightBlock(lightmap), shown, weight, red, green, blue)
         return packVertex(tinted, merged)
     }
 
@@ -605,7 +614,8 @@ object DynamicLightManager {
     @JvmStatic
     fun lightDataWithDynamicLight(lightData: Int, x: Int, y: Int, z: Int): Int {
         if (!hasTerrainLightsAt(x, y, z)) return lightData
-        val level = getDynamicLightLevel(x + 0.5, y + 0.5, z + 0.5).roundToInt().coerceIn(0, 15)
+        val level = getDynamicLightLevel(x + 0.5, y + 0.5, z + 0.5).roundToInt()
+            .coerceIn(0, dynamicLightLevelCap().toInt())
         if (level <= (lightData and 0x0F)) return lightData
         terrainOverrides.increment()
         return (lightData and 0x0F.inv()) or level
@@ -739,3 +749,4 @@ object DynamicLightManager {
         }
     }
 }
+

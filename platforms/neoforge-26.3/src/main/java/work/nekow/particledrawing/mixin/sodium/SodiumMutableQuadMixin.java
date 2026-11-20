@@ -5,6 +5,7 @@ import work.nekow.particledrawing.compat.sodium.SodiumTerrainState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
+import work.nekow.particledrawing.core.client.ShaderCompat;
 import work.nekow.particledrawing.lighting.DynamicLightManager;
 
 /**
@@ -20,10 +21,14 @@ public abstract class SodiumMutableQuadMixin {
             at = @At("HEAD"), index = 2, argsOnly = true, remap = false
     )
     private int particleDrawing$tintVertexColor(int color) {
+        // 光影包自己算地形光照，改顶点颜色等于改它的反照率，会把材质整体染灰。
+        if (ShaderCompat.INSTANCE.legacyPipelines()) return color;
         BlockPos pos = SodiumTerrainState.current();
         if (pos == null) return color;
         return DynamicLightManager.tintSodiumQuadColor(
                 color, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
     }
 }
+
+
 
