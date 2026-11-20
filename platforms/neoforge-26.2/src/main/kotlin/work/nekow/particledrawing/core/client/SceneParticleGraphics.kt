@@ -26,6 +26,7 @@ internal fun sceneSamplerLayout(): SceneBindGroupLayout =
 
 internal fun particleInstanceLayout(): SceneBindGroupLayout = SceneBindGroupLayout.builder()
     .withSampler("Sampler0")
+    .withSampler("Sampler2")
     .withUniform("PDInstances", com.mojang.blaze3d.shaders.UniformType.UNIFORM_BUFFER)
     .withUniform("PDFrame", com.mojang.blaze3d.shaders.UniformType.UNIFORM_BUFFER)
     .build()

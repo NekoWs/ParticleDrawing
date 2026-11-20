@@ -30,7 +30,8 @@ object TextureCache {
     private const val DEFAULT_WHITE = "default_white"
 
     /** 已成功注册的贴图 → Identifier 与原始尺寸，供 UV 归一化。 */
-    data class Entry(val id: Identifier, val width: Int, val height: Int, val animation: ParticleSpriteAnimation? = null)
+    data class Entry(val id: Identifier, val width: Int, val height: Int, val animation: ParticleSpriteAnimation? = null,
+                     val translucent: Boolean = false)
 
     private val entries = ConcurrentHashMap<String, Entry>()
 
@@ -126,6 +127,7 @@ object TextureCache {
     private fun registerImage(textureName: String, img: NativeImage, animation: ParticleSpriteAnimation? = null): Entry {
         val w = img.width
         val h = img.height
+        val translucent = hasTranslucency(img)
         val dt = try {
             PlatformCompat.dynamicTexture("PD:$textureName", img)
         } catch (e: Exception) {
@@ -140,10 +142,17 @@ object TextureCache {
             PlatformCompat.closeTexture(dt, img)
             throw e
         }
-        val entry = Entry(id, w, h, animation)
+        val entry = Entry(id, w, h, animation, translucent)
         entries[textureName] = entry
         versionCounter.incrementAndGet()
         return entry
+    }
+
+    private fun hasTranslucency(img: NativeImage): Boolean {
+        for (y in 0 until img.height) for (x in 0 until img.width) {
+            if (PlatformCompat.getPixel(img, x, y) ushr 24 != 255) return true
+        }
+        return false
     }
 
     /** 清理全部缓存，内置形状会在下次用到时就地重建。 */

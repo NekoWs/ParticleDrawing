@@ -31,11 +31,23 @@ class ParticleRecipeStateCodecTest {
             val buf = FriendlyByteBuf(Unpooled.buffer())
             try {
                 ParticleRecipeStatePayload.CODEC.encode(buf, original)
-                assertTrue(buf.readableBytes() < if (rs === rows) 128 * 1024 else 16 * 1024)
+                assertTrue(buf.readableBytes() < if (rs === rows) 192 * 1024 else 24 * 1024)
                 assertEquals(original, ParticleRecipeStatePayload.CODEC.decode(buf))
                 assertEquals(0, buf.readableBytes())
             } finally { buf.release() }
         }
+    }
+
+    @Test fun `脱离头部后的剩余尾迹可单独同步`() {
+        val history = listOf(Vec3.ZERO, Vec3(1.0, 0.0, 0.0))
+        val row = RecipeStateRow(0, 0, history.last(), Color.ORANGE, 1f, 4, 5, true, 0, null, history, trailAge = 12)
+        val payload = ParticleRecipeStatePayload(id, Content.Frame(50L, listOf(row)))
+        val buf = FriendlyByteBuf(Unpooled.buffer())
+        try {
+            ParticleRecipeStatePayload.CODEC.encode(buf, payload)
+            assertEquals(payload, ParticleRecipeStatePayload.CODEC.decode(buf))
+            assertEquals(0, buf.readableBytes())
+        } finally { buf.release() }
     }
 
     @Test fun `外观与寿命曲线独立于逐刻位置传输`() {

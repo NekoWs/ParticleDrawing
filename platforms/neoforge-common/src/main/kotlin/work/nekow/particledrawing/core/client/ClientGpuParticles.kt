@@ -47,13 +47,13 @@ internal object ClientGpuParticles {
         val width = (look.scaleArray?.get(0) ?: 1f) * size
         val height = (look.scaleArray?.get(1) ?: 1f) * size
         val blocks = shots.chunked(ParticleInstanceDraws.CAPACITY).map { batch ->
-            ParticleInstanceDraws.Block(persistent = true).also { block ->
+            ParticleInstanceDraws.Block().also { block ->
                 for (shot in batch) {
                     val (p, v, a, color, scale, birth) = shot
                     block.position(p.x.toFloat(), p.y.toFloat(), p.z.toFloat(), width * scale)
                     block.motion(v.x.toFloat(), v.y.toFloat(), v.z.toFloat(), height * scale,
                         a.x.toFloat(), a.y.toFloat(), a.z.toFloat(), birth.toFloat())
-                    block.appearance(color.r, color.g, color.b, color.a, uv.u0, uv.v0, uv.u1, uv.v1)
+                    block.appearance(color, uv.u0, uv.v0, uv.u1, uv.v1)
                 }
             }
         }

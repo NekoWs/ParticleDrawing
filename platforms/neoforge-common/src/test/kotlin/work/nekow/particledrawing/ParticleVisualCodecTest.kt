@@ -8,6 +8,8 @@ import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.api.ParticleSceneMaterial
 import work.nekow.particledrawing.api.ParticleVisual
+import work.nekow.particledrawing.api.ParticleTrailStyle
+import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.core.TextureRegistry
 import work.nekow.particledrawing.core.network.ParticleSpawnPayload
@@ -66,6 +68,17 @@ class ParticleVisualCodecTest {
         val decoded = assertNotNull(roundTrip(original.copy()).visual)
         assertEquals(original.sceneMaterial, decoded.sceneMaterial)
         assertEquals(original.softFade, decoded.softFade)
+    }
+
+    @Test
+    fun `拖尾淡出和两端宽度颜色独立下发`() {
+        val visual = ParticleVisual().apply {
+            trailTicks = 12
+            trailStyle = ParticleTrailStyle(24, 0.3f, 1.6f, Color.BLUE.withAlpha(0.25f), Color.ORANGE)
+        }
+        val read = assertNotNull(roundTrip(visual.copy()).visual)
+        assertEquals(visual.trailStyle, read.trailStyle)
+        assertEquals(12, read.trailTicks)
     }
 
     @Test

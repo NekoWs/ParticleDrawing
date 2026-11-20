@@ -90,8 +90,16 @@ class ParticleScalingTest {
             }
         }
         assertFailsWith<IllegalArgumentException> {
-            ParticleRecipeExecution.validate(recipe.copy(visual = look.copy().apply { trailTicks = 8 }),
+            ParticleRecipeExecution.validate(recipe.copy(visual = look.copy().apply {
+                sceneMaterial = work.nekow.particledrawing.api.ParticleSceneMaterial(0f, 12f)
+            }),
                 anchor, true, ParticleRecipeMode.INSTANCED)
         }
+        ParticleRecipeExecution.validate(recipe.copy(visual = look.copy().apply {
+            glowing = false
+            additive = false
+            trailTicks = 8
+            model = work.nekow.particledrawing.math.ResourceId.parse("particledrawing:builtin/octahedron")
+        }), anchor, true, ParticleRecipeMode.INSTANCED)
     }
 }

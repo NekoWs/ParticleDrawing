@@ -28,7 +28,7 @@ internal object ClientParticleSources {
     ) {
         val id: UUID get() = binding.particle.id()
     }
-    private class Entry(var runtime: RecipeRuntime, var anchor: RecipeAnchor, val instanced: Boolean) {
+    private class Entry(val id: UUID, var runtime: RecipeRuntime, var anchor: RecipeAnchor, val instanced: Boolean) {
         val members = linkedMapOf<RecipeRuntime.Particle, Member>()
         val children = RecipeChildren(ClientParticleWorld)
         val childViews = linkedMapOf<RecipeRuntime, Entry>()
@@ -48,7 +48,7 @@ internal object ClientParticleSources {
                     recipe.validate()
                     val anchor = requireNotNull(p.anchor)
                     if (p.mode == ParticleRecipeMode.GPU) ClientGpuParticles.start(p.id, recipe, anchor)
-                    else sources[p.id] = Entry(RecipeRuntime(recipe, p.burst, world = ClientParticleWorld), anchor,
+                    else sources[p.id] = Entry(p.id, RecipeRuntime(recipe, p.burst, world = ClientParticleWorld), anchor,
                         p.mode == ParticleRecipeMode.INSTANCED)
                 }
                 RecipeOperation.UPDATE -> sources[p.id]?.runtime?.update(requireNotNull(p.recipe))
@@ -66,9 +66,10 @@ internal object ClientParticleSources {
                     ClientGpuParticles.remove(p.id)
                 }
                 RecipeOperation.EDIT -> sources[p.id]?.let {
+                    ParticleInstanceDraws.invalidate()
                     it.runtime.edit(p.predicate, p.changes, p.deleteSelected)
                     if (it.suspension == Suspension.PRESERVED) {
-                        ClientParticleEngine.instance()?.let { engine -> removeDead(engine, it) }
+                        ClientParticleEngine.instance()?.let { engine -> removeDead(engine, it, keepTrails = false) }
                     } else sync(it, emitChildren = false)
                 }
             }
@@ -103,7 +104,7 @@ internal object ClientParticleSources {
                 e.runtime.tickInFrame(e.runtime.orbitFrame(anchor, orbitOut))
                 sync(e)
                 childBudget -= e.children.tick(e.runtime.events, childBudget)
-                for (child in e.children.active) sync(e.childViews.getOrPut(child) { Entry(child, e.anchor, e.instanced) }, allowCapacityDrop = true)
+                for (child in e.children.active) sync(e.childViews.getOrPut(child) { Entry(e.id, child, e.anchor, e.instanced) }, allowCapacityDrop = true)
                 e.children.prune()
                 e.childViews.keys.retainAll(e.children.active)
                 if (e.runtime.finished && e.children.active.isEmpty()) sources.remove(id)
@@ -118,7 +119,7 @@ internal object ClientParticleSources {
         val frame = e.runtime.frame
         val hidden = e.runtime.recipe.follow && frame == null
         val subEmit = e.runtime.recipe.subEmit
-        val dead = removeDead(engine, e)
+        val dead = removeDead(engine, e, keepTrails = emitChildren)
 
         val slots = e.runtime.slots
         val sR = slots.slot("r"); val sG = slots.slot("g"); val sB = slots.slot("b"); val sA = slots.slot("a")
@@ -161,7 +162,10 @@ internal object ClientParticleSources {
                     }
                     localizedError(translation("error.recipe.client_limit"))
                 }
-                binding.bridge?.instanced = e.instanced
+                binding.bridge?.let {
+                    it.instanced = e.instanced
+                    if (look.trailStyle.lingerTicks > 0) it.trailOwner = e.id
+                }
                 member = Member(binding, position, color, scale)
                 e.members[p] = member
             }
@@ -179,17 +183,22 @@ internal object ClientParticleSources {
 
     private val orbitOut = DoubleArray(3)
 
-    private fun removeDead(engine: ClientParticleEngine, entry: Entry): List<Pair<RecipeRuntime.Particle, Member>> {
+    private fun removeDead(engine: ClientParticleEngine, entry: Entry,
+                           keepTrails: Boolean): List<Pair<RecipeRuntime.Particle, Member>> {
         if (entry.runtime.removedParticles.isEmpty()) return emptyList()
         val dead = entry.runtime.removedParticles.mapNotNull { particle ->
             entry.members.remove(particle)?.let { particle to it }
         }
-        if (dead.isNotEmpty()) engine.destroyParticles(dead.map { (_, member) -> member.id }.toTypedArray())
+        if (dead.isNotEmpty()) {
+            val ids = dead.map { (_, member) -> member.id }.toTypedArray()
+            if (keepTrails) engine.finishParticles(ids) else engine.destroyParticles(ids)
+        }
         return dead
     }
 
     private fun setPresentationSuspended(entry: Entry, suspend: Boolean) {
         val engine = ClientParticleEngine.instance() ?: return
+        engine.suspendDetachedTrails(entry.id, suspend)
         for (member in entry.members.values) engine.setRecipeSuspended(member.binding, suspend)
         for (child in entry.childViews.values) for (member in child.members.values) {
             engine.setRecipeSuspended(member.binding, suspend)
@@ -197,7 +206,10 @@ internal object ClientParticleSources {
     }
 
     private fun resetOutsideRange(e: Entry) {
-        ClientParticleEngine.instance()?.destroyParticles(e.particleIds().toTypedArray())
+        ClientParticleEngine.instance()?.let {
+            it.destroyParticles(e.particleIds().toTypedArray())
+            it.clearDetachedTrails(e.id)
+        }
         e.members.clear()
         e.children.clear()
         e.childViews.clear()
@@ -214,8 +226,11 @@ internal object ClientParticleSources {
     }
 
     private fun remove(id: UUID) {
-        val e = sources.remove(id) ?: return
-        ClientParticleEngine.instance()?.destroyParticles(e.particleIds().toTypedArray())
+        val e = sources.remove(id)
+        ClientParticleEngine.instance()?.let {
+            if (e != null) it.destroyParticles(e.particleIds().toTypedArray())
+            it.clearDetachedTrails(id)
+        }
     }
 
     fun clear() = sources.clear()

@@ -4,6 +4,7 @@ import net.minecraft.world.phys.AABB
 import net.minecraft.world.phys.Vec3
 import org.joml.Quaternionf
 import work.nekow.particledrawing.api.ParticleRenderOptions
+import work.nekow.particledrawing.api.ParticleTrailStyle
 import work.nekow.particledrawing.api.SoftFade
 import work.nekow.particledrawing.math.Vec3 as CoreVec3
 import work.nekow.particledrawing.api.VelocityStretch
@@ -11,14 +12,33 @@ import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.platform.toCore
 import work.nekow.particledrawing.render.ParticleDistanceLod
 import work.nekow.particledrawing.render.RibbonHistory
+import work.nekow.particledrawing.render.TrailAfterlife
 import java.util.UUID
 import kotlin.math.sqrt
 
 /** 共用桥接粒子的附加外观。默认外观不分配状态。 */
-internal class ParticleRenderEffects(private val visual: ParticleRenderOptions, start: Vec3) {
+internal class ParticleRenderEffects(
+    private val visual: ParticleRenderOptions,
+    start: Vec3,
+    val trailStyle: ParticleTrailStyle = ParticleTrailStyle.DEFAULT,
+) {
     val trailSides = visual.trailSides
     val trail = visual.trailTicks.takeIf { it > 0 }?.let { RibbonHistory(it, start.toCore()) }
     val translucent: Boolean get() = visual.softFade > 0.0 || trail != null
+    private var afterlife: TrailAfterlife? = null
+    val trailOnly get() = afterlife != null
+    val trailPaused get() = afterlife?.paused == true
+
+    fun detach(age: Int = 0): Boolean {
+        if (trailStyle.lingerTicks <= 0 || trail?.hasPath() != true) return false
+        val clock = afterlife ?: TrailAfterlife(trailStyle.lingerTicks).also { afterlife = it }
+        clock.age = age
+        return true
+    }
+
+    fun tickDetached() = afterlife?.advance() == true
+    fun setDetachedPaused(paused: Boolean) { afterlife?.paused = paused }
+    fun trailOpacity(partialTick: Float) = afterlife?.opacity(partialTick) ?: 1f
 
     private val spin = if (visual.alignVelocity) DoubleArray(3) else null
     private var motionRotation: Quaternionf? = null
@@ -67,7 +87,7 @@ internal class ParticleRenderEffects(private val visual: ParticleRenderOptions, 
     }
 
     fun record(x: Double, y: Double, z: Double) {
-        trail?.record(CoreVec3(x, y, z))
+        if (!trailOnly) trail?.record(CoreVec3(x, y, z))
     }
 
     fun syncTrail(history: RibbonHistory) { trail?.copyFrom(history) }
@@ -100,7 +120,8 @@ internal class ParticleRenderEffects(private val visual: ParticleRenderOptions, 
             maxY = maxOf(maxY, position.y)
             maxZ = maxOf(maxZ, position.z)
         }
-        return AABB(minX - half, minY - half, minZ - half, maxX + half, maxY + half, maxZ + half)
+        val margin = half * maxOf(1f, trailStyle.maxWidth)
+        return AABB(minX - margin, minY - margin, minZ - margin, maxX + margin, maxY + margin, maxZ + margin)
     }
 
     companion object {

@@ -87,6 +87,7 @@ class ParticleVisualBuilder {
     var sceneMaterial: ParticleSceneMaterial = ParticleSceneMaterial.NONE
     var trailTicks: Int = 0
     var trailSides: Int = 0
+    var trailStyle: ParticleTrailStyle = ParticleTrailStyle.DEFAULT
     var model: ResourceId? = null
 
     fun velocityStretch(gain: Double): ParticleVisualBuilder {
@@ -194,6 +195,7 @@ class ParticleVisualBuilder {
         visual.sceneMaterial = sceneMaterial
         visual.trailTicks = trailTicks
         visual.trailSides = trailSides
+        visual.trailStyle = trailStyle
         visual.model = model
         return visual
     }

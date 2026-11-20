@@ -3,6 +3,7 @@ package work.nekow.particledrawing.core.client
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.ParticleRenderOptions
 import work.nekow.particledrawing.api.ParticleSceneMaterial
+import work.nekow.particledrawing.api.ParticleTrailStyle
 import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.light.LightShape
 import work.nekow.particledrawing.math.ResourceId
@@ -38,6 +39,7 @@ internal class ResolvedVisual(
     val trailSides: Int = 0,
     val model: ResourceId? = null,
     val sceneMaterial: ParticleSceneMaterial = ParticleSceneMaterial.NONE,
+    val trailStyle: ParticleTrailStyle = ParticleTrailStyle.DEFAULT,
 ) {
     val renderOptions = if (alignVelocity || softFade > 0.0 || trailTicks > 0)
         ParticleRenderOptions(alignVelocity, stretch, softFade, trailTicks, trailSides) else ParticleRenderOptions.DEFAULT
@@ -74,6 +76,7 @@ internal class ResolvedVisual(
                 visual.trailSides,
                 visual.model,
                 visual.sceneMaterial,
+                visual.trailStyle,
             )
         }
     }

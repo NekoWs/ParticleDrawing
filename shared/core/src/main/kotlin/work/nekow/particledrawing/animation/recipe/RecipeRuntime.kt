@@ -611,5 +611,16 @@ class RecipeRuntime(
             return ((r.seeds.size.toLong() + batch - 1) / batch) * r.interval +
                 ((r.seeds.size - 1L) / r.maxAlive + 1L) * r.lifetime + 4L
         }
+
+        /** 粒子死亡后，服务端仍保留可清除拖尾的配方句柄。 */
+        fun detachedTrailBudget(recipe: ParticleRecipe): Long {
+            val linger = recipe.visual.trailStyle.lingerTicks.takeIf { recipe.visual.trailTicks > 0 } ?: 0
+            val childBudget = recipe.emissions.maxOfOrNull { rule ->
+                val child = rule.child
+                if (child.visual.trailTicks > 0 && child.visual.trailStyle.lingerTicks > 0)
+                    retirementBudget(child) + child.visual.trailStyle.lingerTicks else 0L
+            } ?: 0L
+            return maxOf(linger.toLong(), childBudget)
+        }
     }
 }

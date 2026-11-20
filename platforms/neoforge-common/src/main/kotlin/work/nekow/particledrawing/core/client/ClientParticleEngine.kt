@@ -40,6 +40,7 @@ class ClientParticleEngine {
 
     // 带速度的运动粒子索引：每 client tick 确定性积分一次，不参与缓动轮转
     private val trailIds = HashSet<UUID>()
+    private val detachedTrails = linkedMapOf<UUID, BridgeParticle>()
     private val sceneIds = HashSet<UUID>()
 
     private val motionIds: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
@@ -161,14 +162,16 @@ class ClientParticleEngine {
             if (model != null) bridge.model = model
             bridge.sceneMaterial = visual.sceneMaterial
             if (visual.sceneMaterial.active && !visual.lightOnly) sceneIds.add(id)
-            if (visual.renderOptions.active) configureRenderEffects(id, visual.renderOptions, prev)
+            if (visual.renderOptions.active) configureRenderEffects(id, visual.renderOptions, prev, visual.trailStyle)
         }
     }
 
-    internal fun configureRenderEffects(id: UUID, options: ParticleRenderOptions, previous: Vec3? = null) {
+    internal fun configureRenderEffects(id: UUID, options: ParticleRenderOptions, previous: Vec3? = null,
+                                        trailStyle: work.nekow.particledrawing.api.ParticleTrailStyle =
+                                            work.nekow.particledrawing.api.ParticleTrailStyle.DEFAULT) {
         if (!options.active) return
         val bridge = bridges[id] ?: return
-        bridge.enableRenderEffects(options, previous)
+        bridge.enableRenderEffects(options, previous, trailStyle)
         if (options.trailTicks > 0) trailIds.add(id)
     }
 
@@ -449,8 +452,12 @@ class ClientParticleEngine {
     /**
      * 销毁指定粒子并从所有分组中移除。
      */
-    fun destroyParticles(ids: Array<UUID>) {
-        for (id in ids) removeOne(id)
+    fun destroyParticles(ids: Array<UUID>) = removeParticles(ids, keepTrails = false)
+
+    internal fun finishParticles(ids: Array<UUID>) = removeParticles(ids, keepTrails = true)
+
+    private fun removeParticles(ids: Array<UUID>, keepTrails: Boolean) {
+        for (id in ids) removeOne(id, keepTrails)
         for (gms in groups.values) {
             for (id in ids) gms.remove(id)
         }
@@ -459,18 +466,33 @@ class ClientParticleEngine {
     /**
      * 摘掉一个粒子：桥接粒子、各索引与 track 缓冲一并清掉。
      */
-    private fun removeOne(id: UUID) {
+    private fun removeOne(id: UUID, keepTrail: Boolean = false) {
         particles.remove(id)
         ClientAnimationProgramManager.onParticleRemoved(id)
-        bridges.remove(id)?.remove()
+        if (!keepTrail) detachedTrails.remove(id)?.remove()
+        bridges.remove(id)?.let { bridge ->
+            if (keepTrail && bridge.detachTrail()) detachedTrails[id] = bridge
+            else bridge.remove()
+        }
         takeover.clear(id)
         lightIndex.remove(id)
         motionIds.remove(id)
         trailIds.remove(id)
+        sceneIds.remove(id)
         trackBuffers.remove(id)
         attachments.remove(id)
         curveIds.remove(id)
         scaleEaseIds.remove(id)
+    }
+
+    internal fun clearDetachedTrails(owner: UUID) {
+        detachedTrails.values.removeIf { bridge ->
+            if (bridge.trailOwner != owner) false else { bridge.remove(); true }
+        }
+    }
+
+    internal fun suspendDetachedTrails(owner: UUID, suspend: Boolean) {
+        for (bridge in detachedTrails.values) if (bridge.trailOwner == owner) bridge.setDetachedTrailPaused(suspend)
     }
 
     /** 引擎 tick 序号，每次 [frameUpdate] 自增；桥接粒子据此记录外观端点。 */
@@ -485,6 +507,9 @@ class ClientParticleEngine {
         val previousSequence = tickSequenceCounter
         tickSequenceCounter++
         tickSequence = tickSequenceCounter
+        detachedTrails.values.removeIf { bridge ->
+            if (bridge.isAlive && bridge.tickDetachedTrail()) false else { bridge.remove(); true }
+        }
         // 先推进 track 粒子的插值端点（每 tick 一段，没收到新位置就原地保持）
         advanceTrackedParticles()
         // 实体锚点：本地解析位置（无逐 tick 带宽）
@@ -510,7 +535,7 @@ class ClientParticleEngine {
                 deadIds.add(id)
             }
         }
-        for (id in deadIds) removeOne(id)
+        for (id in deadIds) removeOne(id, keepTrail = true)
         if (deadIds.isNotEmpty()) {
             for (memberSet in groups.values) {
                 for (id in deadIds) memberSet.remove(id)
@@ -790,6 +815,8 @@ class ClientParticleEngine {
         lightIndex.clear()
         motionIds.clear()
         trailIds.clear()
+        for (bridge in detachedTrails.values) bridge.remove()
+        detachedTrails.clear()
         sceneIds.clear()
         trackBuffers.clear()
         attachments.clear()
@@ -805,13 +832,16 @@ class ClientParticleEngine {
     /**
      * 当前活跃粒子数量。
      */
-    fun activeCount(): Int = particles.size + ClientGpuParticles.reserved
+    fun activeCount(): Int = particles.size + detachedTrails.size + ClientGpuParticles.reserved
 
     /** 旧版原版粒子通道无法延迟提交，按登记表直接读取使用场景材质的粒子。 */
     internal fun forEachSceneParticle(action: (BridgeParticle) -> Unit) {
         for (id in sceneIds) {
             val bridge = bridges[id] ?: continue
             if (bridge.isAlive) action(bridge)
+        }
+        for (bridge in detachedTrails.values) {
+            if (bridge.isAlive && bridge.sceneMaterial.active) action(bridge)
         }
     }
 

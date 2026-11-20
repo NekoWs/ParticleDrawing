@@ -131,6 +131,11 @@ class ParticleVisual {
             field = value
         }
 
+    /** 仅用于拖尾。历史长度仍由 [trailTicks] 控制。 */
+    var trailStyle: ParticleTrailStyle = ParticleTrailStyle.DEFAULT
+
+    fun trailStyle(style: ParticleTrailStyle): ParticleVisual = apply { trailStyle = style }
+
     /** 配置对外照明的形状。null 清除显式形状。 */
     fun lightShape(shape: LightShape?): ParticleVisual = apply { lightShape = shape?.validated() }
 
@@ -303,6 +308,7 @@ class ParticleVisual {
         c.sceneMaterial = sceneMaterial
         c.trailTicks = trailTicks
         c.trailSides = trailSides
+        c.trailStyle = trailStyle
         c.model = model
         return c
     }
@@ -317,7 +323,8 @@ class ParticleVisual {
     fun isPristine(): Boolean = texture == null && uvRect == null && !hasAniso() &&
         billboard && spinXDeg == 0.0 && spinYDeg == 0.0 && spinZDeg == 0.0 && spinLocal &&
         !additive && !glowing && !emitsLight && !lightOnly && lightIntensity == 1f && lightShape == null &&
-        !alignVelocity && softFade == 0.0 && !sceneMaterial.active && trailTicks == 0 && trailSides == 0 && model == null
+        !alignVelocity && softFade == 0.0 && !sceneMaterial.active && trailTicks == 0 && trailSides == 0 &&
+        trailStyle == ParticleTrailStyle.DEFAULT && model == null
 
     /**
      * 解析成渲染用的 UV，由客户端调用。[texW]/[texH] 是已注册贴图的像素尺寸，未知传 0。

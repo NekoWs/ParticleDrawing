@@ -45,7 +45,8 @@ internal object ParticleCommandOptionParser {
         "color", "scale", "style", "texture", "uv", "size", "size_world", "billboard", "spin",
         "spin_space", "additive", "glowing", "light", "light_only", "intensity", "alpha_curve",
         "size_curve", "red_curve", "green_curve", "blue_curve", "light_curve", "spot",
-        "light_dir", "light_range", "light_falloff", "align_velocity", "stretch", "soft", "trail", "trail_sides", "model",
+        "light_dir", "light_range", "light_falloff", "align_velocity", "stretch", "soft", "trail", "trail_sides",
+        "trail_linger", "trail_width", "trail_color", "model",
         "depth_fade", "distortion",
     )
     private val allowed = appearanceKeys + setOf(
@@ -138,6 +139,18 @@ internal object ParticleCommandOptionParser {
         }
         values["trail"]?.let { visual.trailTicks = int(it, "trail") }
         values["trail_sides"]?.let { visual.trailSides = int(it, "trail_sides") }
+        val trailWidth = values["trail_width"]?.let { floats(it, 2, "trail_width") }
+        val trailColors = values["trail_color"]?.let {
+            val pair = it.split(':')
+            requireLocalized(pair.size == 2) { translation("error.command.trail_color") }
+            pair.map { color -> color.takeUnless { value -> value.equals("inherit", ignoreCase = true) }?.let(::parseColor) }
+        }
+        if (trailWidth != null || trailColors != null || "trail_linger" in values) {
+            visual.trailStyle = work.nekow.particledrawing.api.ParticleTrailStyle(
+                values["trail_linger"]?.let { int(it, "trail_linger") } ?: 0,
+                trailWidth?.get(0) ?: 0f, trailWidth?.get(1) ?: 1f, trailColors?.get(0), trailColors?.get(1),
+            )
+        }
         values["model"]?.let { if (it != "none") visual.model = ResourceId.parse(it) }
         values["stretch"]?.let { visual.stretch = float(it, "stretch").toDouble() }
         visual.alignVelocity = values["align_velocity"]?.let { bool(it, "align_velocity") }

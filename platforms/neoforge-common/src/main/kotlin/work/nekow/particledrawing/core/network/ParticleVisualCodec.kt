@@ -3,6 +3,8 @@ package work.nekow.particledrawing.core.network
 import net.minecraft.network.FriendlyByteBuf
 import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.api.ParticleSceneMaterial
+import work.nekow.particledrawing.api.ParticleTrailStyle
+import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.light.LightFalloff
 import work.nekow.particledrawing.light.LightShape
@@ -37,6 +39,7 @@ internal object ParticleVisualCodec {
     private const val FLAG_TRAIL_SIDES = 1 shl 16
     private const val FLAG_MODEL = 1 shl 17
     private const val FLAG_SCENE_MATERIAL = 1 shl 18
+    private const val FLAG_TRAIL_STYLE = 1 shl 19
 
     fun write(buf: FriendlyByteBuf, visual: ParticleVisual?) {
         if (visual == null) {
@@ -75,6 +78,7 @@ internal object ParticleVisualCodec {
         if (visual.trailSides > 0) flags = flags or FLAG_TRAIL_SIDES
         if (visual.model != null) flags = flags or FLAG_MODEL
         if (visual.sceneMaterial.active) flags = flags or FLAG_SCENE_MATERIAL
+        if (visual.trailStyle != ParticleTrailStyle.DEFAULT) flags = flags or FLAG_TRAIL_STYLE
 
         buf.writeVarInt(flags)
         if (flags == 0) return
@@ -104,6 +108,13 @@ internal object ParticleVisualCodec {
         if (visual.sceneMaterial.active) {
             buf.writeFloat(visual.sceneMaterial.depthFade)
             buf.writeFloat(visual.sceneMaterial.distortion)
+        }
+        if (flags and FLAG_TRAIL_STYLE != 0) {
+            val style = visual.trailStyle
+            buf.writeVarInt(style.lingerTicks)
+            buf.writeFloat(style.tailWidth); buf.writeFloat(style.headWidth)
+            writeColor(buf, style.tailColor)
+            writeColor(buf, style.headColor)
         }
     }
 
@@ -152,8 +163,21 @@ internal object ParticleVisualCodec {
         if (flags and FLAG_TRAIL_SIDES != 0) visual.trailSides = buf.readUnsignedByte().toInt()
         if (flags and FLAG_MODEL != 0) visual.model = ResourceId.parse(buf.readUtf(ParticleVisual.MAX_MODEL_ID))
         if (flags and FLAG_SCENE_MATERIAL != 0) visual.sceneMaterial = ParticleSceneMaterial(buf.readFloat(), buf.readFloat())
+        if (flags and FLAG_TRAIL_STYLE != 0) {
+            visual.trailStyle = ParticleTrailStyle(buf.readVarInt(), buf.readFloat(), buf.readFloat(), readColor(buf), readColor(buf))
+        }
         return visual
     }
+
+    private fun writeColor(buf: FriendlyByteBuf, color: Color?) {
+        buf.writeBoolean(color != null)
+        if (color != null) {
+            buf.writeFloat(color.r); buf.writeFloat(color.g); buf.writeFloat(color.b); buf.writeFloat(color.a)
+        }
+    }
+
+    private fun readColor(buf: FriendlyByteBuf): Color? =
+        if (buf.readBoolean()) Color.of(buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat()) else null
 
     fun writeLightShape(buf: FriendlyByteBuf, shape: LightShape) {
         buf.writeDouble(shape.range)

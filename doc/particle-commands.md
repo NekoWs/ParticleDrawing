@@ -440,6 +440,9 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 | `appearance soft <0..4>` | 距附近方块碰撞面的淡出范围（格），0 关闭 |
 | `appearance trail <0..32>` | 保留最近几刻的世界位置，生成一条随镜头转向并沿尾端渐隐的丝带，0 关闭 |
 | `appearance trail_sides <0 或 3..12>` | 拖尾截面边数；与 `appearance trail` 配合使用 |
+| `appearance trail_linger <0..200>` | 头部消失后，尾迹原地独立淡出的刻数 |
+| `appearance trail_width <尾端,头部>` | 两端宽度倍率，各为 0..8，沿路径长度插值 |
+| `appearance trail_color <尾端:头部>` | 两端颜色，可用 `#RRGGBB`、`#RRGGBBAA` 或 `inherit` |
 | `subemit count <1..64>` | 粒子正常消失时在原地爆发的子粒子数量；不配置则什么都不留 | 
 | `subemit lifetime <1..200>` | 子粒子寿命（刻），默认 12 |
 | `subemit speed <0..2>` | 子粒子初速（格/刻），方向在球面上均匀散开，默认 0.12 |
@@ -586,9 +589,9 @@ pdraw particle emitter sparks on contact scorch decal 0.8 wrap
 
 #### 实例绘制与 GPU 弹道
 
-`start_instanced` 和 `burst_instanced` 沿用客户端公式、碰撞和事件，用一次绘制提交一批共用四边形的粒子。
-适用于全亮、加色、面向镜头的粒子。需要拖尾、拉丝、软化、三角网格、印记、场景材质或简易 `subemit` 时使用普通配方。
-事件子配方可使用与主配方兼容的四边形外观。
+`start_instanced` 和 `burst_instanced` 沿用客户端公式、碰撞和事件。同一游戏刻内，渲染帧复用已上传的两端状态，由 GPU 插值位置、尺寸与颜色。贴图换帧、逐帧寿命曲线或成员变化会刷新受影响的实例数据。
+四边形和 `appearance model` 的三角网格均可实例化。半透明实例按相机深度从远到近提交，可跨实例页、贴图与模型排序。透明网格以粒子中心排序。拖尾沿用各自路径的几何提交。
+场景材质、印记、仅发光粒子和简易 `subemit` 使用普通配方。
 
 `burst_gpu` 把有限寿命的匀加速弹道放到 GPU。客户端只求一次出生公式并上传初值，着色器在每帧求位置和年龄。
 需要固定锚点、静态贴图和 `appearance light 0`，并保证 `max_alive` 至少等于样本数。
@@ -609,7 +612,7 @@ pdraw particle emitter sparks burst_gpu
 #### 服务端同步
 
 `start_synced` 持续生成，`burst_synced` 遍历一轮。服务端在已加载的区块里推进碰撞、探测、力场与事件子配方。
-玩家进服、切回维度或走进渲染距离时，收到仍存活的粒子、年龄、子粒子和已走过的拖尾。随后逐刻同步新的状态。
+玩家进服、切回维度或走进渲染距离时，收到仍存活的粒子、年龄、子粒子和拖尾，也能看到已脱离头部、仍在淡出的尾迹。随后逐刻同步新的状态。
 客户端用一刻的备用快照吸收短时到包抖动，每个渲染帧在相邻两刻间插值。缓冲耗尽时保持最后的状态。
 普通 `start` 和 `burst` 由客户端执行公式、碰撞和事件，服务端按配置变化下发声明。
 同步期间用 `stop` 停止出生，仍存活的粒子会继续推进。`remove` 立即清除。
@@ -622,7 +625,7 @@ pdraw particle emitter rain start_synced
 ```
 
 同一服务器最多同时运行 8 个同步生成器。每个生成器的 `max_alive` 和每刻出生尝试最多 64，
-另有 64 个事件子粒子名额。超出子粒子配额的事件跳过。同步模式要求 `simulation_range 0`，
+另有 64 个事件子粒子与 64 条已脱离头部的尾迹名额。超出子粒子配额的事件跳过，尾迹配额满时回收最早脱离的一条。同步模式要求 `simulation_range 0`，
 用 `on death` 配置死亡子配方。单个生成器每刻超过 32,768 次世界查询时，停止该生成器并在服务端日志报错。
 同步状态随维度卸载或服务器重启释放。Java 和 Kotlin 可通过 `ParticleSources.startSynced` 使用同一入口。
 
@@ -740,9 +743,20 @@ pdraw particle emitter sparks start
 `solid` 按碰撞箱判定：台阶、栅栏、树叶都能挡住粒子。竖直方向优先处理，
 `bounce` 控制反射后的法线速度，`friction` 控制切向速度的保留比例。
 
-软粒子按粒子中心沿六个世界坐标轴到附近碰撞面的距离调整整颗粒子的透明度。拖尾复用粒子的贴图、颜色和
-混合模式，传送时从新落点重新记录。客户端 `maxParticleGeometryQuads` 为拖尾和模型共用的每帧四边形预算，默认 200,000。参见[软粒子示例](../examples/commands/soft-fade.mcfunction)和
+软粒子按粒子中心沿六个世界坐标轴到附近碰撞面的距离调整整颗粒子的透明度。拖尾复用粒子的贴图和混合模式，默认沿用粒子颜色，传送时从新落点重新记录。客户端 `maxParticleGeometryQuads` 为拖尾和模型共用的每帧四边形预算，默认 200,000。参见[软粒子示例](../examples/commands/soft-fade.mcfunction)和
 [丝带示例](../examples/commands/ribbon-trail.mcfunction)。
+
+#### 独立拖尾
+
+启用 `trail` 后，可以为丝带或管状拖尾指定两端的颜色和粗细。色值可自带透明度。头部消失时，
+尾迹冻结在最后走过的路径上，继续淡出。脱离的尾迹计入客户端粒子容量。配方 `remove` 会一起清除尾迹。
+
+```mcfunction
+pdraw particle emitter sparks appearance trail 24
+pdraw particle emitter sparks appearance trail_linger 30
+pdraw particle emitter sparks appearance trail_width 0.2,1.5
+pdraw particle emitter sparks appearance trail_color #6546f040:#8ef9ff
+```
 
 客户端配置 `particleLodDistance` 默认 `0`。设为正数后，该距离以内全量绘制，远处按距离平方反比
 稳定抽样，到四倍距离停止绘制。模拟、寿命、碰撞与照明继续推进。

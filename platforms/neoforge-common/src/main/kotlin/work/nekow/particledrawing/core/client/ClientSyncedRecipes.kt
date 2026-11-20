@@ -32,12 +32,18 @@ internal object ClientSyncedRecipes {
         val history = look.visual.trailTicks.takeIf { it > 0 }?.let { RibbonHistory(it, row.position) }
 
         fun accept(next: RecipeStateRow, existing: Boolean) {
+            if (next.trailAge >= 0) {
+                requireLocalized(history != null && next.trailAge < look.visual.trailStyle.lingerTicks &&
+                    next.light == 0 && (next.history.isNotEmpty() || existing)) {
+                    translation("error.packet.recipe_state")
+                }
+            }
             if (next.history.isNotEmpty()) {
                 requireLocalized(history != null && next.history.size <= look.visual.trailTicks + 1) {
                     translation("error.packet.recipe_state")
                 }
                 checkNotNull(history).restore(next.history)
-            } else if (existing) history?.record(next.position)
+            } else if (existing && next.trailAge < 0) history?.record(next.position)
             row = next
         }
     }
@@ -120,8 +126,11 @@ internal object ClientSyncedRecipes {
             binding.particle.syncRecipeAge(row.age, snap = skipped || previous == null)
             engine.applyRecipeFrame(binding, row.position.toMinecraft(), row.color, row.scale, row.glowing, row.light)
             if (member.history != null) {
-                if (previous == null || skipped || row.history.isNotEmpty()) binding.bridge?.syncTrail(member.history)
+                if (previous == null || skipped || row.history.isNotEmpty() || row.trailAge >= 0) binding.bridge?.syncTrail(member.history)
                 else binding.bridge?.recordTrail()
+            }
+            if (row.trailAge >= 0 && binding.bridge != null) {
+                requireLocalized(binding.bridge.detachTrail(row.trailAge)) { translation("error.packet.recipe_state") }
             }
             if (skipped) engine.holdSyncedRecipeFrame(binding)
         }

@@ -29,11 +29,13 @@ internal object ServerParticleSources {
         var emitting = true
         var ticks = 0L
         var maxLifetime = recipe.lifetime
-        var retireAt = if (burst && recipe.lifetime > 0) RecipeRuntime.retirementBudget(recipe) else Long.MAX_VALUE
+        var maxTail = RecipeRuntime.detachedTrailBudget(recipe)
+        var retireAt = if (burst && recipe.lifetime > 0) RecipeRuntime.retirementBudget(recipe) + maxTail else Long.MAX_VALUE
 
         fun updated(next: ParticleRecipe) {
             maxLifetime = if (maxLifetime == -1 || next.lifetime == -1) -1 else maxOf(maxLifetime, next.lifetime)
-            if (burst && maxLifetime > 0) retireAt = ticks + RecipeRuntime.retirementBudget(next.copy(lifetime = maxLifetime))
+            maxTail = maxOf(maxTail, RecipeRuntime.detachedTrailBudget(next))
+            if (burst && maxLifetime > 0) retireAt = ticks + RecipeRuntime.retirementBudget(next.copy(lifetime = maxLifetime)) + maxTail
         }
     }
     private val entries = linkedMapOf<UUID, Entry>()
@@ -105,7 +107,7 @@ internal object ServerParticleSources {
             return
         }
         e.emitting = false
-        if (e.maxLifetime > 0) e.retireAt = e.ticks + e.maxLifetime + 2L
+        if (e.maxLifetime > 0) e.retireAt = e.ticks + e.maxLifetime + e.maxTail + 2L
         send(e, level, ParticleRecipePayload(id, if (remove) RecipeOperation.REMOVE else RecipeOperation.STOP))
         if (remove) entries.remove(id)
     }
@@ -113,9 +115,6 @@ internal object ServerParticleSources {
     fun edit(id: UUID, predicate: String, changes: Map<String, String>, remove: Boolean, level: ServerLevel) {
         val e = requireNotNullLocalized(entries[id]) { translation("error.recipe.ended") }
         requireMutable(e)
-        requireLocalized(e.mode != ParticleRecipeMode.INSTANCED || "glow" !in changes) {
-            translation("error.recipe.instances_appearance")
-        }
         val synced = e.synced
         if (synced != null) {
             synced.simulation.edit(predicate, changes, remove)

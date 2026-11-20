@@ -11,6 +11,7 @@ import work.nekow.particledrawing.animation.recipe.SyncedRecipe
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleRecipe
 import work.nekow.particledrawing.api.ParticleVisual
+import work.nekow.particledrawing.api.ParticleTrailStyle
 import work.nekow.particledrawing.api.RecipeEmission
 import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.translation
@@ -22,10 +23,11 @@ internal data class RecipeStateRow(
     val id: Long, val lookId: Long, val position: Vec3, val color: Color, val scale: Float,
     val age: Int, val lifetime: Int, val glowing: Boolean, val light: Int, val decal: RecipeDecal?,
     val history: List<Vec3>,
+    val trailAge: Int = -1,
 ) {
     constructor(sample: RecipeParticleSample, lookId: Long, history: List<Vec3>) : this(
         sample.id, lookId, sample.position, sample.color, sample.scale, sample.age, sample.lifetime,
-        sample.glowing, sample.light, sample.decal, history,
+        sample.glowing, sample.light, sample.decal, history, sample.trailAge,
     )
 }
 
@@ -83,7 +85,8 @@ internal data class ParticleRecipeStatePayload(val id: UUID, val content: Conten
             buf.writeFloat(row.color.r); buf.writeFloat(row.color.g); buf.writeFloat(row.color.b); buf.writeFloat(row.color.a)
             buf.writeFloat(row.scale)
             buf.writeVarInt(row.age); buf.writeVarInt(row.lifetime)
-            buf.writeByte(row.light or if (row.glowing) 16 else 0)
+            buf.writeByte(row.light or (if (row.glowing) 16 else 0) or (if (row.trailAge >= 0) 32 else 0))
+            if (row.trailAge >= 0) buf.writeVarInt(row.trailAge)
             buf.writeBoolean(row.decal != null)
             row.decal?.let {
                 StreamCodecs.writeVec(buf, it.position)
@@ -104,8 +107,11 @@ internal data class ParticleRecipeStatePayload(val id: UUID, val content: Conten
             val age = buf.readVarInt()
             val lifetime = buf.readVarInt()
             val light = buf.readUnsignedByte().toInt()
+            val trailAge = if (light and 32 != 0) buf.readVarInt().also {
+                requireState(it in 0 until ParticleTrailStyle.MAX_LINGER_TICKS)
+            } else -1
             requireState(id >= 0 && look >= 0 && scale.isFinite() && scale >= 0f && age >= 0 &&
-                (lifetime == -1 || (lifetime <= ParticleRecipe.MAX_LIFETIME && age < lifetime)) && light in 0..31 &&
+                (lifetime == -1 || (lifetime <= ParticleRecipe.MAX_LIFETIME && age < lifetime)) && light in 0..63 &&
                 color.r in 0f..1f && color.g in 0f..1f && color.b in 0f..1f && color.a in 0f..1f)
             val decal = if (buf.readBoolean()) {
                 val at = readPoint(buf)
@@ -116,7 +122,8 @@ internal data class ParticleRecipeStatePayload(val id: UUID, val content: Conten
             } else null
             val history = List(count(buf, ParticleVisual.MAX_TRAIL_TICKS + 1)) { readPoint(buf) }
             requireState(history.isEmpty() || history.last() == position)
-            return RecipeStateRow(id, look, position, color, scale, age, lifetime, light and 16 != 0, light and 15, decal, history)
+            return RecipeStateRow(id, look, position, color, scale, age, lifetime, light and 16 != 0, light and 15,
+                decal, history, trailAge)
         }
 
         private fun readPoint(buf: FriendlyByteBuf) = StreamCodecs.readVec(buf).toCore().also {

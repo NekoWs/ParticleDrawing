@@ -9,6 +9,7 @@ import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleEvent
 import work.nekow.particledrawing.api.ParticleRecipe
 import work.nekow.particledrawing.api.ParticleSeed
+import work.nekow.particledrawing.api.ParticleTrailStyle
 import work.nekow.particledrawing.api.ParticleVisual
 import work.nekow.particledrawing.api.RecipeEmission
 import work.nekow.particledrawing.i18n.LocalizedFailure
@@ -85,5 +86,25 @@ class SyncedRecipeTest {
         for (bad in listOf(recipe.copy(rate = 65), recipe.copy(maxAlive = 65), recipe.copy(simulationRange = 32.0))) {
             assertFailsWith<IllegalArgumentException> { SyncedRecipe.validate(bad) }.also { assertIs<LocalizedFailure>(it) }
         }
+    }
+
+    @Test fun `主粒子结束后晚加入者仍可看到渐隐尾迹`() {
+        val visual = recipe.visual.copy().apply { trailStyle = ParticleTrailStyle(lingerTicks = 4) }
+        val source = SyncedRecipe(recipe.copy(visual = visual, lifetime = 4, birth = mapOf("vx" to "0.5")), true, floor)
+        repeat(5) { source.tick(RecipeFrame.IDENTITY) }
+        val first = source.snapshot(true).particles.single()
+        assertEquals(0, first.trailAge)
+        assertEquals(0, first.light)
+        assertTrue(first.history.first().x < first.history.last().x)
+        assertEquals(first.position, first.history.last())
+        assertEquals(first.history, source.activeTrails().getValue(first.id).oldestFirst())
+        repeat(3) { source.tick(RecipeFrame.IDENTITY) }
+        val late = source.snapshot(true).particles.single()
+        assertEquals(first.id, late.id)
+        assertEquals(first.history, late.history)
+        assertEquals(3, late.trailAge)
+        assertFalse(source.finished)
+        source.tick(RecipeFrame.IDENTITY)
+        assertTrue(source.finished)
     }
 }

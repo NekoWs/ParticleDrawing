@@ -22,6 +22,7 @@ KDoc。只在特定包中提供的类型单独注明。代码示例见[使用指
 | 类型 | 用途 |
 | --- | --- |
 | `ParticleVisual`、`ParticleStyle`、`ParticleTextures` | 设置尺寸、朝向、混合、贴图、换帧、速度拉丝、软化距离与丝带长度 |
+| `ParticleTrailStyle` | 设置尾端与头部的宽度和 RGBA，让尾迹脱离头部后独立淡出 |
 | `particleVisual`、`ParticleAppearance`、`Light`、`Blend`、`Facing` | Kotlin DSL 和 Java Builder，分别描述全亮与对外照明 |
 | `ParticleCurve`、`CurveKey`、`CurveChannel`、`ParticleLifeCurve` | 逐粒子的外观和光强寿命曲线 |
 | `lifeCurve`、`LifeCurves` | 用 DSL 或 Java 入口创建关键帧和淡出包络 |
@@ -41,7 +42,7 @@ KDoc。只在特定包中提供的类型单独注明。代码示例见[使用指
 | `SubEmit` | 在配方粒子自然到期或满足 `kill` 时沿球面方向发射一层子粒子 |
 | `ParticleSources`、`ParticleSourceHandle` | 启动单轮或持续生成，修改现有实例并停止或移除 |
 | `ParticleSources.startSynced(level, recipe, anchor, burst)` | 由服务端推进配方。进入视距的玩家收到现存粒子、子粒子和尾迹。返回同一种运行句柄 |
-| `ParticleSources.startInstanced(level, recipe, anchor, burst)` / `burstGpu(level, recipe, anchor)` | 复用四边形实例批次，分别使用客户端配方模拟或 GPU 弹道 |
+| `ParticleSources.startInstanced(level, recipe, anchor, burst)` / `burstGpu(level, recipe, anchor)` | 使用客户端配方和常驻实例数据绘制四边形、透明粒子与网格，或在 GPU 上推进四边形弹道 |
 
 ## 单位、表达式与退场
 

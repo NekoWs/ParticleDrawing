@@ -28,6 +28,7 @@ internal fun sceneSamplerLayout(): SceneBindGroupLayout = SceneBindGroupLayout.b
 
 internal fun particleInstanceLayout(): SceneBindGroupLayout = SceneBindGroupLayout.builder()
     .withUniform("Sampler0", com.mojang.renderpearl.api.pipeline.UniformType.COMBINED_IMAGE_SAMPLER)
+    .withUniform("Sampler2", com.mojang.renderpearl.api.pipeline.UniformType.COMBINED_IMAGE_SAMPLER)
     .withUniform("PDInstances", com.mojang.renderpearl.api.pipeline.UniformType.UNIFORM_BUFFER)
     .withUniform("PDFrame", com.mojang.renderpearl.api.pipeline.UniformType.UNIFORM_BUFFER)
     .build()

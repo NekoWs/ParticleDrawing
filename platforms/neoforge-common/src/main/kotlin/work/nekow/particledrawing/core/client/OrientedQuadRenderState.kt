@@ -2,6 +2,8 @@ package work.nekow.particledrawing.core.client
 
 import com.mojang.blaze3d.vertex.VertexConsumer
 import net.minecraft.client.particle.SingleQuadParticle
+import net.minecraft.client.renderer.SubmitNodeCollector
+import net.minecraft.client.renderer.state.level.CameraRenderState
 import net.minecraft.client.renderer.state.level.QuadParticleRenderState
 import org.joml.Quaternionf
 import org.joml.Vector3f
@@ -38,6 +40,15 @@ class OrientedQuadRenderState : QuadParticleRenderState() {
 
     internal fun ribbonVertices(layer: SingleQuadParticle.Layer): RibbonVertices =
         ribbons.getOrPut(layer) { RibbonVertices() }
+
+    override fun isEmpty(): Boolean = super.isEmpty() && ribbons.values.all { it.isEmpty }
+
+    override fun layers(): Set<SingleQuadParticle.Layer> =
+        super.layers() + ribbons.asSequence().filter { !it.value.isEmpty }.map { it.key }.asIterable()
+
+    override fun submit(collector: SubmitNodeCollector, camera: CameraRenderState) {
+        if (!isEmpty()) collector.submitQuadParticleGroup(this)
+    }
 
     // 顶点生成的临时对象，只在渲染线程用，复用以免每颗粒子每帧分配
     private val scratchQ = Quaternionf()

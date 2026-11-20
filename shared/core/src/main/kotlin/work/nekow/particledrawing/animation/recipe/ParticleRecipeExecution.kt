@@ -27,8 +27,10 @@ internal object ParticleRecipeExecution {
 
     fun validate(recipe: ParticleRecipe, anchor: RecipeAnchor, burst: Boolean, mode: ParticleRecipeMode) {
         if (mode == ParticleRecipeMode.STANDARD) return
-        validateAppearance(recipe)
-        if (mode == ParticleRecipeMode.INSTANCED) return
+        if (mode == ParticleRecipeMode.INSTANCED) {
+            validateInstances(recipe)
+            return
+        }
         val unsupportedInput = RecipeExpressions(recipe).externalInputs.any {
             it.needsWorld || it.readsNeighbors || it.ordinal >= RecipeInput.EVENT_X.ordinal
         }
@@ -39,21 +41,27 @@ internal object ParticleRecipeExecution {
             recipe.simulationRange == 0.0 && recipe.lifetime > 0 && recipe.maxAlive >= recipe.seeds.size &&
             (recipe.seeds.size - 1L) / recipe.rate * recipe.interval + recipe.lifetime <= 1_000_000 &&
             recipe.visual.lightLevel == 0 && !recipe.visual.emitsLight && recipe.visual.lightShape == null &&
+            gpuAppearance(recipe) &&
             recipe.lifeCurve == null && !unsupportedInput &&
             recipe.motion.all { (key, value) -> key in accelerations && value.toDoubleOrNull()?.toFloat()?.isFinite() == true }) {
             translation("error.recipe.gpu_unsupported")
         }
     }
 
-    private fun validateAppearance(recipe: ParticleRecipe) {
+    private fun validateInstances(recipe: ParticleRecipe) {
         val v = recipe.visual
-        requireLocalized(v.billboard && v.additive && v.glowing && !v.lightOnly && !v.alignVelocity &&
-            v.softFade == 0.0 && v.trailTicks == 0 && v.model == null && !v.sceneMaterial.active &&
-            recipe.birth.keys.none { it == "glow" } && recipe.motion.keys.none { it == "glow" } &&
+        requireLocalized(!v.sceneMaterial.active && !v.lightOnly &&
             recipe.emissions.none { it.decalRadius > 0.0 } && recipe.subEmit == null) {
             translation("error.recipe.instances_appearance")
         }
-        for (rule in recipe.emissions) validateAppearance(rule.child)
+        for (rule in recipe.emissions) validateInstances(rule.child)
+    }
+
+    private fun gpuAppearance(recipe: ParticleRecipe): Boolean {
+        val v = recipe.visual
+        return v.billboard && v.additive && v.glowing && !v.lightOnly && !v.alignVelocity &&
+            v.softFade == 0.0 && v.trailTicks == 0 && v.model == null && !v.sceneMaterial.active &&
+            "glow" !in recipe.birth && "glow" !in recipe.motion
     }
 
     fun bake(recipe: ParticleRecipe, anchor: RecipeAnchor): List<Shot> {

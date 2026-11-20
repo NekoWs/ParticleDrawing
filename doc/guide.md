@@ -510,6 +510,18 @@ ParticleManager.registerTexture("mymod:glow", pngBytes)   // 幂等，字节上�
 
 `ParticleVisual` 是可变的链式对象，多颗粒子想共用一份外观再各改一点时用 `copy()`。
 
+为已启用的拖尾设置颜色、粗细和独立淡出时间，可在 Kotlin 或 Java 中使用
+`ParticleVisual.trailStyle(ParticleTrailStyle(...))`。两端颜色和宽度按实际路径长度插值。
+
+```kotlin
+val visual = ParticleVisual().apply {
+    trailTicks = 24
+    trailStyle = ParticleTrailStyle(30, 0.2f, 1.5f, Color.CYAN.withAlpha(0.25f), Color.WHITE)
+}
+```
+
+配方可通过 `ParticleSources.startInstanced` 批量绘制透明粒子和 `visual.model` 网格。绘制帧从相邻两刻的实例数据插值得到外观。
+
 ### 原版与模组粒子贴图
 
 `particle:命名空间:粒子名称` 从客户端当前资源包的 `particles/<名称>.json` 中读取全部帧，

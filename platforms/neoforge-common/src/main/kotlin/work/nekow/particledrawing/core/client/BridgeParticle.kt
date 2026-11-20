@@ -11,7 +11,9 @@ import net.minecraft.resources.Identifier
 import net.minecraft.util.Mth
 import net.minecraft.world.phys.Vec3
 import org.joml.Quaternionf
+import org.joml.Vector4f
 import work.nekow.particledrawing.api.ParticleRenderOptions
+import work.nekow.particledrawing.api.ParticleTrailStyle
 import work.nekow.particledrawing.animation.ParticleUvRegion
 import work.nekow.particledrawing.animation.UvData
 import work.nekow.particledrawing.api.Color
@@ -187,14 +189,26 @@ class BridgeParticle(
     internal var model: ParticleModelRenderer.Model? = null
     internal var sceneMaterial = work.nekow.particledrawing.api.ParticleSceneMaterial.NONE
 
-    internal fun enableRenderEffects(visual: ParticleRenderOptions, previous: Vec3?) {
-        val state = ParticleRenderEffects(visual, previous ?: Vec3(x, y, z))
+    internal fun enableRenderEffects(visual: ParticleRenderOptions, previous: Vec3?, trailStyle: ParticleTrailStyle) {
+        val state = ParticleRenderEffects(visual, previous ?: Vec3(x, y, z), trailStyle)
         effects = state
         if (previous != null) {
             state.syncPosition(previous.x, previous.y, previous.z, x, y, z, snap = false)
             state.record(x, y, z)
         }
     }
+
+    internal var trailOwner: UUID? = null
+
+    internal fun detachTrail(age: Int = 0): Boolean {
+        if (effects?.detach(age) != true) return false
+        xo = x; yo = y; zo = z
+        blend.hold()
+        return true
+    }
+
+    internal fun tickDetachedTrail() = effects?.tickDetached() == true
+    internal fun setDetachedTrailPaused(paused: Boolean) { effects?.setDetachedPaused(paused) }
 
     internal fun recordTrail() {
         effects?.record(x, y, z)
@@ -300,6 +314,37 @@ class BridgeParticle(
         return zo + (z - zo) * f
     }
 
+    internal fun instanceSample(partialTick: Float, out: ParticleInstanceDraws.Sample) {
+        refreshTextureIfStale()
+        val entry = texEntry ?: TextureCache.defaultWhite()
+        uvRegion.updateFromTexture(entry, uv, animStartNanos, textureClock, age, frameFactor(partialTick))
+        val start = frameFactor(0f)
+        val end = frameFactor(1f)
+        val effect = effects
+        fun color(f: Float, destination: Vector4f) {
+            destination.set(blend.redAt(f), blend.greenAt(f), blend.blueAt(f),
+                blend.alphaAt(f) * (effect?.alpha(x, y, z, f) ?: 1f))
+        }
+        color(start, out.color0)
+        color(end, out.color1)
+        out.texture = entry.id
+        out.model = model
+        out.blend = when {
+            additive -> ParticleInstanceDraws.Blend.ADDITIVE
+            !entry.translucent && out.color0.w >= 1f && out.color1.w >= 1f -> ParticleInstanceDraws.Blend.OPAQUE
+            else -> ParticleInstanceDraws.Blend.ALPHA
+        }
+        out.from.set(sampledX(0f), sampledY(0f), sampledZ(0f))
+        out.to.set(sampledX(1f), sampledY(1f), sampledZ(1f))
+        out.width0 = frameWidth(0f)
+        out.height0 = frameHeight(0f)
+        out.width1 = frameWidth(1f)
+        out.height1 = frameHeight(1f)
+        out.light = if (isGlowing) -1 else getLightCoords(partialTick)
+        out.orientation = effect?.orientation() ?: if (billboard) null else orientationQuaternion()
+        out.uv.set(getU0(), getV0(), getU1(), getV1())
+    }
+
     /** 本帧实际渲染的透明度（含相邻 tick 插值与曲线乘数），只读观察用。 */
     fun sampledAlpha(partialTick: Float): Float = blend.alphaAt(frameFactor(partialTick))
 
@@ -325,6 +370,7 @@ class BridgeParticle(
 
     internal fun inFrustum(frustum: net.minecraft.client.renderer.culling.Frustum, partialTick: Float): Boolean {
         if (textureClock?.recipeSuspended == true) return false
+        if (instanced) return true
         val visual = effects
         if (visual?.trail == null) return frustum.pointInFrustum(renderX(), renderY(), renderZ())
         val half = maxOf(sampledWidth(partialTick), sampledHeight(partialTick), 0.5f)
@@ -341,19 +387,30 @@ class BridgeParticle(
         camera: net.minecraft.client.Camera,
         partialTick: Float
     ) {
-        if (lightOnly || textureClock?.recipeSuspended == true) return
+        if (lightOnly || textureClock?.recipeSuspended == true || effects?.trailPaused == true) return
         val f = frameFactor(partialTick)
         val cam = camera.position()
         if (!ParticleRenderEffects.visible(particleId, cam, x, y, z)) return
         refreshTextureIfStale()
-        texEntry?.let { uvRegion.updateFromTexture(it, uv, animStartNanos, textureClock, age, f) }
-        if (instanced) {
-            ParticleInstanceDraws.offer((texEntry ?: TextureCache.defaultWhite()).id,
-                sampledX(f) - cam.x, sampledY(f) - cam.y, sampledZ(f) - cam.z, frameWidth(f), frameHeight(f),
-                blend.redAt(f), blend.greenAt(f), blend.blueAt(f), blend.alphaAt(f), getU0(), getV0(), getU1(), getV1())
-            return
+        val entry = texEntry
+        val effect = effects
+        val trail = effect?.trail
+        val trailOnly = effect?.trailOnly == true
+        if (instanced && !trailOnly) {
+            var uvChanged = false
+            val animated = entry != null && (entry.animation != null || uv?.mode == UvData.Mode.ANIMATED)
+            if (animated) {
+                val beforeU0 = getU0(); val beforeV0 = getV0()
+                val beforeU1 = getU1(); val beforeV1 = getV1()
+                uvRegion.updateFromTexture(entry, uv, animStartNanos, textureClock, age, f)
+                uvChanged = beforeU0 != getU0() || beforeV0 != getV0() || beforeU1 != getU1() || beforeV1 != getV1()
+            }
+            val curved = textureClock?.hasAppearanceCurve() == true
+            ParticleInstanceDraws.offer(this, animated || curved, uvChanged || curved)
+            if (trail == null) return
         }
-        if (f <= 0f && effects == null) {
+        entry?.let { uvRegion.updateFromTexture(it, uv, animStartNanos, textureClock, age, f) }
+        if (!instanced && f <= 0f && effect == null) {
             super.extract(state, camera, partialTick)
             return
         }
@@ -367,16 +424,15 @@ class BridgeParticle(
             bCol = blend.blueAt(f)
             alpha = blend.alphaAt(f)
         }
-        alpha *= effects?.alpha(x, y, z, f) ?: 1f
+        alpha *= effect?.alpha(x, y, z, f) ?: 1f
         try {
-            if (alpha <= 0f && effects != null) return
-            super.extract(state, camera, partialTick)
-            if (state is OrientedQuadRenderState) effects?.let { effect ->
-                val trail = effect.trail ?: return@let
+            if (!instanced && !trailOnly && (alpha > 0f || effect == null)) super.extract(state, camera, partialTick)
+            if (trail != null && state is OrientedQuadRenderState) {
                 state.ribbonVertices(getLayer()).append(
                     trail, CoreVec3(sampledX(f), sampledY(f), sampledZ(f)),
-                    CoreVec3(cam.x, cam.y, cam.z), frameHeight(f), f,
-                    getU0(), getU1(), getV0(), getV1(), RibbonVertices.color(rCol, gCol, bCol, alpha), getLightCoords(f), effect.trailSides,
+                    CoreVec3(cam.x, cam.y, cam.z), frameHeight(f), if (trailOnly) 1f else f,
+                    getU0(), getU1(), getV0(), getV1(), RibbonVertices.color(rCol, gCol, bCol, alpha), getLightCoords(f),
+                    effect.trailSides, effect.trailStyle, effect.trailOpacity(if (recipeFrameHeld) 0f else partialTick),
                 )
             }
         } finally {
@@ -413,7 +469,7 @@ class BridgeParticle(
     }
 
     override fun tick() {
-        if (textureClock?.recipeSuspended == true) return
+        if (textureClock?.recipeSuspended == true || effects?.trailOnly == true) return
         age++
         if (age >= lifetime) {
             remove()
