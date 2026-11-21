@@ -1,0 +1,22 @@
+import groovy.json.JsonSlurper
+import java.security.MessageDigest
+
+projectsEvaluated {
+    rootProject.tasks.matching { it.name in [
+        'cacheVersionExecutableServer1.21.1', 'cacheVersionExecutableClient1.21.1', 'cacheVersionMappingsClient1.21.1'
+    ] }.configureEach { task ->
+        def versionDir = rootProject.file('.gradle/caches/minecraft/versions/1.21.1')
+        def downloads = new JsonSlurper().parse(new File(versionDir, 'metadata.json')).downloads
+        def fileName = ['cacheVersionExecutableServer1.21.1': 'server.jar', 'cacheVersionExecutableClient1.21.1': 'client.jar',
+                        'cacheVersionMappingsClient1.21.1': 'client.txt'][task.name]
+        def kind = ['server.jar': 'server', 'client.jar': 'client', 'client.txt': 'client_mappings'][fileName]
+        task.setActions([])
+        task.outputs.upToDateWhen { false }
+        task.outputs.doNotCacheIf('Use the verified Maven cache files') { true }
+        task.doLast {
+            def file = new File(versionDir, fileName)
+            def digest = MessageDigest.getInstance('SHA-1').digest(file.bytes).encodeHex().toString()
+            if (digest != downloads[kind].sha1) throw new GradleException("Checksum mismatch: ${file}")
+        }
+    }
+}

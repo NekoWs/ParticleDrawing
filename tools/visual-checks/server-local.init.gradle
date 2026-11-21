@@ -1,0 +1,8 @@
+gradle.afterProject { target ->
+    if (target == rootProject && target.name == 'ParticleDrawing-neoforge-26.3') {
+        def init = gradle.startParameter.allInitScripts.find { it.name == 'server-local.init.gradle' }
+        target.runs.named('server').configure {
+            workingDirectory target.layout.dir(target.providers.provider { new File(init.parentFile, 'server') })
+        }
+    }
+}

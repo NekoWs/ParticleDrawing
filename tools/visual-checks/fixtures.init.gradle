@@ -1,0 +1,6 @@
+gradle.afterProject { project ->
+    if (project == rootProject && project.name == 'ParticleDrawing-neoforge-26.3') {
+        def init = gradle.startParameter.allInitScripts.find { it.name == 'fixtures.init.gradle' }
+        project.sourceSets.main.kotlin.srcDir(new File(init.parentFile, 'fixtures'))
+    }
+}
