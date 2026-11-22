@@ -1,7 +1,7 @@
 
 license="${mod_license}"
 
-#issueTrackerURL="https://change.me.to.your.issue.tracker.example.invalid/" #optional
+issueTrackerURL="https://github.com/NekoWs/ParticleDrawing/issues" #optional
 
 [[mods]] #mandatory
 
@@ -13,7 +13,7 @@ displayName="${mod_name}" #mandatory
 
 #updateJSONURL="https://change.me.example.invalid/updates.json" #optional
 
-#displayURL="https://change.me.to.your.mods.homepage.example.invalid/" #optional
+displayURL="https://github.com/NekoWs/ParticleDrawing" #optional
 
 iconFile="icon.png" #optional
 

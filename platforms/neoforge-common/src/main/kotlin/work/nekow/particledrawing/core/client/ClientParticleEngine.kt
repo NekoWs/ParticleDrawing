@@ -72,7 +72,9 @@ class ClientParticleEngine {
     private var syncCursor = 0
     private var cachedIds: Array<UUID?> = arrayOfNulls(0)
     private var cachedCount = 0
-    private var cachedSize = -1
+    /** 粒子集合版本：增删都自增。同数量替换时只有版本能发现轮转表过期。 */
+    private var particleVersion = 0L
+    private var cachedVersion = -1L
 
     /**
      * 生成一个新粒子并注册到原版粒子系统。
@@ -108,6 +110,7 @@ class ClientParticleEngine {
         if (scaleArray != null) rp.setScaleArrayDirect(scaleArray)
         rp.captureSpawnSize()
         rp.markBorn(tickSequence)
+        particleVersion++
         particles[id] = rp
         if (lightsUp(glowing, emits || lightShape != null, lightLevel)) lightIndex.add(id)
         if (lifeCurve != null && !lifeCurve.isEmpty()) curveIds.add(id)
@@ -467,6 +470,7 @@ class ClientParticleEngine {
      * 摘掉一个粒子：桥接粒子、各索引与 track 缓冲一并清掉。
      */
     private fun removeOne(id: UUID, keepTrail: Boolean = false) {
+        particleVersion++
         particles.remove(id)
         ClientAnimationProgramManager.onParticleRemoved(id)
         if (!keepTrail) detachedTrails.remove(id)?.remove()
@@ -671,14 +675,14 @@ class ClientParticleEngine {
      * 会把 GC 拖垮（发射器场景几乎每 tick 都在变）。数组容量只增不减，用 [cachedCount] 记真实长度。
      */
     private fun syncParticlesInBatches(motionParticles: Set<UUID>) {
-        if (particles.size != cachedSize) {
+        if (particleVersion != cachedVersion) {
             val n = particles.size
             if (cachedIds.size < n) cachedIds = arrayOfNulls(maxOf(n, cachedIds.size * 2))
             var i = 0
             for (id in particles.keys) cachedIds[i++] = id
             if (i < cachedIds.size) cachedIds[i] = null
             cachedCount = n
-            cachedSize = n
+            cachedVersion = particleVersion
             if (syncCursor >= cachedCount) syncCursor = 0
         }
 
@@ -808,6 +812,7 @@ class ClientParticleEngine {
         ClientSyncedRecipes.clear()
         ClientGpuParticles.clear()
         ClientParticleFields.clear()
+        particleVersion++
         particles.clear()
         bridges.clear()
         groups.clear()
@@ -825,7 +830,7 @@ class ClientParticleEngine {
         exitWatches.clear()
         cachedIds = arrayOfNulls(0)
         cachedCount = 0
-        cachedSize = -1
+        cachedVersion = -1L
         syncCursor = 0
     }
 

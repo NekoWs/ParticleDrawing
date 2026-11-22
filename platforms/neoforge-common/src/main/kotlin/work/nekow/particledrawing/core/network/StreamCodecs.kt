@@ -21,6 +21,24 @@ internal object StreamCodecs {
     fun readIdentifier(buf: FriendlyByteBuf): Identifier =
         Identifier.fromNamespaceAndPath(buf.readUtf(), buf.readUtf())
 
+    /**
+     * 读取带长度前缀的字节数组并卡上限。
+     *
+     * 原版 `readByteArray()` 先按声明长度分配再读，伪造长度可以骗出超大分配；
+     * 这里要求长度同时不超过 [max] 和当前可读字节数。
+     */
+    fun readByteArray(buf: FriendlyByteBuf, max: Int): ByteArray {
+        val size = buf.readVarInt()
+        if (size < 0 || size > max || size > buf.readableBytes()) {
+            throw work.nekow.particledrawing.i18n.LocalizedArgumentException(
+                work.nekow.particledrawing.i18n.translation("error.packet.animation_bytes", size, max)
+            )
+        }
+        val out = ByteArray(size)
+        buf.readBytes(out)
+        return out
+    }
+
     val UUID_CODEC: StreamCodec<FriendlyByteBuf, UUID> =
         object : StreamCodec<FriendlyByteBuf, UUID> {
             override fun decode(buf: FriendlyByteBuf): UUID =

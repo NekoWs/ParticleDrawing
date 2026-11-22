@@ -39,7 +39,7 @@ data class ParticleTexturePayload(
                     val id = buf.readVarInt()
                     val name = buf.readUtf()
                     val eof = buf.readBoolean()
-                    val data = buf.readByteArray()
+                    val data = StreamCodecs.readByteArray(buf, CHUNK_SIZE)
                     return ParticleTexturePayload(id, name, eof, data)
                 }
 

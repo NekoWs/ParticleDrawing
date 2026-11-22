@@ -37,6 +37,10 @@ object ServerProgramDelivery {
     fun isSent(groupId: UUID, playerId: UUID): Boolean =
         sentPlayers[groupId]?.contains(playerId) == true
 
+    /** 已收到该组完整程序的玩家；用于限制完成回报与停播广播范围。 */
+    fun sentPlayersOf(groupId: UUID): Set<UUID> =
+        sentPlayers[groupId]?.toSet() ?: emptySet()
+
     /** 只给已经收到全量程序的玩家投递追加段。 */
     fun sendAppendToSent(groupId: UUID, players: Collection<ServerPlayer>, sendAppend: (ServerPlayer) -> Unit) {
         val sent = sentPlayers[groupId] ?: return

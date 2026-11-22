@@ -48,10 +48,16 @@ internal object ClientSyncedRecipes {
         }
     }
 
+    /** 客户端同时跟踪的同步配方条目上限；只发 Look 不发帧的异常流不能无限堆。 */
+    private const val MAX_ENTRIES = 256
+
     private val entries = linkedMapOf<UUID, Entry>()
 
     fun receive(payload: ParticleRecipeStatePayload) {
         try {
+            if (payload.id !in entries && entries.size >= MAX_ENTRIES) {
+                entries.keys.firstOrNull()?.let(entries::remove)
+            }
             val entry = entries.getOrPut(payload.id, ::Entry)
             when (val content = payload.content) {
                 is Content.Look -> entry.looks[content.id] = content.look

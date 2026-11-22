@@ -29,6 +29,9 @@ object PlatformCompat {
     /** 当前进程是否客户端。26.x 是方法 `getDist()`，1.21.1 是字段 `dist`。 */
     val isClientDist: Boolean get() = FMLEnvironment.getDist() == Dist.CLIENT
 
+    /** 该版本能否覆盖玩家相机姿态；1.21.1 缺 CameraMixin，只能改 FOV，命令应直接拒绝。 */
+    val supportsCameraOverride: Boolean get() = true
+
     /** 客户端向服务端发包。26.x 走 `ClientPacketDistributor`。 */
     fun sendToServer(payload: CustomPacketPayload) = ClientPacketDistributor.sendToServer(payload)
 

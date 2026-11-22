@@ -253,6 +253,11 @@ if (bundleKotlin) {
 
 def jarJarKotlin = targetProperties.getProperty('jarjar_kotlin', '') == 'true'
 
+// 26.x 的 FML 不自带 Kotlin 运行时：漏掉内嵌标记会打出启动即 NoClassDefFoundError 的 JAR。
+if (!jarJarKotlin && !bundleKotlin && (targetProperties.getProperty('minecraft_version', '') ?: '').startsWith('26.')) {
+    throw new GradleException("26.x 目标必须在 target.properties 声明 jarjar_kotlin=true（缺少 Kotlin 运行时会启动崩溃）")
+}
+
 dependencies {
     implementation "net.neoforged:neoforge:${neo_version}"
     if (jarJarKotlin) {

@@ -57,6 +57,7 @@ internal object ParticleDrawParticleCommands {
     )
 
     fun tree(): LiteralArgumentBuilder<CommandSourceStack> = Commands.literal("particle")
+        .requires(work.nekow.particledrawing.platform.PlatformCompat.gamemastersOnly())
         .executes(::help)
         .then(Commands.literal("help").executes(::help))
         .then(groupTree())

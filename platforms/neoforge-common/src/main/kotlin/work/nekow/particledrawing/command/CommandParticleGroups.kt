@@ -20,11 +20,15 @@ internal object CommandParticleGroups {
         val pendingPrograms: MutableList<() -> Unit> = arrayListOf(),
     )
 
+    /** 每维度命名组上限，避免命令无限建组把服务端内存吃满。 */
+    private const val MAX_GROUPS = 256
+
     private val dimensions = HashMap<UUID, LinkedHashMap<String, Entry>>()
 
     fun create(dimension: UUID, name: String, group: ParticleGroup): Entry {
         requireLocalized(NAME.matches(name)) { translation("error.group.name") }
         val groups = dimensions.getOrPut(dimension) { linkedMapOf() }
+        requireLocalized(groups.size < MAX_GROUPS) { translation("error.group.limit", MAX_GROUPS) }
         requireLocalized(name !in groups) { translation("error.group.exists", name) }
         return Entry(name, group).also { groups[name] = it }
     }

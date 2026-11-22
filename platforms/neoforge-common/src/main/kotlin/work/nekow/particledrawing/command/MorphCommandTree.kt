@@ -76,10 +76,30 @@ object MorphCommandTree {
 
     private val draftNames = HashMap<UUID, MutableMap<String, Draft>>()
 
+    /** 每个维度最多缓存的 morph 草稿数，避免随便写名字就能堆住公式字符串。 */
+    private const val MAX_DRAFTS = 64
+
     private fun draft(ctx: CommandContext<CommandSourceStack>): Draft {
         val dim = ParticleUtils.dimensionUUID(ctx.source.level)
         val name = StringArgumentType.getString(ctx, "group")
-        return draftNames.getOrPut(dim) { HashMap() }.getOrPut(name) { Draft() }
+        // 草稿只能挂在真实存在的组上，名字打错要明确报错而不是默默建一张表。
+        CommandParticleGroups.get(dim, name)
+            ?: throw LocalizedArgumentException(translation("error.group.not_found", name))
+        val drafts = draftNames.getOrPut(dim) { HashMap() }
+        if (name !in drafts) {
+            requireLocalized(drafts.size < MAX_DRAFTS) { translation("error.morph.drafts", MAX_DRAFTS) }
+        }
+        return drafts.getOrPut(name) { Draft() }
+    }
+
+    /** 维度卸载：草稿随关卡作废。 */
+    fun discard(dimension: UUID) {
+        draftNames.remove(dimension)
+    }
+
+    /** 服务器关闭：全部丢弃。 */
+    fun clear() {
+        draftNames.clear()
     }
 
     private fun entry(ctx: CommandContext<CommandSourceStack>) = run {

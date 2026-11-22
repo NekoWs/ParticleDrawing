@@ -23,6 +23,9 @@ internal object AnimationProgramCodecs {
 
     /** 一个组的成员上限：受控清单一次发完。 */
     const val MAX_PROGRAM_MEMBERS = 8192
+    /** 单条编排里实体绑定与变量数量的上限。 */
+    const val MAX_ENTITY_BINDINGS = 1024
+    const val MAX_VARS = 1024
 
     // 一个坐标列表可占约 384 KiB，单独分包以免多段形变挤进同一份载荷。
     fun instructionChunks(instructions: List<AnimInstruction>): Sequence<List<AnimInstruction>> = sequence {
@@ -66,6 +69,7 @@ internal object AnimationProgramCodecs {
 
     fun readUuidList(buf: FriendlyByteBuf): List<UUID> {
         val n = buf.readVarInt()
+        requireLocalized(n in 0..MAX_PROGRAM_MEMBERS) { translation("error.packet.program_members", n, MAX_PROGRAM_MEMBERS) }
         return List(n) { StreamCodecs.UUID_CODEC.decode(buf) }
     }
 
@@ -79,6 +83,7 @@ internal object AnimationProgramCodecs {
 
     fun readEntityBindings(buf: FriendlyByteBuf): List<EntityBinding> {
         val n = buf.readVarInt()
+        requireLocalized(n in 0..MAX_ENTITY_BINDINGS) { translation("error.packet.program_members", n, MAX_ENTITY_BINDINGS) }
         return List(n) { EntityBinding(buf.readUtf(), StreamCodecs.UUID_CODEC.decode(buf)) }
     }
 
@@ -92,6 +97,7 @@ internal object AnimationProgramCodecs {
 
     fun readVars(buf: FriendlyByteBuf): Map<String, Double> {
         val n = buf.readVarInt()
+        requireLocalized(n in 0..MAX_VARS) { translation("error.packet.program_members", n, MAX_VARS) }
         val out = LinkedHashMap<String, Double>(n)
         repeat(n) { out[buf.readUtf()] = buf.readDouble() }
         return out

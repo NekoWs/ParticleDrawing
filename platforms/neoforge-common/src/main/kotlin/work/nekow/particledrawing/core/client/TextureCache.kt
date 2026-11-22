@@ -33,6 +33,10 @@ object TextureCache {
     data class Entry(val id: Identifier, val width: Int, val height: Int, val animation: ParticleSpriteAnimation? = null,
                      val translucent: Boolean = false)
 
+    /** 单张贴图解码上限：16384×1024 之类的极端比例也允许，只要总像素不超 1600 万。 */
+    private const val MAX_DIMENSION = 16384
+    private const val MAX_PIXELS = 16_777_216L
+
     private val entries = ConcurrentHashMap<String, Entry>()
 
     // 贴图表版本：每次成功注册或清空 +1；桥接粒子靠它发现生成后才到货的贴图并重新解析
@@ -101,6 +105,9 @@ object TextureCache {
     @JvmStatic
     fun load(textureName: String, pngBytes: ByteArray): Entry? {
         entries[textureName]?.let { return it }
+        // 解码前先读 PNG 头：1MiB 的高压缩比 PNG 可以解成几百 MB 的位图，必须在分配前拒绝。
+        val dimensions = pngDimensions(pngBytes) ?: return null
+        if (dimensions.first.toLong() * dimensions.second > MAX_PIXELS) return null
         val img: NativeImage
         try {
             pngBytes.inputStream().use { img = NativeImage.read(it) }
@@ -108,6 +115,25 @@ object TextureCache {
             return null
         }
         return registerImage(textureName, img)
+    }
+
+    /** 从 PNG 字节里读宽高（IHDR）；签名或长度不合法返回 null。 */
+    private fun pngDimensions(pngBytes: ByteArray): Pair<Int, Int>? {
+        if (pngBytes.size < 24) return null
+        val signature = byteArrayOf(-119, 80, 78, 71, 13, 10, 26, 10)
+        for (i in signature.indices) if (pngBytes[i] != signature[i]) return null
+        if (pngBytes[12] != 'I'.code.toByte() || pngBytes[13] != 'H'.code.toByte() ||
+            pngBytes[14] != 'D'.code.toByte() || pngBytes[15] != 'R'.code.toByte()
+        ) return null
+        fun intAt(offset: Int): Int =
+            ((pngBytes[offset].toInt() and 0xFF) shl 24) or
+                ((pngBytes[offset + 1].toInt() and 0xFF) shl 16) or
+                ((pngBytes[offset + 2].toInt() and 0xFF) shl 8) or
+                (pngBytes[offset + 3].toInt() and 0xFF)
+        val width = intAt(16)
+        val height = intAt(20)
+        if (width !in 1..MAX_DIMENSION || height !in 1..MAX_DIMENSION) return null
+        return width to height
     }
 
     /** 按 ARGB 像素注册贴图，内置形状用；不会出现在外部文件里。 */
@@ -155,9 +181,17 @@ object TextureCache {
         return false
     }
 
-    /** 清理全部缓存，内置形状会在下次用到时就地重建。 */
+    /** 清理全部缓存并释放已注册的动态贴图；内置形状会在下次用到时就地重建。 */
     @JvmStatic
     fun clear() {
+        val textures = Minecraft.getInstance().textureManager
+        for (entry in entries.values) {
+            try {
+                textures.release(entry.id)
+            } catch (_: Exception) {
+                // 贴图可能已随资源包重载释放过，忽略
+            }
+        }
         entries.clear()
         versionCounter.incrementAndGet()
     }

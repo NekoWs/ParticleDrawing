@@ -412,7 +412,7 @@ class MorphRuntime(
 
     /** 时间倍率；0 暂停，1 正常，可大于 1 加速。 */
     fun speed(scale: Double) {
-        requireLocalized(scale >= 0.0) { translation("error.morph.time_scale") }
+        requireLocalized(scale.isFinite() && scale >= 0.0) { translation("error.morph.time_scale") }
         timeScale = scale
     }
 

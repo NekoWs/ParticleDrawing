@@ -1,7 +1,10 @@
 package work.nekow.particledrawing.animation
 
 import net.neoforged.fml.loading.FMLPaths
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.translation
 import java.nio.file.Files
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 
 /**
@@ -11,6 +14,9 @@ object AnimationLoader {
 
     /** 动画播放文件存放目录：`<gameDir>/animations/`。 */
     val DIRECTORY: Path = FMLPaths.GAMEDIR.get().resolve("animations")
+
+    /** 单个动画文件上限：再大的一律拒绝，避免读到超大文件把内存撑爆。 */
+    private const val MAX_FILE_BYTES = 64L shl 20
 
     /** 列出可用的动画名（不含 .pdrawc 后缀）。 */
     @JvmStatic
@@ -24,21 +30,28 @@ object AnimationLoader {
         }
     }
 
-    /** 某名称对应的文件路径；分隔符替换为下划线以防路径穿越，不剥离 Unicode。 */
-    private fun resolvePath(name: String): Path {
+    /** 某名称对应的文件路径；分隔符替换为下划线以防路径穿越，不剥离 Unicode；非法名返回 null。 */
+    private fun resolvePath(name: String): Path? {
         val safe = name.replace(Regex("[/\\\\]"), "_")
-        return DIRECTORY.resolve("$safe.pdrawc")
+        return try {
+            DIRECTORY.resolve("$safe.pdrawc")
+        } catch (_: InvalidPathException) {
+            null
+        }
     }
 
     /** 判断某名称对应的 .pdrawc 文件是否存在（不验签）。 */
     @JvmStatic
-    fun has(name: String): Boolean = Files.exists(resolvePath(name))
+    fun has(name: String): Boolean = resolvePath(name)?.let { Files.exists(it) } ?: false
 
     /** 按名称读取动画播放文件字节并做服务端验签；缺失或验签失败返回 null。 */
     @JvmStatic
     fun load(name: String): ByteArray? {
-        val path = resolvePath(name)
+        val path = resolvePath(name) ?: return null
         if (!Files.exists(path)) return null
+        if (Files.size(path) > MAX_FILE_BYTES) {
+            throw LocalizedArgumentException(translation("error.file.too_large", MAX_FILE_BYTES))
+        }
         val bytes = Files.readAllBytes(path)
         return if (PdrawcReader.verify(bytes)) bytes else null
     }

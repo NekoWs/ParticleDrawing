@@ -24,6 +24,9 @@ data class PlayAnimationPayload(
 ) : CustomPacketPayload {
 
     companion object {
+        /** 单个动画文件的协议上限：与磁盘读取上限一致，防止伪造长度撑爆客户端。 */
+        const val MAX_BYTES: Int = 64 * 1024 * 1024
+
         @JvmField
         val TYPE = CustomPacketPayload.Type<PlayAnimationPayload>(
             Identifier.fromNamespaceAndPath("particledrawing", "play_animation")
@@ -38,7 +41,7 @@ data class PlayAnimationPayload(
                     val oy = buf.readDouble()
                     val oz = buf.readDouble()
                     val startGameTick = buf.readVarLong()
-                    val data = buf.readByteArray()
+                    val data = StreamCodecs.readByteArray(buf, MAX_BYTES)
                     return PlayAnimationPayload(id, ox, oy, oz, startGameTick, data)
                 }
 

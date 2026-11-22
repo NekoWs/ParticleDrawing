@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.animation
 
+import work.nekow.particledrawing.i18n.checkLocalized
 import work.nekow.particledrawing.platform.PlatformCompat
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.server.level.ServerLevel
@@ -37,9 +38,17 @@ object ServerAnimationManager {
 
     private val playbacks = ConcurrentHashMap<UUID, Playback>()
 
+    /** 全局播放记录上限；循环动画不会被 removeFinished 回收，必须有硬上限。 */
+    private const val MAX_PLAYBACKS = 128
+
+    private fun checkPlaybackRoom() {
+        checkLocalized(playbacks.size < MAX_PLAYBACKS) { translation("error.animation.limit", MAX_PLAYBACKS) }
+    }
+
     /** 启动播放：向玩家下发 .pdrawc 字节、原点与服务端进度起点，返回动画 ID。 */
     @JvmStatic
     fun play(dimensionId: UUID, players: Collection<ServerPlayer>, data: ByteArray, origin: Vec3): UUID {
+        checkPlaybackRoom()
         val id = UUID.randomUUID()
         // 解析时间轴参数（loop/长度）用于算进度；解析失败仍然下发，由客户端各自拒绝播放
         val anim = try { AnimationLoader.parse(data) } catch (_: Exception) { null }
@@ -60,6 +69,7 @@ object ServerAnimationManager {
      */
     @JvmStatic
     fun play(animation: ParticleAnimation, dimensionId: UUID, players: Collection<ServerPlayer>, origin: Vec3): UUID {
+        checkPlaybackRoom()
         val id = UUID.randomUUID()
         val startGameTick = players.firstOrNull()?.level()?.gameTime ?: 0L
         val payload = PlayAnimationDataPayload(id, origin.x, origin.y, origin.z, startGameTick, animation)

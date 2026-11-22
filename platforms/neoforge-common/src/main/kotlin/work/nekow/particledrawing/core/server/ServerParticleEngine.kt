@@ -816,6 +816,10 @@ class ServerParticleEngine(
 
     private fun pruneStalePlayers(players: Collection<ServerPlayer>) {
         if (players.isEmpty()) {
+            // 维度暂时没人也要清组计数与投递账本，否则玩家回来时程序不会重新补发。
+            for (playerId in playerParticles.keys.toList()) ServerProgramDelivery.clearPlayer(playerId)
+            for (playerId in playerGroupCounts.keys.toList()) ServerProgramDelivery.clearPlayer(playerId)
+            playerGroupCounts.clear()
             playerParticles.clear()
             visibleTo.clear()
             return

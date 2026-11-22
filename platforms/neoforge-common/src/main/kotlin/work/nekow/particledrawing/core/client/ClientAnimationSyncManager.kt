@@ -15,8 +15,14 @@ import java.nio.file.StandardOpenOption
 // 开始信号 → 内存连接跳过、远程连接上报已有哈希；逐块接收并按名累积；eof 块验签落盘；done 后清理会话。
 object ClientAnimationSyncManager {
 
+    /** 单文件上限：与磁盘读取上限一致，防止对端用无限块把客户端内存撑爆。 */
+    private const val MAX_FILE_BYTES = 64 * 1024 * 1024
+    private const val MAX_PENDING_FILES = 256
+    private const val MAX_PENDING_BYTES = 256 * 1024 * 1024
+
     /** 正在累积的文件内容（相对名 → 字节流）。 */
     private val pendingFiles = LinkedHashMap<String, ByteArrayOutputStream>()
+    private var pendingBytes = 0
 
     /** 当前连接对应的服务器缓存根目录；内存连接或尚未开始时为 null。 */
     private var currentRoot: Path? = null
@@ -25,6 +31,7 @@ object ClientAnimationSyncManager {
     @JvmStatic
     fun onBegin(context: IPayloadContext) {
         pendingFiles.clear()
+        pendingBytes = 0
         currentRoot = null
         if (context.connection().isMemoryConnection) {
             // 单机 / LAN 主机：服务器与客户端共享同一目录，无需同步文件
@@ -52,14 +59,27 @@ object ClientAnimationSyncManager {
         val root = currentRoot ?: return
         // 累积前先校验相对名，非法路径不缓存进 pendingFiles
         if (!AnimationSyncService.sanitizeRelativeName(name.replace('\\', '/'))) return
-        val out = pendingFiles.getOrPut(name) { ByteArrayOutputStream() }
+        // 同步目录只服务动画文件；其它扩展名不落盘，避免被写入任意内容
+        if (!name.endsWith(".pdrawc")) return
+        val out = pendingFiles.getOrPut(name) {
+            if (pendingFiles.size >= MAX_PENDING_FILES) return
+            ByteArrayOutputStream()
+        }
+        if (out.size() + data.size > MAX_FILE_BYTES) {
+            pendingBytes -= out.size()
+            pendingFiles.remove(name)
+            return
+        }
+        if (pendingBytes + data.size > MAX_PENDING_BYTES) return
         out.write(data)
+        pendingBytes += data.size
         if (eof) {
             val bytes = out.toByteArray()
             // .pdrawc 落盘前验签，验签失败的文件不写入（下次进服会重新同步）
             if (!name.endsWith(".pdrawc") || PdrawcReader.verify(bytes)) {
                 writeFile(root, name, bytes)
             }
+            pendingBytes -= bytes.size
             pendingFiles.remove(name)
         }
     }
@@ -68,6 +88,7 @@ object ClientAnimationSyncManager {
     @JvmStatic
     fun onDone(context: IPayloadContext) {
         pendingFiles.clear()
+        pendingBytes = 0
         currentRoot = null
     }
 

@@ -58,6 +58,7 @@ object ServerParticleHandler {
             ServerParticleEngine.clearDimension(dim)
             CommandParticleGroups.discard(dim)
             work.nekow.particledrawing.command.CommandParticleRecipes.discard(dim)
+            work.nekow.particledrawing.command.MorphCommandTree.discard(dim)
             ServerParticleSources.discard(dim)
             ParticleForceFields.discard(dim)
             // 只清这个维度排的任务：别的维度还有刚排的编排要跑
@@ -74,6 +75,7 @@ object ServerParticleHandler {
         AnimationScheduler.clearAll()
         CommandParticleGroups.discardAll()
         work.nekow.particledrawing.command.CommandParticleRecipes.clear()
+        work.nekow.particledrawing.command.MorphCommandTree.clear()
         ServerParticleSources.clear()
         ParticleForceFields.clear()
     }
@@ -122,5 +124,6 @@ object ServerParticleHandler {
     fun onPlayerLoggedOut(event: PlayerEvent.PlayerLoggedOutEvent) {
         ServerEmitterManager.forgetPlayer(event.entity.uuid)
         ServerParticleSources.forget(event.entity.uuid)
+        ServerEffectManager.forgetPlayer(event.entity.uuid)
     }
 }

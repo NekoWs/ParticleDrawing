@@ -37,7 +37,7 @@ data class AnimationSyncFilePayload(
                 override fun decode(buf: FriendlyByteBuf): AnimationSyncFilePayload {
                     val name = buf.readUtf()
                     val eof = buf.readBoolean()
-                    val data = buf.readByteArray()
+                    val data = StreamCodecs.readByteArray(buf, CHUNK_SIZE)
                     return AnimationSyncFilePayload(name, eof, data)
                 }
 

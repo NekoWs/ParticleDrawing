@@ -24,6 +24,9 @@ object ClientTextureSyncManager {
 
     private val LOGGER: Logger = LogManager.getLogger("ParticleDrawing")
 
+    /** 同时处于接收状态的贴图上限，避免对端用大量 id 拖住客户端内存。 */
+    private const val MAX_PENDING = 256
+
     /** 正在累积的贴图（id → 字节流）。 */
     private val pending = LinkedHashMap<Int, ByteArrayOutputStream>()
 
@@ -31,6 +34,10 @@ object ClientTextureSyncManager {
     @JvmStatic
     fun onChunk(payload: ParticleTexturePayload) {
         TextureRegistry.declare(payload.id, payload.name)
+        if (pending.size >= MAX_PENDING && payload.id !in pending) {
+            LOGGER.warn(translation("log.texture.limit").resolve(), MAX_PENDING)
+            return
+        }
         val out = pending.getOrPut(payload.id) { ByteArrayOutputStream() }
         if (out.size() + payload.data.size > TextureRegistry.MAX_BYTES) {
             LOGGER.warn(translation("log.texture.size").resolve(), payload.name)
@@ -127,5 +134,14 @@ object ClientTextureLifecycle {
     @JvmStatic
     fun onLoggingIn(event: ClientPlayerNetworkEvent.LoggingIn) {
         ClientTextureSyncManager.clearRemote()
+        // 换服务器：旧服的贴图与特效字节都作废
+        TextureCache.clear()
+        ClientAnimationManager.clearNetworkCaches()
+    }
+
+    @SubscribeEvent
+    @JvmStatic
+    fun onLoggingOut(event: ClientPlayerNetworkEvent.LoggingOut) {
+        ClientAnimationManager.clearNetworkCaches()
     }
 }

@@ -195,6 +195,9 @@ internal object ClientAnimationProgramManager {
         val out = DoubleArray(8)
     }
 
+    /** 同时运行的编排程序上限。 */
+    private const val MAX_PROGRAMS = 512
+
     private val programs = ConcurrentHashMap<UUID, Program>()
 
     /** 空程序巡检的节拍计数（每 [PRUNE_INTERVAL_TICKS] tick 走一次全量探活）。 */
@@ -215,6 +218,10 @@ internal object ClientAnimationProgramManager {
         varsIn: Map<String, Double>,
         instructions: List<AnimInstruction>,
     ) {
+        if (!programs.containsKey(programId) && programs.size >= MAX_PROGRAMS) {
+            LOGGER.warn(translation("log.program.limit").resolve(), MAX_PROGRAMS)
+            return
+        }
         val level = Minecraft.getInstance().level
         val p = Program(
             programId,

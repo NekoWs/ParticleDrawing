@@ -17,6 +17,9 @@ object AnimationSyncService {
     /** 需要同步的扩展名（相对 animations/ 根）；贴图内嵌于 .pdrawc，不单独同步 PNG。 */
     private val SYNC_EXTENSIONS = setOf(".pdrawc")
 
+    /** 单个动画文件上限：与客户端读取上限一致，超大文件跳过不下发。 */
+    private const val MAX_FILE_BYTES = 64L * 1024 * 1024
+
     /** 待同步文件描述（相对文件名 + 文件字节）。 */
     data class SyncFile(val name: String, val bytes: ByteArray)
 
@@ -25,7 +28,10 @@ object AnimationSyncService {
         val root = AnimationLoader.DIRECTORY
         val result = LinkedHashMap<String, ByteArray>()
         forEachSyncFile(root) { rel, path ->
-            try { result[rel] = Files.readAllBytes(path) } catch (_: IOException) { /* 读取失败跳过 */ }
+            try {
+                if (Files.size(path) > MAX_FILE_BYTES) return@forEachSyncFile
+                result[rel] = Files.readAllBytes(path)
+            } catch (_: IOException) { /* 读取失败跳过 */ }
         }
         return result
     }
@@ -62,7 +68,10 @@ object AnimationSyncService {
     fun computeLocalHashes(root: Path): Map<String, String> {
         val result = LinkedHashMap<String, String>()
         forEachSyncFile(root) { rel, path ->
-            try { result[rel] = HashUtils.sha1Hex(Files.readAllBytes(path)) } catch (_: IOException) { /* 忽略 */ }
+            try {
+                if (Files.size(path) > MAX_FILE_BYTES) return@forEachSyncFile
+                result[rel] = HashUtils.sha1Hex(Files.readAllBytes(path))
+            } catch (_: IOException) { /* 忽略 */ }
         }
         return result
     }

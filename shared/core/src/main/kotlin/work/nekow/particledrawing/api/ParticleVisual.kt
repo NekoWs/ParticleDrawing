@@ -26,8 +26,17 @@ class ParticleVisual {
     /** 贴图名：`ParticleManager.registerTexture` 注册的名字，或 [ParticleStyle] 的内置名；null = 纯白方块。 */
     var texture: String? = null
 
-    /** 子矩形 UV（贴图像素，顺序 u0, v0, u1, v1）；null = 整图。 */
+    /** 子矩形 UV（贴图像素，顺序 u0, v0, u1, v1）；null = 整图。写入请走 [uv]。 */
     var uvRect: FloatArray? = null
+        set(value) {
+            if (value != null) {
+                requireLocalized(value.size >= 4 && value[0].isFinite() && value[1].isFinite() &&
+                    value[2].isFinite() && value[3].isFinite() && value[2] > value[0] && value[3] > value[1]) {
+                    translation("error.visual.uv_rect")
+                }
+            }
+            field = value
+        }
 
     /** 各向异性长轴（四边形局部 X）尺寸；<=0 表示该轴沿用粒子的 `scale`。 */
     var scaleW: Float = 0f
@@ -66,8 +75,12 @@ class ParticleVisual {
      */
     var emitsLight: Boolean = false
 
-    /** 只发光、不画外观；见 [lightOnly]。 */
+    /** 只发光、不画外观；见 [lightOnly]。打开时自动打开 [emitsLight]。 */
     var lightOnly: Boolean = false
+        set(value) {
+            field = value
+            if (value) emitsLight = true
+        }
 
     /**
      * 对外光强的静态乘数（缺省 1）。
@@ -84,6 +97,9 @@ class ParticleVisual {
      * 只影响「向世界投光」，不影响片元本身的颜色，[lightOnly] 的粒子靠它决定光斑形状。
      */
     var lightShape: LightShape? = null
+        set(value) {
+            field = value?.validated()
+        }
 
     /**
      * 长轴自动对齐速度并按速度拉长，用于火花、雨线、彗尾这类「拉丝」效果。
@@ -184,8 +200,14 @@ class ParticleVisual {
         return this
     }
 
+    private fun requireFiniteScale(value: Float, key: String) {
+        requireLocalized(value.isFinite() && kotlin.math.abs(value) <= 1024f) { translation(key) }
+    }
+
     /** 各向异性尺寸（编辑器单位）：长轴 [w]、短轴 [h]。 */
     fun aniso(w: Float, h: Float): ParticleVisual {
+        requireFiniteScale(w, "error.visual.aniso")
+        requireFiniteScale(h, "error.visual.aniso")
         scaleW = w
         scaleH = h
         worldUnits = false
@@ -194,6 +216,8 @@ class ParticleVisual {
 
     /** 各向异性尺寸（世界格整宽/整高），与贴图尺寸无关。 */
     fun anisoWorld(w: Float, h: Float): ParticleVisual {
+        requireFiniteScale(w, "error.visual.aniso")
+        requireFiniteScale(h, "error.visual.aniso")
         scaleW = w
         scaleH = h
         worldUnits = true
@@ -214,6 +238,7 @@ class ParticleVisual {
     /** 三轴自转（弧度）。[spinLocal] = false 时按世界轴外旋。 */
     @JvmOverloads
     fun spin(radiansX: Double, radiansY: Double, radiansZ: Double, spinLocal: Boolean = true): ParticleVisual {
+        requireLocalized(radiansX.isFinite() && radiansY.isFinite() && radiansZ.isFinite()) { translation("error.visual.spin") }
         spinXDeg = Math.toDegrees(radiansX)
         spinYDeg = Math.toDegrees(radiansY)
         spinZDeg = Math.toDegrees(radiansZ)
@@ -227,7 +252,12 @@ class ParticleVisual {
      * 会一并关掉广告牌（广告牌下自转不生效）。方向为零向量时保持默认朝向。
      */
     fun alignTo(from: Vec3, to: Vec3): ParticleVisual {
-        val e = VisualMath.longAxisEulerDegrees(to.x - from.x, to.y - from.y, to.z - from.z)
+        val dx = to.x - from.x
+        val dy = to.y - from.y
+        val dz = to.z - from.z
+        // 零长度方向没有「长轴」可言：保持默认朝向，不要关掉广告牌。
+        if (dx * dx + dy * dy + dz * dz < 1e-12) return this
+        val e = VisualMath.longAxisEulerDegrees(dx, dy, dz)
         spinXDeg = e[0]
         spinYDeg = e[1]
         spinZDeg = e[2]
@@ -341,6 +371,10 @@ class ParticleVisual {
         val w: Int
         val h: Int
         if (rect != null) {
+            // 公开数组可能被直接写坏（NaN/反转）；这里不抛异常，退回整图渲染。
+            if (rect.size < 4 || !rect[0].isFinite() || !rect[1].isFinite() ||
+                !rect[2].isFinite() || !rect[3].isFinite() || rect[2] <= rect[0] || rect[3] <= rect[1]
+            ) return null
             x0 = rect[0].roundToInt()
             y0 = rect[1].roundToInt()
             w = max(1, (rect[2] - rect[0]).roundToInt())

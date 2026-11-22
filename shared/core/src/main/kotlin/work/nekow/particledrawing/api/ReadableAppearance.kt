@@ -44,7 +44,8 @@ class Light private constructor(
         @JvmStatic
         @JvmOverloads
         fun only(level: Int, intensity: Float = 1f): Light {
-            requireLocalized(level in 0..15) { translation("error.light.level") }
+            // 只发光不画外观，等级 0 等于既看不见又不亮，直接拒绝。
+            requireLocalized(level in 1..15) { translation("error.light.level") }
             requireLocalized(intensity.isFinite() && intensity >= 0f) { translation("error.light.intensity") }
             return Light(level, intensity, true, true)
         }

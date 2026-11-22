@@ -1,5 +1,8 @@
 package work.nekow.particledrawing.core.easing
 
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.translation
 import kotlin.math.abs
 
 // 缓动类型：预设或自定义三次贝塞尔曲线，可序列化以便网络传输。
@@ -122,12 +125,13 @@ class EasingType private constructor(
          */
         @JvmStatic
         fun deserialize(data: DoubleArray): EasingType {
+            requireLocalized(data.size >= 5 && data[0].isFinite()) { translation("error.easing.type") }
             val ordinal = data[0].toInt()
             if (ordinal == STEP_ORDINAL) return NONE
-            if (ordinal in PRESET_ARRAY.indices) {
-                return PRESET_ARRAY[ordinal]
-            }
-            return custom(data[1], data[2], data[3], data[4])
+            if (ordinal in PRESET_ARRAY.indices) return PRESET_ARRAY[ordinal]
+            // serialize 用 -1 表示自定义曲线（见 serialize）。
+            if (ordinal == -1) return custom(data[1], data[2], data[3], data[4])
+            throw LocalizedArgumentException(translation("error.easing.type"))
         }
 
         private fun closeEnough(a: Double, b: Double): Boolean {

@@ -62,22 +62,44 @@ internal object EmitterParamsCodec {
         buf.writeDouble(p.offsetAlong)
     }
 
-    fun read(buf: FriendlyByteBuf): EmitterParams = EmitterParams(
-        mode = if (buf.readVarInt() == EmitMode.TIME.ordinal) EmitMode.TIME else EmitMode.DISTANCE,
-        spacing = buf.readDouble(),
-        intervalMs = buf.readVarInt(),
-        lifetimeTicks = buf.readVarInt(),
-        r = buf.readFloat(), g = buf.readFloat(), b = buf.readFloat(), a = buf.readFloat(),
-        scale = buf.readFloat(),
-        visual = ParticleVisualCodec.read(buf),
-        lifeCurve = ParticleCurveCodec.read(buf),
-        velocity = StreamCodecs.readVec(buf),
-        glowing = buf.readBoolean(),
-        lightLevel = buf.readVarInt(),
-        maxAlive = buf.readVarInt(),
-        jitter = buf.readDouble(),
-        offsetAlong = buf.readDouble(),
-    )
+    fun read(buf: FriendlyByteBuf): EmitterParams {
+        val modeOrdinal = buf.readVarInt()
+        val mode = EmitMode.entries.getOrNull(modeOrdinal)
+            ?: throw reject("mode", modeOrdinal)
+        val spacing = buf.readDouble()
+        val intervalMs = buf.readVarInt()
+        val lifetimeTicks = buf.readVarInt()
+        // 推进器构造时会要求这两个值为正，非法值必须在这里拦下，不能留到渲染帧。
+        if (!spacing.isFinite() || spacing <= 0.0) throw reject("spacing", spacing)
+        if (intervalMs <= 0) throw reject("interval_ms", intervalMs)
+        if (lifetimeTicks < 0) throw reject("lifetime", lifetimeTicks)
+        val r = buf.readFloat(); val g = buf.readFloat(); val b = buf.readFloat(); val a = buf.readFloat()
+        val scale = buf.readFloat()
+        if (!scale.isFinite() || scale < 0f) throw reject("scale", scale)
+        val visual = ParticleVisualCodec.read(buf)
+        val lifeCurve = ParticleCurveCodec.read(buf)
+        val velocity = StreamCodecs.readVec(buf)
+        val glowing = buf.readBoolean()
+        val lightLevel = buf.readVarInt()
+        if (lightLevel !in 0..15) throw reject("light", lightLevel)
+        val maxAlive = buf.readVarInt()
+        if (maxAlive < 0) throw reject("max_alive", maxAlive)
+        val jitter = buf.readDouble()
+        val offsetAlong = buf.readDouble()
+        if (!jitter.isFinite()) throw reject("jitter", jitter)
+        if (!offsetAlong.isFinite()) throw reject("offset_along", offsetAlong)
+        return EmitterParams(
+            mode = mode, spacing = spacing, intervalMs = intervalMs, lifetimeTicks = lifetimeTicks,
+            r = r, g = g, b = b, a = a, scale = scale, visual = visual, lifeCurve = lifeCurve,
+            velocity = velocity, glowing = glowing, lightLevel = lightLevel, maxAlive = maxAlive,
+            jitter = jitter, offsetAlong = offsetAlong,
+        )
+    }
+
+    private fun reject(field: String, value: Any?): work.nekow.particledrawing.i18n.LocalizedArgumentException =
+        work.nekow.particledrawing.i18n.LocalizedArgumentException(
+            work.nekow.particledrawing.i18n.translation("error.packet.emitter_params", field, value)
+        )
 }
 
 /**

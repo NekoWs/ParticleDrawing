@@ -15,6 +15,9 @@ data class EffectDataPayload(
 ) : CustomPacketPayload {
 
     companion object {
+        /** 单个特效文件的协议上限。 */
+        const val MAX_BYTES: Int = 64 * 1024 * 1024
+
         @JvmField
         val TYPE = CustomPacketPayload.Type<EffectDataPayload>(
             Identifier.fromNamespaceAndPath("particledrawing", "effect_data")
@@ -24,7 +27,7 @@ data class EffectDataPayload(
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, EffectDataPayload> =
             object : StreamCodec<FriendlyByteBuf, EffectDataPayload> {
                 override fun decode(buf: FriendlyByteBuf): EffectDataPayload =
-                    EffectDataPayload(StreamCodecs.readIdentifier(buf), buf.readByteArray())
+                    EffectDataPayload(StreamCodecs.readIdentifier(buf), StreamCodecs.readByteArray(buf, MAX_BYTES))
 
                 override fun encode(buf: FriendlyByteBuf, p: EffectDataPayload) {
                     StreamCodecs.writeIdentifier(buf, p.key)

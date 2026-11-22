@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.core.network
 
+import work.nekow.particledrawing.animation.ServerEffectManager
 import net.minecraft.network.Connection
 import net.minecraft.server.level.ServerPlayer
 import net.neoforged.neoforge.network.PacketDistributor
@@ -9,6 +10,7 @@ import work.nekow.particledrawing.core.server.AnimationSyncConfigTask
 import work.nekow.particledrawing.core.server.AnimationSyncService
 import work.nekow.particledrawing.core.server.ServerExitCompletion
 import work.nekow.particledrawing.core.server.ServerProgramCompletion
+import work.nekow.particledrawing.core.server.ServerProgramDelivery
 import java.util.Collections
 import java.util.WeakHashMap
 
@@ -49,6 +51,8 @@ internal object ServerPayloadHandler {
     fun handleEffectRequest(payload: EffectRequestPayload, context: IPayloadContext) {
         context.enqueueWork {
             val player = context.player() as? ServerPlayer ?: return@enqueueWork
+            // 只发回该玩家确实被下发过播放的特效字节，避免枚举/搬运注册表内容
+            if (!ServerEffectManager.wasDelivered(player.uuid, payload.key)) return@enqueueWork
             val data = EffectRegistry.dataFor(payload.key) ?: return@enqueueWork
             PacketDistributor.sendToPlayer(player, EffectDataPayload(payload.key, data))
         }
@@ -60,6 +64,9 @@ internal object ServerPayloadHandler {
      */
     fun handleProgramComplete(payload: ProgramCompletePayload, context: IPayloadContext) {
         context.enqueueWork {
+            val player = context.player() as? ServerPlayer ?: return@enqueueWork
+            // 只接受真正收到过这套程序的玩家的完成回报，避免任意客户端提前销毁别人的效果。
+            if (!ServerProgramDelivery.isSent(payload.programId, player.uuid)) return@enqueueWork
             ServerProgramCompletion.complete(payload.programId)
         }
     }

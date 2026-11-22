@@ -1,7 +1,7 @@
 
 license="${mod_license}"
 
-#issueTrackerURL="https://change.me.to.your.issue.tracker.example.invalid/" #optional
+issueTrackerURL="https://github.com/NekoWs/ParticleDrawing/issues" #optional
 
 [[mods]] #mandatory
 
@@ -13,7 +13,7 @@ displayName="${mod_name}" #mandatory
 
 #updateJSONURL="https://change.me.example.invalid/updates.json" #optional
 
-#displayURL="https://change.me.to.your.mods.homepage.example.invalid/" #optional
+displayURL="https://github.com/NekoWs/ParticleDrawing" #optional
 
 iconFile="icon.png" #optional
 
@@ -50,6 +50,14 @@ config="${mod_id}.sodium.mixins.json"
     versionRange="${minecraft_version_range}"
     ordering="NONE"
     side="BOTH"
+
+# Sodium 兼容是可选的：装了才应用 sodium mixin，版本区间与已验证的 Sodium 对齐。
+[[dependencies.${mod_id}]]
+    modId="sodium"
+    type="optional"
+    versionRange="[0.6.0,)"
+    ordering="NONE"
+    side="CLIENT"
 
 #[[dependencies.${mod_id}]]
 #    modId = "kotlinforforge"

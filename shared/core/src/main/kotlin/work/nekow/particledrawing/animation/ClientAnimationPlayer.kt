@@ -171,6 +171,10 @@ class ClientAnimationPlayer(
         if (animation.particles.any { it.st > 0 || it.ent != null }) return@lazy false
         if (animation.functions.any { it.st > 0 || it.ent != null }) return@lazy false
         if (animation.functions.any { hasTimePhase(it) }) return@lazy false
+        // UV 表达式可以引用 this.time，判静态会把翻页 UV 冻在第一帧。
+        if (animation.particles.any { it.uv?.hasExpressions() == true }) return@lazy false
+        if (animation.functions.any { it.uv?.hasExpressions() == true }) return@lazy false
+        if (animation.groupUV.values.any { it.hasExpressions() }) return@lazy false
         animation.functions.none { fx -> usesRandom(fx) }
     }
 
@@ -180,9 +184,18 @@ class ClientAnimationPlayer(
         return runtime.program.process.isNotEmpty() || runtime.program.tick.isNotEmpty() || runtime.objState.morph != null
     }
 
+    // 多目标 SET 轨道展开成逐目标：SET 是绝对值写法，逐目标结果相同，单目标索引也就完整了。
+    private val tracks: List<AnimTrack> = animation.tracks.flatMap { tr ->
+        if (tr.mode == AnimTrack.Mode.SET && tr.ids.size > 1) {
+            tr.ids.map { AnimTrack(tr.pr, listOf(it), tr.keyframes, tr.mode) }
+        } else {
+            listOf(tr)
+        }
+    }
+
     // 预构建求值索引，避免每 tick 线性扫描轨道 / 组 / 粒子
     private val trackIndex: Map<TrackPr, Map<String, AnimTrack>> = buildTrackIndex()
-    private val opTracks: List<AnimTrack> = animation.tracks.filter { it.mode == AnimTrack.Mode.OP }
+    private val opTracks: List<AnimTrack> = tracks.filter { it.mode == AnimTrack.Mode.OP }
     private val opTracksByPr: Map<TrackPr, List<AnimTrack>> = opTracks.filter { it.keyframes.isNotEmpty() }.groupBy { it.pr }
     private val groupSets: Map<String, Set<String>> = buildOwnerSets()
     private val groupSpinLocal: Set<String> = animation.groupSpinSpace.filterValues { it }.keys
@@ -263,6 +276,7 @@ class ClientAnimationPlayer(
         val fx: FunctionObject,
         val program: ScriptProgram,
         val objState: ScriptRuntime.ObjectState,
+        private val budget: FxBudget,
     ) {
         val particles = ArrayList<ParticleHost>()
         // 一旦进入逐帧同步，清除光源或粒子消失也走同一路径。
@@ -306,11 +320,12 @@ class ClientAnimationPlayer(
                 if (!alive) return
                 alive = false
                 particles.remove(this)
+                budget.release()
             }
         }
 
         fun spawn(): ParticleHost {
-            if (particles.size >= MAX_FX_PARTICLES) {
+            if (particles.size >= MAX_FX_PARTICLES || !budget.reserve()) {
                 throw ScriptException("function object particle limit ($MAX_FX_PARTICLES) exceeded")
             }
             val serial = spawnSerial++
@@ -416,8 +431,11 @@ class ClientAnimationPlayer(
                 val host = h as FxParticleHost
                 aliveByIndex[host.index] = host
             }
+            val before = particles.size
             particles.clear()
+            budget.release(before)
             for (hs in s.particles) {
+                budget.reserve()
                 val host = aliveByIndex.remove(hs.index) ?: FxParticleHost(hs.index, hs.spawnMs)
                 host.spawnMs = hs.spawnMs
                 hs.pos.copyInto(host.pos)
@@ -451,6 +469,8 @@ class ClientAnimationPlayer(
         }
     }
 
+    /** 所有函数对象共用的派生粒子预算，避免 N 个对象各自 10 万把客户端撑爆。 */
+    private val fxBudget = FxBudget(MAX_TOTAL_FX_PARTICLES)
     private val fxRuntimes: MutableMap<String, FxRuntime?> = buildFxRuntimes()
     private val derivedByFx: HashMap<String, HashSet<String>> = HashMap()
     private val derivedHosts: HashMap<String, FxRuntime.FxParticleHost> = HashMap()
@@ -467,7 +487,7 @@ class ClientAnimationPlayer(
     private fun buildFxRuntime(fx: FunctionObject): FxRuntime? = try {
         val program = parseProgram(fx.source)
         val obj = ScriptRuntime.createObjectState(fx.seed)
-        val rt = FxRuntime(fx, program, obj)
+        val rt = FxRuntime(fx, program, obj, fxBudget)
         rt.cursorMs = ceil(fx.st.toDouble() / 50.0) * 50.0 - 50.0
         rt.curMs = fx.st.toDouble()
         ScriptRuntime.runSpawnSetup(program, obj, makeCtx(fx, rt, fx.st.toDouble()))
@@ -480,6 +500,7 @@ class ClientAnimationPlayer(
     }
 
     private fun resetFxRuntime(fx: FunctionObject, rt: FxRuntime) {
+        fxBudget.release(rt.particles.size)
         rt.particles.clear()
         rt.spawnSerial = 0
         rt.cursorMs = ceil(fx.st.toDouble() / 50.0) * 50.0 - 50.0
@@ -537,7 +558,7 @@ class ClientAnimationPlayer(
 
     private fun buildTrackIndex(): Map<TrackPr, Map<String, AnimTrack>> {
         val map = HashMap<TrackPr, HashMap<String, AnimTrack>>()
-        for (tr in animation.tracks) {
+        for (tr in tracks) {
             if (tr.ids.size == 1) {
                 val byId = map.getOrPut(tr.pr) { HashMap() }
                 byId[tr.ids[0]] = tr
@@ -618,7 +639,7 @@ class ClientAnimationPlayer(
             if (p.vel.x != 0.0 || p.vel.y != 0.0 || p.vel.z != 0.0) ids.add(p.id)
             if (p.ent != null) ids.add(p.id)
         }
-        for (tr in animation.tracks) {
+        for (tr in tracks) {
             if (tr.keyframes.isEmpty()) continue
             for (id in tr.ids) {
                 if (id.startsWith("g:") || id.startsWith("t:")) {
@@ -859,12 +880,13 @@ class ClientAnimationPlayer(
      * 同时清空这些变量名下的关键帧并重建对应函数对象的运行时，已生成的派生粒子、全局变量与 PRNG 状态都会随之重置。
      */
     fun updateVariable(name: String, value: String) {
-        val numeric = value.toDoubleOrNull() ?: return
+        val numeric = value.toDoubleOrNull()?.takeIf { it.isFinite() } ?: return
         for (fx in animation.functions) {
             val v = fx.vars[name] ?: continue
             v.base = numeric
             v.kf = emptyList()
-            fxRuntimes[fx.id] = buildFxRuntime(fx)
+            // 重建失败就保留旧运行时：换成 null 会让上一轮派生粒子冻结在画面上。
+            buildFxRuntime(fx)?.let { fxRuntimes[fx.id] = it }
         }
     }
 
@@ -1544,3 +1566,22 @@ private fun deepCopyScriptValue(v: Any?, depth: Int = 0): Any? {
         else -> v
     }
 }
+
+/** 派生粒子预算：所有函数对象共用一份存活计数，超限即拒绝新 spawn。 */
+private class FxBudget(private val max: Int) {
+    private var alive = 0
+
+    fun reserve(): Boolean {
+        if (alive >= max) return false
+        alive++
+        return true
+    }
+
+    fun release(count: Int = 1) {
+        if (count <= 0) return
+        alive = (alive - count).coerceAtLeast(0)
+    }
+}
+
+/** 一次播放里所有函数对象允许同时存活的派生粒子上限。 */
+private const val MAX_TOTAL_FX_PARTICLES = 32_768

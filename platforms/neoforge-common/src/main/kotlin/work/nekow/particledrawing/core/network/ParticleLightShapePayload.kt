@@ -28,8 +28,17 @@ internal data class ParticleLightShapePayload(
                 override fun decode(buf: FriendlyByteBuf): ParticleLightShapePayload {
                     val id = StreamCodecs.UUID_CODEC.decode(buf)
                     val shape = if (buf.readBoolean()) ParticleVisualCodec.readLightShape(buf) else null
-                    val part = LightShapePart.entries[buf.readUnsignedByte().toInt()]
+                    val partIndex = buf.readUnsignedByte().toInt()
+                    val part = LightShapePart.entries.getOrNull(partIndex)
+                        ?: throw work.nekow.particledrawing.i18n.LocalizedArgumentException(
+                            work.nekow.particledrawing.i18n.translation("error.packet.light_part", partIndex)
+                        )
                     val durationTicks = buf.readVarInt()
+                    if (durationTicks < 0) {
+                        throw work.nekow.particledrawing.i18n.LocalizedArgumentException(
+                            work.nekow.particledrawing.i18n.translation("error.packet.light_duration", durationTicks)
+                        )
+                    }
                     val easing = if (durationTicks > 0) readEasingCompact(buf) else EasingType.LINEAR
                     return ParticleLightShapePayload(id, shape, part, durationTicks, easing)
                 }

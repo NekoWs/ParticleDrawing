@@ -55,10 +55,19 @@ internal object ClientEmitterManager {
         val scratch = ArrayList<CoreVec3>(8)
     }
 
+    /** 同时运行的发射器上限。 */
+    private const val MAX_EMITTERS = 1024
+
+    private val LOGGER = org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing")
+
     private val emitters = ConcurrentHashMap<UUID, Active>()
     private var lastFrameNanos = 0L
 
     fun spawn(payload: EmitterSpawnPayload) {
+        if (!emitters.containsKey(payload.emitterId) && emitters.size >= MAX_EMITTERS) {
+            LOGGER.warn("[ParticleDrawing] emitter limit reached ({}); dropping {}", MAX_EMITTERS, payload.emitterId)
+            return
+        }
         val p = payload.params
         val active = Active(
             payload.emitterId,

@@ -56,6 +56,13 @@ object ClientAnimationManager {
         }
     }
 
+    /** 同时播放的动画上限；恶意服务端可以用空动画刷条目，这里挡住。 */
+    private const val MAX_ANIMATIONS = 256
+    private const val MAX_PENDING_EFFECTS = 256
+    private const val MAX_EFFECT_CACHE = 64
+
+    private val LOGGER = org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing")
+
     private val entries = ConcurrentHashMap<UUID, Entry>()
 
     // 特效资源缓存：key → .pdrawc 字节（服务端下发后驻留，重复播放不再请求）
@@ -134,7 +141,8 @@ object ClientAnimationManager {
     fun play(animationId: UUID, data: ByteArray, origin: Vec3, startGameTick: Long) {
         val animation = try {
             AnimationLoader.parse(data)
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            LOGGER.warn("[ParticleDrawing] failed to parse animation {}: {}", animationId, error.message)
             return
         }
         play(animationId, animation, origin, startGameTick)
@@ -143,6 +151,10 @@ object ClientAnimationManager {
     /** 开始本地播放一个代码生成的 [ParticleAnimation]（结构化载荷，不验签）。 */
     @JvmStatic
     fun play(animationId: UUID, animation: ParticleAnimation, origin: Vec3, startGameTick: Long) {
+        if (!entries.containsKey(animationId) && entries.size >= MAX_ANIMATIONS) {
+            LOGGER.warn("[ParticleDrawing] animation limit reached ({}); dropping {}", MAX_ANIMATIONS, animationId)
+            return
+        }
         // 服务端在维度切换/重生/重连后会重发同一播放：先清理旧条目与其粒子，再重建
         if (entries.containsKey(animationId)) stopInternal(animationId)
 
@@ -151,16 +163,23 @@ object ClientAnimationManager {
 
         // 服务端权威进度：以当前维度 gameTime 计算起始帧
         val currentGameTick = Minecraft.getInstance().level?.gameTime ?: startGameTick
-        val player = ClientAnimationPlayer(animation, origin, startGameTick, currentGameTick)
+        val player: ClientAnimationPlayer
         val uuids = HashMap<String, UUID>()
         val liveIds = HashSet<String>()
-        for (state in player.currentStates()) {
-            // st 门控：未出场粒子不生成（隐藏 = 渲染管线中不存在）
-            if (!state.visible) continue
-            val uuid = UUID.randomUUID()
-            uuids[state.id] = uuid
-            liveIds.add(state.id)
-            ClientParticleEngine.instance()?.let { spawnState(it, uuid, state) }
+        try {
+            player = ClientAnimationPlayer(animation, origin, startGameTick, currentGameTick)
+            for (state in player.currentStates()) {
+                // st 门控：未出场粒子不生成（隐藏 = 渲染管线中不存在）
+                if (!state.visible) continue
+                val uuid = UUID.randomUUID()
+                uuids[state.id] = uuid
+                liveIds.add(state.id)
+                ClientParticleEngine.instance()?.let { spawnState(it, uuid, state) }
+            }
+        } catch (error: Exception) {
+            // 脚本/资源字段异常（非 OOM）只在这一次播放里失败，不能让客户端主线程抛出。
+            LOGGER.warn("[ParticleDrawing] failed to build animation {}: {}", animationId, error.message)
+            return
         }
         entries[animationId] = Entry(player, uuids, animation, origin, liveIds)
         initAudioPlayers(animationId, animation)
@@ -181,6 +200,10 @@ object ClientAnimationManager {
     fun playEffect(payload: PlayEffectPayload) {
         val cached = effectCache[payload.key]
         if (cached == null) {
+            if (pendingEffectPlays.size >= MAX_PENDING_EFFECTS) {
+                LOGGER.warn("[ParticleDrawing] pending effect limit reached ({}); dropping {}", MAX_PENDING_EFFECTS, payload.playbackId)
+                return
+            }
             pendingEffectPlays[payload.playbackId] = payload
             Minecraft.getInstance().connection?.send(
                 work.nekow.particledrawing.core.network.EffectRequestPayload(payload.key)
@@ -194,7 +217,7 @@ object ClientAnimationManager {
     @JvmStatic
     fun onEffectData(key: Identifier, data: ByteArray) {
         if (!PdrawcReader.verify(data)) return
-        effectCache[key] = data
+        if (effectCache.size < MAX_EFFECT_CACHE || effectCache.containsKey(key)) effectCache[key] = data
         val it = pendingEffectPlays.entries.iterator()
         while (it.hasNext()) {
             val (id, payload) = it.next()
@@ -291,7 +314,13 @@ object ClientAnimationManager {
         val maxMs = animation.timelineLength()
         val initialMs = AnimationProgress.msAt(options.startTick().toLong(), maxMs, loop)
         val currentGameTick = Minecraft.getInstance().level?.gameTime ?: startGameTick
-        val player = ClientAnimationPlayer(animation, Vec3.ZERO, startGameTick, currentGameTick, initialMs)
+        val player: ClientAnimationPlayer
+        try {
+            player = ClientAnimationPlayer(animation, Vec3.ZERO, startGameTick, currentGameTick, initialMs)
+        } catch (error: Exception) {
+            LOGGER.warn("[ParticleDrawing] failed to build effect {}: {}", playbackId, error.message)
+            return
+        }
         val resolver = EffectAnchorResolver(anchor, options.scale())
         // startTick 是 game tick、speed 是倍速，时钟内部统一按毫秒。
         val clock = PlaybackClock(options.startTick() * 50, playing = true, speed = options.speed() * 50)
@@ -314,6 +343,7 @@ object ClientAnimationManager {
      */
     @JvmStatic
     fun onClientLevelUnload() {
+        pendingEffectPlays.clear()
         if (entries.isEmpty()) {
             // 即使没有播放条目，也解除可能残留的摄像机预览（姿态属于旧世界）
             CameraController.detach()
@@ -321,6 +351,13 @@ object ClientAnimationManager {
         }
         for (id in entries.keys) stopInternal(id)
         CameraController.detach()
+    }
+
+    /** 换连接时清掉上一台服务器的特效缓存与待播队列（缓存字节属于旧服）。 */
+    @JvmStatic
+    fun clearNetworkCaches() {
+        pendingEffectPlays.clear()
+        effectCache.clear()
     }
 
     /** 重载所有正在播放动画的内嵌贴图与已登记的程序化贴图（/pdraw reload 使用）。 */

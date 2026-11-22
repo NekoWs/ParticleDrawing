@@ -1,7 +1,5 @@
 package work.nekow.particledrawing.mixin.sodium;
 
-import net.neoforged.fml.ModList;
-import net.neoforged.fml.loading.FMLLoader;
 import org.objectweb.asm.tree.ClassNode;
 import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
 import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
@@ -16,7 +14,6 @@ import java.util.Set;
  * 避免把游戏拖进“找不到注入目标”的崩溃。
  */
 public final class SodiumMixinPlugin implements IMixinConfigPlugin {
-    private static final String SODIUM_ID = "sodium";
     private static volatile boolean announced;
 
     @Override
@@ -56,22 +53,6 @@ public final class SodiumMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
-    }
-
-    private static boolean sodiumLoaded() {
-        try {
-            var loader = FMLLoader.getCurrentOrNull();
-            var loading = loader != null ? loader.getLoadingModList() : null;
-            if (loading != null && loading.getModFileById(SODIUM_ID) != null) return true;
-        } catch (Throwable ignored) {
-            // 早期阶段拿不到加载列表时退回已加载模组表。
-        }
-        try {
-            ModList modList = ModList.get();
-            return modList != null && modList.isLoaded(SODIUM_ID);
-        } catch (Throwable ignored) {
-            return false;
-        }
     }
 
     private static boolean targetPresent(String targetClassName) {

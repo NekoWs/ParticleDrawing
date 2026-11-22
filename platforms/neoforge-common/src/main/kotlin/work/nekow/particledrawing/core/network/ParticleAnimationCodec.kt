@@ -31,6 +31,42 @@ internal object ParticleAnimationCodec {
 
     const val VERSION = 11
 
+    // 载荷来自对端，所有计数/字节长度先卡上限，避免被伪造的 varint 骗出大分配。
+    private const val MAX_PARTICLES = 131_072
+    private const val MAX_TRACKS = 65_536
+    private const val MAX_GROUPS = 65_536
+    private const val MAX_IDS = 262_144
+    private const val MAX_FUNCTIONS = 16_384
+    private const val MAX_TEXTURES = 4_096
+    private const val MAX_CAMERAS = 4_096
+    private const val MAX_TEXTS = 16_384
+    private const val MAX_AUDIO = 256
+    private const val MAX_KEYFRAMES = 262_144
+    private const val MAX_BEATS = 262_144
+    private const val MAX_CHARS = 262_144
+    private const val MAX_HOPS = 2_000_000
+    private const val MAX_BAND_BYTES = 32 shl 20
+    private const val MAX_TEXTURE_BYTES = 8 shl 20
+    private const val MAX_AUDIO_BYTES = 32 shl 20
+
+    private fun count(buf: FriendlyByteBuf, max: Int): Int {
+        val n = buf.readVarInt()
+        if (n < 0 || n > max || n > buf.readableBytes()) {
+            throw LocalizedArgumentException(translation("error.packet.animation_count", n, max))
+        }
+        return n
+    }
+
+    private fun bytes(buf: FriendlyByteBuf, max: Int): ByteArray {
+        val n = buf.readVarInt()
+        if (n < 0 || n > max || n > buf.readableBytes()) {
+            throw LocalizedArgumentException(translation("error.packet.animation_bytes", n, max))
+        }
+        val out = ByteArray(n)
+        buf.readBytes(out)
+        return out
+    }
+
     fun write(buf: FriendlyByteBuf, anim: ParticleAnimation) {
         buf.writeVarInt(VERSION)
         buf.writeBoolean(anim.loop)
@@ -86,58 +122,55 @@ internal object ParticleAnimationCodec {
 
         val loop = buf.readBoolean()
 
-        val particleCount = buf.readVarInt()
+        val particleCount = count(buf, MAX_PARTICLES)
         val particles = ArrayList<AnimParticle>(particleCount)
         repeat(particleCount) { particles.add(readParticle(buf)) }
 
-        val trackCount = buf.readVarInt()
+        val trackCount = count(buf, MAX_TRACKS)
         val tracks = ArrayList<AnimTrack>(trackCount)
         repeat(trackCount) { tracks.add(readTrack(buf)) }
 
-        val groupCount = buf.readVarInt()
+        val groupCount = count(buf, MAX_GROUPS)
         val groups = LinkedHashMap<String, List<String>>(groupCount)
         repeat(groupCount) {
             val name = buf.readUtf()
-            val memberCount = buf.readVarInt()
+            val memberCount = count(buf, MAX_IDS)
             val members = ArrayList<String>(memberCount)
             repeat(memberCount) { members.add(buf.readUtf()) }
             groups[name] = members
         }
 
-        val fxCount = buf.readVarInt()
+        val fxCount = count(buf, MAX_FUNCTIONS)
         val functions = ArrayList<FunctionObject>(fxCount)
         repeat(fxCount) { functions.add(readFunction(buf)) }
 
-        val texCount = buf.readVarInt()
+        val texCount = count(buf, MAX_TEXTURES)
         val textures = ArrayList<String>(texCount)
         repeat(texCount) { textures.add(buf.readUtf()) }
 
-        val groupUVCount = buf.readVarInt()
+        val groupUVCount = count(buf, MAX_GROUPS)
         val groupUV = LinkedHashMap<String, UvData>(groupUVCount)
         repeat(groupUVCount) { groupUV[buf.readUtf()] = readUV(buf) }
 
-        val texDataCount = buf.readVarInt()
+        val texDataCount = count(buf, MAX_TEXTURES)
         val texData = LinkedHashMap<String, ByteArray>(texDataCount)
         repeat(texDataCount) {
             val name = buf.readUtf()
-            val len = buf.readVarInt()
-            val bytes = ByteArray(len)
-            buf.readBytes(bytes)
-            texData[name] = bytes
+            texData[name] = bytes(buf, MAX_TEXTURE_BYTES)
         }
 
         val groupSpinSpace = readBoolMap(buf)
         val groupRotSpace = readBoolMap(buf)
 
-        val camCount = buf.readVarInt()
+        val camCount = count(buf, MAX_CAMERAS)
         val cameras = ArrayList<AnimCamera>(camCount)
         repeat(camCount) { cameras.add(readCamera(buf)) }
 
-        val textCount = buf.readVarInt()
+        val textCount = count(buf, MAX_TEXTS)
         val texts = ArrayList<TextObject>(textCount)
         repeat(textCount) { texts.add(readText(buf)) }
 
-        val audioCount = buf.readVarInt()
+        val audioCount = count(buf, MAX_AUDIO)
         val audioAssets = ArrayList<AudioAsset>(audioCount)
         repeat(audioCount) { audioAssets.add(readAudio(buf)) }
 
@@ -208,10 +241,10 @@ internal object ParticleAnimationCodec {
         val pr = TrackPr.fromOrdinal(prOrdinal)
             ?: throw LocalizedArgumentException(translation("error.animation.track_property", prOrdinal))
         val mode = if (buf.readByte().toInt() == 1) AnimTrack.Mode.OP else AnimTrack.Mode.SET
-        val idCount = buf.readVarInt()
+        val idCount = count(buf, MAX_IDS)
         val ids = ArrayList<String>(idCount)
         repeat(idCount) { ids.add(buf.readUtf()) }
-        val kfCount = buf.readVarInt()
+        val kfCount = count(buf, MAX_KEYFRAMES)
         val keyframes = ArrayList<AnimKeyframe>(kfCount)
         repeat(kfCount) {
             keyframes.add(AnimKeyframe(buf.readVarInt(), buf.readDouble(), readEasingCompact(buf, strict = true)))
@@ -256,12 +289,12 @@ internal object ParticleAnimationCodec {
         val center = doubleArrayOf(buf.readDouble(), buf.readDouble(), buf.readDouble())
         val source = buf.readUtf()
         val seed = buf.readVarInt()
-        val varCount = buf.readVarInt()
+        val varCount = count(buf, MAX_IDS)
         val vars = LinkedHashMap<String, FunctionVar>(varCount)
         repeat(varCount) {
             val varName = buf.readUtf()
             val base = buf.readDouble()
-            val kfCount = buf.readVarInt()
+            val kfCount = count(buf, MAX_KEYFRAMES)
             val kf = ArrayList<Keyframe>(kfCount)
             repeat(kfCount) {
                 kf.add(Keyframe(buf.readDouble(), buf.readDouble(), readEasingCompact(buf, strict = true)))
@@ -374,14 +407,14 @@ internal object ParticleAnimationCodec {
         val spinLocal = buf.readBoolean()   // v8
         val rotLocal = buf.readBoolean()    // v8
         val billboard = buf.readBoolean()   // v8
-        val charCount = buf.readVarInt()
+        val charCount = count(buf, MAX_CHARS)
         val chars = ArrayList<TextChar>(charCount)
         repeat(charCount) {
             val index = buf.readVarInt()
             val code = buf.readVarInt()
             val pos = Vec3(buf.readDouble(), buf.readDouble(), buf.readDouble())
             val size = doubleArrayOf(buf.readDouble(), buf.readDouble())
-            val pn = buf.readVarInt()
+            val pn = count(buf, MAX_IDS)
             val ids = ArrayList<String>(pn)
             repeat(pn) { ids.add(buf.readUtf()) }
             chars.add(TextChar(index, code, pos, size, ids))
@@ -439,9 +472,7 @@ internal object ParticleAnimationCodec {
         val id = buf.readUtf()
         val name = buf.readUtf()
         val fmt = buf.readVarInt()
-        val dataLen = buf.readVarInt()
-        val data = ByteArray(dataLen)
-        buf.readBytes(data)
+        val data = bytes(buf, MAX_AUDIO_BYTES)
         val st = buf.readVarInt()
         val durMs = buf.readVarInt()
         val vol = buf.readDouble()      // v9
@@ -449,19 +480,19 @@ internal object ParticleAnimationCodec {
         val pan = buf.readDouble()      // v9
         val fadeIn = buf.readVarInt()   // v9
         val fadeOut = buf.readVarInt()  // v9
-        val hopCount = buf.readVarInt()
+        val hopCount = count(buf, MAX_HOPS)
         val bpm = buf.readDouble()
         val beatOffsetMs = buf.readDouble()
         val onsetMax = buf.readDouble()
-        val beatCount = buf.readVarInt()
+        val beatCount = count(buf, MAX_BEATS)
         val beats = ArrayList<Int>(beatCount)
         repeat(beatCount) { beats.add(buf.readVarInt()) }
-        val rms = ShortArray(buf.readVarInt()) { buf.readShort() }
-        val peak = ShortArray(buf.readVarInt()) { buf.readShort() }
-        val centroid = ShortArray(buf.readVarInt()) { buf.readShort() }
-        val onset = ByteArray(buf.readVarInt()); buf.readBytes(onset)
-        val rolloff = ByteArray(buf.readVarInt()); buf.readBytes(rolloff)
-        val bands = ByteArray(buf.readVarInt()); buf.readBytes(bands)
+        val rms = ShortArray(count(buf, MAX_HOPS)) { buf.readShort() }
+        val peak = ShortArray(count(buf, MAX_HOPS)) { buf.readShort() }
+        val centroid = ShortArray(count(buf, MAX_HOPS)) { buf.readShort() }
+        val onset = bytes(buf, MAX_HOPS)
+        val rolloff = bytes(buf, MAX_HOPS)
+        val bands = bytes(buf, MAX_BAND_BYTES)
         return AudioAsset(
             id, name, fmt, data, st, durMs, hopCount, bpm, beatOffsetMs, onsetMax, beats,
             rms, peak, centroid, onset, rolloff, bands,
@@ -506,7 +537,9 @@ internal object ParticleAnimationCodec {
 
     private fun readUV(buf: FriendlyByteBuf): UvData {
         val texture = readNullableString(buf)
-        val mode = UvData.Mode.entries[buf.readByte().toInt()]
+        val modeIndex = buf.readByte().toInt()
+        val mode = UvData.Mode.entries.getOrNull(modeIndex)
+            ?: throw LocalizedArgumentException(translation("error.packet.animation_mode", modeIndex))
         val texSize = intArrayOf(buf.readVarInt(), buf.readVarInt())
         val uvStart = intArrayOf(buf.readVarInt(), buf.readVarInt())
         val uvSize = intArrayOf(buf.readVarInt(), buf.readVarInt())
@@ -560,7 +593,7 @@ internal object ParticleAnimationCodec {
     }
 
     private fun readBoolMap(buf: FriendlyByteBuf): Map<String, Boolean> {
-        val n = buf.readVarInt()
+        val n = count(buf, MAX_GROUPS)
         val out = LinkedHashMap<String, Boolean>(n)
         repeat(n) { out[buf.readUtf()] = buf.readBoolean() }
         return out

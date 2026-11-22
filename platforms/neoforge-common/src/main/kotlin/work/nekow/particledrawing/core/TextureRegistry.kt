@@ -31,6 +31,9 @@ object TextureRegistry {
     /** 用户贴图的 id 起点（1..99 留给内置形状）。 */
     private const val FIRST_USER_ID = 100
 
+    /** 登记表条数上限：再多就说明调用方没有回收，拒绝继续生长。 */
+    private const val MAX_ENTRIES = 4096
+
     /** 一条登记：名字 + 协议 id；内置形状两端自带，字节可能缺失。 */
     class Entry internal constructor(
         val name: String,
@@ -90,6 +93,10 @@ object TextureRegistry {
         }
         if (pngBytes.isEmpty() || pngBytes.size > MAX_BYTES) {
             LOGGER.warn(translation("log.texture.invalid_bytes").resolve(), name, pngBytes.size)
+            return null
+        }
+        if (byName.size >= MAX_ENTRIES && !byName.containsKey(name)) {
+            LOGGER.warn(translation("log.texture.limit").resolve(), MAX_ENTRIES)
             return null
         }
         val existing = byName[name]

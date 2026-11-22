@@ -2,6 +2,7 @@ package work.nekow.particledrawing.core.network
 
 import net.minecraft.network.FriendlyByteBuf
 import work.nekow.particledrawing.api.ParticleVisual
+import work.nekow.particledrawing.api.ParticleRenderOptions
 import work.nekow.particledrawing.api.ParticleSceneMaterial
 import work.nekow.particledrawing.api.ParticleTrailStyle
 import work.nekow.particledrawing.api.Color
@@ -156,11 +157,25 @@ internal object ParticleVisualCodec {
         if (flags and FLAG_LIGHT_SHAPE != 0) visual.lightShape = readLightShape(buf)
         if (flags and FLAG_ALIGN_VELOCITY != 0) {
             visual.alignVelocity = true
-            visual.stretch = buf.readFloat().toDouble()
+            val stretch = buf.readFloat().toDouble()
+            ParticleRenderOptions.validateStretch(stretch)
+            visual.stretch = stretch
         }
-        if (flags and FLAG_SOFT_FADE != 0) visual.softFade = buf.readFloat().toDouble()
-        if (flags and FLAG_TRAIL != 0) visual.trailTicks = buf.readVarInt()
-        if (flags and FLAG_TRAIL_SIDES != 0) visual.trailSides = buf.readUnsignedByte().toInt()
+        if (flags and FLAG_SOFT_FADE != 0) {
+            val softFade = buf.readFloat().toDouble()
+            ParticleRenderOptions.validateSoftFade(softFade)
+            visual.softFade = softFade
+        }
+        if (flags and FLAG_TRAIL != 0) {
+            val trailTicks = buf.readVarInt()
+            ParticleRenderOptions.validateTrail(trailTicks)
+            visual.trailTicks = trailTicks
+        }
+        if (flags and FLAG_TRAIL_SIDES != 0) {
+            val trailSides = buf.readUnsignedByte().toInt()
+            ParticleRenderOptions.validateTrailSides(trailSides)
+            visual.trailSides = trailSides
+        }
         if (flags and FLAG_MODEL != 0) visual.model = ResourceId.parse(buf.readUtf(ParticleVisual.MAX_MODEL_ID))
         if (flags and FLAG_SCENE_MATERIAL != 0) visual.sceneMaterial = ParticleSceneMaterial(buf.readFloat(), buf.readFloat())
         if (flags and FLAG_TRAIL_STYLE != 0) {
@@ -196,7 +211,11 @@ internal object ParticleVisualCodec {
         val edge = buf.readDouble()
         val yaw = buf.readDouble()
         val pitch = buf.readDouble()
-        val falloff = LightFalloff.entries[buf.readVarInt()]
+        val falloffIndex = buf.readVarInt()
+        val falloff = LightFalloff.entries.getOrNull(falloffIndex)
+            ?: throw work.nekow.particledrawing.i18n.LocalizedArgumentException(
+                work.nekow.particledrawing.i18n.translation("error.command.light_falloff", falloffIndex)
+            )
         return LightShape(range, outer, inner, edge, yaw, pitch, falloff).validated()
     }
 }

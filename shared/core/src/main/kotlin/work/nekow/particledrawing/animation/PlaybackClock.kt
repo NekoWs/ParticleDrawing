@@ -11,6 +11,17 @@ class PlaybackClock(
     var speed: Double = 50.0,
 ) {
     fun advance() {
-        if (playing) position += speed
+        if (!playing) return
+        if (!speed.isFinite()) {
+            speed = 0.0
+            return
+        }
+        val next = position + speed
+        position = if (next.isFinite()) next.coerceIn(-MAX_POSITION, MAX_POSITION) else MAX_POSITION
+    }
+
+    companion object {
+        /** 位置绝对值上限（24 小时），防止异常 seek/倍速把补跑推到天文数字。 */
+        const val MAX_POSITION = 86_400_000.0
     }
 }

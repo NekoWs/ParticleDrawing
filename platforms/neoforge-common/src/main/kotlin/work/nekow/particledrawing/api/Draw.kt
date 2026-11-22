@@ -340,7 +340,7 @@ object Draw {
                 val pos = when (axis) {
                     Axis.XZ -> Vec3(u, center.y, center.z - height / 2 + iv * sp)
                     Axis.XY -> Vec3(u, v, center.z)
-                    Axis.YZ -> Vec3(center.x, u, v)
+                    Axis.YZ -> Vec3(center.x, center.y - width / 2 + iu * sp, center.z - height / 2 + iv * sp)
                 }
                 place(manager, g, pos, colorFn.colorAt(t), scale, t, visual, false, placed++, stagger, lifeCurve, lifetime)
             }

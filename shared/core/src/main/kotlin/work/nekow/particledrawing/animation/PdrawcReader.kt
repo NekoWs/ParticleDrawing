@@ -24,6 +24,10 @@ import work.nekow.particledrawing.i18n.translation
  *
  * 布局：magic "PDC1" + version varint + 32 字节公钥 + body + 64 字节签名；
  * 签名为 Ed25519，覆盖除末尾 64 字节外的全部内容。
+ *
+ * 公钥保存在文件里，所以 [verify] 只能证明「内容与文件自带公钥匹配」：它能发现传输损坏和
+ * 随手改动，但不能证明来源（任何人都能生成自己的密钥对重新签名）。安全相关的上限校验
+ * （计数、解压大小、索引）必须独立于验签生效，不能把验签当信任边界。
  */
 object PdrawcReader {
 
@@ -32,6 +36,21 @@ object PdrawcReader {
     private const val VERSION = 20
     private const val PUB_LEN = 32
     private const val SIG_LEN = 64
+
+    /** 解压结果上限：压缩炸弹在验签之后、解析之前就会被这里拦下。 */
+    private const val MAX_INFLATED_BYTES = 64 shl 20
+    private const val MAX_TEXTURES = 4096
+    private const val MAX_PARTICLES = 131_072
+    private const val MAX_GROUPS = 65_536
+    private const val MAX_FUNCTIONS = 16_384
+    private const val MAX_CAMERAS = 4_096
+    private const val MAX_TEXTS = 16_384
+    private const val MAX_AUDIO = 256
+    private const val MAX_TRACKS = 65_536
+    private const val MAX_KEYFRAMES = 262_144
+    private const val MAX_IDS = 262_144
+    private const val MAX_CHARS = 262_144
+    private const val MAX_BEATS = 262_144
 
     private val UV_MODES = arrayOf(UvData.Mode.STATIC, UvData.Mode.FILL, UvData.Mode.ANIMATED)
 
@@ -74,7 +93,7 @@ object PdrawcReader {
         val loop = br.u8() != 0
 
         // 贴图表：name + PNG 字节；UV 通过索引引用
-        val texCount = br.varint()
+        val texCount = br.count(MAX_TEXTURES)
         val texNames = ArrayList<String>(texCount)
         val texData = LinkedHashMap<String, ByteArray>()
         for (i in 0 until texCount) {
@@ -86,7 +105,7 @@ object PdrawcReader {
         }
 
         // 粒子（合成 id p0..pN）
-        val particleCount = br.varint()
+        val particleCount = br.count(MAX_PARTICLES)
         val particles = ArrayList<AnimParticle>(particleCount)
         for (i in 0 until particleCount) {
             val color = Color.of(
@@ -109,7 +128,7 @@ object PdrawcReader {
         }
 
         // 组（合成名 g0..gN，成员用粒子索引）
-        val groupCount = br.varint()
+        val groupCount = br.count(MAX_GROUPS)
         val groups = LinkedHashMap<String, List<String>>()
         val groupNames = ArrayList<String>(groupCount)
         val groupSpinSpace = LinkedHashMap<String, Boolean>()
@@ -118,9 +137,13 @@ object PdrawcReader {
             val gflags = br.u8()
             val spinLocal = (gflags and 1) != 0
             val rotLocal = (gflags and 2) != 0
-            val memberCount = br.varint()
+            val memberCount = br.count(MAX_IDS)
             val members = ArrayList<String>(memberCount)
-            for (j in 0 until memberCount) members.add("p" + br.varint())
+            for (j in 0 until memberCount) {
+                val pIdx = br.varint()
+                if (pIdx !in particles.indices) throw LocalizedArgumentException(translation("error.file.particle_index", pIdx))
+                members.add("p" + pIdx)
+            }
             val gname = "g$gi"
             groupNames.add(gname)
             groups[gname] = members
@@ -129,7 +152,7 @@ object PdrawcReader {
         }
 
         // 组级 UV
-        val groupUVCount = br.varint()
+        val groupUVCount = br.count(MAX_GROUPS)
         val groupUV = LinkedHashMap<String, UvData>()
         for (i in 0 until groupUVCount) {
             val gi = br.varint()
@@ -138,7 +161,7 @@ object PdrawcReader {
         }
 
         // 函数对象（合成 id fx0..fxN）
-        val fxCount = br.varint()
+        val fxCount = br.count(MAX_FUNCTIONS)
         val functions = ArrayList<FunctionObject>(fxCount)
         for (fi in 0 until fxCount) {
             val center = doubleArrayOf(br.f32().toDouble(), br.f32().toDouble(), br.f32().toDouble())
@@ -156,7 +179,7 @@ object PdrawcReader {
             val frameSync = (flags and 64) != 0
             // 空闲位 bit7 用于加法混合；不识别该位的播放端按普通混合显示
             val additive = (flags and 128) != 0
-            val varCount = br.varint()
+            val varCount = br.count(MAX_IDS)
             val vars = LinkedHashMap<String, FunctionVar>()
             for (j in 0 until varCount) {
                 val name = br.str()
@@ -171,7 +194,7 @@ object PdrawcReader {
 
         // 摄像机对象：朝向 = target 目标点 + roll 翻滚角，旋转空间见 flags；
         // 关键帧走轨道 id "c:<id>"，rot 轨道 = 摄像机位置绕 target 公转
-        val camCount = br.varint()
+        val camCount = br.count(MAX_CAMERAS)
         val cameras = ArrayList<AnimCamera>(camCount)
         for (i in 0 until camCount) {
             val id = br.str()
@@ -186,7 +209,7 @@ object PdrawcReader {
 
         // 文字对象：生成器源记录，粒子本体已按普通粒子烘焙；chars 引用粒子索引。
         val TEXT_ALIGNS = arrayOf("left", "center", "right")
-        val textCount = br.varint()
+        val textCount = br.count(MAX_TEXTS)
         val texts = ArrayList<TextObject>(textCount)
         for (i in 0 until textCount) {
             val id = br.str()
@@ -210,14 +233,14 @@ object PdrawcReader {
             val letterSpacing = br.f32().toDouble()
             val st = br.varint()
             val life = if (flags and 4 != 0) br.varint() else -1
-            val charCount = br.varint()
+            val charCount = br.count(MAX_CHARS)
             val chars = ArrayList<TextChar>(charCount)
             for (j in 0 until charCount) {
                 val index = br.varint()
                 val code = br.varint()
                 val pos = Vec3(br.f32().toDouble(), br.f32().toDouble(), br.f32().toDouble())
                 val size = doubleArrayOf(br.f32().toDouble(), br.f32().toDouble())
-                val pn = br.varint()
+                val pn = br.count(MAX_IDS)
                 val ids = ArrayList<String>(pn)
                 for (k in 0 until pn) {
                     val pIdx = br.varint()
@@ -239,7 +262,7 @@ object PdrawcReader {
 
         // 音频资产：元数据 + 量化特征列（u16/u8 原始小端字节）+ durMs 后的 5 个播放属性基础值 + 原始音频字节。
         // 列布局与编辑器一致。
-        val audioCount = br.varint()
+        val audioCount = br.count(MAX_AUDIO)
         val audioAssets = ArrayList<AudioAsset>(audioCount)
         for (i in 0 until audioCount) {
             val id = br.str()
@@ -257,7 +280,7 @@ object PdrawcReader {
             val bpm = br.f32().toDouble()
             val beatOffsetMs = br.f32().toDouble()
             val onsetMax = br.f32().toDouble()
-            val beatCount = br.varint()
+            val beatCount = br.count(MAX_BEATS)
             val beats = ArrayList<Int>(beatCount)
             for (b in 0 until beatCount) beats.add(br.varint())
             val dataLen = br.varint()
@@ -270,7 +293,7 @@ object PdrawcReader {
                 centroid = br.shorts(hopCount)
                 onset = br.bytes(hopCount)
                 rolloff = br.bytes(hopCount)
-                bands = br.bytes(hopCount * 16)
+                bands = br.bytes(hopCount, 16)
             }
             audioAssets.add(
                 AudioAsset(
@@ -282,23 +305,32 @@ object PdrawcReader {
         }
 
         // 轨道
-        val trackCount = br.varint()
+        val trackCount = br.count(MAX_TRACKS)
         val tracks = ArrayList<AnimTrack>(trackCount)
         for (i in 0 until trackCount) {
             val prIdx = br.u8()
             val pr = TrackPr.fromOrdinal(prIdx)
                 ?: throw LocalizedArgumentException(translation("error.animation.track_property", prIdx))
             val mode = if (br.u8() == 1) AnimTrack.Mode.OP else AnimTrack.Mode.SET
-            val idCount = br.varint()
+            val idCount = br.count(MAX_IDS)
             val ids = ArrayList<String>(idCount)
             for (j in 0 until idCount) {
                 val kind = br.u8()
                 val idx = br.varint()
                 ids.add(
                     when (kind) {
-                        0 -> "p$idx"
-                        1 -> "g:g$idx"
-                        2 -> "f:fx$idx"
+                        0 -> {
+                            if (idx !in particles.indices) throw LocalizedArgumentException(translation("error.file.particle_index", idx))
+                            "p$idx"
+                        }
+                        1 -> {
+                            if (idx !in groupNames.indices) throw LocalizedArgumentException(translation("error.file.group_index", idx))
+                            "g:g$idx"
+                        }
+                        2 -> {
+                            if (idx !in functions.indices) throw LocalizedArgumentException(translation("error.file.function_index", idx))
+                            "f:fx$idx"
+                        }
                         3 -> if (idx in cameras.indices) "c:${cameras[idx].id}" else throw LocalizedArgumentException(translation("error.file.camera_index", idx))
                         4 -> if (idx in texts.indices) "t:${texts[idx].id}" else throw LocalizedArgumentException(translation("error.file.text_index", idx))
                         5 -> if (idx in audioAssets.indices) "a:${audioAssets[idx].id}" else throw LocalizedArgumentException(translation("error.file.audio_index", idx))
@@ -336,9 +368,23 @@ object PdrawcReader {
         }
     }
 
-    /** raw DEFLATE 解压。 */
+    /** raw DEFLATE 解压；输出超过上限立即失败，避免压缩炸弹撑爆内存。 */
     private fun inflateRaw(data: ByteArray): ByteArray =
-        InflaterInputStream(ByteArrayInputStream(data), Inflater(true)).use { it.readBytes() }
+        InflaterInputStream(ByteArrayInputStream(data), Inflater(true)).use { input ->
+            val out = java.io.ByteArrayOutputStream(8192)
+            val chunk = ByteArray(8192)
+            var total = 0
+            while (true) {
+                val n = input.read(chunk)
+                if (n < 0) break
+                total += n
+                if (total > MAX_INFLATED_BYTES) {
+                    throw LocalizedArgumentException(translation("error.file.too_large", MAX_INFLATED_BYTES))
+                }
+                out.write(chunk, 0, n)
+            }
+            out.toByteArray()
+        }
 
     private fun readRenderOptions(r: Reader, version: Int): ParticleRenderOptions {
         val fields = r.u8()
@@ -418,7 +464,7 @@ object PdrawcReader {
     }
 
     private fun readVarKeyframes(r: Reader): List<Keyframe> {
-        val n = r.varint()
+        val n = r.count(MAX_KEYFRAMES)
         val kf = ArrayList<Keyframe>(n)
         for (i in 0 until n) {
             kf.add(Keyframe(r.varint().toDouble(), r.f32().toDouble(), readEasing(r)))
@@ -427,7 +473,7 @@ object PdrawcReader {
     }
 
     private fun readTrackKeyframes(r: Reader): List<AnimKeyframe> {
-        val n = r.varint()
+        val n = r.count(MAX_KEYFRAMES)
         val kf = ArrayList<AnimKeyframe>(n)
         for (i in 0 until n) {
             kf.add(AnimKeyframe(r.varint(), r.f32().toDouble(), readEasing(r)))
@@ -442,9 +488,20 @@ object PdrawcReader {
 
         fun u8(): Int = buf.get().toInt() and 0xff
 
-        fun bytes(n: Int): ByteArray {
-            if (n < 0 || n > buf.remaining()) throw LocalizedArgumentException(translation("error.file.truncated"))
-            val out = ByteArray(n)
+        /** 读取元素数量；同时要求剩余字节够每个元素至少 1 字节，避免伪造计数骗出大分配。 */
+        fun count(max: Int): Int {
+            val n = varint()
+            if (n < 0 || n > max || n > buf.remaining()) {
+                throw LocalizedArgumentException(translation("error.file.count_range", n, max))
+            }
+            return n
+        }
+
+        fun bytes(n: Int, stride: Int = 1): ByteArray {
+            if (n < 0 || stride <= 0 || n.toLong() * stride > buf.remaining()) {
+                throw LocalizedArgumentException(translation("error.file.truncated"))
+            }
+            val out = ByteArray(n * stride)
             buf.get(out)
             return out
         }
@@ -453,6 +510,9 @@ object PdrawcReader {
 
         /** 读取 n 个 u16（小端）为 ShortArray（值语义无符号，读取侧按 0xFFFF 掩码解释）。 */
         fun shorts(n: Int): ShortArray {
+            if (n < 0 || n.toLong() * 2L > buf.remaining()) {
+                throw LocalizedArgumentException(translation("error.file.truncated"))
+            }
             val out = ShortArray(n)
             for (i in 0 until n) out[i] = buf.short
             return out

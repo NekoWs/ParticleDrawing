@@ -53,6 +53,29 @@ object ServerEffectManager {
     private val playbacks = ConcurrentHashMap<UUID, Playback>()
     private val pendingAnchors = ConcurrentHashMap<UUID, AnchorUpdateBatchPayload.AnchorUpdate>()
 
+    /** 该玩家的每个特效 key 已下发记录；用于拒绝“没给他播过却来要字节”的请求。 */
+    private val deliveredKeys = ConcurrentHashMap<UUID, MutableSet<Identifier>>()
+
+    /** 单玩家记录的 key 上限，防止长时间运行后无界增长。 */
+    private const val MAX_DELIVERED_KEYS = 128
+
+    /** 该 key 是否曾下发给这名玩家。 */
+    @JvmStatic
+    fun wasDelivered(playerId: UUID, key: Identifier): Boolean =
+        deliveredKeys[playerId]?.contains(key) == true
+
+    private fun rememberDelivered(playerId: UUID, key: Identifier) {
+        val set = deliveredKeys.computeIfAbsent(playerId) { ConcurrentHashMap.newKeySet() }
+        if (set.size >= MAX_DELIVERED_KEYS && key !in set) return
+        set.add(key)
+    }
+
+    /** 玩家登出：清掉他的下发记录。 */
+    @JvmStatic
+    fun forgetPlayer(playerId: UUID) {
+        deliveredKeys.remove(playerId)
+    }
+
     /**
      * 播放一个已注册特效。
      * @return 播放 ID；未注册/解析失败抛 [IllegalArgumentException]
@@ -82,6 +105,7 @@ object ServerEffectManager {
         val ids = HashSet<UUID>()
         for (player in players) {
             PacketDistributor.sendToPlayer(player, payload)
+            rememberDelivered(player.uuid, key)
             ids.add(player.uuid)
         }
         playbacks[id] = Playback(id, dimensionId, ids, key, anchor, options, maxMs, loop, startGameTick, clock)

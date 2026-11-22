@@ -182,7 +182,10 @@ fun ParticleAnimation.timelineLength(): Int {
     var max = tracks.flatMap { it.keyframes }.maxOfOrNull { it.ms }?.toDouble() ?: 0.0
     for (p in particles) {
         if (p.st > max) max = p.st.toDouble()
-        if (p.life >= 0 && p.st + p.life > max) max = (p.st + p.life).toDouble()
+        if (p.life >= 0) {
+            val end = p.st.toLong() + p.life.toLong()
+            if (end > max) max = end.toDouble()
+        }
     }
     for (fx in functions) {
         var extent = fx.duration.toDouble()
@@ -194,12 +197,15 @@ fun ParticleAnimation.timelineLength(): Int {
     }
     for (tx in texts) {
         if (tx.st > max) max = tx.st.toDouble()
-        if (tx.life >= 0 && tx.st + tx.life > max) max = (tx.st + tx.life).toDouble()
+        if (tx.life >= 0) {
+            val end = tx.st.toLong() + tx.life.toLong()
+            if (end > max) max = end.toDouble()
+        }
     }
     for (a in audioAssets) {
         if (a.st > max) max = a.st.toDouble()
-        // 内容按倍速折算到时间轴长度（倍速越快，听完所需时间越短）
-        val dur = a.durMs / maxOf(0.25, a.speed)
+        // 内容按倍速折算到时间轴长度（倍速越快，所需时间越短）；倍速口径与播放端一致
+        val dur = a.durMs / maxOf(0.25, minOf(a.speed, 4.0))
         if (a.st + dur > max) max = a.st + dur
     }
     return max.toInt()

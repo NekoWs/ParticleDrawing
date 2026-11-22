@@ -27,6 +27,7 @@ import work.nekow.particledrawing.util.ParticleUtils
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
 import work.nekow.particledrawing.i18n.component
+import work.nekow.particledrawing.i18n.failureComponent
 import work.nekow.particledrawing.i18n.translation
 
 /**
@@ -47,6 +48,7 @@ object ParticleDrawCommands {
         val dispatcher = event.dispatcher
 
         val animation = Commands.literal("animation")
+                .requires(work.nekow.particledrawing.platform.PlatformCompat.gamemastersOnly())
                 .executes(::animationUsage)
                 .then(Commands.literal("list").executes(::listAnimations))
                 .then(Commands.literal("play")
@@ -165,13 +167,17 @@ object ParticleDrawCommands {
      */
     private fun playAnimation(ctx: CommandContext<CommandSourceStack>): Int {
         val name = StringArgumentType.getString(ctx, "name")
-        val data = AnimationLoader.load(name)
-            ?: run {
-                val reason = if (AnimationLoader.has(name)) translation("error.animation.signature", name)
-                    else translation("error.animation.not_found", name)
-                ctx.source.sendFailure(reason.component())
-                return 0
-            }
+        val data = try {
+            AnimationLoader.load(name)
+        } catch (error: Exception) {
+            ctx.source.sendFailure(error.failureComponent("error.animation.play"))
+            return 0
+        } ?: run {
+            val reason = if (AnimationLoader.has(name)) translation("error.animation.signature", name)
+                else translation("error.animation.not_found", name)
+            ctx.source.sendFailure(reason.component())
+            return 0
+        }
 
         val level = ctx.source.level
         val dim = ParticleUtils.dimensionUUID(level)
@@ -243,6 +249,10 @@ object ParticleDrawCommands {
     private fun switchCamera(ctx: CommandContext<CommandSourceStack>): Int {
         if (!PlatformCompat.isClientDist) {
             ctx.source.sendFailure(translation("error.camera.client_only").component())
+            return 0
+        }
+        if (!PlatformCompat.supportsCameraOverride) {
+            ctx.source.sendFailure(translation("error.camera.unsupported").component())
             return 0
         }
         val name = StringArgumentType.getString(ctx, "name")
