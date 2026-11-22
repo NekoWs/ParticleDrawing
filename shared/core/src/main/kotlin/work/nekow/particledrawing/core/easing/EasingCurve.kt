@@ -2,6 +2,7 @@ package work.nekow.particledrawing.core.easing
 
 import java.util.Objects
 import kotlin.math.abs
+import work.nekow.particledrawing.i18n.LocalizedArgumentException
 import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.translation
 
@@ -13,6 +14,14 @@ class EasingCurve(
     val x2: Double,
     val y2: Double
 ) {
+
+    init {
+        // x 是时间轴，必须在 [0,1]；y 允许越界（回弹类曲线本来就会冲出 0..1）。
+        requireLocalized(x1.isFinite() && y1.isFinite() && x2.isFinite() && y2.isFinite() &&
+            x1 in 0.0..1.0 && x2 in 0.0..1.0) {
+            translation("error.easing.curve")
+        }
+    }
 
     // 线性曲线（默认缓动）：直接返回 t；曲线恒等，可跳过贝塞尔反解
     private val linear = x1 == 0.0 && y1 == 0.0 && x2 == 1.0 && y2 == 1.0
@@ -101,12 +110,12 @@ class EasingCurve(
             val inner = css.replace("cubic-bezier(", "").replace(")", "").trim()
             val parts = inner.split(",")
             requireLocalized(parts.size == 4) { translation("error.easing.css", css) }
-            return EasingCurve(
-                parts[0].trim().toDouble(),
-                parts[1].trim().toDouble(),
-                parts[2].trim().toDouble(),
-                parts[3].trim().toDouble()
-            )
+            val values = try {
+                parts.map { it.trim().toDouble() }
+            } catch (_: NumberFormatException) {
+                throw LocalizedArgumentException(translation("error.easing.css", css))
+            }
+            return EasingCurve(values[0], values[1], values[2], values[3])
         }
     }
 }

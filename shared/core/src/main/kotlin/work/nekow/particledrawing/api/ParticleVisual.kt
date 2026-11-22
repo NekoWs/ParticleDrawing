@@ -64,8 +64,11 @@ class ParticleVisual {
     /** 免光照（全亮，不受世界光照影响）。 */
     var glowing: Boolean = false
 
-    /** 向外发出的光照等级 (0-15)。 */
+    /** 向外发出的光照等级 (0-15)，越界自动夹取。 */
     var lightLevel: Int = 15
+        set(value) {
+            field = value.coerceIn(0, 15)
+        }
 
     /**
      * 是否作为动态光源向外照明。
@@ -405,9 +408,10 @@ class ParticleVisual {
         val w = if (scaleW > 0f) scaleW else fallbackScale
         val h = if (scaleH > 0f) scaleH else fallbackScale
         if (!worldUnits) return floatArrayOf(w, h, 1f)
+        // 沿用的轴本来就是编辑器单位的 fallbackScale，不能再按「世界整宽」换算一次。
         return floatArrayOf(
-            VisualMath.editorUnitsForWorldWidth(w, texScale),
-            VisualMath.editorUnitsForWorldWidth(h, texScale),
+            if (scaleW > 0f) VisualMath.editorUnitsForWorldWidth(w, texScale) else w,
+            if (scaleH > 0f) VisualMath.editorUnitsForWorldWidth(h, texScale) else h,
             1f,
         )
     }

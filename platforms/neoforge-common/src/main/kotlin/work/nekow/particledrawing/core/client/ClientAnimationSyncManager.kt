@@ -114,8 +114,10 @@ object ClientAnimationSyncManager {
         try {
             Files.createDirectories(target.parent)
             Files.write(target, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)
-        } catch (_: Exception) {
-            // 写盘失败静默忽略，下次进服重新同步
+        } catch (error: Exception) {
+            // 下次进服会重新同步，但要留一条日志，磁盘满/无权限时才能排查
+            org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing")
+                .warn("[ParticleDrawing] failed to write synced animation {}: {}", rel, error.message)
         }
     }
 

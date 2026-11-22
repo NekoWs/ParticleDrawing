@@ -59,10 +59,22 @@ object ServerEffectManager {
     /** 单玩家记录的 key 上限，防止长时间运行后无界增长。 */
     private const val MAX_DELIVERED_KEYS = 128
 
+    /** 每个玩家最近一次特效字节请求的时间（纳秒），用于限速。 */
+    private val lastRequestNanos = ConcurrentHashMap<UUID, Long>()
+    private const val REQUEST_COOLDOWN_NANOS = 200_000_000L
+
     /** 该 key 是否曾下发给这名玩家。 */
     @JvmStatic
     fun wasDelivered(playerId: UUID, key: Identifier): Boolean =
         deliveredKeys[playerId]?.contains(key) == true
+
+    /** 请求限速：同一玩家 200ms 内只允许一次特效字节请求。 */
+    @JvmStatic
+    fun allowEffectRequest(playerId: UUID): Boolean {
+        val now = System.nanoTime()
+        val previous = lastRequestNanos.put(playerId, now) ?: return true
+        return now - previous >= REQUEST_COOLDOWN_NANOS
+    }
 
     private fun rememberDelivered(playerId: UUID, key: Identifier) {
         val set = deliveredKeys.computeIfAbsent(playerId) { ConcurrentHashMap.newKeySet() }
@@ -74,6 +86,7 @@ object ServerEffectManager {
     @JvmStatic
     fun forgetPlayer(playerId: UUID) {
         deliveredKeys.remove(playerId)
+        lastRequestNanos.remove(playerId)
     }
 
     /**

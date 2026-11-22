@@ -40,21 +40,27 @@ class CurveKey(
     @JvmField val value: Float,
     @JvmField val easing: EasingType = EasingType.LINEAR,
 ) {
+    init {
+        requireLocalized(tTicks.isFinite() && tTicks >= 0f && value.isFinite()) {
+            translation("error.curve.key_value")
+        }
+    }
+
     companion object {
         /** 线性关键帧。 */
         @JvmStatic
         fun at(tTicks: Number, value: Number): CurveKey =
-            CurveKey(tTicks.toFloat(), value.toFloat(), EasingType.LINEAR)
+            CurveKey(checked(tTicks), checked(value), EasingType.LINEAR)
 
         /** 带缓动的关键帧；缓动作用于本帧到下一帧这一段。 */
         @JvmStatic
         fun at(tTicks: Number, value: Number, easing: EasingType): CurveKey =
-            CurveKey(tTicks.toFloat(), value.toFloat(), easing)
+            CurveKey(checked(tTicks), checked(value), easing)
 
         /** 阶跃关键帧：值保持到下一关键帧才跳变。 */
         @JvmStatic
         fun step(tTicks: Number, value: Number): CurveKey =
-            CurveKey(tTicks.toFloat(), value.toFloat(), EasingType.NONE)
+            CurveKey(checked(tTicks), checked(value), EasingType.NONE)
 
         /** 显式时间入口；曲线保留小数刻。 */
         @JvmStatic
@@ -68,6 +74,13 @@ class CurveKey(
         /** 显式时间的阶跃关键帧。 */
         @JvmStatic
         fun step(time: Time, value: Number): CurveKey = step(time.ticks, value)
+
+        /** Double 超 Float 范围时不能静默变成 Infinity。 */
+        private fun checked(value: Number): Float {
+            val f = value.toFloat()
+            requireLocalized(f.isFinite()) { translation("error.curve.key_value") }
+            return f
+        }
     }
 }
 

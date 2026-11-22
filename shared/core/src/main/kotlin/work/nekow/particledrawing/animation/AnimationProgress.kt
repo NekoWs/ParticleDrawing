@@ -14,7 +14,9 @@ object AnimationProgress {
     fun msAt(elapsedTicks: Long, maxMs: Int, loop: Boolean): Int {
         if (maxMs <= 0) return 0
         val eMs = (elapsedTicks.coerceAtLeast(0L) * 50)
-        return if (loop) (eMs % maxMs).toInt() else minOf(eMs, lastFrameMs(maxMs).toLong()).toInt()
+        if (!loop) return minOf(eMs, lastFrameMs(maxMs).toLong()).toInt()
+        // 循环长度不足 1 tick 时取余恒为 0；按 100ms 计，至少能在首尾帧之间交替。
+        return (eMs % maxMs.coerceAtLeast(MIN_LOOP_MS)).toInt()
     }
 
     /**
@@ -24,7 +26,9 @@ object AnimationProgress {
     @JvmStatic
     fun seekMs(targetMs: Int, maxMs: Int, loop: Boolean): Int {
         if (maxMs <= 0) return targetMs.coerceAtLeast(0)
-        return if (loop) ((targetMs % maxMs) + maxMs) % maxMs else targetMs.coerceIn(0, lastFrameMs(maxMs))
+        if (!loop) return targetMs.coerceIn(0, lastFrameMs(maxMs))
+        val span = maxMs.coerceAtLeast(MIN_LOOP_MS)
+        return ((targetMs % span) + span) % span
     }
 
     /**
@@ -34,4 +38,7 @@ object AnimationProgress {
     @JvmStatic
     fun isFinished(elapsedTicks: Long, maxMs: Int, loop: Boolean): Boolean =
         !loop && maxMs > 0 && elapsedTicks * 50 >= maxMs
+
+    /** 循环长度下限：低于一个 game tick 的循环用 50ms 的 tick 量化会永远停在 0。 */
+    private const val MIN_LOOP_MS = 100
 }

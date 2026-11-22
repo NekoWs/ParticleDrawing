@@ -19,6 +19,7 @@ internal object ClientSyncedRecipes {
     private class Entry {
         var tick = -1L
         var receivedTick = -1L
+        var lastActiveTick = 0L
         var lastEmptyTick = -1L
         var held = false
         val pending = TickFrameQueue<Frame>(capacity = 4, reserve = 1)
@@ -53,12 +54,17 @@ internal object ClientSyncedRecipes {
 
     private val entries = linkedMapOf<UUID, Entry>()
 
+    /** 只收到 Look、迟迟没有帧的条目最多保留多少 tick（60 秒）。 */
+    private const val LOOK_ONLY_TTL_TICKS = 1200L
+    private var clockTicks = 0L
+
     fun receive(payload: ParticleRecipeStatePayload) {
         try {
             if (payload.id !in entries && entries.size >= MAX_ENTRIES) {
                 entries.keys.firstOrNull()?.let(entries::remove)
             }
             val entry = entries.getOrPut(payload.id, ::Entry)
+            entry.lastActiveTick = clockTicks
             when (val content = payload.content) {
                 is Content.Look -> entry.looks[content.id] = content.look
                 is Content.Frame -> receiveFrame(entry, content)
@@ -98,13 +104,17 @@ internal object ClientSyncedRecipes {
     }
 
     fun tick(engine: ClientParticleEngine) {
+        clockTicks++
         val iterator = entries.iterator()
         while (iterator.hasNext()) {
             val (id, entry) = iterator.next()
             try {
                 entry.pending.advance(drain = entry.lastEmptyTick > entry.tick)?.let { acceptFrame(entry, it) }
                 sync(engine, entry)
+                val lookOnlyExpired = entry.members.isEmpty() && entry.pending.size == 0 &&
+                    entry.looks.isNotEmpty() && clockTicks - entry.lastActiveTick > LOOK_ONLY_TTL_TICKS
                 if (entry.looks.isEmpty() && entry.members.isEmpty() && entry.pending.size == 0) iterator.remove()
+                else if (lookOnlyExpired) iterator.remove()
             } catch (e: RuntimeException) {
                 iterator.remove()
                 destroy(engine, entry)

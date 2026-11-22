@@ -17,6 +17,7 @@ import java.security.spec.NamedParameterSpec
 import java.util.zip.Inflater
 import java.util.zip.InflaterInputStream
 import work.nekow.particledrawing.i18n.LocalizedArgumentException
+import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.translation
 
 /**
@@ -388,7 +389,9 @@ object PdrawcReader {
 
     private fun readRenderOptions(r: Reader, version: Int): ParticleRenderOptions {
         val fields = r.u8()
-        require(fields in 0..(if (version >= 20) 15 else 7))
+        requireLocalized(fields in 0..(if (version >= 20) 15 else 7)) {
+            translation("error.file.render_options", fields)
+        }
         if (fields == 0) return ParticleRenderOptions.DEFAULT
         return ParticleRenderOptions(
             alignVelocity = fields and 1 != 0,
@@ -466,8 +469,12 @@ object PdrawcReader {
     private fun readVarKeyframes(r: Reader): List<Keyframe> {
         val n = r.count(MAX_KEYFRAMES)
         val kf = ArrayList<Keyframe>(n)
+        var previous = -1L
         for (i in 0 until n) {
-            kf.add(Keyframe(r.varint().toDouble(), r.f32().toDouble(), readEasing(r)))
+            val ms = r.varint().toLong()
+            if (ms < previous) throw LocalizedArgumentException(translation("error.file.keyframe_order"))
+            previous = ms
+            kf.add(Keyframe(ms.toDouble(), r.f32().toDouble(), readEasing(r)))
         }
         return kf
     }
@@ -475,8 +482,12 @@ object PdrawcReader {
     private fun readTrackKeyframes(r: Reader): List<AnimKeyframe> {
         val n = r.count(MAX_KEYFRAMES)
         val kf = ArrayList<AnimKeyframe>(n)
+        var previous = 0
         for (i in 0 until n) {
-            kf.add(AnimKeyframe(r.varint(), r.f32().toDouble(), readEasing(r)))
+            val ms = r.varint()
+            if (ms < previous) throw LocalizedArgumentException(translation("error.file.keyframe_order"))
+            previous = ms
+            kf.add(AnimKeyframe(ms, r.f32().toDouble(), readEasing(r)))
         }
         return kf
     }
@@ -486,7 +497,10 @@ object PdrawcReader {
 
         fun remainingBytes(): ByteArray = bytes(buf.remaining())
 
-        fun u8(): Int = buf.get().toInt() and 0xff
+        fun u8(): Int {
+            if (buf.remaining() < 1) throw LocalizedArgumentException(translation("error.file.truncated"))
+            return buf.get().toInt() and 0xff
+        }
 
         /** 读取元素数量；同时要求剩余字节够每个元素至少 1 字节，避免伪造计数骗出大分配。 */
         fun count(max: Int): Int {
@@ -506,7 +520,10 @@ object PdrawcReader {
             return out
         }
 
-        fun f32(): Float = buf.float
+        fun f32(): Float {
+            if (buf.remaining() < 4) throw LocalizedArgumentException(translation("error.file.truncated"))
+            return buf.float
+        }
 
         /** 读取 n 个 u16（小端）为 ShortArray（值语义无符号，读取侧按 0xFFFF 掩码解释）。 */
         fun shorts(n: Int): ShortArray {

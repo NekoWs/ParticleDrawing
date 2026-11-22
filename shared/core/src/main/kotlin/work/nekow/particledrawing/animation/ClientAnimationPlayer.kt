@@ -195,8 +195,7 @@ class ClientAnimationPlayer(
 
     // 预构建求值索引，避免每 tick 线性扫描轨道 / 组 / 粒子
     private val trackIndex: Map<TrackPr, Map<String, AnimTrack>> = buildTrackIndex()
-    private val opTracks: List<AnimTrack> = tracks.filter { it.mode == AnimTrack.Mode.OP }
-    private val opTracksByPr: Map<TrackPr, List<AnimTrack>> = opTracks.filter { it.keyframes.isNotEmpty() }.groupBy { it.pr }
+    private val opTrackIndex: Map<TrackPr, Map<String, List<AnimTrack>>> = buildOpTrackIndex()
     private val groupSets: Map<String, Set<String>> = buildOwnerSets()
     private val groupSpinLocal: Set<String> = animation.groupSpinSpace.filterValues { it }.keys
     private val groupRotLocal: Set<String> = animation.groupRotSpace.filterValues { it }.keys
@@ -320,6 +319,13 @@ class ClientAnimationPlayer(
                 if (!alive) return
                 alive = false
                 particles.remove(this)
+                budget.release()
+            }
+
+            /** 批量到期用：只标死并归还预算，列表由调用方统一压缩。 */
+            fun markDead() {
+                if (!alive) return
+                alive = false
                 budget.release()
             }
         }
@@ -469,6 +475,9 @@ class ClientAnimationPlayer(
         }
     }
 
+    /** 单帧最多补跑多少个 50ms 边界；超出直接对齐到目标时刻。 */
+    private val MAX_CATCHUP_STEPS = 64
+
     /** 所有函数对象共用的派生粒子预算，避免 N 个对象各自 10 万把客户端撑爆。 */
     private val fxBudget = FxBudget(MAX_TOTAL_FX_PARTICLES)
     private val fxRuntimes: MutableMap<String, FxRuntime?> = buildFxRuntimes()
@@ -559,10 +568,23 @@ class ClientAnimationPlayer(
     private fun buildTrackIndex(): Map<TrackPr, Map<String, AnimTrack>> {
         val map = HashMap<TrackPr, HashMap<String, AnimTrack>>()
         for (tr in tracks) {
+            // OP 轨道不是绝对值，不能进 SET 索引（否则 scalarAt 会把增量当绝对值返回）。
+            if (tr.mode == AnimTrack.Mode.OP) continue
             if (tr.ids.size == 1) {
                 val byId = map.getOrPut(tr.pr) { HashMap() }
                 byId[tr.ids[0]] = tr
             }
+        }
+        return map
+    }
+
+    /** OP 轨道按 pr + 目标 id 建索引，一个目标可以叠加多条。 */
+    private fun buildOpTrackIndex(): Map<TrackPr, Map<String, List<AnimTrack>>> {
+        val map = HashMap<TrackPr, HashMap<String, MutableList<AnimTrack>>>()
+        for (tr in tracks) {
+            if (tr.mode != AnimTrack.Mode.OP) continue
+            val byId = map.getOrPut(tr.pr) { HashMap() }
+            for (id in tr.ids) byId.getOrPut(id) { ArrayList(1) }.add(tr)
         }
         return map
     }
@@ -1012,7 +1034,14 @@ class ClientAnimationPlayer(
             if (t < rt.curMs) resetFxRuntime(fx, rt)
 
             var b = rt.cursorMs + 50.0
+            var caughtUp = 0
             while (b <= t) {
+                // 单帧补跑上限：异常 seek/倍速不能让渲染线程卡在百万次脚本 tick 上。
+                if (++caughtUp > MAX_CATCHUP_STEPS) {
+                    rt.cursorMs = t
+                    rt.curMs = t
+                    break
+                }
                 decrementLifeMs(fx, rt, rt.curMs, b)
                 rt.curMs = b
                 rt.cursorMs = b
@@ -1061,6 +1090,7 @@ class ClientAnimationPlayer(
     private fun decrementLifeMs(fx: FunctionObject, rt: FxRuntime, fromMs: Double, toMs: Double) {
         val st = fx.st.toDouble()
         if (!(toMs > fromMs)) return
+        var anyDead = false
         for (i in rt.particles.indices.reversed()) {
             val host = rt.particles[i] as FxRuntime.FxParticleHost
             val entry = max(host.spawnMs, st)
@@ -1068,13 +1098,16 @@ class ClientAnimationPlayer(
                 val elapsed = toMs - max(entry, fromMs)
                 if (elapsed > 0.0) {
                     if (host.life <= elapsed) {
-                        host.kill()
+                        // 批量到期：先标死，循环外一次压缩，避免每颗都做 O(n) 的列表删除。
+                        host.markDead()
+                        anyDead = true
                     } else {
                         host.life -= elapsed
                     }
                 }
             }
         }
+        if (anyDead) rt.particles.removeAll { p -> (p as? FxRuntime.FxParticleHost)?.alive == false }
     }
 
     /** 把函数对象当前存活粒子同步进渲染状态（新建/更新/删除 + 整体变换 + 可见性门控）。 */
@@ -1230,9 +1263,10 @@ class ClientAnimationPlayer(
     }
 
     private fun opDeltaAt(pr: TrackPr, id: String, t: Double): Double {
-        val tr = findTrackByPr(pr, id) ?: return 0.0
-        if (tr.mode != AnimTrack.Mode.OP || tr.keyframes.isEmpty()) return 0.0
-        return trackValueAt(tr, t, 0.0)
+        val list = opTrackIndex[pr]?.get(id) ?: return 0.0
+        var sum = 0.0
+        for (tr in list) if (tr.keyframes.isNotEmpty()) sum += trackValueAt(tr, t, 0.0)
+        return sum
     }
 
     private fun findSetTrackFor(id: String, pr: TrackPr): AnimTrack? {
@@ -1248,39 +1282,32 @@ class ClientAnimationPlayer(
     }
 
     private fun compOpDelta(p: AnimParticle, pr: TrackPr, t: Double): Double {
-        var delta = 0.0
-        for (tr in opTracksByPr[pr] ?: emptyList()) {
-            for (id in tr.ids) {
-                if (id.startsWith("g:") || id.startsWith("t:")) {
-                    val members = groupSets[id] ?: continue
-                    if (p.id in members) delta += trackValueAt(tr, t, 0.0)
-                } else if (id.startsWith("f:") && p.id.startsWith(id.removePrefix("f:") + ":p")) {
-                    delta += trackValueAt(tr, t, 0.0)
-                }
-            }
-        }
+        var delta = opDeltaAt(pr, p.id, t)
+        for (okey in particleGroupIndex[p.id] ?: emptySet()) delta += opDeltaAt(pr, okey, t)
+        val fx = particleFunction(p.id)
+        if (fx != null) delta += opDeltaAt(pr, "f:" + fx.id, t)
         return delta
     }
 
     private fun rotVectorAt(id: String, t: Double): DoubleArray =
         doubleArrayOf(
-            scalarAt(TrackPr.ROT_X, id, t, 0.0),
-            scalarAt(TrackPr.ROT_Y, id, t, 0.0),
-            scalarAt(TrackPr.ROT_Z, id, t, 0.0),
+            scalarAt(TrackPr.ROT_X, id, t, 0.0) + opDeltaAt(TrackPr.ROT_X, id, t),
+            scalarAt(TrackPr.ROT_Y, id, t, 0.0) + opDeltaAt(TrackPr.ROT_Y, id, t),
+            scalarAt(TrackPr.ROT_Z, id, t, 0.0) + opDeltaAt(TrackPr.ROT_Z, id, t),
         )
 
     private fun spinVectorAt(id: String, t: Double): DoubleArray =
         doubleArrayOf(
-            scalarAt(TrackPr.SPIN_X, id, t, 0.0),
-            scalarAt(TrackPr.SPIN_Y, id, t, 0.0),
-            scalarAt(TrackPr.SPIN_Z, id, t, 0.0),
+            scalarAt(TrackPr.SPIN_X, id, t, 0.0) + opDeltaAt(TrackPr.SPIN_X, id, t),
+            scalarAt(TrackPr.SPIN_Y, id, t, 0.0) + opDeltaAt(TrackPr.SPIN_Y, id, t),
+            scalarAt(TrackPr.SPIN_Z, id, t, 0.0) + opDeltaAt(TrackPr.SPIN_Z, id, t),
         )
 
     private fun orbitCenterAt(id: String, t: Double): Vec3 =
         Vec3(
-            scalarAt(TrackPr.CENTER_X, id, t, 0.0),
-            scalarAt(TrackPr.CENTER_Y, id, t, 0.0),
-            scalarAt(TrackPr.CENTER_Z, id, t, 0.0),
+            scalarAt(TrackPr.CENTER_X, id, t, 0.0) + opDeltaAt(TrackPr.CENTER_X, id, t),
+            scalarAt(TrackPr.CENTER_Y, id, t, 0.0) + opDeltaAt(TrackPr.CENTER_Y, id, t),
+            scalarAt(TrackPr.CENTER_Z, id, t, 0.0) + opDeltaAt(TrackPr.CENTER_Z, id, t),
         )
 
     private fun baseComponent(p: AnimParticle, pr: TrackPr): Double = when (pr) {
@@ -1305,9 +1332,9 @@ class ClientAnimationPlayer(
      * 没有轨道或轨道无关键帧时取资产自带的基础值 [base]。
      */
     fun audioProp(owner: String, pr: TrackPr, base: Double, t: Double): Double {
-        val tr = findTrackByPr(pr, owner) ?: return base
-        if (tr.keyframes.isEmpty()) return base
-        return trackValueAt(tr, t, base)
+        val tr = findTrackByPr(pr, owner)
+        val set = if (tr != null && tr.keyframes.isNotEmpty()) trackValueAt(tr, t, base) else base
+        return set + opDeltaAt(pr, owner, t)
     }
 
     /** 倍速兜底：非有限值/<=0 一律按 1。 */
@@ -1458,7 +1485,8 @@ class ClientAnimationPlayer(
     private fun ownScaleComponent(p: AnimParticle, pr: TrackPr, t: Double): Double {
         var v = baseComponent(p, pr)
         val tr = findTrackByPr(pr, p.id)
-        if (tr != null && tr.mode != AnimTrack.Mode.OP && tr.keyframes.isNotEmpty()) v = trackValueAt(tr, t, v)
+        if (tr != null && tr.keyframes.isNotEmpty()) v = trackValueAt(tr, t, v)
+        v += compOpDelta(p, pr, t)
         return v
     }
 
@@ -1468,9 +1496,10 @@ class ClientAnimationPlayer(
      */
     private fun fxScaleInto(fxId: String, base: DoubleArray, t: Double, out: FloatArray) {
         // 就地写进状态里那份数组，避免每帧每粒子新建
-        out[0] = scalarAt(TrackPr.SCL_X, "f:" + fxId, t, finiteOrOne(base[0])).toFloat().coerceAtLeast(0.01f)
-        out[1] = scalarAt(TrackPr.SCL_Y, "f:" + fxId, t, finiteOrOne(base[1])).toFloat().coerceAtLeast(0.01f)
-        out[2] = scalarAt(TrackPr.SCL_Z, "f:" + fxId, t, finiteOrOne(base[2])).toFloat().coerceAtLeast(0.01f)
+        val fkey = "f:" + fxId
+        out[0] = (scalarAt(TrackPr.SCL_X, fkey, t, finiteOrOne(base[0])) + opDeltaAt(TrackPr.SCL_X, fkey, t)).toFloat().coerceAtLeast(0.01f)
+        out[1] = (scalarAt(TrackPr.SCL_Y, fkey, t, finiteOrOne(base[1])) + opDeltaAt(TrackPr.SCL_Y, fkey, t)).toFloat().coerceAtLeast(0.01f)
+        out[2] = (scalarAt(TrackPr.SCL_Z, fkey, t, finiteOrOne(base[2])) + opDeltaAt(TrackPr.SCL_Z, fkey, t)).toFloat().coerceAtLeast(0.01f)
     }
 
     /** 脚本给的尺寸可能是 NaN/Inf（表达式算爆了）：按 1 兜底，避免坏尺寸进渲染。 */

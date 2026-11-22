@@ -188,13 +188,15 @@ object MorphAllocator {
     private fun uncross(particles: List<MorphParticle>, slots: List<MorphSlot>, map: MutableMap<UUID, Int>, passes: Int) {
         if (map.size < 4) return
         val ids = map.keys.toList()
+        val byId = HashMap<UUID, MorphParticle>(particles.size)
+        for (p in particles) byId[p.id] = p
         repeat(passes) {
             var improved = false
             for (i in ids.indices) {
-                val pa = particles.firstOrNull { it.id == ids[i] } ?: continue
+                val pa = byId[ids[i]] ?: continue
                 val sa = slots[map[ids[i]]!!].position
                 for (j in i + 1 until ids.size) {
-                    val pb = particles.firstOrNull { it.id == ids[j] } ?: continue
+                    val pb = byId[ids[j]] ?: continue
                     val sb = slots[map[ids[j]]!!].position
                     val current = pa.position.distanceToSqr(sa) + pb.position.distanceToSqr(sb)
                     val swapped = pa.position.distanceToSqr(sb) + pb.position.distanceToSqr(sa)

@@ -8,14 +8,14 @@ class Color private constructor(
     val b: Float,
     val a: Float
 ) {
-    val rInt get() = (r * 255).toInt()
-    val gInt get() = (g * 255).toInt()
-    val bInt get() = (b * 255).toInt()
-    val aInt get() = (a * 255).toInt()
+    val rInt get() = clampToInt(r * 255)
+    val gInt get() = clampToInt(g * 255)
+    val bInt get() = clampToInt(b * 255)
+    val aInt get() = clampToInt(a * 255)
 
-    fun withAlpha(alpha: Float) = Color(r, g, b, alpha)
+    fun withAlpha(alpha: Float) = Color(r, g, b, clamp(alpha))
 
-    fun multiply(factor: Float) = Color(r * factor, g * factor, b * factor, a)
+    fun multiply(factor: Float) = Color(clamp(r * factor), clamp(g * factor), clamp(b * factor), a)
 
     fun lerp(target: Color, t: Float): Color {
         val ct = clamp(t)
@@ -83,19 +83,23 @@ class Color private constructor(
 
         /** 由浮点分量创建不透明颜色，分量范围 [0,1]。 */
         @JvmStatic
-        fun of(r: Float, g: Float, b: Float) = Color(r, g, b, 1.0f)
+        fun of(r: Float, g: Float, b: Float) = Color(clamp(r), clamp(g), clamp(b), 1.0f)
 
         /** 由浮点分量创建颜色（含透明度），分量范围 [0,1]。 */
         @JvmStatic
-        fun of(r: Float, g: Float, b: Float, a: Float) = Color(r, g, b, a)
+        fun of(r: Float, g: Float, b: Float, a: Float) = Color(clamp(r), clamp(g), clamp(b), clamp(a))
 
         /** 由整数分量创建不透明颜色，分量范围 [0,255]。 */
         @JvmStatic
-        fun ofInt(r: Int, g: Int, b: Int) = Color(r / 255f, g / 255f, b / 255f, 1.0f)
+        fun ofInt(r: Int, g: Int, b: Int) =
+            Color(r.coerceIn(0, 255) / 255f, g.coerceIn(0, 255) / 255f, b.coerceIn(0, 255) / 255f, 1.0f)
 
         /** 由整数分量创建颜色（含透明度），分量范围 [0,255]。 */
         @JvmStatic
-        fun ofInt(r: Int, g: Int, b: Int, a: Int) = Color(r / 255f, g / 255f, b / 255f, a / 255f)
+        fun ofInt(r: Int, g: Int, b: Int, a: Int) = Color(
+            r.coerceIn(0, 255) / 255f, g.coerceIn(0, 255) / 255f,
+            b.coerceIn(0, 255) / 255f, a.coerceIn(0, 255) / 255f,
+        )
 
         /** 从 ABGR 打包整型还原颜色。 */
         @JvmStatic
@@ -123,7 +127,7 @@ class Color private constructor(
         @JvmStatic
         fun ofHsb(hue: Float, saturation: Float, brightness: Float, alpha: Float): Color {
             val c = ofHsb(hue, saturation, brightness)
-            return Color(c.r, c.g, c.b, alpha)
+            return Color(c.r, c.g, c.b, clamp(alpha))
         }
 
         private fun clamp(v: Float) = v.coerceIn(0f, 1f)

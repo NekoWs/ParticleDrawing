@@ -40,16 +40,38 @@ object AnimationSyncService {
      * 增量差异：返回客户端缺失或内容变化（SHA-1 不同）的文件，按相对名稳定顺序。
      */
     fun computeDiff(clientHashes: Map<String, String>): List<SyncFile> {
-        val serverFiles = collectServerFiles()
+        // 逐文件流式哈希，只有真正需要下发的文件才读进内存。
+        val entries = ArrayList<Pair<String, Path>>()
+        forEachSyncFile(AnimationLoader.DIRECTORY) { rel, path -> entries.add(rel to path) }
+        entries.sortBy { it.first }
         val diff = ArrayList<SyncFile>()
-        val names = serverFiles.keys.sorted()
-        for (name in names) {
-            val bytes = serverFiles[name] ?: continue
-            val serverHash = HashUtils.sha1Hex(bytes)
-            if (clientHashes[name] == serverHash) continue
-            diff.add(SyncFile(name, bytes))
+        for ((name, path) in entries) {
+            try {
+                if (Files.size(path) > MAX_FILE_BYTES) continue
+                val serverHash = hashFile(path) ?: continue
+                if (clientHashes[name] == serverHash) continue
+                diff.add(SyncFile(name, Files.readAllBytes(path)))
+            } catch (_: IOException) {
+                // 读取失败跳过，下次进服再同步
+            }
         }
         return diff
+    }
+
+    /** 流式 SHA-1；读取失败返回 null。 */
+    private fun hashFile(path: Path): String? = try {
+        val digest = java.security.MessageDigest.getInstance("SHA-1")
+        Files.newInputStream(path).use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buffer)
+                if (n < 0) break
+                digest.update(buffer, 0, n)
+            }
+        }
+        digest.digest().joinToString("") { "%02x".format(it) }
+    } catch (_: Exception) {
+        null
     }
 
     /** 校验相对文件名：允许 Unicode 字符，长度上限 512，禁止 .. 与控制字符。 */
@@ -70,7 +92,7 @@ object AnimationSyncService {
         forEachSyncFile(root) { rel, path ->
             try {
                 if (Files.size(path) > MAX_FILE_BYTES) return@forEachSyncFile
-                result[rel] = HashUtils.sha1Hex(Files.readAllBytes(path))
+                hashFile(path)?.let { result[rel] = it }
             } catch (_: IOException) { /* 忽略 */ }
         }
         return result

@@ -170,7 +170,14 @@ class ScalarProgram(
                 ScalarOp.F_POW -> { sp--; stack[sp - 1] = stack[sp - 1].pow(stack[sp]) }
                 ScalarOp.F_MIN -> { sp--; stack[sp - 1] = min(stack[sp - 1], stack[sp]) }
                 ScalarOp.F_MAX -> { sp--; stack[sp - 1] = max(stack[sp - 1], stack[sp]) }
-                ScalarOp.F_CLAMP -> { sp -= 2; stack[sp - 1] = stack[sp - 1].coerceIn(stack[sp], stack[sp + 1]) }
+                ScalarOp.F_CLAMP -> {
+                    sp -= 2
+                    val v = stack[sp - 1]
+                    val lo = stack[sp]
+                    val hi = stack[sp + 1]
+                    // 与解释器一致：逐界比较，lo > hi 也不抛异常。
+                    stack[sp - 1] = if (v < lo) lo else if (v > hi) hi else v
+                }
                 ScalarOp.F_STEP -> { sp--; stack[sp - 1] = if (stack[sp] >= stack[sp - 1]) 1.0 else 0.0 }
                 ScalarOp.F_SMOOTHSTEP -> {
                     sp -= 2
@@ -178,7 +185,14 @@ class ScalarProgram(
                     val t = ((x - e0) / (e1 - e0)).coerceIn(0.0, 1.0)
                     stack[sp - 1] = t * t * (3 - 2 * t)
                 }
-                ScalarOp.F_MOD -> { sp--; val a = stack[sp - 1]; val b = stack[sp]; stack[sp - 1] = a - b * floor(a / b) }
+                ScalarOp.F_MOD -> {
+                    sp--
+                    val a = stack[sp - 1]
+                    val b = stack[sp]
+                    // 与解释器一致：除零是脚本错误，不能静默产生 NaN。
+                    if (b == 0.0) throw ScriptException("mod by zero")
+                    stack[sp - 1] = a - b * floor(a / b)
+                }
                 ScalarOp.F_RANDOM -> stack[sp++] = kotlin.random.Random.nextDouble()
                 ScalarOp.F_RAND -> { val x = toInt32(stack[sp - 1]); stack[sp - 1] = RandState(x).next() }
                 ScalarOp.READ_ARR -> {

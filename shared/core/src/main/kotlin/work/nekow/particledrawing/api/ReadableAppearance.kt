@@ -5,6 +5,9 @@ import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.translation
 
+/** 世界格尺寸上限：防止 Double→Float 溢出成 Infinity。 */
+private const val MAX_WORLD_SIZE = 256.0
+
 // 命名外观门面：把“世界尺寸 / 全亮 / 对外照明 / 混合 / 朝向”一次写清，
 // 单颗、批量、Draw 与发射器都还是同一份 ParticleVisual，不新增渲染模型。
 
@@ -111,6 +114,9 @@ class ParticleVisualBuilder {
     fun worldSize(width: Length, height: Length = width): ParticleVisualBuilder {
         width.requirePositive(translation("field.width").resolve())
         height.requirePositive(translation("field.height").resolve())
+        requireLocalized(width.blocks <= MAX_WORLD_SIZE && height.blocks <= MAX_WORLD_SIZE) {
+            translation("error.parameter.length_limit", MAX_WORLD_SIZE.toInt())
+        }
         worldWidth = width
         worldHeight = height
         return this

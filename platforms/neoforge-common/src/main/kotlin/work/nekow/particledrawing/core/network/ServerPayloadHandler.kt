@@ -53,6 +53,7 @@ internal object ServerPayloadHandler {
             val player = context.player() as? ServerPlayer ?: return@enqueueWork
             // 只发回该玩家确实被下发过播放的特效字节，避免枚举/搬运注册表内容
             if (!ServerEffectManager.wasDelivered(player.uuid, payload.key)) return@enqueueWork
+            if (!ServerEffectManager.allowEffectRequest(player.uuid)) return@enqueueWork
             val data = EffectRegistry.dataFor(payload.key) ?: return@enqueueWork
             PacketDistributor.sendToPlayer(player, EffectDataPayload(payload.key, data))
         }

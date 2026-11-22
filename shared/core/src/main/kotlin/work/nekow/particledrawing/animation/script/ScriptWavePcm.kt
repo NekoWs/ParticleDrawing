@@ -105,10 +105,13 @@ object ScriptWavePcm {
             var peak = 0.0
             var i = a.toInt()
             val end = b.toInt()
+            // 脚本给的窗口可能极大；限制单次遍历的采样数，超长窗口按步进抽样。
+            val span = end - i
+            val stride = if (span > MAX_WINDOW_SAMPLES) (span + MAX_WINDOW_SAMPLES - 1) / MAX_WINDOW_SAMPLES else 1
             while (i < end) {
                 val v = abs(sample(i, ch))
                 if (v > peak) peak = v
-                i++
+                i += stride
             }
             return peak
         }
@@ -120,6 +123,9 @@ object ScriptWavePcm {
             return idx
         }
     }
+
+    /** 单次 peakAt 最多遍历的采样数（脚本可传任意窗口，避免 CPU DoS）。 */
+    private const val MAX_WINDOW_SAMPLES = 8192
 
     // WAV：扫 RIFF 头，样本按索引读原始字节
 

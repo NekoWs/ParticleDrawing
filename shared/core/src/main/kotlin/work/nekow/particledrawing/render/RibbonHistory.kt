@@ -50,6 +50,18 @@ internal class RibbonHistory(private val ticks: Int, start: Vec3) {
     data class Edge(val left: Vec3, val right: Vec3, val progress: Float)
     data class Ring(val vertices: List<Vec3>, val progress: Float)
 
+    /** 标量归一化：只在需要时构造一个 Vec3，省掉 subtract/normalize 的中间对象。 */
+    private inline fun normalized(x: Double, y: Double, z: Double): Vec3 {
+        val length = kotlin.math.sqrt(x * x + y * y + z * z)
+        return if (length < 1.0E-4) Vec3.ZERO else Vec3(x / length, y / length, z / length)
+    }
+
+    /** 标量叉积后归一化（拖尾每段的热路径）。 */
+    private inline fun crossNormalized(
+        ax: Double, ay: Double, az: Double,
+        bx: Double, by: Double, bz: Double,
+    ): Vec3 = normalized(ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx)
+
     private inline fun walk(head: Vec3, partialTick: Float, byDistance: Boolean, visit: (Vec3, Vec3, Float, Boolean) -> Unit) {
         var length = 0.0
         if (byDistance) {
@@ -65,7 +77,9 @@ internal class RibbonHistory(private val ticks: Int, start: Vec3) {
         for (i in 0 until size) {
             val point = if (i == 0) head else sample(i)
             val older = if (i + 1 < size) sample(i + 1) else point
-            val tangent = previous.subtract(older).normalize()
+            val tangent = normalized(
+                previous.x - older.x, previous.y - older.y, previous.z - older.z,
+            )
             val age = if (i == 0) 0f else i - 1f + partialTick
             val progress = if (length > 0.0) {
                 travelled += previous.distanceTo(point)
@@ -86,18 +100,30 @@ internal class RibbonHistory(private val ticks: Int, start: Vec3) {
         var side = Vec3.ZERO
         var edge: Edge? = null
         walk(head, partialTick, style.byDistance) { point, tangent, progress, moved ->
-            var nextSide = tangent.cross(camera.subtract(point)).normalize()
+            val up = if (kotlin.math.abs(tangent.y) < 0.9) UP else RIGHT
+            var nextSide = crossNormalized(
+                tangent.x, tangent.y, tangent.z,
+                camera.x - point.x, camera.y - point.y, camera.z - point.z,
+            )
             if (nextSide == Vec3.ZERO) {
                 nextSide = side
                 if (nextSide == Vec3.ZERO) {
-                    val up = if (kotlin.math.abs(tangent.y) < 0.9) UP else RIGHT
-                    nextSide = tangent.cross(up).normalize()
+                    nextSide = crossNormalized(tangent.x, tangent.y, tangent.z, up.x, up.y, up.z)
                 }
             }
-            if (side.dot(nextSide) < 0.0) nextSide = nextSide.scale(-1.0)
+            if (side.x * nextSide.x + side.y * nextSide.y + side.z * nextSide.z < 0.0) {
+                nextSide = Vec3(-nextSide.x, -nextSide.y, -nextSide.z)
+            }
             side = nextSide
-            val offset = side.scale(width.toDouble() * style.widthAt(progress))
-            val next = Edge(point.add(offset), point.subtract(offset), progress)
+            val radius = width.toDouble() * style.widthAt(progress)
+            val ox = side.x * radius
+            val oy = side.y * radius
+            val oz = side.z * radius
+            val next = Edge(
+                Vec3(point.x + ox, point.y + oy, point.z + oz),
+                Vec3(point.x - ox, point.y - oy, point.z - oz),
+                progress,
+            )
             edge?.let { if (moved) emit(it, next) }
             edge = next
         }
@@ -113,10 +139,20 @@ internal class RibbonHistory(private val ticks: Int, start: Vec3) {
         walk(head, partialTick, style.byDistance) { point, tangent, progress, moved ->
             val forward = if (tangent != Vec3.ZERO) tangent else lastTangent
             if (forward != Vec3.ZERO) {
-                val projected = normal.subtract(forward.scale(normal.dot(forward))).normalize()
+                val along = normal.x * forward.x + normal.y * forward.y + normal.z * forward.z
+                val projected = normalized(
+                    normal.x - forward.x * along,
+                    normal.y - forward.y * along,
+                    normal.z - forward.z * along,
+                )
                 normal = if (projected != Vec3.ZERO) projected
-                    else forward.cross(if (kotlin.math.abs(forward.y) < 0.9) UP else RIGHT).normalize()
-                val binormal = forward.cross(normal)
+                    else crossNormalized(
+                        forward.x, forward.y, forward.z,
+                        if (kotlin.math.abs(forward.y) < 0.9) UP.x else RIGHT.x,
+                        if (kotlin.math.abs(forward.y) < 0.9) UP.y else RIGHT.y,
+                        if (kotlin.math.abs(forward.y) < 0.9) UP.z else RIGHT.z,
+                    )
+                val binormal = crossNormalized(forward.x, forward.y, forward.z, normal.x, normal.y, normal.z)
                 val radius = width.toDouble() * style.widthAt(progress)
                 val vertices = profile.map { (x, y) ->
                     point.add(normal.scale(x * radius)).add(binormal.scale(y * radius))
