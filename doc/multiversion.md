@@ -79,13 +79,14 @@ OGG 解码通过 `ScriptWavePcm.OggReader` 服务接口接入，NeoForge 目标�
 - 接入其他 1.21.x 版本时，在 `platforms/` 新增目标或扩展已验证目标的兼容范围，并同步 CI 和发布矩阵。
   客户端渲染、Mixin 注入与服务端加载应分别验证。
 
-各目标共用动画格式与网络载荷。当前 `.pdrawc` 格式为 18，动画网络编解码版本为 9，NeoForge 载荷注册
-版本为 26。联机双方应采用匹配构建。平台功能差异见[已知限制](known-issues.md)。
+各目标共用动画格式与网络载荷。当前 `.pdrawc` 格式为 20，动画网络编解码版本为 11，NeoForge 载荷注册
+版本为 40。联机双方应采用匹配构建。平台功能差异见[已知限制](known-issues.md)。
 
 ## 发布
 
 每个目标生成 `particledrawing-<Minecraft版本>-neoforge-<version>.jar`，主 JAR 内嵌核心。
-26.3 通过 Jar-in-Jar 提供 Kotlin 标准库。1.21.1 将标准库并入模组类输出，使其归属同一 FML 模块。
+26.2、26.3 通过 Jar-in-Jar 提供 Kotlin 标准库；缺这个标记的 26.x 包会在正式环境启动时因找不到 Kotlin 类崩溃
+（构建脚本现在对 26.x 目标强制检查）。1.21.1 将标准库并入模组类输出，使其归属同一 FML 模块。
 源码 JAR 包含同一次构建的核心与平台源码。
 
 Maven 坐标为 `work.nekow:particledrawing-neoforge-<Minecraft版本>:<version>`，旧发行版使用
