@@ -26,6 +26,14 @@ public abstract class CameraMixin {
 
     @Inject(method = "alignWithEntity", at = @At("RETURN"))
     private void particleDrawing$overrideCamera(float partialTicks, CallbackInfo ci) {
+        // 自由镜头（/pdraw camera）：目标姿态由数据包写入，CameraController 每帧向目标插值，优先于动画摄像机预览。
+        CameraController.FreePose free = CameraController.freeCameraPose();
+        if (free != null) {
+            this.particleDrawing$setPosition(new Vec3(free.x, free.y, free.z));
+            this.particleDrawing$invokeSetRotation(free.yaw, free.pitch, 0.0F);
+            return;
+        }
+
         // 渲染帧姿态：CameraController 在上一/当前 game tick 姿态间按 partialTicks 插值，
         // 并已加上播放原点偏移（粒子以 origin + 局部坐标生成，摄像机同处一个世界）。
         ClientAnimationPlayer.CameraPose pose = CameraController.currentPose((double) partialTicks);

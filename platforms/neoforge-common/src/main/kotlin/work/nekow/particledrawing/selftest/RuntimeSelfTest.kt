@@ -212,6 +212,51 @@ object RuntimeSelfTest {
                 check("批量失败不改旧配置") {
                     atomicResult == 0 && CommandParticleRecipes.get(dimension, batchName).recipe.rate == 4
                 }
+                run("pdraw particle emitter create selftest_text")
+                run("pdraw particle emitter selftest_text sample text SELFTEST")
+                check("文字采样命令落地") {
+                    val draft = if ("selftest_text" in CommandParticleRecipes.names(dimension)) {
+                        CommandParticleRecipes.get(dimension, "selftest_text")
+                    } else {
+                        null
+                    }
+                    draft?.sampling == CommandParticleRecipes.Sampling.TEXT &&
+                        draft.text == "SELFTEST" && draft.samples(level).size == 1024
+                }
+                CommandParticleRecipes.remove(dimension, "selftest_text")
+                run(
+                    "pdraw particle batch selftest_text_batch kind=emitter anchor=fixed anchor.pos=0 60 0 " +
+                        "sample.text=SELFTEST|BATCH sample.text_count=512 sample.text_height=2 " +
+                        "appearance.style=soft_dot emitter.lifetime=20 mode=config",
+                )
+                check("批量文字采样落地") {
+                    val draft = if ("selftest_text_batch" in CommandParticleRecipes.names(dimension)) {
+                        CommandParticleRecipes.get(dimension, "selftest_text_batch")
+                    } else {
+                        null
+                    }
+                    draft?.sampling == CommandParticleRecipes.Sampling.TEXT &&
+                        draft.text == "SELFTEST\nBATCH" && draft.recipe.seeds.size == 512
+                }
+                CommandParticleRecipes.remove(dimension, "selftest_text_batch")
+                run(
+                    "pdraw particle batch selftest_inst kind=emitter anchor=fixed anchor.pos=0 60 0 " +
+                        "sample.count=8 appearance.style=soft_dot emitter.lifetime=10 mode=start_instanced",
+                )
+                check("批量实例模式启动") {
+                    CommandParticleRecipes.get(dimension, "selftest_inst")?.handle?.isActive() == true
+                }
+                CommandParticleRecipes.remove(dimension, "selftest_inst")
+                run(
+                    "pdraw particle batch selftest_gpu kind=emitter anchor=fixed anchor.pos=0 60 0 " +
+                        "sample.count=64 appearance.style=soft_dot appearance.additive=true appearance.glowing=true appearance.light=0 " +
+                        "emitter.lifetime=10 mode=burst_gpu",
+                )
+                check("批量 GPU 模式启动") {
+                    CommandParticleRecipes.get(dimension, "selftest_gpu")?.handle?.isActive() == true
+                }
+                CommandParticleRecipes.remove(dimension, "selftest_gpu")
+                check("自由镜头需要玩家") { run("pdraw camera pos 0 60 0 0 0 70 0") == 0 }
                 val groupName = "selftest_batch_group"
                 run(
                     "pdraw particle batch $groupName kind=sphere center=0 70 0 radius=1 count=8 " +

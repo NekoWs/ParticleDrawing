@@ -616,5 +616,11 @@
   "particledrawing.command.batch.program": "%1$s：已录制 %2$s 条动作",
   "particledrawing.command.batch.dryrun.program": "[dryrun] %1$s：计划 %2$s 条动作",
   "particledrawing.error.batch.image_options": "写了 sample.stride/plane/spacing/alpha，但没写 sample.image",
-  "particledrawing.error.batch.mesh_options": "写了 sample.mesh_count/seed，但没写 sample.mesh"
+  "particledrawing.error.batch.mesh_options": "写了 sample.mesh_count/seed，但没写 sample.mesh",
+  "particledrawing.error.recipe.text_source": "还没选文字，先执行 emitter <名称> sample text <文字>",
+  "particledrawing.command.free_camera.usage": "/pdraw camera pos <x> <y> <z> <偏航> <俯仰> [视角] [平滑]；/pdraw camera look <位置> <目标>；/pdraw camera stop",
+  "particledrawing.command.free_camera.set": "自由镜头已切换",
+  "particledrawing.command.free_camera.stop": "已恢复玩家视角",
+  "particledrawing.error.free_camera.player": "自由镜头只能由玩家执行",
+  "particledrawing.error.free_camera.direction": "目标点与镜头位置重合，无法确定朝向"
 }

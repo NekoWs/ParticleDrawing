@@ -111,4 +111,84 @@ object CameraController {
             p.fov,
         )
     }
+
+    // 自由镜头：/pdraw camera 把目标姿态写进来，渲染帧向目标插值，避免 20 tick 的命令更新变成台阶。
+
+    /** 渲染帧取用的自由镜头姿态。 */
+    data class FreePose(
+        @JvmField val x: Double,
+        @JvmField val y: Double,
+        @JvmField val z: Double,
+        @JvmField val yaw: Float,
+        @JvmField val pitch: Float,
+        @JvmField val fov: Float,
+    )
+
+    private class FreeTarget(
+        var x: Double,
+        var y: Double,
+        var z: Double,
+        var yaw: Float,
+        var pitch: Float,
+        var fov: Float,
+        var smooth: Double,
+    )
+
+    @Volatile
+    private var freeTarget: FreeTarget? = null
+    private var freeCurrent: FreeTarget? = null
+    private var freeLastNanos = 0L
+
+    /** 写入自由镜头目标姿态；[smooth] 是每秒逼近速率，0 表示直接跳到目标。 */
+    @JvmStatic
+    fun setFreeCamera(x: Double, y: Double, z: Double, yaw: Float, pitch: Float, fov: Float, smooth: Double) {
+        freeTarget = FreeTarget(x, y, z, yaw, pitch, fov, smooth.coerceIn(0.0, 60.0))
+    }
+
+    /** 退出自由镜头，恢复玩家视角。 */
+    @JvmStatic
+    fun clearFreeCamera() {
+        freeTarget = null
+        freeCurrent = null
+        freeLastNanos = 0L
+    }
+
+    /** 是否处于自由镜头模式。 */
+    @JvmStatic
+    fun isFreeCameraActive(): Boolean = freeTarget != null
+
+    /** 当前渲染帧的 FOV；未激活返回 null。 */
+    @JvmStatic
+    fun freeCameraFov(): Float? = freeCurrent?.fov ?: freeTarget?.fov
+
+    /** 推进并返回本渲染帧的自由镜头姿态。 */
+    @JvmStatic
+    fun freeCameraPose(): FreePose? {
+        val target = freeTarget ?: return null
+        val now = System.nanoTime()
+        val current = freeCurrent
+        if (current == null) {
+            freeCurrent = FreeTarget(target.x, target.y, target.z, target.yaw, target.pitch, target.fov, target.smooth)
+            freeLastNanos = now
+            return FreePose(target.x, target.y, target.z, target.yaw, target.pitch, target.fov)
+        }
+        val dt = (now - freeLastNanos).coerceIn(0L, 100_000_000L) / 1_000_000_000.0
+        freeLastNanos = now
+        val factor = if (target.smooth <= 0.0) 1.0 else 1.0 - kotlin.math.exp(-target.smooth * dt)
+        val k = factor.toFloat()
+        current.x += (target.x - current.x) * factor
+        current.y += (target.y - current.y) * factor
+        current.z += (target.z - current.z) * factor
+        current.yaw += wrapDegrees(target.yaw - current.yaw) * k
+        current.pitch += (target.pitch - current.pitch) * k
+        current.fov += (target.fov - current.fov) * k
+        return FreePose(current.x, current.y, current.z, current.yaw, current.pitch, current.fov)
+    }
+
+    private fun wrapDegrees(value: Float): Float {
+        var wrapped = value % 360.0f
+        if (wrapped > 180.0f) wrapped -= 360.0f
+        if (wrapped < -180.0f) wrapped += 360.0f
+        return wrapped
+    }
 }

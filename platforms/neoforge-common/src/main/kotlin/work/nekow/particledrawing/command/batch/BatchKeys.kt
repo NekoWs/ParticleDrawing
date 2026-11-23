@@ -59,7 +59,7 @@ internal object BatchKeys {
     private val TOP = listOf(
         key("kind", ALL, "顶层", "emitter|形状|program"),
         key("keep", setOf(BatchKind.EMITTER, BatchKind.PROGRAM), "顶层", "true|false", choices = listOf("true", "false")),
-        key("mode", EMITTER, "顶层", "start|burst|config", choices = listOf("start", "burst", "config")),
+        key("mode", EMITTER, "顶层", "start|burst|config|instanced|gpu|synced", choices = listOf("start", "burst", "config", "start_instanced", "burst_instanced", "burst_gpu", "start_synced", "burst_synced")),
         key("dryrun", ALL, "顶层", "true|false", choices = listOf("true", "false")),
     )
 
@@ -86,6 +86,9 @@ internal object BatchKeys {
         key("sample.plane", EMITTER, "采样", "xy|xz|yz", choices = listOf("xy", "xz", "yz")),
         key("sample.spacing", EMITTER, "采样", "小数"),
         key("sample.alpha", EMITTER, "采样", "0..1"),
+        key("sample.text", EMITTER, "采样", "文字，| 换行"),
+        key("sample.text_count", EMITTER, "采样", "1..8192"),
+        key("sample.text_height", EMITTER, "采样", "字形高度"),
     )
 
     private val FORMULA = listOf(

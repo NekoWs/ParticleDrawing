@@ -15,7 +15,7 @@ import work.nekow.particledrawing.i18n.translation
 
 /** 维度内命名的配置草稿；运行句柄与草稿分开，复制配置不会复制正在播放的粒子。 */
 internal object CommandParticleRecipes {
-    enum class Sampling { PARAMETER, GRID, IMAGE, MESH }
+    enum class Sampling { PARAMETER, GRID, IMAGE, MESH, TEXT }
 
     data class SampleAsset(val name: String, val resource: Boolean) {
         fun open(level: ServerLevel, directory: String, missing: String): InputStream {
@@ -43,6 +43,9 @@ internal object CommandParticleRecipes {
         var meshCount: Int = 256,
         var meshSeed: Int = 0,
         var imageOptions: ParticleImageSampler.Options = ParticleImageSampler.Options(),
+        var text: String? = null,
+        var textCount: Int = 1024,
+        var textHeight: Double = 2.0,
         var recipe: ParticleRecipe = ParticleRecipe(ParticleSampling.count(1)),
         var selector: String = "true",
         val changes: MutableMap<String, String> = linkedMapOf(),
@@ -61,6 +64,10 @@ internal object CommandParticleRecipes {
                 val source = requireNotNullLocalized(mesh) { translation("error.mesh.source") }
                 val provider = source.open(level, "particleMeshes", "error.mesh.missing").use(ParticleMeshSampler::objProvider)
                 ParticleMeshSampler.surface(provider, meshCount, meshSeed)
+            }
+            Sampling.TEXT -> {
+                val value = requireNotNullLocalized(text) { translation("error.recipe.text_source") }
+                ParticleTextSampler.sample(value.replace('|', '\n'), textCount, textHeight).map(::ParticleSeed)
             }
         }
 

@@ -421,6 +421,20 @@ internal object ParticleRecipeCommands {
         root.then(Commands.literal("step").then(Commands.argument("step", DoubleArgumentType.doubleArg(0.000001)).executes { ctx -> sampleConfig(ctx) { d ->
             val step = DoubleArgumentType.getDouble(ctx, "step"); ParticleSampling.grid(d.min, d.max, step); d.step = step
         } }))
+        root.then(textTree())
+        return root
+    }
+
+    private fun textTree(): LiteralArgumentBuilder<CommandSourceStack> {
+        val root = Commands.literal("text")
+        root.then(Commands.argument("text", ParticleCommandArguments.textType()).executes { ctx -> sampleConfig(ctx) { d ->
+            d.sampling = CommandParticleRecipes.Sampling.TEXT
+            d.text = ParticleCommandArguments.text(word(ctx, "text"))
+        } })
+        root.then(Commands.literal("count").then(Commands.argument("count", IntegerArgumentType.integer(1, ParticleRecipe.MAX_SEEDS))
+            .executes { ctx -> sampleConfig(ctx) { d -> d.textCount = IntegerArgumentType.getInteger(ctx, "count") } }))
+        root.then(Commands.literal("height").then(Commands.argument("height", DoubleArgumentType.doubleArg(0.001, 1024.0))
+            .executes { ctx -> sampleConfig(ctx) { d -> d.textHeight = DoubleArgumentType.getDouble(ctx, "height") } }))
         return root
     }
 

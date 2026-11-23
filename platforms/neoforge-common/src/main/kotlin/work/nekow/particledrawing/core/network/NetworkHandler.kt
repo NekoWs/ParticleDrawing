@@ -17,7 +17,7 @@ object NetworkHandler {
     @JvmStatic
     fun register(event: RegisterPayloadHandlersEvent) {
         // 载荷集合或字段变化时提升版本号，避免新旧端误配
-        val registrar: PayloadRegistrar = event.registrar("41")
+        val registrar: PayloadRegistrar = event.registrar("42")
 
         registrar.playToClient(ParticleFieldSnapshot.TYPE, ParticleFieldSnapshot.CODEC) { payload, context ->
             context.enqueueWork { work.nekow.particledrawing.core.client.ClientParticleFields.replace(payload.fields) }
@@ -49,6 +49,7 @@ object NetworkHandler {
         registrar.playToClient(ParticleLightLevelPayload.TYPE, ParticleLightLevelPayload.STREAM_CODEC, ClientPayloadHandler::handleLightLevel)
         registrar.playToClient(ParticleLightIntensityPayload.TYPE, ParticleLightIntensityPayload.STREAM_CODEC, ClientPayloadHandler::handleLightIntensity)
         registrar.playToClient(ParticleLightShapePayload.TYPE, ParticleLightShapePayload.STREAM_CODEC, ClientPayloadHandler::handleLightShape)
+        registrar.playToClient(CameraPosePayload.TYPE, CameraPosePayload.STREAM_CODEC, ClientPayloadHandler::handleCameraPose)
         registrar.playToClient(ParticleTexturePayload.TYPE, ParticleTexturePayload.STREAM_CODEC, ClientPayloadHandler::handleTexture)
         registrar.playToClient(PlayAnimationPayload.TYPE, PlayAnimationPayload.STREAM_CODEC, ClientPayloadHandler::handlePlayAnimation)
         registrar.playToClient(PlayAnimationDataPayload.TYPE, PlayAnimationDataPayload.STREAM_CODEC, ClientPayloadHandler::handlePlayAnimationData)

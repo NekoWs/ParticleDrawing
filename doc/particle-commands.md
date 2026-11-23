@@ -450,6 +450,9 @@ pdraw particle emitter gust start
 | --- | --- |
 | `sample count <数量>` | 生成 N 个同原点样本，`u` 从 0 到 1，包含两端；单点为 0 |
 | `sample range <begin> <end> <step>` | 按指定步长采样参数 u，包含不超出 end 的最后一个点 |
+| `sample text <文字>` | 按字形把文字采样成 XY 平面点阵；`|` 表示换行，默认 1024 点、高 2 格 |
+| `sample text count <数量>` | 文字采样点数，1..8192 |
+| `sample text height <高度>` | 文字目标高度（格） |
 | `sample grid` | 切换为空间网格采样 |
 | `sample bounds <x,y,z> <x,y,z>` | 网格最小和最大相对坐标 |
 | `sample step <间距>` | 网格三个方向的采样间距 |
@@ -954,8 +957,11 @@ pdraw particle batch ring kind=emitter anchor=fixed anchor.pos=~ ~4 ~ sample.cou
 - `birth.*` / `motion.*` / `let.*` / `where` / `kill` / `orbit`：公式，写法与 `emitter` 相同；
 - `emitter.lifetime`、`emitter.emit_from`、`emitter.emit_until`、`rate`、`interval`、`max_alive`、
   `spacing`、`simulation_range`、`follow`、碰撞与子发射都是同名映射；
+- `sample.text` / `sample.text_count` / `sample.text_height`：文字点阵采样，`|` 换行；
 - `appearance.*` 与 `emitter appearance` 的键完全一致；
 - `mode=start`（默认）/`burst`/`config`：写完配置后立即循环、只爆一轮、或只存配置；
+  `start_instanced`/`burst_instanced` 走实例绘制，`burst_gpu` 走 GPU 匀加速弹道，
+  `start_synced`/`burst_synced` 由服务端同步、给晚进玩家补发；
 - `keep=false`（默认）会重置同名配置并清掉正在播放的实例；`keep=true` 在原配置上改写的键。
 
 一次性粒子（自动建组、生成后即可用 `program` 编排）：
@@ -992,3 +998,22 @@ pdraw particle batch rune kind=program program.1=delay,20 program.2=fade_in,30,e
 
 完整示例见 [hell-eye-batch.mcfunction](../examples/commands/hell-eye-batch.mcfunction)：与逐条配置的
 [hell-eye.mcfunction](../examples/commands/hell-eye.mcfunction) 效果相同，12 个配置用 12 行 batch 写完。
+
+## 自由镜头 /pdraw camera
+
+给玩家切换一个由命令驱动的镜头，用于宣传片、巡演和自动演出；镜头姿态由客户端逐渲染帧向目标插值，
+20 tick 的命令更新不会出现台阶。命令必须由玩家执行（数据包里用 `execute as @p run`）。
+
+```mcfunction
+# 位置 + 朝向：MC 玩家视角口径，0 为 +Z，90 为 -X；pitch 正为俯视
+execute as @p run pdraw camera pos 0 152 22 0 5 70 12
+
+# 位置 + 注视点：自动反算偏航/俯仰角
+execute as @p run pdraw camera look 0 152 22 0 154 0 70 12
+
+# 恢复玩家视角
+execute as @p run pdraw camera stop
+```
+
+`pos`/`look` 的末尾两个可选参数是 FOV（1..179，默认 70）与平滑速率（0..60，默认 12，0 表示直接跳到目标）。
+FOV 与镜头位置一样由客户端覆盖；1.21.1 没有相机覆盖能力，命令会正常执行但镜头不变。

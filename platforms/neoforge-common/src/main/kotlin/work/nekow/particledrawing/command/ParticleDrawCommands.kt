@@ -1,6 +1,7 @@
 package work.nekow.particledrawing.command
 
 import work.nekow.particledrawing.platform.PlatformCompat
+import com.mojang.brigadier.arguments.FloatArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
 import com.mojang.brigadier.suggestion.Suggestions
@@ -9,6 +10,7 @@ import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
 import net.minecraft.commands.SharedSuggestionProvider
 import net.minecraft.commands.arguments.coordinates.Vec3Argument
+import net.neoforged.neoforge.network.PacketDistributor
 import work.nekow.particledrawing.lighting.DynamicLightManager
 import net.minecraft.world.phys.Vec3
 import net.neoforged.bus.api.SubscribeEvent
@@ -21,6 +23,7 @@ import work.nekow.particledrawing.animation.AnimationLoader
 import work.nekow.particledrawing.animation.ServerAnimationManager
 import work.nekow.particledrawing.animation.ServerEffectManager
 import work.nekow.particledrawing.core.client.CameraController
+import work.nekow.particledrawing.core.network.CameraPosePayload
 import work.nekow.particledrawing.core.client.ClientAnimationManager
 import work.nekow.particledrawing.core.client.ClientParticleEngine
 import work.nekow.particledrawing.util.ParticleUtils
@@ -76,6 +79,38 @@ object ParticleDrawCommands {
                 .then(Commands.literal("texture")
                     .then(Commands.literal("reload").executes(::reloadTextures)))
                 .then(Commands.literal("light").executes(::lightProbe))
+                .then(Commands.literal("camera")
+                    .executes(::freeCameraUsage)
+                    .then(Commands.literal("stop").executes(::stopFreeCamera))
+                    .then(Commands.literal("pos")
+                        .then(Commands.argument("pos", Vec3Argument.vec3())
+                            .then(Commands.argument("yaw", FloatArgumentType.floatArg(-180.0f, 180.0f))
+                                .then(Commands.argument("pitch", FloatArgumentType.floatArg(-90.0f, 90.0f))
+                                    .executes { ctx -> applyFreeCameraPos(ctx, 70.0f, 12.0f) }
+                                    .then(Commands.argument("fov", FloatArgumentType.floatArg(1.0f, 179.0f))
+                                        .executes { ctx -> applyFreeCameraPos(ctx, FloatArgumentType.getFloat(ctx, "fov"), 12.0f) }
+                                        .then(Commands.argument("smooth", FloatArgumentType.floatArg(0.0f, 60.0f))
+                                            .executes { ctx ->
+                                                applyFreeCameraPos(
+                                                    ctx,
+                                                    FloatArgumentType.getFloat(ctx, "fov"),
+                                                    FloatArgumentType.getFloat(ctx, "smooth"),
+                                                )
+                                            }))))))
+                    .then(Commands.literal("look")
+                        .then(Commands.argument("pos", Vec3Argument.vec3())
+                            .then(Commands.argument("target", Vec3Argument.vec3())
+                                .executes { ctx -> applyFreeCameraLook(ctx, 70.0f, 12.0f) }
+                                .then(Commands.argument("fov", FloatArgumentType.floatArg(1.0f, 179.0f))
+                                    .executes { ctx -> applyFreeCameraLook(ctx, FloatArgumentType.getFloat(ctx, "fov"), 12.0f) }
+                                    .then(Commands.argument("smooth", FloatArgumentType.floatArg(0.0f, 60.0f))
+                                        .executes { ctx ->
+                                            applyFreeCameraLook(
+                                                ctx,
+                                                FloatArgumentType.getFloat(ctx, "fov"),
+                                                FloatArgumentType.getFloat(ctx, "smooth"),
+                                            )
+                                        }))))))
         )
     }
 
@@ -333,5 +368,63 @@ object ParticleDrawCommands {
             false
         )
         return 1
+    }
+
+    /** /pdraw camera：显示自由镜头用法。 */
+    private fun freeCameraUsage(ctx: CommandContext<CommandSourceStack>): Int {
+        ctx.source.sendSuccess({ translation("command.free_camera.usage").component() }, false)
+        return 1
+    }
+
+    /** /pdraw camera stop：恢复玩家视角。 */
+    private fun stopFreeCamera(ctx: CommandContext<CommandSourceStack>): Int {
+        val player = ctx.source.player ?: return freeCameraFailure(ctx)
+        PacketDistributor.sendToPlayer(player, CameraPosePayload.stop())
+        ctx.source.sendSuccess({ translation("command.free_camera.stop").component() }, false)
+        return 1
+    }
+
+    /** /pdraw camera pos：绝对位置 + 偏航/俯仰角（MC 玩家视角口径）。 */
+    private fun applyFreeCameraPos(ctx: CommandContext<CommandSourceStack>, fov: Float, smooth: Float): Int {
+        val player = ctx.source.player ?: return freeCameraFailure(ctx)
+        val pos = Vec3Argument.getVec3(ctx, "pos")
+        val yaw = FloatArgumentType.getFloat(ctx, "yaw")
+        val pitch = FloatArgumentType.getFloat(ctx, "pitch")
+        sendFreeCamera(ctx, player, pos.x, pos.y, pos.z, yaw, pitch, fov, smooth)
+        return 1
+    }
+
+    /** /pdraw camera look：位置 + 目标点，反算偏航/俯仰角。 */
+    private fun applyFreeCameraLook(ctx: CommandContext<CommandSourceStack>, fov: Float, smooth: Float): Int {
+        val player = ctx.source.player ?: return freeCameraFailure(ctx)
+        val pos = Vec3Argument.getVec3(ctx, "pos")
+        val target = Vec3Argument.getVec3(ctx, "target")
+        val dx = target.x - pos.x
+        val dy = target.y - pos.y
+        val dz = target.z - pos.z
+        val length = kotlin.math.sqrt(dx * dx + dy * dy + dz * dz)
+        if (length < 1.0E-4) {
+            ctx.source.sendFailure(translation("error.free_camera.direction").component())
+            return 0
+        }
+        val yaw = Math.toDegrees(kotlin.math.atan2(-dx, dz)).toFloat()
+        val pitch = Math.toDegrees(-kotlin.math.asin((dy / length).coerceIn(-1.0, 1.0))).toFloat()
+        sendFreeCamera(ctx, player, pos.x, pos.y, pos.z, yaw, pitch, fov, smooth)
+        return 1
+    }
+
+    private fun sendFreeCamera(
+        ctx: CommandContext<CommandSourceStack>,
+        player: net.minecraft.server.level.ServerPlayer,
+        x: Double, y: Double, z: Double,
+        yaw: Float, pitch: Float, fov: Float, smooth: Float,
+    ) {
+        PacketDistributor.sendToPlayer(player, CameraPosePayload(true, x, y, z, yaw, pitch, fov, smooth))
+        ctx.source.sendSuccess({ translation("command.free_camera.set").component() }, false)
+    }
+
+    private fun freeCameraFailure(ctx: CommandContext<CommandSourceStack>): Int {
+        ctx.source.sendFailure(translation("error.free_camera.player").component())
+        return 0
     }
 }

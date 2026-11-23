@@ -372,4 +372,20 @@ internal object ClientPayloadHandler {
             ClientAnimationSyncManager.onDone(context)
         }
     }
+
+    // 自由镜头：目标姿态交给 CameraController，渲染帧逐帧插值。
+
+    fun handleCameraPose(payload: CameraPosePayload, context: IPayloadContext) {
+        context.enqueueWork {
+            val controller = work.nekow.particledrawing.core.client.CameraController
+            if (!payload.active) {
+                controller.clearFreeCamera()
+            } else {
+                controller.setFreeCamera(
+                    payload.x, payload.y, payload.z,
+                    payload.yaw, payload.pitch, payload.fov, payload.smooth.toDouble(),
+                )
+            }
+        }
+    }
 }

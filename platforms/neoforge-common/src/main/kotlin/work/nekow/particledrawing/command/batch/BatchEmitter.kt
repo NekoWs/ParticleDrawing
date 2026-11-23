@@ -11,8 +11,10 @@ import work.nekow.particledrawing.animation.recipe.RecipeExpressions
 import work.nekow.particledrawing.api.ParticleImageSampler
 import work.nekow.particledrawing.api.ParticleMeshSampler
 import work.nekow.particledrawing.api.ParticleRecipe
+import work.nekow.particledrawing.api.ParticleRecipeMode
 import work.nekow.particledrawing.api.ParticleSampling
 import work.nekow.particledrawing.api.ParticleSeed
+import work.nekow.particledrawing.api.ParticleTextSampler
 import work.nekow.particledrawing.api.RecipeAnchor
 import work.nekow.particledrawing.api.SubEmit
 import work.nekow.particledrawing.command.CommandParticleRecipes
@@ -58,6 +60,9 @@ internal object BatchEmitter {
         val appearance: MutableMap<String, String> = linkedMapOf(),
         var appearanceDirty: Boolean = false,
         var imageOptionsTouched: Boolean = false,
+        var text: String? = null,
+        var textCount: Int = 1024,
+        var textHeight: Double = 2.0,
         var meshOptionsTouched: Boolean = false,
     ) {
         fun sample(level: ServerLevel): List<ParticleSeed> = when (sampling) {
@@ -76,13 +81,17 @@ internal object BatchEmitter {
                     ParticleMeshSampler.surface(ParticleMeshSampler.objProvider(it), meshCount, meshSeed)
                 }
             }
+            CommandParticleRecipes.Sampling.TEXT -> ParticleTextSampler.sample(
+                requireNotNullLocalized(text) { translation("error.recipe.text_source") }.replace('|', '\n'),
+                textCount, textHeight,
+            ).map(::ParticleSeed)
         }
     }
 
     /** 解析；`existing` 只在 `keep=true` 时作为基底。 */
     fun parse(tokens: List<BatchToken>, existing: CommandParticleRecipes.Draft?, source: CommandSourceStack): Plan {
         val keep = tokens.firstOrNull { it.key == "keep" }?.let { BatchOptions.bool(it.value, it.key) } ?: false
-        val plan = Plan(keep = keep, mode = tokens.firstOrNull { it.key == "mode" }?.let { BatchOptions.value(it, listOf("start", "burst", "config")) } ?: "start")
+        val plan = Plan(keep = keep, mode = tokens.firstOrNull { it.key == "mode" }?.let { BatchOptions.value(it, listOf("start", "burst", "config", "start_instanced", "burst_instanced", "burst_gpu", "start_synced", "burst_synced")) } ?: "start")
         if (keep && existing != null) {
             plan.sampling = existing.sampling
             plan.count = existing.count
@@ -95,6 +104,9 @@ internal object BatchEmitter {
             plan.meshCount = existing.meshCount
             plan.meshSeed = existing.meshSeed
             plan.imageOptions = existing.imageOptions
+            plan.text = existing.text
+            plan.textCount = existing.textCount
+            plan.textHeight = existing.textHeight
             plan.recipe = existing.recipe
             plan.appearance.putAll(existing.appearance)
             plan.anchorKind = "keep"
@@ -176,6 +188,18 @@ internal object BatchEmitter {
                 "sample.mesh_seed" -> {
                     plan.meshOptionsTouched = true
                     plan.meshSeed = BatchOptions.int(token.value, token.key)
+                }
+                "sample.text" -> {
+                    plan.sampling = CommandParticleRecipes.Sampling.TEXT
+                    plan.text = BatchOptions.text(token.value).replace('|', '\n')
+                }
+                "sample.text_count" -> plan.textCount = BatchOptions.int(token.value, token.key).also {
+                    requireLocalized(it in 1..ParticleRecipe.MAX_SEEDS) {
+                        translation("error.batch.range", token.key, 1, ParticleRecipe.MAX_SEEDS)
+                    }
+                }
+                "sample.text_height" -> plan.textHeight = BatchOptions.double(token.value, token.key).also {
+                    requireLocalized(it > 0.0) { translation("error.batch.positive", token.key) }
                 }
                 "sample.stride" -> {
                     plan.imageOptionsTouched = true
@@ -307,6 +331,7 @@ internal object BatchEmitter {
         plan.range?.let { modes += "range" }
         if (plan.sampling == CommandParticleRecipes.Sampling.GRID) modes += "grid"
         plan.image?.let { modes += "image" }
+        if (plan.sampling == CommandParticleRecipes.Sampling.TEXT) modes += "text"
         plan.mesh?.let { modes += "mesh" }
         requireLocalized(modes.size <= 1) { translation("error.batch.sampling_conflict", modes.joinToString(", ")) }
         requireLocalized(!plan.imageOptionsTouched || plan.sampling == CommandParticleRecipes.Sampling.IMAGE) {
@@ -375,6 +400,9 @@ internal object BatchEmitter {
         draft.step = plan.step
         draft.image = plan.image
         draft.mesh = plan.mesh
+        draft.text = plan.text
+        draft.textCount = plan.textCount
+        draft.textHeight = plan.textHeight
         draft.meshCount = plan.meshCount
         draft.meshSeed = plan.meshSeed
         draft.imageOptions = plan.imageOptions
@@ -396,6 +424,12 @@ internal object BatchEmitter {
         when (plan.mode) {
             "start" -> draft.start(level, burst = false)
             "burst" -> draft.start(level, burst = true)
+            "start_instanced" -> draft.start(level, burst = false, mode = ParticleRecipeMode.INSTANCED)
+            "burst_instanced" -> draft.start(level, burst = true, mode = ParticleRecipeMode.INSTANCED)
+            "burst_gpu" -> draft.start(level, burst = true, mode = ParticleRecipeMode.GPU)
+            "start_synced" -> draft.start(level, burst = false, synced = true)
+            "burst_synced" -> draft.start(level, burst = true, synced = true)
+            "config" -> Unit
         }
         return draft
     }

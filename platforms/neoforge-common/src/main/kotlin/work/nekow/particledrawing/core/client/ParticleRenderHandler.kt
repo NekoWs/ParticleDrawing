@@ -183,6 +183,10 @@ object ParticleRenderHandler {
     fun onComputeFov(event: ViewportEvent.ComputeFov) {
         // 没有姿态覆盖能力的版本（1.21.1）连 FOV 也不该改，否则只有视场角变、位置不动。
         if (!PlatformCompat.supportsCameraOverride) return
+        CameraController.freeCameraFov()?.let { fov ->
+            PlatformCompat.applyFov(event, fov)
+            return
+        }
         // 与 CameraMixin 的姿态插值同规则：按渲染 partialTick 在相邻 tick 之间插值，FOV 不逐 tick 跳变
         // 26.3 返回 Float，旧版返回 Double。
         @Suppress("REDUNDANT_CALL_OF_CONVERSION_METHOD")

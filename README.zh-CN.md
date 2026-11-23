@@ -106,6 +106,7 @@ Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80)
 | `/pdraw particle add ...` | 向组内添加点、线、光束、螺旋、法阵、球体等图元。 |
 | `/pdraw particle emitter ...` | 分步配置采样、图片、公式、锚点、粒子寿命与发射窗口。 |
 | `/pdraw particle batch ...` | 一条命令写完整发射器、一组形状或组时间线，选项是带命名空间的 `键=值`。 |
+| `/pdraw camera ...` | 用命令控制玩家镜头，服务宣传片与巡演：`pos`、`look`、`stop`。 |
 | `/pdraw particle program ...` | 用多条命令编排锚点、实体跟随、移动、旋转、脉冲、变量和逐粒子公式。 |
 | `/pdraw animation list` | 列出 `animations/` 里可用的动画。 |
 | `/pdraw animation play <name> [pos]` | 在 `pos` 播放动画，缺省为玩家前方 3 格。 |

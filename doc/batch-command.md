@@ -53,7 +53,7 @@ pdraw particle batch rune kind=program program.1=delay,20 program.2=fade_in,30,e
 | --- | --- | --- |
 | `kind` | `emitter` / 形状名 / `program` | 必填 |
 | `keep` | `true` / `false`（默认） | 发射器：是否在旧配置上叠加；program：是否追加到旧时间线；一次性粒子无意义 |
-| `mode` | `start`（默认）/ `burst` / `config` | 仅 `kind=emitter` |
+| `mode` | `start`（默认）/ `burst` / `config` / `start_instanced` / `burst_instanced` / `burst_gpu` / `start_synced` / `burst_synced` | 仅 `kind=emitter` |
 | `dryrun` | `true` / `false`（默认） | 只校验并回显，不落地 |
 
 ### 外观键（全部要求 `appearance.` 前缀，无短别名）
@@ -85,6 +85,9 @@ pdraw particle batch rune kind=program program.1=delay,20 program.2=fade_in,30,e
 | `sample.plane` | `xy` / `xz` / `yz` | `image plane` |
 | `sample.image` | 文件名 | `image file` |
 | `sample.mesh` | 文件名 | `mesh file` |
+| `sample.text` | 文字，`|` 换行 | `text` |
+| `sample.text_count` | 1..8192 | `text count` |
+| `sample.text_height` | 字形高度 | `text height` |
 | `birth.x` / `birth.y` / `birth.z` / `birth.position` / `birth.velocity` | 公式（双引号） | `birth <属性> <公式>` |
 | `motion.x` … / `motion.acceleration` | 公式（双引号） | `motion <属性> <公式>` |
 | `orbit` | `vec3(...)` 公式 | `orbit vec3(...)` |
@@ -195,7 +198,7 @@ morph 配置键（`kind=program` 时与 `program.*` 一起写）：
 3. 校验：必填键、枚举、数值范围、公式编译、时间线序号，全部不落地；
 4. 失败：报键名、期望格式、公式出错位置，现有配置与时间线**完全不变**；
 5. 落地：按 `keep` reset/叠加，写入配置与时间线；
-6. 动作：`mode=start/burst/config`，`kind=program` 直接生效，一次性粒子直接生成；
+6. 动作：`mode=start/burst/config`（发射器另有实例/GPU/同步模式），`kind=program` 直接生效，一次性粒子直接生成；
 7. 反馈：成功报名字、kind、样本数、`max_alive`（发射器）/动作数（program）/粒子数（形状）；`dryrun=true` 只回显解析结果。
 
 ## 补全与帮助
