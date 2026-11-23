@@ -343,6 +343,29 @@ class ParticleGroup(
     // 时间线编排
 
     /**
+     * 清空尚未下发的时间线录制状态，让后续录制从游标 0 重新开始。
+     * 已经下发过（成员清单已带指令）时返回 false：客户端已持有旧时间线，不能原地清空。
+     */
+    internal fun resetRecordedProgram(): Boolean {
+        if (armed) return false
+        instructions.clear()
+        deliveredInstructions.clear()
+        cursorMs = 0
+        timelineEndMs = -1L
+        expressionEndMs = -1L
+        expressionStartProgramMs = null
+        expressionMode = false
+        varEaseEndTicks.clear()
+        readableParameterNames.clear()
+        readableParameters.clear()
+        clock.reset()
+        return true
+    }
+
+    /** 时间线是否已经随成员清单下发过。 */
+    internal fun hasDeliveredProgram(): Boolean = armed
+
+    /**
      * 把时间线游标向前推进 [ticks]，之后链式调用的动画方法都在新游标时刻触发。
      * 游标累积、不清零，连续两个动画可以共享同一时刻（如停转与淡出同刻）。
      *

@@ -50,6 +50,9 @@ function pdraw_test:rain-contact
 function pdraw_test:hell-eye
 function pdraw_test:hell-eye-end
 function pdraw_test:hell-eye-clear
+function pdraw_test:hell-eye-batch
+function pdraw_test:hell-eye-batch-end
+function pdraw_test:hell-eye-batch-clear
 ```
 
 运行 `mesh-surface` 前，把 [mesh-surface.obj](mesh-surface.obj) 放入服务端工作目录的 `particleMeshes/`，再执行 `function pdraw_test:mesh-surface`。
@@ -93,6 +96,31 @@ function pdraw_test:hell-eye-clear
 - ColorBlock 的亮度参数是光图覆盖（0 等于全黑），示例用 `appearance glowing true` 走全亮绘制；
   重叠处再靠 `appearance additive true` 自然叠亮，不开光影也能读出接近教程的层次。
 - ColorBlock 的 `clearparticle` 会清掉客户端所有粒子；示例收场只清自己这几组，不干扰别的特效。
+
+## 批量命令版：一行一个配置
+
+[hell-eye-batch.mcfunction](hell-eye-batch.mcfunction) 用 `/pdraw particle batch` 把同一份地狱之眼写成
+**12 行**：每个配置一行，采样、出生/运动公式、发射窗口、外观和启动方式都写在同一条命令里。
+逐条配置的版本是 [hell-eye.mcfunction](hell-eye.mcfunction)（约 170 行），两者效果相同，可以对照着看。
+
+```mcfunction
+# 一次写好外层持续状态并开始发射
+pdraw particle batch hell_eye_hold_outer kind=emitter anchor=emitter anchor.emitter=hell_eye_root sample.range=-10,10,0.02 birth.x="12*sin(u)^3" birth.y="4*cos(u)^3" let.drift=0.1*random() motion.vx=x*drift motion.vy=y*drift motion.vz=z*drift emitter.lifetime=8 rate=1024 max_alive=8192 emitter.emit_from=10 appearance.texture=particle:minecraft:end_rod appearance.color=#ff4dff appearance.size_world=0.12,0.12 appearance.glowing=true appearance.additive=true
+
+# 一次性粒子与组时间线也是同一个命令
+pdraw particle batch spark kind=sphere center=~ ~1 ~ radius=2 count=200 appearance.color=#ff4040 particle.lifetime=30
+pdraw particle batch rune kind=program program.1=delay,20 program.2=fade_in,30,ease_out program.3=move,0,3,0,40,easeInOut
+```
+
+- 键名按分区注册，`/pdraw particle batch help` 列出全部键与值语法；
+- 公式用双引号，位置值可以带空格（`anchor.pos=~ ~4 ~`），不用再包一层引号；
+- `dryrun=true` 只校验并回显结果；任一项不合法时旧配置不变，`keep=true` 表示在原配置上改；
+- Tab 补全按已写的 `kind` 过滤键名，枚举键补全取值，`program.<序号>=` 补全动作名。
+
+配套函数：[hell-eye-batch-end.mcfunction](hell-eye-batch-end.mcfunction) 提前收场，
+[hell-eye-batch-clear.mcfunction](hell-eye-batch-clear.mcfunction) 删除配置并取消排程。
+批量命令的完整键表和实现说明见 [doc/batch-command.md](../../doc/batch-command.md)，常用写法见
+[命令文档的批量命令一节](../../doc/particle-commands.md#批量命令-batch)。
 
 ## 几何动态示例
 

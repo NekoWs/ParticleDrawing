@@ -927,3 +927,68 @@ burst 或更新参数。每维度最多 256 个配置，全服最多 256 个播�
 
 代码入口为 `ParticleSampling`、`ParticleImageSampler`、`ParticleRecipe`、`RecipeAnchor` 和
 `ParticleSources.start`。[API 参考](api-reference.md#采样与运行时生成)
+
+## 批量命令 batch
+
+一条命令写完一份配置：发射器、一组一次性粒子、或一条组时间线。键名全部带命名空间，选项之间用空格分隔，
+同一个键名在三次 `kind` 之间不复用。完整键表用 `/pdraw particle batch help` 查看，设计说明见
+[批量命令设计](batch-command.md)。
+
+```mcfunction
+/pdraw particle batch <名字> kind=<emitter|形状|program> 键=值...
+/pdraw particle batch help [分区]
+/pdraw particle batch check kind=emitter ... dryrun=true   # 只校验不落地
+```
+
+`名字` 在 `kind=emitter` 时是发射器配置名，其它两种情况是组名；组不存在时自动创建。位置值里的 `~`
+按命令执行位置解析，`anchor.pos=~ ~4 ~` 这种带空格的值不用加引号；公式和带空格的多值用双引号包住。
+
+发射器（一行顶掉 create/anchor/sample/birth/motion/lifetime/外观/burst）：
+
+```mcfunction
+pdraw particle batch ring kind=emitter anchor=fixed anchor.pos=~ ~4 ~ sample.count=1 orbit="vec3(cos(t*0.0025)*4,0,sin(t*0.0025)*4)" appearance.style=soft_dot appearance.color=#b060ff motion.vy=-0.03 emitter.lifetime=60 rate=2 mode=start
+```
+
+- `sample.*`：`count`、`range=begin,end,step`、`grid`、`bounds=x1,y1,z1,x2,y2,z2`、`step`、`image`、`mesh`
+  等采样方式，与 `emitter` 的子命令一一对应；
+- `birth.*` / `motion.*` / `let.*` / `where` / `kill` / `orbit`：公式，写法与 `emitter` 相同；
+- `emitter.lifetime`、`emitter.emit_from`、`emitter.emit_until`、`rate`、`interval`、`max_alive`、
+  `spacing`、`simulation_range`、`follow`、碰撞与子发射都是同名映射；
+- `appearance.*` 与 `emitter appearance` 的键完全一致；
+- `mode=start`（默认）/`burst`/`config`：写完配置后立即循环、只爆一轮、或只存配置；
+- `keep=false`（默认）会重置同名配置并清掉正在播放的实例；`keep=true` 在原配置上改写的键。
+
+一次性粒子（自动建组、生成后即可用 `program` 编排）：
+
+```mcfunction
+pdraw particle batch spark kind=sphere center=~ ~1 ~ radius=2 count=200 appearance.color=#ff4040 appearance.glowing=true appearance.size_world=0.08,0.08 particle.lifetime=30 particle.velocity=0,0.05,0
+```
+
+形状与 `particle add` 一致：`dot`、`field`、`line`、`beam`、`helix`、`circle`、`disc`、`triangle`、
+`hexagram`、`rect`、`sphere`、`cuboid`。形状参数直接写 `center`、`radius`、`count` 等，
+一次性粒子的寿命/初速/受力/错峰写 `particle.*`，形状选项写 `shape.axis`、`shape.hollow`、
+`shape.taper`、`shape.thickness`。
+
+组时间线（`program.<序号>=动作,参数...`，序号升序执行，可跳号）：
+
+```mcfunction
+pdraw particle batch rune kind=program program.1=delay,20 program.2=fade_in,30,ease_out program.3=move,0,3,0,40,easeInOut program.4=spin,0,1,0,2.5 program.5=pulse,1.15,12,-1
+```
+
+动作表与 `particle program` 子命令一一对应：`delay`、`move`、`move_offset`、`move_path`、`rotate`、
+`recolor`、`scale_by`/`scale_to`、`fade_in`/`fade_out`/`fade_out_keep`、`spin`、`pulse`、`pivot`、
+`follow`、`anchor.fixed`/`anchor.entity`、`variable.set`/`live`/`ease`、`expression`/`expression.local`、
+`stop_continuous`、`destroy_after`、`retire`、`entity`、`morph.start`、`morph.reset`。
+形变参数写 `morph.slots=数量,"位置公式"`、`morph.ticks`、`morph.path`、`morph.easing`、`morph.wobble` 等，
+再用 `program.<序号>=morph.start` 触发。
+
+所有键在写入前统一校验：未知键、重复键、枚举与数值范围、公式编译、形状必填项、组容量、锚点循环都会在
+落地前报错，失败时现有配置与时间线保持原样。`dryrun=true` 只校验并回显解析结果，适合先核对再执行。
+`keep=true` 对已下发过时间线的组做追加；`keep=false` 想清空时间线时要求该组尚未下发，否则请换一个组。
+
+`/pdraw particle batch help [分区]` 按 `顶层`、`锚点`、`采样`、`公式`、`发射器`、`碰撞`、`子发射`、
+`外观`、`形状`、`一次性粒子`、`组编排`、`形变` 分区列出键与值语法；Tab 补全按 kind 过滤键名，
+枚举键补全取值，`program.<序号>=` 补全动作名。
+
+完整示例见 [hell-eye-batch.mcfunction](../examples/commands/hell-eye-batch.mcfunction)：与逐条配置的
+[hell-eye.mcfunction](../examples/commands/hell-eye.mcfunction) 效果相同，12 个配置用 12 行 batch 写完。

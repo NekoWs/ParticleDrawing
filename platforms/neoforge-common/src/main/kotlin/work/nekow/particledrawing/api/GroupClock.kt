@@ -30,6 +30,15 @@ internal class GroupClock {
         anchorTick = nowTick
     }
 
+    /** 清空录制状态：重新从游标 0 起算，等同于从未下发过。 */
+    fun reset() {
+        anchorTick = -1L
+        lastEmitTick = Long.MIN_VALUE
+        lastEmitCursor = 0
+        sessionBaseCursor = 0
+        sessionShiftMs = 0
+    }
+
     /** 程序已运行毫秒（未下发时为 0）。 */
     fun elapsedMs(nowTick: Long): Long =
         if (anchorTick < 0) 0L else (nowTick - anchorTick).coerceAtLeast(0L) * 50

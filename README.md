@@ -115,6 +115,7 @@ More in the [getting started guide](doc/getting-started.md).
 | `/pdraw particle group ...`  | Create and manage named particle groups for data packs and command blocks. |
 | `/pdraw particle add ...`    | Add dots, beams, helices, magic circles, spheres and other primitives. |
 | `/pdraw particle emitter ...` | Configure sampling, images, formulas, anchors, particle lifetimes and the emission window in steps. |
+| `/pdraw particle batch ...` | Write a whole emitter, shape group or program timeline in one command with namespaced `key=value` options. |
 | `/pdraw particle program ...` | Choreograph anchors, entity following, movement, spin, pulses, variables and per-particle expressions. |
 | `/pdraw animation list`      | List the animations available in `animations/`.                 |
 | `/pdraw animation play <name> [pos]` | Play an animation at `pos`, or 3 blocks in front of the player. |
@@ -125,7 +126,7 @@ More in the [getting started guide](doc/getting-started.md).
 | `/pdraw texture reload`      | Reload particle textures from disk (client side only).          |
 
 Use `group → add → program` for choreographed groups. For sampled curves, images and continuous emitters,
-configure each step with `emitter`, then use `burst` or `start`. Both work in data pack functions and command blocks. See the [command guide](doc/particle-commands.md#命令绘制与数据包) for the full
+configure each step with `emitter`, then use `burst` or `start`; `batch` writes the same declaration in one line. Both work in data pack functions and command blocks. See the [command guide](doc/particle-commands.md#命令绘制与数据包) for the full
 syntax and a ready-to-use magic circle example.
 For a short command block example, see the [sin curve with the end rod texture](doc/particle-commands.md#命令方块简单用法sin-曲线).
 Use `texture=particle:minecraft:end_rod` to reuse a vanilla texture while retaining PD animation controls.

@@ -105,6 +105,7 @@ Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80)
 | `/pdraw particle group ...` | 创建、列出或删除数据包与命令方块共用的命名粒子组。 |
 | `/pdraw particle add ...` | 向组内添加点、线、光束、螺旋、法阵、球体等图元。 |
 | `/pdraw particle emitter ...` | 分步配置采样、图片、公式、锚点、粒子寿命与发射窗口。 |
+| `/pdraw particle batch ...` | 一条命令写完整发射器、一组形状或组时间线，选项是带命名空间的 `键=值`。 |
 | `/pdraw particle program ...` | 用多条命令编排锚点、实体跟随、移动、旋转、脉冲、变量和逐粒子公式。 |
 | `/pdraw animation list` | 列出 `animations/` 里可用的动画。 |
 | `/pdraw animation play <name> [pos]` | 在 `pos` 播放动画，缺省为玩家前方 3 格。 |
@@ -114,7 +115,7 @@ Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80)
 | `/pdraw animation debug` | 打印求值耗时、粒子数量与播放时间线。 |
 | `/pdraw texture reload` | 从磁盘重新加载粒子贴图（仅客户端）。 |
 
-编排粒子组用 `group → add → program`。曲线采样、图片和持续发射用 `emitter` 分步配置，再用
+编排粒子组用 `group → add → program`。曲线采样、图片和持续发射用 `emitter` 分步配置，或用 `batch` 一行写完，再用
 `burst` 或 `start` 触发。两种方式都可以在数据包函数和命令方块里使用。完整语法、
 参数表和可直接放进数据包的法阵示例见[粒子命令](doc/particle-commands.md#命令绘制与数据包)。
 命令方块入门可从[末地烛贴图的 sin 曲线](doc/particle-commands.md#命令方块简单用法sin-曲线)开始；

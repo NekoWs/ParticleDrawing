@@ -63,6 +63,7 @@ internal object ParticleDrawParticleCommands {
         .then(groupTree())
         .then(addTree())
         .then(programTree())
+        .then(work.nekow.particledrawing.command.batch.BatchCommandTree.tree())
         .then(ParticleRecipeCommands.tree())
         .then(ParticleFieldCommands.tree())
 

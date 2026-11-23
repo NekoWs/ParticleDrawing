@@ -1,6 +1,6 @@
-# 批量命令 `pdraw particle batch`（设计定稿·待实现）
+# 批量命令 `pdraw particle batch`（已实现）
 
-> 状态：设计已确认，尚未实现。最后更新：2026-11-21。
+> 状态：2026-11-23 已实现，三种 kind 与键表全部落地；实现说明与设计差异见文末。最后更新：2026-11-23。
 
 ## 目标
 
@@ -228,3 +228,36 @@ morph 配置键（`kind=program` 时与 `program.*` 一起写）：
 8. morph 用 `morph.*` 配置 + `program.<n>=morph.start` 触发；
 9. 键名补全 + `help` + `dryrun=true`；
 10. 三平台共用同一份解析与落地代码。
+
+## 实现说明（2026-11-23）
+
+落地在 `platforms/neoforge-common/.../command/batch/`，三端共用，没有为批量命令新增网络载荷或协议字段：
+
+| 文件 | 职责 |
+| --- | --- |
+| `BatchKeys.kt` | 键注册表、分词、值解析（引号、逗号、位置分量、颜色、缓动） |
+| `BatchEmitter.kt` | `kind=emitter` 的解析、校验与落地，复用 `CommandParticleRecipes.Draft` |
+| `BatchShapes.kt` | `kind=形状`，自动建组后调用与 `particle add` 相同的 `Draw` 入口 |
+| `BatchProgram.kt` | `kind=program` 的动作与形变，直接调用 `ParticleGroup` 时间线 API |
+| `BatchCommandTree.kt` | 命令树、`help`、Tab 补全与成功/失败回显 |
+
+与设计稿相比的补充与约定：
+
+- 分词按「空白 + 形如 Key=」识别新键，因此位置值可以直接写 `anchor.pos=~ ~4 ~`（设计示例里的写法），
+  不必再包引号；公式或含空格的多值仍建议用双引号，引号内的逗号不参与切分。
+- 键表在设计与现有子命令之间取并集，额外支持：`anchor.offset` / `anchor.local`、`sample.spacing` /
+  `sample.alpha` / `sample.mesh_count` / `sample.mesh_seed`、`variable.*` / `state.*`、`kill` / `select`、
+  `collision.bounce`、`shape.axis` / `shape.hollow` / `shape.taper` / `shape.thickness`；
+  `unset` 支持 `段`（整段清空）与 `段.字段`。
+- 校验先于落地：公式编译（`ParticleRecipe.validate` / `GroupExpressionOutputs`）、形变公式试算、实体选择器
+  解析、锚点链接与循环、配置/组数量与成员上限都在写任何状态之前完成。验证失败时回复只带原因，旧配置不变。
+- `kind=program` 的组不存在时自动创建一个空组，时间线可以先于成员写入；`keep=false` 想清空已有时间线时，
+  只在该组尚未下发过程序时生效（客户端已持有旧时间线，无法原地清空），此时改用 `keep=true` 追加或换组。
+- `program.<序号>` 允许跳号、按序号升序执行；`morph.*` 必须与 `program.<序号>=morph.start` 同时出现，
+  否则报错，避免写了形变参数却没触发。
+- Tab 补全按已写的 `kind` 过滤键名，枚举键补 `key=值`，`program.<序号>=` 补动作名；`help` 与补全、校验
+  共用同一张注册表。
+- 测试：`BatchOptionsTest` 覆盖分词、引号与逗号、位置分量、动态键大小写与键表范围；`RuntimeSelfTest`
+  用真实命令分发器跑三种 kind、dryrun、失败原子性、`keep` 追加、形变与两个版本的地狱之眼示例。
+- 示例：`examples/commands/hell-eye-batch*.mcfunction` 用 12 行 batch 写出与逐条配置版相同的效果，
+  可直接对照两种写法。

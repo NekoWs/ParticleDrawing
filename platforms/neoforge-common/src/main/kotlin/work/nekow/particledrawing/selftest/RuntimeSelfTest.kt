@@ -6,6 +6,7 @@ import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.event.server.ServerStartedEvent
 import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.api.ParticleManager
+import work.nekow.particledrawing.command.CommandParticleGroups
 import work.nekow.particledrawing.command.CommandParticleRecipes
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.server.ServerParticleSources
@@ -180,6 +181,92 @@ object RuntimeSelfTest {
                     CommandParticleRecipes.names(dimension)
                         .filter { it.startsWith("hell_eye_") }
                         .all { CommandParticleRecipes.get(dimension, it).handle == null }
+                }
+                CommandParticleRecipes.discard(dimension)
+                ServerParticleSources.discard(dimension)
+
+                // 批量命令：dryrun 不落地、原子校验、三种 kind 的落地与补全表。
+                fun run(command: String): Int = try {
+                    server.commands.dispatcher.execute(command, source)
+                } catch (error: Exception) {
+                    failures += "批量命令抛异常：$command（${error.javaClass.simpleName}: ${error.message}）"
+                    -1
+                }
+                val batchName = "selftest_batch"
+                run(
+                    "pdraw particle batch $batchName kind=emitter dryrun=true anchor=fixed anchor.pos=0 60 0 " +
+                        "sample.count=3 appearance.style=soft_dot appearance.color=#ff0000 rate=4 emitter.lifetime=20 mode=config",
+                )
+                check("批量 dryrun 不落地") { batchName !in CommandParticleRecipes.names(dimension) }
+                run(
+                    "pdraw particle batch $batchName kind=emitter anchor=fixed anchor.pos=0 60 0 " +
+                        "sample.count=3 appearance.style=soft_dot appearance.color=#ff0000 rate=4 emitter.lifetime=20 mode=config",
+                )
+                check("批量发射器落地") {
+                    val draft = CommandParticleRecipes.get(dimension, batchName)
+                    draft.recipe.seeds.size == 3 && draft.recipe.rate == 4 && draft.recipe.lifetime == 20 &&
+                        draft.recipe.visual.texture == work.nekow.particledrawing.api.ParticleStyle.SOFT_DOT.textureName &&
+                        draft.recipe.birth["r"] == "1.0"
+                }
+                val atomicResult = run("pdraw particle batch $batchName kind=emitter appearance.color=zz")
+                check("批量失败不改旧配置") {
+                    atomicResult == 0 && CommandParticleRecipes.get(dimension, batchName).recipe.rate == 4
+                }
+                val groupName = "selftest_batch_group"
+                run(
+                    "pdraw particle batch $groupName kind=sphere center=0 70 0 radius=1 count=8 " +
+                        "appearance.color=#00ff00 particle.lifetime=10",
+                )
+                check("批量一次性粒子落地") {
+                    val entry = CommandParticleGroups.get(dimension, groupName)
+                    entry != null && entry.group.size() == 8
+                }
+                val shapeAtomic = run(
+                    "pdraw particle batch $groupName kind=sphere center=0 70 0 radius=-1 count=8 appearance.color=#00ff00",
+                )
+                check("批量一次性粒子原子校验") {
+                    shapeAtomic == 0 && CommandParticleGroups.get(dimension, groupName)?.group?.size() == 8
+                }
+                run("pdraw particle batch $groupName kind=program program.1=delay,5 program.2=spin,0,1,0,3")
+                check("批量时间线落地") { CommandParticleGroups.get(dimension, groupName)?.programmed == true }
+                val replaceResult = run("pdraw particle batch $groupName kind=program program.1=delay,1")
+                check("已下发时间线不允许原地清空") { replaceResult == 0 }
+                val appendResult = run("pdraw particle batch $groupName kind=program keep=true program.1=delay,3")
+                check("keep=true 追加时间线") { appendResult == 1 }
+                val morphResult = run(
+                    "pdraw particle batch $groupName kind=program keep=true " +
+                        "program.1=morph.start morph.slots=4,\"vec3(i,0,0)\" morph.ticks=10",
+                )
+                check("批量形变落地") { morphResult == 1 }
+                check("批量命令 help 有键表") { run("pdraw particle batch help") > 0 }
+                CommandParticleGroups.clear(dimension)
+
+                // 批量版地狱之眼：同样的效果改用 batch 行表达，验证键映射与三种模式。
+                runLines("hell-eye-batch.mcfunction")
+                check("批量版地狱之眼落地") {
+                    val root = CommandParticleRecipes.get(dimension, "hell_eye_root")
+                    val intro = CommandParticleRecipes.get(dimension, "hell_eye_intro_outer")
+                    val hold = CommandParticleRecipes.get(dimension, "hell_eye_hold_outer")
+                    val inner = CommandParticleRecipes.get(dimension, "hell_eye_hold_inner")
+                    intro.anchor == root.anchor && hold.anchor == root.anchor &&
+                        intro.recipe.seeds.size == 1001 && intro.recipe.lifetime == 10 &&
+                        hold.recipe.emitFromTick == 10 && hold.recipe.maxAlive == 8192 && hold.recipe.lifetime == 8 &&
+                        inner.recipe.lifetime == -1 && inner.recipe.seeds.size == 1001
+                }
+                check("批量版地狱之眼在运行") {
+                    listOf("hell_eye_intro_outer", "hell_eye_intro_motes", "hell_eye_hold_outer", "hell_eye_hold_inner")
+                        .all { CommandParticleRecipes.get(dimension, it).handle?.isActive() == true }
+                }
+                runLines("hell-eye-batch-end.mcfunction")
+                check("批量版收场替换持续状态") {
+                    val outer = CommandParticleRecipes.get(dimension, "hell_eye_end_outer")
+                    val hold = CommandParticleRecipes.get(dimension, "hell_eye_hold_outer")
+                    outer.recipe.seeds.size == 1001 && outer.recipe.lifetime == 5 && outer.handle?.isActive() == true &&
+                        hold.handle == null
+                }
+                runLines("hell-eye-batch-clear.mcfunction")
+                check("批量版清空后没有配置") {
+                    CommandParticleRecipes.names(dimension).none { it.startsWith("hell_eye_") }
                 }
                 CommandParticleRecipes.discard(dimension)
                 ServerParticleSources.discard(dimension)
