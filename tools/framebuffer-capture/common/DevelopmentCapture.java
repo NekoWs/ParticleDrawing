@@ -18,14 +18,25 @@ import java.util.regex.Pattern;
 public final class DevelopmentCapture {
     private static final Pattern NAME = Pattern.compile("[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}");
     private static final String OUTPUT = System.getProperty("pd.capture.directory");
+    /** 两次轮询的最小间隔；录像时用 -PpdCaptureIntervalMs 调小。 */
+    private static final long POLL_NANOS = TimeUnit.MILLISECONDS.toNanos(pollMillis());
     private static long nextPoll = System.nanoTime();
+
+    private static long pollMillis() {
+        String raw = System.getProperty("pd.capture.intervalMs", "250").strip();
+        try {
+            return Math.max(0L, Long.parseLong(raw));
+        } catch (NumberFormatException ignored) {
+            return 250L;
+        }
+    }
 
     @SubscribeEvent
     public static void onFrame(RenderFrameEvent.Post event) {
         if (OUTPUT == null) return;
         long now = System.nanoTime();
         if (now - nextPoll < 0L) return;
-        nextPoll = now + TimeUnit.MILLISECONDS.toNanos(250);
+        nextPoll = now + POLL_NANOS;
 
         Minecraft client = Minecraft.getInstance();
         if (client.level == null) return;
