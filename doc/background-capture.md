@@ -50,3 +50,29 @@ for ($i = 0; $i -lt 500; $i++) {
 
 `latest.log` 里每个 `PD framebuffer capture saved to ...` 带毫秒时间戳，可以据此生成每帧的显示时长，
 用 ffmpeg 的 concat 分隔符按真实节奏回放，不会因为截帧抖动而变慢或变快。
+
+## 正式客户端后台录制
+
+开发客户端的光影验收做不了，需要装好模组的正式实例。把 `platforms/<目标>/build/libs/*.jar` 放进实例的
+`mods/`，再带上系统属性启动，鼠标抓取同样会被取消：
+
+```text
+-Dpd.backgroundCapture=true
+```
+
+需要连续画面时用后台录帧接口：启动时设置环境变量 `PD_CAPTURE_DIR`（可选 `PD_CAPTURE_FPS`，默认 30），
+游戏会直接读渲染完成的帧缓冲并写原始像素，不依赖窗口是否在前台。在目录里建 `capture.start` 开始录制，
+建 `capture.stop` 结束，输出：
+
+| 文件 | 内容 |
+| --- | --- |
+| `frames.raw` | 逐帧 RGBA 8 位像素，尺寸见 `frames.meta` |
+| `frames.index` | 每帧「序号 相对纳秒 宽 高」 |
+| `frames.meta` | 宽、高、帧数、首末时间戳与目标帧率 |
+
+合成视频时用 `frames.meta` 的帧数除以首末时间差得到实际帧率，再用 ffmpeg 按这个帧率读 `frames.raw`。
+窗口不在前台也能渲染，但不要最小化。
+
+为了完全不影响正在用电脑的人，可以把客户端放到一个不可见的 Windows 桌面上启动：
+`CreateDesktopW` 建桌面，`CreateProcessW` 的 `STARTUPINFO.lpDesktop` 指向它，窗口从创建起就不在交互桌面，
+不抢焦点也不出现在任务栏。录帧走 `PD_CAPTURE_DIR`，录完直接结束进程即可。
