@@ -70,7 +70,7 @@ data class RecipeAnchor(
 
 /**
  * 可组合的粒子生成声明。出生样本、出生公式和逐刻行为分开配置；运行期只同步声明的改动。
- * 时间单位：t 为发射器运行毫秒，age/life 为粒子刻数，dt 固定为 1 刻，速度单位为格/刻。
+ * 时间单位：t 为发射器运行毫秒，age/life 与发射窗口为刻数，dt 固定为 1 刻，速度单位为格/刻。
  */
 data class ParticleRecipe(
     val seeds: List<ParticleSeed>,
@@ -114,6 +114,16 @@ data class ParticleRecipe(
     /** 持续配方离镜头超过该距离时回收全部粒子，回到范围时重新发射。0 表示始终模拟。 */
     val simulationRange: Double = 0.0,
     val preserveSimulation: Boolean = false,
+    /**
+     * 从实例运行的第几刻开始出生粒子。之前的 tick 只推进时钟，不发射；
+     * 用来把一个效果拆成「先开场、后持续」两段，不需要外部调度。
+     */
+    val emitFromTick: Int = 0,
+    /**
+     * 出生粒子到第几刻为止（不含该刻）。-1 表示一直发射到 stop/remove。
+     * 窗口到期后只停止出生，已经存在的粒子仍按 [lifetime] 走完。
+     */
+    val emitUntilTick: Int = -1,
 ) {
     fun validate() {
         requireLocalized(seeds.isNotEmpty() && seeds.size <= MAX_SEEDS) { translation("error.recipe.seed_count", MAX_SEEDS) }
@@ -123,6 +133,10 @@ data class ParticleRecipe(
         }
         requireLocalized(lifetime == -1 || lifetime in 1..MAX_LIFETIME) { translation("error.recipe.lifetime", MAX_LIFETIME) }
         requireLocalized(maxAlive in 1..MAX_SEEDS) { translation("error.recipe.max_alive", MAX_SEEDS) }
+        requireLocalized(emitFromTick in 0..MAX_EMIT_TICK) { translation("error.recipe.emit_from", MAX_EMIT_TICK) }
+        requireLocalized(emitUntilTick == -1 || emitUntilTick in (emitFromTick + 1)..MAX_EMIT_TICK) {
+            translation("error.recipe.emit_window", MAX_EMIT_TICK)
+        }
         requireLocalized(visual.lightLevel in 0..15) { translation("error.expression.light") }
         requireLocalized(listOf(variables, state, lets, birth, motion).all { it.size <= MAX_FIELDS }) { translation("error.recipe.fields_limit", MAX_FIELDS) }
         requireLocalized(orbit.length <= MAX_EXPRESSION) { translation("error.recipe.anchor_length", MAX_EXPRESSION) }
@@ -163,6 +177,7 @@ data class ParticleRecipe(
         const val MAX_COLLISION_STEPS = 4
         const val MAX_SIMULATION_RANGE = 512.0
         const val MAX_LIFETIME = 72000
+        const val MAX_EMIT_TICK = 72000
         const val MAX_FIELDS = 32
         const val MAX_EXPRESSION = 2048
     }

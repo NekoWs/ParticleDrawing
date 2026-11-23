@@ -47,6 +47,9 @@ function pdraw_test:spotlight
 function pdraw_test:collision-bounce
 function pdraw_test:subemit-burst
 function pdraw_test:rain-contact
+function pdraw_test:hell-eye
+function pdraw_test:hell-eye-end
+function pdraw_test:hell-eye-clear
 ```
 
 运行 `mesh-surface` 前，把 [mesh-surface.obj](mesh-surface.obj) 放入服务端工作目录的 `particleMeshes/`，再执行 `function pdraw_test:mesh-surface`。
@@ -54,6 +57,42 @@ function pdraw_test:rain-contact
 在聊天栏执行时加前缀 `/`。锚点相对函数执行位置，命令方块执行时可以用
 `execute positioned ~ ~2 ~ run function ...` 调整整幅图形的位置。
 执行 `function pdraw_test:clear` 可以清除所有示例粒子并重置对应配置。
+
+## ColorBlock《地狱之眼》完整效果
+
+[hell-eye.mcfunction](hell-eye.mcfunction) 用一条命令复刻 ColorBlock 教程里的地狱之眼：
+开场从中心绽放、持续 10 秒左右、第 12 秒自动向内坍缩收场。共 12 个配置（其中一个只存锚点）、
+约 1.2 万颗常驻粒子。执行位置上方 4 格是图形中心，图形画在 XY 平面；执行后往后退十几格正面看最清楚。
+
+```mcfunction
+# 站在想看的位置后执行；12 秒后自动收场
+function pdraw_test:hell-eye
+
+# 提前收场、清除（重复执行都安全）
+function pdraw_test:hell-eye-end
+function pdraw_test:hell-eye-clear
+```
+
+| 阶段 | 时间轴 | 行为 |
+| --- | --- | --- |
+| 开场 | 第 0–10 刻 | 四组图元从中心 1% 大小指数长到原尺寸，10 刻寿命，到点交棒 |
+| 持续 | 第 10–240 刻 | 外层四角星和圆环每刻重画、粒子随机外扩消散；内侧星常驻慢摆；漩涡火星在体内旋转内收 |
+| 收场 | 第 240 刻 | 立刻抹掉持续状态，三层图元从原尺寸每刻缩小一半，5 刻后消失 |
+
+时间线直接写在配置里：持续状态用发射窗口 `emit_from 10` 等开场结束，收场时间用
+`schedule function pdraw_test:hell-eye-end 12s replace` 触发。改 `emit_from` 的刻数和
+`/schedule` 的时长就能改节奏。想让它跟着实体走，把 `hell_eye_root` 的 `anchor fixed` 换成
+`anchor entity @p 0 4 0 false`，其余配置通过 `anchor emitter` 共享锚点，再给每个配置补 `follow true`。
+
+与原教程的差异：
+
+- ColorBlock 用 12 个命令方块（脉冲、循环、连锁和红石延时）串时间线，这里用发射窗口和
+  `/schedule`，一个函数文件就能播完；没有命令方块方向、朝向和红石接线的要求。
+- ColorBlock 的 `normal` 模式是正态分布：示例里用 Box-Muller 公式
+  （`sqrt(-2*ln(1-random()))*cos(2*PI*random())`）在出生公式里生成高斯偏移，语义等价且能直接读懂。
+- ColorBlock 的亮度参数是光图覆盖（0 等于全黑），示例用 `appearance glowing true` 走全亮绘制；
+  重叠处再靠 `appearance additive true` 自然叠亮，不开光影也能读出接近教程的层次。
+- ColorBlock 的 `clearparticle` 会清掉客户端所有粒子；示例收场只清自己这几组，不干扰别的特效。
 
 ## 几何动态示例
 

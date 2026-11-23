@@ -169,6 +169,55 @@ class ParticleRecipeRuntimeTest {
         }
     }
 
+    @Test fun `发射窗口之前只走时钟不出生`() {
+        val r = RecipeRuntime(recipe(2, 2).copy(emitFromTick = 3, lifetime = 1), true)
+        repeat(3) { r.tick() }
+        assertTrue(r.particles.isEmpty())
+        assertEquals(0L, r.cursor)
+        r.tick()
+        assertEquals(2, r.particles.size)
+        assertEquals(2L, r.cursor)
+        assertFalse(r.emitting)
+    }
+
+    @Test fun `发射窗口结束后停止出生但保留已出生粒子`() {
+        val r = RecipeRuntime(recipe(1).copy(lifetime = 3, emitUntilTick = 2), false)
+        repeat(3) { r.tick() }
+        assertEquals(2, r.particles.size)
+        assertFalse(r.emitting)
+        assertFalse(r.finished)
+        repeat(3) { r.tick() }
+        assertTrue(r.finished)
+    }
+
+    @Test fun `发射窗口起始刻也让逐步绘制整体后移`() {
+        val r = RecipeRuntime(recipe(5, 1).copy(emitFromTick = 4, lifetime = -1), true)
+        repeat(4) { r.tick() }
+        assertEquals(0, r.particles.size)
+        repeat(5) { r.tick() }
+        assertEquals(5, r.particles.size)
+        assertFalse(r.emitting)
+    }
+
+    @Test fun `发射窗口参数非法时报错`() {
+        for (spec in listOf(
+            recipe().copy(emitFromTick = -1),
+            recipe().copy(emitUntilTick = 0),
+            recipe().copy(emitFromTick = 5, emitUntilTick = 5),
+            recipe().copy(emitUntilTick = ParticleRecipe.MAX_EMIT_TICK + 1),
+        )) {
+            assertFailsWith<IllegalArgumentException> { spec.validate() }
+        }
+    }
+
+    @Test fun `回收上界计入发射窗口起点`() {
+        val spec = recipe(2, 2).copy(emitFromTick = 5, lifetime = 2)
+        val runtime = RecipeRuntime(spec, true)
+        val budget = RecipeRuntime.retirementBudget(spec)
+        while (!runtime.finished && runtime.ticks <= budget) runtime.tick()
+        assertTrue(runtime.finished, "window budget $budget 太短")
+    }
+
     @Test fun `初始位置保存出生公式的结果而非原点占位样本`() {
         val runtime = RecipeRuntime(recipe(2, 2).copy(birth = mapOf("x" to "2+u", "z" to "1"),
             motion = mapOf("x" to "dx*cos(PI/2)-dz*sin(PI/2)", "z" to "dx*sin(PI/2)+dz*cos(PI/2)")), true)

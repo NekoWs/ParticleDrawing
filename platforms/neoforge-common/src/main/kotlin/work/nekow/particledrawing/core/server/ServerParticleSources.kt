@@ -30,12 +30,30 @@ internal object ServerParticleSources {
         var ticks = 0L
         var maxLifetime = recipe.lifetime
         var maxTail = RecipeRuntime.detachedTrailBudget(recipe)
-        var retireAt = if (burst && recipe.lifetime > 0) RecipeRuntime.retirementBudget(recipe) + maxTail else Long.MAX_VALUE
+        var retireAt = retirement(recipe, burst)
 
         fun updated(next: ParticleRecipe) {
             maxLifetime = if (maxLifetime == -1 || next.lifetime == -1) -1 else maxOf(maxLifetime, next.lifetime)
             maxTail = maxOf(maxTail, RecipeRuntime.detachedTrailBudget(next))
-            if (burst && maxLifetime > 0) retireAt = ticks + RecipeRuntime.retirementBudget(next.copy(lifetime = maxLifetime)) + maxTail
+            val widened = retirement(next.copy(lifetime = maxLifetime), burst)
+            retireAt = when {
+                widened == Long.MAX_VALUE -> Long.MAX_VALUE
+                // 运行中更新按「从现在起重新算一整段」放宽，只会比实际更晚回收
+                burst -> ticks + widened
+                else -> widened
+            }
+        }
+
+        /** 从启动算起，这个实例最晚在哪一刻不再需要保留；[Long.MAX_VALUE] = 不会自然结束。 */
+        private fun retirement(recipe: ParticleRecipe, burst: Boolean): Long {
+            if (recipe.lifetime <= 0) return Long.MAX_VALUE
+            val base = when {
+                burst -> RecipeRuntime.retirementBudget(recipe)
+                // 持续模式有发射窗口时，窗口结束后粒子再活一个寿命就能回收
+                recipe.emitUntilTick >= 0 -> recipe.emitUntilTick.toLong() + recipe.lifetime + 4L
+                else -> return Long.MAX_VALUE
+            }
+            return base + maxTail
         }
     }
     private val entries = linkedMapOf<UUID, Entry>()

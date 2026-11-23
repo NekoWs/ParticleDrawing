@@ -91,6 +91,7 @@ pdraw particle batch rune kind=program program.1=delay,20 program.2=fade_in,30,e
 | `let.<名字>` | 公式（双引号），可重复出现 | `let <名字> <公式>` |
 | `where` | 条件公式（双引号） | `where <公式>` |
 | `emitter.lifetime` | 整数刻 | 发射器出生粒子的寿命 |
+| `emitter.emit_from` / `emitter.emit_until` | 整数刻（`until` 可 `-1`） | 发射窗口：从第几刻开始、到第几刻停止出生 |
 | `rate` / `interval` / `max_alive` | 整数 | 同名子命令 |
 | `spacing` | 小数 | `spacing <距离>` |
 | `simulation_range` | 小数 | `simulation_range` |

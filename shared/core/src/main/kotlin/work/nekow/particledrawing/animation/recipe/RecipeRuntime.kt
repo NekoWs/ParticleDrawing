@@ -201,6 +201,12 @@ class RecipeRuntime(
             distance?.reset()
             return
         }
+        // 发射窗口按运行刻数计：窗口之前只走时钟，窗口之后只停出生，已有粒子继续走寿命。
+        if (ticks < recipe.emitFromTick) return
+        if (recipe.emitUntilTick >= 0 && ticks >= recipe.emitUntilTick) {
+            emitting = false
+            return
+        }
         val cadence = distance
         if (cadence == null) {
             if (ticks % recipe.interval == 0L) emitBatch(frame, minOf(recipe.rate, budget))
@@ -604,11 +610,12 @@ class RecipeRuntime(
             return anchor.distanceToSqr(observer) > threshold * threshold
         }
 
-        /** 假定全部样本通过，计入存活上限和发射间隔，给服务端一个安全回收上界。 */
+        /** 假定全部样本通过，计入存活上限、发射间隔和发射窗口起点，给服务端一个安全回收上界。 */
         fun retirementBudget(r: ParticleRecipe): Long {
             requireLocalized(r.lifetime > 0) { translation("error.recipe.unbounded_reclaim") }
             val batch = minOf(r.rate, r.maxAlive)
-            return ((r.seeds.size.toLong() + batch - 1) / batch) * r.interval +
+            return r.emitFromTick.toLong() +
+                ((r.seeds.size.toLong() + batch - 1) / batch) * r.interval +
                 ((r.seeds.size - 1L) / r.maxAlive + 1L) * r.lifetime + 4L
         }
 

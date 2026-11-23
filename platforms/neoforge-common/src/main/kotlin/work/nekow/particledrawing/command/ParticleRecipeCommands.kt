@@ -53,9 +53,11 @@ internal object ParticleRecipeCommands {
         val name = Commands.argument("name", StringArgumentType.string()).suggests { ctx, b -> SharedSuggestionProvider.suggest(CommandParticleRecipes.names(dim(ctx)).map(StringArgumentType::escapeIfRequired), b) }
         name.then(Commands.literal("inspect").executes { ctx -> safe(ctx) {
             val d = draft(ctx); val r = d.recipe
+            val window = if (r.emitUntilTick < 0) "${r.emitFromTick}.." else "${r.emitFromTick}..${r.emitUntilTick}"
             success(ctx, translation(
                 "command.recipe.inspect", word(ctx, "name"), d.sampling.name.lowercase(), r.rate, r.interval,
                 r.lifetime, r.maxAlive, r.follow, d.handle != null, r.birth, r.motion, r.variables, r.lets, r.where, r.kill,
+                window,
             ))
         } })
         val startVerbs = setOf("start", "burst", "start_synced", "burst_synced", "start_instanced", "burst_instanced", "burst_gpu")
@@ -101,6 +103,13 @@ internal object ParticleRecipeCommands {
                 val v = IntegerArgumentType.getInteger(ctx, "value")
                 d.update(when (key) { "rate" -> d.recipe.copy(rate = v); "interval" -> d.recipe.copy(interval = v); "lifetime" -> d.recipe.copy(lifetime = v); else -> d.recipe.copy(maxAlive = v) })
             } }))
+        // 发射窗口：按实例运行刻数计，之前不发射、之后只停出生，已有粒子继续走寿命。
+        for (key in listOf("emit_from", "emit_until")) name.then(Commands.literal(key)
+            .then(Commands.argument("tick", IntegerArgumentType.integer(if (key == "emit_from") 0 else -1, ParticleRecipe.MAX_EMIT_TICK))
+                .executes { ctx -> configure(ctx) { d ->
+                    val v = IntegerArgumentType.getInteger(ctx, "tick")
+                    d.update(if (key == "emit_from") d.recipe.copy(emitFromTick = v) else d.recipe.copy(emitUntilTick = v))
+                } }))
         name.then(Commands.literal("spacing").then(Commands.argument("distance", DoubleArgumentType.doubleArg(0.0, ParticleRecipe.MAX_SPACING))
             .executes { ctx -> configure(ctx) { d ->
                 d.update(d.recipe.copy(spacing = DoubleArgumentType.getDouble(ctx, "distance")))

@@ -6,10 +6,14 @@ import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.event.server.ServerStartedEvent
 import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.api.ParticleManager
+import work.nekow.particledrawing.command.CommandParticleRecipes
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.server.ServerParticleSources
 import work.nekow.particledrawing.light.LightFalloff
 import work.nekow.particledrawing.light.LightMath
 import work.nekow.particledrawing.light.LightShape
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.Locale
 
 /**
@@ -20,13 +24,26 @@ import java.util.Locale
  * 在 26.2/26.3 上只统计到框架自带的那一个测试，看起来通过、实际没验证任何东西。
  *
  * 这个自检用同一份 Kotlin 代码在三端跑，断言射灯的创建、形状、转向/聚焦缓动、形状热更与移除，
- * 以及光照数学和语言表的基本正确性。只有传 `-Dpd.selftest=1` 时才执行，
- * 通过时打印 `[PD-SELFTEST] PASS`，失败时打印带原因的 FAIL，CI 依据该标记判定。
+ * 以及光照数学和语言表的基本正确性；再把 examples/commands 里的地狱之眼函数交给命令分发器
+ * 真跑一遍，确认命令语法、公式、发射窗口和锚点链接能落地。
+ * 只有传 `-Dpd.selftest=1` 时才执行，通过时打印 `[PD-SELFTEST] PASS`，失败时打印带原因的
+ * FAIL，CI 依据该标记判定。
  */
 @EventBusSubscriber(modid = ParticleDrawing.MODID, value = [Dist.DEDICATED_SERVER])
 object RuntimeSelfTest {
 
     private const val MARK = "[PD-SELFTEST]"
+
+    /** 自检可能从仓库根目录或平台 run 目录启动，向上找到 examples/commands。 */
+    private fun examplesDirectory(): Path? {
+        var dir: Path? = Path.of("").toAbsolutePath()
+        repeat(8) {
+            val candidate = dir?.resolve("examples/commands")
+            if (candidate != null && Files.isDirectory(candidate)) return candidate
+            dir = dir?.parent
+        }
+        return null
+    }
 
     @SubscribeEvent
     @JvmStatic
@@ -103,6 +120,70 @@ object RuntimeSelfTest {
             val text = work.nekow.particledrawing.i18n.translation("command.animation.empty")
             check("中文文案可解析") { text.resolve(Locale.SIMPLIFIED_CHINESE).isNotBlank() }
             check("英文文案可解析") { text.resolve(Locale.ENGLISH).isNotBlank() }
+
+            // 命令层：把 examples/commands 里的地狱之眼函数真正交给命令分发器跑一遍，
+            // 校验语法、公式、发射窗口与锚点链接都能落地。数据包里才有 /schedule，跳过排程行。
+            val examples = examplesDirectory()
+            if (examples == null) {
+                failures += "找不到 examples/commands 目录，无法检查命令示例"
+            } else {
+                val server = event.server
+                val source = server.createCommandSourceStack()
+                fun runLines(file: String) {
+                    for (line in java.nio.file.Files.readAllLines(examples.resolve(file))) {
+                        val command = line.trim()
+                        if (command.isEmpty() || command.startsWith("#") || command.startsWith("schedule ")) continue
+                        val result = try {
+                            server.commands.dispatcher.execute(command, source)
+                        } catch (error: Exception) {
+                            failures += "$file 命令抛异常：$command（${error.javaClass.simpleName}: ${error.message}）"
+                            -1
+                        }
+                        if (result == 0) failures += "$file 命令未成功：$command"
+                    }
+                }
+
+                val dimension = work.nekow.particledrawing.util.ParticleUtils.dimensionUUID(level)
+                runLines("hell-eye.mcfunction")
+                check("开场与持续配置落地") {
+                    val root = CommandParticleRecipes.get(dimension, "hell_eye_root")
+                    val intro = CommandParticleRecipes.get(dimension, "hell_eye_intro_outer")
+                    val hold = CommandParticleRecipes.get(dimension, "hell_eye_hold_outer")
+                    val inner = CommandParticleRecipes.get(dimension, "hell_eye_hold_inner")
+                    root.anchor.position.x == source.position.x && root.anchor.position.y == source.position.y + 4.0 &&
+                        intro.anchor == root.anchor && hold.anchor == root.anchor &&
+                        intro.recipe.seeds.size == 1001 && intro.recipe.lifetime == 10 &&
+                        hold.recipe.emitFromTick == 10 && hold.recipe.seeds.size == 1001 && hold.recipe.maxAlive == 8192 &&
+                        inner.recipe.emitFromTick == 10 && inner.recipe.lifetime == -1 && inner.recipe.seeds.size == 1001
+                }
+                check("开场与持续都在运行") {
+                    listOf("hell_eye_intro_outer", "hell_eye_intro_motes", "hell_eye_hold_outer", "hell_eye_hold_inner")
+                        .all { CommandParticleRecipes.get(dimension, it).handle?.isActive() == true }
+                }
+                check("发射窗口命令可改可回到默认") {
+                    val draft = CommandParticleRecipes.get(dimension, "hell_eye_hold_ring")
+                    val before = draft.recipe.emitFromTick
+                    server.commands.dispatcher.execute("pdraw particle emitter hell_eye_hold_ring emit_from 20", source)
+                    val changed = draft.recipe.emitFromTick
+                    server.commands.dispatcher.execute("pdraw particle emitter hell_eye_hold_ring emit_from $before", source)
+                    changed == 20 && draft.recipe.emitFromTick == before
+                }
+                runLines("hell-eye-end.mcfunction")
+                check("收场配置落地并替换运行中的持续状态") {
+                    val outer = CommandParticleRecipes.get(dimension, "hell_eye_end_outer")
+                    val hold = CommandParticleRecipes.get(dimension, "hell_eye_hold_outer")
+                    outer.recipe.seeds.size == 1001 && outer.recipe.lifetime == 5 && outer.recipe.emitFromTick == 0 &&
+                        outer.handle?.isActive() == true && hold.handle == null
+                }
+                runLines("hell-eye-clear.mcfunction")
+                check("清空后没有运行中的实例") {
+                    CommandParticleRecipes.names(dimension)
+                        .filter { it.startsWith("hell_eye_") }
+                        .all { CommandParticleRecipes.get(dimension, it).handle == null }
+                }
+                CommandParticleRecipes.discard(dimension)
+                ServerParticleSources.discard(dimension)
+            }
         } catch (error: Exception) {
             failures += "自检启动失败: ${error.javaClass.simpleName}: ${error.message}"
         }

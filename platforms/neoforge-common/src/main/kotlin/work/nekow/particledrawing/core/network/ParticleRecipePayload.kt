@@ -91,6 +91,7 @@ internal object RecipeCodec {
             seed.meshUv?.let { uv -> buf.writeDouble(uv.u); buf.writeDouble(uv.v) }
         }
         buf.writeVarInt(r.rate); buf.writeVarInt(r.interval); buf.writeVarInt(r.lifetime); buf.writeVarInt(r.maxAlive)
+        buf.writeVarInt(r.emitFromTick); buf.writeVarInt(r.emitUntilTick)
         buf.writeBoolean(r.follow)
         writeNumbers(buf, r.variables); writeNumbers(buf, r.state)
         writeStrings(buf, r.lets); writeStrings(buf, r.birth); writeStrings(buf, r.motion)
@@ -148,11 +149,19 @@ internal object RecipeCodec {
                 if (buf.readBoolean()) StreamCodecs.readVec(buf).toCore() else null,
                 if (buf.readBoolean()) ParticleMeshUv(buf.readDouble(), buf.readDouble()) else null)
         }
-        val recipe = ParticleRecipe(seeds, buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean(),
+        val rate = buf.readVarInt()
+        val interval = buf.readVarInt()
+        val lifetime = buf.readVarInt()
+        val maxAlive = buf.readVarInt()
+        val emitFromTick = buf.readVarInt()
+        val emitUntilTick = buf.readVarInt()
+        val follow = buf.readBoolean()
+        val recipe = ParticleRecipe(seeds, rate, interval, lifetime, maxAlive, follow,
             readNumbers(buf), readNumbers(buf), readStrings(buf), readStrings(buf), readStrings(buf),
             buf.readUtf(ParticleRecipe.MAX_EXPRESSION), buf.readUtf(ParticleRecipe.MAX_EXPRESSION),
             readVisual(buf), ParticleCurveCodec.read(buf),
-            buf.readUtf(ParticleRecipe.MAX_EXPRESSION))
+            buf.readUtf(ParticleRecipe.MAX_EXPRESSION),
+            emitFromTick = emitFromTick, emitUntilTick = emitUntilTick)
         val modeOrdinal = buf.readVarInt()
         requireLocalized(modeOrdinal in RecipeCollision.entries.indices) { translation("error.packet.recipe_size") }
         val bounce = buf.readDouble()

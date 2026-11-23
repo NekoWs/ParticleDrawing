@@ -36,6 +36,7 @@ internal object ParticleRecipeExecution {
         }
         requireLocalized(burst && anchor.entity == null && anchor.position.add(anchor.offset).lengthSqr().isFinite() &&
             !recipe.follow && recipe.orbit.isBlank() &&
+            recipe.emitFromTick == 0 && recipe.emitUntilTick < 0 &&
             recipe.collision == RecipeCollision.NONE && recipe.probes.isEmpty() && recipe.emissions.isEmpty() &&
             recipe.subEmit == null && recipe.state.isEmpty() && recipe.kill.trim() == "false" &&
             recipe.simulationRange == 0.0 && recipe.lifetime > 0 && recipe.maxAlive >= recipe.seeds.size &&

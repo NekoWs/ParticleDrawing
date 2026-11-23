@@ -367,6 +367,7 @@ pdraw particle emitter sigil image resource demo:images/ring.png
 | [mandala.mcfunction](../examples/commands/mandala.mcfunction) | 十二瓣玫瑰、双三角星和三重外环，共享锚点并分层反向旋转 |
 | [torus-knot.mcfunction](../examples/commands/torus-knot.mcfunction) | 三叶环面结，立体旋转、倾斜及沿曲线流动的渐变 |
 | [mobius.mcfunction](../examples/commands/mobius.mcfunction) | 双参数点阵组成莫比乌斯带，一圈后横向次序反转 |
+| [hell-eye.mcfunction](../examples/commands/hell-eye.mcfunction) | 三阶段完整效果：开场绽放、持续烘托、向内坍缩，用发射窗口串时间线 |
 
 这些示例展示对应的几何与运动，不复现网站截图的光影、镜头和全部参数。触手示例采用有界波形，
 不照搬案例里接近正切极点的超远坐标。球面是表面点阵，体积填充可另用空间网格与球内条件。
@@ -379,6 +380,7 @@ ColorBlock 的参数 t 在 PD 中对应采样参数 u；PD 的 t 专指发射器
 | `parameter` 一次画完 | `sample range` + `birth position`，`rate` 拉高，`burst` |
 | `tickparameter` 逐步画 | 同上，`rate` 设成每刻要画的颗数，`burst` 只遍历一轮 |
 | `conditional` 空间筛选 | `sample grid` + `where`，条件用 `sx/sy/sz` 看原始网格坐标 |
+| `normal` 随机散布 | `sample count <数量>`，出生公式里用 Box-Muller 生成正态偏移 |
 | 速度表达式里的矩阵 | `let` 存矩阵和向量，`motion velocity` 一次写三个分量 |
 
 四个可直接运行的例子在 `examples/commands/`：`cube`、`seven-star`、`sharp-star`、`five-star`。
@@ -409,6 +411,39 @@ pdraw particle emitter sphere anchor entity @p 0 3 0 false
 start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长期只保留同一批成员时，使用 lifetime=-1
 配合 burst，并按需删除淡出公式；用 remove 清除。
 
+#### 分阶段效果：发射窗口
+
+一个效果常常分「开场 → 持续 → 收场」。配置之间换相位要重新 `start`，但同一个实例内可以用
+发射窗口排时间线，不需要外部计时器：
+
+- `emit_from <刻>`：实例运行到第几刻才开始出生，之前只走时钟；
+- `emit_until <刻>`：到第几刻停止出生（不含该刻），已出生的粒子继续走完 `lifetime`。
+  写 `-1` 表示不设终点（默认）。
+
+窗口按实例运行刻数计算，和 `rate` / `interval` / `lifetime` 同一把尺；`burst` 也会等窗口打开
+才开始遍历样本。下面这个骨架让开场先播 10 刻，再让持续状态自动接上：
+
+```mcfunction
+# 开场：一次性 burst，10 刻寿命，到点和持续状态交棒
+pdraw particle emitter intro lifetime 10
+pdraw particle emitter intro burst
+
+# 持续：start 循环，等第 10 刻窗口打开后才出生（不需要 /schedule）
+pdraw particle emitter hold emit_from 10
+pdraw particle emitter hold lifetime 8
+pdraw particle emitter hold start
+
+# 只发一阵的窗口：第 20 刻开始，第 120 刻停止出生
+pdraw particle emitter gust emit_from 20
+pdraw particle emitter gust emit_until 120
+pdraw particle emitter gust start
+```
+
+想立刻收场用 `pdraw particle emitter <名称> remove`（清粒子、留配置）或
+`stop`（只停出生、让粒子自然走完）。完整可运行的例子是
+[hell-eye.mcfunction](../examples/commands/hell-eye.mcfunction)：开场绽放、10 秒持续、向内坍缩，
+时间线全部写在配置的 `emit_from` 和一条 `/schedule` 里。
+
 ### 采样和公式
 
 | 命令（前缀 `pdraw particle emitter <名称>`） | 含义 |
@@ -425,6 +460,9 @@ start 会不断生成新一轮，存活数量仍受 max_alive 约束。需要长
 | `image plane xy\|xz\|yz` | 图片所在平面 |
 | `mesh file <路径>` / `mesh resource <ID>` | 以三角化 OBJ 为采样源，文件在 `particleMeshes/` 内 |
 | `mesh count <数量>` / `mesh seed <整数>` | 采样数量和种子；按三角面面积抽样 |
+| `rate` / `interval` / `max_alive` | 每刻出生上限（1..1024）、每轮间隔刻数、同时存活上限 |
+| `lifetime <刻>` | 每颗粒子的寿命（刻），`-1` 表示无限 |
+| `emit_from <刻>` / `emit_until <刻>` | 发射窗口：第几刻开始出生、到第几刻停止（不含）；`emit_until -1` 表示不设终点 |
 | `variable <名称> <数值>` | 可热更新的数值输入，适合多条命令控制同一效果 |
 | `state <名称> <初值>` | 每颗粒子独立保存的状态 |
 | `let <名称> <公式>` | 中间计算量，按声明顺序求值 |

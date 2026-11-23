@@ -27,6 +27,9 @@ evaluated on the client, so a running effect costs little to no per-tick bandwid
   motion on a `ParticleGroup`; the client plays it back at render-frame rate.
 - Declare a trail or an aura once as a runtime emitter and let each client emit along the anchor, per
   distance travelled or per interval, with deterministic per-particle jitter.
+- Configure sampling, birth formulas, per-tick motion and an emission window with
+  `/pdraw particle emitter`; a single function can build curves, surfaces, image point clouds and
+  staged effects, while clients receive only the declaration.
 - Spawn up to 256 particle specs per packet, with automatic chunking for the bulk position, velocity,
   force and track operations.
 - Use per-particle textures, sub-rectangle UVs, anisotropic sizes, fixed orientation, additive
@@ -111,7 +114,7 @@ More in the [getting started guide](doc/getting-started.md).
 | ---------------------------- | --------------------------------------------------------------- |
 | `/pdraw particle group ...`  | Create and manage named particle groups for data packs and command blocks. |
 | `/pdraw particle add ...`    | Add dots, beams, helices, magic circles, spheres and other primitives. |
-| `/pdraw particle emitter ...` | Configure sampling, images, formulas, anchors and particle lifetimes in steps. |
+| `/pdraw particle emitter ...` | Configure sampling, images, formulas, anchors, particle lifetimes and the emission window in steps. |
 | `/pdraw particle program ...` | Choreograph anchors, entity following, movement, spin, pulses, variables and per-particle expressions. |
 | `/pdraw animation list`      | List the animations available in `animations/`.                 |
 | `/pdraw animation play <name> [pos]` | Play an animation at `pos`, or 3 blocks in front of the player. |
