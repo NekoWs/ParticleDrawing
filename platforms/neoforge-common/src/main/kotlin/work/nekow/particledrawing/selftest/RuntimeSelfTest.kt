@@ -154,7 +154,7 @@ object RuntimeSelfTest {
                     root.anchor.position.x == source.position.x && root.anchor.position.y == source.position.y + 4.0 &&
                         intro.anchor == root.anchor && hold.anchor == root.anchor &&
                         intro.recipe.seeds.size == 1001 && intro.recipe.lifetime == 10 &&
-                        hold.recipe.emitFromTick == 10 && hold.recipe.seeds.size == 1001 && hold.recipe.maxAlive == 8192 &&
+                        hold.recipe.emitFromTick == 10 && hold.recipe.seeds.size == 2001 && hold.recipe.maxAlive == 8192 &&
                         inner.recipe.emitFromTick == 10 && inner.recipe.lifetime == -1 && inner.recipe.seeds.size == 1001
                 }
                 check("开场与持续都在运行") {

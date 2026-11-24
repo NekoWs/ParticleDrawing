@@ -275,4 +275,22 @@ class ParticleRecipeRuntimeTest {
             assertTrue(it.position.y.isFinite())
         }
     }
+
+    @Test fun `爆发样本不超过 rate 时同刻出生`() {
+        val r = RecipeRuntime(recipe(1001, 1024).copy(lifetime = 10), burst = true)
+        r.tick()
+        assertEquals(1001, r.particles.size)
+        r.particles.forEach { assertEquals(0, it.age) }
+    }
+
+    @Test fun `爆发样本超过 rate 时按 rate 分刻出生`() {
+        // 逐刻公式（例如按 age 的慢摆动）会在多批之间看到年龄差；示例里的爆发段因此把样本压在 rate 内。
+        val r = RecipeRuntime(recipe(1500, 1024).copy(lifetime = 10), burst = true)
+        r.tick()
+        assertEquals(1024, r.particles.size)
+        r.tick()
+        assertEquals(1500, r.particles.size)
+        assertEquals(0, r.particles.minOf { it.age })
+        assertEquals(1, r.particles.maxOf { it.age })
+    }
 }

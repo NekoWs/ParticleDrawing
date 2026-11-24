@@ -105,7 +105,7 @@ function pdraw_test:hell-eye-clear
 
 ```mcfunction
 # 一次写好外层持续状态并开始发射
-pdraw particle batch hell_eye_hold_outer kind=emitter anchor=emitter anchor.emitter=hell_eye_root sample.range=-10,10,0.02 birth.x="12*sin(u)^3" birth.y="4*cos(u)^3" let.drift=0.1*random() motion.vx=x*drift motion.vy=y*drift motion.vz=z*drift emitter.lifetime=8 rate=1024 max_alive=8192 emitter.emit_from=10 appearance.texture=particle:minecraft:end_rod appearance.color=#ff4dff appearance.size_world=0.12,0.12 appearance.glowing=true appearance.additive=true
+pdraw particle batch hell_eye_hold_outer kind=emitter anchor=emitter anchor.emitter=hell_eye_root sample.range=-10,10,0.01 birth.x="12*sin(u)^3" birth.y="4*cos(u)^3" let.drift=0.1*random() motion.vx=x*drift motion.vy=y*drift motion.vz=z*drift emitter.lifetime=8 rate=1024 max_alive=8192 emitter.emit_from=10 appearance.texture=particle:minecraft:end_rod appearance.color=#ff4dff appearance.size_world=0.18,0.18 appearance.glowing=true appearance.additive=true
 
 # 一次性粒子与组时间线也是同一个命令
 pdraw particle batch spark kind=sphere center=~ ~1 ~ radius=2 count=200 appearance.color=#ff4040 particle.lifetime=30
