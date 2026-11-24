@@ -220,7 +220,7 @@ internal object ClientParticleSources {
     }
 
     internal fun error(id: UUID, e: RuntimeException) {
-        org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").error(translation("log.recipe.instance").resolve(), id, e.message)
+        org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").error("{} {}", translation("log.recipe.instance").resolve(), id, e)
         val detail = e.diagnostic()
         val message = if (detail == null) translation("error.recipe.stopped")
             else translation("error.recipe.stopped_detail", detail)

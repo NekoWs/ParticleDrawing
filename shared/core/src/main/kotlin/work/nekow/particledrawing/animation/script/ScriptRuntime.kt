@@ -1829,7 +1829,13 @@ object ScriptRuntime {
                 "smoothstep" -> { val e0 = num(args[0], "smoothstep", n); val e1 = num(args[1], "smoothstep", n); val x = num(args[2], "smoothstep", n); val t = ((x - e0) / (e1 - e0)).coerceIn(0.0, 1.0); t * t * (3 - 2 * t) }
                 "mod" -> { val x = num(args[0], "mod", n); val y = num(args[1], "mod", n); if (y == 0.0) err("mod by zero", n); x - y * floor(x / y) }
                 "noise" -> noise3D(num(args[0], "noise", n), num(args[1], "noise", n), num(args[2], "noise", n), if (args.size > 3) toInt32(num(args[3], "noise seed", n)) else seed)
-                "fbm" -> fbm(num(args[0], "fbm", n), num(args[1], "fbm", n), num(args[2], "fbm", n), jsTrunc(num(args[3], "fbm octaves", n)).toInt(), if (args.size > 4) toInt32(num(args[4], "fbm seed", n)) else seed)
+                "fbm" -> fbm(
+                    num(args[0], "fbm", n),
+                    num(args[1], "fbm", n),
+                    num(args[2], "fbm", n),
+                    if (args.size > 3) jsTrunc(num(args[3], "fbm octaves", n)).toInt() else 4,
+                    if (args.size > 4) toInt32(num(args[4], "fbm seed", n)) else seed,
+                )
                 "rand" -> if (args.isEmpty()) objState.rand.next() else RandState(toInt32(num(args[0], "rand seed", n))).next()
                 "random" -> kotlin.random.Random.nextDouble()
                 "ease_linear" -> { val a = num(args[0], "ease", n); val b = num(args[1], "ease", n); val t = num(args[2], "ease", n); a + (b - a) * t }

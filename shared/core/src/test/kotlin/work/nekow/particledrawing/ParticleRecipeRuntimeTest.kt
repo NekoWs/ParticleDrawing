@@ -252,4 +252,27 @@ class ParticleRecipeRuntimeTest {
         }
         assertEquals("particledrawing.error.expression.unknown_variable", (ex as? LocalizedFailure)?.text?.key)
     }
+
+    @Test fun `锚点偏移存在时引用样本变量的 let 仍走逐粒子路径`() {
+        val r = RecipeRuntime(recipe(3).copy(
+            lets = mapOf("ang" to "u*6.2832"),
+            birth = mapOf("x" to "cos(ang)*3"),
+            orbit = "vec3(t*0.001, 0, 0)"), true)
+        val out = DoubleArray(3)
+        assertTrue(r.orbitOffset(out, 0f))
+        repeat(3) { r.tick() }
+        assertEquals(3, r.particles.size)
+        val expected = listOf(3.0, -3.0, 3.0)
+        r.particles.forEachIndexed { i, p -> assertEquals(expected[i], p.position.x, 1e-6) }
+    }
+
+    @Test fun `fbm 省略倍频时按默认层数求值`() {
+        val r = RecipeRuntime(recipe(2).copy(birth = mapOf("x" to "fbm(u, 0.5, 0.5)", "y" to "fbm(u, 0.5, 0.5, 2)")), true)
+        repeat(2) { r.tick() }
+        assertEquals(2, r.particles.size)
+        r.particles.forEach {
+            assertTrue(it.position.x.isFinite())
+            assertTrue(it.position.y.isFinite())
+        }
+    }
 }

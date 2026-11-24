@@ -112,7 +112,11 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
         values["dt"] = 1.0
         for ((k, v) in orbitVariables) values[k] = v
         for ((k, v) in orbitState) values[k] = v
-        for ((name, runner) in lets) values[name] = finiteLet(name, runner.evalAny(ctx))
+        for ((name, runner) in lets) {
+            // let 可能引用样本级输入（u/i 等），锚点求值时没有这些值；跳过即可，逐粒子路径会自己算。
+            val value = try { finiteLet(name, runner.evalAny(ctx)) } catch (error: RuntimeException) { null }
+            if (value != null) values[name] = value
+        }
     }
 
     /** 把 [prepareAnchor] 之后求出的偏移写进 out[0..2]。 */
