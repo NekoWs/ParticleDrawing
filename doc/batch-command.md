@@ -264,3 +264,16 @@ morph 配置键（`kind=program` 时与 `program.*` 一起写）：
   用真实命令分发器跑三种 kind、dryrun、失败原子性、`keep` 追加、形变与两个版本的地狱之眼示例。
 - 示例：`examples/commands/hell-eye-batch*.mcfunction` 用 12 行 batch 写出与逐条配置版相同的效果，
   可直接对照两种写法。
+
+## 文字形状与形变目标
+
+- `kind=text` 用 `text=<文字>`、`count=<1..8192>`、`height=<字形高度>`、`center=<位置>` 生成文字点阵组，
+  文字里用 `|` 换行。点阵是平面组，默认朝 +Z 方向。
+- 文字组的 `count` 上限是组上限 8192，比其它一次性形状的 4096 更宽；超过 4096 的一部分文字采样会明显更密。
+- `morph.slots` 里的位置公式输出**世界坐标**：先在函数入口用 `data get entity` 把标记坐标写进 `storage`，
+  再用宏函数拼进公式，形变目标才不会落在世界原点。`examples/showcase/datapack/data/showcase/function/runes`
+  是可直接照抄的写法。
+- 形变过渡的缓动名是 `linear/none/in_quad/out_quad/in_out_quad/out_cubic/in_out_cubic/out_back/back` 这套，
+  不是 CSS 的 `ease_in_out`。
+- 公式里 `birth.*` 只在出生时求值，`let.*` 与 `motion.*` 每颗逐 tick 求值；`fbm` / `noise` 这类重计算放
+  `birth.*`，帧率会好很多。`fbm(x,y,z)` 省略第 4 个参数时按 4 层倍频计算。
