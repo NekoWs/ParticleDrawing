@@ -25,9 +25,7 @@
 透镜就是一颗四边形粒子：
 
 ```mcfunction
-pdraw particle emitter pd_lens_optics appearance distortion 32
-pdraw particle emitter pd_lens_optics appearance size_world 5.3,5.3
-pdraw particle emitter pd_lens_optics texture particle:particledrawing:lens
+pdraw particle advanced emitter pd_lens_optics edit look distortion 32 size_world 5.3 5.3 texture particle:particledrawing:lens
 ```
 
 - `distortion 32`：单颗粒子的最大采样偏移，单位是屏幕像素；贴图透明度决定局部强弱。

@@ -27,7 +27,8 @@ class ParticleRecipeCodecTest {
     @Test fun `完整声明保留图片颜色公式顺序与锚点身份`() {
         val source = ParticleRecipe(listOf(ParticleSeed(Vec3(1.0, 2.0, 3.0), Color.CYAN, 0.7)), rate = 20, interval = 2,
             lifetime = 40, maxAlive = 100, follow = true, variables = linkedMapOf("radius" to 2.0), state = mapOf("phase" to 0.0),
-            lets = linkedMapOf("a1" to "radius*2", "a2" to "a1+1"), birth = mapOf("x" to "u"), motion = mapOf("vx" to "-x*0.1"),
+            lets = linkedMapOf("a1" to "radius*2", "a2" to "a1+1"),
+            birth = mapOf("x" to "u", "color" to "vec3(u,0.5,1-u)"), motion = mapOf("vx" to "-x*0.1"),
             where = "x>0", kill = "age>30",
             visual = ParticleVisual().texture("particle:minecraft:end_rod").anisoWorld(0.1f, 0.2f).glowing(true).lightLevel(7),
             lifeCurve = ParticleLifeCurve.EMPTY.plus(ParticleCurve.alpha(CurveKey(0f, 1f), CurveKey(40f, 0f))),
@@ -39,6 +40,7 @@ class ParticleRecipeCodecTest {
         r.validate()
         assertEquals(id, result.id); assertTrue(result.burst)
         assertEquals(ParticleRecipeMode.INSTANCED, result.mode)
+        assertEquals(source.birth, r.birth)
         assertEquals(source.seeds, r.seeds); assertEquals(source.motion, r.motion); assertEquals(source.lets.keys.toList(), r.lets.keys.toList())
         assertEquals(40, r.lifetime); assertEquals(2, r.interval); assertTrue(r.follow)
         assertEquals(12, r.emitFromTick); assertEquals(240, r.emitUntilTick)

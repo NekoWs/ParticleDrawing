@@ -68,7 +68,7 @@ object Draw {
         lifeCurve: ParticleLifeCurve? = null, lifetime: Int = -1
     ): ParticleGroup {
         val g = group ?: manager.createGroup(pos)
-        spawnInto(manager, g, pos, colorFn.colorAt(0.0), scale, visual, lifeCurve, lifetime)
+        placePrepared(manager, g, Placement(pos, colorFn.colorAt(0.0), scale, visual, lifeCurve, lifetime, 0))
         return g
     }
 
@@ -438,6 +438,11 @@ object Draw {
         return g
     }
 
+    internal data class Placement(
+        val position: Vec3, val color: Color, val scale: Float, val visual: ParticleVisual,
+        val lifeCurve: ParticleLifeCurve?, val lifetime: Int, val delay: Int,
+    )
+
     // 内部工具
 
     /** 端部收细系数：taper 时取 `[TAPER_MIN], 1`。 */
@@ -459,14 +464,7 @@ object Draw {
         } else {
             visual
         }
-        val s = scale * f
-        if (stagger <= 0 || index == 0) {
-            spawnInto(manager, group, pos, color, s, look, lifeCurve, lifetime)
-            return
-        }
-        AnimationScheduler.schedule(manager.dimensionId, index * stagger) {
-            spawnInto(manager, group, pos, color, s, look, lifeCurve, lifetime)
-        }
+        placePrepared(manager, group, Placement(pos, color, scale * f, look, lifeCurve, lifetime, index * stagger))
     }
 
     /** 不需要 taper 的图元走的简写。 */
@@ -475,12 +473,18 @@ object Draw {
         color: Color, visual: ParticleVisual, index: Int, stagger: Int,
         lifeCurve: ParticleLifeCurve?, lifetime: Int
     ) {
-        if (stagger <= 0 || index == 0) {
-            spawnInto(manager, group, pos, color, 1f, visual, lifeCurve, lifetime)
-            return
-        }
-        AnimationScheduler.schedule(manager.dimensionId, index * stagger) {
-            spawnInto(manager, group, pos, color, 1f, visual, lifeCurve, lifetime)
+        placePrepared(manager, group, Placement(pos, color, 1f, visual, lifeCurve, lifetime, index * stagger))
+    }
+
+    private fun placePrepared(manager: ParticleManager, group: ParticleGroup, placement: Placement) {
+        group.drawCollector?.let { it(placement); return }
+        val (position, color, scale, visual, curve, lifetime, delay) = placement
+        if (delay <= 0) {
+            spawnInto(manager, group, position, color, scale, visual, curve, lifetime)
+        } else {
+            AnimationScheduler.schedule(manager.dimensionId, delay) {
+                spawnInto(manager, group, position, color, scale, visual, curve, lifetime)
+            }
         }
     }
 

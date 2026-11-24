@@ -50,6 +50,7 @@ internal object CommandParticleRecipes {
         var selector: String = "true",
         val changes: MutableMap<String, String> = linkedMapOf(),
         val appearance: MutableMap<String, String> = linkedMapOf(),
+        var rawBirth: Map<String, String>? = null,
         var handle: ParticleSourceHandle? = null,
         val previousBursts: MutableList<ParticleSourceHandle> = arrayListOf(),
     ) {
@@ -71,109 +72,58 @@ internal object CommandParticleRecipes {
             }
         }
 
-        fun start(level: ServerLevel, burst: Boolean, synced: Boolean = false, mode: ParticleRecipeMode = ParticleRecipeMode.STANDARD) {
-            requireLocalized(burst || handle == null) { translation("error.recipe.running") }
-            handles()
-            val resolved = recipe.copy(seeds = samples(level))
-            resolved.validate()
-            val next = when {
-                synced -> ParticleSources.startSynced(level, resolved, anchor, burst)
-                mode == ParticleRecipeMode.INSTANCED -> ParticleSources.startInstanced(level, resolved, anchor, burst)
-                mode == ParticleRecipeMode.GPU -> ParticleSources.burstGpu(level, resolved, anchor)
-                else -> ParticleSources.start(level, resolved, anchor, burst)
-            }
+        fun activeHandles(): List<ParticleSourceHandle> =
+            (previousBursts + listOfNotNull(handle)).filter { it.isActive() }
+
+        fun record(next: ParticleSourceHandle) {
+            previousBursts.removeAll { !it.isActive() }
             handle?.takeIf { it.isActive() }?.let(previousBursts::add)
             handle = next
-            recipe = resolved
         }
 
-        fun update(next: ParticleRecipe) {
-            next.validate()
-            handles().forEach { it.update(next) }
-            recipe = next
-        }
-
-        fun variable(name: String, value: Double) {
-            val next = recipe.copy(variables = recipe.variables + (name to value))
-            next.validate()
-            handles().forEach { it.variable(name, value) }
-            recipe = next
-        }
-
-        fun handles(): List<ParticleSourceHandle> {
-            previousBursts.removeAll { !it.isActive() }
-            return previousBursts + listOfNotNull(handle?.takeIf { it.isActive() })
-        }
-
-        fun removeParticles() { handles().forEach { it.remove() }; previousBursts.clear(); handle = null }
+        fun removeParticles() { activeHandles().forEach { it.remove() }; previousBursts.clear(); handle = null }
         fun copyDraft() = copy(recipe = recipe.copy(visual = recipe.visual.copy()), changes = LinkedHashMap(changes), appearance = LinkedHashMap(appearance), handle = null, previousBursts = arrayListOf())
     }
 
     private val dimensions = hashMapOf<UUID, LinkedHashMap<String, Draft>>()
-    fun create(dimension: UUID, name: String, anchor: RecipeAnchor): Draft {
-        validName(name)
-        val map = dimensions.getOrPut(dimension) { linkedMapOf() }
-        requireLocalized(map.size < 256) { translation("error.recipe.config_limit") }
-        requireLocalized(name !in map) { translation("error.recipe.exists", name) }
-        return Draft(anchor).also { map[name] = it }
-    }
-    fun reset(dimension: UUID, name: String, anchor: RecipeAnchor): Draft {
-        validName(name)
-        val map = dimensions.getOrPut(dimension) { linkedMapOf() }
-        requireLocalized(name in map || map.size < 256) { translation("error.recipe.config_limit") }
-        map[name]?.removeParticles()
-        val next = Draft(anchor)
-        map[name] = next
-        refreshAnchors(dimension)
-        return next
-    }
-    fun copy(dimension: UUID, from: String, to: String) {
-        validName(to)
-        val source = get(dimension, from)
-        val map = dimensions.getValue(dimension)
-        requireLocalized(to !in map && map.size < 256) { translation("error.recipe.copy_target") }
-        map[to] = source.copyDraft()
-    }
     fun get(dimension: UUID, name: String) = dimensions[dimension]?.get(name) ?: throw LocalizedArgumentException(translation("error.recipe.not_found", name))
     fun names(dimension: UUID) = dimensions[dimension]?.keys?.toList() ?: emptyList()
+
+    fun find(dimension: UUID, name: String): Draft? = dimensions[dimension]?.get(name)
+
+    fun snapshot(dimension: UUID): Map<String, Draft> = dimensions[dimension].orEmpty()
+
+    fun checkCapacity(dimension: UUID, name: String) {
+        val drafts = snapshot(dimension)
+        requireLocalized(name in drafts || drafts.size < 256) { translation("error.recipe.config_limit") }
+    }
+
+    fun install(dimension: UUID, name: String, draft: Draft) {
+        dimensions.getOrPut(dimension) { linkedMapOf() }[name] = draft
+    }
     fun remove(dimension: UUID, name: String) {
         requireLocalized(dimensions[dimension]?.values?.none { it.anchorLink == name } != false) { translation("error.recipe.anchor_in_use") }
         get(dimension, name).removeParticles(); dimensions[dimension]?.remove(name)
     }
-    fun anchor(dimension: UUID, name: String, value: RecipeAnchor) {
-        val d = get(dimension, name)
-        d.anchor = value; d.anchorLink = null
-        refreshAnchors(dimension)
-    }
-    fun linkAnchor(dimension: UUID, name: String, target: String) {
-        val seen = hashSetOf(name)
-        var current: String? = target
-        while (current != null) {
-            requireLocalized(seen.add(current)) { translation("error.recipe.anchor_cycle") }
-            current = get(dimension, current).anchorLink
+    fun resolveAnchors(dimension: UUID, name: String, candidate: Draft): Map<String, RecipeAnchor> {
+        val drafts = snapshot(dimension) + (name to candidate)
+        val resolved = linkedMapOf<String, RecipeAnchor>()
+        val resolving = hashSetOf<String>()
+        fun resolve(target: String): RecipeAnchor {
+            resolved[target]?.let { return it }
+            requireLocalized(resolving.add(target)) { translation("error.recipe.anchor_cycle") }
+            val draft = requireNotNullLocalized(drafts[target]) { translation("error.recipe.not_found", target) }
+            val anchor = draft.anchorLink?.let(::resolve) ?: draft.anchor
+            resolving.remove(target)
+            resolved[target] = anchor
+            return anchor
         }
-        get(dimension, name).anchorLink = target
-        refreshAnchors(dimension)
-    }
-    private fun refreshAnchors(dimension: UUID) {
-        val drafts = dimensions[dimension] ?: return
-        fun resolve(name: String): RecipeAnchor {
-            val d = get(dimension, name)
-            return d.anchorLink?.let(::resolve) ?: d.anchor
-        }
-        for ((name, d) in drafts) {
-            val value = resolve(name)
-            d.handles().forEach { it.anchor(value) }
-            d.anchor = value
-        }
-    }
-    fun discard(dimension: UUID) { dimensions.remove(dimension) }
-    fun clear() = dimensions.clear()
-    private fun validName(name: String) {
-        requireLocalized(Regex("[A-Za-z0-9_.:-]{1,64}").matches(name)) { translation("error.recipe.name") }
-        requireLocalized(name !in setOf("create", "reset", "copy", "list", "help")) { translation("error.recipe.reserved_name", name) }
+        drafts.keys.forEach(::resolve)
+        return resolved
     }
 
+    fun discard(dimension: UUID) { dimensions.remove(dimension) }
+    fun clear() = dimensions.clear()
     internal fun safeAssetPath(root: Path, name: String): Path {
         requireLocalized(!Path.of(name).isAbsolute) { translation("error.asset.relative_path", root.fileName) }
         val base = root.toAbsolutePath().normalize()

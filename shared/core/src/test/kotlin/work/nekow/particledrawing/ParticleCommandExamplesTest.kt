@@ -3,95 +3,14 @@ package work.nekow.particledrawing
 import work.nekow.particledrawing.animation.recipe.RecipeRuntime
 import work.nekow.particledrawing.api.*
 import work.nekow.particledrawing.math.Vec3
-import java.nio.file.Files
-import java.nio.file.Path
 import kotlin.math.abs
 import kotlin.test.*
 
 class ParticleCommandExamplesTest {
-    /** 读取实际函数的数据和公式部分；服务器锚点与贴图由游戏解析。 */
-    private fun example(name: String, emitterName: String? = null): ParticleRecipe {
-        val declarations = Files.readAllLines(Path.of("examples/commands/$name.mcfunction"))
-            .filter { it.isNotBlank() && !it.startsWith("#") }
-            .map { it.split(' ', limit = 5) }
-            .filter { emitterName == null || it[3] == emitterName || (it[3] == "reset" && it[4] == emitterName) }
-        val emitter = declarations.first().also { assertEquals("reset", it[3]) }[4]
-        val commands = declarations.drop(1).map {
-            assertEquals(listOf("pdraw", "particle", "emitter", emitter), it.take(4))
-            val parts = it[4].split(' ', limit = 2)
-            parts[0] to parts.getOrElse(1) { "" }
-        }.groupBy({ it.first }, { it.second })
-        fun value(key: String) = commands.getValue(key).single()
-        fun fields(key: String) = commands[key].orEmpty().associate {
-            val parts = it.split(' ', limit = 2)
-            parts[0] to parts[1]
-        }
-        val seeds = if ("image" in commands) {
-            val settings = fields("image")
-            assertEquals("pd-icon.png", settings.getValue("file"))
-            Files.newInputStream(Path.of("platforms/neoforge-common/src/main/resources/icon.png")).use {
-                ParticleImageSampler.sample(it, ParticleImageSampler.Options(
-                    stride = settings.getValue("stride").toInt(), spacing = settings.getValue("spacing").toDouble(),
-                    plane = ParticleImageSampler.Plane.valueOf(settings.getValue("plane").uppercase()),
-                ))
-            }
-        } else {
-            val sampling = value("sample").split(' ')
-            when (sampling[0]) {
-                "count" -> ParticleSampling.count(sampling[1].toInt())
-                "range" -> ParticleSampling.range(sampling[1].toDouble(), sampling[2].toDouble(), sampling[3].toDouble())
-                else -> error("未覆盖的示例采样")
-            }
-        }
-        return ParticleRecipe(seeds, rate = value("rate").toInt(), lifetime = value("lifetime").toInt(),
-            maxAlive = value("max_alive").toInt(), variables = fields("variable").mapValues { it.value.toDouble() },
-            follow = commands["follow"]?.single()?.toBooleanStrict() ?: false,
-            lets = fields("let"), birth = fields("birth"), motion = fields("motion")).also { it.validate() }
-    }
+    private fun example(name: String, emitterName: String? = null): ParticleRecipe =
+        ParticleExampleDeclarations.read(name).single { emitterName == null || it.name == emitterName }.recipe
 
-    /** ColorBlock 等价示例：同一个解析口径读 mcfunction，确认文件里的命令能组成可运行配方。 */
-    private fun colorBlockExample(name: String): ParticleRecipe {
-        val lines = Files.readAllLines(Path.of("examples/commands/$name.mcfunction"))
-            .map(String::trim)
-            .filter { it.isNotEmpty() && !it.startsWith("#") }
-        val emitter = lines.first().split(' ')[4]
-        val commands = lines.drop(1).map {
-            val parts = it.split(' ', limit = 5)
-            assertEquals(listOf("pdraw", "particle", "emitter", emitter), parts.take(4))
-            val body = parts[4].split(' ', limit = 2)
-            body[0] to body.getOrElse(1) { "" }
-        }.groupBy({ it.first }, { it.second })
-        fun value(key: String) = commands.getValue(key).single()
-        fun fields(key: String) = commands[key].orEmpty().associate {
-            val (field, formula) = it.split(' ', limit = 2).let { p -> p[0] to p.getOrElse(1) { "" } }
-            field to formula
-        }
-        val sampling = lines.first { it.contains(" sample ") && !it.contains(" bounds ") && !it.contains(" step ") }.substringAfter(" sample ")
-        val seeds = when (sampling.split(' ')[0]) {
-            "range" -> {
-                val args = sampling.split(' ')
-                ParticleSampling.range(args[1].toDouble(), args[2].toDouble(), args[3].toDouble())
-            }
-            "count" -> ParticleSampling.count(sampling.split(' ')[1].toInt())
-            "grid" -> {
-                val bounds = lines.first { it.contains(" bounds ") }.substringAfter(" bounds ").split(' ').map { it.split(',').map(String::toDouble) }
-                val step = lines.first { it.contains(" step ") }.substringAfter(" step ").toDouble()
-                ParticleSampling.grid(Vec3(bounds[0][0], bounds[0][1], bounds[0][2]), Vec3(bounds[1][0], bounds[1][1], bounds[1][2]), step)
-            }
-            else -> error("未覆盖的示例采样")
-        }
-        return ParticleRecipe(
-            seeds,
-            rate = value("rate").toInt(),
-            interval = commands["interval"]?.single()?.toInt() ?: 1,
-            lifetime = value("lifetime").toInt(),
-            maxAlive = value("max_alive").toInt(),
-            lets = fields("let"),
-            birth = fields("birth"),
-            motion = fields("motion"),
-            where = commands["where"]?.single() ?: "true",
-        ).also { it.validate() }
-    }
+    private fun colorBlockExample(name: String): ParticleRecipe = example(name)
 
     @Test fun `ColorBlock 四个示例函数都能画出对应形状`() {
         val cube = RecipeRuntime(colorBlockExample("cube"), true).also { repeat(2) { _ -> it.tick() } }

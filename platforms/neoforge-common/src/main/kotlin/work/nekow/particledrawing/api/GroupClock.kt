@@ -25,6 +25,12 @@ internal class GroupClock {
     /** 当前会话的偏移（把待发指令整批改写时用）。 */
     val shiftMs: Int get() = sessionShiftMs
 
+    fun beginAppend(nowTick: Long) {
+        lastEmitTick = nowTick
+        sessionBaseCursor = 0
+        sessionShiftMs = elapsedMs(nowTick).toInt()
+    }
+
     /** 服务端下发新程序时调用：程序时刻从这一刻重新起算。 */
     fun onProgramStart(nowTick: Long) {
         anchorTick = nowTick

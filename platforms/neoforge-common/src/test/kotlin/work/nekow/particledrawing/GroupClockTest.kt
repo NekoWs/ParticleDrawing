@@ -75,6 +75,18 @@ class GroupClockTest {
     }
 
     @Test
+    fun `新的命令从当前播放时刻计算延迟`() {
+        val clock = armed()
+        clock.onEmit(anchorTick, 250)
+        val now = anchorTick + 20
+        clock.beginAppend(now)
+        assertEquals(1_100, clock.programTime(100, now))
+        clock.onEmit(now, 100)
+        clock.beginAppend(now)
+        assertEquals(1_050, clock.programTime(50, now))
+    }
+
+    @Test
     fun `全量重发后时间轴从新的起点重算`() {
         val clock = armed()
         clock.onEmit(anchorTick, 0)

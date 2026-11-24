@@ -113,13 +113,11 @@ More in the [getting started guide](doc/getting-started.md).
 
 | Command                      | Description                                                     |
 | ---------------------------- | --------------------------------------------------------------- |
-| `/pdraw particle group ...`  | Create and manage named particle groups for data packs and command blocks. |
-| `/pdraw particle add ...`    | Add dots, beams, helices, magic circles, spheres and other primitives. |
-| `/pdraw particle emitter ...` | Configure sampling, images, formulas, anchors, particle lifetimes and the emission window in steps. |
-| `/pdraw particle batch ...` | Write a whole emitter, shape group or program timeline in one command with namespaced `key=value` options. |
-| `/pdraw help` | Open the interactive in-chat help: paged topics, clickable entries, usage lines and example commands you can click to fill. |
-| `/pdraw camera ...` | Drive a player's camera from commands for cinematics and tours; `pos`, `look` and `stop`. |
-| `/pdraw particle program ...` | Choreograph anchors, entity following, movement, spin, pulses, variables and per-particle expressions. |
+| `/pdraw particle draw …` | Draw one or more shapes and animate the group with `then`. |
+| `/pdraw particle emitter …` | Define and optionally start an emitter in one command. |
+| `/pdraw particle template` / `/pdraw particle use …` | Save and instantiate reusable emitter declarations. |
+| `/pdraw particle advanced …` | Inspect emitters, edit live recipes, or append group actions. |
+| `/pdraw particle clear` / `/pdraw particle delete …` | Clear instances or remove named definitions. |
 | `/pdraw animation list`      | List the animations available in `animations/`.                 |
 | `/pdraw animation play <name> [pos]` | Play an animation at `pos`, or 3 blocks in front of the player. |
 | `/pdraw animation stop`      | Stop every animation and effect playing in the current dimension. |
@@ -128,13 +126,8 @@ More in the [getting started guide](doc/getting-started.md).
 | `/pdraw animation debug`     | Print evaluation time, particle count and timeline of playback. |
 | `/pdraw texture reload`      | Reload particle textures from disk (client side only).          |
 
-Use `group → add → program` for choreographed groups. For sampled curves, images and continuous emitters,
-configure each step with `emitter`, then use `burst` or `start`; `batch` writes the same declaration in one line. Both work in data pack functions and command blocks. See the [command guide](doc/particle-commands.md#命令绘制与数据包) for the full
-syntax and a ready-to-use magic circle example.
-For a short command block example, see the [sin curve with the end rod texture](doc/particle-commands.md#命令方块简单用法sin-曲线).
-Use `texture=particle:minecraft:end_rod` to reuse a vanilla texture while retaining PD animation controls.
-Frames follow particle age and lifetime. Use `field anchor` with `expression local` to share the group anchor,
-and `lifetime=80` for a four-second lifetime. [Data pack setup and example functions](examples/commands/README.md)
+Use `draw` to create and animate particle groups. Use `emitter` to define a recipe and `start` or `burst` to play it.
+See the [command guide](doc/particle-commands.md#命令绘制与数据包) for syntax and examples.
 
 ## Documentation
 

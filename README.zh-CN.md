@@ -24,7 +24,7 @@
 - 在 `ParticleGroup` 上录制位移、旋转、缩放、脉冲、颜色渐变以及表达式或实体驱动的运动时间线，客户端
   按渲染帧回放。
 - 把拖尾或光环一次声明为运行时发射器，各客户端沿锚点按里程或按间隔发射，并带确定性的逐粒子抖动。
-- 用 `/pdraw particle emitter` 把采样、出生公式、逐刻运动和发射窗口拆开配置：一段命令就能做出曲线、
+- 用 `/pdraw particle emitter` 配置采样、出生公式、逐刻运动和发射窗口：一段命令就能做出曲线、
   曲面、图片点阵和分阶段特效，运行期只下发声明。
 - 单个数据包最多生成 256 条粒子规格，批量位置、速度、力与轨道操作自动分包。
 - 五个可直接摆放的 showcase 效果（星云 / 法阵文字 / 光织 / 丝带 / 星门）见[展示效果](examples/showcase/README.md)。
@@ -103,13 +103,11 @@ Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80)
 
 | 命令 | 说明 |
 | --- | --- |
-| `/pdraw particle group ...` | 创建、列出或删除数据包与命令方块共用的命名粒子组。 |
-| `/pdraw particle add ...` | 向组内添加点、线、光束、螺旋、法阵、球体等图元。 |
-| `/pdraw particle emitter ...` | 分步配置采样、图片、公式、锚点、粒子寿命与发射窗口。 |
-| `/pdraw particle batch ...` | 一条命令写完整发射器、一组形状或组时间线，选项是带命名空间的 `键=值`。 |
-- `/pdraw help` 打开交互式帮助：分页、可点击、每个命令带用法和示例。
-| `/pdraw camera ...` | 用命令控制玩家镜头，服务宣传片与巡演：`pos`、`look`、`stop`。 |
-| `/pdraw particle program ...` | 用多条命令编排锚点、实体跟随、移动、旋转、脉冲、变量和逐粒子公式。 |
+| `/pdraw particle draw …` | 绘制一个或多个图元，并用 `then` 编排粒子组。 |
+| `/pdraw particle emitter …` | 一条命令定义发射器，可立即播放。 |
+| `/pdraw particle template` / `/pdraw particle use …` | 保存并复用发射器声明。 |
+| `/pdraw particle advanced …` | 检查发射器、热更新配方或追加组动作。 |
+| `/pdraw particle clear` / `/pdraw particle delete …` | 清理运行实例或删除命名定义。 |
 | `/pdraw animation list` | 列出 `animations/` 里可用的动画。 |
 | `/pdraw animation play <name> [pos]` | 在 `pos` 播放动画，缺省为玩家前方 3 格。 |
 | `/pdraw animation stop` | 停止当前维度里正在播放的全部动画与特效。 |
@@ -118,12 +116,8 @@ Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80)
 | `/pdraw animation debug` | 打印求值耗时、粒子数量与播放时间线。 |
 | `/pdraw texture reload` | 从磁盘重新加载粒子贴图（仅客户端）。 |
 
-编排粒子组用 `group → add → program`。曲线采样、图片和持续发射用 `emitter` 分步配置，或用 `batch` 一行写完，再用
-`burst` 或 `start` 触发。两种方式都可以在数据包函数和命令方块里使用。完整语法、
-参数表和可直接放进数据包的法阵示例见[粒子命令](doc/particle-commands.md#命令绘制与数据包)。
-命令方块入门可从[末地烛贴图的 sin 曲线](doc/particle-commands.md#命令方块简单用法sin-曲线)开始；
-`texture=particle:minecraft:end_rod` 可在 PD 粒子上直接复用原版贴图。
-贴图默认按粒子年龄与寿命换帧；`field anchor` 与 `expression local` 可共用组锚点，`lifetime=80` 指定 4 秒寿命。 [数据包安装与函数示例](examples/commands/README.md)
+用 `draw` 绘制图元并编排粒子组。发射器用 `emitter` 定义，`start` 和 `burst` 控制播放。
+语法和示例见[粒子命令](doc/particle-commands.md#命令绘制与数据包)。
 
 ## 文档
 

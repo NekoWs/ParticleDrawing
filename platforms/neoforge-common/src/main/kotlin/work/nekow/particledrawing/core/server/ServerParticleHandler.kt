@@ -58,7 +58,7 @@ object ServerParticleHandler {
             ServerParticleEngine.clearDimension(dim)
             CommandParticleGroups.discard(dim)
             work.nekow.particledrawing.command.CommandParticleRecipes.discard(dim)
-            work.nekow.particledrawing.command.MorphCommandTree.discard(dim)
+            work.nekow.particledrawing.command.v2.EmitterCommands.discard(dim)
             ServerParticleSources.discard(dim)
             ParticleForceFields.discard(dim)
             // 只清这个维度排的任务：别的维度还有刚排的编排要跑
@@ -75,7 +75,7 @@ object ServerParticleHandler {
         AnimationScheduler.clearAll()
         CommandParticleGroups.discardAll()
         work.nekow.particledrawing.command.CommandParticleRecipes.clear()
-        work.nekow.particledrawing.command.MorphCommandTree.clear()
+        work.nekow.particledrawing.command.v2.EmitterCommands.clear()
         ServerParticleSources.clear()
         ParticleForceFields.clear()
     }

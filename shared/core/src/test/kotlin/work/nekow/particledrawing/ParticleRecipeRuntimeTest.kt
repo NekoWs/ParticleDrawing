@@ -21,6 +21,16 @@ class ParticleRecipeRuntimeTest {
         r.tick(); assertTrue(r.finished)
     }
 
+    @Test fun `颜色公式写 RGB 并保留独立透明度`() {
+        val recipe = recipe(2, 2).copy(birth = mapOf("color" to "vec3(u,0.25,1-u)", "a" to "0.5"))
+        val runtime = RecipeRuntime(recipe, true)
+        runtime.tick()
+        assertEquals(listOf(0.0, 1.0), runtime.particles.map { it.value("r") })
+        assertEquals(listOf(1.0, 0.0), runtime.particles.map { it.value("b") })
+        assertTrue(runtime.particles.all { it.value("g") == 0.25 && it.value("a") == 0.5 })
+        assertFailsWith<IllegalArgumentException> { recipe.copy(birth = mapOf("color" to "vec3(2,0,0)")).validate() }
+    }
+
     @Test fun `间隔暂停出生与停止都不冻结现存粒子`() {
         val r = RecipeRuntime(recipe(3).copy(interval = 2, lifetime = 8, birth = mapOf("vx" to "0.1")), false)
         r.tick(); r.tick(); assertEquals(1, r.particles.size)

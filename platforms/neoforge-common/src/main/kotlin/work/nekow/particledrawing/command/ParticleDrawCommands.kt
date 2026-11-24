@@ -27,6 +27,7 @@ import work.nekow.particledrawing.core.network.CameraPosePayload
 import work.nekow.particledrawing.core.client.ClientAnimationManager
 import work.nekow.particledrawing.core.client.ClientParticleEngine
 import work.nekow.particledrawing.command.help.HelpBook
+import work.nekow.particledrawing.command.help.HelpCommands
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
@@ -129,10 +130,12 @@ object ParticleDrawCommands {
     private fun openHelp(ctx: CommandContext<CommandSourceStack>, raw: String): Int {
         val parts = raw.trim().split(Regex("\\s+")).filter(String::isNotEmpty)
         if (parts.isEmpty()) return HelpBook.open(ctx.source, 1)
-        if (parts[0].equals("page", ignoreCase = true)) {
-            return HelpBook.open(ctx.source, parts.getOrNull(1)?.toIntOrNull() ?: 1)
+        return when (parts[0].lowercase()) {
+            "page" -> HelpBook.open(ctx.source, parts.getOrNull(1)?.toIntOrNull() ?: 1)
+            "cmd" -> HelpBook.command(ctx.source, parts.drop(1).joinToString(" "))
+            "examples" -> HelpBook.examples(ctx.source)
+            else -> HelpBook.topic(ctx.source, parts[0])
         }
-        return HelpBook.topic(ctx.source, parts[0])
     }
 
     private fun suggestHelpArgs(
@@ -141,7 +144,11 @@ object ParticleDrawCommands {
         val raw = try { StringArgumentType.getString(ctx, "args") } catch (_: IllegalArgumentException) { "" }
         val prefix = raw.substringAfterLast(' ')
         val before = raw.substring(0, raw.length - prefix.length)
-        val options = if (before.isBlank()) listOf("page") + HelpBook.ids() else HelpBook.ids()
+        val options = when {
+            before.isBlank() -> listOf("page", "cmd", "examples") + HelpBook.ids()
+            before.trim() == "cmd" -> HelpCommands.ids()
+            else -> HelpBook.ids()
+        }
         return SharedSuggestionProvider.suggest(
             options.filter { it.startsWith(prefix, ignoreCase = true) },
             builder.createOffset(builder.input.lastIndexOf(' ') + 1),

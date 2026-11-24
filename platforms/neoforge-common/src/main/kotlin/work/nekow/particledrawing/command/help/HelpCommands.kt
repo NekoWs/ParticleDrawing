@@ -1,0 +1,162 @@
+package work.nekow.particledrawing.command.help
+
+import work.nekow.particledrawing.command.v2.ParticleCommandsV2
+
+/**
+ * 帮助里的一条命令：单独一页，参数逐条解释。
+ *
+ * `id` 同时用作页面地址与语言键后缀；`usage` 是纯命令文本，点击可填进聊天框；
+ * 参数名为展示文本（如 `<名称>`），效果说明与标题、简介一起放在语言文件里。
+ */
+internal data class HelpParam(val name: String, val effectKey: String)
+
+internal data class HelpExample(val noteKey: String, val command: String)
+
+internal data class HelpExampleGroup(val titleKey: String, val entries: List<HelpExample>)
+
+internal data class HelpCommand(
+    val id: String,
+    val topic: String,
+    val usage: String,
+    val params: List<HelpParam> = emptyList(),
+) {
+    val titleKey: String get() = "command.help.cmd.$id.title"
+    val summaryKey: String get() = "command.help.cmd.$id.summary"
+    val topicTitleKey: String get() = "command.help.$topic.title"
+}
+
+internal object HelpCommands {
+    private fun command(id: String, topic: String, usage: String, vararg params: HelpParam) =
+        HelpCommand(id, topic, usage, params.toList())
+
+    private val particleHelp = mapOf(
+        "draw" to ("particle" to listOf(
+            HelpParam("<shape>", "command.help.cmd.draw.p1"),
+            HelpParam("as", "command.help.cmd.draw.p2"),
+            HelpParam("also", "command.help.cmd.draw.p3"),
+            HelpParam("then", "command.help.cmd.draw.p4"),
+        )),
+        "emitter" to ("emitter" to listOf(
+            HelpParam("at", "command.help.cmd.emitter.p1"),
+            HelpParam("sample", "command.help.cmd.emitter.p2"),
+            HelpParam("spawn", "command.help.cmd.emitter.p3"),
+            HelpParam("move", "command.help.cmd.emitter.p4"),
+            HelpParam("look", "command.help.cmd.emitter.p5"),
+        )),
+        "template" to ("emitter" to listOf(
+            HelpParam("from emitter", "command.help.cmd.template.p1"),
+        )),
+        "use" to ("emitter" to listOf(
+            HelpParam("as", "command.help.cmd.use.p1"),
+            HelpParam("without", "command.help.cmd.use.p2"),
+        )),
+        "start" to ("emitter" to listOf(
+            HelpParam("instanced", "command.help.cmd.start.p1"),
+            HelpParam("synced", "command.help.cmd.start.p2"),
+        )),
+        "burst" to ("emitter" to listOf(
+            HelpParam("gpu", "command.help.cmd.burst.p1"),
+        )),
+        "stop" to ("emitter" to listOf()),
+        "clear" to ("particle" to listOf(
+            HelpParam("emitter", "command.help.cmd.clear.p1"),
+            HelpParam("group", "command.help.cmd.clear.p2"),
+        )),
+        "delete" to ("particle" to listOf(
+            HelpParam("emitter", "command.help.cmd.delete.p1"),
+            HelpParam("group", "command.help.cmd.delete.p2"),
+            HelpParam("template", "command.help.cmd.delete.p3"),
+        )),
+        "advanced" to ("particle" to listOf(
+            HelpParam("emitter", "command.help.cmd.advanced.p1"),
+            HelpParam("group", "command.help.cmd.advanced.p2"),
+        )),
+    )
+
+    private val entries = ParticleCommandsV2.usages.map { (id, usage) ->
+        val (topic, params) = particleHelp.getValue(id)
+        HelpCommand(id, topic, "/pdraw particle $usage", params)
+    } + listOf(
+        command(
+            "animation.list", "animation",
+            "/pdraw animation list",
+        ),
+        command(
+            "animation.play", "animation",
+            "/pdraw animation play <名字> [位置]",
+            HelpParam("<名字>", "command.help.cmd.animation.play.p1"),
+            HelpParam("[位置]", "command.help.cmd.animation.play.p2"),
+        ),
+        command(
+            "animation.stop", "animation",
+            "/pdraw animation stop",
+        ),
+        command(
+            "camera.pos", "camera",
+            "/pdraw camera pos <x> <y> <z> <yaw> <pitch> [fov] [smooth]",
+            HelpParam("<x> <y> <z>", "command.help.cmd.camera.pos.p1"),
+            HelpParam("<yaw> <pitch>", "command.help.cmd.camera.pos.p2"),
+            HelpParam("[fov]", "command.help.cmd.camera.pos.p3"),
+            HelpParam("[smooth]", "command.help.cmd.camera.pos.p4"),
+        ),
+        command(
+            "camera.look", "camera",
+            "/pdraw camera look <x> <y> <z> <目标 x> <目标 y> <目标 z> [fov] [smooth]",
+            HelpParam("<x> <y> <z>", "command.help.cmd.camera.look.p1"),
+            HelpParam("<目标>", "command.help.cmd.camera.look.p2"),
+            HelpParam("[fov] [smooth]", "command.help.cmd.camera.look.p3"),
+        ),
+        command(
+            "camera.stop", "camera",
+            "/pdraw camera stop",
+        ),
+        command(
+            "texture.reload", "texture",
+            "/pdraw texture reload",
+        ),
+        command(
+            "light.probe", "light",
+            "/pdraw light",
+        ),
+    )
+
+    val commands: List<HelpCommand> = entries
+
+    private val byId = entries.associateBy(HelpCommand::id)
+
+    fun get(id: String): HelpCommand? = byId[id.lowercase()]
+
+    fun ofTopic(topic: String): List<HelpCommand> = entries.filter { it.topic == topic }
+
+    fun ids(): List<String> = entries.map(HelpCommand::id)
+
+    val exampleGroups: List<HelpExampleGroup> = listOf(
+        HelpExampleGroup(
+            "command.help.examples.section.instant",
+            listOf(
+                HelpExample("command.help.examples.sin",
+                    "pdraw particle draw sin at ~ ~2 ~ width 16 height 2 cycles 1 count 200 look color aqua life 200"),
+                HelpExample("command.help.examples.cube",
+                    "pdraw particle draw expr at ~ ~2 ~ count 100 vec3(rand()*4-2,rand()*4-2,rand()*4-2) " +
+                        "look color expr vec3(u,0.4,1-u) life 200"),
+            ),
+        ),
+        HelpExampleGroup(
+            "command.help.examples.section.follow",
+            listOf(
+                HelpExample("command.help.examples.follow_ring",
+                    "pdraw particle draw circle as ex_ring at ~ ~1 ~ radius 3 count 64 look color gold glow then spin 0 1 0 2"),
+                HelpExample("command.help.examples.follow_step",
+                    "pdraw particle emitter ex_fire at ~ ~1 ~ sample count 60 spawn vec3(rand()-0.5,0,rand()-0.5) " +
+                        "move vec3(0,0.06,0) look color orange size 0.1 glow life 30 rate 6 start"),
+            ),
+        ),
+        HelpExampleGroup(
+            "command.help.examples.section.cleanup",
+            listOf(
+                HelpExample("command.help.examples.cleanup_emitter", "pdraw particle delete emitter ex_fire"),
+                HelpExample("command.help.examples.cleanup_group", "pdraw particle delete group ex_ring"),
+            ),
+        ),
+    )
+}

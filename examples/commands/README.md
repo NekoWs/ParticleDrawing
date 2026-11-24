@@ -71,7 +71,7 @@ function pdraw_test:hell-eye-batch-clear
 # 站在想看的位置后执行；12 秒后自动收场
 function pdraw_test:hell-eye
 
-# 提前收场、清除（重复执行都安全）
+# 提前收场与清除
 function pdraw_test:hell-eye-end
 function pdraw_test:hell-eye-clear
 ```
@@ -82,10 +82,10 @@ function pdraw_test:hell-eye-clear
 | 持续 | 第 10–240 刻 | 外层四角星和圆环每刻重画、粒子随机外扩消散；内侧星常驻慢摆；漩涡火星在体内旋转内收 |
 | 收场 | 第 240 刻 | 立刻抹掉持续状态，三层图元从原尺寸每刻缩小一半，5 刻后消失 |
 
-时间线直接写在配置里：持续状态用发射窗口 `emit_from 10` 等开场结束，收场时间用
-`schedule function pdraw_test:hell-eye-end 12s replace` 触发。改 `emit_from` 的刻数和
-`/schedule` 的时长就能改节奏。想让它跟着实体走，把 `hell_eye_root` 的 `anchor fixed` 换成
-`anchor entity @p 0 4 0 false`，其余配置通过 `anchor emitter` 共享锚点，再给每个配置补 `follow true`。
+时间线直接写在配置里：持续状态用发射窗口 `window 10` 等开场结束，收场时间用
+`schedule function pdraw_test:hell-eye-end 12s replace` 触发。改 `window` 的刻数和
+`/schedule` 的时长就能改节奏。想让它跟着实体走，把 `hell_eye_root` 的 `at` 换成
+`at @p offset 0 4 0`，其余配置通过 `at emitter` 共享锚点，再给每个配置补 `follow true`。
 
 与原教程的差异：
 
@@ -93,34 +93,15 @@ function pdraw_test:hell-eye-clear
   `/schedule`，一个函数文件就能播完；没有命令方块方向、朝向和红石接线的要求。
 - ColorBlock 的 `normal` 模式是正态分布：示例里用 Box-Muller 公式
   （`sqrt(-2*ln(1-random()))*cos(2*PI*random())`）在出生公式里生成高斯偏移，语义等价且能直接读懂。
-- ColorBlock 的亮度参数是光图覆盖（0 等于全黑），示例用 `appearance glowing true` 走全亮绘制；
-  重叠处再靠 `appearance additive true` 自然叠亮，不开光影也能读出接近教程的层次。
+- ColorBlock 的亮度参数是光图覆盖（0 等于全黑），示例用 `look glow` 走全亮绘制；
+  重叠处再靠 `look additive` 自然叠亮，不开光影也能读出接近教程的层次。
 - ColorBlock 的 `clearparticle` 会清掉客户端所有粒子；示例收场只清自己这几组，不干扰别的特效。
 
-## 批量命令版：一行一个配置
+## 第二份地狱之眼配置
 
-[hell-eye-batch.mcfunction](hell-eye-batch.mcfunction) 用 `/pdraw particle batch` 把同一份地狱之眼写成
-**12 行**：每个配置一行，采样、出生/运动公式、发射窗口、外观和启动方式都写在同一条命令里。
-逐条配置的版本是 [hell-eye.mcfunction](hell-eye.mcfunction)（约 170 行），两者效果相同，可以对照着看。
-
-```mcfunction
-# 一次写好外层持续状态并开始发射
-pdraw particle batch hell_eye_hold_outer kind=emitter anchor=emitter anchor.emitter=hell_eye_root sample.range=-10,10,0.01 birth.x="12*sin(u)^3" birth.y="4*cos(u)^3" let.drift=0.1*random() motion.vx=x*drift motion.vy=y*drift motion.vz=z*drift emitter.lifetime=8 rate=1024 max_alive=8192 emitter.emit_from=10 appearance.texture=particle:minecraft:end_rod appearance.color=#ff4dff appearance.size_world=0.18,0.18 appearance.glowing=true appearance.additive=true
-
-# 一次性粒子与组时间线也是同一个命令
-pdraw particle batch spark kind=sphere center=~ ~1 ~ radius=2 count=200 appearance.color=#ff4040 particle.lifetime=30
-pdraw particle batch rune kind=program program.1=delay,20 program.2=fade_in,30,ease_out program.3=move,0,3,0,40,easeInOut
-```
-
-- 键名按分区注册，`/pdraw particle batch help` 列出全部键与值语法；
-- 公式用双引号，位置值可以带空格（`anchor.pos=~ ~4 ~`），不用再包一层引号；
-- `dryrun=true` 只校验并回显结果；任一项不合法时旧配置不变，`keep=true` 表示在原配置上改；
-- Tab 补全按已写的 `kind` 过滤键名，枚举键补全取值，`program.<序号>=` 补全动作名。
-
-配套函数：[hell-eye-batch-end.mcfunction](hell-eye-batch-end.mcfunction) 提前收场，
-[hell-eye-batch-clear.mcfunction](hell-eye-batch-clear.mcfunction) 删除配置并取消排程。
-批量命令的完整键表和实现说明见 [doc/batch-command.md](../../doc/batch-command.md)，常用写法见
-[命令文档的批量命令一节](../../doc/particle-commands.md#批量命令-batch)。
+[hell-eye-batch.mcfunction](hell-eye-batch.mcfunction) 也使用 v2 声明，每个发射器一行，包含采样、出生和运动公式、发射窗口、外观和启动方式。
+配套函数 [hell-eye-batch-end.mcfunction](hell-eye-batch-end.mcfunction) 用于提前收场，
+[hell-eye-batch-clear.mcfunction](hell-eye-batch-clear.mcfunction) 用于清理和取消排程。
 
 ## 几何动态示例
 
@@ -136,12 +117,12 @@ pdraw particle batch rune kind=program program.1=delay,20 program.2=fade_in,30,e
 三组均存在 240 刻（12 秒），最后 30 刻淡出，一次触发即可。mandala 共 2040 颗，另外两组分别
 960、1008 颗。站在图形侧上方更容易看出曼陀罗分层与曲面的立体关系。
 
-改坐标只需修改函数里的 anchor fixed。曼陀罗的另外两层引用 mandala 锚点，运行后也可以直接绑定实体：
+改坐标只需修改函数里的 `at`。曼陀罗的另外两层引用 mandala 锚点，运行后也可以直接绑定实体：
 
 ```mcfunction
-pdraw particle emitter mandala anchor entity @p 0 2 0 false
-pdraw particle emitter knot variable speed 0.0008
-pdraw particle emitter mobius variable tilt 1.1
+pdraw particle advanced emitter mandala edit at @p offset 0 2 0
+pdraw particle advanced emitter knot edit with variable speed 0.0008
+pdraw particle advanced emitter mobius edit with variable tilt 1.1
 ```
 
 speed 使用弧度/毫秒，tilt 使用弧度；这些示例的公式每刻读取变量，更新时不会重新生成整组。
@@ -156,9 +137,9 @@ speed 使用弧度/毫秒，tilt 使用弧度；这些示例的公式每刻读�
 | sharp-star | 锐角星形，参数拆成 p/q，速度用矩阵旋转 | sharp-star | 7 刻 |
 | five-star | 五角星曲线，步长 2 | five-star | 1 刻 |
 
-这些函数用 `sample` 选参数、`let` 拆中间量、`birth position` / `motion velocity` 一次写三个分量。
-`where` 里的 `sx/sy/sz` 是采样原始坐标，和出生后的 `x/y/z` 分开，筛选不受出生位移影响。
-参数含义见[分步配置粒子生成器](../../doc/particle-commands.md)。
+这些函数用 `sample` 选参数、`let` 拆中间量、`spawn` / `move` 一次写三个分量。
+`filter` 里的 `sx/sy/sz` 是采样原始坐标，和出生后的 `x/y/z` 分开，筛选不受出生位移影响。
+参数含义见[发射器与模板](../../doc/particle-commands.md#发射器与模板)。
 
 ## 大规模场景示例
 
@@ -172,7 +153,7 @@ speed 使用弧度/毫秒，tilt 使用弧度；这些示例的公式每刻读�
 
 这两个示例专门用来压性能：黑洞带向心加速度、逐刻吞没判定和动态光，升级动画每刻重算位置、
 透明度与尺寸。两者都走配方的热路径（标量公式 + `vec3(...)` 输出），两万颗在 7800 XT 上
-稳定 90–105 帧。想再压一点就减 `sample count` 或 `max_alive`；想更密就提到 6667（单发射器上限 8192）。
+稳定 90–105 帧。想再压一点就减 `sample count` 或 `max`；想更密就提到 6667（单发射器上限 8192）。
 
 升级动画的三个发射器各占 1/3 圈，`u` 被放大 512 倍后：整数部分决定角度、小数部分决定这颗在
 拖尾里的滞后量，所以每个角度上有一列粒子。改 `sin(ph*3.1416)*2.6` 里的 2.6 就是改残影最长能拖多远，
@@ -188,10 +169,10 @@ speed 使用弧度/毫秒，tilt 使用弧度；这些示例的公式每刻读�
 ## 图片示例
 
 image 示例需要把项目的 `platforms/neoforge-common/src/main/resources/icon.png` 复制为游戏工作目录的
-`particleImages/pd-icon.png`。680×680 图标、stride=8 共 7225 点，max_alive=8192 可容纳完整图片，
+`particleImages/pd-icon.png`。680×680 图标、stride=8 共 7225 点，`max 8192` 可容纳完整图片，
 rate=1024 在 8 刻内画完。替换图片后按有效像素数调整 stride、spacing、容量与寿命；
 采样超过 8192 点会报错。
 
-这些函数都是普通配置，使用同一套采样与公式命令。可以复制、更名、修改公式，或只调用末尾的 burst
-重复播放。参数、坐标系与实体跟随用法见[分步配置粒子生成器](../../doc/particle-commands.md)。
+这些函数都是普通配置，使用同一套采样与公式命令。可以复制、更名、修改公式，或用 `burst <发射器>`
+重复播放。参数、坐标系与实体跟随用法见[发射器与模板](../../doc/particle-commands.md#发射器与模板)。
 

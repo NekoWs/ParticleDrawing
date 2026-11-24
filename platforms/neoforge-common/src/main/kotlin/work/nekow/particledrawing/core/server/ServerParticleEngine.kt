@@ -60,6 +60,27 @@ class ServerParticleEngine(
     private val playerGroupCounts: MutableMap<UUID, MutableMap<UUID, Int>> = ConcurrentHashMap()
     /** 延迟生成、尚未落到 [particles] 的成员 → 已通过 `ParticleGroup.add` 指定的组。 */
     private val pendingGroups: MutableMap<UUID, UUID> = ConcurrentHashMap()
+    private val drawReservations = hashMapOf<UUID, Int>()
+    private var reservedDrawCount = 0
+
+    internal fun availableDrawCapacity(replacing: UUID?): Int {
+        val freed = replacing?.let { (groups[it]?.size() ?: 0) + (drawReservations[it] ?: 0) } ?: 0
+        return ParticleDrawingConfig.SERVER.maxParticlesPerDimension.get() - particles.size - reservedDrawCount + freed
+    }
+
+    internal fun reserveDraw(groupId: UUID, count: Int) {
+        drawReservations[groupId] = (drawReservations[groupId] ?: 0) + count
+        reservedDrawCount += count
+    }
+
+    internal fun claimDraw(groupId: UUID): Boolean {
+        val remaining = drawReservations[groupId] ?: return false
+        if (remaining == 1) drawReservations.remove(groupId) else drawReservations[groupId] = remaining - 1
+        reservedDrawCount--
+        return true
+    }
+
+    internal fun pendingDrawCount(groupId: UUID) = drawReservations[groupId] ?: 0
     private var visibilityTickCounter = 0
     private var lastCapacityWarnNanos = 0L
 
@@ -78,7 +99,7 @@ class ServerParticleEngine(
                       lifeCurve: ParticleLifeCurve? = null,
                       prev: Vec3? = null): ParticleData? {
         val maxTotal = ParticleDrawingConfig.SERVER.maxParticlesPerDimension.get()
-        if (particles.size >= maxTotal) {
+        if (particles.size + reservedDrawCount >= maxTotal) {
             warnWhenOverCapacity()
             return null
         }
@@ -118,7 +139,7 @@ class ServerParticleEngine(
         val created = ArrayList<ParticleData?>(specs.size)
         val payloads = ArrayList<ParticleSpawnPayload>(specs.size)
         for (spec in specs) {
-            if (particles.size >= maxTotal) {
+            if (particles.size + reservedDrawCount >= maxTotal) {
                 warnWhenOverCapacity()
                 created.add(null)
                 continue
@@ -540,7 +561,9 @@ class ServerParticleEngine(
 
     /** 销毁整个粒子组及其所有成员。 */
     fun destroyGroup(groupId: UUID, playersInDimension: Collection<ServerPlayer>) {
+        AnimationScheduler.cancelOwned(groupId)
         val group = groups.remove(groupId) ?: return
+        reservedDrawCount -= drawReservations.remove(groupId) ?: 0
 
         val ids = ArrayList(group.memberIds())
         for (id in ids) {
@@ -595,7 +618,7 @@ class ServerParticleEngine(
             }
         }
 
-        groups.entries.removeIf { it.value.isEmpty() }
+        groups.entries.removeIf { (id, group) -> group.isEmpty() && id !in drawReservations }
 
         // 周期性可见性重检：补发新进入范围的粒子，回收已越界的粒子
         visibilityTickCounter++
@@ -647,7 +670,10 @@ class ServerParticleEngine(
         }
 
         particles.clear()
+        AnimationScheduler.cancelOwned(groups.keys)
         groups.clear()
+        drawReservations.clear()
+        reservedDrawCount = 0
         playerParticles.clear()
         visibleTo.clear()
         playerGroupCounts.clear()

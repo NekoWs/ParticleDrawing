@@ -1,9 +1,11 @@
 package work.nekow.particledrawing.command
 
+import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.ParticleGroup
+import work.nekow.particledrawing.command.v2.GroupActions
+import work.nekow.particledrawing.command.v2.ProgramCommands
 import work.nekow.particledrawing.core.server.AnimationScheduler
 import java.util.UUID
-import kotlin.math.max
 import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.translation
 
@@ -12,11 +14,13 @@ internal object CommandParticleGroups {
     data class Entry(
         val name: String,
         val group: ParticleGroup,
+        val initialPivot: Vec3 = group.pivot,
         var programmed: Boolean = false,
         var activated: Boolean = false,
-        var expectedMembers: Int = 0,
         var membersReadyTick: Long = 0,
         var flushScheduled: Boolean = false,
+        var programState: ProgramCommands.State? = null,
+        var morphDraft: GroupActions.MorphConfig? = null,
         val pendingPrograms: MutableList<() -> Unit> = arrayListOf(),
     )
 
@@ -25,49 +29,34 @@ internal object CommandParticleGroups {
 
     private val dimensions = HashMap<UUID, LinkedHashMap<String, Entry>>()
 
-    fun create(dimension: UUID, name: String, group: ParticleGroup): Entry {
-        requireLocalized(NAME.matches(name)) { translation("error.group.name") }
-        val groups = dimensions.getOrPut(dimension) { linkedMapOf() }
-        requireLocalized(groups.size < MAX_GROUPS) { translation("error.group.limit", MAX_GROUPS) }
-        requireLocalized(name !in groups) { translation("error.group.exists", name) }
-        return Entry(name, group).also { groups[name] = it }
+    fun checkCapacity(dimension: UUID, name: String) {
+        val groups = dimensions[dimension].orEmpty()
+        requireLocalized(name in groups || groups.size < MAX_GROUPS) { translation("error.group.limit", MAX_GROUPS) }
+    }
+
+    fun install(dimension: UUID, name: String, group: ParticleGroup): Entry {
+        delete(dimension, name)
+        val entry = Entry(name, group)
+        dimensions.getOrPut(dimension) { linkedMapOf() }[name] = entry
+        return entry
+    }
+
+    fun delete(dimension: UUID, name: String): Boolean {
+        val groups = dimensions[dimension] ?: return false
+        val entry = groups.remove(name) ?: return false
+        entry.pendingPrograms.clear()
+        entry.group.remove()
+        if (groups.isEmpty()) dimensions.remove(dimension)
+        return true
+    }
+
+    fun clearPrepared(dimension: UUID) {
+        names(dimension).forEach { delete(dimension, it) }
     }
 
     fun get(dimension: UUID, name: String): Entry? = dimensions[dimension]?.get(name)
 
     fun names(dimension: UUID): List<String> = dimensions[dimension]?.keys?.toList() ?: emptyList()
-
-    fun remove(dimension: UUID, name: String): Boolean {
-        val groups = dimensions[dimension] ?: return false
-        val entry = groups.remove(name) ?: return false
-        disposeAfterPendingMembers(dimension, entry)
-        if (groups.isEmpty()) dimensions.remove(dimension)
-        return true
-    }
-
-    fun clear(dimension: UUID): Int {
-        val groups = dimensions.remove(dimension) ?: return 0
-        groups.values.forEach { disposeAfterPendingMembers(dimension, it) }
-        return groups.size
-    }
-
-    /** 已排的 Draw stagger 任务不能取消；留一个空组接住迟到成员，全部到齐后统一销毁。 */
-    private fun disposeAfterPendingMembers(dimension: UUID, entry: Entry) {
-        val remaining = entry.membersReadyTick - AnimationScheduler.currentTick()
-        entry.group.remove()
-        if (remaining <= 0L) return
-        entry.group.manager.getEngine().createGroup(entry.group.id, entry.group.pivot)
-        AnimationScheduler.schedule(dimension, remaining.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()) {
-            entry.group.remove()
-        }
-    }
-
-    /** Draw 的 stagger 会延迟真正生成成员；程序必须等最后一颗到组里后再下发。 */
-    fun waitForMembers(entry: Entry, particleCount: Int, stagger: Int) {
-        if (particleCount <= 1 || stagger <= 0) return
-        val lastDelay = (particleCount.toLong() - 1L) * stagger
-        entry.membersReadyTick = max(entry.membersReadyTick, AnimationScheduler.currentTick() + lastDelay + 1L)
-    }
 
     fun hasPendingMembers(entry: Entry): Boolean =
         entry.membersReadyTick > AnimationScheduler.currentTick()
@@ -80,20 +69,29 @@ internal object CommandParticleGroups {
             return false
         }
         entry.pendingPrograms += action
+        schedulePrograms(dimension, entry)
+        return true
+    }
+
+    private fun schedulePrograms(dimension: UUID, entry: Entry) {
         if (!entry.flushScheduled) {
+            val remaining = entry.membersReadyTick - AnimationScheduler.currentTick()
             entry.flushScheduled = true
-            AnimationScheduler.schedule(dimension, remaining.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()) {
+            AnimationScheduler.scheduleOwned(dimension, remaining.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), entry.group.id) {
                 entry.flushScheduled = false
                 if (get(dimension, entry.name) !== entry) {
                     entry.pendingPrograms.clear()
-                    return@schedule
+                    return@scheduleOwned
+                }
+                if (hasPendingMembers(entry)) {
+                    schedulePrograms(dimension, entry)
+                    return@scheduleOwned
                 }
                 val queued = entry.pendingPrograms.toList()
                 entry.pendingPrograms.clear()
                 queued.forEach { it() }
             }
         }
-        return true
     }
 
     /** 关卡卸载时引擎已经负责销毁，这里只丢弃旧世界引用。 */
@@ -104,6 +102,4 @@ internal object CommandParticleGroups {
     fun discardAll() {
         dimensions.clear()
     }
-
-    private val NAME = Regex("^[A-Za-z0-9_.:-]{1,64}$")
 }

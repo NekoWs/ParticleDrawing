@@ -47,6 +47,19 @@ class ParticleGroup(
     /** 可读退场的稳定令牌；重复 exit 用同一令牌重定向，旧完成信号按版本丢弃。 */
     internal val exitToken: UUID = UUID.randomUUID()
 
+    internal var drawCollector: ((Draw.Placement) -> Unit)? = null
+    internal val programCursorMs: Int get() = cursorMs
+    internal val programEntities: List<String> get() = entityBindings.map { it.handle }
+    internal val programVariables: Set<String> get() = vars.keys
+    internal val hasProgramExpression: Boolean get() = expressionMode
+    internal val programElapsedMs: Long get() = clock.elapsedMs(manager.level.gameTime)
+
+    internal fun beginCommandAppend() {
+        if (!hasDeliveredProgram()) return
+        cursorMs = 0
+        clock.beginAppend(manager.level.gameTime)
+    }
+
     /** 时间线游标（毫秒）：delay 累积推进（1 game tick = 50ms）。 */
     private var cursorMs = 0
 
@@ -482,7 +495,7 @@ class ParticleGroup(
 
     /** 排一次组销毁：把程序时刻换算成「从此刻起」的 tick 数，避免把销毁推后一整段已运行时长。 */
     private fun scheduleDestroy(programTimeMs: Int) {
-        AnimationScheduler.schedule(manager.dimensionId, clock.ticksFromNow(programTimeMs, manager.level.gameTime)) {
+        AnimationScheduler.scheduleOwned(manager.dimensionId, clock.ticksFromNow(programTimeMs, manager.level.gameTime), id) {
             manager.getEngine().destroyGroup(id, manager.getPlayers())
             stopProgramOnClient(destroyParticles = false)
         }

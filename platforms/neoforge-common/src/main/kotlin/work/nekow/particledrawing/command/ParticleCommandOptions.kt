@@ -234,8 +234,47 @@ internal object ParticleCommandOptionParser {
         return out
     }
 
+    /** CSS 颜色名到 #RRGGBB 的映射；解析时和十六进制颜色走同一条路径。 */
+    private val namedColors: Map<String, String> = mapOf(
+        "black" to "#000000", "silver" to "#C0C0C0", "gray" to "#808080", "grey" to "#808080",
+        "white" to "#FFFFFF", "maroon" to "#800000", "red" to "#FF0000", "purple" to "#800080",
+        "fuchsia" to "#FF00FF", "magenta" to "#FF00FF", "green" to "#008000", "lime" to "#00FF00",
+        "olive" to "#808000", "yellow" to "#FFFF00", "navy" to "#000080", "blue" to "#0000FF",
+        "teal" to "#008080", "aqua" to "#00FFFF", "cyan" to "#00FFFF", "orange" to "#FFA500",
+        "gold" to "#FFD700", "pink" to "#FFC0CB", "hotpink" to "#FF69B4", "deeppink" to "#FF1493",
+        "violet" to "#EE82EE", "indigo" to "#4B0082", "brown" to "#A52A2A", "chocolate" to "#D2691E",
+        "coral" to "#FF7F50", "crimson" to "#DC143C", "darkred" to "#8B0000", "darkgreen" to "#006400",
+        "darkblue" to "#00008B", "darkcyan" to "#008B8B", "darkorange" to "#FF8C00", "darkviolet" to "#9400D3",
+        "lightblue" to "#ADD8E6", "lightgreen" to "#90EE90", "lightgray" to "#D3D3D3", "lightgrey" to "#D3D3D3",
+        "skyblue" to "#87CEEB", "royalblue" to "#4169E1", "tomato" to "#FF6347", "turquoise" to "#40E0D0",
+        "tan" to "#D2B48C", "beige" to "#F5F5DC", "ivory" to "#FFFFF0", "khaki" to "#F0E68C",
+        "lavender" to "#E6E6FA", "plum" to "#DDA0DD", "orchid" to "#DA70D6", "salmon" to "#FA8072",
+        "sienna" to "#A0522D", "slategray" to "#708090", "slategrey" to "#708090", "springgreen" to "#00FF7F",
+        "seagreen" to "#2E8B57", "forestgreen" to "#228B22", "midnightblue" to "#191970", "dodgerblue" to "#1E90FF",
+        "steelblue" to "#4682B4", "firebrick" to "#B22222", "rebeccapurple" to "#663399", "peru" to "#CD853F",
+        "wheat" to "#F5DEB3", "azure" to "#F0FFFF", "honeydew" to "#F0FFF0", "lavenderblush" to "#FFF0F5",
+        "antiquewhite" to "#FAEBD7", "bisque" to "#FFE4C4", "burlywood" to "#DEB887", "cadetblue" to "#5F9EA0",
+        "chartreuse" to "#7FFF00", "cornflowerblue" to "#6495ED", "cornsilk" to "#FFF8DC", "darkgoldenrod" to "#B8860B",
+        "darkkhaki" to "#BDB76B", "darkmagenta" to "#8B008B", "darkolivegreen" to "#556B2F", "darkorchid" to "#9932CC",
+        "darksalmon" to "#E9967A", "darkseagreen" to "#8FBC8F", "darkslateblue" to "#483D8B", "darkslategray" to "#2F4F4F",
+        "darkturquoise" to "#00CED1", "deepskyblue" to "#00BFFF", "dimgray" to "#696969", "gainsboro" to "#DCDCDC",
+        "greenyellow" to "#ADFF2F", "indianred" to "#CD5C5C", "lawngreen" to "#7CFC00", "lightcoral" to "#F08080",
+        "lightcyan" to "#E0FFFF", "lightpink" to "#FFB6C1", "lightsalmon" to "#FFA07A", "lightseagreen" to "#20B2AA",
+        "lightskyblue" to "#87CEFA", "lightslategray" to "#778899", "lightsteelblue" to "#B0C4DE", "lightyellow" to "#FFFFE0",
+        "limegreen" to "#32CD32", "mediumaquamarine" to "#66CDAA", "mediumblue" to "#0000CD", "mediumorchid" to "#BA55D3",
+        "mediumpurple" to "#9370DB", "mediumseagreen" to "#3CB371", "mediumslateblue" to "#7B68EE", "mediumspringgreen" to "#00FA9A",
+        "mediumturquoise" to "#48D1CC", "mediumvioletred" to "#C71585", "navajowhite" to "#FFDEAD", "olivedrab" to "#6B8E23",
+        "orangered" to "#FF4500", "palegoldenrod" to "#EEE8AA", "palegreen" to "#98FB98", "paleturquoise" to "#AFEEEE",
+        "palevioletred" to "#DB7093", "papayawhip" to "#FFEFD5", "peachpuff" to "#FFDAB9", "powderblue" to "#B0E0E6",
+        "rosybrown" to "#BC8F8F", "saddlebrown" to "#8B4513", "sandybrown" to "#F4A460", "slateblue" to "#6A5ACD",
+        "snow" to "#FFFAFA", "thistle" to "#D8BFD8", "whitesmoke" to "#F5F5F5", "yellowgreen" to "#9ACD32",
+    )
+
+    /** 补全与错误提示共用的颜色名列表。 */
+    val colorNames: List<String> = namedColors.keys.sorted()
+
     internal fun parseColor(raw: String): Color {
-        val s = raw.removePrefix("#")
+        val s = namedColors[raw.trim().lowercase()]?.removePrefix("#") ?: raw.removePrefix("#")
         requireLocalized(s.length == 6 || s.length == 8) { translation("error.command.color_format", raw) }
         val value = s.toLongOrNull(16) ?: throw LocalizedArgumentException(translation("error.command.color_digits", raw))
         val r: Int

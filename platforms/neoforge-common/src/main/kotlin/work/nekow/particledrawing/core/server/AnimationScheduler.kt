@@ -14,9 +14,12 @@ object AnimationScheduler {
     private var serverTick = 0L
 
     // 任务带维度标识：关卡卸载时只清这个维度的任务，别的维度刚排的编排不受影响
-    private class Task(val dimensionId: UUID, val dueTick: Long, val action: () -> Unit)
+    private class Task(
+        val dimensionId: UUID, val dueTick: Long, val order: Long, val owner: UUID?, val action: () -> Unit,
+    )
 
-    private val queue = java.util.PriorityQueue<Task>(java.util.Comparator.comparingLong { it.dueTick })
+    private var nextOrder = 0L
+    private val queue = java.util.PriorityQueue(compareBy<Task> { it.dueTick }.thenBy { it.order })
 
     /** 当前服务端累计 tick（调度器启动以来）。 */
     @JvmStatic
@@ -25,7 +28,23 @@ object AnimationScheduler {
     /** 安排一个 [dimensionId] 维度内的延迟任务；delayTicks<=0 表示下一 tick 执行。 */
     @JvmStatic
     fun schedule(dimensionId: UUID, delayTicks: Int, action: () -> Unit) {
-        queue.add(Task(dimensionId, serverTick + delayTicks.coerceAtLeast(1), action))
+        enqueue(dimensionId, delayTicks, null, action)
+    }
+
+    internal fun scheduleOwned(dimensionId: UUID, delayTicks: Int, owner: UUID, action: () -> Unit) {
+        enqueue(dimensionId, delayTicks, owner, action)
+    }
+
+    private fun enqueue(dimensionId: UUID, delayTicks: Int, owner: UUID?, action: () -> Unit) {
+        queue.add(Task(dimensionId, serverTick + delayTicks.coerceAtLeast(1), nextOrder++, owner, action))
+    }
+
+    internal fun cancelOwned(owner: UUID) {
+        queue.removeIf { it.owner == owner }
+    }
+
+    internal fun cancelOwned(owners: Set<UUID>) {
+        queue.removeIf { it.owner in owners }
     }
 
     /** 服务端每 tick 推进：到期任务按先后出队执行。 */

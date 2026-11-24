@@ -11,7 +11,6 @@ import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -22,104 +21,9 @@ import kotlin.test.assertTrue
  * 发射窗口和寿命一旦写错，不用进游戏就能发现。
  */
 class HellEyeExampleTest {
-    private class Draft(val name: String) {
-        var sampling = "count 1"
-        var count = 1
-        var range: Triple<Double, Double, Double>? = null
-        val lets = linkedMapOf<String, String>()
-        val birth = linkedMapOf<String, String>()
-        val motion = linkedMapOf<String, String>()
-        var where = "true"
-        var kill = "false"
-        var rate = 8
-        var interval = 1
-        var lifetime = 80
-        var maxAlive = 4096
-        var emitFrom = 0
-        var emitUntil = -1
-        var texture: String? = null
-        var color: String? = null
-
-        fun recipe(): ParticleRecipe {
-            val seeds = range?.let { ParticleSampling.range(it.first, it.second, it.third) } ?: ParticleSampling.count(count)
-            val birthColor = linkedMapOf<String, String>()
-            color?.let { parseHexColor(it, birthColor) }
-            return ParticleRecipe(
-                seeds, rate = rate, interval = interval, lifetime = lifetime, maxAlive = maxAlive,
-                lets = lets, birth = birthColor + birth, motion = motion, where = where, kill = kill,
-                emitFromTick = emitFrom, emitUntilTick = emitUntil,
-            ).also { it.validate() }
-        }
-
-        private fun parseHexColor(text: String, into: MutableMap<String, String>) {
-            val hex = text.removePrefix("#")
-            fun channel(start: Int) = hex.substring(start, start + 2).toInt(16).toFloat() / 255f
-            into["r"] = channel(0).toString()
-            into["g"] = channel(2).toString()
-            into["b"] = channel(4).toString()
-            into["a"] = if (hex.length >= 8) channel(6).toString() else "1.0"
-        }
-    }
-
-    private fun lines(name: String): List<String> =
-        Files.readAllLines(Path.of("examples/commands/$name.mcfunction"))
-            .map(String::trim)
-            .filter { it.isNotEmpty() && !it.startsWith("#") && !it.startsWith("schedule ") }
-
-    private fun emitterName(line: String): String = line.split(' ')[4]
-
-    private fun config(name: String): Pair<Map<String, Draft>, List<Pair<String, String>>> {
-        val drafts = linkedMapOf<String, Draft>()
-        val invocations = arrayListOf<Pair<String, String>>()
-        for (line in lines(name)) {
-            val tokens = line.split(' ')
-            assertEquals("pdraw", tokens[0]); assertEquals("particle", tokens[1]); assertEquals("emitter", tokens[2])
-            val head = tokens[3]
-            if (head == "reset" || head == "create") {
-                drafts[tokens[4]] = Draft(tokens[4])
-                continue
-            }
-            // 收场函数在重新声明之前先 remove 旧配置：按命令语法是 <名称> remove，
-            // 配置还没声明时这里直接跳过，后面真正声明坍缩配置时再建。
-            if (tokens[4] in setOf("remove", "stop", "delete") && head !in drafts) continue
-            val draft = assertNotNull(drafts[head], "缺少配置声明：$line")
-            val body = tokens.drop(4).joinToString(" ")
-            val action = tokens[4]
-            val value = body.removePrefix(action).trim()
-            when (action) {
-                "anchor", "texture" -> Unit
-                "sample" -> {
-                    draft.sampling = value
-                    val args = value.split(' ')
-                    when (args[0]) {
-                        "count" -> { draft.count = args[1].toInt(); draft.range = null }
-                        "range" -> draft.range = Triple(args[1].toDouble(), args[2].toDouble(), args[3].toDouble())
-                        else -> error("未覆盖的采样：$value")
-                    }
-                }
-                "let", "birth", "motion" -> {
-                    val (field, formula) = value.split(' ', limit = 2).let { it[0] to it.getOrElse(1) { "" } }
-                    when (action) {
-                        "let" -> draft.lets[field] = formula
-                        "birth" -> draft.birth[field] = formula
-                        else -> draft.motion[field] = formula
-                    }
-                }
-                "where" -> draft.where = value
-                "kill" -> draft.kill = value
-                "lifetime" -> draft.lifetime = value.toInt()
-                "rate" -> draft.rate = value.toInt()
-                "interval" -> draft.interval = value.toInt()
-                "max_alive" -> draft.maxAlive = value.toInt()
-                "emit_from" -> draft.emitFrom = value.toInt()
-                "emit_until" -> draft.emitUntil = value.toInt()
-                "appearance" -> if (value.split(' ')[0] == "color") draft.color = value.split(' ')[1]
-                "burst", "start" -> invocations += draft.name to action
-                "inspect", "apply", "remove_selected" -> Unit
-                else -> error("未覆盖的发射器动作：$action")
-            }
-        }
-        return drafts to invocations
+    private fun config(name: String): Pair<Map<String, ParticleExampleDeclarations.Entry>, List<Pair<String, String>>> {
+        val configs = ParticleExampleDeclarations.read(name)
+        return configs.associateBy { it.name } to configs.mapNotNull { entry -> entry.action?.let { entry.name to it } }
     }
 
     private fun fast(recipe: ParticleRecipe): Boolean = RecipeExpressions(recipe).fast != null
@@ -127,7 +31,7 @@ class HellEyeExampleTest {
     @Test fun `地狱之眼开场绽放后在第 10 刻切换持续状态`() {
         val (drafts, invocations) = config("hell-eye")
         assertEquals(9, drafts.size)
-        val recipes = drafts.mapValues { it.value.recipe() }
+        val recipes = drafts.mapValues { it.value.recipe }
         assertEquals(
             listOf("hell_eye_intro_outer", "hell_eye_intro_ring", "hell_eye_intro_inner", "hell_eye_intro_motes",
                 "hell_eye_hold_outer", "hell_eye_hold_ring", "hell_eye_hold_motes", "hell_eye_hold_inner"),
@@ -183,10 +87,10 @@ class HellEyeExampleTest {
     @Test fun `地狱之眼收场在三组图元上同时向内坍缩`() {
         val (startDrafts, invocations) = config("hell-eye")
         assertTrue(invocations.isNotEmpty())
-        startDrafts.mapValues { it.value.recipe() } // 起手配置本身必须合法
+        startDrafts.mapValues { it.value.recipe } // 起手配置本身必须合法
         val (drafts, _) = config("hell-eye-end")
         assertEquals(3, drafts.size)
-        val recipes = drafts.mapValues { it.value.recipe() }
+        val recipes = drafts.mapValues { it.value.recipe }
         assertEquals(1001, recipes.getValue("hell_eye_end_outer").seeds.size)
         assertEquals(1001, recipes.getValue("hell_eye_end_ring").seeds.size)
         assertEquals(1001, recipes.getValue("hell_eye_end_inner").seeds.size)
@@ -214,10 +118,9 @@ class HellEyeExampleTest {
         val all = linkedSetOf<String>()
         all += config("hell-eye").first.keys
         all += config("hell-eye-end").first.keys
-        val cleared = lines("hell-eye-clear").mapNotNull { line ->
-            val tokens = line.split(' ')
-            if (tokens.size >= 5 && tokens[3] == "reset") tokens[4] else null
-        }.toSet()
+        val cleared = Files.readAllLines(Path.of("examples/commands/hell-eye-clear.mcfunction"))
+            .filter { it.startsWith("pdraw particle delete emitter ") }
+            .map { it.substringAfterLast(' ') }.toSet()
         assertEquals(all, cleared, "clear 函数漏掉了配置")
         assertTrue(Files.readAllLines(Path.of("examples/commands/hell-eye-clear.mcfunction"))
             .any { it.trim().startsWith("schedule clear ") })
@@ -225,9 +128,9 @@ class HellEyeExampleTest {
 
     @Test fun `持续状态的内侧星寿命无限且整体在锚点平面内`() {
         val (drafts, _) = config("hell-eye")
-        val inner = drafts.getValue("hell_eye_hold_inner").recipe()
+        val inner = drafts.getValue("hell_eye_hold_inner").recipe
         assertEquals(-1, inner.lifetime)
-        val outer = drafts.getValue("hell_eye_hold_outer").recipe()
+        val outer = drafts.getValue("hell_eye_hold_outer").recipe
         assertEquals(8, outer.lifetime)
         assertEquals(1024, outer.rate)
         assertEquals(8192, outer.maxAlive)
@@ -244,9 +147,9 @@ class HellEyeExampleTest {
 
     @Test fun `开场曲线尺寸与 ColorBlock 一致`() {
         val (drafts, _) = config("hell-eye")
-        val outer = RecipeRuntime(drafts.getValue("hell_eye_intro_outer").recipe(), burst = true)
-        val ring = RecipeRuntime(drafts.getValue("hell_eye_intro_ring").recipe(), burst = true)
-        val inner = RecipeRuntime(drafts.getValue("hell_eye_intro_inner").recipe(), burst = true)
+        val outer = RecipeRuntime(drafts.getValue("hell_eye_intro_outer").recipe, burst = true)
+        val ring = RecipeRuntime(drafts.getValue("hell_eye_intro_ring").recipe, burst = true)
+        val inner = RecipeRuntime(drafts.getValue("hell_eye_intro_inner").recipe, burst = true)
         repeat(9) { outer.tick(); ring.tick(); inner.tick() }
         // 第 9 刻接近最终尺寸（ColorBlock 指数绽放到 97%–111%，采样步长让极值略小于理论值）
         val maxOuterX = outer.particles.maxOf { abs(it.position.x) }

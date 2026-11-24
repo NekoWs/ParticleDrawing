@@ -1,5 +1,6 @@
 package work.nekow.particledrawing.selftest
 
+import net.minecraft.world.phys.Vec3
 import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
@@ -8,6 +9,7 @@ import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.api.ParticleManager
 import work.nekow.particledrawing.command.CommandParticleGroups
 import work.nekow.particledrawing.command.CommandParticleRecipes
+import work.nekow.particledrawing.command.help.HelpCommands
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.server.ServerParticleSources
 import work.nekow.particledrawing.light.LightFalloff
@@ -164,10 +166,10 @@ object RuntimeSelfTest {
                 check("发射窗口命令可改可回到默认") {
                     val draft = CommandParticleRecipes.get(dimension, "hell_eye_hold_ring")
                     val before = draft.recipe.emitFromTick
-                    server.commands.dispatcher.execute("pdraw particle emitter hell_eye_hold_ring emit_from 20", source)
-                    val changed = draft.recipe.emitFromTick
-                    server.commands.dispatcher.execute("pdraw particle emitter hell_eye_hold_ring emit_from $before", source)
-                    changed == 20 && draft.recipe.emitFromTick == before
+                    server.commands.dispatcher.execute("pdraw particle advanced emitter hell_eye_hold_ring edit window 20", source)
+                    val changed = CommandParticleRecipes.get(dimension, "hell_eye_hold_ring").recipe.emitFromTick
+                    server.commands.dispatcher.execute("pdraw particle advanced emitter hell_eye_hold_ring edit window $before", source)
+                    changed == 20 && CommandParticleRecipes.get(dimension, "hell_eye_hold_ring").recipe.emitFromTick == before
                 }
                 runLines("hell-eye-end.mcfunction")
                 check("收场配置落地并替换运行中的持续状态") {
@@ -185,145 +187,145 @@ object RuntimeSelfTest {
                 CommandParticleRecipes.discard(dimension)
                 ServerParticleSources.discard(dimension)
 
-                // 批量命令：dryrun 不落地、原子校验、三种 kind 的落地与补全表。
-                fun run(command: String): Int = try {
-                    server.commands.dispatcher.execute(command, source)
-                } catch (error: Exception) {
-                    failures += "批量命令抛异常：$command（${error.javaClass.simpleName}: ${error.message}）"
-                    org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").error("selftest command failed: {}", command, error)
-                    -1
+                fun run(command: String, commandSource: net.minecraft.commands.CommandSourceStack = source): Int = try {
+                    server.commands.dispatcher.execute(command, commandSource)
+                } catch (_: com.mojang.brigadier.exceptions.CommandSyntaxException) {
+                    0
                 }
-                val batchName = "selftest_batch"
-                run(
-                    "pdraw particle batch $batchName kind=emitter dryrun=true anchor=fixed anchor.pos=0 60 0 " +
-                        "sample.count=3 appearance.style=soft_dot appearance.color=#ff0000 rate=4 emitter.lifetime=20 mode=config",
-                )
-                check("批量 dryrun 不落地") { batchName !in CommandParticleRecipes.names(dimension) }
-                run(
-                    "pdraw particle batch $batchName kind=emitter anchor=fixed anchor.pos=0 60 0 " +
-                        "sample.count=3 appearance.style=soft_dot appearance.color=#ff0000 rate=4 emitter.lifetime=20 mode=config",
-                )
-                check("批量发射器落地") {
-                    val draft = CommandParticleRecipes.get(dimension, batchName)
-                    draft.recipe.seeds.size == 3 && draft.recipe.rate == 4 && draft.recipe.lifetime == 20 &&
-                        draft.recipe.visual.texture == work.nekow.particledrawing.api.ParticleStyle.SOFT_DOT.textureName &&
-                        draft.recipe.birth["r"] == "1.0"
-                }
-                val atomicResult = run("pdraw particle batch $batchName kind=emitter appearance.color=zz")
-                check("批量失败不改旧配置") {
-                    atomicResult == 0 && CommandParticleRecipes.get(dimension, batchName).recipe.rate == 4
-                }
-                run("pdraw particle emitter create selftest_text")
-                run("pdraw particle emitter selftest_text sample text SELFTEST")
-                check("文字采样命令落地") {
-                    val draft = if ("selftest_text" in CommandParticleRecipes.names(dimension)) {
-                        CommandParticleRecipes.get(dimension, "selftest_text")
-                    } else {
-                        null
-                    }
-                    draft?.sampling == CommandParticleRecipes.Sampling.TEXT &&
-                        draft.text == "SELFTEST" && draft.samples(level).size == 1024
-                }
-                CommandParticleRecipes.remove(dimension, "selftest_text")
-                run(
-                    "pdraw particle batch selftest_text_batch kind=emitter anchor=fixed anchor.pos=0 60 0 " +
-                        "sample.text=SELFTEST|BATCH sample.text_count=512 sample.text_height=2 " +
-                        "appearance.style=soft_dot emitter.lifetime=20 mode=config",
-                )
-                check("批量文字采样落地") {
-                    val draft = if ("selftest_text_batch" in CommandParticleRecipes.names(dimension)) {
-                        CommandParticleRecipes.get(dimension, "selftest_text_batch")
-                    } else {
-                        null
-                    }
-                    draft?.sampling == CommandParticleRecipes.Sampling.TEXT &&
-                        draft.text == "SELFTEST\nBATCH" && draft.recipe.seeds.size == 512
-                }
-                CommandParticleRecipes.remove(dimension, "selftest_text_batch")
-                run(
-                    "pdraw particle batch selftest_inst kind=emitter anchor=fixed anchor.pos=0 60 0 " +
-                        "sample.count=8 appearance.style=soft_dot emitter.lifetime=10 mode=start_instanced",
-                )
-                check("批量实例模式启动") {
-                    CommandParticleRecipes.get(dimension, "selftest_inst")?.handle?.isActive() == true
-                }
-                CommandParticleRecipes.remove(dimension, "selftest_inst")
-                run(
-                    "pdraw particle batch selftest_gpu kind=emitter anchor=fixed anchor.pos=0 60 0 " +
-                        "sample.count=64 appearance.style=soft_dot appearance.additive=true appearance.glowing=true appearance.light=0 " +
-                        "emitter.lifetime=10 mode=burst_gpu",
-                )
-                check("批量 GPU 模式启动") {
-                    CommandParticleRecipes.get(dimension, "selftest_gpu")?.handle?.isActive() == true
-                }
-                CommandParticleRecipes.remove(dimension, "selftest_gpu")
-                run(
-                    "pdraw particle batch selftest_text_shape kind=text center=0 70 0 text=SELFTEST|MORPH " +
-                        "count=256 height=3 appearance.style=soft_dot",
-                )
-                check("批量文字组落地") {
-                    val entry = CommandParticleGroups.get(dimension, "selftest_text_shape")
-                    entry != null && entry.group.size() == 256
-                }
-                val textMorph = run(
-                    "pdraw particle batch selftest_text_shape kind=program keep=true " +
-                        "program.1=delay,5 program.2=morph.start " +
-                        "morph.slots=64,\"vec3(cos(i*0.1)*4,0,sin(i*0.1)*4)\" morph.ticks=20",
-                )
-                check("文字组 morph 落地") {
-                    textMorph > 0 && CommandParticleGroups.get(dimension, "selftest_text_shape")?.programmed == true
-                }
-                CommandParticleGroups.remove(dimension, "selftest_text_shape")
-                run(
-                    "pdraw particle batch selftest_text_big kind=text center=0 70 0 text=星 count=6000 " +
-                        "height=2 appearance.style=soft_dot",
-                )
-                check("文字组支持超过 4096 颗") {
-                    CommandParticleGroups.get(dimension, "selftest_text_big")?.group?.size() == 6000
-                }
-                check("文字组上限仍是 8192") {
-                    run("pdraw particle batch selftest_text_big kind=text center=0 70 0 text=星 count=8193") == 0
-                }
-                CommandParticleGroups.remove(dimension, "selftest_text_big")
-                check("自由镜头需要玩家") { run("pdraw camera pos 0 60 0 0 0 70 0") == 0 }
-                val groupName = "selftest_batch_group"
-                run(
-                    "pdraw particle batch $groupName kind=sphere center=0 70 0 radius=1 count=8 " +
-                        "appearance.color=#00ff00 particle.lifetime=10",
-                )
-                check("批量一次性粒子落地") {
-                    val entry = CommandParticleGroups.get(dimension, groupName)
-                    entry != null && entry.group.size() == 8
-                }
-                val shapeAtomic = run(
-                    "pdraw particle batch $groupName kind=sphere center=0 70 0 radius=-1 count=8 appearance.color=#00ff00",
-                )
-                check("批量一次性粒子原子校验") {
-                    shapeAtomic == 0 && CommandParticleGroups.get(dimension, groupName)?.group?.size() == 8
-                }
-                run("pdraw particle batch $groupName kind=program program.1=delay,5 program.2=spin,0,1,0,3")
-                check("批量时间线落地") { CommandParticleGroups.get(dimension, groupName)?.programmed == true }
-                val replaceResult = run("pdraw particle batch $groupName kind=program program.1=delay,1")
-                check("已下发时间线不允许原地清空") { replaceResult == 0 }
-                val appendResult = run("pdraw particle batch $groupName kind=program keep=true program.1=delay,3")
-                check("keep=true 追加时间线") { appendResult == 1 }
-                val morphResult = run(
-                    "pdraw particle batch $groupName kind=program keep=true " +
-                        "program.1=morph.start morph.slots=4,\"vec3(i,0,0)\" morph.ticks=10",
-                )
-                check("批量形变落地") { morphResult == 1 }
-                check("批量命令 help 有键表") { run("pdraw particle batch help") > 0 }
-                check("交互式帮助索引可打开") { run("pdraw help") > 0 }
-                check("交互式帮助主题可打开") { run("pdraw help batch") > 0 }
-                check("交互式帮助索引可翻页") { run("pdraw help page 2") > 0 }
-                check("批量键目录可翻页") { run("pdraw particle batch help 2") > 0 }
-                check("批量键详情可打开") { run("pdraw particle batch help key rate") > 0 }
-                check("批量分区页可打开") { run("pdraw particle batch help group 外观") > 0 }
-                CommandParticleGroups.clear(dimension)
 
-                // 批量版地狱之眼：同样的效果改用 batch 行表达，验证键映射与三种模式。
+                fun suggest(command: String): List<String> = server.commands.dispatcher.getCompletionSuggestions(
+                    server.commands.dispatcher.parse(command, source),
+                ).join().list.map { it.text }
+
+                val name = "v2_check"
+                check("发射器 dryrun 不建配置") {
+                    run("pdraw particle emitter $name at 0 60 0 sample count 3 life 20 rate 4 start dryrun") == 1 &&
+                        CommandParticleRecipes.find(dimension, name) == null
+                }
+                check("发射器声明与外观落地") {
+                    run("pdraw particle emitter $name at 0 60 0 sample count 3 look style soft_dot color red life 20 rate 4 start") == 1 &&
+                        CommandParticleRecipes.get(dimension, name).let {
+                            it.recipe.seeds.size == 3 && it.recipe.rate == 4 &&
+                                it.recipe.visual.texture == work.nekow.particledrawing.api.ParticleStyle.SOFT_DOT.textureName &&
+                                it.recipe.birth["r"] == "1.0" && it.handle?.isActive() == true
+                        }
+                }
+                check("不兼容模式和错误外观保留原配置与句柄") {
+                    val before = CommandParticleRecipes.get(dimension, name)
+                    run("pdraw particle emitter $name look color zz") == 0 &&
+                        run("pdraw particle emitter $name start gpu") == 0 &&
+                        run("pdraw particle emitter $name look color expr vec3(2,0,0) dryrun") == 0 &&
+                        run("pdraw particle emitter $name at 0 60 0 life -1 burst gpu") == 0 &&
+                        CommandParticleRecipes.get(dimension, name) === before && before.handle?.isActive() == true
+                }
+                check("模板按使用位置解析，覆盖和清除独立") {
+                    val moved = source.withPosition(Vec3(50.0, 70.0, -4.0))
+                    run("pdraw particle template $name at ~ ~2 ~ sample count 2 orbit vec3(1,0,0) look color red glow") == 1 &&
+                        run("pdraw particle use $name as v2_red") == 1 &&
+                        run("pdraw particle use $name as v2_blue without orbit look color blue", moved) == 1 &&
+                        CommandParticleRecipes.get(dimension, "v2_red").recipe.orbit.isNotEmpty() &&
+                        CommandParticleRecipes.get(dimension, "v2_blue").let {
+                            it.recipe.orbit.isEmpty() && it.recipe.visual.glowing && it.recipe.birth["b"] == "1.0" &&
+                                it.anchor.position.x == 50.0 && it.anchor.position.y == 72.0 && it.anchor.position.z == -4.0
+                        }
+                }
+                check("模板快照保留锚点与布局") {
+                    run("pdraw particle template v2_snapshot from emitter v2_blue") == 1 &&
+                        run("pdraw particle use v2_snapshot as v2_copy") == 1 &&
+                        CommandParticleRecipes.get(dimension, "v2_copy").let {
+                            it.recipe.seeds.size == 2 && it.anchor == CommandParticleRecipes.get(dimension, "v2_blue").anchor
+                        }
+                }
+                check("名字链拒绝循环与被引用的删除") {
+                    run("pdraw particle emitter v2_child at emitter v2_blue") == 1 &&
+                        run("pdraw particle advanced emitter v2_blue edit at emitter v2_child") == 0 &&
+                        run("pdraw particle delete emitter v2_blue") == 0 &&
+                        run("pdraw particle delete emitter v2_child") == 1
+                }
+                check("持续发射与爆发独立，停止后可重启") {
+                    val current = CommandParticleRecipes.get(dimension, name)
+                    run("pdraw particle start $name") == 0 &&
+                        run("pdraw particle burst $name") == 1 && current.activeHandles().size == 2 &&
+                        run("pdraw particle stop $name") == 1 && current.activeHandles().size == 2 &&
+                        run("pdraw particle start $name") == 1 && current.activeHandles().size == 3 &&
+                        run("pdraw particle clear emitter $name") == 1 && current.activeHandles().isEmpty()
+                }
+                check("实例、GPU 和同步动作") {
+                    run("pdraw particle emitter v2_inst at 0 60 0 sample count 8 look style soft_dot life 10 start instanced") == 1 &&
+                        run("pdraw particle emitter v2_gpu at 0 60 0 sample count 64 look style soft_dot additive glow light 0 life 10 burst gpu") == 1 &&
+                        run("pdraw particle emitter v2_sync at 0 60 0 sample count 4 life 10 max 64 burst synced") == 1
+                }
+                check("文字采样与图元") {
+                    run("pdraw particle emitter v2_text sample text \"SELFTEST|V2\" count 512 height 2") == 1 &&
+                        CommandParticleRecipes.get(dimension, "v2_text").recipe.seeds.size == 512 &&
+                        run("pdraw particle draw text as v2_letters at 0 70 0 text 星 size 2 count 6000") == 6000 &&
+                        run("pdraw particle draw text as v2_letters at 0 70 0 text 星 count 8193") == 0 &&
+                        CommandParticleGroups.get(dimension, "v2_letters")?.group?.size() == 6000
+                }
+                check("图元合并、颜色公式与出错回滚") {
+                    val drawn = run("pdraw particle draw sin as $name at 0 70 0 width 4 height 1 cycles 1 count 8 " +
+                        "look color expr vec3(u,0,1-u) also expr at 0 70 0 count 4 \"vec3(u, 1, 0)\"")
+                    val before = CommandParticleGroups.get(dimension, name)
+                    drawn == 12 && before?.group?.size() == 12 &&
+                        run("pdraw particle draw circle as $name at 0 70 0 radius 2 count 4 then rotate 0 0 0 90 4") == 0 &&
+                        run("pdraw particle draw dot as $name at 0 70 0 dryrun") == 1 &&
+                        CommandParticleGroups.get(dimension, name) === before
+                }
+                check("编排追加、形变草稿与替换边界") {
+                    run("pdraw particle advanced group $name program then delay 5 then spin 0 1 0 3") == 2 &&
+                        run("pdraw particle advanced group $name program replace then delay 1") == 0 &&
+                        run("pdraw particle advanced group $name morph configure slots 12 \"vec3(i, 70, 0)\" ticks 10") == 1 &&
+                        run("pdraw particle advanced group $name morph start") == 1 &&
+                        run("pdraw particle advanced group $name morph inspect") == 1
+                }
+                check("错峰覆盖取消旧生成，清理按类型查找") {
+                    run("pdraw particle draw line as $name from 0 70 0 to 1 70 0 count 4 stagger 2 then spin 0 1 0 1") == 4 &&
+                        run("pdraw particle draw dot as $name at 0 70 0") == 1 &&
+                        run("pdraw particle clear group $name") == 1 &&
+                        CommandParticleGroups.get(dimension, name)?.group?.size() == 0 &&
+                        CommandParticleRecipes.find(dimension, name) != null
+                }
+                check("补全使用声明段与维度内对象") {
+                    suggest("pdraw particle draw ").contains("sin") &&
+                        suggest("pdraw particle emitter $name ").containsAll(listOf("at", "sample", "look", "start")) &&
+                        suggest("pdraw particle emitter $name look glow ").contains("start") &&
+                        suggest("pdraw particle start ").contains(name) &&
+                        suggest("pdraw particle delete template ").contains(name)
+                }
+                check("v2 帮助和可运行示例") {
+                    run("pdraw help") > 0 && run("pdraw help particle") > 0 && run("pdraw help cmd draw") > 0 &&
+                        run("pdraw help page 2") > 0 && HelpCommands.exampleGroups.all { group ->
+                            group.entries.all { example -> run(example.command.removePrefix("/")) > 0 }
+                        }
+                }
+                check("旧粒子入口已移除") {
+                    run("pdraw particle batch old kind=emitter") == 0 &&
+                        run("pdraw particle group list") == 0
+                }
+                check("自由镜头需要玩家") { run("pdraw camera pos 0 60 0 0 0 70 0") == 0 }
+                CommandParticleGroups.clearPrepared(dimension)
+                CommandParticleRecipes.discard(dimension)
+                ServerParticleSources.discard(dimension)
+                work.nekow.particledrawing.command.v2.EmitterCommands.discard(dimension)
+
+                check("数据包示例通过 v2 语法检查") {
+                    val root = examples.parent
+                    java.nio.file.Files.walk(root).use { paths ->
+                        paths.filter { it.toString().endsWith(".mcfunction") }.forEach { file ->
+                            java.nio.file.Files.readAllLines(file).forEach { line ->
+                                if (line.contains("pdraw particle ") && !line.trimStart().startsWith("#")) {
+                                    val command = line.substringAfter("pdraw particle ")
+                                        .replace(Regex("\\$\\([^)]+\\)"), "0")
+                                    work.nekow.particledrawing.command.v2.ParticleCommandsV2.checkSyntax("pdraw particle $command", source)
+                                }
+                            }
+                        }
+                    }
+                    true
+                }
+                // 验证第二份地狱之眼函数的开始、收尾与清理。
                 runLines("hell-eye-batch.mcfunction")
-                check("批量版地狱之眼落地") {
+                check("第二份地狱之眼落地") {
                     val root = CommandParticleRecipes.get(dimension, "hell_eye_root")
                     val intro = CommandParticleRecipes.get(dimension, "hell_eye_intro_outer")
                     val hold = CommandParticleRecipes.get(dimension, "hell_eye_hold_outer")
@@ -333,19 +335,19 @@ object RuntimeSelfTest {
                         hold.recipe.emitFromTick == 10 && hold.recipe.maxAlive == 8192 && hold.recipe.lifetime == 8 &&
                         inner.recipe.lifetime == -1 && inner.recipe.seeds.size == 1001
                 }
-                check("批量版地狱之眼在运行") {
+                check("第二份地狱之眼在运行") {
                     listOf("hell_eye_intro_outer", "hell_eye_intro_motes", "hell_eye_hold_outer", "hell_eye_hold_inner")
                         .all { CommandParticleRecipes.get(dimension, it).handle?.isActive() == true }
                 }
                 runLines("hell-eye-batch-end.mcfunction")
-                check("批量版收场替换持续状态") {
+                check("第二份收场替换持续状态") {
                     val outer = CommandParticleRecipes.get(dimension, "hell_eye_end_outer")
                     val hold = CommandParticleRecipes.get(dimension, "hell_eye_hold_outer")
                     outer.recipe.seeds.size == 1001 && outer.recipe.lifetime == 5 && outer.handle?.isActive() == true &&
                         hold.handle == null
                 }
                 runLines("hell-eye-batch-clear.mcfunction")
-                check("批量版清空后没有配置") {
+                check("第二份清空后没有配置") {
                     CommandParticleRecipes.names(dimension).none { it.startsWith("hell_eye_") }
                 }
                 CommandParticleRecipes.discard(dimension)

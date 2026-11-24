@@ -90,10 +90,26 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
                 out[g.names[0]] = finite(g.runner.eval(ctx))
             } else {
                 val v = g.runner.evalAny(ctx)
+                if (g.names[0] == "r") requireLocalized(v is Vec3 && listOf(v.x, v.y, v.z).all { it in 0.0..1.0 }) {
+                    translation("error.command.v2.color_range")
+                }
                 for (k in g.names.indices) out[g.names[k]] = finite(component(v, g.components[k], g.names[k]))
             }
         }
         return out
+    }
+
+    internal fun drawVector(formula: String): (Int, Int, Double) -> Vec3 {
+        validate(formula, setOf("i", "n", "u"))
+        val runner = compile(formula, false)
+        return { i, n, u ->
+            values.clear()
+            values["i"] = i.toDouble()
+            values["n"] = n.toDouble()
+            values["u"] = u
+            val vector = runner.evalAny(ctx)
+            requireNotNullLocalized(vector as? Vec3) { translation("error.expression.orbit_vec3") }
+        }
     }
 
     fun evaluate(groups: List<OutputGroup>): Map<String, Double> =
@@ -235,6 +251,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
             commits += target to VarNode(temp, 0, 0)
         }
         for ((name, expr) in outputs) {
+            if (name == "color") return false
             val node = parseExpression(expr)
             val vector = VECTOR_OUTPUTS[name]
             if (vector == null) {
@@ -274,11 +291,27 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
                 out += OutputGroup(
                     components.map { it.first }.toTypedArray(),
                     components.map { it.second }.toIntArray(),
-                    compile(expr, false),
+                    compile(expr, false).also { runner -> if (name == "color") validateColorSyntax(runner.node) },
                 )
             }
         }
         return out
+    }
+
+    private fun validateColorSyntax(node: Node) {
+        val constantValid = when (node) {
+            is NumNode, is StrNode, is BoolNode, is UndefinedNode, is ArrayNode -> false
+            is CallNode -> {
+                val name = (node.callee as? VarNode)?.name
+                when (name) {
+                    "vec2", "vec4", "mat3", "mat4" -> false
+                    "vec3" -> node.args.size == 3 && node.args.all { it !is NumNode || it.value in 0.0..1.0 }
+                    else -> true
+                }
+            }
+            else -> true
+        }
+        requireLocalized(constantValid) { translation("error.command.v2.color_range") }
     }
 
     /** 从向量/数组里取第 [index] 个分量；写错形状直接报错，不静默取默认值。 */
@@ -378,6 +411,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
             "position" to listOf("x" to 0, "y" to 1, "z" to 2),
             "velocity" to listOf("vx" to 0, "vy" to 1, "vz" to 2),
             "acceleration" to listOf("ax" to 0, "ay" to 1, "az" to 2),
+            "color" to listOf("r" to 0, "g" to 1, "b" to 2),
         )
 
         /** 可写字段全集，命令补全用。 */
