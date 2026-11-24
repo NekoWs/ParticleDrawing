@@ -622,5 +622,6 @@
   "particledrawing.command.free_camera.set": "Free camera engaged",
   "particledrawing.command.free_camera.stop": "Player view restored",
   "particledrawing.error.free_camera.player": "The free camera can only be driven by a player",
-  "particledrawing.error.free_camera.direction": "Target coincides with the camera position"
+  "particledrawing.error.free_camera.direction": "Target coincides with the camera position",
+  "particledrawing.error.text.points": "The point set is empty."
 }

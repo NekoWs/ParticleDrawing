@@ -33,6 +33,7 @@ internal object BatchShapes {
         val lifetime: Int,
         val positions: Map<String, Vec3>,
         val numbers: Map<String, Double>,
+        val text: String? = null,
     )
 
     private val POSITION_KEYS = setOf("pos", "start", "end", "center")
@@ -55,6 +56,7 @@ internal object BatchShapes {
         val seen = HashMap<String, Int>()
         val positions = LinkedHashMap<String, Vec3>()
         val numbers = LinkedHashMap<String, Double>()
+        var textValue: String? = null
         val options = ArrayList<String>()
         for (token in tokens) {
             val spec = BatchKeys.require(token.key, BatchKind.SHAPE)
@@ -65,6 +67,7 @@ internal object BatchShapes {
             when {
                 token.key == "kind" || token.key == "dryrun" -> Unit
                 token.key in POSITION_KEYS -> positions[token.key] = BatchOptions.position(token.value, token.key).resolve(source)
+                token.key == "text" -> textValue = BatchOptions.text(token.value).replace('|', '\n')
                 token.key in NUMBER_KEYS -> numbers[token.key] = BatchOptions.double(token.value, token.key)
                 token.key.startsWith("appearance.") -> {
                     val field = token.key.substringAfter('.')
@@ -75,6 +78,11 @@ internal object BatchShapes {
                 }
                 token.key in OPTION_MAP -> options += "${OPTION_MAP.getValue(token.key)}=\"${BatchOptions.text(token.value).replace("\"", "\\\"")}\""
                 else -> throw LocalizedArgumentException(translation("error.batch.unknown_key", token.key, "shape"))
+            }
+        }
+        if (shape == "text") {
+            requireLocalized(textValue != null && textValue!!.isNotBlank()) {
+                translation("error.batch.shape_required", shape, "text")
             }
         }
         for (required in BatchKeys.shapeRequired(shape)) {
@@ -97,6 +105,7 @@ internal object BatchShapes {
             lifetime = parsed.lifetime,
             positions = positions,
             numbers = numbers,
+            text = textValue,
         )
     }
 
@@ -118,6 +127,7 @@ internal object BatchShapes {
                 val density = int("density")
                 (density + 1) * (density + 1) * (density + 1)
             }
+            "text" -> (numbers["count"]?.toInt() ?: 1024)
             else -> throw LocalizedArgumentException(translation("error.batch.shape", shape))
         }
     }
@@ -151,7 +161,7 @@ internal object BatchShapes {
         atLeast("width", 0.0)
         atLeast("height", 0.0)
         atLeast("depth", 0.0)
-        between("count", 1, 4096)
+        between("count", 1, if (plan.shape == "text") AnimationProgramCodecs.MAX_PROGRAM_MEMBERS else 4096)
         between("perimeter", 1, 4096)
         between("layers", 1, 256)
         between("segments", 1, 1024)
@@ -216,6 +226,13 @@ internal object BatchShapes {
                 m, plan.positions.getValue("center"), plan.numbers.getValue("radius"),
                 plan.numbers.getValue("count").toInt(), o.color, o.scale, o.stagger, group, o.visual, o.lifeCurve, plan.lifetime,
             )
+            "text" -> {
+                val center = plan.positions.getValue("center")
+                val count = plan.numbers["count"]?.toInt() ?: 1024
+                val height = plan.numbers["height"] ?: 2.0
+                val points = Draw.textPoints(plan.text.orEmpty(), center, count, height)
+                Draw.points(m, center, points, o.color, o.scale, o.stagger, group, o.visual, o.lifeCurve, plan.lifetime)
+            }
             "cuboid" -> Draw.cuboid(
                 m, plan.positions.getValue("center"), plan.numbers.getValue("width"), plan.numbers.getValue("height"),
                 plan.numbers.getValue("depth"), plan.numbers.getValue("density").toInt(), o.hollow,

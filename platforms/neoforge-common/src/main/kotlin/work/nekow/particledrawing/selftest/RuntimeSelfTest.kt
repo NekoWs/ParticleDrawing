@@ -256,6 +256,34 @@ object RuntimeSelfTest {
                     CommandParticleRecipes.get(dimension, "selftest_gpu")?.handle?.isActive() == true
                 }
                 CommandParticleRecipes.remove(dimension, "selftest_gpu")
+                run(
+                    "pdraw particle batch selftest_text_shape kind=text center=0 70 0 text=SELFTEST|MORPH " +
+                        "count=256 height=3 appearance.style=soft_dot",
+                )
+                check("批量文字组落地") {
+                    val entry = CommandParticleGroups.get(dimension, "selftest_text_shape")
+                    entry != null && entry.group.size() == 256
+                }
+                val textMorph = run(
+                    "pdraw particle batch selftest_text_shape kind=program keep=true " +
+                        "program.1=delay,5 program.2=morph.start " +
+                        "morph.slots=64,\"vec3(cos(i*0.1)*4,0,sin(i*0.1)*4)\" morph.ticks=20",
+                )
+                check("文字组 morph 落地") {
+                    textMorph > 0 && CommandParticleGroups.get(dimension, "selftest_text_shape")?.programmed == true
+                }
+                CommandParticleGroups.remove(dimension, "selftest_text_shape")
+                run(
+                    "pdraw particle batch selftest_text_big kind=text center=0 70 0 text=星 count=6000 " +
+                        "height=2 appearance.style=soft_dot",
+                )
+                check("文字组支持超过 4096 颗") {
+                    CommandParticleGroups.get(dimension, "selftest_text_big")?.group?.size() == 6000
+                }
+                check("文字组上限仍是 8192") {
+                    run("pdraw particle batch selftest_text_big kind=text center=0 70 0 text=星 count=8193") == 0
+                }
+                CommandParticleGroups.remove(dimension, "selftest_text_big")
                 check("自由镜头需要玩家") { run("pdraw camera pos 0 60 0 0 0 70 0") == 0 }
                 val groupName = "selftest_batch_group"
                 run(

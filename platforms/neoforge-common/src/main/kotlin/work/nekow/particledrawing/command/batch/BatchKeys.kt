@@ -18,7 +18,7 @@ internal enum class BatchKind {
     companion object {
         /** 形状名放在这里，kind 判断时先查它。 */
         val SHAPES = listOf(
-            "dot", "field", "line", "beam", "helix", "circle", "disc", "triangle", "hexagram", "rect", "sphere", "cuboid",
+            "dot", "field", "line", "beam", "helix", "circle", "disc", "triangle", "hexagram", "rect", "sphere", "cuboid", "text",
         )
 
         fun of(raw: String): BatchKind? = when (raw.lowercase()) {
@@ -154,6 +154,7 @@ internal object BatchKeys {
         key("shape.hollow", SHAPE, "一次性粒子", "true|false", choices = listOf("true", "false")),
         key("shape.taper", SHAPE, "一次性粒子", "true|false", choices = listOf("true", "false")),
         key("shape.thickness", SHAPE, "一次性粒子", "小数"),
+        key("text", SHAPE, "文字", "文字，| 换行"),
     )
 
     private val PROGRAM_KEYS = listOf(
@@ -171,7 +172,9 @@ internal object BatchKeys {
         key("morph.max_accel", PROGRAM, "形变", "小数"),
         key("morph.converge", PROGRAM, "形变", "小数"),
         key("morph.path", PROGRAM, "形变", "straight|quadratic|cubic", choices = listOf("straight", "quadratic", "cubic")),
-        key("morph.easing", PROGRAM, "形变", "缓动名"),
+        key("morph.easing", PROGRAM, "形变", "形变缓动名", choices = listOf(
+            "linear", "none", "in_quad", "out_quad", "in_out_quad", "out_cubic", "in_out_cubic", "out_back", "back",
+        )),
         key("morph.wobble", PROGRAM, "形变", "none|bell|noise|vortex[,强度[,峰数]]", choices = listOf("none", "bell", "noise", "vortex")),
         key("morph.allocation", PROGRAM, "形变", "nearest|index|angle", choices = listOf("nearest", "index", "angle")),
         key("morph.dynamic", PROGRAM, "形变", "true|false", choices = listOf("true", "false")),
@@ -233,6 +236,7 @@ internal object BatchKeys {
         "rect" -> listOf("center", "width", "height", "density")
         "sphere" -> listOf("center", "radius", "count")
         "cuboid" -> listOf("center", "width", "height", "depth", "density")
+        "text" -> listOf("center")
         else -> emptyList()
     }
 

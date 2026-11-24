@@ -194,6 +194,28 @@ object Draw {
         }
     }
 
+    /**
+     * 把一组世界坐标点铺成粒子组（文字点阵、自定义点云用）。
+     * 点集为空时抛出本地化错误；[center] 只作为自动建组的轴心。
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun points(
+        manager: ParticleManager, center: Vec3, points: List<Vec3>,
+        colorFn: ColorSource = ColorSource.of(Color.WHITE), scale: Float = DEFAULT_SCALE,
+        stagger: Int = 0, group: ParticleGroup? = null, visual: ParticleVisual = ParticleVisual(),
+        lifeCurve: ParticleLifeCurve? = null, lifetime: Int = -1,
+    ): ParticleGroup {
+        requireLocalized(points.isNotEmpty()) { translation("error.text.points") }
+        val g = group ?: manager.createGroup(center)
+        val total = points.size
+        for (i in 0 until total) {
+            val t = if (total > 1) i.toDouble() / (total - 1) else 0.0
+            place(manager, g, points[i], colorFn.colorAt(t), scale, t, visual, false, i, stagger, lifeCurve, lifetime)
+        }
+        return g
+    }
+
     // 2D 图形（axis 选择所在平面）
 
     /**

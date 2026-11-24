@@ -197,7 +197,9 @@ internal object BatchCommandTree {
                 when {
                     key.startsWith("program.") && key.removePrefix("program.").toIntOrNull() != null ->
                         suggestions += BatchKeys.actionNames
-                    key == "morph.easing" -> suggestions += BatchKeys.easingNames
+                    key == "morph.easing" -> suggestions += listOf(
+                        "linear", "none", "in_quad", "out_quad", "in_out_quad", "out_cubic", "in_out_cubic", "out_back", "back",
+                    )
                     key.endsWith("easing") -> suggestions += BatchKeys.easingNames
                 }
             }

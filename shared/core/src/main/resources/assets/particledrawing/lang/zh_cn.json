@@ -622,5 +622,6 @@
   "particledrawing.command.free_camera.set": "自由镜头已切换",
   "particledrawing.command.free_camera.stop": "已恢复玩家视角",
   "particledrawing.error.free_camera.player": "自由镜头只能由玩家执行",
-  "particledrawing.error.free_camera.direction": "目标点与镜头位置重合，无法确定朝向"
+  "particledrawing.error.free_camera.direction": "目标点与镜头位置重合，无法确定朝向",
+  "particledrawing.error.text.points": "点集为空，无法生成粒子。"
 }
