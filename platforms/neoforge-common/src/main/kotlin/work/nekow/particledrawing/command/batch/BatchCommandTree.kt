@@ -10,6 +10,7 @@ import net.minecraft.commands.Commands
 import net.minecraft.commands.SharedSuggestionProvider
 import net.minecraft.network.chat.Component
 import work.nekow.particledrawing.command.CommandParticleGroups
+import work.nekow.particledrawing.command.help.BatchHelp
 import work.nekow.particledrawing.command.CommandParticleRecipes
 import work.nekow.particledrawing.command.ParticleCommandOptions
 import work.nekow.particledrawing.i18n.LocalizedArgumentException
@@ -30,12 +31,12 @@ internal object BatchCommandTree {
     private val NAME = Regex("[A-Za-z0-9_.:-]{1,64}")
 
     fun tree(): LiteralArgumentBuilder<CommandSourceStack> = Commands.literal("batch")
-        .executes(::help)
+        .executes { BatchHelp.overview(it.source) }
         .then(Commands.literal("help")
-            .executes(::help)
-            .then(Commands.argument("group", StringArgumentType.word())
-                .suggests { _, builder -> SharedSuggestionProvider.suggest(BatchKeys.groups, builder) }
-                .executes(::help)))
+            .executes { BatchHelp.overview(it.source) }
+            .then(Commands.argument("args", StringArgumentType.greedyString())
+                .suggests(BatchHelp::suggest)
+                .executes { ctx -> BatchHelp.handle(ctx.source, StringArgumentType.getString(ctx, "args")) }))
         .then(Commands.argument("name", StringArgumentType.word())
             .suggests(::suggestNames)
             .then(Commands.argument("options", StringArgumentType.greedyString())
@@ -131,29 +132,6 @@ internal object BatchCommandTree {
             false,
         )
         return count
-    }
-
-    private fun help(ctx: CommandContext<CommandSourceStack>): Int {
-        val section = try {
-            StringArgumentType.getString(ctx, "group")
-        } catch (_: IllegalArgumentException) {
-            null
-        }
-        ctx.source.sendSuccess({ translation("command.batch.usage").component() }, false)
-        ctx.source.sendSuccess({ translation("command.batch.examples").component() }, false)
-        val keys = if (section == null) BatchKeys.all else BatchKeys.all.filter { it.group.equals(section, ignoreCase = true) }
-        if (keys.isEmpty()) {
-            ctx.source.sendSuccess({ translation("command.batch.group_missing", section ?: "").component() }, false)
-            return 1
-        }
-        for ((group, entries) in keys.groupBy { it.group }) {
-            ctx.source.sendSuccess({ Component.literal("[$group]") }, false)
-            for (entry in entries) {
-                val line = if (entry.repeatable) "${entry.name}=${entry.syntax}（可重复）" else "${entry.name}=${entry.syntax}"
-                ctx.source.sendSuccess({ Component.literal("  $line") }, false)
-            }
-        }
-        return keys.size
     }
 
     private fun suggestNames(

@@ -117,6 +117,7 @@ More in the [getting started guide](doc/getting-started.md).
 | `/pdraw particle add ...`    | Add dots, beams, helices, magic circles, spheres and other primitives. |
 | `/pdraw particle emitter ...` | Configure sampling, images, formulas, anchors, particle lifetimes and the emission window in steps. |
 | `/pdraw particle batch ...` | Write a whole emitter, shape group or program timeline in one command with namespaced `key=value` options. |
+| `/pdraw help` | Open the interactive in-chat help: paged topics, clickable entries, usage lines and example commands you can click to fill. |
 | `/pdraw camera ...` | Drive a player's camera from commands for cinematics and tours; `pos`, `look` and `stop`. |
 | `/pdraw particle program ...` | Choreograph anchors, entity following, movement, spin, pulses, variables and per-particle expressions. |
 | `/pdraw animation list`      | List the animations available in `animations/`.                 |

@@ -26,6 +26,7 @@ import work.nekow.particledrawing.core.client.CameraController
 import work.nekow.particledrawing.core.network.CameraPosePayload
 import work.nekow.particledrawing.core.client.ClientAnimationManager
 import work.nekow.particledrawing.core.client.ClientParticleEngine
+import work.nekow.particledrawing.command.help.HelpBook
 import work.nekow.particledrawing.util.ParticleUtils
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
@@ -73,8 +74,13 @@ object ParticleDrawCommands {
 
         dispatcher.register(
             Commands.literal("pdraw")
-                .executes(::rootUsage)
+                .executes { HelpBook.open(it.source, 1) }
                 .then(ParticleDrawParticleCommands.tree())
+                .then(Commands.literal("help")
+                    .executes { HelpBook.open(it.source, 1) }
+                    .then(Commands.argument("args", StringArgumentType.greedyString())
+                        .suggests(::suggestHelpArgs)
+                        .executes { ctx -> openHelp(ctx, StringArgumentType.getString(ctx, "args")) }))
                 .then(animation)
                 .then(Commands.literal("texture")
                     .then(Commands.literal("reload").executes(::reloadTextures)))
@@ -120,12 +126,26 @@ object ParticleDrawCommands {
      * @param ctx 命令上下文
      * @return 命令执行结果
      */
-    private fun rootUsage(ctx: CommandContext<CommandSourceStack>): Int {
-        ctx.source.sendSuccess(
-            { translation("command.root.usage").component() },
-            false,
+    private fun openHelp(ctx: CommandContext<CommandSourceStack>, raw: String): Int {
+        val parts = raw.trim().split(Regex("\\s+")).filter(String::isNotEmpty)
+        if (parts.isEmpty()) return HelpBook.open(ctx.source, 1)
+        if (parts[0].equals("page", ignoreCase = true)) {
+            return HelpBook.open(ctx.source, parts.getOrNull(1)?.toIntOrNull() ?: 1)
+        }
+        return HelpBook.topic(ctx.source, parts[0])
+    }
+
+    private fun suggestHelpArgs(
+        ctx: CommandContext<CommandSourceStack>, builder: SuggestionsBuilder,
+    ): CompletableFuture<Suggestions> {
+        val raw = try { StringArgumentType.getString(ctx, "args") } catch (_: IllegalArgumentException) { "" }
+        val prefix = raw.substringAfterLast(' ')
+        val before = raw.substring(0, raw.length - prefix.length)
+        val options = if (before.isBlank()) listOf("page") + HelpBook.ids() else HelpBook.ids()
+        return SharedSuggestionProvider.suggest(
+            options.filter { it.startsWith(prefix, ignoreCase = true) },
+            builder.createOffset(builder.input.lastIndexOf(' ') + 1),
         )
-        return 1
     }
 
     /**

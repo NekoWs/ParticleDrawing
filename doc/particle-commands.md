@@ -994,8 +994,7 @@ pdraw particle batch rune kind=program program.1=delay,20 program.2=fade_in,30,e
 落地前报错，失败时现有配置与时间线保持原样。`dryrun=true` 只校验并回显解析结果，适合先核对再执行。
 `keep=true` 对已下发过时间线的组做追加；`keep=false` 想清空时间线时要求该组尚未下发，否则请换一个组。
 
-`/pdraw particle batch help [分区]` 按 `顶层`、`锚点`、`采样`、`公式`、`发射器`、`碰撞`、`子发射`、
-`外观`、`形状`、`一次性粒子`、`组编排`、`形变` 分区列出键与值语法；Tab 补全按 kind 过滤键名，
+`/pdraw particle batch help` 打开交互式键目录：总览页给 kind 与分区的按钮，键列表按 8 个一页翻，点键名进入详情页（适用 kind、值语法、可选值、分区介绍与可点击填入的模板命令）。也可以直接跳页：`help 2`、`help group 外观`、`help kind emitter 2`、`help key rate`。`/pdraw help` 是同样的交互式帮助目录，按钮可以翻页、跳主题、把示例命令填进聊天框。
 枚举键补全取值，`program.<序号>=` 补全动作名。
 
 完整示例见 [hell-eye-batch.mcfunction](../examples/commands/hell-eye-batch.mcfunction)：与逐条配置的

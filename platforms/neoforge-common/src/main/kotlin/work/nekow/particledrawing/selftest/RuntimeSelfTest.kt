@@ -190,6 +190,7 @@ object RuntimeSelfTest {
                     server.commands.dispatcher.execute(command, source)
                 } catch (error: Exception) {
                     failures += "批量命令抛异常：$command（${error.javaClass.simpleName}: ${error.message}）"
+                    org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").error("selftest command failed: {}", command, error)
                     -1
                 }
                 val batchName = "selftest_batch"
@@ -312,6 +313,12 @@ object RuntimeSelfTest {
                 )
                 check("批量形变落地") { morphResult == 1 }
                 check("批量命令 help 有键表") { run("pdraw particle batch help") > 0 }
+                check("交互式帮助索引可打开") { run("pdraw help") > 0 }
+                check("交互式帮助主题可打开") { run("pdraw help batch") > 0 }
+                check("交互式帮助索引可翻页") { run("pdraw help page 2") > 0 }
+                check("批量键目录可翻页") { run("pdraw particle batch help 2") > 0 }
+                check("批量键详情可打开") { run("pdraw particle batch help key rate") > 0 }
+                check("批量分区页可打开") { run("pdraw particle batch help group 外观") > 0 }
                 CommandParticleGroups.clear(dimension)
 
                 // 批量版地狱之眼：同样的效果改用 batch 行表达，验证键映射与三种模式。

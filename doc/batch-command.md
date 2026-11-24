@@ -11,7 +11,7 @@
 - `kind=program`：组编排时间线（move/spin/fade/expression/morph…），一次写完整条时间线；
 - 键名全部带命名空间，与现有子命令一一对应；
 - 先校验后落地，任一项出错整条不生效；
-- Tab 补全键名与枚举值，`help` 列出键表；
+- Tab 补全键名与枚举值，`help` 是分页、可点击的交互式键目录（`help`、`help 2`、`help group 外观`、`help key rate`）；
 - `dryrun=true` 只校验并回显解析结果，方便核对。
 
 不在本期：跨存档导出/导入、替代现有任何命令（旧写法全部保留）。
@@ -205,7 +205,7 @@ morph 配置键（`kind=program` 时与 `program.*` 一起写）：
 
 - 键注册表驱动的 Tab 补全：按前缀分组（`appearance.`、`sample.`、`motion.`、`anchor.`、`program.`、`morph.`），
   枚举键（`anchor=`、`mode=`、`morph.path=` 等）补全取值，缓动名补全现有缓动；
-- `pdraw particle batch help [分区]` 输出键表与三条示例；
+- `pdraw particle batch help` 输出交互式键目录：分页、按钮、键详情与可点击填入的模板命令；
 - 键表与补全、help 共用同一张注册表，避免三处各写一份。
 
 ## 落地拆分
