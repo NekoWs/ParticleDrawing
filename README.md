@@ -32,7 +32,7 @@ evaluated on the client, so a running effect costs little to no per-tick bandwid
   staged effects, while clients receive only the declaration.
 - Spawn up to 256 particle specs per packet, with automatic chunking for the bulk position, velocity,
   force and track operations.
-- Five drop-in showcase effects (nebula / rune text / light weave / ribbons / stargate): [showcase effects](examples/showcase/README.md).
+- A compact command sample: [cube.mcfunction](examples/commands/cube.mcfunction).
 - Use per-particle textures, sub-rectangle UVs, anisotropic sizes, fixed orientation, additive
   blending, built-in soft-dot/line shapes and PNG registration that syncs itself to clients, without a
   resource pack.

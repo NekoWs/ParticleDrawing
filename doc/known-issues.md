@@ -3,8 +3,8 @@
 ## Minecraft 1.21.1
 
 - `/pdraw animation camera` 摄像机预览暂不可用。该版本会在模组类可见前加载 `Camera`。
-- 1.21.1 的数据包格式为 48，资源包格式为 34。仓库中的[数据包示例](../examples/commands/README.md)
-  提供 26.x 的 `pack.mcmeta`，在 1.21.1 使用这些函数时需换成该版本的元数据。
+- 1.21.1 的数据包格式为 48，资源包格式为 34。仓库中的命令函数（如 [cube.mcfunction](../examples/commands/cube.mcfunction)）
+  按 26.x 编写，在 1.21.1 放进数据包时需换成该版本的 `pack.mcmeta`。
 
 ## 加色粒子的渲染管线
 

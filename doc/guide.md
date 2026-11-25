@@ -306,25 +306,6 @@ Java 可调用 `Draw.textPoints("变换形状", center, 602, 2.4)`，也可传�
 `yaw` 和 `pitch` 以度为单位，分别绕 Y 轴和 X 轴走最短角差。面向摄像机的粒子相对相机旋转，固定朝向的粒子以世界 +Z 为基准。
 `size` 使用 `ParticleSpawnSpec.scale` 的单位，等比缩放粒子。省略的属性沿用当前值。
 
-[SubtitleMorph.kt](../examples/api/SubtitleMorph.kt) 用 602 颗粒子绘制「粒子字幕」和「变换形状」，
-还提供立方体表面和球面。把示例复制到调用方，在服务端主线程生成。字幕在 XY 平面，从 +Z 一侧观看。
-
-```kotlin
-import examples.SubtitleMorph
-import examples.SubtitleMorph.Target
-import work.nekow.particledrawing.api.ParticleManager
-
-// 创建时显示「粒子字幕」。level 是 ServerLevel，center 是世界坐标 Vec3。
-val effect = SubtitleMorph.spawn(ParticleManager.of(level), center)
-
-// 在命令回调或延时任务中调用，过渡到立方体。
-effect.show(Target.CUBE)
-```
-
-也可以传入 `Target.SECOND_CAPTION`、`Target.SPHERE` 或 `Target.FIRST_CAPTION` 切换到另一句字幕、球面或初始字幕。
-每次切换计划用 48 刻缓动和至多 8 刻错峰，限速时会延长。中途调用会从当前布局接续。示例复用同一组粒子，
-结束时调用 `effect.remove()`。示例的立方体槽位按坐标设置不同的 yaw 和 size，同时将 pitch 过渡到 −32°。
-
 公式重载通过 `MorphOptions(writeAttributes = true)` 配合 `yaw`、`pitch`、`size` 公式使用。
 需要每刻更新目标时，可同时启用 `dynamicSlots`。
 组表达式会接管位置，使用形变的成员应放在专用粒子组里。
@@ -791,7 +772,7 @@ trail.isActive()
 **写运动公式时容易踩的坑**：`motion acceleration` 是「每刻都施加一次的加速度」，写一个恒定的切向分量
 会让速度无界增长，几秒内粒子就被甩出视野（表现是画面瞬间变空、帧率虚高）。要做环绕运动，应该在
 `birth velocity` 里给一次切向初速度，`motion acceleration` 只留向心分量；需要吸积再给速度一点阻尼或
-向内分量，见[黑洞示例](../examples/commands/blackhole.mcfunction)。
+向内分量，见[粒子命令](particle-commands.md)里的发射器公式段。
 
 ## 缓动
 

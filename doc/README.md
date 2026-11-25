@@ -15,4 +15,4 @@ ParticleDrawing 在 NeoForge 中绘制和编排粒子，也可播放编辑器导
 | [已知限制](known-issues.md) | 平台功能差异和渲染、音频限制 |
 | [能力缺口](particle-gaps.md) | 还画不出来、做不到的粒子能力与优先级 |
 
-数据包目录和可直接运行的函数见[命令函数示例](../examples/commands/README.md)。
+可运行的命令示例保留在 [cube.mcfunction](../examples/commands/cube.mcfunction)。
