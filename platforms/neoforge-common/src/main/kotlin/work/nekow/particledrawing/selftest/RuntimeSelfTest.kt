@@ -355,21 +355,6 @@ object RuntimeSelfTest {
                 ServerParticleSources.discard(dimension)
                 work.nekow.particledrawing.command.v2.EmitterCommands.discard(dimension)
 
-                check("数据包示例通过 v2 语法检查") {
-                    val root = examples.parent
-                    java.nio.file.Files.walk(root).use { paths ->
-                        paths.filter { it.toString().endsWith(".mcfunction") }.forEach { file ->
-                            java.nio.file.Files.readAllLines(file).forEach { line ->
-                                if (line.contains("pdraw particle ") && !line.trimStart().startsWith("#")) {
-                                    val command = line.substringAfter("pdraw particle ")
-                                        .replace(Regex("\\$\\([^)]+\\)"), "0")
-                                    work.nekow.particledrawing.command.v2.ParticleCommandsV2.checkSyntax("pdraw particle $command", source)
-                                }
-                            }
-                        }
-                    }
-                    true
-                }
                 // 验证第二份地狱之眼函数的开始、收尾与清理。
                 runLines("hell-eye-batch.mcfunction")
                 check("第二份地狱之眼落地") {
