@@ -9,7 +9,7 @@
 | 26.3 | 26.3.0.101 | 25 |
 
 选择与游戏版本对应的 ParticleDrawing JAR，放入 `mods/`。联机时，客户端与服务端安装同一版本的
-ParticleDrawing。[播放第一个动画](animation.md#播放动画文件) · [命令示例](../examples/commands/cube.mcfunction)
+ParticleDrawing。[播放第一个动画](animation.md#播放动画文件)
 
 ## Gradle 依赖
 

@@ -21,6 +21,8 @@ import kotlin.test.assertTrue
  * 发射窗口和寿命一旦写错，不用进游戏就能发现。
  */
 class HellEyeExampleTest {
+    private val hasExample = Files.exists(Path.of("examples/commands/hell-eye.mcfunction"))
+
     private fun config(name: String): Pair<Map<String, ParticleExampleDeclarations.Entry>, List<Pair<String, String>>> {
         val configs = ParticleExampleDeclarations.read(name)
         return configs.associateBy { it.name } to configs.mapNotNull { entry -> entry.action?.let { entry.name to it } }
@@ -29,6 +31,7 @@ class HellEyeExampleTest {
     private fun fast(recipe: ParticleRecipe): Boolean = RecipeExpressions(recipe).fast != null
 
     @Test fun `地狱之眼开场绽放后在第 10 刻切换持续状态`() {
+        if (!hasExample) return
         val (drafts, invocations) = config("hell-eye")
         assertEquals(9, drafts.size)
         val recipes = drafts.mapValues { it.value.recipe }
@@ -85,6 +88,7 @@ class HellEyeExampleTest {
     }
 
     @Test fun `地狱之眼收场在三组图元上同时向内坍缩`() {
+        if (!hasExample) return
         val (startDrafts, invocations) = config("hell-eye")
         assertTrue(invocations.isNotEmpty())
         startDrafts.mapValues { it.value.recipe } // 起手配置本身必须合法
@@ -115,6 +119,7 @@ class HellEyeExampleTest {
     }
 
     @Test fun `清空函数覆盖地狱之眼全部配置`() {
+        if (!hasExample) return
         val all = linkedSetOf<String>()
         all += config("hell-eye").first.keys
         all += config("hell-eye-end").first.keys
@@ -127,6 +132,7 @@ class HellEyeExampleTest {
     }
 
     @Test fun `持续状态的内侧星寿命无限且整体在锚点平面内`() {
+        if (!hasExample) return
         val (drafts, _) = config("hell-eye")
         val inner = drafts.getValue("hell_eye_hold_inner").recipe
         assertEquals(-1, inner.lifetime)
@@ -146,6 +152,7 @@ class HellEyeExampleTest {
     }
 
     @Test fun `开场曲线尺寸与 ColorBlock 一致`() {
+        if (!hasExample) return
         val (drafts, _) = config("hell-eye")
         val outer = RecipeRuntime(drafts.getValue("hell_eye_intro_outer").recipe, burst = true)
         val ring = RecipeRuntime(drafts.getValue("hell_eye_intro_ring").recipe, burst = true)

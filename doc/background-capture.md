@@ -7,8 +7,8 @@
 ```powershell
 python -B tools/recording/record.py `
   --world 'run/neoforge-26.3/client/saves/PD Command v2 Smoke' `
-  --setup tools/recording/cube-setup.mcfunction `
-  --scene examples/commands/cube.mcfunction `
+  --setup path/to/setup.mcfunction `
+  --scene path/to/scene.mcfunction `
   --output build/recordings/cube-entrance.mp4
 ```
 
@@ -31,8 +31,8 @@ $modJar = Get-ChildItem 'platforms/neoforge-26.2/build/libs/particledrawing-26.2
 python -B tools/recording/record.py `
   --instance $instance --shader-pack 'BSL_v10.1.8.zip' --mod-jar $modJar.FullName `
   --world (Join-Path $instance 'saves/新的世界') `
-  --setup tools/recording/cube-setup.mcfunction `
-  --scene examples/commands/cube.mcfunction `
+  --setup path/to/setup.mcfunction `
+  --scene path/to/scene.mcfunction `
   --output build/recordings/cube-bsl.mp4
 ```
 

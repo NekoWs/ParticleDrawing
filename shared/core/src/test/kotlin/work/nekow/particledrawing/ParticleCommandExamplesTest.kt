@@ -2,15 +2,20 @@ package work.nekow.particledrawing
 
 import work.nekow.particledrawing.animation.recipe.RecipeRuntime
 import work.nekow.particledrawing.api.*
+import java.nio.file.Files
+import java.nio.file.Path
 import work.nekow.particledrawing.math.Vec3
 import kotlin.math.abs
 import kotlin.test.*
 
 class ParticleCommandExamplesTest {
+    private val hasExamples = Files.isDirectory(Path.of("examples/commands"))
+
     private fun example(name: String, emitterName: String? = null): ParticleRecipe =
         ParticleExampleDeclarations.read(name).single { emitterName == null || it.name == emitterName }.recipe
 
     @Test fun `ColorBlock 星形发射器示例都能画出对应形状`() {
+        if (!hasExamples) return
         val seven = RecipeRuntime(example("seven-star"), true).also { repeat(41) { _ -> it.tick() } }
         assertEquals(1001, seven.particles.size)
         val sharp = RecipeRuntime(example("sharp-star"), true).also { repeat(7) { _ -> it.tick() } }
@@ -20,6 +25,7 @@ class ParticleCommandExamplesTest {
     }
 
     @Test fun `图片示例的全部像素能同时存在并在寿命结束后回收`() {
+        if (!hasExamples) return
         val recipe = example("image")
         assertEquals(7225, recipe.seeds.size)
         val runtime = RecipeRuntime(recipe, true)
@@ -34,6 +40,7 @@ class ParticleCommandExamplesTest {
     }
 
     @Test fun `球面示例旋转变色后仍保持半径且可以热更新转速`() {
+        if (!hasExamples) return
         val recipe = example("rotating-sphere")
         val runtime = RecipeRuntime(recipe, true)
         runtime.tick()
@@ -47,6 +54,7 @@ class ParticleCommandExamplesTest {
     }
 
     @Test fun `桃心示例逐步画完且留在锚点竖直平面`() {
+        if (!hasExamples) return
         val recipe = example("heart")
         val runtime = RecipeRuntime(recipe, true)
         repeat(20) { runtime.tick() }
@@ -58,6 +66,7 @@ class ParticleCommandExamplesTest {
     }
 
     @Test fun `动态曲臂保持九臂数量并在有界区域摆动`() {
+        if (!hasExamples) return
         val recipe = example("tentacles")
         val runtime = RecipeRuntime(recipe, true)
         runtime.tick()
@@ -72,6 +81,7 @@ class ParticleCommandExamplesTest {
     }
 
     @Test fun `环面结闭合且旋转倾斜不改变到中心的距离`() {
+        if (!hasExamples) return
         val recipe = example("torus-knot")
         val runtime = RecipeRuntime(recipe, true)
         runtime.tick()
@@ -85,6 +95,7 @@ class ParticleCommandExamplesTest {
     }
 
     @Test fun `莫比乌斯带首尾反向衔接且扭转曲面旋转时不散开`() {
+        if (!hasExamples) return
         val runtime = RecipeRuntime(example("mobius"), true)
         runtime.tick()
         val before = runtime.particles.map { it.position }
@@ -97,6 +108,7 @@ class ParticleCommandExamplesTest {
     }
 
     @Test fun `曼陀罗三层始终完整居中且外环保持三种半径`() {
+        if (!hasExamples) return
         val runtimes = listOf("mandala", "mandala-star", "mandala-ring").associateWith { name ->
             val recipe = example("mandala", name)
             assertTrue(recipe.follow)

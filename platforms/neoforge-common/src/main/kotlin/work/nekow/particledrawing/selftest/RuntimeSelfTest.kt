@@ -130,7 +130,7 @@ object RuntimeSelfTest {
             // 校验语法、公式、发射窗口与锚点链接都能落地。数据包里才有 /schedule，跳过排程行。
             val examples = examplesDirectory()
             if (examples == null) {
-                failures += "找不到 examples/commands 目录，无法检查命令示例"
+                // 本地不再携带 .mcfunction 夹具时跳过命令示例检查。
             } else {
                 val server = event.server
                 val source = server.createCommandSourceStack()

@@ -80,7 +80,7 @@ pdraw particle use flame as preview at ~ ~6 ~ start dryrun
 
 ### 世界输入、碰撞和事件
 
-`collide …` 设置碰撞类别及反弹、摩擦。`subemit …` 可配置死亡后释放的子粒子。`with environment …` 和 `with probe …` 为公式提供世界输入，`with on …` 可在出生、碰撞或死亡时运行子配方。查看[高级配置](command-v2-design.md#71-配方配置和原地修改)和 [cube 示例](../examples/commands/cube.mcfunction)。
+`collide …` 设置碰撞类别及反弹、摩擦。`subemit …` 可配置死亡后释放的子粒子。`with environment …` 和 `with probe …` 为公式提供世界输入，`with on …` 可在出生、碰撞或死亡时运行子配方。查看[高级配置](command-v2-design.md#71-配方配置和原地修改)。
 
 ## 帮助
 
