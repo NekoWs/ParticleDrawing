@@ -194,7 +194,10 @@ runs {
         if (project.hasProperty('pdRecordProfile')) {
             def profile = project.file(project.property('pdRecordProfile'))
             workingDirectory project.layout.dir(providers.provider { profile })
-            arguments '--gameDir', profile.absolutePath
+            // NeoForge 1.21.1 的运行配置已传入 --gameDir .，这里仅切换工作目录。
+            if (targetProperties.getProperty('minecraft_version') != '1.21.1') {
+                arguments '--gameDir', profile.absolutePath
+            }
         }
         if (project.hasProperty('pdBackgroundCapture') || project.hasProperty('pdCaptureDir') || project.hasProperty('pdRecordProfile')) {
             systemProperty 'pd.backgroundCapture', 'true'

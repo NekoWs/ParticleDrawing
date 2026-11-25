@@ -147,7 +147,7 @@ OGG/WAV 音频和带脚本的函数对象。
 用 `/pdraw animation stop` 停止当前维度的动画。
 
 用 `/pdraw animation var <name> <value>` 更新脚本变量，用 `/pdraw animation debug` 查看播放状态，
-或用 `/pdraw animation camera <name>` 预览摄像机轨道。Minecraft 1.21.1 暂不支持动画摄像机预览。
+或在单人游戏中用 `/pdraw animation camera <name>` 预览摄像机轨道。
 代码中可用 `ServerAnimationManager` 播放动画、更新变量或停止播放。[动画播放](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/animation.md)
 
 ## 文档

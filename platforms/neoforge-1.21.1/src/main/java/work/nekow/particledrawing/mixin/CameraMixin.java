@@ -3,7 +3,6 @@ package work.nekow.particledrawing.mixin;
 import net.minecraft.client.Camera;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.BlockGetter;
-import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -22,7 +21,7 @@ import work.nekow.particledrawing.core.client.CameraController;
 public abstract class CameraMixin {
 
     @Shadow
-    private Vec3 position;
+    protected abstract void setPosition(double x, double y, double z);
 
     @Shadow
     protected abstract void setRotation(float yRot, float xRot, float roll);
@@ -34,6 +33,13 @@ public abstract class CameraMixin {
     private void particleDrawing$overrideCamera(
             BlockGetter level, Entity entity, boolean detached, boolean thirdPersonReverse,
             float partialTicks, CallbackInfo ci) {
+        CameraController.FreePose free = CameraController.freeCameraPose();
+        if (free != null) {
+            this.setPosition(free.x, free.y, free.z);
+            this.setRotation(free.yaw, free.pitch, 0.0F);
+            return;
+        }
+
         ClientAnimationPlayer.CameraPose pose = CameraController.currentPose((double) partialTicks);
         if (pose == null) {
             return;
@@ -43,7 +49,7 @@ public abstract class CameraMixin {
         double[] target = pose.getTarget();
         double rollDeg = pose.getRoll();
 
-        this.position = new Vec3(pos[0], pos[1], pos[2]);
+        this.setPosition(pos[0], pos[1], pos[2]);
 
         // 视线方向 d = normalize(target - pos)
         double dx = target[0] - pos[0];

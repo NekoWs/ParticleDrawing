@@ -153,8 +153,8 @@ Files are loaded on demand, so you can add or replace them while the game is run
 `/pdraw animation list` to list animations or `/pdraw animation stop` to stop them in the current dimension.
 
 Use `/pdraw animation var <name> <value>` to update a script variable, `/pdraw animation debug` to check
-playback status, or `/pdraw animation camera <name>` to preview a camera track. Camera-track preview is
-currently unavailable on Minecraft 1.21.1. From code, use `ServerAnimationManager` to play an animation,
+playback status, or `/pdraw animation camera <name>` to preview a camera track in single-player.
+From code, use `ServerAnimationManager` to play an animation,
 update variables, or stop playback. [Animation playback](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/animation.md)
 
 ## Documentation

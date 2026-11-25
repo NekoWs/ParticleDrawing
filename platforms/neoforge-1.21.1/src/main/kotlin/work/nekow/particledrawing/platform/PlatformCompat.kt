@@ -28,8 +28,7 @@ object PlatformCompat {
     /** 当前进程是否客户端。1.21.1 是字段 `dist`。 */
     val isClientDist: Boolean get() = FMLEnvironment.dist == Dist.CLIENT
 
-    /** 1.21.1 没法在模组类可见前挂 CameraMixin，只能改 FOV，姿态覆盖不可用。 */
-    val supportsCameraOverride: Boolean get() = false
+    val supportsCameraOverride: Boolean get() = true
 
     /** 客户端向服务端发包。1.21.1 走 `PacketDistributor`。 */
     fun sendToServer(payload: CustomPacketPayload) = PacketDistributor.sendToServer(payload)

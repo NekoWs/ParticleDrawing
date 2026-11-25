@@ -5,6 +5,7 @@
   "mixins": [],
   "client": [
     "BrightnessGetterMixin",
+    "CameraMixin",
     "ClientLightOcclusionMixin",
     "TerrainLightMixin",
     "EntityRendererMixin",

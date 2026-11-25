@@ -22,7 +22,7 @@ class FxDeltaTest {
             "  p.position = [this.delta, sum, 0]\n" +
             "}"
 
-    private fun player(): ClientAnimationPlayer = ClientAnimationPlayer(
+    private fun player(source: String = this.source): ClientAnimationPlayer = ClientAnimationPlayer(
         ParticleAnimation(
             loop = false,
             particles = emptyList(),
@@ -85,5 +85,31 @@ class FxDeltaTest {
         player.advanceFrame(0.0)
         player.advanceFrame(50.0)
         assertRows(player, listOf(0.0 to 0.0, 0.0 to 0.0, 50.0 to 50.0))
+    }
+
+    @Test
+    fun `大幅跳转仍扣除粒子寿命并保持 tick 边界`() {
+        val player = player(
+            """
+            func setup() {
+                this.spawn()
+                let finite = this.spawn()
+                finite.life = 3500
+            }
+            func tick() {
+                let counter = this.particles[0]
+                counter.position.x = counter.position.x + 1
+            }
+            """.trimIndent(),
+        )
+
+        val initial = player.currentStates()
+        assertEquals(2, initial.size)
+        val initialCount = initial.first().pos.x
+
+        player.advanceFrame(4001.0)
+        assertEquals(listOf(initialCount + 64), player.currentStates().map { it.pos.x })
+        player.advanceFrame(4050.0)
+        assertEquals(listOf(initialCount + 65), player.currentStates().map { it.pos.x })
     }
 }

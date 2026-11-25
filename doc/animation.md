@@ -20,7 +20,7 @@ v20 增加管状拖尾截面；丝带和管状拖尾按游戏刻记录世界位�
 | `/pdraw animation play <名称> [位置]` | 播放动画。命令方块需给出位置 |
 | `/pdraw animation var <名称> <值>` | 更新当前维度播放中动画的同名函数对象变量 |
 | `/pdraw animation stop` | 停止当前维度的动画 |
-| `/pdraw animation camera <名称>` / `/pdraw animation camera stop` | 预览动画摄像机或退出预览，见[版本限制](known-issues.md#minecraft-1211) |
+| `/pdraw animation camera <名称>` / `/pdraw animation camera stop` | 预览动画摄像机或退出预览。在单人游戏中使用 |
 | `/pdraw animation debug` | 查看播放状态 |
 
 ### Kotlin 与 Java 入口

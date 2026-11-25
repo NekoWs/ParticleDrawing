@@ -1038,8 +1038,8 @@ class ClientAnimationPlayer(
             while (b <= t) {
                 // 单帧补跑上限：异常 seek/倍速不能让渲染线程卡在百万次脚本 tick 上。
                 if (++caughtUp > MAX_CATCHUP_STEPS) {
-                    rt.cursorMs = t
-                    rt.curMs = t
+                    // 跳过剩余脚本 tick，保留原有边界。循环后的寿命更新仍按完整经过时间计算。
+                    rt.cursorMs += floor((t - rt.cursorMs) / 50.0) * 50.0
                     break
                 }
                 decrementLifeMs(fx, rt, rt.curMs, b)
