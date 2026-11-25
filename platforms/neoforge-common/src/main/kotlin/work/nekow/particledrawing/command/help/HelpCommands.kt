@@ -35,6 +35,9 @@ internal object HelpCommands {
             HelpParam("as", "command.help.cmd.draw.p2"),
             HelpParam("also", "command.help.cmd.draw.p3"),
             HelpParam("then", "command.help.cmd.draw.p4"),
+            HelpParam("stagger", "command.help.cmd.draw.stagger"),
+            HelpParam("enter", "command.help.cmd.draw.enter"),
+            HelpParam("edges", "command.help.cmd.draw.edges"),
         )),
         "emitter" to ("emitter" to listOf(
             HelpParam("at", "command.help.cmd.emitter.p1"),
@@ -137,8 +140,8 @@ internal object HelpCommands {
                 HelpExample("command.help.examples.sin",
                     "pdraw particle draw sin at ~ ~2 ~ width 16 height 2 cycles 1 count 200 look color aqua life 200"),
                 HelpExample("command.help.examples.cube",
-                    "pdraw particle draw expr at ~ ~2 ~ count 100 vec3(rand()*4-2,rand()*4-2,rand()*4-2) " +
-                        "look color expr vec3(u,0.4,1-u) life 200"),
+                    "pdraw particle draw cuboid at ~ ~1.5 ~ width 2 height 2 depth 2 density 7 edges edge_gap 2 " +
+                        "look color aqua size 0.1 glow life 200 stagger 1 enter fade_grow 8"),
             ),
         ),
         HelpExampleGroup(

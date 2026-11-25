@@ -6,11 +6,13 @@ import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.event.server.ServerStartedEvent
 import work.nekow.particledrawing.ParticleDrawing
+import work.nekow.particledrawing.api.CurveChannel
 import work.nekow.particledrawing.api.ParticleManager
 import work.nekow.particledrawing.command.CommandParticleGroups
 import work.nekow.particledrawing.command.CommandParticleRecipes
 import work.nekow.particledrawing.command.help.HelpCommands
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.server.AnimationScheduler
 import work.nekow.particledrawing.core.server.ServerParticleSources
 import work.nekow.particledrawing.light.LightFalloff
 import work.nekow.particledrawing.light.LightMath
@@ -198,6 +200,48 @@ object RuntimeSelfTest {
                 ).join().list.map { it.text }
 
                 val name = "v2_check"
+                check("立方体示例按棱逐颗入场、角点去重") {
+                    runLines("cube.mcfunction")
+                    val group = requireNotNull(CommandParticleGroups.get(dimension, "cube")).group
+                    val engine = manager.getEngine()
+                    val data = requireNotNull(engine.getGroup(group.id))
+                    val first = engine.getParticle(data.memberIds().single()) ?: return@check false
+                    val curve = first.lifeCurve() ?: return@check false
+                    val validStart = first.offsetFromPivot() == Vec3(-1.0, -1.0, -1.0) &&
+                        engine.pendingDrawCount(group.id) == 67 &&
+                        listOf(CurveChannel.ALPHA, CurveChannel.SCALE).all {
+                            curve.valueAt(it, 0f) == 0f && curve.valueAt(it, 4f) in 0.6f..0.8f &&
+                                curve.valueAt(it, 8f) == 1f && curve.valueAt(it, 40f) == 1f
+                        }
+                    AnimationScheduler.tick()
+                    val validStagger = group.size() == 2
+                    repeat(7) { AnimationScheduler.tick() }
+                    val validGap = group.size() == 7
+                    AnimationScheduler.tick()
+                    val secondEdge = engine.getParticle(data.memberIds()[7])?.offsetFromPivot()
+                    val validEdge = group.size() == 8 && secondEdge != null &&
+                        secondEdge.x == 1.0 && secondEdge.y == -1.0 && secondEdge.z in -0.7..-0.6
+                    repeat(80) { AnimationScheduler.tick() }
+                    val offsets = data.memberIds().mapNotNull { engine.getParticle(it)?.offsetFromPivot() }
+                    val validGeometry = offsets.size == 68 && offsets.toSet().size == 68 &&
+                        offsets.all { point -> listOf(point.x, point.y, point.z).count { kotlin.math.abs(it) == 1.0 } >= 2 }
+                    validStart && validStagger && validGap && validEdge && validGeometry && engine.pendingDrawCount(group.id) == 0
+                }
+                check("入场曲线叠加，错峰溢出拒绝覆盖，清理取消剩余入场") {
+                    val existing = CommandParticleGroups.get(dimension, "cube") ?: return@check false
+                    val start = "pdraw particle draw cuboid as cube at 0 60 0 width 2 height 2 depth 2 density 3 edges"
+                    if (run("$start edge_gap 2147483647") != 0 ||
+                        CommandParticleGroups.get(dimension, "cube") !== existing ||
+                        run("$start look alpha_curve 0:0.5 stagger 1 enter fade 8 ease linear") != 20) return@check false
+                    val group = requireNotNull(CommandParticleGroups.get(dimension, "cube")).group
+                    val engine = manager.getEngine()
+                    val id = engine.getGroup(group.id)?.memberIds()?.singleOrNull() ?: return@check false
+                    val curve = engine.getParticle(id)?.lifeCurve() ?: return@check false
+                    curve.valueAt(CurveChannel.ALPHA, 4f) == 0.25f &&
+                        curve.valueAt(CurveChannel.SCALE, 4f) == 1f &&
+                        run("pdraw particle clear group cube") == 1 &&
+                        engine.getParticle(id) == null && engine.pendingDrawCount(group.id) == 0
+                }
                 check("发射器 dryrun 不建配置") {
                     run("pdraw particle emitter $name at 0 60 0 sample count 3 life 20 rate 4 start dryrun") == 1 &&
                         CommandParticleRecipes.find(dimension, name) == null
@@ -287,6 +331,9 @@ object RuntimeSelfTest {
                 }
                 check("补全使用声明段与维度内对象") {
                     suggest("pdraw particle draw ").contains("sin") &&
+                        suggest("pdraw particle draw cuboid at 0 60 0 width 2 height 2 depth 2 density 7 ").contains("edges") &&
+                        suggest("pdraw particle draw dot at 0 60 0 enter ").containsAll(listOf("fade", "grow", "fade_grow")) &&
+                        suggest("pdraw particle draw dot at 0 60 0 enter grow 8 ease ").contains("ease_out_quad") &&
                         suggest("pdraw particle emitter $name ").containsAll(listOf("at", "sample", "look", "start")) &&
                         suggest("pdraw particle emitter $name look glow ").contains("start") &&
                         suggest("pdraw particle start ").contains(name) &&

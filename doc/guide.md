@@ -87,6 +87,8 @@ Draw.circle(m, center, 3.0, 60, visual = ParticleVisual().texture("mymod:glass")
 
 ### 波浪入场
 
+使用命令时可通过 `stagger` 和 `enter fade_grow` 配合完成逐颗入场，并用 `cuboid edges` 按棱线顺序绘制。详见[逐粒子入场](particle-commands.md#逐粒子入场)。
+
 `stagger = N` 让第 i 个粒子延迟 i×N tick 出现：
 
 ```kotlin

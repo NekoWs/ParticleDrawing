@@ -15,6 +15,16 @@ pdraw particle delete group sigil
 
 常用形状包括 `dot`、`field`、`line`、`beam`、`helix`、`circle`、`disc`、`triangle`、`hexagram`、`rect`、`sphere`、`cuboid`、`text`、`sin` 和 `expr`。查看[图元参数](command-v2-design.md#31-声明与几何)和[外观字段](command-v2-design.md#32-外观-look)。
 
+### 逐粒子入场
+
+`stagger` 设置图元内相邻粒子的出生间隔。`enter fade`、`enter grow` 和 `enter fade_grow` 分别让每颗粒子从出生起淡入、长大或同时播放两者。填入时长，单位为游戏刻，可追加 `ease <缓动>`。
+
+```mcfunction
+pdraw particle draw cuboid as cube at ~ ~1.5 ~ width 2 height 2 depth 2 density 7 edges edge_gap 2 look color aqua size 0.1 glow stagger 1 enter fade_grow 8
+```
+
+`edges` 只绘制长方体的十二条棱。示例从底边画到竖边和顶边，每隔一刻生成一颗粒子，换边多等两刻。共享角点只生成一次。每颗粒子用八刻淡入并长到指定尺寸。用 `pdraw particle clear group cube` 清理当前粒子并取消剩余入场。
+
 ### 编排命令
 
 ```mcfunction

@@ -35,10 +35,10 @@ v2 发布时删除 `particle batch`、`particle group`、`particle add`、`parti
 
 ```text
 /pdraw particle draw <形状> [as <组名>] [group_pivot <坐标>] <几何>
-  [<形状选项>] [look <外观字段>…] [life <刻>] [stagger <刻>]
+  [<形状选项>] [look <外观字段>…] [life <刻>] [stagger <刻>] [enter <样式> <刻> [ease <缓动>]]
   {also <图元>} {then <动作>} [dryrun]
 
-<图元> = <形状> <几何> [<形状选项>] [look <外观字段>…] [life <刻>] [stagger <刻>]
+<图元> = <形状> <几何> [<形状选项>] [look <外观字段>…] [life <刻>] [stagger <刻>] [enter <样式> <刻> [ease <缓动>]]
 ```
 
 语法块中的换行用于排版。`also` 图元各自使用自己的外观和寿命，按书写顺序合入同一组。`then` 作用于整组。`as` 指定可查找的组名，成功后覆盖旧组。省略 `as` 时每次执行独立绘制。省略 `group_pivot` 时以首个图元的 `at` 或 `from` 为轴心。首个图元是 `field at anchor` 时默认取命令源位置。`field at anchor` 总是在组轴心生成。
@@ -55,7 +55,7 @@ v2 发布时删除 `particle batch`、`particle group`、`particle add`、`parti
 | `triangle` / `hexagram` | `at <坐标> radius <数> segments <数量>` | `[axis <平面>]` |
 | `rect` | `at <坐标> width <数> height <数> density <数量>` | `[axis <平面>] [hollow [true/false]]` |
 | `sphere` | `at <坐标> radius <数> count <数量>` | — |
-| `cuboid` | `at <坐标> width <数> height <数> depth <数> density <数量>` | `[hollow [true/false]]` |
+| `cuboid` | `at <坐标> width <数> height <数> depth <数> density <数量>` | `[hollow [true/false] \| edges [edge_gap <刻>]]` |
 | `text` | `at <坐标> text <文字> [size <字高>] [count <数量>]` | — |
 | `sin` | `at <坐标> width <数> height <数> cycles <数> count <数量>` | `[axis <平面>]` |
 | `expr` | `at <坐标> count <数量> <vec3 公式>` | — |
@@ -63,6 +63,8 @@ v2 发布时删除 `particle batch`、`particle group`、`particle add`、`parti
 - 平面可选 `xy`、`xz`、`yz`。现有平面图元默认 `xz`，`sin` 默认 `xy`。`sin` 在第一个轴上绘制 `(u - 0.5) * width`，第二个轴上绘制 `sin(u * 2 * PI * cycles) * height`，`at` 是波形中心。`expr` 的结果是相对 `at` 的世界轴偏移。
 - `sin`、`expr` 取 `i = 0..n-1`，`u = i/(n-1)`，单点时 `u = 0`。已有图元的点序、采样和默认几何选项沿用 `Draw`。文字采用旧文字点阵，默认字高 2、目标点数 1024，实际成员数以点阵结果为准。
 - `life` 默认 `-1`，与旧绘图命令一致。显式寿命接受 `-1` 或非负 32 位整数。`0` 在首次寿命检查时过期。`stagger` 默认 0，按各图元内部点序安排出生。`field` 和 `dot` 不支持非零 `stagger`。`force_ticks` 缺省 `-1`，显式值为 `-1` 或非负整数。
+- `cuboid edges` 要求三轴尺寸均为正。每条棱含端点均匀采样 `density` 个位置，共享角点只在第一次经过时生成。以底面最小 X/Z 角点为起点，依次画底边、同序竖边和顶边。第 `i` 颗粒子在 `i × stagger + e × edge_gap` 刻出生，`i` 是图元内从零开始的粒子序号，`e` 是从零开始计数的有新增粒子的棱序号。`edge_gap` 默认 0。仅设置 `edge_gap` 时每条棱的新增粒子同时出生。
+- `enter` 从每颗粒子出生开始播放。`fade` 将透明度乘数从 0 缓动到 1，`grow` 改变尺寸乘数，`fade_grow` 同时改变两者。时长必须为正整数，默认使用 `ease_out_quad`，结束后乘数保持 1。预设与 `look` 自定义寿命曲线相乘，有限寿命到期时粒子照常销毁。
 - 普通 `count` 为 `1..4096`，`text` 为 `1..8192`。分段、密度和层数沿用现有图元的上下限。在准备阶段按实际生成数校验整组最多 8192 个成员，包含待出生的成员。创建结果要么足额，要么失败。`beam` 的 `look` 只接受色源、`texture`、`additive`、`glow` 和寿命曲线。`thickness` 默认 0.1 格，`taper` 默认开启。两端太近、无法形成条带时报错。
 - 命名组可接受后续 `advanced group` 操作，成员自然过期后保留组名。匿名绘制通过内部 ID 关联编排，无成员和待执行任务时自动回收。覆盖或清理命名组时，旧成员、待出生任务、编排和形变草稿一起清理。
 
@@ -126,7 +128,7 @@ morph slots <数量> <位置公式> {<形变选项>}
 - `pivot` 与 `anchor fixed` 等价。`follow` 与 `anchor entity` 等价，`local` 表示偏移随实体朝向旋转。`expression` 默认世界坐标，`local` 使用组锚点坐标。表达式和形变对几何写入的冲突沿用旧校验。
 - `fade_in` 默认 `ease_out`，`fade_out` 和 `fade_out_keep` 默认 `ease_in`，其他可选缓动默认 `linear`。`pulse` 默认 `cycles -1`，表示持续，显式值接受 `-1` 或正整数。`retire` 默认 `grace 2`，仅作为链的末尾动作，沿用完成信号与宽限规则。
 - 动作持续时长、延迟和宽限使用非负整数，`pulse` 半周期必须为正，旋转轴与转轴必须非零。组程序还须满足各动作自身的约束。累计游标、错峰延迟、动作结束和销毁时刻用宽整数预检，超出现有时间表示范围时拒绝。
-- 错峰出生时，初始轴心和成员信息随生成生效，动作时间 0 在最后一颗成员就绪后开始。带动作的完整声明须保证各图元的有限寿命能覆盖时间 0。命令成功前完成动作校验，延时仅决定何时播放。组覆盖、清理或卸载后，旧任务通过组实例 ID 失效。
+- 错峰出生时，初始轴心和成员信息随生成生效，动作时间 0 在最后一颗成员就绪后开始。尚在播放的 `enter` 可以与组动作重叠。带动作的完整声明须保证各图元的有限寿命能覆盖时间 0。命令成功前完成动作校验，延时仅决定何时播放。组覆盖、清理或卸载后，旧任务通过组实例 ID 失效。
 
 ### 3.4 形变
 

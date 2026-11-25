@@ -10,7 +10,7 @@ import work.nekow.particledrawing.i18n.failureComponent
 internal object ParticleCommandsV2 {
     private const val INPUT = "declaration"
     val usages = linkedMapOf(
-        "draw" to "draw <shape> [as <group>] ... [also <shape> ...] [then <action> ...] [dryrun]",
+        "draw" to "draw <shape> [as <group>] ... [stagger <ticks>] [enter <style> <ticks>] [also <shape> ...] [then <action> ...] [dryrun]",
         "emitter" to "emitter <name> ... [start|burst [mode]] [dryrun]",
         "template" to "template <name> [from emitter <source>|...] [dryrun]",
         "use" to "use <template> as <name> [without <path>] ... [start|burst [mode]] [dryrun]",

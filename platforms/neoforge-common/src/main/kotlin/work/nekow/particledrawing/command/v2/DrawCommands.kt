@@ -5,13 +5,18 @@ import net.minecraft.commands.arguments.coordinates.Coordinates
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.recipe.RecipeExpressions
 import work.nekow.particledrawing.api.Color
+import work.nekow.particledrawing.api.CurveKey
 import work.nekow.particledrawing.api.Draw
 import work.nekow.particledrawing.api.ParticleManager
 import work.nekow.particledrawing.api.ParticleGroup
+import work.nekow.particledrawing.api.ParticleCurve
+import work.nekow.particledrawing.api.ParticleLifeCurve
 import work.nekow.particledrawing.api.ParticleRecipe
 import work.nekow.particledrawing.api.ParticleSampling
 import work.nekow.particledrawing.command.CommandParticleGroups
+import work.nekow.particledrawing.command.ParticleCommandOptionParser
 import work.nekow.particledrawing.config.ParticleDrawingConfig
+import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.network.AnimationProgramCodecs
 import work.nekow.particledrawing.core.server.AnimationScheduler
 import work.nekow.particledrawing.core.server.ServerParticleEngine
@@ -29,6 +34,7 @@ internal object DrawCommands {
         val shape: String, val start: Coordinates?, val end: Coordinates?, val numbers: Map<String, Double>,
         val text: String?, val expression: String?, val look: Map<String, String>, val options: Map<String, String>,
         val life: Int, val stagger: Int, val velocity: Vec3?, val force: Vec3?, val forceTicks: Int,
+        val edgeGap: Int?, val entrance: ParticleLifeCurve?,
     )
 
     private data class Particle(val placement: Draw.Placement, val velocity: Vec3?, val force: Vec3?, val forceTicks: Int)
@@ -36,6 +42,7 @@ internal object DrawCommands {
     private val shapes = listOf("dot", "field", "line", "beam", "helix", "circle", "disc", "triangle", "hexagram",
         "rect", "sphere", "cuboid", "text", "sin", "expr")
     private val planes = listOf("xy", "xz", "yz")
+    private val easings = EasingType.PRESETS.map { checkNotNull(it.name).lowercase() } + "none"
     private val planeFigures = setOf("circle", "disc", "triangle", "hexagram", "rect", "sin")
     private val beamLook = setOf("color", "gradient", CommandLook.COLOR_EXPRESSION, "texture", "additive", "glow",
         "alpha_curve", "red_curve", "green_curve", "blue_curve", "size_curve", "light_curve")
@@ -165,7 +172,15 @@ internal object DrawCommands {
             val taper = if (input.take("taper")) input.flag() else shape == "beam"
             options["taper"] = taper.toString()
         }
-        if (shape in setOf("rect", "cuboid") && input.take("hollow")) options["hollow"] = input.flag().toString()
+        val edgeGap = if (shape == "cuboid" && input.take("edges")) {
+            if (listOf("width", "height", "depth").any { numbers.getValue(it) <= 0.0 }) {
+                input.invalid("positive width, height and depth for edges")
+            }
+            if (input.take("edge_gap")) input.integer("edge_gap", 0) else 0
+        } else null
+        if (edgeGap == null && shape in setOf("rect", "cuboid") && input.take("hollow")) {
+            options["hollow"] = input.flag().toString()
+        }
         val velocity = if (shape == "field" && input.take("velocity")) input.vector("velocity") else null
         val force = if (shape == "field" && input.take("force")) input.vector("force") else null
         val forceTicks = if (force != null && input.take("force_ticks")) input.integer("force_ticks", -1) else -1
@@ -174,7 +189,22 @@ internal object DrawCommands {
         val life = if (input.take("life")) input.integer("life", -1) else -1
         val stagger = if (input.take("stagger")) input.integer("stagger", 0, Int.MAX_VALUE - 1) else 0
         if (stagger != 0 && shape in setOf("field", "dot")) input.invalid("stagger 0 for $shape", stagger.toString())
-        return Figure(shape, start, end, numbers, text, formula, look, options, life, stagger, velocity, force, forceTicks)
+        val entrance = if (input.take("enter")) entrance(input) else null
+        return Figure(shape, start, end, numbers, text, formula, look, options, life, stagger, velocity, force, forceTicks,
+            edgeGap, entrance)
+    }
+
+    private fun entrance(input: CommandInput): ParticleLifeCurve {
+        val style = input.choice(listOf("fade", "grow", "fade_grow"))
+        val ticks = input.integer("enter ticks", 1)
+        val easing = if (input.take("ease")) ParticleCommandOptionParser.easing(input.value("easing", easings))
+            else EasingType.EASE_OUT_QUAD
+        val start = CurveKey.at(0, 0)
+        val end = CurveKey.at(ticks, 1, easing)
+        return ParticleLifeCurve(buildList {
+            if (style != "grow") add(ParticleCurve.alpha(start, end))
+            if (style != "fade") add(ParticleCurve.scale(start, end))
+        })
     }
 
     private fun prepare(figures: List<Figure>, source: CommandSourceStack, pivot: Vec3): List<Particle> {
@@ -184,7 +214,9 @@ internal object DrawCommands {
         for (figure in figures) {
             val start = figure.start?.getPosition(source) ?: pivot
             val end = figure.end?.getPosition(source)
-            val options = CommandLook.options(figure.look, figure.options)
+            val parsed = CommandLook.options(figure.look, figure.options)
+            val options = figure.entrance?.let { parsed.copy(lifeCurve = (parsed.lifeCurve ?: ParticleLifeCurve.EMPTY).plus(it)) }
+                ?: parsed
             val positions = when (figure.shape) {
                 "dot", "field" -> mapOf("pos" to start)
                 "line", "beam" -> mapOf("start" to start, "end" to checkNotNull(end))
@@ -197,10 +229,11 @@ internal object DrawCommands {
                 }
                 raw.add(it)
             }
+            val edges = figure.edgeGap?.let { FigureDrawing.cuboidEdges(start, figure.numbers) }
             val custom = when (figure.shape) {
                 "sin", "expr" -> customPoints(figure, start)
                 "field" -> List(figure.numbers.getValue("count").toInt()) { start }
-                else -> null
+                else -> edges?.map { it.position }
             }
             if (custom != null) {
                 Draw.points(manager, start, custom, options.color, options.scale, group = scratch,
@@ -212,7 +245,8 @@ internal object DrawCommands {
             requireLocalized(raw.isNotEmpty()) { translation("error.text.points") }
             val color = figure.look[CommandLook.COLOR_EXPRESSION]?.let { vectorExpression(it) }
             for ((i, point) in raw.withIndex()) {
-                val delay = i.toLong() * figure.stagger
+                val edgeDelay = (figure.edgeGap ?: 0).toLong() * (edges?.get(i)?.edge ?: 0)
+                val delay = i.toLong() * figure.stagger + edgeDelay
                 requireLocalized(delay < Int.MAX_VALUE && point.position.hasFiniteCoordinates() && point.scale.isFinite()) {
                     translation("error.command.v2.draw_range")
                 }

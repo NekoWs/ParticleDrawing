@@ -12,6 +12,8 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 internal object FigureDrawing {
+    internal data class EdgePoint(val position: Vec3, val edge: Int)
+
     data class Plan(
         val shape: String,
         val options: ParticleCommandOptions,
@@ -20,6 +22,35 @@ internal object FigureDrawing {
         val numbers: Map<String, Double>,
         val text: String? = null,
     )
+
+    internal fun cuboidEdges(center: Vec3, numbers: Map<String, Double>): List<EdgePoint> {
+        val x = numbers.getValue("width") / 2.0
+        val y = numbers.getValue("height") / 2.0
+        val z = numbers.getValue("depth") / 2.0
+        val density = numbers.getValue("density").toInt()
+        val corners = listOf(
+            center.add(-x, -y, -z), center.add(x, -y, -z), center.add(x, -y, z), center.add(-x, -y, z),
+            center.add(-x, y, -z), center.add(x, y, -z), center.add(x, y, z), center.add(-x, y, z),
+        )
+        val seen = BooleanArray(corners.size)
+        val points = ArrayList<EdgePoint>(8 + 12 * (density - 2))
+        var edge = 0
+        fun addEdge(from: Int, to: Int) {
+            val startSize = points.size
+            if (!seen[from]) points.add(EdgePoint(corners[from], edge))
+            for (i in 1 until density - 1) {
+                points.add(EdgePoint(corners[from].lerp(corners[to], i.toDouble() / (density - 1)), edge))
+            }
+            if (!seen[to]) points.add(EdgePoint(corners[to], edge))
+            seen[from] = true
+            seen[to] = true
+            if (points.size > startSize) edge++
+        }
+        for (i in 0..3) addEdge(i, (i + 1) % 4)
+        for (i in 0..3) addEdge(i, i + 4)
+        for (i in 0..3) addEdge(i + 4, (i + 1) % 4 + 4)
+        return points
+    }
 
     internal fun render(plan: Plan, m: ParticleManager, group: ParticleGroup) {
         val o = plan.options

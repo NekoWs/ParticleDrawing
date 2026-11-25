@@ -10,16 +10,12 @@ class ParticleCommandExamplesTest {
     private fun example(name: String, emitterName: String? = null): ParticleRecipe =
         ParticleExampleDeclarations.read(name).single { emitterName == null || it.name == emitterName }.recipe
 
-    private fun colorBlockExample(name: String): ParticleRecipe = example(name)
-
-    @Test fun `ColorBlock 四个示例函数都能画出对应形状`() {
-        val cube = RecipeRuntime(colorBlockExample("cube"), true).also { repeat(2) { _ -> it.tick() } }
-        assertEquals(116, cube.particles.size)
-        val seven = RecipeRuntime(colorBlockExample("seven-star"), true).also { repeat(41) { _ -> it.tick() } }
+    @Test fun `ColorBlock 星形发射器示例都能画出对应形状`() {
+        val seven = RecipeRuntime(example("seven-star"), true).also { repeat(41) { _ -> it.tick() } }
         assertEquals(1001, seven.particles.size)
-        val sharp = RecipeRuntime(colorBlockExample("sharp-star"), true).also { repeat(7) { _ -> it.tick() } }
+        val sharp = RecipeRuntime(example("sharp-star"), true).also { repeat(7) { _ -> it.tick() } }
         assertEquals(6165, sharp.particles.size)
-        val five = RecipeRuntime(colorBlockExample("five-star"), true).also { it.tick() }
+        val five = RecipeRuntime(example("five-star"), true).also { it.tick() }
         assertEquals(501, five.particles.size)
     }
 
