@@ -4,14 +4,18 @@ import com.mojang.brigadier.arguments.DoubleArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.builder.LiteralArgumentBuilder
 import com.mojang.brigadier.context.CommandContext
+import com.mojang.brigadier.suggestion.Suggestions
+import com.mojang.brigadier.suggestion.SuggestionsBuilder
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
+import net.minecraft.commands.SharedSuggestionProvider
 import net.minecraft.commands.arguments.EntityArgument
 import net.minecraft.commands.arguments.coordinates.Vec3Argument
 import work.nekow.particledrawing.api.ForceFieldKind
 import work.nekow.particledrawing.api.ParticleForceField
 import work.nekow.particledrawing.api.ParticleForceFields
 import work.nekow.particledrawing.api.RecipeAnchor
+import java.util.concurrent.CompletableFuture
 import work.nekow.particledrawing.i18n.component
 import work.nekow.particledrawing.i18n.failureComponent
 import work.nekow.particledrawing.i18n.requireLocalized
@@ -33,10 +37,10 @@ internal object ParticleFieldCommands {
             } else {
                 strength.executes { ctx -> configure(ctx, kind) }
             }
-            root.then(Commands.literal(kind.name.lowercase()).then(Commands.argument("id", StringArgumentType.string())
+            root.then(Commands.literal(kind.name.lowercase()).then(Commands.argument("id", StringArgumentType.string()).suggests(::suggestIds)
                 .then(Commands.argument("radius", DoubleArgumentType.doubleArg(0.05, 128.0)).then(strength))))
         }
-        root.then(Commands.literal("anchor").then(Commands.argument("id", StringArgumentType.string())
+        root.then(Commands.literal("anchor").then(Commands.argument("id", StringArgumentType.string()).suggests(::suggestIds)
             .then(Commands.literal("fixed").then(Commands.argument("position", Vec3Argument.vec3()).executes { ctx -> safe(ctx) {
                 ParticleForceFields.anchor(ctx.source.level, id(ctx), RecipeAnchor(Vec3Argument.getVec3(ctx, "position")))
             } }))
@@ -44,7 +48,7 @@ internal object ParticleFieldCommands {
                 val entity = EntityArgument.getEntity(ctx, "entity")
                 ParticleForceFields.anchor(ctx.source.level, id(ctx), RecipeAnchor(entity.position(), entity.uuid, entity.id, local = true))
             } }))))
-        root.then(Commands.literal("remove").then(Commands.argument("id", StringArgumentType.string()).executes { ctx -> safe(ctx) {
+        root.then(Commands.literal("remove").then(Commands.argument("id", StringArgumentType.string()).suggests(::suggestIds).executes { ctx -> safe(ctx) {
             requireLocalized(ParticleForceFields.remove(ctx.source.level, id(ctx))) { translation("error.field.not_found", id(ctx)) }
         } }))
         root.then(Commands.literal("list").executes { ctx ->
@@ -54,6 +58,11 @@ internal object ParticleFieldCommands {
         })
         return root
     }
+
+    private fun suggestIds(
+        ctx: CommandContext<CommandSourceStack>, builder: SuggestionsBuilder,
+    ): CompletableFuture<Suggestions> =
+        SharedSuggestionProvider.suggest(ParticleForceFields.ids(ctx.source.level).map { it.toString() }, builder)
 
     private fun configure(ctx: CommandContext<CommandSourceStack>, kind: ForceFieldKind) = safe(ctx) {
         val id = id(ctx)
