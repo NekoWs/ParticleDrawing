@@ -1,247 +1,226 @@
 package work.nekow.particledrawing.dev
 
+import com.mojang.blaze3d.platform.NativeImage
 import com.mojang.logging.LogUtils
 import net.minecraft.client.Minecraft
+import net.minecraft.commands.CommandResultCallback
 import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.client.event.RenderFrameEvent
 import java.io.BufferedWriter
-import java.lang.reflect.Method
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+import java.util.function.Consumer
 
-/**
- * 后台录制：把渲染完成后的帧写成原始像素流，供 ffmpeg 合成视频。
- *
- * 只在设置了环境变量 `PD_CAPTURE_DIR` 时启用，用于宣传片/演示录制；游戏窗口不需要置前，
- * 也不影响鼠标。用法：
- *
- * ```
- * $env:PD_CAPTURE_DIR='...\build\visual-checks\trailer'
- * # 启动游戏后，在目录里创建 capture.start 开始录，创建 capture.stop 停止
- * ```
- *
- * 输出：`frames.raw`（RGBA 字节流）、`frames.index`（每帧相对时间与尺寸）、`frames.meta`（汇总）。
- * 帧率默认 30，可用 `PD_CAPTURE_FPS` 调整。像素格式随版本固定为 RGBA 8 位。
- */
+/** 从游戏自己的帧缓冲录制 RGBA。设置 PD_CAPTURE_FPS=0 时读取每个渲染帧。 */
 @EventBusSubscriber(modid = "particledrawing", value = [Dist.CLIENT])
 object RecordingCapture {
     private val logger = LogUtils.getLogger()
-    private val directory: Path? = System.getenv("PD_CAPTURE_DIR")?.takeIf(String::isNotBlank)?.let(Path::of)
-    private val targetFps: Double = System.getenv("PD_CAPTURE_FPS")?.toDoubleOrNull()?.takeIf { it in 1.0..240.0 } ?: 30.0
-    private val intervalNanos: Long = (1_000_000_000.0 / targetFps).toLong()
-    private val pollNanos: Long = TimeUnit.MILLISECONDS.toNanos(200)
+    private val directory = System.getenv("PD_CAPTURE_DIR")?.takeIf(String::isNotBlank)?.let(Path::of)
+    private val automation = System.getenv("PD_CAPTURE_AUTOMATION") == "1"
+    private val fps = System.getenv("PD_CAPTURE_FPS")?.toDoubleOrNull()?.takeIf { it == 0.0 || it in 1.0..240.0 } ?: 30.0
+    private val interval = if (fps == 0.0) 0L else (1_000_000_000.0 / fps).toLong()
+    private val pollInterval = TimeUnit.MILLISECONDS.toNanos(25)
 
-    private var recording = false
-    private var channel: FileChannel? = null
-    private var indexWriter: BufferedWriter? = null
-    private var nextFrameNanos = 0L
-    private var nextPollNanos = 0L
-    private var warnedCapture = false
-    private var frames = 0
-    private var firstNanos = 0L
-    private var lastNanos = 0L
-    private var width = 0
-    private var height = 0
-    private val scratch: ByteBuffer = ByteBuffer.allocateDirect(8 * 1024 * 1024)
+    private var nextPoll = 0L
+    private var setup: CompletableFuture<Unit>? = null
+    private var scene: CompletableFuture<Unit>? = null
+    private var take: Take? = null
+    private var failed = false
 
     @SubscribeEvent
     @JvmStatic
     fun onFrame(event: RenderFrameEvent.Post) {
         val dir = directory ?: return
-        val now = System.nanoTime()
-        if (now >= nextPollNanos) {
-            nextPollNanos = now + pollNanos
-            poll(dir)
-        }
-        if (!recording) return
-        if (now < nextFrameNanos) return
+        if (failed) return
         val client = Minecraft.getInstance()
-        if (client.level == null) return
-        if (!Framebuffer.capture(client) { image -> writeFrame(image, now) }) {
-            if (!warnedCapture) {
-                warnedCapture = true
-                logger.warn("PD recording cannot read the framebuffer yet")
+        try {
+            val now = System.nanoTime()
+            if (now - nextPoll >= 0L) {
+                nextPoll = now + pollInterval
+                poll(dir, client)
             }
-            return
+            val current = take ?: return
+            if (current.stopping && current.inFlight == 0) {
+                current.finish()
+                take = null
+                if (automation) client.stop()
+            } else if (!current.stopping && client.level != null && now >= current.nextFrame) {
+                current.nextFrame = if (current.nextFrame + interval * 2 < now) now + interval else current.nextFrame + interval
+                current.inFlight++
+                Framebuffer.capture(client) { image ->
+                    try {
+                        image.use { current.write(it, now) }
+                    } catch (error: Exception) {
+                        fail(dir, client, error)
+                    } finally {
+                        current.inFlight--
+                    }
+                }
+            }
+        } catch (error: Exception) {
+            fail(dir, client, error)
         }
-        // 落后时从当前时刻重新排，避免一次补很多帧。
-        nextFrameNanos = if (nextFrameNanos + intervalNanos * 2 < now) now + intervalNanos else nextFrameNanos + intervalNanos
     }
 
-    private fun poll(dir: Path) {
-        if (!recording && Files.exists(dir.resolve("capture.start"))) {
-            start(dir)
-        } else if (recording && Files.exists(dir.resolve("capture.stop"))) {
-            stop(dir)
-        }
-    }
-
-    private fun start(dir: Path) {
-        Files.createDirectories(dir)
-        Files.deleteIfExists(dir.resolve("capture.start"))
-        Files.deleteIfExists(dir.resolve("frames.raw"))
-        Files.deleteIfExists(dir.resolve("frames.index"))
-        Files.deleteIfExists(dir.resolve("frames.meta"))
-        channel = FileChannel.open(
-            dir.resolve("frames.raw"), StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING,
-        )
-        indexWriter = Files.newBufferedWriter(dir.resolve("frames.index"))
-        frames = 0
-        warnedCapture = false
-        firstNanos = 0L
-        lastNanos = 0L
-        width = 0
-        height = 0
-        recording = true
-        nextFrameNanos = System.nanoTime()
-        logger.info("PD recording started at {} fps -> {}", targetFps, dir)
-    }
-
-    private fun stop(dir: Path) {
-        recording = false
-        Files.deleteIfExists(dir.resolve("capture.stop"))
-        val meta = buildString {
-            append("width=").append(width).append('\n')
-            append("height=").append(height).append('\n')
-            append("format=rgba\n")
-            append("frames=").append(frames).append('\n')
-            append("firstNanos=").append(firstNanos).append('\n')
-            append("lastNanos=").append(lastNanos).append('\n')
-            append("fps=").append(targetFps).append('\n')
-        }
-        runCatching { indexWriter?.close() }
-        runCatching { channel?.close() }
-        runCatching { Files.writeString(dir.resolve("frames.meta"), meta) }
-        indexWriter = null
-        channel = null
-        logger.info("PD recording stopped: {} frames", frames)
-    }
-
-    private fun writeFrame(image: Any, stamp: Long) {
-        val out = channel ?: return
-        val w = Framebuffer.width(image)
-        val h = Framebuffer.height(image)
-        if (w <= 0 || h <= 0) return
-        val bytes = Framebuffer.pixels(image) ?: return
-        width = w
-        height = h
-        if (frames == 0) firstNanos = stamp
-        lastNanos = stamp
-        frames++
-        if (frames == 1) logger.info("PD recording first frame {}x{}", w, h)
-        runCatching {
-            indexWriter?.apply {
-                write(frames.toString())
-                write(" ")
-                write((stamp - firstNanos).toString())
-                write(" ")
-                write(w.toString())
-                write(" ")
-                write(h.toString())
-                write("\n")
+    private fun poll(dir: Path, client: Minecraft) {
+        if (automation && client.level != null && client.player != null && !client.isPaused) {
+            if (setup == null) {
+                hideHud(client)
+                setup = commands(dir.resolve("setup.mcfunction"), client)
+            }
+            if (setup?.isDone == true && !Files.exists(dir.resolve("capture.ready"))) {
+                setup?.join()
+                Files.createFile(dir.resolve("capture.ready"))
+            }
+            if (take != null && Files.deleteIfExists(dir.resolve("capture.scene"))) {
+                scene = commands(dir.resolve("scene.mcfunction"), client)
+            }
+            if (scene?.isDone == true && !Files.exists(dir.resolve("capture.scene-done"))) {
+                scene?.join()
+                Files.createFile(dir.resolve("capture.scene-done"))
             }
         }
-        val buffer = if (bytes is ByteBuffer) bytes.duplicate() else byteBufferOf(bytes)
-        while (buffer.hasRemaining()) out.write(buffer)
-    }
-
-    private fun byteBufferOf(bytes: Any): ByteBuffer {
-        val array = bytes as ByteArray
-        val buffer = scratch
-        buffer.clear()
-        if (array.size > buffer.capacity()) {
-            return ByteBuffer.wrap(array)
+        if (take == null && Files.deleteIfExists(dir.resolve("capture.start"))) {
+            Files.deleteIfExists(dir.resolve("frames.meta"))
+            take = Take(dir)
+            logger.info("PD recording started at {} -> {}", if (fps == 0.0) "every rendered frame" else "$fps fps", dir)
         }
-        buffer.put(array)
-        buffer.flip()
-        return buffer
+        if (take != null && Files.deleteIfExists(dir.resolve("capture.stop"))) take?.stopping = true
     }
 
-    /** 跨版本读写 NativeImage：26.x 有 getPixelBytes，1.21.1 只有 getPixelsRGBA。全部走反射。 */
+    private fun commands(path: Path, client: Minecraft): CompletableFuture<Unit> {
+        if (!Files.exists(path)) return CompletableFuture.completedFuture(Unit)
+        val lines = Files.readAllLines(path).map(String::trim).filter { it.isNotEmpty() && !it.startsWith("#") }
+        val server = checkNotNull(client.singleplayerServer) { "Recording commands require a singleplayer world" }
+        val playerId = checkNotNull(client.player).uuid
+        val completion = CompletableFuture<Unit>()
+        server.execute {
+            try {
+                val player = checkNotNull(server.playerList.getPlayer(playerId))
+                for (line in lines) {
+                    // 每条命令重新取玩家位置，前一条命令可能刚传送过玩家。
+                    val playerSource = player.createCommandSourceStack()
+                    var success = false
+                    val source = server.createCommandSourceStack().withEntity(player)
+                        .withPosition(playerSource.position).withRotation(playerSource.rotation).withLevel(playerSource.level)
+                        .withSuppressedOutput().withCallback(CommandResultCallback { ok, _ -> success = success || ok })
+                    server.commands.performPrefixedCommand(source, line)
+                    check(success) { "Recording command failed in ${path.fileName}: $line" }
+                }
+                completion.complete(Unit)
+            } catch (error: Exception) {
+                completion.completeExceptionally(error)
+            }
+        }
+        return completion
+    }
+
+    private fun hideHud(client: Minecraft) {
+        val options = client.options
+        val legacy = options.javaClass.fields.firstOrNull { it.name == "hideGui" }
+        if (legacy != null) {
+            legacy.setBoolean(options, true)
+        } else {
+            val hud = client.gui.javaClass.getField("hud").get(client.gui)
+            if (hud.javaClass.getMethod("isHidden").invoke(hud) == false) hud.javaClass.getMethod("toggle").invoke(hud)
+        }
+    }
+
+    private fun fail(dir: Path, client: Minecraft, error: Exception) {
+        if (failed) return
+        failed = true
+        logger.error("PD recording failed", error)
+        runCatching { take?.close() }
+        runCatching { Files.writeString(dir.resolve("capture.error"), (error.cause ?: error).toString()) }
+        if (automation) client.stop()
+    }
+
+    private class Take(private val dir: Path) : AutoCloseable {
+        private val index: BufferedWriter = Files.newBufferedWriter(dir.resolve("frames.index"))
+        private val raw: FileChannel = try {
+            FileChannel.open(dir.resolve("frames.raw"), StandardOpenOption.CREATE, StandardOpenOption.WRITE,
+                StandardOpenOption.TRUNCATE_EXISTING)
+        } catch (error: Exception) {
+            index.close()
+            throw error
+        }
+        var nextFrame = System.nanoTime()
+        var stopping = false
+        var inFlight = 0
+        private var frames = 0
+        private var first = 0L
+        private var last = 0L
+        private var width = 0
+        private var height = 0
+
+        fun write(image: NativeImage, stamp: Long) {
+            if (failed) return
+            if (frames == 0) {
+                first = stamp
+                width = image.width
+                height = image.height
+            }
+            check(image.width == width && image.height == height && (frames == 0 || stamp > last)) {
+                "Recording frame size or order changed"
+            }
+            val pixels = Framebuffer.pixels(image)
+            check(pixels.remaining().toLong() == width.toLong() * height * 4L) { "Invalid RGBA frame size" }
+            while (pixels.hasRemaining()) raw.write(pixels)
+            last = stamp
+            index.write("${++frames} ${stamp - first} $width $height\n")
+            if (frames == 1 && automation) Files.createFile(dir.resolve("capture.active"))
+        }
+
+        fun finish() {
+            close()
+            val metadata = dir.resolve("frames.meta.next")
+            Files.writeString(metadata, "width=$width\nheight=$height\nformat=rgba\nframes=$frames\n" +
+                "firstNanos=$first\nlastNanos=$last\nfps=$fps\n")
+            Files.move(metadata, dir.resolve("frames.meta"), StandardCopyOption.ATOMIC_MOVE)
+            logger.info("PD recording stopped: {} frames", frames)
+        }
+
+        override fun close() {
+            try {
+                index.close()
+            } finally {
+                raw.close()
+            }
+        }
+    }
+
     private object Framebuffer {
-        private val minecraftClass = Minecraft::class.java
-        private val screenshotClass = Class.forName("net.minecraft.client.Screenshot")
-        private val callbackCapture: Method? = screenshotClass.methods
-            .firstOrNull { it.name == "takeScreenshot" && it.parameterCount == 2 }
-        private val directCapture: Method? = screenshotClass.methods
-            .firstOrNull { it.name == "takeScreenshot" && it.parameterCount == 1 }
-        private val gameRendererField: java.lang.reflect.Field? = runCatching { minecraftClass.getField("gameRenderer") }.getOrNull()
-        private val gameRendererMethod: Method? = runCatching { minecraftClass.getMethod("gameRenderer") }.getOrNull()
-        private val mainRenderTargetGetter: Method? = runCatching { minecraftClass.getMethod("getMainRenderTarget") }.getOrNull()
-        private val widthMethod: Method? = Class.forName("com.mojang.blaze3d.platform.NativeImage").getMethod("getWidth")
-        private val heightMethod: Method? = Class.forName("com.mojang.blaze3d.platform.NativeImage").getMethod("getHeight")
-        private val pixelBytes: Method? = runCatching {
-            Class.forName("com.mojang.blaze3d.platform.NativeImage").getMethod("getPixelBytes")
-        }.getOrNull()
-        private val pixelsRgba: Method? = runCatching {
-            Class.forName("com.mojang.blaze3d.platform.NativeImage").getMethod("getPixelsRGBA")
-        }.getOrNull()
-        private val pixelsAbgr: Method? = runCatching {
-            Class.forName("com.mojang.blaze3d.platform.NativeImage").getMethod("getPixelsABGR")
-        }.getOrNull()
+        private val screenshots = Class.forName("net.minecraft.client.Screenshot").methods
+            .filter { it.name == "takeScreenshot" }
+        private val asynchronous = screenshots.firstOrNull { it.parameterTypes.lastOrNull() == Consumer::class.java && it.parameterCount == 2 }
+        private val synchronous = screenshots.firstOrNull { it.parameterCount == 1 }
+        private val legacyTarget = Minecraft::class.java.methods.firstOrNull { it.name == "getMainRenderTarget" }
+        private val bytes = NativeImage::class.java.methods.firstOrNull { it.name == "getPixelBytes" }
+        private val packed = NativeImage::class.java.methods.firstOrNull { it.name in setOf("getPixelsABGR", "getPixelsRGBA") }
 
-        fun capture(client: Minecraft, consumer: (Any) -> Unit): Boolean {
-            val target = renderTarget(client) ?: return false
-            return runCatching {
-                if (callbackCapture != null) {
-                    callbackCapture.invoke(null, target, java.util.function.Consumer<Any> { consumer(it) })
-                } else {
-                    val image = directCapture?.invoke(null, target) ?: return false
-                    consumer(image)
-                }
-                true
-            }.getOrElse {
-                LogUtils.getLogger().error("PD recording capture failed", it)
-                false
+        fun capture(client: Minecraft, save: Consumer<NativeImage>) {
+            val target = if (legacyTarget != null) legacyTarget.invoke(client) else {
+                val renderer = Minecraft::class.java.getField("gameRenderer").get(client)
+                renderer.javaClass.getMethod("mainRenderTarget").invoke(renderer)
             }
+            if (asynchronous != null) asynchronous.invoke(null, target, save)
+            else save.accept(checkNotNull(synchronous).invoke(null, target) as NativeImage)
         }
 
-        private fun renderTarget(client: Minecraft): Any? {
-            mainRenderTargetGetter?.let { getter -> return runCatching { getter.invoke(client) }.getOrNull() }
-            val renderer = gameRendererField?.let { runCatching { it.get(client) }.getOrNull() }
-                ?: gameRendererMethod?.let { runCatching { it.invoke(client) }.getOrNull() }
-                ?: return null
-            return runCatching { renderer.javaClass.getMethod("mainRenderTarget").invoke(renderer) }.getOrNull()
-        }
-
-        fun width(image: Any): Int = widthMethod?.let { runCatching { it.invoke(image) as Int }.getOrNull() } ?: 0
-        fun height(image: Any): Int = heightMethod?.let { runCatching { it.invoke(image) as Int }.getOrNull() } ?: 0
-
-        /** 返回 ByteBuffer（原始 RGBA）或 IntArray（1.21.1）。 */
-        fun pixels(image: Any): Any? {
-            pixelBytes?.let { method -> runCatching { return method.invoke(image) as ByteBuffer }.getOrNull() }
-            pixelsRgba?.let { method ->
-                val ints = runCatching { method.invoke(image) as IntArray }.getOrNull() ?: return@let
-                return rgbaBytes(ints)
-            }
-            pixelsAbgr?.let { method ->
-                val ints = runCatching { method.invoke(image) as IntArray }.getOrNull() ?: return@let
-                return rgbaBytes(ints, abgr = true)
-            }
-            return null
-        }
-
-        private fun rgbaBytes(pixels: IntArray, abgr: Boolean = false): ByteArray {
-            val out = ByteArray(pixels.size * 4)
-            var i = 0
-            for (pixel in pixels) {
-                val a = (pixel ushr 24) and 0xFF
-                val b = (pixel ushr 16) and 0xFF
-                val g = (pixel ushr 8) and 0xFF
-                val r = pixel and 0xFF
-                if (abgr) {
-                    out[i++] = r.toByte(); out[i++] = g.toByte(); out[i++] = b.toByte(); out[i++] = a.toByte()
-                } else {
-                    out[i++] = r.toByte(); out[i++] = g.toByte(); out[i++] = b.toByte(); out[i++] = a.toByte()
-                }
-            }
-            return out
+        fun pixels(image: NativeImage): ByteBuffer {
+            if (bytes != null) return (bytes.invoke(image) as ByteBuffer).duplicate()
+            val pixels = checkNotNull(packed).invoke(image) as IntArray
+            val output = ByteBuffer.allocate(pixels.size * 4).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            output.asIntBuffer().put(pixels)
+            return output
         }
     }
 }

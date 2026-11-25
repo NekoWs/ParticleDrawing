@@ -191,7 +191,12 @@ runs {
 
     client {
         systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
-        if (project.hasProperty('pdBackgroundCapture') || project.hasProperty('pdCaptureDir')) {
+        if (project.hasProperty('pdRecordProfile')) {
+            def profile = project.file(project.property('pdRecordProfile'))
+            workingDirectory project.layout.dir(providers.provider { profile })
+            arguments '--gameDir', profile.absolutePath
+        }
+        if (project.hasProperty('pdBackgroundCapture') || project.hasProperty('pdCaptureDir') || project.hasProperty('pdRecordProfile')) {
             systemProperty 'pd.backgroundCapture', 'true'
             if (targetProperties.getProperty('minecraft_version') == '26.3') {
                 environmentVariables.put('SDL_WINDOW_ACTIVATE_WHEN_SHOWN', '0')
@@ -205,7 +210,8 @@ runs {
             systemProperty 'pd.capture.intervalMs', project.property('pdCaptureIntervalMs').toString()
         }
 
-        arguments '--width', '1708', '--height', '960'
+        arguments '--width', providers.gradleProperty('pdRecordWidth').getOrElse('1708'),
+                  '--height', providers.gradleProperty('pdRecordHeight').getOrElse('960')
         // 验收用的直入钩子：不传属性时完全惰性，不影响正常启动。
         // -PpdQuickPlay=<存档名> 直接进单人世界；-PpdQuickConnect=<地址> 直连服务器。
         if (project.hasProperty('pdQuickPlay')) {

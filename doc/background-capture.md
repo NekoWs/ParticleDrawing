@@ -1,4 +1,24 @@
-# 后台验收截图
+# 后台截图与录像
+
+## 一键录制
+
+在 Windows 下从仓库根目录运行。需要 Python 3.9 或更新版本、PATH 上的 FFmpeg 和 FFprobe，以及对应目标的 JDK（1.21.1 用 JDK 21，26.x 用 JDK 25）。
+
+```powershell
+python -B tools/recording/record.py `
+  --world 'run/neoforge-26.3/client/saves/PD Command v2 Smoke' `
+  --setup tools/recording/cube-setup.mcfunction `
+  --scene examples/commands/cube.mcfunction `
+  --output build/recordings/cube-entrance.mp4
+```
+
+`--world` 指向任意已保存的单人存档。工具在临时开发配置中打开副本，使用独立的 Windows 桌面，不显示游戏窗口，也不抓取鼠标。`--java-home` 可指定 JDK，依赖已缓存时可加 `--offline`。
+
+`--setup` 可指定拍摄前执行的命令，用于布景和设定视角。`--scene` 可指定预录后执行的命令，用于触发动画。两者都按文件顺序以本地玩家为执行实体，每行一条命令，支持注释。cube 取景脚本适用于空旷测试存档。
+
+默认分辨率为 1280×720，进入场景后等待 3 秒，再预录 0.5 秒并在触发后录 7 秒。`--width`、`--height`、`--warmup`、`--preroll`、`--seconds` 可分别调整。每个渲染帧都会录入，成片以可变帧率保留帧间时间。实际帧率取决于游戏渲染、显卡读回与磁盘吞吐，工具结束后会打印实测帧率。MP4 为无声视频，录制期间需要额外磁盘空间存放原始帧。用 `--help` 查看完整参数。
+
+## 单帧截图
 
 `-PpdCaptureDir` 启用开发客户端的截图通道，同时关闭鼠标抓取。26.3 启动时也关闭 SDL 的窗口自动激活。
 需要空闲时继续推进场景的验收存档，在开发客户端的 `options.txt` 中保留 `pauseOnLostFocus:false`。
@@ -60,7 +80,7 @@ for ($i = 0; $i -lt 500; $i++) {
 -Dpd.backgroundCapture=true
 ```
 
-需要连续画面时用后台录帧接口：启动时设置环境变量 `PD_CAPTURE_DIR`（可选 `PD_CAPTURE_FPS`，默认 30），
+需要连续画面时用后台录帧接口：启动时设置环境变量 `PD_CAPTURE_DIR`（可选 `PD_CAPTURE_FPS`，默认 30，填 0 录制每个渲染帧），
 游戏会直接读渲染完成的帧缓冲并写原始像素，不依赖窗口是否在前台。在目录里建 `capture.start` 开始录制，
 建 `capture.stop` 结束，输出：
 
