@@ -86,9 +86,9 @@ internal object HelpCommands {
         ),
         command(
             "animation.play", "animation",
-            "/pdraw animation play <名字> [位置]",
-            HelpParam("<名字>", "command.help.cmd.animation.play.p1"),
-            HelpParam("[位置]", "command.help.cmd.animation.play.p2"),
+            "/pdraw animation play <name> [pos]",
+            HelpParam("<name>", "command.help.cmd.animation.play.p1"),
+            HelpParam("[pos]", "command.help.cmd.animation.play.p2"),
         ),
         command(
             "animation.stop", "animation",
@@ -104,9 +104,9 @@ internal object HelpCommands {
         ),
         command(
             "camera.look", "camera",
-            "/pdraw camera look <x> <y> <z> <目标 x> <目标 y> <目标 z> [fov] [smooth]",
+            "/pdraw camera look <x> <y> <z> <target x> <target y> <target z> [fov] [smooth]",
             HelpParam("<x> <y> <z>", "command.help.cmd.camera.look.p1"),
-            HelpParam("<目标>", "command.help.cmd.camera.look.p2"),
+            HelpParam("<target>", "command.help.cmd.camera.look.p2"),
             HelpParam("[fov] [smooth]", "command.help.cmd.camera.look.p3"),
         ),
         command(

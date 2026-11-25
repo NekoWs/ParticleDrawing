@@ -9,6 +9,7 @@ import work.nekow.particledrawing.command.CommandParticleRecipes.Draft
 import work.nekow.particledrawing.command.v2.EmitterDeclaration.Companion.prepareRecipe
 import work.nekow.particledrawing.core.server.ServerParticleSources
 import work.nekow.particledrawing.i18n.component
+import work.nekow.particledrawing.i18n.reply
 import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.requireNotNullLocalized
 import work.nekow.particledrawing.i18n.translation
@@ -118,7 +119,7 @@ internal object EmitterCommands {
                 }
             }
             "advanced" -> advanced(input, source, dimension, names)
-            else -> error("Unknown emitter command $op")
+            else -> throw work.nekow.particledrawing.i18n.LocalizedStateException(translation("error.command.v2.failed"))
         }
     }
 
@@ -189,11 +190,11 @@ internal object EmitterCommands {
                 input.finish()
                 command {
                     val draft = CommandParticleRecipes.get(dimension, name)
-                    source.sendSuccess({
+                    source.reply({
                         translation("command.v2.inspect", name, draft.sampling.name.lowercase(), draft.recipe.seeds.size,
                             draft.recipe.lifetime, draft.recipe.rate, draft.recipe.maxAlive, draft.activeHandles().size,
                             draft.anchorLink ?: draft.anchor.position).component()
-                    }, false)
+                    })
                     1
                 }
             }
@@ -266,16 +267,37 @@ internal object EmitterCommands {
     }
 
     private fun result(source: CommandSourceStack, name: String, draft: Draft, launch: Launch?, dryrun: Boolean): Int {
-        val action = launch?.let { "${it.label} ${it.mode}" } ?: "config"
-        source.sendSuccess({
-            translation("command.v2.emitter", name, action, draft.recipe.seeds.size, draft.recipe.rate,
-                draft.recipe.maxAlive, if (dryrun) "dryrun" else "").component()
-        }, false)
+        val action = when {
+            launch == null -> translation("command.v2.action.config")
+            launch.burst -> translation("command.v2.action.burst")
+            else -> translation("command.v2.action.start")
+        }
+        source.reply({
+            translation("command.v2.emitter", action, name, draft.recipe.seeds.size,
+                if (dryrun) translation("command.v2.dryrun") else "").component()
+        })
         return 1
     }
 
     internal fun success(source: CommandSourceStack, name: String, op: String): Int {
-        source.sendSuccess({ translation("command.v2.done", name, op).component() }, false)
+        val key = when (op) {
+            "start" -> "command.v2.op.start"
+            "burst" -> "command.v2.op.burst"
+            "stop" -> "command.v2.op.stop"
+            "clear" -> "command.v2.op.clear"
+            "delete" -> "command.v2.op.delete"
+            "template" -> "command.v2.op.template"
+            "list" -> "command.v2.op.list"
+            "edit" -> "command.v2.op.edit"
+            "apply" -> "command.v2.op.apply"
+            "remove_selected" -> "command.v2.op.remove_selected"
+            "dryrun" -> "command.v2.op.dryrun"
+            else -> "command.v2.done"
+        }
+        source.reply({
+            if (key == "command.v2.done") translation(key, name, op).component()
+            else translation(key, name).component()
+        })
         return 1
     }
 

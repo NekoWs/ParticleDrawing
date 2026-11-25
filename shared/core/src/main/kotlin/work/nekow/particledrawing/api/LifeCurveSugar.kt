@@ -18,7 +18,7 @@ object LifeCurveSugar {
         requireLocalized(lifetimeTicks > 0) {
             translation("error.curve.fade_lifetime")
         }
-        requireLocalized(ticks <= lifetimeTicks) { translation("error.curve.fade_length") }
+        requireLocalized(ticks <= lifetimeTicks) { translation("error.curve.fade_length", ticks, lifetimeTicks) }
         val start = lifetimeTicks - ticks
         return ParticleCurve.alpha(
             CurveKey.at(start, 1f),
@@ -33,7 +33,7 @@ object LifeCurveSugar {
         requireLocalized(lifetimeTicks > 0) {
             translation("error.curve.shrink_lifetime")
         }
-        requireLocalized(ticks <= lifetimeTicks) { translation("error.curve.fade_length") }
+        requireLocalized(ticks <= lifetimeTicks) { translation("error.curve.fade_length", ticks, lifetimeTicks) }
         val start = lifetimeTicks - ticks
         return ParticleCurve.scale(
             CurveKey.at(start, 1f),

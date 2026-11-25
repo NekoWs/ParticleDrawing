@@ -96,7 +96,7 @@ object TextureRegistry {
             return null
         }
         if (byName.size >= MAX_ENTRIES && !byName.containsKey(name)) {
-            LOGGER.warn(translation("log.texture.limit").resolve(), MAX_ENTRIES)
+            LOGGER.warn(translation("log.texture.limit", MAX_ENTRIES).resolve())
             return null
         }
         val existing = byName[name]

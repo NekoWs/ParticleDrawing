@@ -193,7 +193,7 @@ internal object ProgramCommands {
         val variables = current?.variables.orEmpty().toMutableSet()
         for ((index, step) in steps.withIndex()) {
             val action = step.action
-            requireLocalized(!action.requiresActive || active) { translation("error.group.not_started", "") }
+            requireLocalized(!action.requiresActive || active) { translation("error.group.not_started_unnamed") }
             requireLocalized(action.activates || (!active && cursor == 0L)) { translation("error.group.static_declarations") }
             val duration: Long = when (action) {
                 is Action.Delay -> {

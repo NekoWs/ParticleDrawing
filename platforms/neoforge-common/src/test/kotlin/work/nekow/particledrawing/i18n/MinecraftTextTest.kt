@@ -8,6 +8,7 @@ import net.minecraft.util.FormattedCharSequence
 import net.minecraft.world.phys.Vec3
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 
 class MinecraftTextTest {
@@ -37,6 +38,12 @@ class MinecraftTextTest {
         } finally {
             Language.inject(original)
         }
+    }
+
+    @Test
+    fun unlocalizedDetailsStayOutOfPlayerText() {
+        val failure = RuntimeException("English internals").failureComponent("error.command.v2.failed")
+        assertFalse(failure.string.contains("English internals"))
     }
 
     private fun language(locale: String? = null): Language {

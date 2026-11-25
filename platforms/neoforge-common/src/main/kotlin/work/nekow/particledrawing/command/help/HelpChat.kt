@@ -9,6 +9,8 @@ import net.minecraft.network.chat.MutableComponent
 import net.minecraft.network.chat.Style
 import work.nekow.particledrawing.i18n.LocalizedText
 import work.nekow.particledrawing.i18n.component
+import work.nekow.particledrawing.i18n.reply
+import work.nekow.particledrawing.i18n.replyFailure
 import work.nekow.particledrawing.i18n.translation
 import java.lang.reflect.Constructor
 
@@ -117,6 +119,22 @@ internal object HelpChat {
     fun translated(key: String, vararg args: Any?): Component =
         translation(key, *args).component()
 
+    /** 给已有的可翻译组件补样式；组件文本交给客户端按玩家语言渲染。 */
+    private fun Component.styled(
+        color: ChatFormatting? = null,
+        bold: Boolean = false,
+        clickKind: HelpClick? = null,
+        command: String? = null,
+        hover: Component? = null,
+    ): Component {
+        var style = Style.EMPTY
+        color?.let { style = style.withColor(it) }
+        if (bold) style = style.withBold(true)
+        if (clickKind != null && command != null) style = style.withClickEvent(click(clickKind, command))
+        hover?.let { style = style.withHoverEvent(this@HelpChat.hover(it)) }
+        return copy().withStyle(style)
+    }
+
     /** 把多行文本压成一条聊天消息，行间用换行符。 */
     fun lines(parts: List<Component>): Component {
         val out = Component.empty()
@@ -128,13 +146,13 @@ internal object HelpChat {
     }
 
     fun message(source: CommandSourceStack, parts: List<Component>): Int {
-        source.sendSuccess({ lines(parts) }, false)
+        source.reply({ lines(parts) })
         return 1
     }
 
     fun plain(source: CommandSourceStack, component: Component): Int {
-        source.sendSuccess({ component }, false)
-        return 1
+        source.replyFailure(component)
+        return 0
     }
 
     /** 默认字体的近似宽度：中文等多字节字符 9px，空格 4px，其余 6px。 */
@@ -151,15 +169,15 @@ internal object HelpChat {
      *
      * 不用固定条数，按标题（可能含中文）估算像素宽后均分两侧短横线，页脚用同样总宽的纯横线。
      */
-    fun header(title: String): Component {
-        val core = "===<{ $title }>==="
+    fun header(title: Component): Component {
+        val core = "===<{ ${title.string} }>==="
         val available = (PAGE_WIDTH - pixelWidth(core)).coerceAtLeast(12)
         val leftPixels = available / 2
         val left = "-".repeat(leftPixels / 6)
         val right = "-".repeat((available - leftPixels) / 6)
         return text(left, color = ChatFormatting.GRAY)
             .append(text("===<{ ", color = ChatFormatting.GRAY))
-            .append(text(title, color = ChatFormatting.GOLD, bold = true))
+            .append(title.styled(ChatFormatting.GOLD, bold = true))
             .append(text(" }>===", color = ChatFormatting.GRAY)
                 .append(text(right, color = ChatFormatting.GRAY)))
     }
@@ -181,23 +199,29 @@ internal object HelpChat {
     }
 
     fun button(label: LocalizedText, command: String, hover: LocalizedText? = null): Component =
-        text(
-            "[" + label.resolve() + "]",
-            color = ChatFormatting.AQUA,
-            clickKind = HelpClick.RUN,
-            command = command,
-            hover = (hover ?: translation("command.help.ui.click_run")).component(),
-        )
+        Component.empty()
+            .append(Component.literal("["))
+            .append(label.component())
+            .append(Component.literal("]"))
+            .styled(
+                color = ChatFormatting.AQUA,
+                clickKind = HelpClick.RUN,
+                command = command,
+                hover = (hover ?: translation("command.help.ui.click_run")).component(),
+            )
 
-    fun disabled(label: String, hover: Component?): Component =
-        text("[$label]", color = ChatFormatting.GRAY, hover = hover)
+    fun disabled(label: Component, hover: Component?): Component =
+        Component.empty()
+            .append(Component.literal("["))
+            .append(label)
+            .append(Component.literal("]"))
+            .styled(color = ChatFormatting.GRAY, hover = hover)
 
     /** 目录条目：`  - 标题：简介`，标题可点击。 */
-    fun item(title: String, summary: String, command: String, hover: Component?): Component =
+    fun item(title: Component, summary: Component, command: String, hover: Component?): Component =
         text("  - ", color = ChatFormatting.GRAY)
             .append(
-                text(
-                    title,
+                title.styled(
                     color = ChatFormatting.AQUA,
                     bold = true,
                     clickKind = HelpClick.RUN,
@@ -205,13 +229,15 @@ internal object HelpChat {
                     hover = hover,
                 ),
             )
-            .append(text("：" + summary, color = ChatFormatting.GRAY))
+            .append(translation("command.help.ui.separator").component().styled(ChatFormatting.GRAY))
+            .append(summary.styled(ChatFormatting.GRAY))
 
     /** 命令页的一行参数：`  - <名称>  效果说明`。 */
-    fun param(name: String, effect: String): Component =
+    fun param(name: String, effect: Component): Component =
         text("  - ", color = ChatFormatting.GRAY)
             .append(text(name, color = ChatFormatting.YELLOW))
-            .append(text("  " + effect, color = ChatFormatting.WHITE))
+            .append(text("  ", color = ChatFormatting.WHITE))
+            .append(effect.styled(ChatFormatting.WHITE))
 
     /**
      * 可点击填入的命令行，缩进两格。
@@ -219,7 +245,7 @@ internal object HelpChat {
      * 选择器、坐标占位符与 `键=` 各带悬停说明；`hovers` 是命令页从参数说明里拆出来的词条，
      * 例如 `<名称>` 会显示该参数的用途。
      */
-    fun commandLine(command: String, indent: String = "  ", hovers: Map<String, String> = emptyMap()): Component {
+    fun commandLine(command: String, indent: String = "  ", hovers: Map<String, Component> = emptyMap()): Component {
         val value = if (command.startsWith("pdraw ")) "/$command" else command
         val out = text(indent, color = ChatFormatting.GRAY)
         command.split(' ').forEachIndexed { index, token ->
@@ -244,8 +270,8 @@ internal object HelpChat {
         return out
     }
 
-    private fun tokenHover(token: String, hovers: Map<String, String>): Component? {
-        hovers[token]?.let { return Component.literal(it) }
+    private fun tokenHover(token: String, hovers: Map<String, Component>): Component? {
+        hovers[token]?.let { return it }
         return when {
             token.startsWith("@p") -> translation("command.help.tip.at_p").component()
             token.startsWith("@a") -> translation("command.help.tip.at_a").component()
@@ -263,7 +289,10 @@ internal object HelpChat {
 
     /** 小节标题，如「用法」「示例」「参数」。 */
     fun section(key: String): Component =
-        text(translation(key).resolve() + "：", color = ChatFormatting.YELLOW)
+        Component.empty()
+            .append(translation(key).component())
+            .append(translation("command.help.ui.separator").component())
+            .styled(ChatFormatting.YELLOW)
 }
 
 /** 一行帮助里的按钮：显示文本、点击执行的命令、悬停说明。 */

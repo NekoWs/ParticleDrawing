@@ -35,7 +35,7 @@ object ClientTextureSyncManager {
     fun onChunk(payload: ParticleTexturePayload) {
         TextureRegistry.declare(payload.id, payload.name)
         if (pending.size >= MAX_PENDING && payload.id !in pending) {
-            LOGGER.warn(translation("log.texture.limit").resolve(), MAX_PENDING)
+            LOGGER.warn(translation("log.texture.limit", MAX_PENDING).resolve())
             return
         }
         val out = pending.getOrPut(payload.id) { ByteArrayOutputStream() }

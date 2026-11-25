@@ -32,6 +32,8 @@ import work.nekow.particledrawing.util.ParticleUtils
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
 import work.nekow.particledrawing.i18n.component
+import work.nekow.particledrawing.i18n.reply
+import work.nekow.particledrawing.i18n.replyFailure
 import work.nekow.particledrawing.i18n.failureComponent
 import work.nekow.particledrawing.i18n.translation
 
@@ -163,7 +165,7 @@ object ParticleDrawCommands {
      */
     private fun lightProbe(ctx: CommandContext<CommandSourceStack>): Int {
         if (ctx.source.server.isDedicatedServer) {
-            ctx.source.sendFailure(translation("error.light.singleplayer").component())
+            ctx.source.replyFailure(translation("error.light.singleplayer").component())
             return 0
         }
         // 定时函数是以服务端身份跑的，这里不能用 playerOrException；按命令源坐标取样即可。
@@ -188,16 +190,12 @@ object ParticleDrawCommands {
             "%.2f".format(Locale.ROOT, below), "%.2f".format(Locale.ROOT, above),
             DynamicLightManager.diagnosticsText(), source,
         )
-        org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").info("[PD-light] {}", line.resolve())
-        ctx.source.sendSuccess({ line.component() }, false)
+        ctx.source.reply({ line.component() })
         return 1
     }
 
     private fun animationUsage(ctx: CommandContext<CommandSourceStack>): Int {
-        ctx.source.sendSuccess(
-            { translation("command.animation.usage").component() },
-            false,
-        )
+        ctx.source.reply(translation("command.animation.usage").component())
         return 1
     }
 
@@ -211,7 +209,7 @@ object ParticleDrawCommands {
         } else {
             translation("command.animation.list", names.joinToString(", "))
         }
-        ctx.source.sendSuccess({ msg.component() }, false)
+        ctx.source.reply({ msg.component() })
         return names.size
     }
 
@@ -232,12 +230,12 @@ object ParticleDrawCommands {
         val data = try {
             AnimationLoader.load(name)
         } catch (error: Exception) {
-            ctx.source.sendFailure(error.failureComponent("error.animation.play"))
+            ctx.source.replyFailure(error.failureComponent("error.animation.play"))
             return 0
         } ?: run {
             val reason = if (AnimationLoader.has(name)) translation("error.animation.signature", name)
                 else translation("error.animation.not_found", name)
-            ctx.source.sendFailure(reason.component())
+            ctx.source.replyFailure(reason.component())
             return 0
         }
 
@@ -249,17 +247,14 @@ object ParticleDrawCommands {
             // 命令方块、告示牌一类非玩家执行者拿不到朝向，回退不了就明确报错，别抛原始异常
             val player = ctx.source.player
             if (player == null) {
-                ctx.source.sendFailure(translation("error.animation.position").component())
+                ctx.source.replyFailure(translation("error.animation.position").component())
                 return 0
             }
             player.position().add(player.lookAngle.scale(3.0))
         }
 
         ServerAnimationManager.play(dim, level.players(), data, origin)
-        ctx.source.sendSuccess(
-            { translation("command.animation.play", name).component() },
-            false
-        )
+        ctx.source.reply({ translation("command.animation.play", name).component() })
         return 1
     }
 
@@ -272,7 +267,7 @@ object ParticleDrawCommands {
         ServerAnimationManager.stopAll(dim, level.players())
         // 特效与文件动画共用客户端的播放表：只停动画会留下服务端还在、客户端已消失的特效记录
         ServerEffectManager.stopAll(dim, level.players())
-        ctx.source.sendSuccess({ translation("command.animation.stop").component() }, false)
+        ctx.source.reply({ translation("command.animation.stop").component() })
         return 1
     }
 
@@ -282,14 +277,11 @@ object ParticleDrawCommands {
      */
     private fun reloadTextures(ctx: CommandContext<CommandSourceStack>): Int {
         if (!PlatformCompat.isClientDist) {
-            ctx.source.sendFailure(translation("error.texture.client_only").component())
+            ctx.source.replyFailure(translation("error.texture.client_only").component())
             return 0
         }
         ClientAnimationManager.reloadTextures()
-        ctx.source.sendSuccess(
-            { translation("command.texture.reload").component() },
-            false
-        )
+        ctx.source.reply({ translation("command.texture.reload").component() })
         return 1
     }
 
@@ -297,10 +289,7 @@ object ParticleDrawCommands {
      * /pdraw animation camera：显示摄像机子命令用法。
      */
     private fun cameraUsage(ctx: CommandContext<CommandSourceStack>): Int {
-        ctx.source.sendSuccess(
-            { translation("command.camera.usage").component() },
-            false
-        )
+        ctx.source.reply({ translation("command.camera.usage").component() })
         return 1
     }
 
@@ -310,22 +299,22 @@ object ParticleDrawCommands {
      */
     private fun switchCamera(ctx: CommandContext<CommandSourceStack>): Int {
         if (!PlatformCompat.isClientDist) {
-            ctx.source.sendFailure(translation("error.camera.client_only").component())
+            ctx.source.replyFailure(translation("error.camera.client_only").component())
             return 0
         }
         if (!PlatformCompat.supportsCameraOverride) {
-            ctx.source.sendFailure(translation("error.camera.unsupported").component())
+            ctx.source.replyFailure(translation("error.camera.unsupported").component())
             return 0
         }
         val name = StringArgumentType.getString(ctx, "name")
         val target = ClientAnimationManager.findCamera(name)
         if (target == null) {
-            ctx.source.sendFailure(translation("error.camera.not_found", name).component())
+            ctx.source.replyFailure(translation("error.camera.not_found", name).component())
             return 0
         }
         CameraController.attach(target.animationId, target.cameraId, target.origin)
         CameraController.updatePose(target.pose)
-        ctx.source.sendSuccess({ translation("command.camera.switch", target.cameraId).component() }, false)
+        ctx.source.reply({ translation("command.camera.switch", target.cameraId).component() })
         return 1
     }
 
@@ -334,11 +323,11 @@ object ParticleDrawCommands {
      */
     private fun stopCamera(ctx: CommandContext<CommandSourceStack>): Int {
         if (!PlatformCompat.isClientDist) {
-            ctx.source.sendFailure(translation("error.camera.client_only").component())
+            ctx.source.replyFailure(translation("error.camera.client_only").component())
             return 0
         }
         CameraController.detach()
-        ctx.source.sendSuccess({ translation("command.camera.stop").component() }, false)
+        ctx.source.reply({ translation("command.camera.stop").component() })
         return 1
     }
 
@@ -358,10 +347,7 @@ object ParticleDrawCommands {
         val engineParticles = engine?.activeCount() ?: 0
 
         if (infos.isEmpty()) {
-            ctx.source.sendSuccess(
-                { translation("command.animation.none_playing", engineParticles).component() },
-                false
-            )
+            ctx.source.reply({ translation("command.animation.none_playing", engineParticles).component() })
             return 0
         }
 
@@ -372,12 +358,9 @@ object ParticleDrawCommands {
             val msg = translation(
                 "command.animation.debug_row", shortId, particleCount, currentMs, maxMs, frameCount, lastMs, avgMs,
             )
-            ctx.source.sendSuccess({ msg.component() }, false)
+            ctx.source.reply({ msg.component() })
         }
-        ctx.source.sendSuccess(
-            { translation("command.animation.debug_total", infos.size, engineParticles).component() },
-            false
-        )
+        ctx.source.reply({ translation("command.animation.debug_total", infos.size, engineParticles).component() })
         return infos.size
     }
 
@@ -390,16 +373,13 @@ object ParticleDrawCommands {
         val level = ctx.source.level
         val dim = ParticleUtils.dimensionUUID(level)
         ServerAnimationManager.updateVariableForDimension(dim, name, value, level.players())
-        ctx.source.sendSuccess(
-            { translation("command.animation.variable", name, value).component() },
-            false
-        )
+        ctx.source.reply({ translation("command.animation.variable", name, value).component() })
         return 1
     }
 
     /** /pdraw camera：显示自由镜头用法。 */
     private fun freeCameraUsage(ctx: CommandContext<CommandSourceStack>): Int {
-        ctx.source.sendSuccess({ translation("command.free_camera.usage").component() }, false)
+        ctx.source.reply({ translation("command.free_camera.usage").component() })
         return 1
     }
 
@@ -407,7 +387,7 @@ object ParticleDrawCommands {
     private fun stopFreeCamera(ctx: CommandContext<CommandSourceStack>): Int {
         val player = ctx.source.player ?: return freeCameraFailure(ctx)
         PacketDistributor.sendToPlayer(player, CameraPosePayload.stop())
-        ctx.source.sendSuccess({ translation("command.free_camera.stop").component() }, false)
+        ctx.source.reply({ translation("command.free_camera.stop").component() })
         return 1
     }
 
@@ -431,7 +411,7 @@ object ParticleDrawCommands {
         val dz = target.z - pos.z
         val length = kotlin.math.sqrt(dx * dx + dy * dy + dz * dz)
         if (length < 1.0E-4) {
-            ctx.source.sendFailure(translation("error.free_camera.direction").component())
+            ctx.source.replyFailure(translation("error.free_camera.direction").component())
             return 0
         }
         val yaw = Math.toDegrees(kotlin.math.atan2(-dx, dz)).toFloat()
@@ -447,11 +427,11 @@ object ParticleDrawCommands {
         yaw: Float, pitch: Float, fov: Float, smooth: Float,
     ) {
         PacketDistributor.sendToPlayer(player, CameraPosePayload(true, x, y, z, yaw, pitch, fov, smooth))
-        ctx.source.sendSuccess({ translation("command.free_camera.set").component() }, false)
+        ctx.source.reply({ translation("command.free_camera.set").component() })
     }
 
     private fun freeCameraFailure(ctx: CommandContext<CommandSourceStack>): Int {
-        ctx.source.sendFailure(translation("error.free_camera.player").component())
+        ctx.source.replyFailure(translation("error.free_camera.player").component())
         return 0
     }
 }

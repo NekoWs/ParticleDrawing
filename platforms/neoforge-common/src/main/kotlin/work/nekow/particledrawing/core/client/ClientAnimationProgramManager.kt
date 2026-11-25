@@ -219,7 +219,7 @@ internal object ClientAnimationProgramManager {
         instructions: List<AnimInstruction>,
     ) {
         if (!programs.containsKey(programId) && programs.size >= MAX_PROGRAMS) {
-            LOGGER.warn(translation("log.program.limit").resolve(), MAX_PROGRAMS)
+            LOGGER.warn(translation("log.program.limit", MAX_PROGRAMS).resolve())
             return
         }
         val level = Minecraft.getInstance().level

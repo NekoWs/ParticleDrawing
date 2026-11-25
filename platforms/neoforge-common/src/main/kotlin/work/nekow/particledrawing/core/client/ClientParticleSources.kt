@@ -11,7 +11,6 @@ import work.nekow.particledrawing.api.SubEmit
 import work.nekow.particledrawing.core.network.ParticleRecipePayload
 import work.nekow.particledrawing.core.network.RecipeOperation
 import work.nekow.particledrawing.i18n.component
-import work.nekow.particledrawing.i18n.diagnostic
 import work.nekow.particledrawing.i18n.localizedError
 import work.nekow.particledrawing.i18n.translation
 import work.nekow.particledrawing.math.Vec3 as CoreVec3
@@ -221,10 +220,6 @@ internal object ClientParticleSources {
 
     internal fun error(id: UUID, e: RuntimeException) {
         org.apache.logging.log4j.LogManager.getLogger("ParticleDrawing").error("{} {}", translation("log.recipe.instance").resolve(), id, e)
-        val detail = e.diagnostic()
-        val message = if (detail == null) translation("error.recipe.stopped")
-            else translation("error.recipe.stopped_detail", detail)
-        Minecraft.getInstance().player?.sendSystemMessage(message.component())
     }
 
     private fun remove(id: UUID) {

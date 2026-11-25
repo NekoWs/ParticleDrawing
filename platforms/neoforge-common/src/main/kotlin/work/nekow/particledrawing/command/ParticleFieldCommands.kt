@@ -17,6 +17,8 @@ import work.nekow.particledrawing.api.ParticleForceFields
 import work.nekow.particledrawing.api.RecipeAnchor
 import java.util.concurrent.CompletableFuture
 import work.nekow.particledrawing.i18n.component
+import work.nekow.particledrawing.i18n.reply
+import work.nekow.particledrawing.i18n.replyFailure
 import work.nekow.particledrawing.i18n.failureComponent
 import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.translation
@@ -41,19 +43,19 @@ internal object ParticleFieldCommands {
                 .then(Commands.argument("radius", DoubleArgumentType.doubleArg(0.05, 128.0)).then(strength))))
         }
         root.then(Commands.literal("anchor").then(Commands.argument("id", StringArgumentType.string()).suggests(::suggestIds)
-            .then(Commands.literal("fixed").then(Commands.argument("position", Vec3Argument.vec3()).executes { ctx -> safe(ctx) {
+            .then(Commands.literal("fixed").then(Commands.argument("position", Vec3Argument.vec3()).executes { ctx -> safe(ctx, "command.field.anchored") {
                 ParticleForceFields.anchor(ctx.source.level, id(ctx), RecipeAnchor(Vec3Argument.getVec3(ctx, "position")))
             } }))
-            .then(Commands.literal("entity").then(Commands.argument("entity", EntityArgument.entity()).executes { ctx -> safe(ctx) {
+            .then(Commands.literal("entity").then(Commands.argument("entity", EntityArgument.entity()).executes { ctx -> safe(ctx, "command.field.anchored") {
                 val entity = EntityArgument.getEntity(ctx, "entity")
                 ParticleForceFields.anchor(ctx.source.level, id(ctx), RecipeAnchor(entity.position(), entity.uuid, entity.id, local = true))
             } }))))
-        root.then(Commands.literal("remove").then(Commands.argument("id", StringArgumentType.string()).suggests(::suggestIds).executes { ctx -> safe(ctx) {
+        root.then(Commands.literal("remove").then(Commands.argument("id", StringArgumentType.string()).suggests(::suggestIds).executes { ctx -> safe(ctx, "command.field.removed") {
             requireLocalized(ParticleForceFields.remove(ctx.source.level, id(ctx))) { translation("error.field.not_found", id(ctx)) }
         } }))
         root.then(Commands.literal("list").executes { ctx ->
             val ids = ParticleForceFields.ids(ctx.source.level)
-            ctx.source.sendSuccess({ translation("command.field.list", ids.joinToString(", ")).component() }, false)
+            ctx.source.reply({ translation("command.field.list", ids.joinToString(", ")).component() })
             ids.size
         })
         return root
@@ -79,12 +81,12 @@ internal object ParticleFieldCommands {
     private fun id(ctx: CommandContext<CommandSourceStack>) = ResourceId.parse(word(ctx, "id"))
     private fun word(ctx: CommandContext<CommandSourceStack>, key: String) = StringArgumentType.getString(ctx, key)
 
-    private inline fun safe(ctx: CommandContext<CommandSourceStack>, action: () -> Unit): Int = try {
+    private inline fun safe(ctx: CommandContext<CommandSourceStack>, successKey: String = "command.field.updated", action: () -> Unit): Int = try {
         action()
-        ctx.source.sendSuccess({ translation("command.field.updated", id(ctx)).component() }, false)
+        ctx.source.reply({ translation(successKey, id(ctx)).component() })
         1
     } catch (error: Exception) {
-        ctx.source.sendFailure(error.failureComponent("error.field.parameters"))
+        ctx.source.replyFailure(error.failureComponent("error.field.parameters"))
         0
     }
 }

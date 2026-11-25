@@ -1,13 +1,17 @@
 package work.nekow.particledrawing.command.v2
 
+import work.nekow.particledrawing.i18n.replyFailure
+
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.builder.LiteralArgumentBuilder
 import com.mojang.brigadier.exceptions.CommandSyntaxException
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
+import org.apache.logging.log4j.LogManager
 import work.nekow.particledrawing.i18n.failureComponent
 
 internal object ParticleCommandsV2 {
+    private val LOGGER = LogManager.getLogger("ParticleDrawing")
     private const val INPUT = "declaration"
     val usages = linkedMapOf(
         "draw" to "draw <shape> [as <group>] ... [stagger <ticks>] [enter <style> <ticks>] [also <shape> ...] [then <action> ...] [dryrun]",
@@ -42,7 +46,8 @@ internal object ParticleCommandsV2 {
                     } catch (error: CommandSyntaxException) {
                         throw error
                     } catch (error: RuntimeException) {
-                        ctx.source.sendFailure(error.failureComponent("error.command.v2.failed"))
+                        LOGGER.debug("[PD-command] {} failed: {}", verb, error.message ?: error.javaClass.simpleName, error)
+                        ctx.source.replyFailure(error.failureComponent("error.command.v2.failed"))
                         0
                     }
                 }))

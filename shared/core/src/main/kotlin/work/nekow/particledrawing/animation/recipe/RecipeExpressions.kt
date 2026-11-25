@@ -328,7 +328,16 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
 
     private fun compile(expr: String, condition: Boolean): ScriptRuntime.ExpressionRunner {
         requireLocalized(expr.isNotBlank() && expr.length <= ParticleRecipe.MAX_EXPRESSION) { translation("error.expression.formula_length", ParticleRecipe.MAX_EXPRESSION) }
-        return ScriptRuntime.ExpressionRunner(if (condition) "($expr) ? 1 : 0" else expr)
+        return try {
+            ScriptRuntime.ExpressionRunner(if (condition) "($expr) ? 1 : 0" else expr)
+        } catch (error: ScriptException) {
+            val text = if (error.line != null && error.col != null) {
+                translation("error.expression.syntax_at", error.line, error.col)
+            } else {
+                translation("error.expression.syntax")
+            }
+            throw LocalizedArgumentException(text, error)
+        }
     }
 
     private fun finite(value: Double): Double {

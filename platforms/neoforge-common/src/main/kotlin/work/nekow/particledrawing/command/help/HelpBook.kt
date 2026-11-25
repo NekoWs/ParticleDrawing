@@ -28,7 +28,7 @@ internal object HelpBook {
         val slice = topics.drop((current - 1) * PAGE_SIZE).take(PAGE_SIZE)
         val lines = ArrayList<Component>()
         lines += HelpChat.header(
-            translation("command.help.ui.page_title", current, pages).resolve(),
+            translation("command.help.ui.page_title", current, pages).component(),
         )
         lines += HelpChat.nav(
             listOf(
@@ -36,7 +36,7 @@ internal object HelpBook {
                     HelpChat.button(translation("command.help.ui.prev_page"), "/pdraw help page ${current - 1}")
                 } else {
                     HelpChat.disabled(
-                        translation("command.help.ui.prev_page").resolve(),
+                        translation("command.help.ui.prev_page").component(),
                         translation("command.help.ui.first_page").component(),
                     )
                 },
@@ -44,7 +44,7 @@ internal object HelpBook {
                     HelpChat.button(translation("command.help.ui.next_page"), "/pdraw help page ${current + 1}")
                 } else {
                     HelpChat.disabled(
-                        translation("command.help.ui.next_page").resolve(),
+                        translation("command.help.ui.next_page").component(),
                         translation("command.help.ui.last_page").component(),
                     )
                 },
@@ -52,8 +52,8 @@ internal object HelpBook {
         )
         for (topic in slice) {
             lines += HelpChat.item(
-                translation("command.help.$topic.title").resolve(),
-                translation("command.help.$topic.summary").resolve(),
+                translation("command.help.$topic.title").component(),
+                translation("command.help.$topic.summary").component(),
                 "/pdraw help $topic",
                 translation("command.help.$topic.summary").component(),
             )
@@ -70,7 +70,7 @@ internal object HelpBook {
         }
         val commands = HelpCommands.ofTopic(id)
         val lines = ArrayList<Component>()
-        lines += HelpChat.header(translation("command.help.$id.title").resolve())
+        lines += HelpChat.header(translation("command.help.$id.title").component())
         lines += HelpChat.nav(
             buildList {
                 add(HelpChat.button(translation("command.help.ui.index"), "/pdraw help"))
@@ -78,8 +78,8 @@ internal object HelpBook {
         )
         for (command in commands) {
             lines += HelpChat.item(
-                translation(command.titleKey).resolve(),
-                translation(command.summaryKey).resolve(),
+                translation(command.titleKey).component(),
+                translation(command.summaryKey).component(),
                 "/pdraw help cmd ${command.id}",
                 translation(command.summaryKey).component(),
             )
@@ -100,9 +100,9 @@ internal object HelpBook {
         lines += HelpChat.header(
             translation(
                 "command.help.ui.command_title",
-                translation("command.help.${command.topic}.title").resolve(),
-                translation(command.titleKey).resolve(),
-            ).resolve(),
+                translation("command.help.${command.topic}.title").component(),
+                translation(command.titleKey).component(),
+            ).component(),
         )
         lines += HelpChat.nav(
             buildList {
@@ -117,7 +117,7 @@ internal object HelpBook {
             },
         )
         val hovers = command.params
-            .flatMap { param -> param.name.split(' ').map { it to translation(param.effectKey).resolve() } }
+            .flatMap { param -> param.name.split(' ').map { it to translation(param.effectKey).component() } }
             .toMap()
         lines += HelpChat.section("command.help.ui.usage")
         lines += HelpChat.commandLine(command.usage, hovers = hovers)
@@ -125,7 +125,7 @@ internal object HelpBook {
         if (command.params.isNotEmpty()) {
             lines += HelpChat.section("command.help.ui.params")
             for (param in command.params) {
-                lines += HelpChat.param(param.name, translation(param.effectKey).resolve())
+                lines += HelpChat.param(param.name, translation(param.effectKey).component())
             }
         }
         lines += HelpChat.bottom()
@@ -134,7 +134,7 @@ internal object HelpBook {
 
     fun examples(source: CommandSourceStack): Int {
         val lines = ArrayList<Component>()
-        lines += HelpChat.header(translation("command.help.examples.title").resolve())
+        lines += HelpChat.header(translation("command.help.examples.title").component())
         lines += HelpChat.nav(
             listOf(
                 HelpChat.button(translation("command.help.ui.index"), "/pdraw help"),

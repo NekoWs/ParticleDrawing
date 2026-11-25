@@ -44,7 +44,7 @@ object ShaderCompat {
         val current = query()
         if (current && !announced) {
             announced = true
-            LOGGER.info("[PD-compat] 光影包已启用，模组自建管线退回原版管线（加法混合 / 实例化配方 / 场景材质）")
+            LOGGER.info("[PD-compat] Shader package enabled; using vanilla pipeline (additive / instanced / scene materials)")
         }
         active = current
         return current
@@ -69,7 +69,7 @@ object ShaderCompat {
             return try {
                 val api = Class.forName(IRIS_API)
                 val instance = api.getMethod("getInstance").invoke(null)
-                    ?: throw IllegalStateException("IrisApi.getInstance() 返回 null")
+                    ?: throw IllegalStateException("IrisApi.getInstance() returned null")
                 Resolved(instance, api.getMethod("isShaderPackInUse")).also { resolved = it }
             } catch (t: Throwable) {
                 resolveFailed = true

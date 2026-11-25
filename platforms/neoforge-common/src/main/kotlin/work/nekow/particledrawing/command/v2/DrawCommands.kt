@@ -21,6 +21,7 @@ import work.nekow.particledrawing.core.network.AnimationProgramCodecs
 import work.nekow.particledrawing.core.server.AnimationScheduler
 import work.nekow.particledrawing.core.server.ServerParticleEngine
 import work.nekow.particledrawing.i18n.component
+import work.nekow.particledrawing.i18n.reply
 import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.requireNotNullLocalized
 import work.nekow.particledrawing.i18n.translation
@@ -87,7 +88,7 @@ internal object DrawCommands {
                     }
                 }
             }
-            feedback(source, "draw", particles.size, dryrun)
+            feedback(source, name, "draw", particles.size, dryrun)
         }
     }
 
@@ -225,7 +226,7 @@ internal object DrawCommands {
             val raw = ArrayList<Draw.Placement>()
             scratch.drawCollector = {
                 requireLocalized(result.size + raw.size < MAX_MEMBERS) {
-                    translation("error.group.capacity", "", MAX_MEMBERS)
+                    translation("error.group.capacity_unnamed", MAX_MEMBERS)
                 }
                 raw.add(it)
             }
@@ -370,7 +371,7 @@ internal object DrawCommands {
                         val delay = particles.maxOf { it.placement.delay }
                         record(entry, if (delay == 0) 0 else delay + 1)
                     }
-                    feedback(source, op, particles.size, dryrun)
+                    feedback(source, name, op, particles.size, dryrun)
                 }
             }
             "program" -> {
@@ -416,8 +417,7 @@ internal object DrawCommands {
                     val draft = entry.morphDraft
                     if (draft == null) EmitterCommands.success(source, name, op)
                     else {
-                        source.sendSuccess({ translation("command.v2.morph", name, draft.slotCount,
-                            draft.position, draft.ticks, draft.path.name).component() }, false)
+                        source.reply({ translation("command.v2.morph", name, draft.slotCount, draft.ticks).component() })
                         1
                     }
                 }
@@ -435,7 +435,7 @@ internal object DrawCommands {
         requireLocalized(!replace || !entry.group.hasDeliveredProgram()) { translation("error.command.v2.program_delivered", name) }
         val state = ProgramCommands.validate(steps, if (replace) null else ProgramCommands.state(entry))
         if (!dryrun) ProgramCommands.apply(dimension, entry, steps, state, replace)
-        return feedback(source, "program", steps.size, dryrun)
+        return feedback(source, name, "program", steps.size, dryrun)
     }
 
     fun control(source: CommandSourceStack, op: String, input: CommandInput): () -> Int {
@@ -456,8 +456,16 @@ internal object DrawCommands {
 
     private fun command(action: () -> Int) = action
 
-    private fun feedback(source: CommandSourceStack, op: String, count: Int, dryrun: Boolean): Int {
-        source.sendSuccess({ translation("command.v2.draw", op, count, if (dryrun) "dryrun" else "").component() }, false)
+    private fun feedback(source: CommandSourceStack, name: String?, op: String, count: Int, dryrun: Boolean): Int {
+        val key = when (op) {
+            "program" -> "command.v2.program"
+            "append" -> "command.v2.append"
+            else -> "command.v2.draw"
+        }
+        val group = name ?: translation("command.v2.anonymous")
+        source.reply({
+            translation(key, group, count, if (dryrun) translation("command.v2.dryrun") else "").component()
+        })
         return if (dryrun) 1 else count
     }
 }

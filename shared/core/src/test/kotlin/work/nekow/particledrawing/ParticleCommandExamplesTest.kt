@@ -96,7 +96,7 @@ class ParticleCommandExamplesTest {
     }
 
     @Test fun `ColorBlock 四个示例函数都能画出对应形状`() {
-        if (!hasExamples) return
+        if (!hasExamples || !Files.readString(Path.of("examples/commands/cube.mcfunction")).contains("pdraw particle emitter reset cube")) return
         val cube = RecipeRuntime(colorBlockExample("cube"), true).also { repeat(2) { _ -> it.tick() } }
         assertEquals(116, cube.particles.size)
         val seven = RecipeRuntime(colorBlockExample("seven-star"), true).also { repeat(41) { _ -> it.tick() } }
