@@ -18,6 +18,26 @@ python -B tools/recording/record.py `
 
 默认分辨率为 1280×720，进入场景后等待 3 秒，再预录 0.5 秒并在触发后录 7 秒。`--width`、`--height`、`--warmup`、`--preroll`、`--seconds` 可分别调整。每个渲染帧都会录入，成片以可变帧率保留帧间时间。实际帧率取决于游戏渲染、显卡读回与磁盘吞吐，工具结束后会打印实测帧率。MP4 为无声视频，录制期间需要额外磁盘空间存放原始帧。用 `--help` 查看完整参数。
 
+## 开光影录制
+
+使用已安装 Iris、兼容 Sodium 和光影包的 NeoForge 单人客户端。先构建同一 Minecraft 版本的 ParticleDrawing JAR，再指定实例目录、包名和成品 JAR。实例需已下载所需资源，并在 `.minecraft/versions` 下提供完整合并的版本 JSON。
+
+```powershell
+$instance = Join-Path $env:APPDATA '.minecraft/versions/26.2'
+$modJar = Get-ChildItem 'platforms/neoforge-26.2/build/libs/particledrawing-26.2-neoforge-*.jar' |
+  Where-Object Name -NotLike '*-sources.jar' | Sort-Object LastWriteTime -Descending |
+  Select-Object -First 1
+
+python -B tools/recording/record.py `
+  --instance $instance --shader-pack 'BSL_v10.1.8.zip' --mod-jar $modJar.FullName `
+  --world (Join-Path $instance 'saves/新的世界') `
+  --setup tools/recording/cube-setup.mcfunction `
+  --scene examples/commands/cube.mcfunction `
+  --output build/recordings/cube-bsl.mp4
+```
+
+工具会复制实例的模组、配置、选中的光影包和存档，替换副本中的 ParticleDrawing 后以离线单人模式启动。Iris 确认光影已生效后才开始录制。原实例及存档保持原样。开光影时仍在独立的隐藏桌面录制每个渲染帧。
+
 ## 单帧截图
 
 `-PpdCaptureDir` 启用开发客户端的截图通道，同时关闭鼠标抓取。26.3 启动时也关闭 SDL 的窗口自动激活。
@@ -73,8 +93,8 @@ for ($i = 0; $i -lt 500; $i++) {
 
 ## 正式客户端后台录制
 
-开发客户端的光影验收做不了，需要装好模组的正式实例。把 `platforms/<目标>/build/libs/*.jar` 放进实例的
-`mods/`，再带上系统属性启动，鼠标抓取同样会被取消：
+手动控制正式实例的录制时，把 `platforms/<目标>/build/libs/*.jar` 放进实例的
+`mods/`，再带上系统属性启动，鼠标抓取会被取消：
 
 ```text
 -Dpd.backgroundCapture=true

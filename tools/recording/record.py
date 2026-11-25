@@ -1,4 +1,4 @@
-"""Record a development Minecraft world to MP4 from an inactive Windows desktop."""
+"""Record Minecraft to MP4 from an inactive Windows desktop."""
 
 import argparse
 import math
@@ -28,7 +28,10 @@ def parse_args():
     parser.add_argument("--scene", type=Path, help="commands to run after the pre-roll")
     parser.add_argument("--output", required=True, type=Path, help="new .mp4 path")
     parser.add_argument("--platform", choices=("1.21.1", "26.2", "26.3"), default="26.3")
-    parser.add_argument("--java-home", type=Path, help="Gradle JDK (21 for 1.21.1, 25 for 26.x)")
+    parser.add_argument("--java-home", type=Path, help="JDK for the client (21 for 1.21.1, 25 for 26.x)")
+    parser.add_argument("--instance", type=Path, help="installed Iris version directory under .minecraft/versions")
+    parser.add_argument("--shader-pack", help="name of a shader pack already installed in the instance")
+    parser.add_argument("--mod-jar", type=Path, help="current ParticleDrawing JAR built for the installed instance")
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--seconds", type=positive, default=7, help="seconds after the scene starts")
@@ -45,6 +48,19 @@ def parse_args():
         parser.error("--output must be outside the source world")
     if any(size < 2 or size % 2 for size in (args.width, args.height)):
         parser.error("--width and --height must be positive even integers")
+    if any((args.instance, args.shader_pack, args.mod_jar)):
+        if not all((args.instance, args.shader_pack, args.mod_jar)):
+            parser.error("--instance, --shader-pack and --mod-jar must be supplied together")
+        args.instance = args.instance.resolve()
+        if not (args.instance / f"{args.instance.name}.json").is_file():
+            parser.error("--instance must contain its installed version JSON")
+        pack = Path(args.shader_pack)
+        if pack.name != args.shader_pack or pack.name in ("", ".", ".."):
+            parser.error("--shader-pack must be a name inside the instance's shaderpacks folder")
+        if not (args.instance / "shaderpacks" / pack).exists():
+            parser.error(f"Shader pack not found: {pack}")
+        if not args.mod_jar.is_file() or args.mod_jar.suffix.lower() != ".jar":
+            parser.error("--mod-jar must be an existing JAR file")
     return args
 
 
@@ -63,6 +79,9 @@ def prepare(args, session):
         source = getattr(args, name)
         if source:
             shutil.copyfile(source, capture / f"{name}.mcfunction")
+    if args.instance:
+        from installed_client import prepare_shader_profile
+        prepare_shader_profile(args.instance, profile, args.shader_pack, args.mod_jar)
     return profile, capture
 
 
@@ -78,7 +97,7 @@ def wait_for(process, capture, marker, timeout):
         if code is not None:
             if marker is None and code == 0:
                 return
-            raise RuntimeError(f"Gradle exited with code {code} while waiting for {marker or 'shutdown'}")
+            raise RuntimeError(f"Client launch exited with code {code} while waiting for {marker or 'shutdown'}")
         time.sleep(0.05)
     raise RuntimeError(f"Timed out waiting for {marker or 'shutdown'}")
 
@@ -86,22 +105,20 @@ def wait_for(process, capture, marker, timeout):
 def record(args, profile, capture, log):
     from hidden_desktop import launch
 
-    environment = dict(os.environ, PD_CAPTURE_DIR=str(capture), PD_CAPTURE_AUTOMATION="1",
-                       PD_CAPTURE_FPS="0", PD_RECORD_ROOT=str(ROOT), PD_RECORD_PROFILE=str(profile))
-    if args.java_home:
-        environment["JAVA_HOME"] = str(args.java_home.resolve())
-    shell = os.environ.get("COMSPEC", r"C:\Windows\System32\cmd.exe")
-    command = (
-        f'{subprocess.list2cmdline([shell])} /d /v:off /s /c '
-        rf'""%PD_RECORD_ROOT%\gradlew.bat" -p platforms/neoforge-{args.platform} runClient --no-daemon '
-        f'--max-workers=2 "-PpdRecordProfile=%PD_RECORD_PROFILE%" -PpdQuickPlay=recording '
-        f'-PpdRecordWidth={args.width} -PpdRecordHeight={args.height}'
-        + (" --offline" if args.offline else "") + '"'
-    )
-    with launch(shell, command, ROOT, environment, log) as process:
+    environment = dict(os.environ, PD_CAPTURE_DIR=str(capture), PD_CAPTURE_AUTOMATION="1", PD_CAPTURE_FPS="0",
+                       PD_CAPTURE_REQUIRE_SHADER="1" if args.instance else "0")
+    if args.instance:
+        from installed_client import java_launch
+        executable, command = java_launch(args, profile)
+        environment.update(SDL_WINDOW_ACTIVATE_WHEN_SHOWN="0", SDL_WINDOW_ACTIVATE_WHEN_RAISED="0")
+    else:
+        executable, command = gradle_launch(args, profile, environment)
+    with launch(executable, command, profile if args.instance else ROOT, environment, log) as process:
         try:
             print("Waiting for the world on the hidden desktop...", flush=True)
             wait_for(process, capture, "capture.ready", args.timeout)
+            if args.instance:
+                print(f"Iris is active with {args.shader_pack}", flush=True)
             time.sleep(args.warmup)
             (capture / "capture.start").touch()
             wait_for(process, capture, "capture.active", 30)
@@ -120,6 +137,21 @@ def record(args, profile, capture, log):
                 deadline = time.monotonic() + 10
                 while process.poll() is None and time.monotonic() < deadline:
                     time.sleep(0.05)
+
+
+def gradle_launch(args, profile, environment):
+    environment.update(PD_RECORD_ROOT=str(ROOT), PD_RECORD_PROFILE=str(profile))
+    if args.java_home:
+        environment["JAVA_HOME"] = str(args.java_home.resolve())
+    shell = os.environ.get("COMSPEC", r"C:\Windows\System32\cmd.exe")
+    command = (
+        f'{subprocess.list2cmdline([shell])} /d /v:off /s /c '
+        rf'""%PD_RECORD_ROOT%\gradlew.bat" -p platforms/neoforge-{args.platform} runClient --no-daemon '
+        f'--max-workers=2 "-PpdRecordProfile=%PD_RECORD_PROFILE%" -PpdQuickPlay=recording '
+        f'-PpdRecordWidth={args.width} -PpdRecordHeight={args.height}'
+        + (" --offline" if args.offline else "") + '"'
+    )
+    return shell, command
 
 
 def timestamps(capture, count, width, height):

@@ -4,10 +4,12 @@ import com.mojang.blaze3d.platform.NativeImage
 import com.mojang.logging.LogUtils
 import net.minecraft.client.Minecraft
 import net.minecraft.commands.CommandResultCallback
+import net.neoforged.fml.ModList
 import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.client.event.RenderFrameEvent
+import work.nekow.particledrawing.core.client.ShaderCompat
 import java.io.BufferedWriter
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -25,6 +27,7 @@ object RecordingCapture {
     private val logger = LogUtils.getLogger()
     private val directory = System.getenv("PD_CAPTURE_DIR")?.takeIf(String::isNotBlank)?.let(Path::of)
     private val automation = System.getenv("PD_CAPTURE_AUTOMATION") == "1"
+    private val requireShader = System.getenv("PD_CAPTURE_REQUIRE_SHADER") == "1"
     private val fps = System.getenv("PD_CAPTURE_FPS")?.toDoubleOrNull()?.takeIf { it == 0.0 || it in 1.0..240.0 } ?: 30.0
     private val interval = if (fps == 0.0) 0L else (1_000_000_000.0 / fps).toLong()
     private val pollInterval = TimeUnit.MILLISECONDS.toNanos(25)
@@ -78,6 +81,11 @@ object RecordingCapture {
             }
             if (setup?.isDone == true && !Files.exists(dir.resolve("capture.ready"))) {
                 setup?.join()
+                if (requireShader) {
+                    check(ModList.get().isLoaded("iris")) { "Shader recording requires Iris" }
+                    if (!ShaderCompat.shaderpackActive()) return
+                    logger.info("PD recording confirmed an active Iris shader pack")
+                }
                 Files.createFile(dir.resolve("capture.ready"))
             }
             if (take != null && Files.deleteIfExists(dir.resolve("capture.scene"))) {
@@ -87,6 +95,9 @@ object RecordingCapture {
                 scene?.join()
                 Files.createFile(dir.resolve("capture.scene-done"))
             }
+        }
+        if (requireShader && (take != null || Files.exists(dir.resolve("capture.start")))) {
+            check(ShaderCompat.shaderpackActive()) { "Iris shader pack is no longer active" }
         }
         if (take == null && Files.deleteIfExists(dir.resolve("capture.start"))) {
             Files.deleteIfExists(dir.resolve("frames.meta"))
