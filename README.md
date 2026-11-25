@@ -6,41 +6,45 @@
 [![Maven Central](https://img.shields.io/maven-central/v/work.nekow/particledrawing-neoforge-26.3?label=Maven%20Central)](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3)
 [![Modrinth](https://img.shields.io/modrinth/dt/particledrawing?label=Modrinth&logo=modrinth)](https://modrinth.com/mod/particledrawing)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/NekoWs/ParticleDrawing/blob/master/LICENSE)
-![Minecraft](https://img.shields.io/badge/Minecraft-26.2%20%2F%2026.3%20%2F%201.21.1-informational)
-![NeoForge](https://img.shields.io/badge/NeoForge-26.2%20%2F%2026.3%20%2F%2021.1-informational)
 
-ParticleDrawing is a server-authoritative particle effects library for NeoForge. Effects are built
-primarily with the `/pdraw` command system or the Kotlin/Java API; it can also play `.pdrawc`
-animations exported from the ParticleDrawing editor.
+ParticleDrawing is a particle effects library for Minecraft on NeoForge. Use `/pdraw` in chat, command
+blocks, or data pack functions to draw shapes, animate particle groups, and run emitters. Mod
+developers can build effects with the Kotlin and Java API. The mod also plays `.pdrawc` animations
+exported from the ParticleDrawing editor.
 
-The server declares and owns effects, while clients evaluate and render them locally. Choreographed
-groups, life curves and runtime emitters are sent once and evaluated on the client, so a running
-effect costs little to no per-tick bandwidth.
+The server sends group animations, lifetime curves, and client-side emitter configurations once.
+Clients evaluate and render those effects locally. Bulk spawn, velocity, force, and
+tracking updates are split into packets automatically.
 
-## Highlights
+Built-in soft dots and lines work without a custom resource pack, as do vanilla particle textures.
+ParticleDrawing also supports custom PNG textures, per-particle UVs, independent width and height, fixed
+orientation, additive blending, and dynamic lighting.
 
-- **Commands first.** Draw shapes, choreograph groups and declare emitters in one command. Works in
-  chat, command blocks and data pack functions, with tab completion and in-game help.
-- **API first.** Draw shapes and animate groups from Kotlin or Java with `Draw`, `ParticleGroup`,
-  `ParticleBatch` and runtime emitters. No `.pdrawc` file or editor is required.
-- **No resource pack for basic effects.** Built-in soft-dot and line shapes, vanilla particle
-  textures, per-particle UVs, anisotropic sizes, additive blending and PNG registration are supported.
-- **Declarative and cheap at runtime.** Sampling layouts, birth and motion formulas, life curves and
-  program timelines are evaluated on the client. Bulk spawn, velocity, force and track operations are
-  chunked automatically.
-- **Multi-version.** One code base for Minecraft 26.2, 26.3 and 1.21.1 on NeoForge.
-- **Optional editor playback.** `.pdrawc` animations with cameras, audio, function objects and
-  runtime variables can be played from `<gameDir>/animations/`.
+## Installation
+
+| Minecraft | Minimum NeoForge | Java |
+| --- | --- | --- |
+| 1.21.1 | 21.1.235 | 21 |
+| 26.2 | 26.2.0.59 | 25 |
+| 26.3 | 26.3.0.101 | 25 |
+
+1. Install NeoForge for your Minecraft version.
+2. Place the matching ParticleDrawing JAR in `mods/`. In multiplayer, install the same ParticleDrawing
+   version on the server and each client.
+3. In game, run `/pdraw help` with an account that has command permissions.
+
+Download from [Modrinth](https://modrinth.com/mod/particledrawing) or [GitHub Releases](https://github.com/NekoWs/ParticleDrawing/releases).
 
 ## Commands
 
-`/pdraw` is available in chat, command blocks and `.mcfunction` files. In functions, omit the leading
-`/`. Run `/pdraw help` for the topic index, or `/pdraw help cmd draw` / `/pdraw help cmd emitter` for
-the full parameter list.
+Start with a ring. The second example replaces it with a ring and hexagram that rise, spin, and fade.
+The examples use `.mcfunction` syntax. In chat, add a leading `/`.
 
 ```mcfunction
-# Draw a named group and animate it.
+# Draw a glowing ring named sigil.
 pdraw particle draw circle as sigil at ~ ~1 ~ radius 3 count 96 look color aqua size 0.15 glow
+
+# Replace sigil with two shapes and animate them as a group.
 pdraw particle draw circle as sigil at ~ ~1 ~ radius 3 count 96 look color aqua also hexagram at ~ ~1 ~ radius 2.4 segments 24 look color gold then move 0 1 0 40 then spin 0 1 0 2 then delay 40 then fade_out 20
 
 # Declare an emitter and start it in the same command.
@@ -55,17 +59,17 @@ pdraw particle delete emitter fire
 | Command | Description |
 | --- | --- |
 | `/pdraw particle draw …` | Draw one or more shapes, name the group, and append `then` actions. |
-| `/pdraw particle emitter …` | Define an emitter from sampling, formulas, appearance and an emission window. |
+| `/pdraw particle emitter …` | Set sampling, spawn and motion formulas, appearance, and emission timing. |
 | `/pdraw particle template` / `use …` | Save an emitter declaration and instantiate it with overrides. |
-| `/pdraw particle start` / `burst` / `stop …` | Control continuous emission, one-shot bursts and running instances. |
+| `/pdraw particle start` / `burst` / `stop …` | Start continuous emission, emit a single burst, or stop spawning. |
 | `/pdraw particle clear` / `delete …` | Clear live instances, or remove the named emitter, group or template. |
 | `/pdraw particle advanced …` | Inspect recipes, edit live emitters, or append actions to an existing group. |
-| `/pdraw animation …` | List, play, stop and debug `.pdrawc` animations; switch preview cameras. |
-| `/pdraw camera …` | Drive a free camera pose for recordings and cinematics. |
+| `/pdraw animation …` | List, play, stop, and inspect `.pdrawc` animations. |
+| `/pdraw camera …` | Control a free camera for recordings and cinematics. |
 | `/pdraw texture reload` | Hot-reload particle textures from disk. |
-| `/pdraw particle field …` | Configure the programmatic force-field entrance. |
+| `/pdraw particle field …` | Configure particle force fields. |
 
-Useful pieces of the command grammar:
+Combine these options to shape and animate an effect.
 
 - `draw` accepts `dot`, `field`, `line`, `beam`, `helix`, `circle`, `disc`, `triangle`, `hexagram`,
   `rect`, `sphere`, `cuboid`, `text`, `sin` and `expr`.
@@ -75,11 +79,13 @@ Useful pieces of the command grammar:
 - `emitter` accepts `sample`, `spawn`, `move`, `life`, `rate`, `window`, `collide`, `subemit`,
   `with environment`, `with probe` and `with on`.
 
-More syntax and examples: [particle commands](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/particle-commands.md).
+Press Tab for available arguments, or run `/pdraw help cmd draw` or `/pdraw help cmd emitter`
+for command-specific help. [Particle command syntax and examples](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/particle-commands.md)
 
 ## API
 
-Add the dependency for your game version:
+Add Maven Central to your Gradle repositories and use the artifact for your Minecraft version.
+The Kotlin DSL example targets Minecraft 26.3. Replace `<version>` with a published ParticleDrawing version.
 
 ```kotlin
 // build.gradle.kts
@@ -97,11 +103,12 @@ type = "required"
 ordering = "AFTER"
 ```
 
-For Minecraft 26.2, replace `neoforge-26.3` with `neoforge-26.2`. Published versions are available on
-Maven Central: [26.2](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.2) ·
-[26.3](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3).
+[Minecraft 1.21.1](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-1.21.1) ·
+[Minecraft 26.2](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.2) ·
+[Minecraft 26.3](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3)
 
-Draw from the server main thread:
+Call the drawing API on the server thread with a `ServerLevel`. This example draws a ring that
+fades in as it spins, then stops spinning and fades out.
 
 ```kotlin
 import net.minecraft.world.phys.Vec3
@@ -118,83 +125,37 @@ Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80)
     .fadeOut(20)
 ```
 
-`Draw` returns a `ParticleGroup` for most shapes; the same API covers lines, curves, polylines,
-polygons, spheres, cuboids and text points. Beyond one-shot groups:
-
+- `Draw` creates a `ParticleGroup` for shapes such as lines, curves, polylines, polygons, spheres,
+  cuboids, and text made of particles.
 - `ParticleBatch` manages particle streams whose members are added and removed over time.
-- `ParticleManager.emitter(anchor)` declares runtime emitters with spacing or interval emission.
-- `Effects` registers and plays named effects with movable anchors and playback clocks.
-- `Animation.create { … }` builds `.pdrawc`-equivalent animations directly in code.
-- Per-particle textures, UV frames, anisotropic sizes, fixed orientation, dynamic lighting and
-  OGG/WAV audio are available from the same API.
+- `ParticleManager.emitter(anchor)` creates runtime emitters that spawn by distance or time interval.
+- `Effects` registers and plays named effects with movable anchors and playback controls.
+- `Animation.create { … }` builds an animation in code using the same data model as `.pdrawc`.
 
-Full API index: [api reference](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/api-reference.md).
-More code examples: [guide](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/guide.md) and
-[getting started](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/getting-started.md).
-
-## Editor and `.pdrawc` animations
-
-The ParticleDrawing editor saves projects as `.pdraw` and exports `.pdrawc` files for the runtime.
-This workflow is optional; commands and the API cover effects that do not need an editor project.
-
-1. Export an animation from the [editor](https://viewer.nekow.work/).
-2. Put the file into `<gameDir>/animations/`.
-3. Play it in game:
-
-```mcfunction
-pdraw animation play meteor
-pdraw animation list
-pdraw animation stop
-```
-
-Animations are loaded on demand, so the game does not need a restart after adding or replacing a
-file. Playback also supports preview cameras, runtime function-object variables and timing diagnostics:
-
-```mcfunction
-pdraw animation camera <name>
-pdraw animation var <name> <value>
-pdraw animation debug
-```
-
-From code, use `ServerAnimationManager` to play a `ParticleAnimation` or a `.pdrawc` file, update
-variables and stop playback. Cameras, audio assets, function objects and timeline tracks are part of
-the animation format.
-
-More: [animation playback](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/animation.md).
-
-## Requirements
-
-| Minecraft | Minimum NeoForge | Java |
-| --- | --- | --- |
-| 1.21.1 | 21.1.235 | 21 |
-| 26.2 | 26.2.0.59 | 25 |
-| 26.3 | 26.3.0.101 | 25 |
-
-## Installation
-
-### Players
-
-1. Install NeoForge for Minecraft 26.2, 26.3 or 1.21.1.
-2. Put the ParticleDrawing JAR for your game version into `mods/`.
-3. Use `/pdraw` in game. For editor animations, also place `.pdrawc` files into
-   `<gameDir>/animations/`.
-
-Downloads: [Modrinth](https://modrinth.com/mod/particledrawing) ·
-[GitHub Releases](https://github.com/NekoWs/ParticleDrawing/releases).
-
-On a server, install the same ParticleDrawing version on the client and the server.
-
-### Developers
-
-The dependency coordinates are target-specific. To bundle ParticleDrawing in your own JAR:
+To bundle ParticleDrawing in your mod, use the following Gradle dependency declaration.
 
 ```kotlin
 jarJar(implementation("work.nekow:particledrawing-neoforge-26.3:<version>"))
 ```
 
-Older releases keep the `work.nekow:particledrawing:<version>` coordinate. See the
-[multi-version guide](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/multiversion.md) for
-coordinates, run directories and migration notes.
+Older releases use `work.nekow:particledrawing:<version>`. [Multi-version layout and migration](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/multiversion.md)
+
+## Editor playback
+
+The editor saves projects as `.pdraw` and exports `.pdrawc` files for in-game playback. Animations can
+include timeline tracks, camera tracks, OGG/WAV audio, and scripted function objects.
+
+1. Export a `.pdrawc` file from the [ParticleDrawing editor](https://viewer.nekow.work/).
+2. Put the file in `animations/` under the game directory or the dedicated server's working directory.
+3. In chat, run `/pdraw animation play meteor` to play `meteor.pdrawc`.
+
+Files are loaded on demand, so you can add or replace them while the game is running. Run
+`/pdraw animation list` to list animations or `/pdraw animation stop` to stop them in the current dimension.
+
+Use `/pdraw animation var <name> <value>` to update a script variable, `/pdraw animation debug` to check
+playback status, or `/pdraw animation camera <name>` to preview a camera track. Camera-track preview is
+currently unavailable on Minecraft 1.21.1. From code, use `ServerAnimationManager` to play an animation,
+update variables, or stop playback. [Animation playback](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/animation.md)
 
 ## Documentation
 
@@ -202,6 +163,7 @@ coordinates, run directories and migration notes.
 - [Getting started](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/getting-started.md)
 - [Particle commands](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/particle-commands.md)
 - [API reference](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/api-reference.md)
+- [Kotlin and Java examples](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/guide.md)
 - [Animation playback](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/animation.md)
 - [Multi-version layout](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/multiversion.md)
 - [Known issues](https://github.com/NekoWs/ParticleDrawing/blob/master/doc/known-issues.md)
@@ -216,21 +178,21 @@ cd ParticleDrawing
 ./gradlew runServer      # start a development server
 ```
 
-The build requires JDK 25. The root build targets 26.3; the shared core targets Java 21. Build a
-specific adapter with `./gradlew -p platforms/neoforge-26.2 build` or
-`./gradlew -p platforms/neoforge-26.3 build`.
+The root build targets Minecraft 26.3 and requires JDK 25. Use
+`./gradlew -p platforms/neoforge-26.2 build` or `./gradlew -p platforms/neoforge-26.3 build`
+to build a specific 26.x target. The Minecraft 1.21.1 target
+(`./gradlew -p platforms/neoforge-1.21.1 build`) and the standalone core
+(`./gradlew -p shared/core build`) target Java 21.
 
 ## Releasing
 
-`mod_version` in `gradle.properties` is the single source of truth. Whenever it changes, the same
-commit gets a matching `v<mod_version>` tag. Pushing the tag publishes to Maven Central through
-`publish.yml`, publishes each target to Modrinth through `modrinth.yml`, and creates a GitHub Release
-through `release.yml`. All workflows fail if the tag name and `mod_version` do not match.
+Set `mod_version` in `gradle.properties` and tag the same commit `v<mod_version>`. Pushing the tag
+triggers Maven Central publication (`publish.yml`), Modrinth publication (`modrinth.yml`), and the
+GitHub Release (`release.yml`). Each release workflow checks that the tag matches `mod_version`.
 
-To publish a GitHub Release for an existing tag, open **Actions → Publish GitHub Release → Run
-workflow** and enter `v<version>`. It uses the built-in `GITHUB_TOKEN` with `contents: write`; no
-extra secret is required. Rerunning replaces same-named attachments while preserving existing release
-notes.
+To publish a GitHub Release for an existing tag, open **Actions → Publish GitHub Release → Run workflow**
+and enter `v<version>`. The workflow uses the built-in `GITHUB_TOKEN` with `contents: write`.
+Rerunning it replaces same-named attachments and preserves the release notes.
 
 ## License
 
