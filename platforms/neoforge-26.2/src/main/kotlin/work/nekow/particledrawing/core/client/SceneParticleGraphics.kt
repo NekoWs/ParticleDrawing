@@ -1,7 +1,5 @@
 package work.nekow.particledrawing.core.client
 
-import com.mojang.blaze3d.systems.RenderSystem
-import net.minecraft.client.renderer.BindGroupLayouts
 
 internal typealias SceneGpuFormat = com.mojang.blaze3d.GpuFormat
 internal typealias SceneBindGroupLayout = com.mojang.blaze3d.pipeline.BindGroupLayout
@@ -19,8 +17,6 @@ internal typealias SceneSampler = com.mojang.blaze3d.textures.GpuSampler
 internal typealias SceneGpuBuffer = com.mojang.blaze3d.buffers.GpuBuffer
 internal typealias SceneGpuBufferSlice = com.mojang.blaze3d.buffers.GpuBufferSlice
 
-internal val sceneProjectionLayout get() = BindGroupLayouts.MATRICES_PROJECTION
-
 internal fun sceneSamplerLayout(): SceneBindGroupLayout =
     SceneBindGroupLayout.builder().withSampler("SceneDepth").withSampler("SceneColor").build()
 
@@ -31,10 +27,12 @@ internal fun particleInstanceLayout(): SceneBindGroupLayout = SceneBindGroupLayo
     .withUniform("PDFrame", com.mojang.blaze3d.shaders.UniformType.UNIFORM_BUFFER)
     .build()
 
-internal fun com.mojang.blaze3d.pipeline.RenderPipeline.Builder.sceneDepthConvention() =
-    withShaderDefine("PD_ZERO_TO_ONE", if (RenderSystem.getDevice().deviceInfo.isZZeroToOne) 1 else 0)
-
 internal fun SceneRenderPass.useScenePipeline(pipeline: SceneRenderPipeline) = setPipeline(pipeline)
 
 internal fun SceneRenderPass.bindSceneTexture(name: String, texture: SceneTextureView, sampler: SceneSampler) =
     bindTexture(name, texture, sampler)
+
+internal fun useWeightedParticleTransparency(): Boolean = !ShaderCompat.legacyPipelines()
+
+internal fun createOitTexture(width: Int, height: Int, format: SceneGpuFormat) =
+    com.mojang.blaze3d.pipeline.TextureTarget("Particle OIT", width, height, false, format)

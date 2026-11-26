@@ -19,6 +19,6 @@ out vec4 fragColor;
 void main() {
     vec4 mask = texture(Sampler0, texCoord);
     vec4 color = mask * vertexColor * ColorModulator;
-    color = sampleParticleScene(mask, color, material, ProjMat, false, false);
+    color = sampleParticleScene(mask, color, material, ProjMat, false);
     fragColor = material.y > 0.0 ? color : linear_fog(color, vertexDistance, FogStart, FogEnd, FogColor);
 }

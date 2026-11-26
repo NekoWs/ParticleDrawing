@@ -15,13 +15,13 @@ layout(location = 0) out vec4 fragColor;
 
 void main() {
     vec4 mask = texture(Sampler0, texCoord);
-#ifdef RENDERPEARL_DEPTH_IS_ZERO_TO_ONE
+#if PD_ZERO_TO_ONE
     const bool zeroToOne = true;
 #else
     const bool zeroToOne = false;
 #endif
     vec4 color = mask * vertexColor * ColorModulator;
-    color = sampleParticleScene(mask, color, material, ProjMat, zeroToOne, true);
+    color = sampleParticleScene(mask, color, material, ProjMat, zeroToOne);
     fragColor = material.y > 0.0 ? color : apply_fog(color, distances.x, distances.y,
         FogEnvironmentalStart, FogEnvironmentalEnd, FogRenderDistanceStart, FogRenderDistanceEnd, FogColor);
 }

@@ -72,7 +72,8 @@ OGG 解码通过 `ScriptWavePcm.OggReader` 服务接口接入，NeoForge 目标�
   若需整份替换共享文件，在目标配置的 `shared_replacements` 中列出对应路径。
 - 1.21.1 使用 `VertexConsumer` 和 `ParticleRenderType` 渲染粒子。`Identifier` 与
   `BlockAndLightGetter` 映射到该版本的原生类型，编译后由 `drop_alias_facades` 清除别名生成的空类。
-- 26.3 接入 Renderpearl 及 OIT。加色粒子分别提供深度范围、透射率和颜色累积管线。
+- 1.21.1 和 26.2 为 ParticleDrawing 普通半透明粒子提供加权 OIT，两端共用颜色与透射率算法。
+- 26.3 接入 Renderpearl 及原版 OIT。加色粒子分别提供深度范围、透射率和颜色累积管线。启用 Iris 光影包时，普通半透明粒子改在光影合成后执行加权 OIT。
   服务端配置在 `config/particledrawing-server.toml`，世界可用 `syncedconfig/` 下的同名文件覆盖。
   迁移旧世界时将 `serverconfig/particledrawing-server.toml` 移到该世界的 `syncedconfig/`。
   26.2 继续使用 `serverconfig/`。[NeoForge 26.3 迁移说明](https://docs.neoforged.net/primer/docs/26.3/)

@@ -19,6 +19,8 @@ import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.client.event.RegisterShadersEvent
 import work.nekow.particledrawing.ParticleDrawing
+import work.nekow.particledrawing.api.ParticleSceneMaterial
+import work.nekow.particledrawing.config.ParticleDrawingConfig
 
 /** 在地形与普通透明合成后提交使用场景纹理的粒子。 */
 @EventBusSubscriber(modid = ParticleDrawing.MODID, value = [Dist.CLIENT])
@@ -44,17 +46,28 @@ object SceneParticlePass {
     private data class Batch(val texture: Identifier, val additive: Boolean)
 
     @JvmStatic fun render(camera: Camera, partialTick: Float, frustum: Frustum, lightmap: LightTexture) {
-        // 光影包生效时场景材质拿不到可靠的颜色/深度副本，整段跳过；相关粒子已退回普通四边形。
+        // 调试旧管线时由普通粒子路径接管。
         if (ShaderCompat.legacyPipelines()) return
         ParticleInstancePass.render(camera.position, lightmap)
+        ParticleOitPass.render(camera, partialTick, frustum, lightmap)
+        val sceneMaterials = ParticleDrawingConfig.CLIENT.sceneMaterials.get()
+        val postShader = ShaderCompat.postShaderParticles()
+        if (!sceneMaterials && !postShader) return
         val activeShader = shader ?: return
         val engine = ClientParticleEngine.instance() ?: return
         val batches = linkedMapOf<Batch, MutableList<BridgeParticle>>()
-        engine.forEachSceneParticle { particle ->
+        fun collect(particle: BridgeParticle) {
             if (frustum.isVisible(particle.getRenderBoundingBox(partialTick))) {
                 val batch = Batch(particle.sceneTexture(), particle.sceneAdditive)
                 batches.getOrPut(batch) { arrayListOf() }.add(particle)
             }
+        }
+        if (postShader) {
+            engine.forEachBridgeParticle { particle ->
+                if (particle.deferredSceneMaterial() || particle.postShaderAdditive()) collect(particle)
+            }
+        } else if (sceneMaterials) {
+            engine.forEachSceneParticle(::collect)
         }
         if (batches.isEmpty()) return
         scene.capture(Minecraft.getInstance().mainRenderTarget)
@@ -75,7 +88,10 @@ object SceneParticlePass {
                 else RenderSystem.defaultBlendFunc()
                 RenderSystem.setShaderTexture(0, batch.texture)
                 val builder = BufferBuilder(buffer, VertexFormat.Mode.QUADS, format)
-                for (particle in particles) particle.render(SceneParticleVertices(builder, particle.sceneMaterial), camera, partialTick)
+                for (particle in particles) {
+                    val material = if (sceneMaterials) particle.sceneMaterial else ParticleSceneMaterial.NONE
+                    particle.renderGeometry(SceneParticleVertices(builder, material), camera, partialTick)
+                }
                 val mesh = builder.build() ?: continue
                 mesh.sortQuads(buffer, VertexSorting.DISTANCE_TO_ORIGIN)
                 BufferUploader.drawWithShader(mesh)
@@ -93,6 +109,7 @@ object SceneParticlePass {
 
     @JvmStatic fun close() {
         ParticleInstancePass.close()
+        ParticleOitPass.close()
         vertices?.close()
         vertices = null
         scene.close()

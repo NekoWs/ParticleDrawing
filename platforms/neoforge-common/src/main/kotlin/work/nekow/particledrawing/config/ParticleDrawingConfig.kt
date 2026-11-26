@@ -66,6 +66,7 @@ object ParticleDrawingConfig {
         val sceneMaterials: ModConfigSpec.BooleanValue
         val terrainDynamicLights: ModConfigSpec.BooleanValue
         val shaderCompat: ModConfigSpec.BooleanValue
+        val weightedParticleTransparency: ModConfigSpec.BooleanValue
         val shaderLightPools: ModConfigSpec.BooleanValue
         val debugLogFps: ModConfigSpec.BooleanValue
         val forceLegacyPipelines: ModConfigSpec.BooleanValue
@@ -112,10 +113,13 @@ object ParticleDrawingConfig {
 
             builder.push("compatibility")
             shaderCompat = builder
-                .comment("When a shader pack (Iris) is in use, fall back to vanilla particle pipelines for the mod's own pipelines: additive blending, instanced recipes and scene materials degrade automatically. Turn this off to keep the mod's pipelines under a shader pack, accepting that the pack may not render them.")
+                .comment("Draw additive particles after Iris composites the world so they retain additive blending. Scene materials, instancing and weighted OIT also use the composed scene.")
                 .define("shaderCompat", true)
+            weightedParticleTransparency = builder
+                .comment("Use weighted order-independent blending for regular translucent ParticleDrawing particles on 1.21.1 and 26.2, or with an active Iris shader pack on 26.3.")
+                .define("weightedParticleTransparency", true)
             shaderLightPools = builder
-                .comment("Optional fallback for shader packs that ignore the vanilla lightmap: draw a soft light patch on the surface under each particle light. Off by default because most packs read the lightmap, where the baked terrain light already shows up. Only active together with shaderCompat.")
+                .comment("Optional fallback for shader packs that ignore the vanilla lightmap: draw a soft light patch on the surface under each particle light. Replaces ParticleDrawing terrain light baking while compatibility mode is active. Off by default because packs that use the vanilla lightmap already receive terrain lighting.")
                 .define("shaderLightPools", false)
             customAdditivePipeline = builder
                 .comment("Draw additive particles with the mod's own blend pipeline. Turn this off when a shader pack overexposes or mis-sorts additive particles; they then use the vanilla translucent particle pipeline without additive blending.")

@@ -839,6 +839,12 @@ class ClientParticleEngine {
      */
     fun activeCount(): Int = particles.size + detachedTrails.size + ClientGpuParticles.reserved
 
+    /** 1.21.1 的透明通道直接访问桥接对象，包括已脱离发射器的尾迹。 */
+    internal fun forEachBridgeParticle(action: (BridgeParticle) -> Unit) {
+        for (bridge in bridges.values) if (bridge.isAlive) action(bridge)
+        for (bridge in detachedTrails.values) if (bridge.isAlive) action(bridge)
+    }
+
     /** 旧版原版粒子通道无法延迟提交，按登记表直接读取使用场景材质的粒子。 */
     internal fun forEachSceneParticle(action: (BridgeParticle) -> Unit) {
         for (id in sceneIds) {

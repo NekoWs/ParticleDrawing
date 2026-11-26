@@ -10,6 +10,7 @@ import net.minecraft.client.particle.ParticleRenderType
 import net.minecraft.client.renderer.GameRenderer
 import net.minecraft.client.renderer.texture.TextureManager
 import net.minecraft.resources.Identifier
+import work.nekow.particledrawing.config.ParticleDrawingConfig
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -43,7 +44,7 @@ private class PdParticleRenderType(
     override fun begin(tesselator: Tesselator, textureManager: TextureManager): BufferBuilder {
         RenderSystem.setShader(GameRenderer::getParticleShader)
         RenderSystem.setShaderTexture(0, texture)
-        if (additive) {
+        if (additive && ParticleDrawingConfig.CLIENT.customAdditivePipeline.get() && !ShaderCompat.legacyPipelines()) {
             RenderSystem.enableBlend()
             RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE)
             RenderSystem.depthMask(false)

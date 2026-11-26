@@ -5,6 +5,7 @@ import work.nekow.particledrawing.core.client.particleLayer
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -21,6 +22,12 @@ class ParticleLayerContractTest {
     @Test
     fun `加色层按半透明粒子参与排序`() {
         assertTrue(particleLayer(texture, translucent = false, additive = true).translucent)
+    }
+
+    @Test
+    fun `加色层只测试深度，不遮挡后方粒子`() {
+        val additive = particleLayer(texture, translucent = true, additive = true)
+        assertFalse(assertNotNull(additive.pipeline().depthStencilState).writeDepth)
     }
 
     @Test

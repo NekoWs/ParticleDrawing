@@ -10,6 +10,7 @@ import net.minecraft.world.phys.Vec3
 import org.joml.Quaternionf
 import org.joml.Vector4f
 import org.joml.Vector3f
+import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.api.ParticleRenderOptions
 import work.nekow.particledrawing.api.ParticleTrailStyle
 import work.nekow.particledrawing.animation.ParticleUvRegion
@@ -353,6 +354,25 @@ class BridgeParticle(
      * 原版在 `renderRotatedQuad` 里直接读 `rCol/alpha`，没有 partialTick 口，只能临时替换、读完还原。
      */
     override fun render(consumer: VertexConsumer, camera: Camera, partialTick: Float) {
+        if (deferredSceneMaterial() || postShaderAdditive() || (ParticleOitPass.enabled() && weightedAlpha(partialTick))) return
+        renderGeometry(consumer, camera, partialTick)
+    }
+
+    internal fun deferredSceneMaterial(): Boolean = sceneMaterial.active &&
+        ParticleDrawingConfig.CLIENT.sceneMaterials.get() && !ShaderCompat.legacyPipelines()
+
+    internal fun postShaderAdditive(): Boolean = additive && ShaderCompat.postShaderParticles() &&
+        ParticleDrawingConfig.CLIENT.customAdditivePipeline.get() && !usesInstancePipeline()
+
+    internal fun weightedAlpha(partialTick: Float): Boolean {
+        if (additive || usesInstancePipeline() || deferredSceneMaterial()) return false
+        refreshTextureIfStale()
+        return sampledAlpha(partialTick) < 1f || texEntry?.translucent == true || effects?.translucent == true
+    }
+
+    private fun usesInstancePipeline(): Boolean = instanced && !ShaderCompat.legacyPipelines()
+
+    internal fun renderGeometry(consumer: VertexConsumer, camera: Camera, partialTick: Float) {
         if (lightOnly || textureClock?.recipeSuspended == true || effects?.trailPaused == true) return
         val f = frameFactor(partialTick)
         val cam = camera.position
@@ -362,7 +382,8 @@ class BridgeParticle(
         val effect = effects
         val trail = effect?.trail
         val trailOnly = effect?.trailOnly == true
-        if (instanced && !trailOnly) {
+        val submitInstances = usesInstancePipeline()
+        if (submitInstances && !trailOnly) {
             var uvChanged = false
             val animated = entry != null && (entry.animation != null || uv?.mode == UvData.Mode.ANIMATED)
             if (animated) {
@@ -388,7 +409,7 @@ class BridgeParticle(
         }
         alpha *= effect?.alpha(x, y, z, f) ?: 1f
         try {
-            if (!instanced && !trailOnly && (alpha > 0f || effect == null)) super.render(consumer, camera, partialTick)
+            if (!submitInstances && !trailOnly && (alpha > 0f || effect == null)) super.render(consumer, camera, partialTick)
             if (trail != null) {
                 ribbonVertices.clear()
                 ribbonVertices.append(
@@ -465,9 +486,8 @@ class BridgeParticle(
     private var renderTypeTranslucent = false
 
     override fun getRenderType(): ParticleRenderType {
-        if (sceneMaterial.active) return ParticleRenderType.NO_RENDER
         refreshTextureIfStale()
-        val translucent = additive || alpha < 1.0f || effects?.translucent == true
+        val translucent = additive || sceneMaterial.active || alpha < 1.0f || texEntry?.translucent == true || effects?.translucent == true
         val cached = renderTypeCache
         if (cached != null && translucent == renderTypeTranslucent) return cached
         val entry = texEntry

@@ -371,7 +371,7 @@ class BridgeParticle(
 
     internal fun inFrustum(frustum: net.minecraft.client.renderer.culling.Frustum, partialTick: Float): Boolean {
         if (textureClock?.recipeSuspended == true) return false
-        if (instanced) return true
+        if (usesInstancePipeline()) return true
         val visual = effects
         if (visual?.trail == null) return frustum.pointInFrustum(renderX(), renderY(), renderZ())
         val half = maxOf(sampledWidth(partialTick), sampledHeight(partialTick), 0.5f)
@@ -397,7 +397,8 @@ class BridgeParticle(
         val effect = effects
         val trail = effect?.trail
         val trailOnly = effect?.trailOnly == true
-        if (instanced && !trailOnly) {
+        val submitInstances = usesInstancePipeline()
+        if (submitInstances && !trailOnly) {
             var uvChanged = false
             val animated = entry != null && (entry.animation != null || uv?.mode == UvData.Mode.ANIMATED)
             if (animated) {
@@ -411,7 +412,7 @@ class BridgeParticle(
             if (trail == null) return
         }
         entry?.let { uvRegion.updateFromTexture(it, uv, animStartNanos, textureClock, age, f) }
-        if (!instanced && f <= 0f && effect == null) {
+        if (!submitInstances && f <= 0f && effect == null) {
             super.extract(state, camera, partialTick)
             return
         }
@@ -427,7 +428,7 @@ class BridgeParticle(
         }
         alpha *= effect?.alpha(x, y, z, f) ?: 1f
         try {
-            if (!instanced && !trailOnly && (alpha > 0f || effect == null)) super.extract(state, camera, partialTick)
+            if (!submitInstances && !trailOnly && (alpha > 0f || effect == null)) super.extract(state, camera, partialTick)
             if (trail != null && state is OrientedQuadRenderState) {
                 state.ribbonVertices(getLayer()).append(
                     trail, CoreVec3(sampledX(f), sampledY(f), sampledZ(f)),
@@ -484,9 +485,20 @@ class BridgeParticle(
     private var layerTranslucent = false
     private var layerCustomBlend = false
 
+    private fun usesInstancePipeline(): Boolean = instanced && !ShaderCompat.legacyPipelines()
+
+    internal fun postShaderAdditive(): Boolean = additive && ShaderCompat.postShaderParticles() &&
+        ParticleDrawingConfig.CLIENT.customAdditivePipeline.get() && !usesInstancePipeline()
+
+    internal fun weightedAlpha(partialTick: Float): Boolean {
+        if (additive || usesInstancePipeline()) return false
+        refreshTextureIfStale()
+        return sampledAlpha(partialTick) < 1f || texEntry?.translucent == true || effects?.translucent == true
+    }
+
     override fun getLayer(): Layer {
         refreshTextureIfStale()
-        val translucent = additive || alpha < 1.0f || effects?.translucent == true
+        val translucent = additive || alpha < 1.0f || texEntry?.translucent == true || effects?.translucent == true
         // 光影包兼容：关掉自定义加法管线后，加法粒子退回原版半透明管线（没有加法混合和 OIT 加法阶段）。
         val customBlend = additive && ParticleDrawingConfig.CLIENT.customAdditivePipeline.get() &&
             !ShaderCompat.legacyPipelines()

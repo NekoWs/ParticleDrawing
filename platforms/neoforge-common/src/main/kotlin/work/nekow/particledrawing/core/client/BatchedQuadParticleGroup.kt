@@ -14,6 +14,7 @@ import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.client.event.RegisterParticleGroupsEvent
 import work.nekow.particledrawing.ParticleDrawing
+import work.nekow.particledrawing.api.ParticleSceneMaterial
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 
 /**
@@ -44,13 +45,18 @@ class BatchedQuadParticleGroup(
     /** 与原版 QuadParticleGroup 同一套提取逻辑（含崩溃归因），只换了渲染状态。 */
     override fun extractRenderState(frustum: Frustum, camera: Camera, partialTickTime: Float): ParticleGroupRenderState {
         SceneParticleQuads.reset()
-        // 光影包兼容：关掉场景材质粒子时改画普通四边形，不再抓本帧的颜色和深度副本。
+        val weighted = ParticleOitPass.beginFrame()
         val sceneMaterials = ParticleDrawingConfig.CLIENT.sceneMaterials.get() && !ShaderCompat.legacyPipelines()
         for (particle in particles) {
             val bridge = particle as BridgeParticle
             if (bridge.inFrustum(frustum, partialTickTime)) {
                 try {
-                    val destination = if (sceneMaterials && bridge.sceneMaterial.active) SceneParticleQuads.forMaterial(bridge.sceneMaterial) else renderState
+                    val destination = when {
+                        sceneMaterials && bridge.sceneMaterial.active -> SceneParticleQuads.forMaterial(bridge.sceneMaterial)
+                        bridge.postShaderAdditive() -> SceneParticleQuads.forMaterial(ParticleSceneMaterial.NONE)
+                        weighted != null && bridge.weightedAlpha(partialTickTime) -> weighted
+                        else -> renderState
+                    }
                     bridge.extract(destination, camera, partialTickTime)
                 } catch (t: Throwable) {
                     val report = CrashReport.forThrowable(t, "Rendering Particle")

@@ -1,0 +1,5 @@
+{
+  "vertex": "particledrawing:oit_composite",
+  "fragment": "particledrawing:oit_composite",
+  "samplers": [{ "name": "Sampler0" }]
+}

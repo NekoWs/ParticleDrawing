@@ -46,11 +46,11 @@ internal object ClientParticleSources {
                     val recipe = requireNotNull(p.recipe)
                     recipe.validate()
                     val anchor = requireNotNull(p.anchor)
-                    // 光影包兼容：实例化与 GPU 配方走模组自建管线，光影包生效时降级成普通粒子。
+                    // 调试旧管线时以 CPU 启动 GPU 配方。CPU 实例在渲染阶段按帧选择管线。
                     val legacy = ShaderCompat.legacyPipelines()
                     if (p.mode == ParticleRecipeMode.GPU && !legacy) ClientGpuParticles.start(p.id, recipe, anchor)
                     else sources[p.id] = Entry(p.id, RecipeRuntime(recipe, p.burst, world = ClientParticleWorld), anchor,
-                        p.mode == ParticleRecipeMode.INSTANCED && !legacy)
+                        p.mode == ParticleRecipeMode.INSTANCED)
                 }
                 RecipeOperation.UPDATE -> sources[p.id]?.runtime?.update(requireNotNull(p.recipe))
                 RecipeOperation.ANCHOR -> sources[p.id]?.anchor = requireNotNull(p.anchor)

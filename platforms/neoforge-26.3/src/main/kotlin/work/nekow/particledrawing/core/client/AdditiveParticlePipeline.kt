@@ -6,6 +6,7 @@ import com.mojang.renderpearl.api.pipeline.ColorTargetState
 import com.mojang.renderpearl.api.pipeline.DepthStencilState
 import com.mojang.renderpearl.api.pipeline.PrimitiveTopology
 import com.mojang.renderpearl.api.pipeline.RenderPipeline
+import com.mojang.renderpearl.api.pipeline.CompareOp
 import net.minecraft.client.renderer.BindGroupLayouts
 import net.minecraft.client.renderer.oit.OitPipelineSet
 import net.minecraft.resources.Identifier
@@ -26,7 +27,7 @@ val ADDITIVE_PARTICLE: RenderPipeline = RenderPipeline.builder()
     .withBindGroupLayout(BindGroupLayouts.SAMPLER0_SAMPLER2)
     .withVertexBinding(0, DefaultVertexFormat.PARTICLE)
     .withPrimitiveTopology(PrimitiveTopology.QUADS)
-    .withDepthStencilState(DepthStencilState.DEFAULT)
+    .withDepthStencilState(DepthStencilState(CompareOp.GREATER_THAN_OR_EQUAL, false))
     .withColorTargetState(ColorTargetState(BlendFunction.LIGHTNING))
     .withCull(false)
     .withLocation(Identifier.fromNamespaceAndPath("particledrawing", "additive_particle"))

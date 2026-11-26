@@ -5,13 +5,7 @@ import org.apache.logging.log4j.LogManager
 import work.nekow.particledrawing.config.ParticleDrawingConfig
 import java.lang.reflect.Method
 
-/**
- * 光影包兼容状态。
- *
- * Iris 只认识原版管线和自己声明的程序，模组自建的管线（加法混合、实例化粒子、场景材质）在光影包
- * 生效时可能不被绘制。这里反射读 Iris 的公开 API 判断“有没有光影包正在用”，命中时让这些粒子退回
- * 原版管线。用反射而不是编译期依赖，既能保持 Iris 可选，也方便 1.21.1 / 26.2 / 26.3 共用一份代码。
- */
+/** 查询可选的 Iris，并按渲染帧固定自定义粒子提交方式。 */
 object ShaderCompat {
     private val LOGGER = LogManager.getLogger("ParticleDrawing")
     private const val REFRESH_NANOS = 1_000_000_000L
@@ -32,9 +26,25 @@ object ShaderCompat {
 
     private class Resolved(val instance: Any, val inUse: Method)
 
-    /** 是否该退回原版管线：光影包生效时自动退回，调试开关可强制打开。 */
-    fun legacyPipelines(): Boolean =
-        ParticleDrawingConfig.CLIENT.forceLegacyPipelines.get() || (ParticleDrawingConfig.CLIENT.shaderCompat.get() && shaderpackActive())
+    @Volatile
+    private var legacyFrame = false
+
+    @Volatile
+    private var postShaderFrame = false
+
+    /** 同一帧的几何提取、绘制与区块线程共用一份兼容状态。 */
+    fun refreshFrame() {
+        val config = ParticleDrawingConfig.CLIENT
+        legacyFrame = config.forceLegacyPipelines.get()
+        postShaderFrame = config.shaderCompat.get() && !legacyFrame && shaderpackActive()
+    }
+
+    fun legacyPipelines(): Boolean = legacyFrame
+
+    fun postShaderParticles(): Boolean = postShaderFrame
+
+    fun useLightPools(): Boolean = ParticleDrawingConfig.CLIENT.shaderLightPools.get() &&
+        (postShaderFrame || legacyFrame)
 
     /** 有无光影包正在生效。读不到 Iris API 时按未启用来处理，避免光影包缺失或换版本时误降级。 */
     fun shaderpackActive(): Boolean {
@@ -44,7 +54,7 @@ object ShaderCompat {
         val current = query()
         if (current && !announced) {
             announced = true
-            LOGGER.info("[PD-compat] Shader package enabled; using vanilla pipeline (additive / instanced / scene materials)")
+            LOGGER.info("[PD-compat] Iris shader pack enabled")
         }
         active = current
         return current

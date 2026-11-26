@@ -1,7 +1,6 @@
 package work.nekow.particledrawing.core.client
 
 import com.mojang.blaze3d.systems.RenderSystem
-import net.minecraft.client.renderer.BindGroupLayouts
 
 internal typealias SceneGpuFormat = com.mojang.renderpearl.api.GpuFormat
 internal typealias SceneBindGroupLayout = com.mojang.renderpearl.api.pipeline.BindGroupLayout
@@ -19,8 +18,6 @@ internal typealias SceneSampler = com.mojang.renderpearl.api.textures.GpuSampler
 internal typealias SceneGpuBuffer = com.mojang.renderpearl.api.buffers.GpuBuffer
 internal typealias SceneGpuBufferSlice = com.mojang.renderpearl.api.buffers.GpuBufferSlice
 
-internal val sceneProjectionLayout get() = BindGroupLayouts.PROJECTION
-
 internal fun sceneSamplerLayout(): SceneBindGroupLayout = SceneBindGroupLayout.builder()
     .withUniform("SceneDepth", com.mojang.renderpearl.api.pipeline.UniformType.COMBINED_IMAGE_SAMPLER)
     .withUniform("SceneColor", com.mojang.renderpearl.api.pipeline.UniformType.COMBINED_IMAGE_SAMPLER)
@@ -33,10 +30,13 @@ internal fun particleInstanceLayout(): SceneBindGroupLayout = SceneBindGroupLayo
     .withUniform("PDFrame", com.mojang.renderpearl.api.pipeline.UniformType.UNIFORM_BUFFER)
     .build()
 
-internal fun com.mojang.renderpearl.api.pipeline.RenderPipeline.Builder.sceneDepthConvention() = this
-
 internal fun SceneRenderPass.useScenePipeline(pipeline: SceneRenderPipeline) =
     setPipeline(RenderSystem.getCompiledPipeline(pipeline))
 
 internal fun SceneRenderPass.bindSceneTexture(name: String, texture: SceneTextureView, sampler: SceneSampler) =
     setUniform(name, texture, sampler)
+
+internal fun useWeightedParticleTransparency(): Boolean = ShaderCompat.postShaderParticles()
+
+internal fun createOitTexture(width: Int, height: Int, format: SceneGpuFormat) =
+    com.mojang.blaze3d.pipeline.TextureTarget("Particle OIT", width, height, format, null)

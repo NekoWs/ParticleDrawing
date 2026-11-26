@@ -20,7 +20,7 @@ void main() {
     const bool zeroToOne = false;
 #endif
     vec4 color = mask * vertexColor * ColorModulator;
-    color = sampleParticleScene(mask, color, material, ProjMat, zeroToOne, true);
+    color = sampleParticleScene(mask, color, material, ProjMat, zeroToOne);
     fragColor = material.y > 0.0 ? color : apply_fog(color, distances.x, distances.y,
         FogEnvironmentalStart, FogEnvironmentalEnd, FogRenderDistanceStart, FogRenderDistanceEnd, FogColor);
 }

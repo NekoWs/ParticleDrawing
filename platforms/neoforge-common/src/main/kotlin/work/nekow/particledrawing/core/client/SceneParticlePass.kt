@@ -21,13 +21,14 @@ object SceneParticlePass {
         .build()
     private val sceneLayout = sceneSamplerLayout()
     private val shader = Identifier.fromNamespaceAndPath("particledrawing", "core/scene_particle")
-    private fun pipeline(name: String, blend: SceneBlendFunction): SceneRenderPipeline = SceneRenderPipeline.builder()
-        .withLocation(Identifier.fromNamespaceAndPath("particledrawing", name))
+    private fun buildPipeline(additive: Boolean, zeroToOne: Boolean): SceneRenderPipeline = SceneRenderPipeline.builder()
+        .withLocation(Identifier.fromNamespaceAndPath("particledrawing",
+            "scene_particle_${if (additive) "additive" else "alpha"}_${if (zeroToOne) "zo" else "no"}"))
         .withVertexShader(shader)
         .withFragmentShader(shader)
-        .sceneDepthConvention()
+        .withShaderDefine("PD_ZERO_TO_ONE", if (zeroToOne) 1 else 0)
         .withBindGroupLayout(BindGroupLayouts.GLOBALS)
-        .withBindGroupLayout(sceneProjectionLayout)
+        .withBindGroupLayout(BindGroupLayouts.PROJECTION)
         .withBindGroupLayout(BindGroupLayouts.DYNAMIC_TRANSFORMS)
         .withBindGroupLayout(BindGroupLayouts.FOG)
         .withBindGroupLayout(BindGroupLayouts.SAMPLER0_SAMPLER2)
@@ -35,17 +36,20 @@ object SceneParticlePass {
         .withVertexBinding(0, vertexFormat)
         .withPrimitiveTopology(SceneTopology.QUADS)
         .withDepthStencilState(SceneDepthStencilState(SceneCompareOp.GREATER_THAN_OR_EQUAL, false))
-        .withColorTargetState(SceneColorTargetState(blend))
+        .withColorTargetState(SceneColorTargetState(if (additive) SceneBlendFunction.LIGHTNING else SceneBlendFunction.TRANSLUCENT))
         .withCull(false)
         .build()
 
-    private val alpha by lazy { pipeline("scene_particle", SceneBlendFunction.TRANSLUCENT) }
-    private val additive by lazy { pipeline("scene_particle_additive", SceneBlendFunction.LIGHTNING) }
+    private val pipelines = hashMapOf<Pair<Boolean, Boolean>, SceneRenderPipeline>()
+
+    private fun pipeline(additive: Boolean, zeroToOne: Boolean): SceneRenderPipeline =
+        pipelines.getOrPut(additive to zeroToOne) { buildPipeline(additive, zeroToOne) }
     private val scene = ParticleSceneBuffers()
     private var vertices: StagedVertexBuffer? = null
 
     @JvmStatic fun render() {
         ParticleInstancePass.render()
+        ParticleOitPass.render()
         val batches = SceneParticleQuads.batches
         if (batches.isEmpty()) return
         val mc = Minecraft.getInstance()
@@ -65,6 +69,7 @@ object SceneParticlePass {
         scene.capture(target)
         val transforms = RenderSystem.getDynamicUniforms().writeTransform(RenderSystem.getModelViewMatrixCopy())
         val sampler = RenderSystem.getSamplerCache().getClampToEdge(SceneFilterMode.LINEAR)
+        val zeroToOne = RenderSystem.getDevice().deviceInfo.isZZeroToOne
         RenderSystem.getDevice().createCommandEncoder().createRenderPass(
             { "Particle scene materials" }, requireNotNull(target.colorTextureView), Optional.empty(),
             requireNotNull(target.depthTextureView), OptionalDouble.empty(),
@@ -75,7 +80,7 @@ object SceneParticlePass {
             scene.bind(pass)
             for ((layer, draw) in draws) {
                 val info = staged.getExecuteInfo(draw) ?: continue
-                val pipeline = if (layer.pipeline() === ADDITIVE_PARTICLE) additive else alpha
+                val pipeline = pipeline(layer.pipeline() === ADDITIVE_PARTICLE, zeroToOne)
                 val texture = mc.textureManager.getTexture(layer.textureAtlasLocation())
                 pass.useScenePipeline(pipeline)
                 pass.bindSceneTexture("Sampler0", texture.textureView, texture.sampler)
@@ -88,12 +93,14 @@ object SceneParticlePass {
 
     @JvmStatic fun endFrame() {
         ParticleInstancePass.endFrame()
+        ParticleOitPass.endFrame()
         SceneParticleQuads.reset()
         vertices?.endFrame()
     }
 
     @JvmStatic fun close() {
         ParticleInstancePass.close()
+        ParticleOitPass.close()
         SceneParticleQuads.reset()
         vertices?.close()
         vertices = null

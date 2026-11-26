@@ -8,6 +8,7 @@ import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.core.SectionPos
 import work.nekow.particledrawing.api.LightSample
 import work.nekow.particledrawing.config.ParticleDrawingConfig
+import work.nekow.particledrawing.core.client.ShaderCompat
 import work.nekow.particledrawing.light.LightFalloff
 import work.nekow.particledrawing.light.LightMath
 import work.nekow.particledrawing.light.LightShape
@@ -226,6 +227,9 @@ object DynamicLightManager {
     /** 本帧的发光粒子候选：复用同一份，不逐帧新建列表。 */
     private val candidates = ArrayList<RenderParticle>()
 
+    @Volatile
+    private var bakeTerrain = true
+
     /**
      * 每帧根据发光粒子刷新动态光源，并请求受影响的区块重建。
      *
@@ -272,6 +276,11 @@ object DynamicLightManager {
         val signature = signatureOf(newSources)
         val changed = signature != lastSignature || !lastEnabled
 
+        // 软光斑启停时重建受光区块，避免缓存的地形动态光与光斑重叠。
+        val terrain = ParticleDrawingConfig.CLIENT.terrainDynamicLights.get() && !ShaderCompat.useLightPools()
+        val terrainChanged = terrain != bakeTerrain
+        bakeTerrain = terrain
+
         // 计算需要重建的区块：新增、移动、移除的光源。
         val nextBaked = HashMap<UUID, BakedState>(newSources.size)
         for (src in newSources) {
@@ -283,7 +292,7 @@ object DynamicLightManager {
                 nextBaked[src.id] = BakedState(src.x, src.y, src.z, src.lightQ, src.range, src.shape, src.rgb, src.occlusionRevision)
                 continue
             }
-            if (prev.range != src.range || prev.shape != src.shape || prev.rgb != src.rgb ||
+            if (terrainChanged || prev.range != src.range || prev.shape != src.shape || prev.rgb != src.rgb ||
                 prev.occlusionRevision != src.occlusionRevision || LightBakePolicy.shouldRebake(
                     prev.x, prev.y, prev.z, prev.lightQ,
                     prev.lastX, prev.lastY, prev.lastZ,
@@ -500,7 +509,7 @@ object DynamicLightManager {
     /** @return 动态光是否烘进地形顶点；光影包自己算地形光照时关掉这一路，实体仍走光图。 */
     @JvmStatic
     fun isTerrainEnabled(): Boolean =
-        ParticleDrawingConfig.CLIENT.terrainDynamicLights.get() && isEnabled()
+        bakeTerrain && ParticleDrawingConfig.CLIENT.terrainDynamicLights.get() && isEnabled()
 
     @JvmStatic
     fun hasActiveLights(): Boolean = lightBounds != null && isEnabled()

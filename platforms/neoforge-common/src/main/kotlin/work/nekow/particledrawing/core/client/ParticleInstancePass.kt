@@ -16,9 +16,8 @@ internal object ParticleInstancePass {
             .withLocation(Identifier.fromNamespaceAndPath("particledrawing", name))
             .withVertexShader(shader)
             .withFragmentShader(shader)
-            .sceneDepthConvention()
             .withBindGroupLayout(BindGroupLayouts.GLOBALS)
-            .withBindGroupLayout(sceneProjectionLayout)
+            .withBindGroupLayout(BindGroupLayouts.PROJECTION)
             .withBindGroupLayout(BindGroupLayouts.DYNAMIC_TRANSFORMS)
             .withBindGroupLayout(BindGroupLayouts.FOG)
             .withBindGroupLayout(particleInstanceLayout())
@@ -62,7 +61,7 @@ internal object ParticleInstancePass {
                             val frame: SceneGpuBufferSlice, val data: SceneGpuBufferSlice, val count: Int)
 
     fun render() {
-        // 光影包生效时实例化粒子的管线不被识别，整批跳过；新生成的配方已按普通粒子降级。
+        // 调试旧管线时，桥接粒子由普通绘制提交。
         if (ShaderCompat.legacyPipelines()) return
         if (!ParticleInstanceDraws.hasDraws()) return
         val mc = Minecraft.getInstance()

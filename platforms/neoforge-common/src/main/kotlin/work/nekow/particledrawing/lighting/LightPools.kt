@@ -6,7 +6,6 @@ import net.minecraft.client.Minecraft
 import net.minecraft.world.level.levelgen.Heightmap
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.LightSample
-import work.nekow.particledrawing.config.ParticleDrawingConfig
 import work.nekow.particledrawing.core.client.ShaderCompat
 import kotlin.math.acos
 import kotlin.math.exp
@@ -180,10 +179,7 @@ internal object LightPools {
 
     /** 开关条件集中在一起，避免渲染入口和绘制逻辑各判一套。 */
     private fun enabled(): Boolean =
-        ParticleDrawingConfig.CLIENT.shaderLightPools.get() &&
-            DynamicLightManager.isEnabled() &&
-            DynamicLightManager.hasActiveLights() &&
-            ShaderCompat.legacyPipelines()
+        DynamicLightManager.hasActiveLights() && ShaderCompat.useLightPools()
 }
 
 

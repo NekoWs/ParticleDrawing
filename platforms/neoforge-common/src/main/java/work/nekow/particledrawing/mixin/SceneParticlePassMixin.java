@@ -9,8 +9,9 @@ import work.nekow.particledrawing.core.client.SceneParticlePass;
 
 @Mixin(LevelRenderer.class)
 abstract class SceneParticlePassMixin {
-    @Inject(method = "render", at = @At(value = "INVOKE", shift = At.Shift.AFTER,
-        target = "Lcom/mojang/blaze3d/framegraph/FrameGraphBuilder;execute(Lcom/mojang/blaze3d/resource/GraphicsResourceAllocator;Lcom/mojang/blaze3d/framegraph/FrameGraphBuilder$Inspector;)V"))
+    // Iris 合成场景后再绘制，保留当前视图矩阵供粒子和深度采样使用。
+    @Inject(method = "render", order = 1100, at = @At(value = "INVOKE",
+        target = "Lorg/joml/Matrix4fStack;popMatrix()Lorg/joml/Matrix4fStack;", remap = false))
     private void pd$renderSceneParticles(CallbackInfo ci) {
         SceneParticlePass.render();
     }
