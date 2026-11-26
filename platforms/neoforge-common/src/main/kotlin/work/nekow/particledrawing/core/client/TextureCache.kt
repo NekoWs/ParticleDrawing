@@ -38,6 +38,8 @@ object TextureCache {
     /** 单张贴图解码上限：16384×1024 之类的极端比例也允许，只要总像素不超 1600 万。 */
     private const val MAX_DIMENSION = 16384
     private const val MAX_PIXELS = 16_777_216L
+    internal const val KEYFRAME_GLOW = "particledrawing:builtin/keyframe_glow"
+    internal const val KEYFRAME_GLOW_SIZE = 64
     private const val SHEET_CACHE_PIXELS = 110_000_000L
     private const val SHEET_IDLE_NANOS = 8_000_000_000L
     private val sheetUse = linkedMapOf<String, Long>()
@@ -60,6 +62,7 @@ object TextureCache {
             return it
         }
         try {
+            if (textureName == KEYFRAME_GLOW) return keyframeGlow()
             if (ParticleSheets.isReference(textureName)) return loadSheet(textureName)
             ParticleTextures.parse(textureName)?.let { reference ->
                 val resources = Minecraft.getInstance().resourceManager
@@ -102,6 +105,24 @@ object TextureCache {
         val pixels = BuiltinTextures.pixels(style, BuiltinTextures.SIZE)
         if (pixels.isEmpty()) return null
         return registerPixels(textureName, BuiltinTextures.SIZE, BuiltinTextures.SIZE, pixels)
+    }
+
+    /** Additive profile stores its soft falloff in RGB to preserve low-intensity light through alpha testing. */
+    private fun keyframeGlow(): Entry? {
+        val size = KEYFRAME_GLOW_SIZE
+        val center = (size - 1) / 2.0
+        val pixels = IntArray(size * size) { index ->
+            val x = (index % size - center) / center
+            val y = (index / size - center) / center
+            val radiusSquared = x * x + y * y
+            val edge = ((1.0 - radiusSquared) * 3.0).coerceIn(0.0, 1.0)
+            val core = kotlin.math.exp(-41.0 * radiusSquared)
+            val near = kotlin.math.exp(-9.0 * radiusSquared)
+            val far = kotlin.math.exp(-3.6 * radiusSquared)
+            val brightness = (255 * edge * (0.69 * core + 0.23 * near + 0.08 * far)).toInt()
+            (0xff shl 24) or (brightness * 0x010101)
+        }
+        return registerPixels(KEYFRAME_GLOW, size, size, pixels)
     }
 
     private fun loadSheet(name: String): Entry {

@@ -82,6 +82,7 @@ object ParticleRenderHandler {
         val partialTick = event.partialTick.getGameTimeDeltaPartialTick(false)
         ClientGpuParticles.partialTick = partialTick
         ClientAnimationManager.frameTick(partialTick)
+        ClientParticleKeyframes.advance()
         // 运行时发射器：按渲染帧而不是 tick 推进里程/时间
         ClientEmitterManager.frameTick(partialTick)
 
@@ -163,6 +164,7 @@ object ParticleRenderHandler {
             // 换关卡后 gameTime 从新世界重新计，旧值留着会误判成本 tick 没走
             lastLevelGameTime = Long.MIN_VALUE
             ClientAnimationManager.onClientLevelUnload()
+            ClientParticleKeyframes.clear()
             // 发射器声明随旧关卡一起作废，服务端会在新维度补发
             ClientEmitterManager.clearAll()
             // 旧关卡的粒子桥接已随 ParticleEngine 销毁，编排程序留着只会空转

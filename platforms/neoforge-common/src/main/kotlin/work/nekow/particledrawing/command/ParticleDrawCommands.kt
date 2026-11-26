@@ -9,6 +9,8 @@ import com.mojang.brigadier.suggestion.SuggestionsBuilder
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
 import net.minecraft.commands.SharedSuggestionProvider
+import net.minecraft.resources.Identifier
+import work.nekow.particledrawing.core.network.ParticleKeyframesPayload
 import net.minecraft.commands.arguments.coordinates.Vec3Argument
 import net.neoforged.neoforge.network.PacketDistributor
 import work.nekow.particledrawing.lighting.DynamicLightManager
@@ -64,6 +66,28 @@ object ParticleDrawCommands {
                         .executes(::playAnimation)
                         .then(Commands.argument("pos", Vec3Argument.vec3()).executes(::playAnimation))))
                 .then(Commands.literal("stop").executes(::stopAnimations))
+                .then(Commands.literal("keyframes")
+                    .then(Commands.literal("play")
+                        .then(Commands.argument("asset", StringArgumentType.greedyString())
+                            .executes { ctx ->
+                                val name = StringArgumentType.getString(ctx, "asset")
+                                val asset = Identifier.tryParse(name)
+                                if (asset == null || name.length > 240 || asset.path.split('/').any { it.isEmpty() || it == "." || it == ".." }) {
+                                    ctx.source.replyFailure(translation("error.resource.invalid", "particle_keyframes", name).component())
+                                    return@executes 0
+                                }
+                                val pos = ctx.source.position
+                                val payload = ParticleKeyframesPayload(
+                                    asset, pos.x, pos.y, pos.z, ctx.source.rotation.y,
+                                )
+                                for (player in ctx.source.level.players()) PacketDistributor.sendToPlayer(player, payload)
+                                1
+                            }))
+                    .then(Commands.literal("stop").executes { ctx ->
+                        val payload = ParticleKeyframesPayload(null)
+                        for (player in ctx.source.level.players()) PacketDistributor.sendToPlayer(player, payload)
+                        1
+                    }))
                 .then(Commands.literal("camera")
                     .executes(::cameraUsage)
                     .then(Commands.literal("stop").executes(::stopCamera))

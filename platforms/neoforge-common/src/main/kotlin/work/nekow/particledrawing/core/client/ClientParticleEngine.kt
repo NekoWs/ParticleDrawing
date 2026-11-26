@@ -856,6 +856,11 @@ class ClientParticleEngine {
         }
     }
 
+    internal fun bridgeForKeyframes(id: UUID): BridgeParticle? {
+        takeover.markPosition(id)
+        return bridges[id]
+    }
+
     internal class RecipeBinding(val particle: RenderParticle, val bridge: BridgeParticle?, val visual: ResolvedVisual)
 
     /** 配方从出生起拥有粒子位置，寿命曲线仍由外观同步负责。 */
