@@ -124,6 +124,8 @@ data class ParticleRecipe(
      * 窗口到期后只停止出生，已经存在的粒子仍按 [lifetime] 走完。
      */
     val emitUntilTick: Int = -1,
+    /** 相邻多少个出生样本构成一条光带。0 时各样本独立绘制。 */
+    val strandSamples: Int = 0,
 ) {
     fun validate() {
         requireLocalized(seeds.isNotEmpty() && seeds.size <= MAX_SEEDS) { translation("error.recipe.seed_count", MAX_SEEDS) }
@@ -137,6 +139,9 @@ data class ParticleRecipe(
         requireLocalized(emitUntilTick == -1 || emitUntilTick in (emitFromTick + 1)..MAX_EMIT_TICK) {
             translation("error.recipe.emit_window", MAX_EMIT_TICK)
         }
+        requireLocalized(strandSamples == 0 || (strandSamples in 2..MAX_SEEDS && seeds.size % strandSamples == 0 &&
+            !visual.lightOnly && visual.model == null && visual.trailTicks == 0 && !visual.sceneMaterial.active &&
+            subEmit == null && emissions.isEmpty())) { translation("error.recipe.strand_appearance") }
         requireLocalized(visual.lightLevel in 0..15) { translation("error.expression.light") }
         requireLocalized(listOf(variables, state, lets, birth, motion).all { it.size <= MAX_FIELDS }) { translation("error.recipe.fields_limit", MAX_FIELDS) }
         requireLocalized(orbit.length <= MAX_EXPRESSION) { translation("error.recipe.anchor_length", MAX_EXPRESSION) }

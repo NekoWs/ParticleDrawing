@@ -750,6 +750,7 @@ trail.isActive()
 
 持续配方设置 `simulationRange` 与 `preserveSimulation = true` 后，可在相机远离时暂停并保留粒子状态。
 同材质的全亮加色四边形可通过 `ParticleSources.startInstanced` 批量绘制，弹道爆发可用
+普通 `ParticleSources.burst` 可用 `ParticleRecipe.strandSamples` 将同组相邻采样点连接为连续柔边光带。
 `ParticleSources.burstGpu` 在 GPU 求匀加速运动。见[实例绘制与 GPU 弹道](particle-commands.md#实例绘制与-gpu-弹道)。
 
 发射器的公式在启动时会被编译成一段直接读写寄存器的指令序列，逐粒子逐刻只做数组访问，

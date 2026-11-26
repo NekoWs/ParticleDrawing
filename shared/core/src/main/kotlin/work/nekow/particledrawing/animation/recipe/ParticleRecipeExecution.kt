@@ -26,6 +26,9 @@ internal object ParticleRecipeExecution {
     }
 
     fun validate(recipe: ParticleRecipe, anchor: RecipeAnchor, burst: Boolean, mode: ParticleRecipeMode) {
+        requireLocalized(recipe.strandSamples == 0 || (burst && mode == ParticleRecipeMode.STANDARD)) {
+            translation("error.recipe.strand_mode")
+        }
         if (mode == ParticleRecipeMode.STANDARD) return
         if (mode == ParticleRecipeMode.INSTANCED) {
             validateInstances(recipe)

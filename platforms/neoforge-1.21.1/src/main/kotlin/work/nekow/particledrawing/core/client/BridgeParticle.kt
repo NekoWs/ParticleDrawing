@@ -316,6 +316,17 @@ class BridgeParticle(
         out.uv.set(getU0(), getV0(), getU1(), getV1())
     }
 
+    internal var recipeStrand: RecipeStrand? = null
+
+    internal fun strandPosition(partialTick: Float) =
+        CoreVec3(sampledX(partialTick), sampledY(partialTick), sampledZ(partialTick))
+
+    internal fun strandTint(partialTick: Float, position: CoreVec3): Int {
+        val f = frameFactor(partialTick)
+        val opacity = effects?.alpha(position.x, position.y, position.z, f) ?: 1f
+        return RibbonVertices.color(blend.redAt(f), blend.greenAt(f), blend.blueAt(f), blend.alphaAt(f) * opacity)
+    }
+
     fun sampledAlpha(partialTick: Float): Float = blend.alphaAt(frameFactor(partialTick))
     fun sampledWidth(partialTick: Float): Float =
         blend.widthAt(frameFactor(partialTick)) * (effects?.stretchFactor ?: 1f)
@@ -335,6 +346,7 @@ class BridgeParticle(
      * 并兜一个最小半边长，保证盒子始终合法。
      */
     override fun getRenderBoundingBox(partialTicks: Float): net.minecraft.world.phys.AABB {
+        recipeStrand?.bounds(this, partialTicks)?.let { return it }
         val half = maxOf(frameWidth(partialTicks), frameHeight(partialTicks), 0.5f, model?.fixedRadius ?: 0f)
         val px = sampledX(partialTicks)
         val py = sampledY(partialTicks)
@@ -378,6 +390,15 @@ class BridgeParticle(
         val cam = camera.position
         if (!ParticleRenderEffects.visible(particleId, cam, x, y, z)) return
         refreshTextureIfStale()
+        val link = recipeStrand
+        if (link != null) {
+            texEntry?.let { uvRegion.updateFromTexture(it, uv, animStartNanos, textureClock, age, f) }
+            ribbonVertices.clear()
+            link.append(this, ribbonVertices, CoreVec3(cam.x, cam.y, cam.z), partialTick,
+                (getU0() + getU1()) * 0.5f, getV0(), getV1(), getLightColor(f))
+            ribbonVertices.writeTo(consumer)
+            return
+        }
         val entry = texEntry
         val effect = effects
         val trail = effect?.trail

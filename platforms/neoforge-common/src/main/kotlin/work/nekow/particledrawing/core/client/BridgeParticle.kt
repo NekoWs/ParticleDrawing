@@ -347,6 +347,17 @@ class BridgeParticle(
     }
 
     /** 本帧实际渲染的透明度（含相邻 tick 插值与曲线乘数），只读观察用。 */
+    internal var recipeStrand: RecipeStrand? = null
+
+    internal fun strandPosition(partialTick: Float) =
+        CoreVec3(sampledX(partialTick), sampledY(partialTick), sampledZ(partialTick))
+
+    internal fun strandTint(partialTick: Float, position: CoreVec3): Int {
+        val f = frameFactor(partialTick)
+        val opacity = effects?.alpha(position.x, position.y, position.z, f) ?: 1f
+        return RibbonVertices.color(blend.redAt(f), blend.greenAt(f), blend.blueAt(f), blend.alphaAt(f) * opacity)
+    }
+
     fun sampledAlpha(partialTick: Float): Float = blend.alphaAt(frameFactor(partialTick))
 
     /** 本帧实际渲染的宽/高（渲染半宽，已含贴图尺寸系数），只读观察用。 */
@@ -372,6 +383,7 @@ class BridgeParticle(
     internal fun inFrustum(frustum: net.minecraft.client.renderer.culling.Frustum, partialTick: Float): Boolean {
         if (textureClock?.recipeSuspended == true) return false
         if (usesInstancePipeline()) return true
+        recipeStrand?.let { return it.bounds(this, partialTick)?.let(frustum::isVisible) == true }
         val visual = effects
         if (visual?.trail == null) return frustum.pointInFrustum(renderX(), renderY(), renderZ())
         val half = maxOf(sampledWidth(partialTick), sampledHeight(partialTick), 0.5f)
@@ -393,6 +405,15 @@ class BridgeParticle(
         val cam = camera.position()
         if (!ParticleRenderEffects.visible(particleId, cam, x, y, z)) return
         refreshTextureIfStale()
+        val link = recipeStrand
+        if (link != null) {
+            texEntry?.let { uvRegion.updateFromTexture(it, uv, animStartNanos, textureClock, age, f) }
+            if (state is OrientedQuadRenderState) {
+                link.append(this, state.ribbonVertices(getLayer()), CoreVec3(cam.x, cam.y, cam.z), partialTick,
+                    (getU0() + getU1()) * 0.5f, getV0(), getV1(), getLightCoords(f))
+            }
+            return
+        }
         val entry = texEntry
         val effect = effects
         val trail = effect?.trail

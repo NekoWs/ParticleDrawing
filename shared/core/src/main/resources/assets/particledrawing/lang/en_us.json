@@ -415,6 +415,8 @@
   "particledrawing.error.recipe.sample_options": "Use spacing > 0 and alpha in 0..1.",
   "particledrawing.error.recipe.section": "Unknown configuration section.",
   "particledrawing.error.recipe.seed_color": "Use sample colors in 0..1.",
+  "particledrawing.error.recipe.strand_appearance": "Strand samples must divide the total sample count. Strands cannot use models, trails, scene materials, light-only particles or child emitters.",
+  "particledrawing.error.recipe.strand_mode": "Strands require a standard burst.",
   "particledrawing.error.recipe.seed_count": "Use 1..%1$s spawn samples.",
   "particledrawing.error.recipe.seed_finite": "Use finite spawn coordinates and parameters.",
   "particledrawing.error.recipe.state_change": "Remove and restart to change state fields.",

@@ -92,6 +92,10 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
                     appearance.putAll(look)
                 }
             }
+            if (input.take("strand")) {
+                val samples = input.integer("strand", 0, ParticleRecipe.MAX_SEEDS)
+                add("strand") { recipe = recipe.copy(strandSamples = samples) }
+            }
             for ((field, range) in mapOf("life" to -1..72000, "rate" to 1..1024, "interval" to 1..72000, "max" to 1..8192)) {
                 if (!input.take(field)) continue
                 val value = input.integer(field, range.first, range.last)
@@ -340,7 +344,7 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
                 val slot = if (section == "look") CommandLook.slot(field) else field
                 val named = setOf("let", "variable", "state", "change")
                 val scalar = setOf("at", "sample", "filter", "kill", "orbit", "window", "collide", "subemit",
-                    "sim_range", "life", "rate", "interval", "max", "spacing", "follow", "select", "probe", "on")
+                    "sim_range", "strand", "life", "rate", "interval", "max", "spacing", "follow", "select", "probe", "on")
                 val valid = when (section) {
                     "look" -> field.isEmpty() || CommandLook.key(field) in CommandLook.fields
                     "spawn", "move" -> field.isEmpty() || identifier.matches(field)
@@ -388,6 +392,7 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
                         collisionHalfSize = defaults.collisionHalfSize, collisionSteps = defaults.collisionSteps)
                     "subemit" -> recipe.copy(subEmit = null)
                     "sim_range" -> recipe.copy(simulationRange = 0.0, preserveSimulation = false)
+                    "strand" -> recipe.copy(strandSamples = 0)
                     "life" -> recipe.copy(lifetime = defaults.lifetime)
                     "rate" -> recipe.copy(rate = defaults.rate)
                     "interval" -> recipe.copy(interval = defaults.interval)

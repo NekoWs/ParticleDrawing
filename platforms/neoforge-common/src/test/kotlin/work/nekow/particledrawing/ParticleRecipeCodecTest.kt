@@ -14,6 +14,17 @@ import java.util.UUID
 import kotlin.test.*
 
 class ParticleRecipeCodecTest {
+    @Test fun `光带分组随声明往返并拒绝不完整的分组`() {
+        val source = ParticleRecipe(ParticleSampling.count(12), strandSamples = 4)
+        val payload = roundTrip(ParticleRecipePayload(UUID.randomUUID(), RecipeOperation.START, source,
+            RecipeAnchor(Vec3.ZERO), burst = true))
+        val decoded = assertNotNull(payload.recipe)
+        decoded.validate()
+        assertTrue(payload.burst)
+        assertEquals(4, decoded.strandSamples)
+        assertFailsWith<IllegalArgumentException> { source.copy(strandSamples = 5).validate() }
+    }
+
     private fun roundTrip(p: ParticleRecipePayload): ParticleRecipePayload {
         val buf = FriendlyByteBuf(Unpooled.buffer())
         try {

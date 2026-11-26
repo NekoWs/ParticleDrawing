@@ -29,6 +29,7 @@ data class RecipeEmission(
             translation("error.recipe.event_child", MAX_CHILD_SEEDS, MAX_CHILD_LIFETIME)
         }
         requireLocalized(child.simulationRange == 0.0) { translation("error.recipe.simulation_burst") }
+        requireLocalized(child.strandSamples == 0) { translation("error.recipe.strand_mode") }
         child.validate()
     }
 

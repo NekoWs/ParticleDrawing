@@ -66,6 +66,19 @@ pdraw particle use flame as preview at ~ ~6 ~ start dryrun
 
 `window 10 until 240` 在第 10 刻开始发射，第 240 刻停止。`interval` 设按刻发射的间隔，`rate` 控制每次最多尝试的样本数。样本量大于 `max` 时满额等待空位。`burst` 遍历一轮采样，可以跨多刻。
 
+### 连续光带
+
+`strand <每条样本数>` 放在 `look` 之后、`life` 之前，按样本顺序把相邻点接成光带。总样本数
+必须能被每条样本数整除，`strand 0` 恢复独立粒子。每条光带按相邻采样点逐帧更新位置、
+宽度和颜色。纹理沿宽度采样中心截面，`style soft_dot` 提供柔边。滤掉或删除中间样本时，
+光带在缺口处断开。
+
+```mcfunction
+pdraw particle emitter glow_arc at ~ ~2 ~ sample count 96 spawn "vec3(3*cos(u*PI),3*sin(u*PI),0)" look style soft_dot color #9fdcff size 0.14 glow additive strand 96 life 80 rate 96 burst
+```
+
+光带使用普通 `burst`。模型、粒子拖尾、场景材质、仅光源和子发射使用各自的外观路径。
+
 ### 实例绘制与 GPU 弹道
 
 `start instanced` 和 `burst instanced` 适用于兼容的外观。`burst gpu` 使用现有 GPU 弹道，要求固定锚点、有限寿命和受支持的运动及外观。命令会校验配方是否适配执行模式。查看[执行模式](command-v2-design.md#44-运行参数与动作)。

@@ -116,6 +116,7 @@ internal object RecipeCodec {
         buf.writeDouble(r.neighborRadius)
         buf.writeDouble(r.simulationRange)
         buf.writeBoolean(r.preserveSimulation)
+        buf.writeVarInt(r.strandSamples)
         buf.writeVarInt(r.probes.size)
         for (probe in r.probes) {
             buf.writeDouble(probe.range)
@@ -179,6 +180,7 @@ internal object RecipeCodec {
         val neighborRadius = buf.readDouble()
         val simulationRange = buf.readDouble()
         val preserveSimulation = buf.readBoolean()
+        val strandSamples = count(buf, ParticleRecipe.MAX_SEEDS)
         val probes = List(count(buf, ParticleRecipe.MAX_PROBES)) {
             val range = buf.readDouble()
             val mode = RecipeCollision.entries[count(buf, RecipeCollision.entries.lastIndex)]
@@ -211,6 +213,7 @@ internal object RecipeCodec {
             neighborRadius = neighborRadius,
             simulationRange = simulationRange,
             preserveSimulation = preserveSimulation,
+            strandSamples = strandSamples,
             probes = probes,
         )
     }

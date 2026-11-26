@@ -35,23 +35,8 @@ internal class RibbonVertices {
             val gradient = style.colorAt(original, progress)
             return color(gradient.r, gradient.g, gradient.b, gradient.a * opacity)
         }
-        fun vertex(position: Vec3, u: Float, v: Float, tint: Int) {
-            if (size == colors.size) {
-                val capacity = colors.size * 2
-                geometry = geometry.copyOf(capacity * STRIDE)
-                colors = colors.copyOf(capacity)
-                lights = lights.copyOf(capacity)
-            }
-            val i = size * STRIDE
-            geometry[i] = (position.x - camera.x).toFloat()
-            geometry[i + 1] = (position.y - camera.y).toFloat()
-            geometry[i + 2] = (position.z - camera.z).toFloat()
-            geometry[i + 3] = u
-            geometry[i + 4] = v
-            colors[size] = tint
-            lights[size] = light
-            size++
-        }
+        fun vertex(position: Vec3, u: Float, v: Float, tint: Int) =
+            addVertex(position, camera, u, v, tint, light)
 
         if (sides > 0) {
             history.forEachTubeSegment(head, width, partialTick, sides, style) { a, b ->
@@ -79,6 +64,23 @@ internal class RibbonVertices {
             vertex(b.right, bu, v0, bc)
             vertex(b.left, bu, v1, bc)
         }
+    }
+
+    internal fun addVertex(position: Vec3, camera: Vec3, u: Float, v: Float, tint: Int, light: Int) {
+        if (size == colors.size) {
+            val capacity = colors.size * 2
+            geometry = geometry.copyOf(capacity * STRIDE)
+            colors = colors.copyOf(capacity)
+            lights = lights.copyOf(capacity)
+        }
+        val i = size * STRIDE
+        geometry[i] = (position.x - camera.x).toFloat()
+        geometry[i + 1] = (position.y - camera.y).toFloat()
+        geometry[i + 2] = (position.z - camera.z).toFloat()
+        geometry[i + 3] = u
+        geometry[i + 4] = v
+        colors[size] = tint
+        lights[size++] = light
     }
 
     fun writeTo(builder: VertexConsumer) {

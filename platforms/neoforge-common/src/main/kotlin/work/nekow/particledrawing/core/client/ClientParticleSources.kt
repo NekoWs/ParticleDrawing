@@ -29,6 +29,7 @@ internal object ClientParticleSources {
     }
     private class Entry(val id: UUID, var runtime: RecipeRuntime, var anchor: RecipeAnchor, val instanced: Boolean) {
         val members = linkedMapOf<RecipeRuntime.Particle, Member>()
+        val strandMembers = hashMapOf<Long, BridgeParticle>()
         val children = RecipeChildren(ClientParticleWorld)
         val childViews = linkedMapOf<RecipeRuntime, Entry>()
         var suspension = Suspension.ACTIVE
@@ -176,9 +177,29 @@ internal object ClientParticleSources {
             engine.applyRecipeFrame(member.binding, position, color, scale, glow, light)
         }
 
+        linkStrands(e)
+
         // 优先补主发射器的成员，余下的容量再给子粒子。
         if (emitChildren && subEmit != null) for ((particle, member) in dead) {
             burst(engine, e, particle, member, subEmit)
+        }
+    }
+
+    private fun linkStrands(entry: Entry) {
+        val length = entry.runtime.recipe.strandSamples
+        val byIndex = entry.strandMembers
+        if (length == 0 && byIndex.isEmpty()) return
+        byIndex.clear()
+        for ((particle, member) in entry.members) {
+            val bridge = member.binding.bridge ?: continue
+            if (length == 0) bridge.recipeStrand = null else byIndex[particle.index] = bridge
+        }
+        if (length == 0) return
+        for ((index, bridge) in byIndex) {
+            val link = bridge.recipeStrand ?: RecipeStrand().also { bridge.recipeStrand = it }
+            val local = index % length
+            link.previous = if (local > 0) byIndex[index - 1] else null
+            link.next = if (local < length - 1) byIndex[index + 1] else null
         }
     }
 
@@ -212,6 +233,7 @@ internal object ClientParticleSources {
             it.clearDetachedTrails(e.id)
         }
         e.members.clear()
+        e.strandMembers.clear()
         e.children.clear()
         e.childViews.clear()
         e.runtime = RecipeRuntime(e.runtime.recipe, burst = false, world = ClientParticleWorld)
