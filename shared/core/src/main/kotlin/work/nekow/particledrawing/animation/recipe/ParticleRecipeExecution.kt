@@ -26,7 +26,9 @@ internal object ParticleRecipeExecution {
     }
 
     fun validate(recipe: ParticleRecipe, anchor: RecipeAnchor, burst: Boolean, mode: ParticleRecipeMode) {
-        requireLocalized(recipe.strandSamples == 0 || (burst && mode == ParticleRecipeMode.STANDARD)) {
+        val strand = recipe.strandSamples != 0
+        val instancedStrand = mode == ParticleRecipeMode.INSTANCED && gpuAppearance(recipe) && unlit(recipe)
+        requireLocalized(!strand || (burst && (mode == ParticleRecipeMode.STANDARD || instancedStrand))) {
             translation("error.recipe.strand_mode")
         }
         if (mode == ParticleRecipeMode.STANDARD) return
@@ -44,8 +46,7 @@ internal object ParticleRecipeExecution {
             recipe.subEmit == null && recipe.state.isEmpty() && recipe.kill.trim() == "false" &&
             recipe.simulationRange == 0.0 && recipe.lifetime > 0 && recipe.maxAlive >= recipe.seeds.size &&
             (recipe.seeds.size - 1L) / recipe.rate * recipe.interval + recipe.lifetime <= 1_000_000 &&
-            recipe.visual.lightLevel == 0 && !recipe.visual.emitsLight && recipe.visual.lightShape == null &&
-            gpuAppearance(recipe) &&
+            unlit(recipe) && gpuAppearance(recipe) &&
             recipe.lifeCurve == null && !unsupportedInput &&
             recipe.motion.all { (key, value) -> key in accelerations && value.toDoubleOrNull()?.toFloat()?.isFinite() == true }) {
             translation("error.recipe.gpu_unsupported")
@@ -60,6 +61,10 @@ internal object ParticleRecipeExecution {
         }
         for (rule in recipe.emissions) validateInstances(rule.child)
     }
+
+    private fun unlit(recipe: ParticleRecipe): Boolean =
+        recipe.visual.lightLevel == 0 && !recipe.visual.emitsLight && recipe.visual.lightShape == null &&
+            "light" !in recipe.birth && "light" !in recipe.motion
 
     private fun gpuAppearance(recipe: ParticleRecipe): Boolean {
         val v = recipe.visual

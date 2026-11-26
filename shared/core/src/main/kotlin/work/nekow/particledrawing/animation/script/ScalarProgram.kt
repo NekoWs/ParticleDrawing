@@ -365,6 +365,7 @@ fun compileRegisterCode(
     nameToSlot: Map<String, Int>,
     tempStart: Int,
     conditionTargets: Set<String> = emptySet(),
+    constantValues: Map<String, Double> = emptyMap(),
 ): RegisterCode? {
     val ops = ArrayList<ScalarOp>()
     val args = ArrayList<Int>()
@@ -394,7 +395,7 @@ fun compileRegisterCode(
         val slot = writeSlot(target) ?: return null
         val depth = intArrayOf(0)
         val maxDepth = intArrayOf(0)
-        if (!emitExpr(value, ops, args, consts, readSlot, depth, maxDepth, target in conditionTargets)) return null
+        if (!emitExpr(value, ops, args, consts, readSlot, depth, maxDepth, target in conditionTargets, constantValues)) return null
         if (depth[0] != 1) return null
         ops.add(ScalarOp.POP_REG); args.add(slot)
         if (maxDepth[0] > stackSize) stackSize = maxDepth[0]
@@ -458,6 +459,7 @@ private fun emitExpr(
     depth: IntArray,
     maxDepth: IntArray,
     allowCond: Boolean,
+    constantValues: Map<String, Double> = emptyMap(),
 ): Boolean {
     fun push(op: ScalarOp, arg: Int, delta: Int) {
         ops.add(op); args.add(arg)
@@ -482,6 +484,12 @@ private fun emitExpr(
             return true
         }
         is VarNode -> {
+            val constant = constantValues[node.name]
+            if (constant != null) {
+                push(ScalarOp.PUSH_CONST, consts.size, 1)
+                consts.add(constant)
+                return true
+            }
             val slot = slotOf(node.name) ?: return false
             push(ScalarOp.PUSH_REG, slot, 1)
             return true
@@ -489,13 +497,13 @@ private fun emitExpr(
         is UnaryNode -> {
             when (node.op) {
                 "-" -> {
-                    if (!emitExpr(node.operand, ops, args, consts, slotOf, depth, maxDepth, false)) return false
+                    if (!emitExpr(node.operand, ops, args, consts, slotOf, depth, maxDepth, false, constantValues)) return false
                     return apply(ScalarOp.NEG)
                 }
                 "!" -> {
                     if (!allowCond) return false
                     // 取反的入参仍是条件
-                    if (!emitExpr(node.operand, ops, args, consts, slotOf, depth, maxDepth, true)) return false
+                    if (!emitExpr(node.operand, ops, args, consts, slotOf, depth, maxDepth, true, constantValues)) return false
                     return apply(ScalarOp.NOT)
                 }
                 else -> return false
@@ -507,8 +515,8 @@ private fun emitExpr(
             if (op in CONDITION_OPS && !allowCond) return false
             // && 和 || 的两侧都是条件，比较的两侧和算术的两侧都是数值
             val operandCond = op == ScalarOp.AND || op == ScalarOp.OR
-            if (!emitExpr(node.left, ops, args, consts, slotOf, depth, maxDepth, operandCond)) return false
-            if (!emitExpr(node.right, ops, args, consts, slotOf, depth, maxDepth, operandCond)) return false
+            if (!emitExpr(node.left, ops, args, consts, slotOf, depth, maxDepth, operandCond, constantValues)) return false
+            if (!emitExpr(node.right, ops, args, consts, slotOf, depth, maxDepth, operandCond, constantValues)) return false
             return apply(op)
         }
         is CallNode -> {
@@ -517,7 +525,7 @@ private fun emitExpr(
             val arity = SCALAR_FUNC_ARITY[callee.name] ?: return false
             if (node.args.size != arity) return false
             for (arg in node.args) {
-                if (!emitExpr(arg, ops, args, consts, slotOf, depth, maxDepth, false)) return false
+                if (!emitExpr(arg, ops, args, consts, slotOf, depth, maxDepth, false, constantValues)) return false
             }
             return apply(op)
         }

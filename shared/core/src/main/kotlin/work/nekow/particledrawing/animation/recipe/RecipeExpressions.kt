@@ -193,7 +193,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
         val birthAssigns = ArrayList(lets)
         val birthConds = HashSet<String>()
         if (!appendOutputs(birthAssigns, recipe.birth, birthConds)) return null
-        val birth = compileRegisterCode(birthAssigns, slots.map, base, birthConds) ?: return null
+        val birth = compileRegisterCode(birthAssigns, slots.map, base, birthConds, recipe.variables) ?: return null
 
         // 每刻：先算 kill（看的是推进前的状态），再算 motion
         val tickAssigns = ArrayList(lets)
@@ -202,7 +202,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
         tickConds += KILL_TEMP
         if (!appendOutputs(tickAssigns, recipe.motion, tickConds)) return null
         val tick = compileRegisterCode(
-            tickAssigns, slots.map + mapOf(KILL_TEMP to base), base + 1, tickConds,
+            tickAssigns, slots.map + mapOf(KILL_TEMP to base), base + 1, tickConds, recipe.variables,
         ) ?: return null
 
         // 出生后的筛选与销毁（看的是出生后的状态）
@@ -214,7 +214,7 @@ class RecipeExpressions(recipe: ParticleRecipe, preferFast: Boolean = true) {
             checkAssigns,
             slots.map + mapOf(WHERE_TEMP to base, KILL_TEMP to base + 1),
             base + 2,
-            checkConds,
+            checkConds, recipe.variables,
         ) ?: return null
 
         val motion = recipe.motion

@@ -26,6 +26,7 @@ import java.util.function.Consumer
 object RecordingCapture {
     private val logger = LogUtils.getLogger()
     private val directory = System.getenv("PD_CAPTURE_DIR")?.takeIf(String::isNotBlank)?.let(Path::of)
+    private val timingOnly = System.getenv("PD_CAPTURE_TIMING") == "1"
     private val automation = System.getenv("PD_CAPTURE_AUTOMATION") == "1"
     private val requireShader = System.getenv("PD_CAPTURE_REQUIRE_SHADER") == "1"
     private val fps = System.getenv("PD_CAPTURE_FPS")?.toDoubleOrNull()?.takeIf { it == 0.0 || it in 1.0..240.0 } ?: 30.0
@@ -55,6 +56,8 @@ object RecordingCapture {
                 current.finish()
                 take = null
                 if (automation) client.stop()
+            } else if (timingOnly && !current.stopping && client.level != null) {
+                current.markFrame(now)
             } else if (!current.stopping && client.level != null && now >= current.nextFrame) {
                 current.nextFrame = if (current.nextFrame + interval * 2 < now) now + interval else current.nextFrame + interval
                 current.inFlight++
@@ -175,7 +178,6 @@ object RecordingCapture {
         fun write(image: NativeImage, stamp: Long) {
             if (failed) return
             if (frames == 0) {
-                first = stamp
                 width = image.width
                 height = image.height
             }
@@ -185,6 +187,11 @@ object RecordingCapture {
             val pixels = Framebuffer.pixels(image)
             check(pixels.remaining().toLong() == width.toLong() * height * 4L) { "Invalid RGBA frame size" }
             while (pixels.hasRemaining()) raw.write(pixels)
+            markFrame(stamp)
+        }
+
+        fun markFrame(stamp: Long) {
+            if (frames == 0) first = stamp
             last = stamp
             index.write("${++frames} ${stamp - first} $width $height\n")
             if (frames == 1 && automation) Files.createFile(dir.resolve("capture.active"))
@@ -193,7 +200,7 @@ object RecordingCapture {
         fun finish() {
             close()
             val metadata = dir.resolve("frames.meta.next")
-            Files.writeString(metadata, "width=$width\nheight=$height\nformat=rgba\nframes=$frames\n" +
+            Files.writeString(metadata, "width=$width\nheight=$height\nformat=${if (timingOnly) "timing" else "rgba"}\nframes=$frames\n" +
                 "firstNanos=$first\nlastNanos=$last\nfps=$fps\n")
             Files.move(metadata, dir.resolve("frames.meta"), StandardCopyOption.ATOMIC_MOVE)
             logger.info("PD recording stopped: {} frames", frames)

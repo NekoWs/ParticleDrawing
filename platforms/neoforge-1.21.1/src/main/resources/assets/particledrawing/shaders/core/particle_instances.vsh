@@ -25,7 +25,8 @@ void main() {
         distances = 0.0;
         return;
     }
-    vec4 view = pdVertex(ModelViewMat, position, size, rotation, Corner, FaceNormal, vertexColor);
+    vec4 view = pdIsStrand() ? ModelViewMat * vec4(position, 1.0)
+                              : pdVertex(ModelViewMat, position, size, rotation, Corner, FaceNormal, vertexColor);
     if (light >= 0) vertexColor *= texelFetch(Sampler2, pdPackedLight(light) / 16, 0);
     gl_Position = ProjMat * view;
     distances = fog_distance(position, FogShape);

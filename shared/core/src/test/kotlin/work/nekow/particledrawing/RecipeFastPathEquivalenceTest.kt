@@ -126,6 +126,30 @@ class RecipeFastPathEquivalenceTest {
     }
 
     @Test
+    fun scalarRecipeVariablesAreRecompiledWhenEdited() {
+        val recipe = ParticleRecipe(
+            ParticleSampling.count(1), rate = 1, lifetime = -1,
+            variables = mapOf("closing" to 0.0),
+            state = mapOf("progress_out" to 0.0),
+            lets = mapOf("rate_out" to "closing*0.2"),
+            motion = mapOf("progress_out" to "progress_out+rate_out", "x" to "progress_out"),
+        )
+        val edited = recipe.copy(variables = mapOf("closing" to 1.0))
+        assertNotNull(RecipeExpressions(recipe).fast)
+        assertNotNull(RecipeExpressions(edited).fast)
+        val fast = RecipeRuntime(recipe, burst = true)
+        val slow = RecipeRuntime(recipe, burst = true, preferFast = false)
+        repeat(3) { fast.tick(); slow.tick() }
+        fast.update(edited)
+        slow.update(edited)
+        repeat(6) {
+            fast.tick(); slow.tick()
+            assertEquals(slow.particles.single().position, fast.particles.single().position)
+        }
+        assertTrue(fast.particles.single().position.x > 0.0)
+    }
+
+    @Test
     fun vectorLetFallsBackToInterpreter() {
         val recipe = ParticleRecipe(
             ParticleSampling.count(8),

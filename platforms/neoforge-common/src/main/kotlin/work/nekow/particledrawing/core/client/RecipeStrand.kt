@@ -8,6 +8,20 @@ internal class RecipeStrand {
     var previous: BridgeParticle? = null
     var next: BridgeParticle? = null
 
+    internal data class Endpoint(val position: Vec3, val width: Float, val color: Int, val direction: Float)
+
+    /** One endpoint is shared by both adjacent GPU segments. Quantize its unit tangent to eight bits per axis. */
+    internal fun endpoint(bridge: BridgeParticle, partialTick: Float): Endpoint {
+        val center = bridge.strandPosition(partialTick)
+        val link = checkNotNull(bridge.recipeStrand)
+        val before = link.previous?.strandPosition(partialTick) ?: center
+        val after = link.next?.strandPosition(partialTick) ?: center
+        val tangent = tangent(before, center, after).normalize()
+        fun component(value: Double) = kotlin.math.round(value.coerceIn(-1.0, 1.0) * 127.0).toInt() + 127
+        val direction = (component(tangent.x) shl 16 or (component(tangent.y) shl 8) or component(tangent.z)).toFloat()
+        return Endpoint(center, bridge.sampledHeight(partialTick), bridge.strandTint(partialTick, center), direction)
+    }
+
     fun bounds(start: BridgeParticle, partialTick: Float): AABB? {
         val end = next ?: return null
         val a = start.strandPosition(partialTick)
@@ -40,12 +54,16 @@ internal class RecipeStrand {
     }
 
     private fun widthAxis(before: Vec3, center: Vec3, after: Vec3, camera: Vec3): Vec3 {
-        var tangent = after.subtract(before)
-        if (tangent.lengthSqr() < 1.0E-8) tangent = center.subtract(before)
+        val tangent = tangent(before, center, after)
         val across = tangent.cross(camera.subtract(center)).normalize()
         if (across.lengthSqr() > 0.0) return across
         val basis = if (kotlin.math.abs(tangent.y) < kotlin.math.abs(tangent.x)) UP else RIGHT
         return tangent.cross(basis).normalize()
+    }
+
+    private fun tangent(before: Vec3, center: Vec3, after: Vec3): Vec3 {
+        val tangent = after.subtract(before)
+        return if (tangent.lengthSqr() < 1.0E-8) center.subtract(before) else tangent
     }
 
     companion object {

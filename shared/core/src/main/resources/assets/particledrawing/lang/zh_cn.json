@@ -416,7 +416,7 @@
   "particledrawing.error.recipe.section": "未知配置节。",
   "particledrawing.error.recipe.seed_color": "样本颜色需要在 0..1。",
   "particledrawing.error.recipe.strand_appearance": "光带的采样点数必须整除总样本数。光带不能与模型、拖尾、场景材质、仅光源或子发射一起使用。",
-  "particledrawing.error.recipe.strand_mode": "光带需要使用普通模式的一次性爆发。",
+  "particledrawing.error.recipe.strand_mode": "连续光带需要普通爆发，或全亮加色的实例化爆发。",
   "particledrawing.error.recipe.seed_count": "出生样本需要 1..%1$s 个。",
   "particledrawing.error.recipe.seed_finite": "出生坐标和参数必须是有限数。",
   "particledrawing.error.recipe.state_change": "更改 state 字段前先 remove，再 start。",

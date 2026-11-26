@@ -26,7 +26,8 @@ void main() {
         distances = vec2(0.0);
         return;
     }
-    vec4 view = pdVertex(ModelViewMat, position, size, rotation, Corner, FaceNormal, vertexColor);
+    vec4 view = pdIsStrand() ? ModelViewMat * vec4(position, 1.0)
+                              : pdVertex(ModelViewMat, position, size, rotation, Corner, FaceNormal, vertexColor);
     if (light >= 0) vertexColor *= sample_lightmap(Sampler2, pdPackedLight(light));
     gl_Position = ProjMat * view;
     distances = vec2(fog_spherical_distance(position), fog_cylindrical_distance(position));

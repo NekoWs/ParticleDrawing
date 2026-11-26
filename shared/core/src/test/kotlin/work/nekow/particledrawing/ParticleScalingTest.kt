@@ -80,6 +80,25 @@ class ParticleScalingTest {
         }
     }
 
+    @Test
+    fun instancedStrandsAcceptEditableFullBrightBursts() {
+        val anchor = RecipeAnchor(Vec3.ZERO)
+        val ribbon = ParticleRecipe(ParticleSampling.count(8), strandSamples = 4, visual = look,
+            lifetime = -1, motion = mapOf("x" to "u+sin(t/1000)"))
+        ParticleRecipeExecution.validate(ribbon, anchor, true, ParticleRecipeMode.INSTANCED)
+        ParticleRecipeExecution.validate(ribbon, anchor, true, ParticleRecipeMode.STANDARD)
+        assertFailsWith<IllegalArgumentException> {
+            ParticleRecipeExecution.validate(ribbon, anchor, false, ParticleRecipeMode.INSTANCED)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            ParticleRecipeExecution.validate(ribbon.copy(motion = mapOf("light" to "2")),
+                anchor, true, ParticleRecipeMode.INSTANCED)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            ParticleRecipeExecution.validate(ribbon, anchor, true, ParticleRecipeMode.GPU)
+        }
+    }
+
     @Test fun `两种图形模式明确拒绝无法复现的效果`() {
         val recipe = ParticleRecipe(seeds, visual = look)
         val anchor = RecipeAnchor(Vec3.ZERO)

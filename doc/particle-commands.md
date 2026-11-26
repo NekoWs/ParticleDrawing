@@ -87,15 +87,21 @@ pdraw particle use flame as preview at ~ ~6 ~ start dryrun
 宽度和颜色。纹理沿宽度采样中心截面，`style soft_dot` 提供柔边。滤掉或删除中间样本时，
 光带在缺口处断开。
 
+可用普通 `burst` 绘制光带。需要高帧率时，给光带加上 `glow additive light 0`，并使用 `burst instanced`。GPU 在渲染帧中插值端点、按相机方向展开带面。位置、颜色和状态公式仍每刻在 CPU 求值。`glow` 让粒子保持全亮，`light 0` 避免每个节点再照亮地形。
+
 ```mcfunction
-pdraw particle emitter glow_arc at ~ ~2 ~ sample count 96 spawn "vec3(3*cos(u*PI),3*sin(u*PI),0)" look style soft_dot color #9fdcff size 0.14 glow additive strand 96 life 80 rate 96 burst
+pdraw particle emitter arc at ~ ~2 ~ sample count 48 spawn "vec3(3`cos(u`PI),3`sin(u`PI),0)" look style soft_dot color #9fdcff size 0.14 glow additive light 0 strand 48 life 80 rate 48 burst instanced
 ```
 
-光带使用普通 `burst`。模型、粒子拖尾、场景材质、仅光源和子发射使用各自的外观路径。
+### GPU 弹道
 
-### 实例绘制与 GPU 弹道
+`burst gpu` 将特殊的固定锚点、有限寿命弹道交给 GPU 计算，支持出生位置、速度和恒定加速度。比如：
 
-`start instanced` 和 `burst instanced` 适用于兼容的外观。`burst gpu` 使用现有 GPU 弹道，要求固定锚点、有限寿命和受支持的运动及外观。命令会校验配方是否适配执行模式。查看[执行模式](command-v2-design.md#44-运行参数与动作)。
+```mcfunction
+pdraw particle emitter sparks at ~ ~2 ~ sample count 96 spawn set velocity "vec3(0.12`cos(2`PI`u),0.08,0.12`sin(2`PI`u))" move set ay -0.006 look style soft_dot color gold size 0.13 glow additive light 0 life 42 rate 96 burst gpu
+```
+
+逐刻表达式、热更新和连续带面可选 `burst instanced`。查看[执行模式](command-v2-design.md#44-运行参数与动作)。
 
 ### 服务端同步
 

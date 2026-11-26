@@ -9,17 +9,18 @@ import org.joml.Vector4f
 import org.lwjgl.system.MemoryUtil
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.render.InstanceFrameCache
+import work.nekow.particledrawing.math.Vec3 as CoreVec3
 import java.nio.ByteBuffer
 import kotlin.math.floor
 
 /** CPU 快照和 GPU 弹道共用实例页。透明顺序单独提交，不搬动实例记录。 */
 internal object ParticleInstanceDraws {
     const val CAPACITY = 128
-    const val BLOCK_BYTES = CAPACITY * 7 * 16
+    const val BLOCK_BYTES = CAPACITY * 8 * 16
     const val FRAME_BYTES = 2 * 16 + CAPACITY * Int.SIZE_BYTES
 
     enum class Blend { OPAQUE, ALPHA, ADDITIVE }
-    data class Material(val texture: Identifier, val model: ParticleModelRenderer.Model?, val blend: Blend)
+    data class Material(val texture: Identifier, val model: ParticleModelRenderer.Model?, val blend: Blend, val strand: Boolean = false)
 
     class Sample {
         lateinit var texture: Identifier
@@ -36,6 +37,7 @@ internal object ParticleInstanceDraws {
         var light = -1
         var orientation: Quaternionfc? = null
         val uv = Vector4f()
+        var strand: RecipeStrand? = null
     }
 
     class Block : AutoCloseable {
@@ -59,6 +61,7 @@ internal object ParticleInstanceDraws {
             data.putFloat(u0).putFloat(v0).putFloat(u1).putFloat(v1)
             data.putFloat(color.r).putFloat(color.g).putFloat(color.b).putFloat(color.a)
             data.putFloat(0f).putFloat(0f).putFloat(0f).putFloat(0f)
+            data.putFloat(0f).putFloat(0f).putFloat(0f).putFloat(0f)
             count++
         }
 
@@ -77,6 +80,31 @@ internal object ParticleInstanceDraws {
             data.putFloat(after.x).putFloat(after.y).putFloat(after.z).putFloat(after.w)
             data.putFloat(orientation?.x() ?: 0f).putFloat(orientation?.y() ?: 0f)
                 .putFloat(orientation?.z() ?: 0f).putFloat(orientation?.w() ?: 0f)
+            data.putFloat(0f).putFloat(0f).putFloat(0f).putFloat(0f)
+            count++
+        }
+
+        fun appendStrand(sample: Sample, bridge: BridgeParticle, origin: Vec3) {
+            val strand = checkNotNull(sample.strand)
+            val end = checkNotNull(strand.next)
+            val a0 = strand.endpoint(bridge, 0f)
+            val a1 = strand.endpoint(bridge, 1f)
+            val b0 = strand.endpoint(end, 0f)
+            val b1 = strand.endpoint(end, 1f)
+            fun start(p: CoreVec3, width: Float) {
+                position((p.x - origin.x).toFloat(), (p.y - origin.y).toFloat(), (p.z - origin.z).toFloat(), width)
+            }
+            fun delta(a: CoreVec3, b: CoreVec3, width: Float) {
+                position((b.x - a.x).toFloat(), (b.y - a.y).toFloat(), (b.z - a.z).toFloat(), width)
+            }
+            start(a0.position, a0.width); delta(a0.position, a1.position, a1.width)
+            start(b0.position, b0.width); delta(b0.position, b1.position, b1.width)
+            data.putFloat((sample.uv.x + sample.uv.z) * 0.5f).putFloat(sample.uv.y).putFloat(sample.uv.w).putFloat(0f)
+            fun rg(color: Int) = (color ushr 8 and 0xffff).toFloat()
+            fun ba(color: Int) = ((color and 255) shl 8 or (color ushr 24)).toFloat()
+            data.putFloat(rg(a0.color)).putFloat(rg(a1.color)).putFloat(rg(b0.color)).putFloat(rg(b1.color))
+            data.putFloat(ba(a0.color)).putFloat(ba(a1.color)).putFloat(ba(b0.color)).putFloat(ba(b1.color))
+            data.putFloat(a0.direction).putFloat(a1.direction).putFloat(b0.direction).putFloat(b1.direction)
             count++
         }
 
@@ -186,14 +214,16 @@ internal object ParticleInstanceDraws {
         var lastKey: Key? = null
         for (bridge in batch.offered) {
             bridge.instanceSample(partialTick, sample)
-            if (maxOf(sample.color0.w, sample.color1.w) <= 0f) continue
+            val strand = sample.strand != null
+            if (!strand && maxOf(sample.color0.w, sample.color1.w) <= 0f) continue
             val from = sample.from
             val to = sample.to
             val x = cell(from.x); val y = cell(from.y); val z = cell(from.z)
             val prior = lastKey
             val key = if (prior != null && prior.origin.x == x && prior.origin.y == y && prior.origin.z == z &&
-                prior.material.texture == sample.texture && prior.material.model === sample.model && prior.material.blend == sample.blend
-            ) prior else Key(Material(sample.texture, sample.model, sample.blend), Vec3(x, y, z))
+                prior.material.texture == sample.texture && prior.material.model === sample.model &&
+                prior.material.blend == sample.blend && prior.material.strand == strand
+            ) prior else Key(Material(sample.texture, sample.model, sample.blend, strand), Vec3(x, y, z))
             val group = if (key === prior) checkNotNull(lastGroup) else batch.pages.getOrPut(key) { arrayListOf() }
             lastKey = key
             lastGroup = group
@@ -205,7 +235,7 @@ internal object ParticleInstanceDraws {
             val block = page.block
             if (sample.blend == Blend.ALPHA) batch.transparent += Ordered(page, block.count,
                 Vec3(from.x, from.y, from.z), Vec3(to.x, to.y, to.z), bridge.particleId)
-            block.append(sample, key.origin)
+            if (strand) block.appendStrand(sample, bridge, key.origin) else block.append(sample, key.origin)
         }
     }
 
@@ -217,7 +247,9 @@ internal object ParticleInstanceDraws {
         fun submit(page: Page, indices: IntArray?, count: Int) {
             val (material, origin) = page.key
             if (material.model != null && !ParticleGeometryBudget.reserve(count * material.model.faces.size)) return
-            draw(material, page.block, Frame(origin.subtract(camera), -1f, 0f, 0f, partialTick), indices, count)
+            if (material.strand && !ParticleGeometryBudget.reserve(count)) return
+            val mode = if (material.strand) -2f else -1f
+            draw(material, page.block, Frame(origin.subtract(camera), mode, 0f, 0f, partialTick), indices, count)
         }
         fun submitUnordered(blend: Blend) {
             for (batch in batches) for ((key, blocks) in batch.pages) {

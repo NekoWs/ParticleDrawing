@@ -289,6 +289,7 @@ class BridgeParticle(
     }
 
     internal fun instanceSample(partialTick: Float, out: ParticleInstanceDraws.Sample) {
+        out.strand = recipeStrand
         refreshTextureIfStale()
         val entry = texEntry ?: TextureCache.defaultWhite()
         uvRegion.updateFromTexture(entry, uv, animStartNanos, textureClock, age, frameFactor(partialTick))
@@ -394,7 +395,8 @@ class BridgeParticle(
         if (!ParticleRenderEffects.visible(particleId, cam, x, y, z)) return
         refreshTextureIfStale()
         val link = recipeStrand
-        if (link != null) {
+        if (link != null && link.next == null) return
+        if (link != null && !usesInstancePipeline()) {
             texEntry?.let { uvRegion.updateFromTexture(it, uv, animStartNanos, textureClock, age, f) }
             ribbonVertices.clear()
             link.append(this, ribbonVertices, CoreVec3(cam.x, cam.y, cam.z), partialTick,
