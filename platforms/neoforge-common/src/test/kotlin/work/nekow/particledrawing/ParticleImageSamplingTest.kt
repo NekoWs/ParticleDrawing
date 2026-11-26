@@ -1,9 +1,11 @@
 package work.nekow.particledrawing
 
-import work.nekow.particledrawing.math.Vec3
+import work.nekow.particledrawing.animation.recipe.RecipeRuntime
+import work.nekow.particledrawing.api.ParticleRecipe
 import work.nekow.particledrawing.api.ParticleImageSampler
 import work.nekow.particledrawing.api.ParticleSampling
 import work.nekow.particledrawing.command.CommandParticleRecipes
+import work.nekow.particledrawing.math.Vec3
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -46,6 +48,20 @@ class ParticleImageSamplingTest {
         val image = BufferedImage(100, 100, BufferedImage.TYPE_INT_RGB)
         assertFailsWith<IllegalArgumentException> { ParticleImageSampler.sample(ByteArrayInputStream(png(image))) }
         assertEquals(2500, ParticleImageSampler.sample(ByteArrayInputStream(png(image)), ParticleImageSampler.Options(stride = 2)).size)
+    }
+
+    @Test fun `图片可跨刻发完全部采样并按寿命回收`() {
+        val image = BufferedImage(85, 85, BufferedImage.TYPE_INT_RGB)
+        val seeds = ParticleImageSampler.sample(ByteArrayInputStream(png(image)))
+        assertEquals(85 * 85, seeds.size)
+
+        val recipe = ParticleRecipe(seeds, rate = 1024, lifetime = 10, maxAlive = 8192)
+        val runtime = RecipeRuntime(recipe, true)
+        repeat(8) { runtime.tick() }
+        assertFalse(runtime.emitting)
+        assertEquals(seeds, runtime.particles.map { it.seed })
+        repeat(recipe.lifetime) { runtime.tick() }
+        assertTrue(runtime.finished)
     }
 
     @Test fun `路径不会越过图片根目录`() {

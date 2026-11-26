@@ -153,10 +153,10 @@ dynamic true|false | keep_velocity true|false | attributes true|false
 ```mcfunction
 pdraw particle draw circle at ~ ~1 ~ radius 3 count 96 look color aqua size 0.15 glow
 pdraw particle draw sin at ~ ~2 ~ width 16 height 2 cycles 1 count 200 look color #7fe0ff life 200
-pdraw particle draw expr at ~ ~2 ~ count 200 "vec3(u*16-8, sin(u*2*PI)*2, 0)" look color expr vec3(u,0.4,1-u)
+pdraw particle draw expr at ~ ~2 ~ count 16 "vec3(u*4, u*u, 0)"
 pdraw particle draw text at ~ ~2 ~ text "HELLO" size 2 count 512 look color gold life 200
-pdraw particle draw circle as feet at ~ ~1 ~ radius 3 count 64 look color #ffcc66 glow then follow @p
-pdraw particle draw circle as sigil at ~ ~1 ~ radius 3 count 96 look color aqua also hexagram at ~ ~1 ~ radius 2.4 segments 24 look color #ffeeaa then move 0 1 0 40 then spin 0 1 0 2 then delay 40 then fade_out 20
+pdraw particle draw circle as ring at ~ ~1 ~ radius 2 count 24 then follow @p
+pdraw particle draw dot at ~ ~1 ~ also dot at ~ ~2 ~
 ```
 
 最后一行中的上浮和旋转同刻开始，40 刻后开始淡出，20 刻后移除整组。
@@ -244,13 +244,12 @@ orbit <vec3 公式>
 ### 4.5 发射示例
 
 ```mcfunction
-pdraw particle emitter fire at ~ ~1 ~ sample count 100 let radius 2 spawn vec3((rand()-0.5)*radius,0,(rand()-0.5)*radius) look color red size 0.15 glow life 40 rate 20 start
-pdraw particle emitter meteor at ~ ~4 ~ sample count 200 spawn vec3((rand()-0.5)*8,0,(rand()-0.5)*8) move vec3(0,-0.05,0) look color orange life 60 rate 64 burst
-pdraw particle emitter ribbon at ~ ~2 ~ sample count 2 let phase t/680+i*PI spawn vec3(2*cos(phase),0.7*sin(phase),0) move set position vec3(2*cos(phase),0.7*sin(phase),0) look trail 32 life 160 rate 2 burst
-pdraw particle emitter sigil at @s sample image file "pd-icon.png" pixel_spacing 0.05 stride 8 filter "u > 0.2" max 8192 spacing 0.25 start
+pdraw particle emitter rising at ~ ~1 ~ move vec3(0,0.04,0) life 20 rate 1 start
+pdraw particle emitter delayed at ~ ~1 ~ sample count 1 life 10 window 20 burst
+pdraw particle emitter image at ~ ~2 ~ sample image file "example.png" stride 2 life 40 max 8192 burst
 ```
 
-图片示例由玩家执行。将模组的 `icon.png` 放到游戏工作目录的 `particleImages/pd-icon.png` 后，移动玩家即可按距离发射。
+第一条命令持续发射向上移动的粒子。第二条命令等 20 刻再发射一轮。图片用例读取游戏工作目录下的 `particleImages/example.png`，每隔一个像素采样。
 
 ## 5. 模板与覆盖
 
@@ -277,10 +276,8 @@ pdraw particle emitter sigil at @s sample image file "pd-icon.png" pixel_spacing
 `without` 接受上述段名和具名字段，例如 `without orbit`、`without let.radius`、`without spawn.position`、`without look.trail`、`without on`。整段清除恢复缺省行为，删除一项保留同段其他项。别名归一后校验路径，未知路径或重复清除报错，已缺省的合法路径可重复执行。合并后仍引用被删 `let` 或其他声明时，拒绝整个 `use`。
 
 ```mcfunction
-pdraw particle template fire at ~ ~1 ~ sample count 100 spawn vec3(rand()-0.5,0,rand()-0.5) orbit vec3(sin(t/1000),0,0) look color red size 0.15 glow life 40 rate 20
-pdraw particle use fire as fire_blue without orbit look color blue burst
-pdraw particle use fire as fire_high at ~ ~6 ~ start
-pdraw particle use fire as fire_preview burst dryrun
+pdraw particle template colored_dot at ~ ~1 ~ sample count 1 look color red life 20
+pdraw particle use colored_dot as blue_dot look color blue burst
 ```
 
 ## 6. 控制命令与对象生命周期
@@ -421,7 +418,7 @@ with on clear
 | 绘制与编排 | 组合图元成员数、正弦端点、单点输入、颜色公式、错峰后时间 0、显式延迟、局部表达式和连续形变均符合定义。错峰中清理或覆盖后旧粒子不会再出现 |
 | 生命周期与失败 | 同名组、模板、发射器互不干扰。覆盖失败、超容量、模式不兼容、坏资产、最后一段错误和 `dryrun` 不改变旧状态。循环覆盖、停发扫尾、永久粒子清理和引用环都可复现 |
 | 模板与配方 | 在不同位置和执行者下使用同一模板，坐标与选择器结果符合定义。覆盖、清除、快照、锚点依赖、事件配置和热更新通过配置与运行结果断言 |
-| 示例效果 | `cube` 验证棱线绘制与逐粒子入场；`hell-eye` 验证开场、延迟持续、收尾与清理。配方示例验证出生速度、逐刻位置、透明度、样本数和非默认间隔 |
+| 独立用例 | 棱线绘制验证角点去重和逐粒子入场。发射器用例验证锚点链接、延迟发射、热更新和清理。配方单测验证出生速度、逐刻位置、透明度、样本数和非默认间隔 |
 | 多版本门禁 | 独立核心 `build`，以及 1.21.1、26.2、26.3 的 `build runGameTestServer -PpdSelfTest` 均通过，各运行日志出现 `[PD-SELFTEST] PASS`。渲染和客户端补全另用实际开发客户端验收 |
 
-复用 `RuntimeSelfTest` 的真实命令分派器。`ParticleCommandExamplesTest` 与 `HellEyeExampleTest` 保留对样本和运行结果的断言，其辅助解析与语法测试共用同一份声明测试输入，避免把另一个手写解析器当成命令入口的验收。
+复用 `RuntimeSelfTest` 的真实命令分派器。`ParticleRecipeRuntimeTest` 和 `ParticleImageSamplingTest` 对样本和运行结果单独断言。

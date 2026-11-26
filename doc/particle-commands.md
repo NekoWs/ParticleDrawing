@@ -18,10 +18,10 @@ pdraw particle delete group ring
 `stagger` 设置图元内相邻粒子的出生间隔。`enter fade`、`enter grow` 和 `enter fade_grow` 分别让每颗粒子从出生起淡入、长大或同时播放两者。填入时长，单位为游戏刻，可追加 `ease <缓动>`。
 
 ```mcfunction
-pdraw particle draw cuboid as cube at ~ ~1.5 ~ size 2 density 7 edges edge_gap 2 look color aqua size 0.1 glow stagger 1 enter fade_grow 8
+pdraw particle draw line as line from ~ ~1 ~ to ~4 ~1 ~ count 12 stagger 2 enter fade 8
 ```
 
-`edges` 只绘制长方体的十二条棱。示例从底边画到竖边和顶边，每隔一刻生成一颗粒子，换边多等两刻。共享角点只生成一次。每颗粒子用八刻淡入并长到指定尺寸。用 `pdraw particle clear group cube` 清理当前粒子并取消剩余入场。
+直线上的粒子每隔两刻生成一颗，每颗用八刻淡入。用 `pdraw particle clear group line` 清理当前粒子并取消剩余入场。
 
 ### 编排命令
 
@@ -42,11 +42,11 @@ pdraw particle draw circle as ring at ~ ~1 ~ radius 3 count 96 then spin 1 1 0 2
 有效帧数为 8，按 30 fps 循环。PNG 按从左到右、从上到下排列，整图宽高都须是帧尺寸的整数倍。
 
 ```json
-{"texture":"example:textures/vfx/sparks.png","frame_width":320,"frame_height":180,"frames":8,"fps":30}
+{"texture":"example:textures/particles/sequence.png","frame_width":320,"frame_height":180,"frames":8,"fps":30}
 ```
 
 ```mcfunction
-pdraw particle draw dot at ~ ~2 ~ look texture sheet:example:sparks size_world 8 4.5 glow additive life 20
+pdraw particle draw dot at ~ ~2 ~ look texture sheet:example:sequence size_world 2 1.125 life 20
 ```
 
 每张图集最多 256 帧和 16,777,216 像素。显示尺寸由 `size_world` 控制，可以在多个世界坐标放置。
@@ -55,11 +55,11 @@ pdraw particle draw dot at ~ ~2 ~ look texture sheet:example:sparks size_world 8
 ## 发射器与模板
 
 ```mcfunction
-pdraw particle emitter fire at ~ ~1 ~ sample count 60 spawn vec3(rand()-0.5,0,rand()-0.5) move vec3(0,0.06,0) look color orange size 0.1 glow life 30 rate 6 start
-pdraw particle stop fire
-pdraw particle burst fire
-pdraw particle clear emitter fire
-pdraw particle delete emitter fire
+pdraw particle emitter rising at ~ ~1 ~ move vec3(0,0.04,0) life 20 rate 1 start
+pdraw particle stop rising
+pdraw particle burst rising
+pdraw particle clear emitter rising
+pdraw particle delete emitter rising
 ```
 
 `emitter` 定义完整配方。省略 `start` 或 `burst` 时只存配置。同名完整声明成功后清除旧实例。`stop` 停止出生，已有粒子按寿命运行。`clear` 清理实例并保留配置，`delete` 连同配置一起删除。`dryrun` 校验整条声明并回显样本数。
@@ -67,9 +67,8 @@ pdraw particle delete emitter fire
 `spawn` 默认写出生位置，`move` 默认写逐刻速度。用 `spawn set velocity …` 写出生速度，或用 `move set position …` 直接控制逐刻位置。`let` 按声明顺序求值，公式中的 `u` 是采样参数，`t` 是运行毫秒，`age` 和 `life` 是刻数。带空格的公式用双引号括起。
 
 ```mcfunction
-pdraw particle template flame at ~ ~1 ~ sample count 100 let radius 2 spawn vec3((rand()-0.5)*radius,0,(rand()-0.5)*radius) look color red size 0.15 glow life 40 rate 20
-pdraw particle use flame as blue_flame look color blue burst
-pdraw particle use flame as preview at ~ ~6 ~ start dryrun
+pdraw particle template colored_dot at ~ ~1 ~ sample count 1 look color red life 20
+pdraw particle use colored_dot as blue_dot look color blue burst
 ```
 
 模板中的坐标和选择器在 `use` 时按当时的命令源解析。用 `without orbit`、`without look.trail` 等清除继承值。要在原有效果上修改参数，可用 `advanced emitter <名字> edit …`。需要复用所有设置时可用 `template <名字> from emitter <发射器>` 保存快照。
@@ -90,15 +89,15 @@ pdraw particle use flame as preview at ~ ~6 ~ start dryrun
 可用普通 `burst` 绘制光带。需要高帧率时，给光带加上 `glow additive light 0`，并使用 `burst instanced`。GPU 在渲染帧中插值端点、按相机方向展开带面。位置、颜色和状态公式仍每刻在 CPU 求值。`glow` 让粒子保持全亮，`light 0` 避免每个节点再照亮地形。
 
 ```mcfunction
-pdraw particle emitter arc at ~ ~2 ~ sample count 48 spawn "vec3(3`cos(u`PI),3`sin(u`PI),0)" look style soft_dot color #9fdcff size 0.14 glow additive light 0 strand 48 life 80 rate 48 burst instanced
+pdraw particle emitter band at ~ ~2 ~ sample count 8 spawn vec3(u*3,0,0) strand 8 life 60 burst
 ```
 
 ### GPU 弹道
 
-`burst gpu` 将特殊的固定锚点、有限寿命弹道交给 GPU 计算，支持出生位置、速度和恒定加速度。比如：
+`burst gpu` 在 GPU 上计算固定锚点、有限寿命的弹道。下面让一颗粒子以固定速度向上发射，再按恒定加速度落下。
 
 ```mcfunction
-pdraw particle emitter sparks at ~ ~2 ~ sample count 96 spawn set velocity "vec3(0.12`cos(2`PI`u),0.08,0.12`sin(2`PI`u))" move set ay -0.006 look style soft_dot color gold size 0.13 glow additive light 0 life 42 rate 96 burst gpu
+pdraw particle emitter falling_dot at ~ ~2 ~ sample count 1 spawn set velocity vec3(0,0.1,0) move set ay -0.006 look glow additive light 0 life 32 burst gpu
 ```
 
 逐刻表达式、热更新和连续带面可选 `burst instanced`。查看[执行模式](command-v2-design.md#44-运行参数与动作)。
@@ -121,8 +120,7 @@ pdraw particle emitter sparks at ~ ~2 ~ sample count 96 spawn set velocity "vec3
 
 ## 自由镜头 /pdraw camera
 
-给玩家切换一个由命令驱动的镜头，用于宣传片、巡演和自动演出；镜头姿态由客户端逐渲染帧向目标插值，
-20 tick 的命令更新不会出现台阶。命令必须由玩家执行（数据包里用 `execute as @p run`）。
+设置玩家镜头的位置、朝向和视场角。客户端逐渲染帧向目标插值。命令必须由玩家执行（数据包里用 `execute as @p run`）。
 
 ```mcfunction
 # 位置 + 朝向：MC 玩家视角口径，0 为 +Z，90 为 -X；pitch 正为俯视

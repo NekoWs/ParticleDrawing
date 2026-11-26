@@ -39,5 +39,6 @@ repo/
 .kotlin/
 logs/
 
-# 本地粒子展厅页面与实机录屏，素材体积大，只在本地看
+# 本地示例、粒子展厅与录制素材
+/local-examples/
 /gallery/

@@ -138,7 +138,7 @@ internal object HelpCommands {
             "command.help.examples.section.instant",
             listOf(
                 HelpExample("command.help.examples.sin",
-                    "pdraw particle draw sin at ~ ~2 ~ width 16 height 2 cycles 1 count 200 look color aqua life 200"),
+                    "pdraw particle draw sin at ~ ~1 ~ width 8 height 1 cycles 1 count 32 life 100"),
                 HelpExample("command.help.examples.cube",
                     "pdraw particle draw cuboid at ~ ~1.5 ~ size 2 density 7 edges life 200"),
             ),
@@ -149,14 +149,13 @@ internal object HelpCommands {
                 HelpExample("command.help.examples.follow_ring",
                     "pdraw particle draw circle as ex_ring at ~ ~1 ~ radius 3 count 64 then spin 1 1 0 2"),
                 HelpExample("command.help.examples.follow_step",
-                    "pdraw particle emitter ex_fire at ~ ~1 ~ sample count 60 spawn vec3(rand()-0.5,0,rand()-0.5) " +
-                        "move vec3(0,0.06,0) look color orange size 0.1 glow life 30 rate 6 start"),
+                    "pdraw particle emitter ex_emitter at ~ ~1 ~ move vec3(0,0.04,0) life 20 rate 1 start"),
             ),
         ),
         HelpExampleGroup(
             "command.help.examples.section.cleanup",
             listOf(
-                HelpExample("command.help.examples.cleanup_emitter", "pdraw particle delete emitter ex_fire"),
+                HelpExample("command.help.examples.cleanup_emitter", "pdraw particle delete emitter ex_emitter"),
                 HelpExample("command.help.examples.cleanup_group", "pdraw particle delete group ex_ring"),
             ),
         ),
