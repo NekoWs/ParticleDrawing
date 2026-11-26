@@ -270,8 +270,8 @@ object RuntimeSelfTest {
             check("文字采样与图元") {
                 run("pdraw particle emitter v2_text sample text \"SELFTEST|V2\" count 512 height 2") == 1 &&
                     CommandParticleRecipes.get(dimension, "v2_text").recipe.seeds.size == 512 &&
-                    run("pdraw particle draw text as v2_letters at 0 70 0 text 星 size 2 count 6000") == 6000 &&
-                    run("pdraw particle draw text as v2_letters at 0 70 0 text 星 count 8193") == 0 &&
+                    run("pdraw particle draw text as v2_letters at 0 70 0 text A size 2 count 6000") == 6000 &&
+                    run("pdraw particle draw text as v2_letters at 0 70 0 text A count 8193") == 0 &&
                     CommandParticleGroups.get(dimension, "v2_letters")?.group?.size() == 6000
             }
             check("图元合并、颜色公式与出错回滚") {

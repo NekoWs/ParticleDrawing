@@ -13,6 +13,8 @@ pdraw particle delete group ring
 
 常用形状包括 `dot`、`field`、`line`、`beam`、`helix`、`circle`、`disc`、`triangle`、`hexagram`、`rect`、`sphere`、`cuboid`、`text`、`sin` 和 `expr`。查看[图元参数](command-v2-design.md#31-声明与几何)和[外观字段](command-v2-design.md#32-外观-look)。
 
+`draw text` 和 `sample text` 由服务端 Java 进程按字体轮廓采样。若绘制中文等文字时提示缺少字形，请在服务端安装覆盖该文字的字体，并重启服务端，使 Java 的默认无衬线字体能找到相应字形。
+
 ### 逐粒子入场
 
 `stagger` 设置图元内相邻粒子的出生间隔。`enter fade`、`enter grow` 和 `enter fade_grow` 分别让每颗粒子从出生起淡入、长大或同时播放两者。填入时长，单位为游戏刻，可追加 `ease <缓动>`。
