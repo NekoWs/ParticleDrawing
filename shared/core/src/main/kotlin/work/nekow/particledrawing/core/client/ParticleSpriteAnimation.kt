@@ -2,10 +2,12 @@ package work.nekow.particledrawing.core.client
 
 import kotlin.math.floor
 
-/** 纵向帧图集：有限寿命播完整个序列，无限寿命默认每 60 tick 循环一次。 */
-data class ParticleSpriteAnimation(val frameHeight: Int, val frames: Int, val fps: Double? = null) {
+/** 粒子帧图集。旧资源帧纵向排列，预排图集可使用多列。 */
+data class ParticleSpriteAnimation(
+    val frameHeight: Int, val frames: Int, val fps: Double? = null, val frameWidth: Int = 0, val columns: Int = 1,
+) {
     init {
-        require(frameHeight > 0 && frames > 0)
+        require(frameHeight > 0 && frames > 0 && columns > 0 && (frameWidth > 0 || columns == 1))
         require(fps == null || (fps.isFinite() && fps > 0 && fps <= 120))
     }
     fun frameAt(ageTicks: Double, lifetimeTicks: Int): Int {

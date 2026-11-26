@@ -459,6 +459,7 @@
   "particledrawing.error.texture.name_length": "Texture name too long (%1$s/%2$s).",
   "particledrawing.error.texture.pixel_limit": "Texture sequence exceeds the pixel limit.",
   "particledrawing.error.texture.reference_length": "Particle texture reference is too long.",
+  "particledrawing.error.texture.sheet": "Invalid frame size, frame count, frame rate or texture for particle sheet %1$s.",
   "particledrawing.error.texture.reference_syntax": "Use particle:namespace:name[#frame or @fps].",
   "particledrawing.error.texture.resource_name": "Invalid particle resource %1$s.",
   "particledrawing.error.texture.sequence_length": "Limit %1$s to 256 frames.",

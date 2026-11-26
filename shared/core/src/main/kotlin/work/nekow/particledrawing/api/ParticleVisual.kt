@@ -386,7 +386,7 @@ class ParticleVisual {
             x0 = 0
             y0 = 0
             // 资源引用始终取当前整图，资源包换分辨率后不沿用旧像素取景框。
-            val resourceTexture = name.startsWith("particle:")
+            val resourceTexture = name.startsWith("particle:") || ParticleSheets.isReference(name)
             w = if (texW > 0 && !resourceTexture) texW else 0
             h = if (texH > 0 && !resourceTexture) texH else 0
         }
@@ -433,7 +433,7 @@ class ParticleVisual {
             val box = if (size != null) max(size[0], size[1]) else 0
             if (box > 0) return box / 16f
             // 整张资源贴图按一张标准图标计，资源包像素密度不改变粒子的世界尺寸。
-            if (uv?.texture?.startsWith("particle:") == true) return 1f
+            if (uv?.texture?.let { it.startsWith("particle:") || ParticleSheets.isReference(it) } == true) return 1f
             val dim = max(texW, texH)
             return if (dim > 0) dim / 16f else 1f
         }

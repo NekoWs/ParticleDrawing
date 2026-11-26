@@ -459,6 +459,7 @@
   "particledrawing.error.texture.name_length": "贴图名过长（%1$s/%2$s）。",
   "particledrawing.error.texture.pixel_limit": "贴图序列超出像素上限。",
   "particledrawing.error.texture.reference_length": "粒子贴图引用过长。",
+  "particledrawing.error.texture.sheet": "粒子图集 %1$s 的帧尺寸、数量、帧率或纹理路径无效。",
   "particledrawing.error.texture.reference_syntax": "格式为 particle:命名空间:名称[#帧号 或 @帧率]。",
   "particledrawing.error.texture.resource_name": "粒子资源名 %1$s 无效。",
   "particledrawing.error.texture.sequence_length": "%1$s 最多 256 帧。",

@@ -122,6 +122,9 @@ class BridgeParticle(
      * 贴图晚于粒子到货（运行时登记）时就地重解析。
      */
     private fun refreshTextureIfStale() {
+        if ((texEntry?.animation?.frameWidth ?: 0) > 0) {
+            uv?.texture?.let(TextureCache::touchSheet)
+        }
         val version = TextureCache.version()
         if (version == seenTexVersion) return
         seenTexVersion = version

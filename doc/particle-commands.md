@@ -38,6 +38,23 @@ pdraw particle advanced group sigil program append then recolor #9fe0ff 10
 
 用 `look texture particle:minecraft:end_rod` 引用粒子贴图。`#N` 选固定帧，`@FPS` 设循环帧率。资源包只提供外观，运动由本模组控制。
 
+### 预排动画图集
+
+`look texture sheet:<命名空间>:<名称>` 从客户端资源包加载预排图集。将描述文件放在
+`assets/<命名空间>/particle_sheets/<名称>.json`。例如下面的描述读取四列、两行的 320×180 贴图帧，
+有效帧数为 8，按 30 fps 循环。PNG 按从左到右、从上到下排列，整图宽高都须是帧尺寸的整数倍。
+
+```json
+{"texture":"example:textures/vfx/sparks.png","frame_width":320,"frame_height":180,"frames":8,"fps":30}
+```
+
+```mcfunction
+pdraw particle draw dot at ~ ~2 ~ look texture sheet:example:sparks size_world 8 4.5 glow additive life 20
+```
+
+每张图集最多 256 帧和 16,777,216 像素。显示尺寸由 `size_world` 控制，可以在多个世界坐标放置。
+每帧是粒子四边形的一张贴图，游戏深度会遮挡它。
+
 ## 发射器与模板
 
 ```mcfunction

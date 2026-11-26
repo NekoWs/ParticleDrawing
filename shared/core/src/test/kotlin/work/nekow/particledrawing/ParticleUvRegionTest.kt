@@ -29,6 +29,20 @@ class ParticleUvRegionTest {
         assertEquals(listOf(0f, 1f, 0f, 1f), listOf(reg.u0, reg.u1, reg.v0, reg.v1))
     }
 
+    @Test
+    fun `平铺资源在行末换行并留出半像素边距`() {
+        val reg = ParticleUvRegion()
+        val sprite = ParticleSpriteAnimation(8, 6, 20.0, frameWidth = 10, columns = 3)
+        val fullFrame = UvData("sheet:test:sample", UvData.Mode.STATIC, IntArray(2), IntArray(2),
+            IntArray(2), IntArray(2), 0f, 0, false)
+        reg.update(fullFrame, 30, 16, 0.0, sprite, 2.0, 6)
+        assertEquals(listOf(20.5f / 30, 29.5f / 30, 0.5f / 16, 7.5f / 16),
+            listOf(reg.u0, reg.u1, reg.v0, reg.v1))
+        reg.update(fullFrame, 30, 16, 0.0, sprite, 3.0, 6)
+        assertEquals(listOf(0.5f / 30, 9.5f / 30, 8.5f / 16, 15.5f / 16),
+            listOf(reg.u0, reg.u1, reg.v0, reg.v1))
+    }
+
     private fun uv(mode: UvData.Mode, loop: Boolean = false) =
         UvData("test", mode, intArrayOf(8, 4), intArrayOf(1, 0), intArrayOf(2, 2), intArrayOf(2, 2), 8f, 0, loop)
 }

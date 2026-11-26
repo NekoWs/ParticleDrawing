@@ -9,10 +9,12 @@ import net.minecraft.client.renderer.texture.DynamicTexture
 import net.minecraft.resources.Identifier
 import work.nekow.particledrawing.platform.PlatformCompat
 import org.apache.logging.log4j.LogManager
+import work.nekow.particledrawing.api.ParticleSheets
 import work.nekow.particledrawing.api.ParticleStyle
 import work.nekow.particledrawing.api.ParticleTextures
 import work.nekow.particledrawing.util.BuiltinTextures
 import work.nekow.particledrawing.util.HashUtils
+import java.io.BufferedInputStream
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -36,6 +38,10 @@ object TextureCache {
     /** 单张贴图解码上限：16384×1024 之类的极端比例也允许，只要总像素不超 1600 万。 */
     private const val MAX_DIMENSION = 16384
     private const val MAX_PIXELS = 16_777_216L
+    private const val SHEET_CACHE_PIXELS = 110_000_000L
+    private const val SHEET_IDLE_NANOS = 8_000_000_000L
+    private val sheetUse = linkedMapOf<String, Long>()
+    private var sheetPixels = 0L
 
     private val entries = ConcurrentHashMap<String, Entry>()
 
@@ -49,8 +55,12 @@ object TextureCache {
     /** 内置形状按需生成，particle: 引用按当前客户端资源包读取，其余名字查登记表。 */
     @JvmStatic
     fun get(textureName: String): Entry? {
-        entries[textureName]?.let { return it }
+        entries[textureName]?.let {
+            if (ParticleSheets.isReference(textureName)) touchSheet(textureName)
+            return it
+        }
         try {
+            if (ParticleSheets.isReference(textureName)) return loadSheet(textureName)
             ParticleTextures.parse(textureName)?.let { reference ->
                 val resources = Minecraft.getInstance().resourceManager
                 val sprites = ParticleTextures.resolveFrames(reference) { id ->
@@ -92,6 +102,49 @@ object TextureCache {
         val pixels = BuiltinTextures.pixels(style, BuiltinTextures.SIZE)
         if (pixels.isEmpty()) return null
         return registerPixels(textureName, BuiltinTextures.SIZE, BuiltinTextures.SIZE, pixels)
+    }
+
+    private fun loadSheet(name: String): Entry {
+        val resources = Minecraft.getInstance().resourceManager
+        val sheet = ParticleSheets.read(name) { id -> resources.openAsReader(id.toMinecraft()).use { it.readText() } }
+        resources.open(sheet.image.toMinecraft()).use { raw ->
+            val stream = BufferedInputStream(raw)
+            stream.mark(24)
+            val size = requireNotNull(pngDimensions(stream.readNBytes(24)))
+            stream.reset()
+            val columns = size.first / sheet.width
+            val rows = size.second / sheet.height
+            val pixels = size.first.toLong() * size.second
+            requireLocalized(pixels <= MAX_PIXELS && size.first % sheet.width == 0 &&
+                size.second % sheet.height == 0 && sheet.frames <= columns * rows) {
+                translation("error.texture.sheet", name)
+            }
+            trimSheets(pixels)
+            val sprite = ParticleSpriteAnimation(sheet.height, sheet.frames, sheet.fps, sheet.width, columns)
+            val entry = registerImage(name, NativeImage.read(stream), sprite)
+            sheetUse[name] = System.nanoTime()
+            sheetPixels += pixels
+            return entry
+        }
+    }
+
+    internal fun touchSheet(name: String) {
+        sheetUse.computeIfPresent(name) { _, _ -> System.nanoTime() }
+    }
+
+    private fun trimSheets(incomingPixels: Long) {
+        val now = System.nanoTime()
+        val iterator = sheetUse.iterator()
+        while (sheetPixels + incomingPixels > SHEET_CACHE_PIXELS && iterator.hasNext()) {
+            val (name, touched) = iterator.next()
+            if (now - touched < SHEET_IDLE_NANOS) continue
+            iterator.remove()
+            entries.remove(name)?.let {
+                Minecraft.getInstance().textureManager.release(it.id)
+                sheetPixels -= it.width.toLong() * it.height
+                versionCounter.incrementAndGet()
+            }
+        }
     }
 
     /** 名字是否已注册（含内置形状）。 */
@@ -193,6 +246,8 @@ object TextureCache {
             }
         }
         entries.clear()
+        sheetUse.clear()
+        sheetPixels = 0L
         versionCounter.incrementAndGet()
     }
 
@@ -201,9 +256,11 @@ object TextureCache {
     fun clearParticleResources() {
         val textures = Minecraft.getInstance().textureManager
         for ((name, entry) in entries) {
-            if (!name.startsWith("particle:")) continue
+            if (!name.startsWith("particle:") && !ParticleSheets.isReference(name)) continue
             if (entries.remove(name, entry)) textures.release(entry.id)
         }
+        sheetUse.clear()
+        sheetPixels = 0L
         versionCounter.incrementAndGet()
     }
 
