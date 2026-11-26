@@ -37,13 +37,8 @@ ordering = "AFTER"
 
 ```kotlin
 val manager = ParticleManager.of(level)
-Draw.circle(manager, center, radius = 4.0, count = 80)
-    .fadeIn(15)
-    .spin(Vec3(0.0, 1.0, 0.0), Math.PI / 40)
-    .delay(100)
-    .stopContinuous()
-    .fadeOut(20)
+Draw.circle(manager, center, radius = 4.0, count = 80, lifetime = 100)
 ```
 
-`Draw.circle` 返回 `ParticleGroup`。示例在第 0 刻启动淡入和旋转，在第 100 刻停止旋转并开始淡出。
+`Draw.circle` 返回 `ParticleGroup`。这个圆环保留 100 个游戏刻。
 1 刻为 50 毫秒。[更多代码示例](guide.md) · [类型索引](api-reference.md)

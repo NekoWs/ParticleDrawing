@@ -140,15 +140,14 @@ internal object HelpCommands {
                 HelpExample("command.help.examples.sin",
                     "pdraw particle draw sin at ~ ~2 ~ width 16 height 2 cycles 1 count 200 look color aqua life 200"),
                 HelpExample("command.help.examples.cube",
-                    "pdraw particle draw cuboid at ~ ~1.5 ~ width 2 height 2 depth 2 density 7 edges edge_gap 2 " +
-                        "look color aqua size 0.1 glow life 200 stagger 1 enter fade_grow 8"),
+                    "pdraw particle draw cuboid at ~ ~1.5 ~ size 2 density 7 edges life 200"),
             ),
         ),
         HelpExampleGroup(
             "command.help.examples.section.follow",
             listOf(
                 HelpExample("command.help.examples.follow_ring",
-                    "pdraw particle draw circle as ex_ring at ~ ~1 ~ radius 3 count 64 look color gold glow then spin 0 1 0 2"),
+                    "pdraw particle draw circle as ex_ring at ~ ~1 ~ radius 3 count 64 then spin 1 1 0 2"),
                 HelpExample("command.help.examples.follow_step",
                     "pdraw particle emitter ex_fire at ~ ~1 ~ sample count 60 spawn vec3(rand()-0.5,0,rand()-0.5) " +
                         "move vec3(0,0.06,0) look color orange size 0.1 glow life 30 rate 6 start"),

@@ -37,23 +37,11 @@ Download from [Modrinth](https://modrinth.com/mod/particledrawing) or [GitHub Re
 
 ## Commands
 
-Start with a ring. The second example replaces it with a ring and hexagram that rise, spin, and fade.
-The examples use `.mcfunction` syntax. In chat, add a leading `/`.
+The commands below draw a named ring and delete it. In chat, add a leading `/`.
 
 ```mcfunction
-# Draw a glowing ring named sigil.
-pdraw particle draw circle as sigil at ~ ~1 ~ radius 3 count 96 look color aqua size 0.15 glow
-
-# Replace sigil with two shapes and animate them as a group.
-pdraw particle draw circle as sigil at ~ ~1 ~ radius 3 count 96 look color aqua also hexagram at ~ ~1 ~ radius 2.4 segments 24 look color gold then move 0 1 0 40 then spin 0 1 0 2 then delay 40 then fade_out 20
-
-# Declare an emitter and start it in the same command.
-pdraw particle emitter fire at ~ ~1 ~ sample count 60 spawn vec3(rand()-0.5,0,rand()-0.5) move vec3(0,0.06,0) look color orange size 0.1 glow life 30 rate 6 start
-
-# Stop emitting, clear instances, or remove the definition.
-pdraw particle stop fire
-pdraw particle clear emitter fire
-pdraw particle delete emitter fire
+pdraw particle draw circle as ring at ~ ~1 ~ radius 3 count 96 look color aqua
+pdraw particle delete group ring
 ```
 
 | Command | Description |
@@ -107,8 +95,7 @@ ordering = "AFTER"
 [Minecraft 26.2](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.2) ·
 [Minecraft 26.3](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3)
 
-Call the drawing API on the server thread with a `ServerLevel`. This example draws a ring that
-fades in as it spins, then stops spinning and fades out.
+Call the drawing API on the server thread with a `ServerLevel`. The ring in this example lasts 100 game ticks.
 
 ```kotlin
 import net.minecraft.world.phys.Vec3
@@ -117,12 +104,7 @@ import work.nekow.particledrawing.api.ParticleManager
 
 val manager = ParticleManager.of(level)
 
-Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80)
-    .fadeIn(15)
-    .spin(Vec3(0.0, 1.0, 0.0), Math.PI / 40)
-    .delay(100)
-    .stopContinuous()
-    .fadeOut(20)
+Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80, lifetime = 100)
 ```
 
 - `Draw` creates a `ParticleGroup` for shapes such as lines, curves, polylines, polygons, spheres,

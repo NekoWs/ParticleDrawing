@@ -683,7 +683,7 @@
   "particledrawing.command.help.examples.section.instant": "立刻就能看到的效果",
   "particledrawing.command.help.examples.section.cleanup": "清理示例对象",
   "particledrawing.command.help.examples.sin": "sin 曲线：一条命令画一条正弦波",
-  "particledrawing.command.help.examples.cube": "逐颗淡入并长大，依次画完立方体的十二条棱",
+  "particledrawing.command.help.examples.cube": "绘制立方体的十二条棱",
   "particledrawing.command.help.examples.cleanup_emitter": "删除发射器示例",
   "particledrawing.command.help.examples.cleanup_group": "删除圆环组",
   "particledrawing.command.help.ui.click_run": "点击执行",

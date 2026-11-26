@@ -5,10 +5,8 @@
 ## 命令绘制与数据包
 
 ```mcfunction
-pdraw particle draw circle as sigil at ~ ~1 ~ radius 3 count 96 look color aqua size 0.15 glow
-pdraw particle draw sin at ~ ~2 ~ width 16 height 2 cycles 1 count 200 look color #7fe0ff life 200
-pdraw particle draw expr at ~ ~2 ~ count 200 "vec3(u*16-8,sin(u*2*PI)*2,0)" look color expr vec3(u,0.4,1-u)
-pdraw particle delete group sigil
+pdraw particle draw circle as ring at ~ ~1 ~ radius 3 count 96 look color aqua
+pdraw particle delete group ring
 ```
 
 `as` 命名组，重复执行会完整替换同名组。省略 `as` 时各次绘制独立。`at` 或 `from` 用原版坐标，支持 `~` 与 `^`。`group_pivot` 覆盖组轴心。`also` 将下一个图元加入同一组，每个图元可有自己的外观、寿命和错峰设置。
@@ -20,7 +18,7 @@ pdraw particle delete group sigil
 `stagger` 设置图元内相邻粒子的出生间隔。`enter fade`、`enter grow` 和 `enter fade_grow` 分别让每颗粒子从出生起淡入、长大或同时播放两者。填入时长，单位为游戏刻，可追加 `ease <缓动>`。
 
 ```mcfunction
-pdraw particle draw cuboid as cube at ~ ~1.5 ~ width 2 height 2 depth 2 density 7 edges edge_gap 2 look color aqua size 0.1 glow stagger 1 enter fade_grow 8
+pdraw particle draw cuboid as cube at ~ ~1.5 ~ size 2 density 7 edges edge_gap 2 look color aqua size 0.1 glow stagger 1 enter fade_grow 8
 ```
 
 `edges` 只绘制长方体的十二条棱。示例从底边画到竖边和顶边，每隔一刻生成一颗粒子，换边多等两刻。共享角点只生成一次。每颗粒子用八刻淡入并长到指定尺寸。用 `pdraw particle clear group cube` 清理当前粒子并取消剩余入场。
@@ -28,11 +26,10 @@ pdraw particle draw cuboid as cube at ~ ~1.5 ~ width 2 height 2 depth 2 density 
 ### 编排命令
 
 ```mcfunction
-pdraw particle draw circle as sigil at ~ ~1 ~ radius 3 count 96 look color aqua also hexagram at ~ ~1 ~ radius 2.4 segments 24 look color gold then move 0 1 0 40 then spin 0 1 0 2 then delay 40 then fade_out 20
-pdraw particle advanced group sigil program append then recolor #9fe0ff 10
+pdraw particle draw circle as ring at ~ ~1 ~ radius 3 count 96 then spin 1 1 0 2
 ```
 
-上浮和旋转同刻开始，第 40 刻开始淡出。只有 `delay` 推进时间游标。`then follow @s` 让整组跟随当前执行实体，执行上下文必须有单一实体。已有组可追加编排或先准备形变草稿再启动。查看[动作表](command-v2-design.md#33-动作与时间轴)和[已有组](command-v2-design.md#72-已有组)。
+这条命令围绕倾斜轴旋转粒子组。`then` 中只有 `delay` 推进时间游标。查看[动作表](command-v2-design.md#33-动作与时间轴)、[已有组](command-v2-design.md#72-已有组)。
 
 ### 复用原版粒子贴图
 

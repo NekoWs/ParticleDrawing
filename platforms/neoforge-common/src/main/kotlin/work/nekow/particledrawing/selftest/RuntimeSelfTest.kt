@@ -227,6 +227,24 @@ object RuntimeSelfTest {
                         offsets.all { point -> listOf(point.x, point.y, point.z).count { kotlin.math.abs(it) == 1.0 } >= 2 }
                     validStart && validStagger && validGap && validEdge && validGeometry && engine.pendingDrawCount(group.id) == 0
                 }
+                check("方体边长简写与三轴尺寸等价") {
+                    val short = "pdraw particle draw cuboid as short_cube at 0 60 0 size 2 density 3 edges"
+                    val long = "pdraw particle draw cuboid as long_cube at 0 60 0 width 2 height 2 depth 2 density 3 edges"
+                    if (run(short) != 20 || run(long) != 20) return@check false
+                    val engine = manager.getEngine()
+                    fun offsets(name: String): Set<Vec3> {
+                        val id = requireNotNull(CommandParticleGroups.get(dimension, name)).group.id
+                        val members = requireNotNull(engine.getGroup(id)).memberIds()
+                        return members.map { requireNotNull(engine.getParticle(it)).offsetFromPivot() }.toSet()
+                    }
+                    val actual = offsets("short_cube")
+                    val expected = offsets("long_cube")
+                    run("pdraw particle delete group short_cube")
+                    run("pdraw particle delete group long_cube")
+                    actual.size == 20 && actual == expected &&
+                        run(short.replace("size 2", "size 0") + " dryrun") == 0 &&
+                        run(short.replace("size 2", "size -1") + " dryrun") == 0
+                }
                 check("入场曲线叠加，错峰溢出拒绝覆盖，清理取消剩余入场") {
                     val existing = CommandParticleGroups.get(dimension, "cube") ?: return@check false
                     val start = "pdraw particle draw cuboid as cube at 0 60 0 width 2 height 2 depth 2 density 3 edges"

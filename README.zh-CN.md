@@ -33,23 +33,11 @@ ParticleDrawing 是一个基于 NeoForge 的 Minecraft 粒子效果库。用 `/p
 
 ## 命令
 
-第一条命令绘制圆环。第二条替换同名粒子组，画出一同上升、旋转并淡出的圆环和六芒星。
-示例采用 `.mcfunction` 写法，在聊天栏执行时请加上开头的 `/`。
+下面两条命令绘制和删除一个命名圆环。在聊天栏执行时请加上开头的 `/`。
 
 ```mcfunction
-# 绘制名为 sigil 的发光圆环。
-pdraw particle draw circle as sigil at ~ ~1 ~ radius 3 count 96 look color aqua size 0.15 glow
-
-# 用两个图形替换 sigil，并为整组编排动画。
-pdraw particle draw circle as sigil at ~ ~1 ~ radius 3 count 96 look color aqua also hexagram at ~ ~1 ~ radius 2.4 segments 24 look color gold then move 0 1 0 40 then spin 0 1 0 2 then delay 40 then fade_out 20
-
-# 定义并启动发射器。
-pdraw particle emitter fire at ~ ~1 ~ sample count 60 spawn vec3(rand()-0.5,0,rand()-0.5) move vec3(0,0.06,0) look color orange size 0.1 glow life 30 rate 6 start
-
-# 停止发射、清理实例或删除定义。
-pdraw particle stop fire
-pdraw particle clear emitter fire
-pdraw particle delete emitter fire
+pdraw particle draw circle as ring at ~ ~1 ~ radius 3 count 96 look color aqua
+pdraw particle delete group ring
 ```
 
 | 命令 | 说明 |
@@ -103,7 +91,7 @@ ordering = "AFTER"
 [Minecraft 26.2](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.2) ·
 [Minecraft 26.3](https://central.sonatype.com/artifact/work.nekow/particledrawing-neoforge-26.3)
 
-在服务端主线程调用绘制 API，传入 `ServerLevel`。示例中的圆环会一边旋转一边淡入，停止旋转后再淡出。
+在服务端主线程调用绘制 API，传入 `ServerLevel`。示例中的圆环保留 100 个游戏刻。
 
 ```kotlin
 import net.minecraft.world.phys.Vec3
@@ -112,12 +100,7 @@ import work.nekow.particledrawing.api.ParticleManager
 
 val manager = ParticleManager.of(level)
 
-Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80)
-    .fadeIn(15)
-    .spin(Vec3(0.0, 1.0, 0.0), Math.PI / 40)
-    .delay(100)
-    .stopContinuous()
-    .fadeOut(20)
+Draw.circle(manager, Vec3(0.0, 70.0, 0.0), radius = 3.0, count = 80, lifetime = 100)
 ```
 
 - `Draw` 可绘制线段、曲线、折线、多边形、球体、长方体和点阵文字等，返回 `ParticleGroup`。

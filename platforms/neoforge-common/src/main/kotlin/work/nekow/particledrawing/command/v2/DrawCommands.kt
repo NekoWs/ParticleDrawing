@@ -143,9 +143,17 @@ internal object DrawCommands {
                 integer("segments", max = 1024)
             }
             "rect", "cuboid" -> {
-                number("width")
-                number("height")
-                if (shape == "cuboid") number("depth")
+                if (shape == "cuboid" && input.take("size")) {
+                    val size = input.number("size")
+                    if (size <= 0.0) input.invalid("positive size", size.toString())
+                    numbers["width"] = size
+                    numbers["height"] = size
+                    numbers["depth"] = size
+                } else {
+                    number("width")
+                    number("height")
+                    if (shape == "cuboid") number("depth")
+                }
                 integer("density", 2, 512)
                 if (numbers.values.take(if (shape == "cuboid") 3 else 2).all { it == 0.0 }) input.invalid("nonzero size")
             }

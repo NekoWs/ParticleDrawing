@@ -683,7 +683,7 @@
   "particledrawing.command.help.examples.section.instant": "immediately visible",
   "particledrawing.command.help.examples.section.cleanup": "cleanup",
   "particledrawing.command.help.examples.sin": "sine curve: one command draws a full wave",
-  "particledrawing.command.help.examples.cube": "Trace all twelve edges of a cube as each particle fades in and grows",
+  "particledrawing.command.help.examples.cube": "Draw the twelve edges of a cube",
   "particledrawing.command.help.examples.cleanup_emitter": "delete an emitter example",
   "particledrawing.command.help.examples.cleanup_group": "delete the ring group",
   "particledrawing.command.help.ui.click_run": "click to run",
