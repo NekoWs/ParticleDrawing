@@ -85,8 +85,8 @@ v2 发布时删除 `particle batch`、`particle group`、`particle add`、`parti
 | `size` / `size_world` / `size_relative` | `size <边长>` 为世界等宽等高。`size_world <宽> <高>` 为世界尺寸。`size_relative <宽> <高>` 为相对尺寸。三者互斥 |
 | `uv` | `<u> <v> <宽> <高>` |
 | `spin` / `spin_space` | `<x> <y> <z>` 角度与 `world/local`，默认 `local`。`spin_space` 需要 `spin` |
-| `glow` / `additive` / `billboard` / `light_only` / `align_velocity` | `[true/false]`，只写键表示 `true`。`glowing` 是 `glow` 的别名 |
-| `light` / `light_intensity` | `<0..15>` 与 `<强度倍数>`。`intensity` 是 `light_intensity` 的别名 |
+| `glow` / `additive` / `billboard` / `light_only` / `align_velocity` | `[true/false]`，只写键表示 `true`。`glowing` 是 `glow` 的别名；`glow` 只让片元免光照，不会向外投光 |
+| `light` / `light_intensity` | `<0..15>` 与 `<强度倍数>`。`light` 显式设置向外照明等级（默认 0 = 不投光）；`intensity` 是 `light_intensity` 的别名 |
 | `spot` / `light_dir` / `light_range` / `light_falloff` | `<外角[,内角[,边缘]]>`、`<偏航> <俯仰>`、`<距离>`、`<衰减曲线>` |
 | `alpha_curve` / `size_curve` / `red_curve` / `green_curve` / `blue_curve` / `light_curve` | 一个曲线参数，`刻:值[:缓动],刻:值[:缓动],…` |
 | `soft` | `<0..4>` 格，软粒子采样半径，0 关闭 |
@@ -281,7 +281,7 @@ orbit <vec3 公式>
 
 | 段 | 值域与默认 |
 | --- | --- |
-| `strand` | 爆发的光带分组长度，在 `look` 后、`life` 前。0 使用独立粒子，非零值须为 2..8192 且整除采样总数。可用 `burst`，或给带面设置 `glow additive light 0` 后使用 `burst instanced` |
+| `strand` | 爆发的光带分组长度，在 `look` 后、`life` 前。0 使用独立粒子，非零值须为 2..8192 且整除采样总数。可用 `burst`，或给带面设置 `glow additive` 后使用 `burst instanced` |
 | `life` | `-1` 或 `1..1000000`。默认 80。`-1` 的粒子仍可被公式、碰撞或显式清理移除 |
 | `rate` | `1..65536`。默认 8。是每次发射最多尝试的样本数 |
 | `interval` | `1..1000000`。默认 1。按刻发射模式的间隔 |

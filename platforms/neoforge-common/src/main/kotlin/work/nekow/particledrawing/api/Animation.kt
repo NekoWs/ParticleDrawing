@@ -215,7 +215,7 @@ class ParticleBuilder internal constructor() {
     internal var pcolor: Color = Color.WHITE
     internal var pscale: FloatArray = floatArrayOf(1f, 1f, 1f)
     internal var pglowing: Boolean = false
-    internal var plightLevel: Int = 15
+    internal var plightLevel: Int = 0
     internal var ppos: Vec3 = Vec3.ZERO
     internal var pvel: Vec3 = Vec3.ZERO
     internal var puv: UvData? = null

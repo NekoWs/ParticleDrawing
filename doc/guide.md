@@ -534,13 +534,13 @@ val visual = ParticleVisual().apply {
 整张资源贴图按标准图标尺寸计算，资源包的像素密度不会改变粒子大小；显式给 `uv` 时仍按像素取子矩形。
 
 这复用原版贴图序列与年龄选帧方式，不执行原版粒子工厂的随机漂移、颜色渐变或物理逻辑；颜色、尺寸、
-发光和淡入淡出继续使用 PD 的参数与编排。`end_rod` 的明亮外观配合 `glowing`，`light=0` 则避免向世界投光。
+发光和淡入淡出继续使用 PD 的参数与编排。`end_rod` 的明亮外观配合 `glowing` 即可；`glow` 默认不向世界投光，需要照明再显式写 `light`。
 没有贴图列表、帧号越界或客户端缺资源时，会显示紫黑错误贴图并记录具体原因。
 
 动态图集最多 256 帧、合计 16,777,216 像素，各帧需为相同尺寸。
 
 ```kotlin
-val visual = ParticleVisual().particleTexture("minecraft:end_rod").anisoWorld(0.12f, 0.12f).glowing(true).lightLevel(0)
+val visual = ParticleVisual().particleTexture("minecraft:end_rod").anisoWorld(0.12f, 0.12f).glowing(true)
 Draw.circle(manager, center, 2.0, 80, visual = visual)
 
 // 同样适用于粒子构建器、发射器，以及可读外观 DSL

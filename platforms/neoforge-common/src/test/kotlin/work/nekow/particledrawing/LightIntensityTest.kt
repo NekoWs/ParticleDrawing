@@ -37,9 +37,11 @@ class LightIntensityTest {
         lifetimeTicks: Int = 20,
         curve: ParticleLifeCurve? = null,
         lightIntensity: Float = 1f,
+        emitsLight: Boolean = true,
     ): RenderParticle = RenderParticle(
         UUID.randomUUID(), Vec3.ZERO, Color.of(1f, 1f, 1f, alpha), scale,
         true, lightLevel, lifetimeTicks, null, curve, null, lightIntensity,
+        emitsLight = emitsLight,
     ).also { it.captureSpawnSize() }
 
     @Test

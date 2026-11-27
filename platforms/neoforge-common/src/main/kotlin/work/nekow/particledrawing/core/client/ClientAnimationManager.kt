@@ -625,12 +625,15 @@ object ClientAnimationManager {
         resolver: EffectAnchorResolver? = null,
     ) {
         val pos = resolver?.apply(state.pos.toMinecraft()) ?: state.pos.toMinecraft()
+        val emitsLight = state.lightShape != null || state.glowing && state.lightLevel > 0 ||
+            state.lightIntensity != 1f
         engine.spawnParticle(
             uuid, pos.x, pos.y, pos.z,
             state.color.r, state.color.g, state.color.b, state.color.a,
             state.scale[0], -1, null, state.glowing, state.lightLevel, state.uv,
             state.billboard, state.spin, state.spinLocal, state.additive, state.scale,
             lightIntensity = state.lightIntensity, lightShape = state.lightShape,
+            emitsLight = emitsLight,
         )
         engine.configureRenderEffects(uuid, state.renderOptions)
     }

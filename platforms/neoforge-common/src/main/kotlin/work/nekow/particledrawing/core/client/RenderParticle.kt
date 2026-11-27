@@ -79,7 +79,7 @@ class RenderParticle(
     private val lifeCurve: ParticleLifeCurve? = null,
     prev: Vec3? = null,
     lightIntensity: Float = 1f,
-    emitsLight: Boolean = glowing,
+    emitsLight: Boolean = false,
     /** 只发光不画外观；光强不随透明度和尺寸衰减。 */
     private val lightOnly: Boolean = false,
     /** 光源形状（射灯锥角、半径、衰减）；null = 点光。 */
@@ -199,6 +199,11 @@ class RenderParticle(
     fun id(): UUID = id
     fun glowing(): Boolean = glowing
     fun emitsLight(): Boolean = emitsLightSource || lightShape != null
+
+    /** 显式把粒子标记为向外投光（运行时提亮时用，不影响片元全亮）。 */
+    fun enableEmitsLight() {
+        emitsLightSource = true
+    }
 
     /** 只发光不画外观；见 [ParticleVisual.lightOnly]。 */
     fun lightOnly(): Boolean = lightOnly
@@ -320,7 +325,7 @@ class RenderParticle(
      * 都会连续收束；显式 remove 或死亡后光源不再被收集。
      */
     fun lightIntensity(partialTick: Float = 0f): Float {
-        if ((!glowing && !emitsLight() && !lightOnly) || lightLevel <= 0) return 0f
+        if ((!emitsLight() && !lightOnly) || lightLevel <= 0) return 0f
         val value = rawLightIntensity(partialTick) + lightTransitionOffset(partialTick)
         return if (value.isFinite()) value.coerceAtLeast(0f) else 0f
     }

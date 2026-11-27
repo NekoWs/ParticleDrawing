@@ -22,7 +22,9 @@ class ParticleSpawnSpec {
     var scale: Float = 1f
     var lifetime: Int = -1
     var glowing: Boolean = false
-    var lightLevel: Int = 15
+    var lightLevel: Int = 0
+    /** 是否向外投光；与 [glowing]（片元全亮）独立，`lightLevel` 只在为 true 时生效。 */
+    var emitsLight: Boolean = false
     var visual: ParticleVisual? = null
     var lifeCurve: ParticleLifeCurve? = null
 
@@ -84,7 +86,13 @@ class ParticleSpawnSpec {
 
     fun glowing(glowing: Boolean): ParticleSpawnSpec = apply { this.glowing = glowing }
 
-    fun lightLevel(level: Int): ParticleSpawnSpec = apply { this.lightLevel = level.coerceIn(0, 15) }
+    fun lightLevel(level: Int): ParticleSpawnSpec = apply {
+        this.lightLevel = level.coerceIn(0, 15)
+        this.emitsLight = this.lightLevel > 0
+    }
+
+    /** 显式开关向外照明；等级沿用 [lightLevel]（默认 0，需配合 [lightLevel] 提亮）。 */
+    fun emitsLight(enabled: Boolean = true): ParticleSpawnSpec = apply { this.emitsLight = enabled }
 
     private fun spec(): ParticleVisual = visual ?: ParticleVisual().also { visual = it }
 
@@ -102,6 +110,7 @@ class ParticleSpawnSpec {
         this.visual = visual.copy()
         this.glowing = visual.glowing
         this.lightLevel = visual.lightLevel
+        this.emitsLight = visual.emitsLight
     }
 
     /** 直接给一条寿命曲线。 */
@@ -114,6 +123,14 @@ class ParticleSpawnSpec {
 
     /** 直接给整套寿命曲线。 */
     fun lifeCurve(curve: ParticleLifeCurve): ParticleSpawnSpec = apply { this.lifeCurve = curve }
+
+    /** 出生包用的外观：显式照明要写成外观标记，否则客户端不会向世界投光。 */
+    internal fun resolvedVisual(): ParticleVisual? {
+        if (!emitsLight) return visual
+        val v = visual?.copy() ?: ParticleVisual()
+        v.emitsLight = true
+        return v
+    }
 
     /** 透明度曲线（乘数）。 */
     fun alphaCurve(vararg keys: CurveKey): ParticleSpawnSpec = curve(ParticleCurve.alpha(*keys))
@@ -173,6 +190,7 @@ class ParticleSpawnSpec {
         c.lifetime = lifetime
         c.glowing = glowing
         c.lightLevel = lightLevel
+        c.emitsLight = emitsLight
         c.visual = visual?.copy()
         c.lifeCurve = lifeCurve
         c.velocityPerTick = velocityPerTick

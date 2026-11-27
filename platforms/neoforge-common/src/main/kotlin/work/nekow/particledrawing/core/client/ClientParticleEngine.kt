@@ -89,7 +89,7 @@ class ClientParticleEngine {
                       spin: DoubleArray = ZERO_SPIN, spinLocal: Boolean = true,
                       additive: Boolean = false, scaleArray: FloatArray? = null,
                       lifeCurve: ParticleLifeCurve? = null, prev: Vec3? = null,
-                      lightIntensity: Float = 1f, emitsLight: Boolean = glowing,
+                      lightIntensity: Float = 1f, emitsLight: Boolean = false,
                       lightOnly: Boolean = false, lightShape: LightShape? = null) {
         if (activeCount() >= ParticleDrawingConfig.CLIENT.maxRenderParticles.get()) {
             noteRenderCapDrop()
@@ -112,7 +112,7 @@ class ClientParticleEngine {
         rp.markBorn(tickSequence)
         particleVersion++
         particles[id] = rp
-        if (lightsUp(glowing, emits || lightShape != null, lightLevel)) lightIndex.add(id)
+        if (lightsUp(emits || lightShape != null, lightLevel)) lightIndex.add(id)
         if (lifeCurve != null && !lifeCurve.isEmpty()) curveIds.add(id)
 
         val pe: ParticleEngine = Minecraft.getInstance().particleEngine
@@ -157,7 +157,7 @@ class ClientParticleEngine {
         spawnParticle(
             id, x, y, z, r, g, b, a, scale, lifetimeTicks, groupId, glowing, lightLevel,
             visual.uv, visual.billboard, visual.spin, visual.spinLocal, visual.additive,
-            visual.scaleArray, lifeCurve, prev, visual.lightIntensity, visual.emitsLight || glowing,
+            visual.scaleArray, lifeCurve, prev, visual.lightIntensity, visual.emitsLight,
             visual.lightOnly, visual.lightShape,
         )
         val bridge = bridges[id]
@@ -302,7 +302,9 @@ class ClientParticleEngine {
         if (scaleArray != null) rp.setScaleArrayDirect(scaleArray) else rp.setScaleDirect(scale)
         rp.setGlowing(glowing)
         rp.setLightLevel(lightLevel)
-        lightIndex.refresh(rp.id(), wasLight, lightsUp(glowing, rp.emitsLight(), lightLevel))
+        // 动画/编辑器语义：glow + 光照等级 > 0 即向外投光；等级曲线后起亮时补开标记
+        if (lightLevel > 0 && glowing) rp.enableEmitsLight()
+        lightIndex.refresh(rp.id(), wasLight, lightsUp(rp.emitsLight(), lightLevel))
         bridge?.let {
             it.syncPosition(pos.x, pos.y, pos.z, snap, resetEffects)
             it.syncColor(color.r, color.g, color.b, color.a)
@@ -431,6 +433,7 @@ class ClientParticleEngine {
         val rp = particles[id] ?: return
         val wasLight = lightsUp(rp)
         rp.setLightLevel(level)
+        if (level > 0) rp.enableEmitsLight()
         lightIndex.refresh(id, wasLight, lightsUp(rp))
     }
 

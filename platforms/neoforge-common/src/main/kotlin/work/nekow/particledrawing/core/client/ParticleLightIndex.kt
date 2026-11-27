@@ -44,8 +44,8 @@ internal class ParticleLightIndex {
 }
 
 /** 会发光的判定只有这一处：全亮或显式发光，且光照等级 > 0。 */
-internal fun lightsUp(glowing: Boolean, emitsLight: Boolean, lightLevel: Int): Boolean =
-    (glowing || emitsLight) && lightLevel > 0
+/** 只有显式开启向外照明（`emitsLight` / `light_only`）且等级大于 0 才算光源；`glow` 只免光照。 */
+internal fun lightsUp(emitsLight: Boolean, lightLevel: Int): Boolean = emitsLight && lightLevel > 0
 
 internal fun lightsUp(particle: RenderParticle): Boolean =
-    lightsUp(particle.glowing(), particle.emitsLight(), particle.lightLevel())
+    lightsUp(particle.emitsLight(), particle.lightLevel())

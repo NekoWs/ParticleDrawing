@@ -3,7 +3,7 @@
 ## 创建光源
 
 全亮与向世界投光是两个属性。命名外观用 `fullBright` 控制全亮，用 `Light.level` 或 `Light.only`
-配置照明。旧接口的 `glowing(true)` 同时使粒子全亮并发光，可用 `lightLevel(0)` 关闭对外照明。
+配置照明。`glowing(true)` / `glow` 只让粒子全亮，不再自动向外投光；需要投光时显式调用 `lightLevel(n)` 或 `emitsLight(true)`（默认等级 0）。
 
 创建纯光源时用 `lightOnly(true)` 隐藏粒子外观。普通发光粒子的有效亮度由光照等级、强度乘数、
 `LIGHT` 曲线、透明度和尺寸包络共同决定。纯光源的亮度只取前三项。

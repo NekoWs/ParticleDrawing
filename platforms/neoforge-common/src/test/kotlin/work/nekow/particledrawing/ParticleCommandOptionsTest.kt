@@ -47,9 +47,24 @@ class ParticleCommandOptionsTest {
         assertTrue(on.visual.lightOnly)
         assertTrue(on.visual.emitsLight, "只发光必须同时是光源，否则这条命令没有任何效果")
 
-        val off = ParticleCommandOptionParser.parse("light=15 light_only=false")
+        val off = ParticleCommandOptionParser.parse("light_only=false")
         assertFalse(off.visual.lightOnly)
         assertFalse(off.visual.emitsLight)
+    }
+
+    @Test
+    fun `glow 只免光照，照明必须显式写 light`() {
+        val glow = ParticleCommandOptionParser.parse("glowing=true")
+        assertTrue(glow.visual.glowing)
+        assertFalse(glow.visual.emitsLight, "glow 不再隐式投光，避免总要补 light 0")
+        assertEquals(0, glow.visual.lightLevel)
+
+        val light = ParticleCommandOptionParser.parse("light=12")
+        assertTrue(light.visual.emitsLight)
+        assertEquals(12, light.visual.lightLevel)
+
+        val dark = ParticleCommandOptionParser.parse("glowing=true light=0")
+        assertFalse(dark.visual.emitsLight)
     }
 
     @Test

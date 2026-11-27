@@ -61,11 +61,11 @@ class ParticleVisual {
     /** 加法混合：亮部叠亮、有溢出感。与 [glowing] 不同，后者只免光照。 */
     var additive: Boolean = false
 
-    /** 免光照（全亮，不受世界光照影响）。 */
+    /** 免光照（全亮，不受世界光照影响）。只影响片元，不会自动向外投光。 */
     var glowing: Boolean = false
 
-    /** 向外发出的光照等级 (0-15)，越界自动夹取。 */
-    var lightLevel: Int = 15
+    /** 向外发出的光照等级 (0-15)，越界自动夹取；只有 [emitsLight] 为 true 时生效。默认 0 = 不投光。 */
+    var lightLevel: Int = 0
         set(value) {
             field = value.coerceIn(0, 15)
         }
@@ -74,7 +74,7 @@ class ParticleVisual {
      * 是否作为动态光源向外照明。
      *
      * 与 [glowing]（片元免光照/全亮）分开：旧 API 用 `glowing = true` 同时承担两件事，
-     * 新外观门面可以让片元不透明但仍向世界投光。旧路径默认仍按 `glowing` 兼容。
+     * 现在 `glow` 只免光照；需要照亮世界必须显式打开本标志（命令写法 `look light <0..15>`）。
      */
     var emitsLight: Boolean = false
 
@@ -275,15 +275,16 @@ class ParticleVisual {
         return this
     }
 
-    /** 免光照开关。 */
+    /** 免光照开关（只让片元全亮，不改变是否向外投光）。 */
     fun glowing(enabled: Boolean): ParticleVisual {
         glowing = enabled
         return this
     }
 
-    /** 向外照明等级 (0-15)。 */
+    /** 向外照明等级 (0-15)；显式调用本方法即打开 [emitsLight]，0 关闭照明。 */
     fun lightLevel(level: Int): ParticleVisual {
         lightLevel = level.coerceIn(0, 15)
+        emitsLight = lightLevel > 0
         return this
     }
 

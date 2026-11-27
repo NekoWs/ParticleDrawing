@@ -21,7 +21,7 @@ KDoc。只在特定包中提供的类型单独注明。代码示例见[使用指
 
 | 类型 | 用途 |
 | --- | --- |
-| `ParticleVisual`、`ParticleStyle`、`ParticleTextures` | 设置尺寸、朝向、混合、贴图、换帧、速度拉丝、软化距离与丝带长度 |
+| `ParticleVisual`、`ParticleStyle`、`ParticleTextures` | 设置尺寸、朝向、混合、贴图、换帧、速度拉丝、软化距离与丝带长度。`glowing` 只让片元免光照；向外投光用 `emitsLight` / `lightLevel`（默认 0），两者互不隐式联动 |
 | `ParticleTrailStyle` | 设置尾端与头部的宽度和 RGBA，让尾迹脱离头部后独立淡出 |
 | `particleVisual`、`ParticleAppearance`、`Light`、`Blend`、`Facing` | Kotlin DSL 和 Java Builder，分别描述全亮与对外照明 |
 | `ParticleCurve`、`CurveKey`、`CurveChannel`、`ParticleLifeCurve` | 逐粒子的外观和光强寿命曲线 |

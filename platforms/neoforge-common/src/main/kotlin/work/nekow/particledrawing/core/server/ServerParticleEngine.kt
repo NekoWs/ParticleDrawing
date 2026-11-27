@@ -145,9 +145,10 @@ class ServerParticleEngine(
                 continue
             }
             val id = UUID.randomUUID()
+            val visual = spec.resolvedVisual()
             val data = ParticleData.create(
                 id, spec.position, spec.color, spec.scale, spec.lifetime,
-                groupId, spec.glowing, spec.lightLevel, null, spec.visual, spec.resolvedLifeCurve(),
+                groupId, spec.glowing, spec.lightLevel, null, visual, spec.resolvedLifeCurve(),
             )
             particles[id] = data
             if (groupId != null) groups[groupId]?.addMember(id)
@@ -157,7 +158,7 @@ class ServerParticleEngine(
                     id, spec.position.x, spec.position.y, spec.position.z,
                     spec.color.r, spec.color.g, spec.color.b, spec.color.a,
                     spec.scale, spec.lifetime, groupId, spec.glowing, spec.lightLevel,
-                    spec.visual, spec.resolvedLifeCurve(), spec.prev,
+                    visual, spec.resolvedLifeCurve(), spec.prev,
                 )
             )
         }

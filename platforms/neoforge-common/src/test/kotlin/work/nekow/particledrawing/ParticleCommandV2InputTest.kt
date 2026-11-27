@@ -209,4 +209,19 @@ class ParticleCommandV2InputTest {
         assertEquals(PointAxis.X, (transforms[3] as PointTransform.Mirror).axis)
         assertEquals(emptyList(), PointSetCommands.parseTransforms(CommandInput("as next")))
     }
+
+    @Test fun lookGlowDoesNotEmitLightButLightDoes() {
+        val glow = CommandInput("glow additive")
+        val glowOptions = CommandLook.options(CommandLook.parse(glow))
+        glow.finish()
+        assertTrue(glowOptions.visual.glowing)
+        assertTrue(glowOptions.visual.additive)
+        assertFalse(glowOptions.visual.emitsLight, "glow 只免光照，不再默认投光")
+
+        val light = CommandInput("glow light 12")
+        val lightOptions = CommandLook.options(CommandLook.parse(light))
+        light.finish()
+        assertTrue(lightOptions.visual.emitsLight)
+        assertEquals(12, lightOptions.visual.lightLevel)
+    }
 }

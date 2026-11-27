@@ -38,7 +38,7 @@ class ParticleEmitter internal constructor(
     private var color: Color = Color.WHITE
     private var scale: Float = 1f
     private var glowing: Boolean = false
-    private var lightLevel: Int = 15
+    private var lightLevel: Int = 0
     private var velocity: Vec3 = Vec3.ZERO
     private var maxAlive: Int = 4096
     private var jitterBlocks: Double = 0.0
@@ -114,8 +114,11 @@ class ParticleEmitter internal constructor(
     /** 每颗粒子是否发光（免光照）。 */
     fun glowing(glowing: Boolean): ParticleEmitter = apply { this.glowing = glowing }
 
-    /** 向外发出的光照等级 (0-15)，0 关闭照明。 */
-    fun lightLevel(level: Int): ParticleEmitter = apply { this.lightLevel = level.coerceIn(0, 15) }
+    /** 向外发出的光照等级 (0-15)，显式调用即打开向外照明；0 关闭照明。 */
+    fun lightLevel(level: Int): ParticleEmitter = apply {
+        this.lightLevel = level.coerceIn(0, 15)
+        spec().lightLevel(this.lightLevel)
+    }
 
     /** 对外光强静态乘数（>= 0；1 = 原始亮度）。只影响动态光照，不改片元外观。 */
     fun lightIntensity(multiplier: Float): ParticleEmitter = apply { spec().lightIntensity(multiplier) }

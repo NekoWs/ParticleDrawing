@@ -14,11 +14,11 @@ import kotlin.test.assertTrue
 class ParticleLightIndexTest {
 
     @Test
-    fun `全亮或显式发光且等级大于零才算光源`() {
-        assertTrue(lightsUp(glowing = true, emitsLight = false, lightLevel = 15))
-        assertTrue(lightsUp(glowing = false, emitsLight = true, lightLevel = 1))
-        assertFalse(lightsUp(glowing = true, emitsLight = true, lightLevel = 0))
-        assertFalse(lightsUp(glowing = false, emitsLight = false, lightLevel = 15))
+    fun `只有显式发光且等级大于零才算光源`() {
+        assertFalse(lightsUp(emitsLight = false, lightLevel = 15), "glow 只免光照，不再自动投光")
+        assertTrue(lightsUp(emitsLight = true, lightLevel = 1))
+        assertFalse(lightsUp(emitsLight = true, lightLevel = 0))
+        assertFalse(lightsUp(emitsLight = false, lightLevel = 0))
     }
 
     @Test

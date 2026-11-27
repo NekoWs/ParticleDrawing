@@ -150,7 +150,7 @@ pdraw particle use colored_dot as blue_dot look color blue burst
 宽度和颜色。纹理沿宽度采样中心截面，`style soft_dot` 提供柔边。滤掉或删除中间样本时，
 光带在缺口处断开。
 
-可用普通 `burst` 绘制光带。需要高帧率时，给光带加上 `glow additive light 0`，并使用 `burst instanced`。GPU 在渲染帧中插值端点、按相机方向展开带面。位置、颜色和状态公式仍每刻在 CPU 求值。`glow` 让粒子保持全亮，`light 0` 避免每个节点再照亮地形。
+可用普通 `burst` 绘制光带。需要高帧率时，给光带加上 `glow additive`，并使用 `burst instanced`。GPU 在渲染帧中插值端点、按相机方向展开带面。位置、颜色和状态公式仍每刻在 CPU 求值。`glow` 只让粒子保持全亮，默认不会照亮地形；要投光再显式写 `light`。
 
 ```mcfunction
 pdraw particle emitter band at ~ ~2 ~ sample count 8 spawn vec3(u*3,0,0) strand 8 life 60 burst
@@ -161,7 +161,7 @@ pdraw particle emitter band at ~ ~2 ~ sample count 8 spawn vec3(u*3,0,0) strand 
 `burst gpu` 在 GPU 上计算固定锚点、有限寿命的弹道。下面让一颗粒子以固定速度向上发射，再按恒定加速度落下。
 
 ```mcfunction
-pdraw particle emitter falling_dot at ~ ~2 ~ sample count 1 spawn set velocity vec3(0,0.1,0) move set ay -0.006 look glow additive light 0 life 32 burst gpu
+pdraw particle emitter falling_dot at ~ ~2 ~ sample count 1 spawn set velocity vec3(0,0.1,0) move set ay -0.006 look glow additive life 32 burst gpu
 ```
 
 逐刻表达式、热更新和连续带面可选 `burst instanced`。查看[执行模式](command-v2-design.md#44-运行参数与动作)。
@@ -211,8 +211,8 @@ pdraw particle emitter falling_dot at ~ ~2 ~ sample count 1 spawn set velocity v
 
 ```mcfunction
 scoreboard objectives add pd_arrow_fx dummy
-pdraw particle template arrow_trail sample count 1 look style soft_dot color aqua size 0.10 glow light 0 life 9 max 160 spacing 0.20
-pdraw particle template arrow_impact sample count 16 spawn set velocity vec3(0.14*cos(2*PI*u),0.09,0.14*sin(2*PI*u)) move set ay -0.016 look style soft_dot color gold size 0.15 glow light 0 life 12 rate 16
+pdraw particle template arrow_trail sample count 1 look style soft_dot color aqua size 0.10 glow life 9 max 160 spacing 0.20
+pdraw particle template arrow_impact sample count 16 spawn set velocity vec3(0.14*cos(2*PI*u),0.09,0.14*sin(2*PI*u)) move set ay -0.016 look style soft_dot color gold size 0.15 glow life 12 rate 16
 ```
 
 让重复方块的箭头指向连锁方块。两个方块都设为无条件、始终活动。

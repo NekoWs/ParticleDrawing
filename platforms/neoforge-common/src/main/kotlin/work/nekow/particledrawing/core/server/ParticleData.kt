@@ -82,7 +82,16 @@ class ParticleData(
     fun setScale(scale: Float) { this.scale = scale }
     fun setLifetime(lifetime: Int) { this.lifetime = lifetime }
     fun setGlowing(glowing: Boolean) { this.glowing = glowing }
-    fun setLightLevel(lightLevel: Int) { this.lightLevel = lightLevel.coerceIn(0, 15) }
+    fun setLightLevel(lightLevel: Int) {
+        this.lightLevel = lightLevel.coerceIn(0, 15)
+        if (this.lightLevel <= 0) return
+        // 显式提亮即视为向外投光；迟到玩家拿到的出生包也要带上这个标记
+        val current = visual
+        if (current?.emitsLight == true) return
+        val updated = current?.copy() ?: ParticleVisual()
+        updated.emitsLight = true
+        visual = updated
+    }
     fun setOffsetFromPivot(offset: Vec3) { this.offsetFromPivot = offset }
 
     /**

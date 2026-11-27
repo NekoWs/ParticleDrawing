@@ -281,7 +281,7 @@ object RuntimeSelfTest {
             }
             check("实例、GPU 和同步动作") {
                 run("pdraw particle emitter v2_inst at 0 60 0 sample count 8 look style soft_dot life 10 start instanced") == 1 &&
-                    run("pdraw particle emitter v2_gpu at 0 60 0 sample count 64 look style soft_dot additive glow light 0 life 10 burst gpu") == 1 &&
+                    run("pdraw particle emitter v2_gpu at 0 60 0 sample count 64 look style soft_dot additive glow life 10 burst gpu") == 1 &&
                     run("pdraw particle emitter v2_sync at 0 60 0 sample count 4 life 10 max 64 burst synced") == 1
             }
             check("发射参数只保留安全上限") {
@@ -301,8 +301,8 @@ object RuntimeSelfTest {
                 try {
                     level.setBlockAndUpdate(block, Blocks.STONE.defaultBlockState())
                     if (run("scoreboard objectives add pd_test_arrow_fx dummy") <= 0 ||
-                        run("pdraw particle template v2_trail sample count 1 look style soft_dot color aqua size 0.10 glow light 0 life 9 max 160 spacing 0.20") != 1 ||
-                        run("pdraw particle template v2_hit sample count 16 spawn set velocity vec3(0.14*cos(2*PI*u),0.09,0.14*sin(2*PI*u)) move set ay -0.016 look style soft_dot color gold size 0.15 glow light 0 life 12 rate 16") != 1 ||
+                        run("pdraw particle template v2_trail sample count 1 look style soft_dot color aqua size 0.10 glow life 9 max 160 spacing 0.20") != 1 ||
+                        run("pdraw particle template v2_hit sample count 16 spawn set velocity vec3(0.14*cos(2*PI*u),0.09,0.14*sin(2*PI*u)) move set ay -0.016 look style soft_dot color gold size 0.15 glow life 12 rate 16") != 1 ||
                         run(attach) != 0 ||
                         run("""summon minecraft:arrow 0.5 201.5 0.5 {Tags:["pd_selftest_arrow"],Motion:[0.0d,-1.0d,0.0d]}""") != 1 ||
                         run("""summon minecraft:arrow 2.5 201.5 0.5 {Tags:["pd_selftest_arrow"]}""") != 1 ||

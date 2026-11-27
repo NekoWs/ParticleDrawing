@@ -425,7 +425,9 @@ class ParticleHandle(
         private var lifetime: Int = -1
         private var groupId: UUID? = null
         private var glowing: Boolean = false
-        private var lightLevel: Int = 15
+        private var lightLevel: Int = 0
+        /** 是否向外投光；与 [glowing]（片元全亮）独立。 */
+        private var emitsLight: Boolean = false
         private var offsetFromPivot: Vec3 = Vec3.ZERO
         private var delayTicks: Int = 0
 
@@ -487,13 +489,19 @@ class ParticleHandle(
         /** 关联到指定粒子组。 */
         fun group(groupId: UUID) = apply { this.groupId = groupId }
 
-        /** 标记为发光粒子。 */
+        /** 标记为全亮粒子（免光照；不会自动向外投光）。 */
         fun glowing(glowing: Boolean) = apply { this.glowing = glowing }
 
         /**
-         * 设置向外发出的光照等级 (0-15)，0 关闭照明。
+         * 设置向外发出的光照等级 (0-15)，显式调用即打开向外照明；0 关闭照明。
          */
-        fun lightLevel(level: Int) = apply { this.lightLevel = level.coerceIn(0, 15) }
+        fun lightLevel(level: Int) = apply {
+            this.lightLevel = level.coerceIn(0, 15)
+            this.emitsLight = this.lightLevel > 0
+        }
+
+        /** 显式开关向外照明；等级沿用 [lightLevel]（默认 0，需配合 [lightLevel] 提亮）。 */
+        fun emitsLight(enabled: Boolean = true) = apply { this.emitsLight = enabled }
 
         /**
          * 对外光强乘数（>= 0；1 = 原始亮度）。只影响动态光照，不改透明度或全亮标志。
@@ -561,6 +569,16 @@ class ParticleHandle(
             this.visualSpec = visual.copy()
             this.glowing = visual.glowing
             this.lightLevel = visual.lightLevel
+            this.emitsLight = visual.emitsLight
+        }
+
+        /** 生成时用的外观：显式照明要写进外观标记，才能随出生包下发给客户端。 */
+        private fun visualForSpawn(): ParticleVisual? {
+            val spec = visualSpec
+            if (!emitsLight) return spec
+            val visual = spec?.copy() ?: ParticleVisual()
+            visual.emitsLight = true
+            return visual
         }
 
         /**
@@ -658,7 +676,7 @@ class ParticleHandle(
             val engine = manager.getEngine()
             val id = UUID.randomUUID()
             val players = manager.getPlayers()
-            val spec = visualSpec
+            val spec = visualForSpawn()
             // fadeOut/shrinkTo 要靠寿命算关键帧：在这里（寿命已定）展开，无限寿命会在这里明确报错
             val curve = resolvedLifeCurve()
 
