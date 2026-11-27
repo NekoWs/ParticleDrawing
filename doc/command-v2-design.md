@@ -177,7 +177,31 @@ then morph target <点源> {<形变选项>}
 - 点源目标只改位置，不能写 `yaw`、`pitch`、`size` 或 `attributes`，也不支持 `dynamic`；需要逐槽位外观或动态公式时改用 `slots`。
 - 目标点数少于成员时，多出的成员留在原地；多于成员时，多余目标不参与配对。`slots` 与点源目标共用同一套时长账本。
 
-### 3.5 绘制示例
+### 3.5 有界控制流与程序模板
+
+`then` 除线性动作外还接受有界控制流与带参数的程序模板：
+
+```text
+then if <条件> then <动作>… [else then <动作>…] end
+then repeat <次数> then <动作>… end
+then call <模板> [<参数> <值>]…
+
+/pdraw particle program define <名称> [with <参数> <缺省>…] then <动作>…
+/pdraw particle program list|inspect <名称>|delete <名称或模式>
+```
+
+- `if` 条件在**服务端展开时**求值一次，可用程序参数、成员数 `n` 与 `repeat` 的序号 `r`（不带引号，也可写整串引号）；未选中的分支仍做结构校验，语法错误在解析阶段就报出。客户端只收到展开后的线性指令，网络协议不变。
+- `repeat` 次数 `1..256`，展开后总指令数上限 4096；`call` 嵌套上限 4 层，超出明确报错。`repeat` 体内可用 `{r}` 引用当前轮次（从 0 开始）。
+- `call` 的参数用 `{参数}` 文本替换，可出现在公式、文字、数字与点源名称里；数字参数在 `if` 条件里直接参与运算。模板按维度保存在内存里，最多 256 个，关卡卸载与停服时丢弃。
+- `program define` 在定义时按缺省参数校验动作语法；实参不同导致的展开错误在绘制/追加时报告。`dryrun` 会完整走展开、采样与校验，但不会创建组。
+
+```mcfunction
+pdraw particle program define wave with rx 5 then delay {rx} then morph target text "W" size 2 ticks 20
+pdraw particle draw text as ex_wave at ~ ~2 ~ text "HI" size 2 count 64 then call wave rx 8
+pdraw particle draw line as ex_branch from ~ ~1 ~ to ~1 ~1 ~ count 8 then if n > 4 then repeat 2 then delay 2 end else then delay 4 end
+```
+
+### 3.6 绘制示例
 
 ```mcfunction
 pdraw particle draw circle at ~ ~1 ~ radius 3 count 96 look color aqua size 0.15 glow
@@ -350,6 +374,8 @@ pdraw particle use colored_dot as blue_dot look color blue burst
 - `combine` 的 `merge` 与 `sequence` 都按顺序拼接，`sequence` 供光带/路径消费；`filter` 的公式可用 `x` / `y` / `z` / `i` / `n` / `u`，布尔 true 或非 0 保留；`sort` 影响 `allocation index` 的配对顺序，`shuffle` 用固定种子可复现。
 - 写操作一律写到 `as` 指定的点集，源点集不变；写成同名即原地更新。`inspect` 显示来源、点数与 revision。最多 256 个点集，每个最多 8192 点，超出在准备阶段报错。
 - 消费端共用同一份相对坐标与点序：`draw pointset <名称> at <坐标>` 直接铺成粒子，`emitter … sample pointset <名称>` 当出生样本，`then morph target pointset <名称>` 当形变目标。
+
+程序模板（`program`）与 `then if/else`、`then repeat`、`then call` 见 3.5；模板和点集一样是维度内内存对象，随关卡卸载与停服清理。
 
 | 操作 | 行为 |
 | --- | --- |

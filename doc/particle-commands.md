@@ -75,6 +75,24 @@ pdraw particle draw text as hello at ~ ~2 ~ text "HELLO" size 2 count 512 then m
 
 删除用 `pointset delete <名称或模式>`。
 
+### 程序模板与组内控制流
+
+重复出现的 `then` 动作可以存成带参数的程序模板，再用 `call` 展开；模板参数用 `{名称}` 占位，可出现在公式、文字、数字与点源名称里：
+
+```mcfunction
+pdraw particle program define wave with rx 5 then delay {rx} then morph target text "W" size 2 ticks 20
+pdraw particle draw text as hello at ~ ~2 ~ text "HI" size 2 count 64 then call wave rx 8
+pdraw particle program inspect wave
+```
+
+模板在服务端展开成线性指令，客户端不需要新协议。`then if <条件>` 按展开时的参数、成员数 `n` 与重复序号 `r` 选一支执行，`then repeat <次数> then … end` 最多 256 次：
+
+```mcfunction
+pdraw particle draw line as branch at ~ ~1 ~ to ~1 ~1 ~ count 8 then if n > 4 then repeat 2 then delay 2 end else then delay 4 end
+```
+
+控制流有界：展开后最多 4096 条指令，`call` 最多嵌套 4 层；`dryrun` 会完整展开并校验但不创建组。模板按维度保存，用 `program list` 查看、`program delete <名称或模式>` 删除。
+
 ### 复用原版粒子贴图
 
 用 `look texture particle:minecraft:end_rod` 引用粒子贴图。`#N` 选固定帧，`@FPS` 设循环帧率。资源包只提供外观，运动由本模组控制。

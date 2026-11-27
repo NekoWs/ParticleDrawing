@@ -226,6 +226,22 @@ internal class CommandInput(
         return dryrun
     }
 
+    /** 当前游标（跳过空白），配合 [rawSince] 截取刚解析完的原文，用于保存程序模板。 */
+    fun mark(): Int = start()
+
+    /** 从 [mark] 到当前位置的原始文本；模板展开时先替换参数再重新解析。 */
+    fun rawSince(mark: Int): String = reader.string.substring(mark, reader.cursor).trim()
+
+    /** 当前位置之后的原始文本。 */
+    fun remainingRaw(): String = reader.string.substring(start())
+
+    /** 取走剩余原文并走到命令末尾，供程序模板保存动作段。 */
+    fun consumeRemaining(): String {
+        val text = remainingRaw().trim()
+        reader.cursor = reader.totalLength
+        return text
+    }
+
     fun finish() {
         start()
         if (reader.canRead()) invalid("end of command", reader.remaining)

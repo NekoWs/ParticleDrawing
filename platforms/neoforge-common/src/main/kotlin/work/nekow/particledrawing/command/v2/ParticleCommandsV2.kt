@@ -17,7 +17,8 @@ internal object ParticleCommandsV2 {
     val usages = linkedMapOf(
         "draw" to "draw <shape> [as <group>] ... [stagger <ticks>] [enter <style> <ticks>] [also <shape> ...] [then <action> ...] [dryrun]",
         "emitter" to "emitter <name> ... [start|burst [mode]] [dryrun]",
-        "pointset" to "pointset define|list|inspect|delete ...",
+        "pointset" to "pointset define|list|inspect|delete|transform ...",
+        "program" to "program define <name> [with <param> <default> ...] then <action> ... | list|inspect|delete ...",
         "template" to "template <name> [from emitter <source>|...] [dryrun]",
         "use" to "use <template> as <name> [without <path>] ... [start|burst [mode]] [dryrun]",
         "start" to "start <emitter> [standard|instanced|synced] [dryrun]",
@@ -77,6 +78,7 @@ internal object ParticleCommandsV2 {
         when (verb) {
             "draw" -> DrawCommands.parse(input, source)
             "pointset" -> PointSetCommands.parse(input, source)
+            "program" -> ProgramTemplateCommands.parse(input, source)
             "bind", "unbind" -> EntityBindingCommands.parse(verb, input, source)
             "advanced" -> when (input.choice(listOf("emitter", "group"))) {
                 "group" -> DrawCommands.advanced(input, source)

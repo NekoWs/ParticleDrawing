@@ -63,7 +63,9 @@ internal object DrawCommands {
             val particles = prepare(figures, source, pivot)
             val maxDelay = particles.maxOf { it.placement.delay }
             val readyDelay = if (maxDelay == 0) 0 else maxDelay + 1
-            val steps = ProgramCommands.prepareMorphs(program.map { it(source) }, particles.size, source, pivot)
+            val steps = ProgramCommands.prepareMorphs(
+                ProgramCommands.expand(program, source, dimension, particles.size), particles.size, source, pivot,
+            )
             val state = ProgramCommands.validate(steps)
             if (steps.isNotEmpty()) {
                 requireLocalized(particles.all { particle ->
@@ -391,10 +393,10 @@ internal object DrawCommands {
             "program" -> {
                 val replace = input.take("replace")
                 if (!replace) input.take("append")
-                val steps = ProgramCommands.chain(input)
-                if (steps.isEmpty()) input.invalid("then")
+                val nodes = ProgramCommands.chain(input)
+                if (nodes.isEmpty()) input.invalid("then")
                 val dryrun = input.end()
-                command { program(source, dimension, name, steps.map { it(source) }, replace, dryrun) }
+                command { program(source, dimension, name, nodes, replace, dryrun) }
             }
             else -> morph(input, source, dimension, name)
         }
@@ -425,7 +427,7 @@ internal object DrawCommands {
                     )
                     // 记下这次求出的点数与采样点，inspect 能看到实际值；start 之间也不会重复采样。
                     if (!dryrun) entry.morphDraft = steps.single().morph
-                    program(source, dimension, name, steps, false, dryrun)
+                    program(source, dimension, name, ProgramCommands.literal(steps), false, dryrun)
                     1
                 }
             }
@@ -452,7 +454,7 @@ internal object DrawCommands {
         }
 
     private fun program(
-        source: CommandSourceStack, dimension: UUID, name: String, steps: List<ProgramCommands.Step>,
+        source: CommandSourceStack, dimension: UUID, name: String, nodes: List<ProgramCommands.Node>,
         replace: Boolean, dryrun: Boolean,
     ): Int {
         val entry = entry(dimension, name)
@@ -460,7 +462,10 @@ internal object DrawCommands {
             translation("error.group.no_members", name)
         }
         requireLocalized(!replace || !entry.group.hasDeliveredProgram()) { translation("error.command.v2.program_delivered", name) }
-        val steps = ProgramCommands.prepareMorphs(steps, readyMembers(entry), source, entry.group.pivot)
+        val members = readyMembers(entry)
+        val steps = ProgramCommands.prepareMorphs(
+            ProgramCommands.expand(nodes, source, dimension, members), members, source, entry.group.pivot,
+        )
         val state = ProgramCommands.validate(steps, if (replace) null else ProgramCommands.state(entry))
         if (!dryrun) ProgramCommands.apply(dimension, entry, steps, state, replace)
         return feedback(source, name, "program", steps.size, dryrun)

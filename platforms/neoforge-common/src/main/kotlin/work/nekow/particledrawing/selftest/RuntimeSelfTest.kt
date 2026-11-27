@@ -17,6 +17,7 @@ import work.nekow.particledrawing.api.CurveChannel
 import work.nekow.particledrawing.api.ParticleManager
 import work.nekow.particledrawing.command.CommandParticleGroups
 import work.nekow.particledrawing.api.PointSets
+import work.nekow.particledrawing.command.v2.ProgramTemplates
 import work.nekow.particledrawing.command.CommandParticleRecipes
 import work.nekow.particledrawing.command.help.HelpCommands
 import work.nekow.particledrawing.core.easing.EasingType
@@ -402,6 +403,43 @@ object RuntimeSelfTest {
                     run("pdraw particle pointset delete v2_word*") == 7 &&
                     PointSets.names(dimension).none { it.startsWith("v2_word") }
             }
+            check("程序模板定义与调用参数") {
+                run("pdraw particle program define v2_wave with rx 5 then delay {rx} then morph target text \"W\" size 1 ticks 5") == 1 &&
+                    run("pdraw particle program inspect v2_wave") == 1 &&
+                    run("pdraw particle draw line as v2_wave_a from 0 70 0 to 1 70 0 count 4 then call v2_wave rx 2") == 4 &&
+                    run("pdraw particle draw line as v2_wave_b from 0 70 0 to 1 70 0 count 4 then call v2_wave rx 3") == 4 &&
+                    CommandParticleGroups.get(dimension, "v2_wave_a")?.programState?.cursor == 100L &&
+                    CommandParticleGroups.get(dimension, "v2_wave_b")?.programState?.cursor == 150L
+            }
+            check("程序 if 分支") {
+                run("pdraw particle draw line as v2_branch_a from 0 70 0 to 1 70 0 count 4 then if n >= 4 then delay 1 else then delay 3 end") == 4 &&
+                    run("pdraw particle draw line as v2_branch_b from 0 70 0 to 1 70 0 count 4 then if n < 4 then delay 1 else then delay 3 end") == 4 &&
+                    CommandParticleGroups.get(dimension, "v2_branch_a")?.programState?.cursor == 50L &&
+                    CommandParticleGroups.get(dimension, "v2_branch_b")?.programState?.cursor == 150L
+            }
+            check("程序 repeat") {
+                run("pdraw particle draw line as v2_repeat from 0 70 0 to 1 70 0 count 4 then repeat 3 then delay 2 end") == 4 &&
+                    CommandParticleGroups.get(dimension, "v2_repeat")?.programState?.cursor == 300L
+            }
+            check("程序上界错误") {
+                run("pdraw particle draw line as v2_bad from 0 70 0 to 1 70 0 count 4 then if n >= 4 then delay 1 else then delay -1 end") == 0 &&
+                    run("pdraw particle draw line as v2_bad from 0 70 0 to 1 70 0 count 4 then repeat 257 then delay 1 end") == 0 &&
+                    run("pdraw particle draw line as v2_dry from 0 70 0 to 1 70 0 count 4 then repeat 2 then delay 1 end dryrun") == 1 &&
+                    CommandParticleGroups.get(dimension, "v2_dry") == null
+            }
+            check("程序嵌套深度") {
+                run("pdraw particle program define v2_self then call v2_self") == 1 &&
+                    run("pdraw particle draw line as v2_selfg from 0 70 0 to 1 70 0 count 4 then call v2_self") == 0
+            }
+            check("程序模板清理") {
+                run("pdraw particle program delete v2_*") == 2 &&
+                    ProgramTemplates.names(dimension).none { it.startsWith("v2_") } &&
+                    run("pdraw particle delete group v2_wave_a") == 1 &&
+                    run("pdraw particle delete group v2_wave_b") == 1 &&
+                    run("pdraw particle delete group v2_branch_a") == 1 &&
+                    run("pdraw particle delete group v2_branch_b") == 1 &&
+                    run("pdraw particle delete group v2_repeat") == 1
+            }
             check("错峰覆盖取消旧生成，清理按类型查找") {
                 run("pdraw particle draw line as $name from 0 70 0 to 1 70 0 count 4 stagger 2 then spin 0 1 0 1") == 4 &&
                     run("pdraw particle draw dot as $name at 0 70 0") == 1 &&
@@ -410,7 +448,14 @@ object RuntimeSelfTest {
                     CommandParticleRecipes.find(dimension, name) != null
             }
             check("补全使用声明段与维度内对象") {
-                suggest("pdraw particle draw ").contains("sin") &&
+                run("pdraw particle program define ex_done then delay 1") == 1 &&
+                    run("pdraw particle pointset define ex_pts text \"C\" size 1 count 4") == 1 &&
+                    suggest("pdraw particle program inspect ").contains("ex_done") &&
+                    suggest("pdraw particle draw line as ex_c from 0 60 0 to 1 60 0 count 2 then call ").contains("ex_done") &&
+                    suggest("pdraw particle draw pointset ").contains("ex_pts") &&
+                    suggest("pdraw particle emitter $name sample pointset ").contains("ex_pts") &&
+                    suggest("pdraw particle draw line as ex_p from 0 60 0 to 1 60 0 count 2 then morph target pointset ").contains("ex_pts") &&
+                    suggest("pdraw particle draw ").contains("sin") &&
                     suggest("pdraw particle draw cuboid at 0 60 0 width 2 height 2 depth 2 density 7 ").contains("edges") &&
                     suggest("pdraw particle draw dot at 0 60 0 enter ").containsAll(listOf("fade", "grow", "fade_grow")) &&
                     suggest("pdraw particle draw dot at 0 60 0 enter grow 8 ease ").contains("ease_out_quad") &&
@@ -501,6 +546,7 @@ object RuntimeSelfTest {
             CommandParticleRecipes.discard(dimension)
             ServerParticleSources.discard(dimension)
             PointSets.discard(dimension)
+            work.nekow.particledrawing.command.v2.ProgramTemplates.discard(dimension)
             work.nekow.particledrawing.command.v2.EmitterCommands.discard(dimension)
         } catch (error: Exception) {
             failures += "自检启动失败: ${error.javaClass.simpleName}: ${error.message}"

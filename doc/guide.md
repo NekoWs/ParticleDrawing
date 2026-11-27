@@ -398,6 +398,14 @@ circle.fadeIn(20)
 生成还没落地的成员则预挂组，出生时直接带组；程序已下发时按当前完整成员和历史指令重发全量，不要求
 改用 `Builder.group`。既有粒子从旧组改挂时，新程序接管后旧程序不再写这颗粒子。
 
+### 命令里的程序模板
+
+命令层还有一层“程序模板”：`pdraw particle program define … then …` 把重复的 `then` 动作存成带参数的
+模板，`then call <模板> <参数> <值>` 在服务端展开；同一层支持有界的 `then if/else`、`then repeat`，
+展开完仍是普通线性指令，客户端协议不变。代码 API 不需要这一层——直接复用 `ParticleGroup` 的方法与
+`PointSource` 即可；模板存在的意义是让命令方块/MCFunction 少复制粘贴。写法与上限见
+[命令参考](command-v2-design.md#35-有界控制流与程序模板)与[命令教程](particle-commands.md#程序模板与组内控制流)。
+
 ## 单粒子
 
 `ParticleManager.create()` 返回生成规格 Builder。`spawn()` 因维度容量不足而被拒绝时返回 `null`。

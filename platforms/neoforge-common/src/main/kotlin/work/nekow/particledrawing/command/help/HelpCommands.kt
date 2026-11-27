@@ -82,6 +82,12 @@ internal object HelpCommands {
             HelpParam("inspect", "command.help.cmd.pointset.p3"),
             HelpParam("delete", "command.help.cmd.pointset.p4"),
         )),
+        "program" to ("particle" to listOf(
+            HelpParam("define", "command.help.cmd.program.p1"),
+            HelpParam("list", "command.help.cmd.program.p2"),
+            HelpParam("inspect", "command.help.cmd.program.p3"),
+            HelpParam("delete", "command.help.cmd.program.p4"),
+        )),
     )
 
     private val entries = ParticleCommandsV2.usages.map { (id, usage) ->
@@ -166,6 +172,15 @@ internal object HelpCommands {
                 HelpExample("command.help.examples.morph_text",
                     "pdraw particle draw text as ex_word at ~ ~2 ~ text \"HI\" size 2 count 64 look color gold " +
                         "then delay 10 then morph target text \"OK\" size 2 ticks 20 space local"),
+            ),
+        ),
+        HelpExampleGroup(
+            "command.help.examples.section.program",
+            listOf(
+                HelpExample(
+                    "command.help.examples.program_def",
+                    "pdraw particle program define ex_wave with rx 5 then delay {rx} then morph target text \"W\" size 2 ticks 20",
+                ),
             ),
         ),
         HelpExampleGroup(
