@@ -11,4 +11,9 @@ ext.pdrawRepositoryRoot = rootDir
 ext.pdrawTarget = 'neoforge-26.3'
 apply from: 'gradle/neoforge-platform.gradle'
 
+// 根入口供 IDEA 运行客户端。版本变动后，增量输出可能保留旧平台类和 Kotlin facade。
+tasks.named('compileKotlin') {
+    incremental = false
+}
+
 mavenPublishing { publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL) }
