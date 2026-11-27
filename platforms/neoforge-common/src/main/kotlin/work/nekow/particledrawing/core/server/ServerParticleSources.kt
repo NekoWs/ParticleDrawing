@@ -238,7 +238,7 @@ internal object ServerParticleSources {
     private fun requireMutable(entry: Entry) =
         requireLocalized(entry.mode != ParticleRecipeMode.GPU) { translation("error.recipe.gpu_immutable") }
 
-    private fun freeze(r: ParticleRecipe): ParticleRecipe = r.copy(seeds = r.seeds.toList(), visual = r.visual.copy(),
+    internal fun freeze(r: ParticleRecipe): ParticleRecipe = r.copy(seeds = r.seeds.toList(), visual = r.visual.copy(),
         variables = LinkedHashMap(r.variables), state = LinkedHashMap(r.state), lets = LinkedHashMap(r.lets),
         birth = LinkedHashMap(r.birth), motion = LinkedHashMap(r.motion),
         probes = r.probes.toList(), emissions = r.emissions.map { it.copy(child = freeze(it.child)) })

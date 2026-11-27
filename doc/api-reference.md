@@ -41,6 +41,10 @@ KDoc。只在特定包中提供的类型单独注明。代码示例见[使用指
 | `ParticleRecipe`、`RecipeAnchor` | 用样本、公式、筛选、发射窗口（`emitFromTick` / `emitUntilTick`）和锚点声明出生与运动，配置方块或液体碰撞 |
 | `SubEmit` | 在配方粒子自然到期或满足 `kill` 时沿球面方向发射一层子粒子 |
 | `ParticleSources`、`ParticleSourceHandle` | 启动单轮或持续生成，修改现有实例并停止或移除 |
+| `EntityParticleEffects.bind(entity, name, emission, events, emissionMode)` | 在服务端为实体登记命名绑定。持续发射和事件爆发可独立使用。重复登记同名绑定返回 `false` |
+| `EntityParticleBurst(recipe, each, stopEmission, mode)` | 按事件位置爆发，选择执行模式、重复触发，以及是否停止同一绑定的持续发射 |
+| `EntityParticleEffects.trigger(entity, event, position)` | 在服务端发出自定义事件，返回实际启动的爆发数。内置碰撞和死亡事件由模组派发 |
+| `EntityParticleEffects.isBound(entity, name)` / `unbind(entity, name)` | 查询或解除绑定。解除后现有粒子继续走完寿命 |
 | `ParticleSources.startSynced(level, recipe, anchor, burst)` | 由服务端推进配方。进入视距的玩家收到现存粒子、子粒子和尾迹。返回同一种运行句柄 |
 | `ParticleVisual.texture("sheet:namespace:name")` | 引用客户端资源包中按行预排的动画图集，用描述文件指定帧尺寸、帧数和帧率 |
 | `ParticleRecipe.strandSamples` | 普通爆发每条光带的样本数。相邻样本共享柔边截面，颜色和尺寸沿段插值 |

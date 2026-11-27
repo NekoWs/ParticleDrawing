@@ -122,8 +122,8 @@ internal object EmitterCommands {
 
     fun templateNames(dimension: UUID): Set<String> = templates[dimension]?.keys.orEmpty()
 
-    fun projectileRecipe(source: CommandSourceStack, name: String): ParticleRecipe {
-        val draft = resolveTemplate(source, name, EmitterDeclaration.Binding(source, name), useAnchor = false)
+    fun bindingRecipe(source: CommandSourceStack, name: String): ParticleRecipe {
+        val draft = resolveTemplate(source, name, EmitterDeclaration.Binding(source, null), useAnchor = false)
         draft.recipe = draft.recipe.copy(seeds = draft.samples(source.level))
         draft.prepareRecipe()
         return draft.recipe

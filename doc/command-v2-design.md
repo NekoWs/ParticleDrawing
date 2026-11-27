@@ -282,7 +282,15 @@ pdraw particle use colored_dot as blue_dot look color blue burst
 
 ## 6. 控制命令与对象生命周期
 
-`/pdraw particle projectile trail <模板> impact <模板>` 以当前执行的投射物为目标，分别以实体锚点持续发射和在首次碰撞的世界坐标爆发。两份模板在绑定时解析，均须使用有限寿命。投射物命令负责选择锚点，忽略模板的 `at`。已绑定时重复执行保留现有实例。投射物离开世界时停止发射，绑定不跨区块卸载或重启。粒子实例沿用常规配方的容量限制。参见[命令方块搭建](particle-commands.md#多箭矢拖尾与命中)。
+```text
+/pdraw particle bind <名称> [emit <模板> [mode standard|instanced]]
+    {on <事件> burst <模板> [mode standard|instanced|gpu] [each] [stop]}
+/pdraw particle unbind <名称>
+```
+
+绑定作用于当前执行者实体，至少配置 `emit` 或一个 `on`。每个绑定下同一事件只能声明一次。默认单次触发，`each` 改为每次触发，`stop` 停止这个绑定的持续发射。同名绑定重复执行时保留现有运行状态，包括已消费的一次性事件。移除后可以重新绑定。内置支持 `impact` 和 `death`，也可写模组注册的事件 ID（例如 `example:signal`，由模组调用 API 发出）。
+
+在绑定时解析模板，忽略模板的 `at`。持续发射固定使用实体锚点，事件爆发固定使用事件的世界坐标。所有配方须使用有限粒子寿命。实体离开关卡时停止发射，绑定不跨区块卸载或重启。服务端最多同时保留 1024 个绑定，每个最多 16 个事件。粒子实例沿用常规配方的容量限制。参见[命令方块搭建](particle-commands.md#多箭矢拖尾与命中)。
 
 ```text
 /pdraw particle start <发射器> [standard|instanced|synced] [dryrun]

@@ -22,7 +22,7 @@ import work.nekow.particledrawing.math.Vec3 as CoreVec3
 import work.nekow.particledrawing.util.ParticleUtils
 
 internal data class EmitterDeclaration(private val changes: List<Change>) {
-    internal data class Binding(val source: CommandSourceStack?, val name: String) {
+    internal data class Binding(val source: CommandSourceStack?, val name: String?) {
         fun child(name: String): ParticleRecipe? {
             if (source == null) return null
             requireLocalized(this.name != name) { translation("error.recipe.event_self") }

@@ -775,6 +775,22 @@ trail.isActive()
 `birth velocity` 里给一次切向初速度，`motion acceleration` 只留向心分量；需要吸积再给速度一点阻尼或
 向内分量，见[粒子命令](particle-commands.md)里的发射器公式段。
 
+### 将配方绑定到实体事件
+
+在服务端线程调用 `EntityParticleEffects`。例如为一个生物登记死亡时的爆发，`recipe` 使用有限寿命。
+
+```kotlin
+EntityParticleEffects.bind(
+    entity,
+    "example_death",
+    events = mapOf(EntityParticleEffects.DEATH to EntityParticleBurst(recipe)),
+)
+```
+
+需要持续发射时传 `emission = recipe`，依附实体生成的位置使用实体锚点。内置 `IMPACT` 使用投射物实际碰撞点，`DEATH` 使用生物死亡位置。模组自己的事件可以用 `ResourceId("example", "signal")` 作映射键，并在事件发生时调用 `EntityParticleEffects.trigger(entity, event, position)`。命令模板可用同一个 `example:signal` 订阅它。
+
+每个实体可拥有多个名字不同的绑定。默认每种事件只触发一次。要重复爆发则设置 `each = true`。设置 `stopEmission = true` 可在事件发生时停止同一绑定的持续发射。可用 `unbind(entity, name)` 解除绑定；实体退出关卡时也会清理。
+
 ## 缓动
 
 预设：`LINEAR`、`EASE_IN` / `EASE_OUT` / `EASE_IN_OUT`，以及 `*_QUAD` / `*_CUBIC` / `*_BOUNCE` /

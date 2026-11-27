@@ -21,7 +21,9 @@ import work.nekow.particledrawing.command.help.HelpCommands
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.server.AnimationScheduler
 import work.nekow.particledrawing.core.server.ServerParticleSources
-import work.nekow.particledrawing.core.server.ServerProjectileEffects
+import work.nekow.particledrawing.core.server.ServerEntityParticleEffects
+import work.nekow.particledrawing.api.EntityParticleEffects
+import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.light.LightFalloff
 import work.nekow.particledrawing.light.LightMath
 import work.nekow.particledrawing.light.LightShape
@@ -278,7 +280,7 @@ object RuntimeSelfTest {
             check("多支投射物独立绑定，首次碰撞结束拖尾") {
                 val block = BlockPos(0, 200, 0)
                 val saved = level.getBlockState(block)
-                val attach = "pdraw particle projectile trail v2_trail impact v2_hit"
+                val attach = "pdraw particle bind arrow_fx emit v2_trail on impact burst v2_hit stop"
                 val selector = "@e[type=minecraft:arrow,tag=pd_selftest_arrow,distance=..8]"
                 val unbound = "@e[type=minecraft:arrow,tag=pd_selftest_arrow,tag=!pd_selftest_bound,distance=..8,nbt={inGround:0b}]"
                 val bind = "execute positioned 0 201 0 as $unbound at @s store success score @s pd_test_arrow_fx run $attach"
@@ -296,23 +298,43 @@ object RuntimeSelfTest {
                     val arrows = EntityArgument.entities().parse(StringReader(selector))
                         .findEntities(source.withPosition(Vec3(0.0, 201.0, 0.0))).filterIsInstance<Projectile>()
                         .sortedBy { it.x }
-                    if (arrows.size != 2 || !arrows.all(ServerProjectileEffects::isBound)) return@check false
+                    if (arrows.size != 2 || !arrows.all { EntityParticleEffects.isBound(it, "arrow_fx") }) return@check false
                     val (falling, other) = arrows
                     val hit = ProjectileImpactEvent(other, EntityHitResult(falling))
                     hit.isCanceled = true
-                    ServerProjectileEffects.onImpact(hit)
-                    if (!ServerProjectileEffects.isBound(other)) return@check false
+                    ServerEntityParticleEffects.onImpact(hit)
                     falling.tick()
-                    if (ServerProjectileEffects.isBound(falling) || !ServerProjectileEffects.isBound(other)) return@check false
-                    hit.isCanceled = false
-                    ServerProjectileEffects.onImpact(hit)
-                    if (ServerProjectileEffects.isBound(other) || run(attach, source.withEntity(other)) != 1) return@check false
+                    if (EntityParticleEffects.trigger(falling, EntityParticleEffects.IMPACT, falling.position()) != 0 ||
+                        EntityParticleEffects.trigger(other, EntityParticleEffects.IMPACT, other.position()) != 1 ||
+                        EntityParticleEffects.trigger(other, EntityParticleEffects.IMPACT, other.position()) != 0
+                    ) return@check false
+                    val event = ResourceId("selftest", "signal")
+                    val executing = source.withEntity(other)
+                    if (run("pdraw particle bind extra on $event burst v2_hit each", executing) != 1 ||
+                        EntityParticleEffects.trigger(other, event, other.position()) != 1 ||
+                        EntityParticleEffects.trigger(other, event, other.position()) != 1 ||
+                        run("pdraw particle unbind extra", executing) != 1 ||
+                        EntityParticleEffects.trigger(other, event, other.position()) != 0
+                    ) return@check false
                     other.discard()
-                    !ServerProjectileEffects.isBound(other)
+                    !EntityParticleEffects.isBound(other, "arrow_fx")
                 } finally {
                     run("execute positioned 0 201 0 run kill $selector")
                     run("scoreboard objectives remove pd_test_arrow_fx")
                     level.setBlockAndUpdate(block, saved)
+                }
+            }
+            check("生物可单独绑定死亡事件") {
+                val target = "@e[type=minecraft:pig,tag=pd_selftest_living,limit=1]"
+                if (run("""summon minecraft:pig 0.5 201.5 0.5 {Tags:["pd_selftest_living"],NoAI:1b}""") != 1) return@check false
+                val pig = EntityArgument.entity().parse(StringReader(target)).findSingleEntity(source)
+                try {
+                    run("pdraw particle bind death_fx on death burst v2_hit", source.withEntity(pig)) == 1 &&
+                        run("damage $target 100 minecraft:generic") == 1 &&
+                        EntityParticleEffects.isBound(pig, "death_fx") &&
+                        EntityParticleEffects.trigger(pig, EntityParticleEffects.DEATH, pig.position()) == 0
+                } finally {
+                    pig.discard()
                 }
             }
             check("文字采样与图元") {

@@ -116,9 +116,17 @@ pdraw particle emitter falling_dot at ~ ~2 ~ sample count 1 spawn set velocity v
 
 `collide …` 设置碰撞类别及反弹、摩擦。`subemit …` 可配置死亡后释放的子粒子。`with environment …` 和 `with probe …` 为公式提供世界输入，`with on …` 可在出生、碰撞或死亡时运行子配方。查看[高级配置](command-v2-design.md#71-配方配置和原地修改)。
 
-## 多箭矢拖尾与命中
+## 实体绑定与事件
 
-`pdraw particle projectile trail <模板> impact <模板>` 以投射物的身份执行。每个投射物独立绑定，飞行期间重复绑定会返回成功并保留当前实例。第一次有效碰撞在服务端的碰撞坐标触发爆发，同时停发拖尾，已经生成的尾部自然消散。命中方块和实体都有效。穿透箭只在本次绑定的首次命中时爆发。投射物被删除、拾取或卸载时，停止拖尾并解除绑定。
+用 `execute as <选择器>` 让实体执行 `pdraw particle bind <名称>`。每个实体维护自己的命名绑定。可以单独使用 `emit <模板>` 让发射器随实体移动，单独使用 `on <事件> burst <模板>` 在事件的位置爆发，或把两者写进同一个绑定。多个绑定可同时挂在一个实体上。
+
+- `impact` 取投射物撞到实体或方块的碰撞点。 `death` 取生物死亡时的位置。其他模组可通过 API 提供自定义的命名空间事件。
+- 事件默认只执行一次。加 `each` 可重复触发，加 `stop` 同时停掉**当前绑定**的持续发射。两者一起使用时写 `each stop`。
+- 重复绑定同名配置会保留原配置。使用 `pdraw particle unbind <名称>` 解除绑定；已有粒子走完寿命。实体离开关卡也会自动解除绑定。
+
+### 多箭矢拖尾与命中
+
+这个例子用距离发射生成每支箭的拖尾，并在首次碰撞时爆发和停发。穿透箭的后续碰撞不会再次爆发。
 
 先用聊天命令或脉冲命令方块执行以下三条，各执行一次。聊天栏命令需要加 `/`。发射器模板存在于当前维度的内存中，重启后需重新定义。两个模板都要用有限的粒子寿命，拖尾用 `spacing` 沿飞行距离取样，命中模板用 `burst` 的按刻发射参数。
 
@@ -132,10 +140,10 @@ pdraw particle template arrow_impact sample count 16 spawn set velocity vec3(0.1
 
 | 顺序 | 方块 | 命令 |
 | --- | --- | --- |
-| 1 | 重复 | `execute as @e[type=minecraft:arrow,distance=..64,tag=!pd_arrow_fx_done,nbt={inGround:0b}] at @s store success score @s pd_arrow_fx run pdraw particle projectile trail arrow_trail impact arrow_impact` |
+| 1 | 重复 | `execute as @e[type=minecraft:arrow,distance=..64,tag=!pd_arrow_fx_done,nbt={inGround:0b}] at @s store success score @s pd_arrow_fx run pdraw particle bind arrow_fx emit arrow_trail on impact burst arrow_impact stop` |
 | 2 | 连锁 | `tag @e[type=minecraft:arrow,tag=!pd_arrow_fx_done,scores={pd_arrow_fx=1}] add pd_arrow_fx_done` |
 
-记分板按每支箭保存绑定是否成功。第二块只给成功绑定的箭打标，避免穿透箭在首次命中后再次绑定。选择器覆盖附近所有普通箭，包括生物或发射器射出的箭。光灵箭可为 `minecraft:spectral_arrow` 加一组同样的方块。若只想处理地图脚本生成的箭，在第一块的选择器中追加自定义来源标签。对于脚本生成且可能同刻命中的投射物，生成后应立即执行绑定命令。每刻扫描只能捕获执行时仍存在且可选中的箭。
+记分板按每支箭保存绑定是否成功。第二块只给成功绑定的箭打标，减少重复扫描的工作。选择器覆盖附近所有普通箭，包括生物或发射器射出的箭。光灵箭可为 `minecraft:spectral_arrow` 加一组同样的方块。若只想处理地图脚本生成的箭，在第一块的选择器中追加自定义来源标签。对于脚本生成且可能同刻命中的投射物，生成后应立即执行绑定命令。每刻扫描只能捕获执行时仍存在且可选中的箭。
 
 ## 帮助
 
