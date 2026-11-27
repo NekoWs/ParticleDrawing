@@ -1,10 +1,17 @@
 package work.nekow.particledrawing.selftest
 
+import com.mojang.brigadier.StringReader
+import net.minecraft.commands.arguments.EntityArgument
+import net.minecraft.core.BlockPos
+import net.minecraft.world.entity.projectile.Projectile
+import net.minecraft.world.level.block.Blocks
+import net.minecraft.world.phys.EntityHitResult
 import net.minecraft.world.phys.Vec3
 import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.SubscribeEvent
 import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.event.server.ServerStartedEvent
+import net.neoforged.neoforge.event.entity.ProjectileImpactEvent
 import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.api.CurveChannel
 import work.nekow.particledrawing.api.ParticleManager
@@ -14,6 +21,7 @@ import work.nekow.particledrawing.command.help.HelpCommands
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.core.server.AnimationScheduler
 import work.nekow.particledrawing.core.server.ServerParticleSources
+import work.nekow.particledrawing.core.server.ServerProjectileEffects
 import work.nekow.particledrawing.light.LightFalloff
 import work.nekow.particledrawing.light.LightMath
 import work.nekow.particledrawing.light.LightShape
@@ -266,6 +274,46 @@ object RuntimeSelfTest {
                 run("pdraw particle emitter v2_inst at 0 60 0 sample count 8 look style soft_dot life 10 start instanced") == 1 &&
                     run("pdraw particle emitter v2_gpu at 0 60 0 sample count 64 look style soft_dot additive glow light 0 life 10 burst gpu") == 1 &&
                     run("pdraw particle emitter v2_sync at 0 60 0 sample count 4 life 10 max 64 burst synced") == 1
+            }
+            check("多支投射物独立绑定，首次碰撞结束拖尾") {
+                val block = BlockPos(0, 200, 0)
+                val saved = level.getBlockState(block)
+                val attach = "pdraw particle projectile trail v2_trail impact v2_hit"
+                val selector = "@e[type=minecraft:arrow,tag=pd_selftest_arrow,distance=..8]"
+                val unbound = "@e[type=minecraft:arrow,tag=pd_selftest_arrow,tag=!pd_selftest_bound,distance=..8,nbt={inGround:0b}]"
+                val bind = "execute positioned 0 201 0 as $unbound at @s store success score @s pd_test_arrow_fx run $attach"
+                val mark = "tag @e[type=minecraft:arrow,tag=pd_selftest_arrow,scores={pd_test_arrow_fx=1}] add pd_selftest_bound"
+                try {
+                    level.setBlockAndUpdate(block, Blocks.STONE.defaultBlockState())
+                    if (run("scoreboard objectives add pd_test_arrow_fx dummy") <= 0 ||
+                        run("pdraw particle template v2_trail sample count 1 look style soft_dot color aqua size 0.10 glow light 0 life 9 max 160 spacing 0.20") != 1 ||
+                        run("pdraw particle template v2_hit sample count 16 spawn set velocity vec3(0.14*cos(2*PI*u),0.09,0.14*sin(2*PI*u)) move set ay -0.016 look style soft_dot color gold size 0.15 glow light 0 life 12 rate 16") != 1 ||
+                        run(attach) != 0 ||
+                        run("""summon minecraft:arrow 0.5 201.5 0.5 {Tags:["pd_selftest_arrow"],Motion:[0.0d,-1.0d,0.0d]}""") != 1 ||
+                        run("""summon minecraft:arrow 2.5 201.5 0.5 {Tags:["pd_selftest_arrow"]}""") != 1 ||
+                        run(bind) != 2 || run(bind) != 2 || run(mark) != 2 || run(bind) != 0
+                    ) return@check false
+                    val arrows = EntityArgument.entities().parse(StringReader(selector))
+                        .findEntities(source.withPosition(Vec3(0.0, 201.0, 0.0))).filterIsInstance<Projectile>()
+                        .sortedBy { it.x }
+                    if (arrows.size != 2 || !arrows.all(ServerProjectileEffects::isBound)) return@check false
+                    val (falling, other) = arrows
+                    val hit = ProjectileImpactEvent(other, EntityHitResult(falling))
+                    hit.isCanceled = true
+                    ServerProjectileEffects.onImpact(hit)
+                    if (!ServerProjectileEffects.isBound(other)) return@check false
+                    falling.tick()
+                    if (ServerProjectileEffects.isBound(falling) || !ServerProjectileEffects.isBound(other)) return@check false
+                    hit.isCanceled = false
+                    ServerProjectileEffects.onImpact(hit)
+                    if (ServerProjectileEffects.isBound(other) || run(attach, source.withEntity(other)) != 1) return@check false
+                    other.discard()
+                    !ServerProjectileEffects.isBound(other)
+                } finally {
+                    run("execute positioned 0 201 0 run kill $selector")
+                    run("scoreboard objectives remove pd_test_arrow_fx")
+                    level.setBlockAndUpdate(block, saved)
+                }
             }
             check("文字采样与图元") {
                 run("pdraw particle emitter v2_text sample text \"SELFTEST|V2\" count 512 height 2") == 1 &&

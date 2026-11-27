@@ -7,8 +7,14 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder
 import com.mojang.brigadier.exceptions.CommandSyntaxException
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
+import net.minecraft.world.entity.projectile.Projectile
 import org.apache.logging.log4j.LogManager
+import work.nekow.particledrawing.core.server.ServerProjectileEffects
 import work.nekow.particledrawing.i18n.failureComponent
+import work.nekow.particledrawing.i18n.requireLocalized
+import work.nekow.particledrawing.i18n.requireNotNullLocalized
+import work.nekow.particledrawing.i18n.translation
+import work.nekow.particledrawing.util.ParticleUtils
 
 internal object ParticleCommandsV2 {
     private val LOGGER = LogManager.getLogger("ParticleDrawing")
@@ -20,6 +26,7 @@ internal object ParticleCommandsV2 {
         "use" to "use <template> as <name> [without <path>] ... [start|burst [mode]] [dryrun]",
         "start" to "start <emitter> [standard|instanced|synced] [dryrun]",
         "burst" to "burst <emitter> [standard|instanced|gpu|synced] [dryrun]",
+        "projectile" to "projectile trail <template> impact <template>",
         "stop" to "stop <emitter>",
         "clear" to "clear emitter|group <name>",
         "delete" to "delete emitter|group|template <name>",
@@ -66,6 +73,7 @@ internal object ParticleCommandsV2 {
     private fun parse(verb: String, input: CommandInput, source: CommandSourceStack): () -> Int =
         when (verb) {
             "draw" -> DrawCommands.parse(input, source)
+            "projectile" -> projectile(input, source)
             "advanced" -> when (input.choice(listOf("emitter", "group"))) {
                 "group" -> DrawCommands.advanced(input, source)
                 else -> EmitterCommands.parse(verb, input, source)
@@ -78,4 +86,28 @@ internal object ParticleCommandsV2 {
             }
             else -> EmitterCommands.parse(verb, input, source)
         }
+
+    private fun projectile(input: CommandInput, source: CommandSourceStack): () -> Int {
+        val names = EmitterCommands.templateNames(ParticleUtils.dimensionUUID(source.level))
+        input.expect("trail")
+        val trail = input.name(names)
+        input.expect("impact")
+        val impact = input.name(names)
+        input.finish()
+        return {
+            val projectile = requireNotNullLocalized(source.entity as? Projectile) {
+                translation("error.projectile.executor")
+            }
+            requireLocalized(projectile.level() === source.level) {
+                translation("error.projectile.dimension")
+            }
+            if (!ServerProjectileEffects.isBound(projectile)) {
+                ServerProjectileEffects.bind(
+                    source.level, projectile,
+                    EmitterCommands.projectileRecipe(source, trail), EmitterCommands.projectileRecipe(source, impact),
+                )
+            }
+            1
+        }
+    }
 }

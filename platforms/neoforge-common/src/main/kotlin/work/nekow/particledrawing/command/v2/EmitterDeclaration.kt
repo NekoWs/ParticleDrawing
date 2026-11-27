@@ -35,8 +35,10 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
     val empty get() = changes.isEmpty()
     val changesSampling get() = changes.any { it.field == "sample" }
 
-    fun apply(draft: Draft, binding: Binding) {
-        for ((_, change) in changes) draft.change(binding)
+    fun apply(draft: Draft, binding: Binding, useAnchor: Boolean = true) {
+        for ((field, change) in changes) {
+            if (useAnchor || field != "at") draft.change(binding)
+        }
     }
 
     companion object {

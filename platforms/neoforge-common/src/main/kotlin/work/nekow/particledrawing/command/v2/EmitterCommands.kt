@@ -1,6 +1,7 @@
 package work.nekow.particledrawing.command.v2
 
 import net.minecraft.commands.CommandSourceStack
+import work.nekow.particledrawing.api.ParticleRecipe
 import work.nekow.particledrawing.api.ParticleRecipeMode
 import work.nekow.particledrawing.api.ParticleSourceHandle
 import work.nekow.particledrawing.api.RecipeAnchor
@@ -80,12 +81,8 @@ internal object EmitterCommands {
                 val launch = input.launch()
                 val dryrun = input.end()
                 command {
-                    val saved = requireNotNullLocalized(templates[dimension]?.get(template)) {
-                        translation("error.command.v2.template_missing", template)
-                    }
                     val binding = EmitterDeclaration.Binding(source, name)
-                    val draft = saved.snapshot?.copyDraft() ?: fresh(source)
-                    saved.declaration?.apply(draft, binding)
+                    val draft = resolveTemplate(source, template, binding)
                     without.apply(draft, binding)
                     declaration.apply(draft, binding)
                     install(source, dimension, name, draft, launch, dryrun)
@@ -120,6 +117,26 @@ internal object EmitterCommands {
             }
             "advanced" -> advanced(input, source, dimension, names)
             else -> throw work.nekow.particledrawing.i18n.LocalizedStateException(translation("error.command.v2.failed"))
+        }
+    }
+
+    fun templateNames(dimension: UUID): Set<String> = templates[dimension]?.keys.orEmpty()
+
+    fun projectileRecipe(source: CommandSourceStack, name: String): ParticleRecipe {
+        val draft = resolveTemplate(source, name, EmitterDeclaration.Binding(source, name), useAnchor = false)
+        draft.recipe = draft.recipe.copy(seeds = draft.samples(source.level))
+        draft.prepareRecipe()
+        return draft.recipe
+    }
+
+    private fun resolveTemplate(
+        source: CommandSourceStack, name: String, binding: EmitterDeclaration.Binding, useAnchor: Boolean = true,
+    ): Draft {
+        val saved = requireNotNullLocalized(templates[ParticleUtils.dimensionUUID(source.level)]?.get(name)) {
+            translation("error.command.v2.template_missing", name)
+        }
+        return (saved.snapshot?.copyDraft() ?: fresh(source)).also {
+            saved.declaration?.apply(it, binding, useAnchor)
         }
     }
 

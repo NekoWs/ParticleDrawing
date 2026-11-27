@@ -282,6 +282,8 @@ pdraw particle use colored_dot as blue_dot look color blue burst
 
 ## 6. 控制命令与对象生命周期
 
+`/pdraw particle projectile trail <模板> impact <模板>` 以当前执行的投射物为目标，分别以实体锚点持续发射和在首次碰撞的世界坐标爆发。两份模板在绑定时解析，均须使用有限寿命。投射物命令负责选择锚点，忽略模板的 `at`。已绑定时重复执行保留现有实例。投射物离开世界时停止发射，绑定不跨区块卸载或重启。粒子实例沿用常规配方的容量限制。参见[命令方块搭建](particle-commands.md#多箭矢拖尾与命中)。
+
 ```text
 /pdraw particle start <发射器> [standard|instanced|synced] [dryrun]
 /pdraw particle burst <发射器> [standard|instanced|gpu|synced] [dryrun]

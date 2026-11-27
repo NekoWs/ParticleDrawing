@@ -60,6 +60,7 @@ internal object HelpCommands {
         "burst" to ("emitter" to listOf(
             HelpParam("gpu", "command.help.cmd.burst.p1"),
         )),
+        "projectile" to ("emitter" to listOf()),
         "stop" to ("emitter" to listOf()),
         "clear" to ("particle" to listOf(
             HelpParam("emitter", "command.help.cmd.clear.p1"),
