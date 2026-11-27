@@ -8,6 +8,7 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
 import org.apache.logging.log4j.LogManager
+import work.nekow.particledrawing.i18n.LocalizedFailure
 import work.nekow.particledrawing.i18n.failureComponent
 
 internal object ParticleCommandsV2 {
@@ -48,7 +49,13 @@ internal object ParticleCommandsV2 {
                     } catch (error: CommandSyntaxException) {
                         throw error
                     } catch (error: RuntimeException) {
-                        LOGGER.debug("[PD-command] {} failed: {}", verb, error.message ?: error.javaClass.simpleName, error)
+                        // 参数或状态错误是给执行者的正常反馈，只写一行文本，不带堆栈；
+                        // 命令方块每刻重试也不会刷屏。真正的意外异常仍留调试堆栈。
+                        if (error is LocalizedFailure) {
+                            LOGGER.trace("[PD-command] {} rejected: {}", verb, error.message)
+                        } else {
+                            LOGGER.debug("[PD-command] {} failed: {}", verb, error.message ?: error.javaClass.simpleName, error)
+                        }
                         ctx.source.replyFailure(error.failureComponent("error.command.v2.failed"))
                         0
                     }
