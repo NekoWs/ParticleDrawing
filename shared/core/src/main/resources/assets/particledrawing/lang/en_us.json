@@ -771,6 +771,7 @@
   "particledrawing.command.v2.program": "Programmed %1$s · %2$s actions%3$s",
   "particledrawing.command.v2.dryrun": " (dryrun)",
   "particledrawing.command.v2.anonymous": "anonymous group",
+  "particledrawing.command.v2.matches": "Matched %2$s target(s) with %1$s.",
   "particledrawing.command.v2.action.config": "Created",
   "particledrawing.command.v2.action.start": "Started",
   "particledrawing.command.v2.action.burst": "Bursted",

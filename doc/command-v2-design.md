@@ -66,7 +66,7 @@ v2 发布时删除 `particle batch`、`particle group`、`particle add`、`parti
 - `cuboid size` 用正数边长同时设置三轴。`cuboid edges` 要求三轴尺寸均为正。每条棱含端点均匀采样 `density` 个位置，共享角点只在第一次经过时生成。以底面最小 X/Z 角点为起点，依次画底边、同序竖边和顶边。第 `i` 颗粒子在 `i × stagger + e × edge_gap` 刻出生，`i` 是图元内从零开始的粒子序号，`e` 是从零开始计数的有新增粒子的棱序号。`edge_gap` 默认 0。仅设置 `edge_gap` 时每条棱的新增粒子同时出生。
 - `enter` 从每颗粒子出生开始播放。`fade` 将透明度乘数从 0 缓动到 1，`grow` 改变尺寸乘数，`fade_grow` 同时改变两者。时长必须为正整数，默认使用 `ease_out_quad`，结束后乘数保持 1。预设与 `look` 自定义寿命曲线相乘，有限寿命到期时粒子照常销毁。
 - 普通 `count` 为 `1..4096`，`text` 为 `1..8192`。分段、密度和层数沿用现有图元的上下限。在准备阶段按实际生成数校验整组最多 8192 个成员，包含待出生的成员。创建结果要么足额，要么失败。`beam` 的 `look` 只接受色源、`texture`、`additive`、`glow` 和寿命曲线。`thickness` 默认 0.1 格，`taper` 默认开启。两端太近、无法形成条带时报错。
-- 命名组可接受后续 `advanced group` 操作，成员自然过期后保留组名。匿名绘制通过内部 ID 关联编排，无成员和待执行任务时自动回收。覆盖或清理命名组时，旧成员、待出生任务、编排和形变草稿一起清理。
+- 所有命令绘制的组可接受后续 `advanced group` 操作。显式命名组在成员自然过期后保留组名。匿名绘制登记为 `anon:<组 UUID>`，可列出、清理或删除，无成员和待出生任务时自动回收。覆盖或清理组时，旧成员、待出生任务、编排和形变草稿一起清理。
 
 ### 3.2 外观 `look`
 
@@ -285,7 +285,7 @@ pdraw particle use colored_dot as blue_dot look color blue burst
 ```text
 /pdraw particle bind <名称> [emit <模板> [mode standard|instanced]]
     {on <事件> burst <模板> [mode standard|instanced|gpu] [each] [stop]}
-/pdraw particle unbind <名称>
+/pdraw particle unbind <名称或模式>
 ```
 
 绑定作用于当前执行者实体，至少配置 `emit` 或一个 `on`。每个绑定下同一事件只能声明一次。默认单次触发，`each` 改为每次触发，`stop` 停止这个绑定的持续发射。同名绑定重复执行时保留现有运行状态，包括已消费的一次性事件。移除后可以重新绑定。内置支持 `impact` 和 `death`，也可写模组注册的事件 ID（例如 `example:signal`，由模组调用 API 发出）。
@@ -295,9 +295,9 @@ pdraw particle use colored_dot as blue_dot look color blue burst
 ```text
 /pdraw particle start <发射器> [standard|instanced|synced] [dryrun]
 /pdraw particle burst <发射器> [standard|instanced|gpu|synced] [dryrun]
-/pdraw particle stop <发射器>
-/pdraw particle clear emitter|group <名字>
-/pdraw particle delete emitter|group|template <名字>
+/pdraw particle stop <发射器名称或模式>
+/pdraw particle clear emitter|group <名称或模式>
+/pdraw particle delete emitter|group|template <名称或模式>
 ```
 
 | 操作 | 行为 |
@@ -307,11 +307,12 @@ pdraw particle use colored_dot as blue_dot look color blue burst
 | `stop` | 停止该名字下全部实例继续发射根粒子。已存活粒子、尾迹及其后续事件按原运行时推进 |
 | `clear emitter` | 移除该名字的所有实例、粒子、尾迹和当前实例可能产生的后续出生，保留配置，之后可用 `start` 或 `burst` |
 | `delete emitter` | 先校验锚点引用，再按 `clear emitter` 清理并删除配置 |
-| `clear group` | 立即清理成员、程序、待出生任务和形变草稿，同名空组保留原本建立时的轴心 |
+| `clear group` | 立即清理成员、程序、待出生任务和形变草稿。显式命名组保留名称和初始轴心，匿名组直接回收 |
 | `delete group` | 按 `clear group` 清理，再删除组名 |
 | `delete template` | 删除模板。已实例化的配置与实例保持独立 |
 
 - 命名对象不存在时报错，已存在对象的 `stop` 和 `clear` 可安全重试。`clear`、`delete` 显式指定种类，允许不同种类同名。已经停止但包含无限寿命粒子的实例仍可按名字清理。
+- `stop`、`clear`、`delete`、`unbind` 和 `field remove` 接受完整名称或通配模式。`*` 匹配任意长度，`?` 匹配单字符，区分大小写。模式返回匹配数量，零匹配返回 0。批量删除发射器一次校验全部外部锚点引用，同批引用可一起移除。
 - 成功重建或删除后，旧 ID 的延迟任务和回调不得作用于同名新对象。关卡卸载和停服时清除本命令系统持有的模板、组、配置和挂起引用，不写入存档。
 - 每维度最多 256 个命名组、256 个命名发射器配置和 256 个模板。活跃实例仍受运行时全服 256 个源及最多 8 个同步源约束。停止后仍需扫尾的实例计入活跃容量。完全移除的旧实例，在同一次替换容量检查中可用其名额。匿名组受现有服务端粒子和组资源约束，结束即回收。
 
@@ -374,7 +375,7 @@ with on clear
 /pdraw particle advanced group <组名> morph reset
 ```
 
-- `create` 仅创建空组，同名时报错。`reset` 覆盖成指定轴心的空组。`append` 仅允许尚未录制程序的组，保留轴心、已有成员及形变草稿。已有组可通过第 6 节清理。`clear_all` 删除当前维度的命名组及其状态。
+- `create` 仅创建空组，同名时报错。`reset` 覆盖成指定轴心的空组。`append` 仅允许尚未录制程序的组，保留轴心、已有成员及形变草稿。已有组可通过第 6 节清理。`clear_all` 删除当前维度由命令创建的组及其状态。
 - `program` 默认 `append`，要求已有成员或正在等待已登记的成员。首个下发前，连续编排共用预备游标。已有程序下发后，追加链从当前播放时刻开始，`delay` 为相对此次追加的偏移。`replace` 只允许替换尚未下发的编排，重置游标和未下发绑定。已下发的组要重做整段表演，使用同名 `draw` 重建。
 - `morph configure` 保存完整形变草稿，`start` 以 `program append` 的时钟开始形变。`inspect` 查询草稿，`reset` 删除草稿。草稿和已经下发的形变各自独立。`then morph slots` 直接携带定义，可在同一条时间线中写多次。
 
@@ -386,7 +387,7 @@ with on clear
 4. 准备成功后，一次提交更新名字映射和运行对象。须先保证所需容量，包含待出生成员和本次可回收的旧容量。应用完整变更后按先移除旧 ID、再发布新 ID 的顺序下发。提交阶段不重新选择实体、重新读资源或执行可失败的业务校验。校验失败时，旧对象、已运行实例与依赖者保持原状态。客户端断线或未来公式出错使用现有运行时错误处理。
 5. 对客户端迟到、错峰出生和重复执行，继续使用现有按实例 ID 的同步和回收机制。同名重建、清理和卸载使用实例 ID 识别已过期的计划。组动作受现有成员、待发指令和单包容量约束。指令按协议分包，单包最多 512 条。配方按已有样本、公式、环境、探测和事件限制校验。
 
-错误返回 0，消息包含出错的字段、目标名字或参数位置。`draw`、`advanced group … append` 返回实际接收的成员数，`program` 返回接受的动作数。其他成功操作和 `dryrun` 返回 1。帮助、错误、补全提示与反馈文案同步维护 `zh_cn`、`en_us`。
+错误返回 0，消息包含出错的字段、目标名字或参数位置。`draw`、`advanced group … append` 返回实际接收的成员数，`program` 返回接受的动作数，通配模式返回匹配的目标数。其他成功操作和 `dryrun` 返回 1。帮助、错误、补全提示与反馈文案同步维护 `zh_cn`、`en_us`。
 
 ## 9. 迁移规则
 

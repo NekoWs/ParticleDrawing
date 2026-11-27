@@ -15,6 +15,7 @@ import work.nekow.particledrawing.api.ForceFieldKind
 import work.nekow.particledrawing.api.ParticleForceField
 import work.nekow.particledrawing.api.ParticleForceFields
 import work.nekow.particledrawing.api.RecipeAnchor
+import work.nekow.particledrawing.command.v2.CommandInput
 import java.util.concurrent.CompletableFuture
 import work.nekow.particledrawing.i18n.component
 import work.nekow.particledrawing.i18n.reply
@@ -50,9 +51,10 @@ internal object ParticleFieldCommands {
                 val entity = EntityArgument.getEntity(ctx, "entity")
                 ParticleForceFields.anchor(ctx.source.level, id(ctx), RecipeAnchor(entity.position(), entity.uuid, entity.id, local = true))
             } }))))
-        root.then(Commands.literal("remove").then(Commands.argument("id", StringArgumentType.string()).suggests(::suggestIds).executes { ctx -> safe(ctx, "command.field.removed") {
-            requireLocalized(ParticleForceFields.remove(ctx.source.level, id(ctx))) { translation("error.field.not_found", id(ctx)) }
-        } }))
+        root.then(Commands.literal("remove").then(Commands.argument("id", StringArgumentType.greedyString())
+            .suggests { ctx, builder ->
+                SharedSuggestionProvider.suggest(ParticleForceFields.ids(ctx.source.level).map { it.toString() } + "*", builder)
+            }.executes(::remove)))
         root.then(Commands.literal("list").executes { ctx ->
             val ids = ParticleForceFields.ids(ctx.source.level)
             ctx.source.reply({ translation("command.field.list", ids.joinToString(", ")).component() })
@@ -78,12 +80,29 @@ internal object ParticleFieldCommands {
         ParticleForceFields.set(ctx.source.level, id, spec, RecipeAnchor(ctx.source.position))
     }
 
+    private fun remove(ctx: CommandContext<CommandSourceStack>): Int {
+        val input = CommandInput(word(ctx, "id"))
+        val pattern = input.namePattern(emptyList())
+        input.finish()
+        val level = ctx.source.level
+        if (!pattern.isWildcard) return safe(ctx, "command.field.removed", pattern.text) {
+            val id = ResourceId.parse(pattern.text)
+            requireLocalized(ParticleForceFields.remove(level, id)) { translation("error.field.not_found", id) }
+        }
+        val ids = ParticleForceFields.ids(level).filter { pattern.matches(it.toString()) }
+        val count = ParticleForceFields.removeAll(level, ids)
+        return pattern.report(ctx.source, count)
+    }
+
     private fun id(ctx: CommandContext<CommandSourceStack>) = ResourceId.parse(word(ctx, "id"))
     private fun word(ctx: CommandContext<CommandSourceStack>, key: String) = StringArgumentType.getString(ctx, key)
 
-    private inline fun safe(ctx: CommandContext<CommandSourceStack>, successKey: String = "command.field.updated", action: () -> Unit): Int = try {
+    private inline fun safe(
+        ctx: CommandContext<CommandSourceStack>, successKey: String = "command.field.updated",
+        rawId: String = word(ctx, "id"), action: () -> Unit,
+    ): Int = try {
         action()
-        ctx.source.reply({ translation(successKey, id(ctx)).component() })
+        ctx.source.reply({ translation(successKey, ResourceId.parse(rawId)).component() })
         1
     } catch (error: Exception) {
         ctx.source.replyFailure(error.failureComponent("error.field.parameters"))

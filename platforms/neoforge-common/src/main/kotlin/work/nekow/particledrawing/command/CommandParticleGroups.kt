@@ -9,11 +9,12 @@ import java.util.UUID
 import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.translation
 
-/** 数据包与命令方块创建的命名粒子组；名称在维度内唯一，服务器重启后清空。 */
+/** 命令创建的粒子组；匿名组使用临时名称，随成员到期回收。 */
 internal object CommandParticleGroups {
     data class Entry(
         val name: String,
         val group: ParticleGroup,
+        val anonymous: Boolean = false,
         val initialPivot: Vec3 = group.pivot,
         var programmed: Boolean = false,
         var activated: Boolean = false,
@@ -31,14 +32,25 @@ internal object CommandParticleGroups {
 
     fun checkCapacity(dimension: UUID, name: String) {
         val groups = dimensions[dimension].orEmpty()
-        requireLocalized(name in groups || groups.size < MAX_GROUPS) { translation("error.group.limit", MAX_GROUPS) }
+        requireLocalized(groups[name]?.anonymous == false || groups.values.count { !it.anonymous } < MAX_GROUPS) {
+            translation("error.group.limit", MAX_GROUPS)
+        }
     }
 
-    fun install(dimension: UUID, name: String, group: ParticleGroup): Entry {
-        delete(dimension, name)
-        val entry = Entry(name, group)
-        dimensions.getOrPut(dimension) { linkedMapOf() }[name] = entry
+    fun install(dimension: UUID, name: String?, group: ParticleGroup): Entry {
+        val key = name ?: "anon:${group.id}"
+        delete(dimension, key)
+        val entry = Entry(key, group, anonymous = name == null)
+        dimensions.getOrPut(dimension) { linkedMapOf() }[key] = entry
         return entry
+    }
+
+    fun pruneAnonymous(dimension: UUID) {
+        val groups = dimensions[dimension] ?: return
+        groups.values.removeIf { entry ->
+            entry.anonymous && entry.group.manager.getEngine().getGroup(entry.group.id) == null
+        }
+        if (groups.isEmpty()) dimensions.remove(dimension)
     }
 
     fun delete(dimension: UUID, name: String): Boolean {

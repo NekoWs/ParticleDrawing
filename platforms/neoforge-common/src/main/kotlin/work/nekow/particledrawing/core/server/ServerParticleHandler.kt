@@ -40,6 +40,7 @@ object ServerParticleHandler {
             ServerAnimationManager.removeFinished(dim, level.gameTime)
             val engine = ServerParticleEngine.getOrCreate(dim)
             engine.tick(level.players())
+            CommandParticleGroups.pruneAnonymous(dim)
         }
     }
 

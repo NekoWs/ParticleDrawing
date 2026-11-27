@@ -34,13 +34,16 @@ object ParticleForceFields {
     }
 
     @JvmStatic
-    fun remove(level: ServerLevel, id: ResourceId): Boolean {
+    fun remove(level: ServerLevel, id: ResourceId): Boolean = removeAll(level, listOf(id)) != 0
+
+    internal fun removeAll(level: ServerLevel, ids: Collection<ResourceId>): Int {
         val dimension = ParticleUtils.dimensionUUID(level)
-        val fields = dimensions[dimension] ?: return false
-        if (fields.remove(id) == null) return false
+        val fields = dimensions[dimension] ?: return 0
+        val removed = ids.count { fields.remove(it) != null }
+        if (removed == 0) return 0
         if (fields.isEmpty()) dimensions.remove(dimension)
         broadcast(level, fields)
-        return true
+        return removed
     }
 
     @JvmStatic

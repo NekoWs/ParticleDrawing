@@ -9,6 +9,7 @@ import net.minecraft.commands.arguments.coordinates.Coordinates
 import net.minecraft.commands.arguments.coordinates.Vec3Argument
 import net.minecraft.commands.arguments.selector.EntitySelector
 import net.minecraft.world.phys.Vec3
+import work.nekow.particledrawing.command.CommandNamePattern
 import work.nekow.particledrawing.command.ParticleCommandOptionParser
 import work.nekow.particledrawing.i18n.component
 import work.nekow.particledrawing.i18n.translation
@@ -86,6 +87,11 @@ internal class CommandInput(raw: String, private val suggesting: Boolean = false
     fun name(choices: Collection<String> = emptyList()): String =
         value("name", choices.map(::suggestedName)).also {
             if (!NAME.matches(it)) invalid("name", it)
+        }
+
+    fun namePattern(choices: Collection<String>): CommandNamePattern =
+        value("name pattern", choices.map(::suggestedName) + "*").let {
+            CommandNamePattern.parse(it) ?: invalid("name pattern", it)
         }
 
     fun integer(label: String, min: Int = Int.MIN_VALUE, max: Int = Int.MAX_VALUE): Int =

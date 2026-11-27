@@ -9,7 +9,7 @@ pdraw particle draw circle as ring at ~ ~1 ~ radius 3 count 96 look color aqua
 pdraw particle delete group ring
 ```
 
-`as` 命名组，重复执行会完整替换同名组。省略 `as` 时各次绘制独立。`at` 或 `from` 用原版坐标，支持 `~` 与 `^`。`group_pivot` 覆盖组轴心。`also` 将下一个图元加入同一组，每个图元可有自己的外观、寿命和错峰设置。
+`as` 命名组，重复执行会完整替换同名组。省略 `as` 时各次绘制独立，反馈与 `/pdraw particle advanced group list` 会显示 `anon:…` 临时组名，复制这个名字即可清理单组。临时组在成员与待出生任务耗尽后自动回收。`at` 或 `from` 用原版坐标，支持 `~` 与 `^`。`group_pivot` 覆盖组轴心。`also` 将下一个图元加入同一组，每个图元可有自己的外观、寿命和错峰设置。
 
 常用形状包括 `dot`、`field`、`line`、`beam`、`helix`、`circle`、`disc`、`triangle`、`hexagram`、`rect`、`sphere`、`cuboid`、`text`、`sin` 和 `expr`。查看[图元参数](command-v2-design.md#31-声明与几何)和[外观字段](command-v2-design.md#32-外观-look)。
 
@@ -115,6 +115,23 @@ pdraw particle emitter falling_dot at ~ ~2 ~ sample count 1 spawn set velocity v
 ### 世界输入、碰撞和事件
 
 `collide …` 设置碰撞类别及反弹、摩擦。`subemit …` 可配置死亡后释放的子粒子。`with environment …` 和 `with probe …` 为公式提供世界输入，`with on …` 可在出生、碰撞或死亡时运行子配方。查看[高级配置](command-v2-design.md#71-配方配置和原地修改)。
+
+## 按名字批量清理
+
+`*` 匹配零个或多个字符，`?` 匹配一个字符。模式匹配整个名字并区分大小写，`.`、`:` 等字符按字面比较。一条命令只在指定类型、当前维度内操作。`unbind` 只操作执行命令的实体。带通配符的命令返回匹配数量，未匹配时返回 0。
+
+| 命令 | 效果 |
+| --- | --- |
+| `/pdraw particle delete group anon:*` | 清理所有匿名组及其待出生任务 |
+| `/pdraw particle clear group demo_?` | 清理匹配的粒子组，显式命名的组保留名字和初始轴心 |
+| `/pdraw particle stop trail_*` | 停止匹配发射器的新粒子，已有粒子自然消散 |
+| `/pdraw particle clear emitter trail_*` | 清除匹配发射器的实例和粒子，保留配方 |
+| `/pdraw particle delete emitter trail_*` | 清除匹配发射器及其配方 |
+| `/pdraw particle delete template demo_*` | 删除匹配模板 |
+| `/pdraw particle unbind aura_*` | 解除当前执行实体上匹配的绑定 |
+| `/pdraw particle field remove example:wind_*` | 删除匹配完整资源 ID 的力场 |
+
+互相引用的发射器可在同一次删除中一起移除。若有未选中的发射器仍引用其中某个锚点，整次删除失败。`delete group *` 会删除当前维度中命令创建的所有组。
 
 ## 实体绑定与事件
 

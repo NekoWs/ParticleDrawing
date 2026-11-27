@@ -21,10 +21,10 @@ internal object ParticleCommandsV2 {
         "start" to "start <emitter> [standard|instanced|synced] [dryrun]",
         "burst" to "burst <emitter> [standard|instanced|gpu|synced] [dryrun]",
         "bind" to "bind <name> [emit <template> [mode <mode>]] [on <event> burst <template> [mode <mode>] [each] [stop]] ...",
-        "unbind" to "unbind <name>",
-        "stop" to "stop <emitter>",
-        "clear" to "clear emitter|group <name>",
-        "delete" to "delete emitter|group|template <name>",
+        "unbind" to "unbind <name|pattern>",
+        "stop" to "stop <emitter|pattern>",
+        "clear" to "clear emitter|group <name|pattern>",
+        "delete" to "delete emitter|group|template <name|pattern>",
         "advanced" to "advanced emitter|group ...",
     )
 

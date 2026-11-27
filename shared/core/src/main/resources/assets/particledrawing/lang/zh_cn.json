@@ -771,6 +771,7 @@
   "particledrawing.command.v2.program": "已编排 %1$s · %2$s 个动作%3$s",
   "particledrawing.command.v2.dryrun": "（试运行）",
   "particledrawing.command.v2.anonymous": "匿名组",
+  "particledrawing.command.v2.matches": "%1$s 匹配到 %2$s 个目标。",
   "particledrawing.command.v2.action.config": "已创建",
   "particledrawing.command.v2.action.start": "已启动",
   "particledrawing.command.v2.action.burst": "已爆发",

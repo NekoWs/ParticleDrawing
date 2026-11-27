@@ -42,6 +42,9 @@ internal object ServerEntityParticleEffects {
 
     fun isBound(entity: Entity, name: String) = entity.level() is ServerLevel && bindings[entity]?.containsKey(name) == true
 
+    fun names(entity: Entity): List<String> =
+        if (entity.level() is ServerLevel) bindings[entity]?.keys?.toList().orEmpty() else emptyList()
+
     fun bind(
         entity: Entity, name: String, emission: ParticleRecipe?, events: Map<ResourceId, EntityParticleBurst>,
         emissionMode: ParticleRecipeMode,

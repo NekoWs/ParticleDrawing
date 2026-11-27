@@ -5,6 +5,7 @@ import work.nekow.particledrawing.api.ParticleRecipe
 import work.nekow.particledrawing.api.ParticleRecipeMode
 import work.nekow.particledrawing.api.ParticleSourceHandle
 import work.nekow.particledrawing.api.RecipeAnchor
+import work.nekow.particledrawing.command.CommandNamePattern
 import work.nekow.particledrawing.command.CommandParticleRecipes
 import work.nekow.particledrawing.command.CommandParticleRecipes.Draft
 import work.nekow.particledrawing.command.v2.EmitterDeclaration.Companion.prepareRecipe
@@ -108,11 +109,12 @@ internal object EmitterCommands {
                 }
             }
             "stop" -> {
-                val name = input.name(names)
+                val pattern = input.namePattern(names)
                 input.finish()
                 command {
-                    CommandParticleRecipes.get(dimension, name).activeHandles().forEach { it.stop() }
-                    success(source, name, "stop")
+                    val targets = pattern.select(CommandParticleRecipes.names(dimension))
+                    targets.forEach { name -> CommandParticleRecipes.get(dimension, name).activeHandles().forEach { it.stop() } }
+                    success(source, pattern, "stop", targets.size)
                 }
             }
             "advanced" -> advanced(input, source, dimension, names)
@@ -269,19 +271,23 @@ internal object EmitterCommands {
     fun control(source: CommandSourceStack, op: String, kind: String, input: CommandInput): () -> Int {
         val dimension = ParticleUtils.dimensionUUID(source.level)
         val names = if (kind == "template") templates[dimension]?.keys.orEmpty() else CommandParticleRecipes.names(dimension)
-        val name = input.name(names)
+        val pattern = input.namePattern(names)
         input.finish()
         return {
+            val targets = pattern.select(if (kind == "template") templateNames(dimension) else CommandParticleRecipes.names(dimension))
             when {
-                kind == "template" -> requireLocalized(templates[dimension]?.remove(name) != null) {
-                    translation("error.command.v2.template_missing", name)
+                kind == "template" -> targets.forEach { name ->
+                    requireLocalized(templates[dimension]?.remove(name) != null) { translation("error.command.v2.template_missing", name) }
                 }
-                op == "delete" -> CommandParticleRecipes.remove(dimension, name)
-                else -> CommandParticleRecipes.get(dimension, name).removeParticles()
+                op == "delete" -> CommandParticleRecipes.remove(dimension, targets)
+                else -> targets.forEach { CommandParticleRecipes.get(dimension, it).removeParticles() }
             }
-            success(source, name, op)
+            success(source, pattern, op, targets.size)
         }
     }
+
+    internal fun success(source: CommandSourceStack, pattern: CommandNamePattern, op: String, count: Int): Int =
+        if (pattern.isWildcard) pattern.report(source, count) else success(source, pattern.text, op)
 
     private fun result(source: CommandSourceStack, name: String, draft: Draft, launch: Launch?, dryrun: Boolean): Int {
         val action = when {

@@ -313,7 +313,7 @@ object RuntimeSelfTest {
                     if (run("pdraw particle bind extra on $event burst v2_hit each", executing) != 1 ||
                         EntityParticleEffects.trigger(other, event, other.position()) != 1 ||
                         EntityParticleEffects.trigger(other, event, other.position()) != 1 ||
-                        run("pdraw particle unbind extra", executing) != 1 ||
+                        run("pdraw particle unbind ext?a", executing) != 1 ||
                         EntityParticleEffects.trigger(other, event, other.position()) != 0
                     ) return@check false
                     other.discard()
@@ -388,6 +388,58 @@ object RuntimeSelfTest {
                     run("pdraw particle group list") == 0
             }
             check("自由镜头需要玩家") { run("pdraw camera pos 0 60 0 0 0 70 0") == 0 }
+            check("匿名组可按名称删除、取消错峰并在过期后回收") {
+                val old = CommandParticleGroups.names(dimension).toSet()
+                val engine = manager.getEngine()
+                fun drawAnonymous(command: String): CommandParticleGroups.Entry? {
+                    val prior = CommandParticleGroups.names(dimension).toSet()
+                    if (run(command) <= 0) return null
+                    val key = CommandParticleGroups.names(dimension).singleOrNull { it !in prior } ?: return null
+                    return CommandParticleGroups.get(dimension, key)
+                }
+                val short = drawAnonymous("pdraw particle draw dot at 0 70 0 life 1") ?: return@check false
+                val staged = drawAnonymous("pdraw particle draw line from 0 70 0 to 3 70 0 count 4 stagger 2 then spin 0 1 0 1")
+                    ?: return@check false
+                val last = drawAnonymous("pdraw particle draw dot at 0 70 0") ?: return@check false
+                if (!short.anonymous || !short.name.startsWith("anon:") || engine.pendingDrawCount(staged.group.id) != 3 ||
+                    run("pdraw particle delete group ${last.name}") != 1 || engine.getGroup(last.group.id) != null
+                ) return@check false
+                repeat(2) { engine.tick(level.players()) }
+                CommandParticleGroups.pruneAnonymous(dimension)
+                if (CommandParticleGroups.get(dimension, short.name) != null) return@check false
+                val anonymousCount = CommandParticleGroups.names(dimension).count { it.startsWith("anon:") }
+                run("pdraw particle clear group anon:*") == anonymousCount &&
+                    engine.pendingDrawCount(staged.group.id) == 0 && engine.getGroup(staged.group.id) == null &&
+                    CommandParticleGroups.names(dimension).containsAll(old.filterNot { it.startsWith("anon:") })
+            }
+            check("通配符按完整名字工作，批量删除保护外部锚点引用") {
+                if (run("pdraw particle draw dot as glob.a at 0 70 0") != 1 ||
+                    run("pdraw particle draw dot as globXa at 0 70 0") != 1 ||
+                    run("pdraw particle delete group glob.?") != 1 ||
+                    CommandParticleGroups.get(dimension, "globXa") == null ||
+                    run("pdraw particle delete group missing_*") != 0 ||
+                    run("pdraw particle emitter glob_root at 0 65 0 start") != 1 ||
+                    run("pdraw particle emitter glob_child at emitter glob_root start") != 1 ||
+                    run("pdraw particle emitter outside at emitter glob_child") != 1 ||
+                    run("pdraw particle delete emitter glob_*") != 0 ||
+                    CommandParticleRecipes.find(dimension, "glob_root") == null ||
+                    CommandParticleRecipes.find(dimension, "glob_child") == null ||
+                    run("pdraw particle delete emitter outside") != 1 ||
+                    run("pdraw particle stop glob_*") != 2
+                ) return@check false
+                val root = CommandParticleRecipes.get(dimension, "glob_root")
+                val child = CommandParticleRecipes.get(dimension, "glob_child")
+                listOf(root, child).all { draft -> draft.activeHandles().none { ServerParticleSources.isContinuouslyEmitting(it.id) } } &&
+                    run("pdraw particle clear emitter glob_*") == 2 &&
+                    run("pdraw particle delete emitter glob_*") == 2 &&
+                    CommandParticleRecipes.names(dimension).none { it.startsWith("glob_") } &&
+                    run("pdraw particle template glob_a sample count 1") == 1 &&
+                    run("pdraw particle template glob_b sample count 1") == 1 &&
+                    run("pdraw particle delete template glob_?") == 2 &&
+                    run("pdraw particle field attract \"pdself:glob_a\" 4 0.5") == 1 &&
+                    run("pdraw particle field attract \"pdself:glob_b\" 4 0.5") == 1 &&
+                    run("pdraw particle field remove pdself:glob_*") == 2
+            }
             CommandParticleGroups.clearPrepared(dimension)
             CommandParticleRecipes.discard(dimension)
             ServerParticleSources.discard(dimension)

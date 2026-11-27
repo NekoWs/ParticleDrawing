@@ -4,6 +4,7 @@ import net.minecraft.commands.CommandSourceStack
 import work.nekow.particledrawing.api.EntityParticleBurst
 import work.nekow.particledrawing.api.EntityParticleEffects
 import work.nekow.particledrawing.api.ParticleRecipeMode
+import work.nekow.particledrawing.core.server.ServerEntityParticleEffects
 import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.requireNotNullLocalized
 import work.nekow.particledrawing.i18n.translation
@@ -14,12 +15,18 @@ internal object EntityBindingCommands {
     private data class Event(val template: String, val mode: ParticleRecipeMode, val each: Boolean, val stop: Boolean)
 
     fun parse(verb: String, input: CommandInput, source: CommandSourceStack): () -> Int {
-        val name = input.name()
         if (verb == "unbind") {
+            val choices = source.entity?.let(ServerEntityParticleEffects::names).orEmpty()
+            val pattern = input.namePattern(choices)
             input.finish()
-            return { if (EntityParticleEffects.unbind(entity(source), name)) 1 else 0 }
+            return {
+                val entity = entity(source)
+                val count = pattern.select(ServerEntityParticleEffects.names(entity)).count { EntityParticleEffects.unbind(entity, it) }
+                if (pattern.isWildcard) pattern.report(source, count) else count
+            }
         }
 
+        val name = input.name()
         val names = EmitterCommands.templateNames(ParticleUtils.dimensionUUID(source.level))
         val emission = if (input.take("emit")) input.name(names) else null
         val emissionMode = if (emission == null) ParticleRecipeMode.STANDARD else input.mode(burst = false)

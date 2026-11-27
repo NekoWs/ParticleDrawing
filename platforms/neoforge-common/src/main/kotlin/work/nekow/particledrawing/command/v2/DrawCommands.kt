@@ -74,21 +74,15 @@ internal object DrawCommands {
             val manager = ParticleManager.of(source.level)
             val replacing = name?.let { CommandParticleGroups.get(dimension, it)?.group?.id }
             checkCapacity(manager, particles.size, replacing)
-            if (!dryrun) {
+            val feedbackName = if (!dryrun) {
                 val group = manager.createGroup(pivot)
-                val entry = name?.let { CommandParticleGroups.install(dimension, it, group) }
+                val entry = CommandParticleGroups.install(dimension, name, group)
                 spawn(group, particles)
-                if (entry != null) {
-                    record(entry, readyDelay)
-                    if (steps.isNotEmpty()) ProgramCommands.apply(dimension, entry, steps, state, false)
-                } else if (steps.isNotEmpty()) {
-                    if (readyDelay == 0) ProgramCommands.apply(group, steps)
-                    else AnimationScheduler.scheduleOwned(dimension, readyDelay, group.id) {
-                        if (group.size() > 0) ProgramCommands.apply(group, steps)
-                    }
-                }
-            }
-            feedback(source, name, "draw", particles.size, dryrun)
+                record(entry, readyDelay)
+                if (steps.isNotEmpty()) ProgramCommands.apply(dimension, entry, steps, state, false)
+                entry.name
+            } else name
+            feedback(source, feedbackName, "draw", particles.size, dryrun)
         }
     }
 
@@ -448,13 +442,16 @@ internal object DrawCommands {
 
     fun control(source: CommandSourceStack, op: String, input: CommandInput): () -> Int {
         val dimension = ParticleUtils.dimensionUUID(source.level)
-        val name = input.name(CommandParticleGroups.names(dimension))
+        val pattern = input.namePattern(CommandParticleGroups.names(dimension) + "anon:*")
         input.finish()
         return {
-            val entry = entry(dimension, name)
-            if (op == "delete") CommandParticleGroups.delete(dimension, name)
-            else CommandParticleGroups.install(dimension, name, entry.group.manager.createGroup(entry.initialPivot))
-            EmitterCommands.success(source, name, op)
+            val names = pattern.select(CommandParticleGroups.names(dimension))
+            for (name in names) {
+                val entry = entry(dimension, name)
+                if (op == "delete" || entry.anonymous) CommandParticleGroups.delete(dimension, name)
+                else CommandParticleGroups.install(dimension, name, entry.group.manager.createGroup(entry.initialPivot))
+            }
+            EmitterCommands.success(source, pattern, op, names.size)
         }
     }
 

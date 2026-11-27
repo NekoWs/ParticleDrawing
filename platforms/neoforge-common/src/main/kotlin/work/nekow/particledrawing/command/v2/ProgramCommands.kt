@@ -267,7 +267,7 @@ internal object ProgramCommands {
         }
     }
 
-    fun apply(group: ParticleGroup, steps: List<Step>) {
+    private fun apply(group: ParticleGroup, steps: List<Step>) {
         for (step in steps) GroupActions.applyAction(group, step.action, step.morph)
     }
 }

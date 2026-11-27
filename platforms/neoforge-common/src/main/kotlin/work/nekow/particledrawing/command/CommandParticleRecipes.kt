@@ -101,9 +101,17 @@ internal object CommandParticleRecipes {
     fun install(dimension: UUID, name: String, draft: Draft) {
         dimensions.getOrPut(dimension) { linkedMapOf() }[name] = draft
     }
-    fun remove(dimension: UUID, name: String) {
-        requireLocalized(dimensions[dimension]?.values?.none { it.anchorLink == name } != false) { translation("error.recipe.anchor_in_use") }
-        get(dimension, name).removeParticles(); dimensions[dimension]?.remove(name)
+    fun remove(dimension: UUID, name: String) = remove(dimension, listOf(name))
+
+    fun remove(dimension: UUID, names: List<String>) {
+        val targets = names.toSet()
+        val drafts = targets.map { get(dimension, it) }
+        val entries = dimensions[dimension] ?: return
+        requireLocalized(entries.none { (name, draft) -> name !in targets && draft.anchorLink in targets }) {
+            translation("error.recipe.anchor_in_use")
+        }
+        drafts.forEach(Draft::removeParticles)
+        entries.keys.removeAll(targets)
     }
     fun resolveAnchors(dimension: UUID, name: String, candidate: Draft): Map<String, RecipeAnchor> {
         val drafts = snapshot(dimension) + (name to candidate)
