@@ -2,6 +2,7 @@ package work.nekow.particledrawing
 
 import work.nekow.particledrawing.animation.morph.*
 import work.nekow.particledrawing.math.Vec3
+import java.lang.management.ManagementFactory
 import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.sqrt
@@ -274,24 +275,45 @@ class MorphGuardrailsTest {
     @Test
     fun `G8 4096 粒子单刻耗时在预算内`() {
         if (System.getProperty("pd.skipPerf") != null) return
-        val n = 4096
-        val runtime = MorphRuntime(
-            List(n) { i ->
-                val a = 2.0 * Math.PI * i / n
-                MorphParticle(id(i), Vec3(Math.cos(a) * 6.0, 0.0, Math.sin(a) * 6.0), Vec3.ZERO, i)
-            },
-            List(n) { i ->
-                val a = 2.0 * Math.PI * i / n
-                MorphSlot(Vec3(Math.cos(a) * 2.0, 3.0, Math.sin(a) * 2.0))
-            },
-            MorphOptions(ticks = 40, wobble = MorphWobble.BELL, wobbleStrength = 0.1),
-        )
-        repeat(5) { runtime.tick() } // 预热
-        val start = System.nanoTime()
-        repeat(20) { runtime.tick() }
-        val perTickMs = (System.nanoTime() - start) / 1e6 / 20.0
-        println("G8 morph 4096 粒子单刻耗时 ${"%.3f".format(perTickMs)} ms")
-        assertTrue(perTickMs <= 2.0, "单刻耗时 $perTickMs ms 超出 2ms 预算")
+        val count = 4096
+        val particles = List(count) { i ->
+            val a = 2.0 * Math.PI * i / count
+            MorphParticle(id(i), Vec3(Math.cos(a) * 6.0, 0.0, Math.sin(a) * 6.0), Vec3.ZERO, i)
+        }
+        val slots = List(count) { i ->
+            val a = 2.0 * Math.PI * i / count
+            MorphSlot(Vec3(Math.cos(a) * 2.0, 3.0, Math.sin(a) * 2.0))
+        }
+        val options = MorphOptions(ticks = 40, wobble = MorphWobble.BELL, wobbleStrength = 0.1)
+        repeat(2) {
+            val warmup = MorphRuntime(particles, slots, options)
+            repeat(30) { warmup.tick() }
+        }
+
+        val thread = ManagementFactory.getThreadMXBean()
+        val useCpuTime = thread.isCurrentThreadCpuTimeSupported && thread.isThreadCpuTimeEnabled
+        val measuredTicks = 20
+        val wallSamples = DoubleArray(5)
+        val cpuSamples = DoubleArray(wallSamples.size)
+        for (round in wallSamples.indices) {
+            val runtime = MorphRuntime(particles, slots, options)
+            repeat(5) { runtime.tick() }
+            val wallStart = System.nanoTime()
+            val cpuStart = if (useCpuTime) thread.currentThreadCpuTime else 0L
+            repeat(measuredTicks) { runtime.tick() }
+            val cpuElapsed = if (useCpuTime) thread.currentThreadCpuTime - cpuStart else 0L
+            wallSamples[round] = (System.nanoTime() - wallStart) / 1e6 / measuredTicks
+            cpuSamples[round] = cpuElapsed / 1e6 / measuredTicks
+            assertFalse(runtime.completed, "采样应在形变仍在推进时结束")
+        }
+        // 取各轮单刻均值的中位数。线程 CPU 时间排除共享 runner 的调度等待。
+        val wallMs = wallSamples.sorted()[wallSamples.size / 2]
+        val cpuMs = cpuSamples.sorted()[cpuSamples.size / 2]
+        // 部分 JVM 的 CPU 时钟粒度不足以分辨短采样，测得零时用多轮墙钟中位数。
+        val perTickMs = if (cpuMs > 0.0) cpuMs else wallMs
+        val clock = if (cpuMs > 0.0) "线程 CPU" else "墙钟"
+        println("G8 morph 4096 粒子单刻耗时 ${"%.3f".format(perTickMs)} ms ($clock)，墙钟 ${"%.3f".format(wallMs)} ms")
+        assertTrue(perTickMs > 0.0 && perTickMs <= 2.0, "单刻 $clock 耗时 $perTickMs ms，预算为 2 ms")
     }
 
     // ── G9 生命周期不变量 ──────────────────────────────────────────────────────
