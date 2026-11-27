@@ -58,7 +58,8 @@ internal object ServerParticleSources {
     }
     private val entries = linkedMapOf<UUID, Entry>()
     private val logger = LogManager.getLogger("ParticleDrawing")
-    private const val MAX_SYNCED_SOURCES = 8
+    private const val MAX_SYNCED_SOURCES = 64
+    private const val MAX_SOURCES = 1024
 
     fun start(level: ServerLevel, recipe: ParticleRecipe, anchor: RecipeAnchor, burst: Boolean, synced: Boolean = false,
               mode: ParticleRecipeMode = ParticleRecipeMode.STANDARD): UUID {
@@ -72,7 +73,7 @@ internal object ServerParticleSources {
         recipe.validate()
         RecipeRuntime.requireCadence(recipe, burst)
         ParticleRecipeExecution.validate(recipe, anchor, burst, mode)
-        requireLocalized(entries.keys.count { it !in replacing } < 256) { translation("error.recipe.active_limit") }
+        requireLocalized(entries.keys.count { it !in replacing } < MAX_SOURCES) { translation("error.recipe.active_limit") }
         if (synced) {
             SyncedRecipe.validate(recipe)
             requireLocalized(entries.count { (id, entry) -> id !in replacing && entry.synced != null } < MAX_SYNCED_SOURCES) {

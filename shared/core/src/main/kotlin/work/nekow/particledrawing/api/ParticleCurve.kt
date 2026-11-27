@@ -130,7 +130,7 @@ class ParticleCurve(
 
     companion object {
         /** 单条曲线的关键帧上限（超出报错，不截断）。 */
-        const val MAX_KEYS = 64
+        const val MAX_KEYS = 256
 
         @JvmStatic
         fun of(channel: CurveChannel, vararg keys: CurveKey): ParticleCurve =

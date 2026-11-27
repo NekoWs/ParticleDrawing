@@ -47,7 +47,7 @@ internal class ServerRecipeWorld(private val serverLevel: ServerLevel) : Minecra
     }
 
     private companion object {
-        const val MAX_SWEEP = 64.0
-        const val MAX_QUERIES = 32_768
+        const val MAX_SWEEP = 1024.0
+        const val MAX_QUERIES = 1_048_576
     }
 }

@@ -705,7 +705,7 @@
   "particledrawing.command.help.examples.section.follow": "Group motion and emission",
   "particledrawing.command.help.examples.follow_ring": "Draw and spin a named ring.",
   "particledrawing.command.help.examples.follow_step": "Start an emitter with upward motion.",
-  "particledrawing.error.command.v2.expected": "Invalid or incomplete parameters near %2$s.",
+  "particledrawing.error.command.v2.expected": "Expected %1$s, got \"%2$s\".",
   "particledrawing.error.command.v2.failed": "Invalid particle command parameters.",
   "particledrawing.error.command.v2.live_sample": "Stop and clear all instances before changing the sampling layout.",
   "particledrawing.error.command.v2.look_conflict": "An appearance option and a birth output write the same property.",

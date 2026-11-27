@@ -35,14 +35,17 @@ class RecipeDistanceAndMeshTest {
     }
 
     @Test fun `距离发射受逐刻预算限制且静止时没有积压出生`() {
-        val recipe = ParticleRecipe(ParticleSampling.count(1), rate = 64, spacing = 0.05)
+        val recipe = ParticleRecipe(ParticleSampling.count(1), rate = 64, spacing = 0.05, maxAlive = ParticleRecipe.MAX_ALIVE)
         val runtime = RecipeRuntime(recipe, burst = false)
         runtime.tick()
         val next = RecipeFrame(Vec3(20.0, 0.0, 0.0))
         runtime.tickInFrame(next)
-        assertEquals(ParticleRecipe.MAX_RATE, runtime.particles.size)
+        val spawned = runtime.particles.size
+        // 20 格按 0.05 切成约 400 个位置，每个位置 64 颗；单刻预算不参与截断，但绝不能超过 1024 个位置。
+        assertTrue(spawned in 399 * recipe.rate..400 * recipe.rate)
+        assertTrue(spawned <= ParticleRecipe.MAX_BIRTHS_PER_TICK)
         runtime.tickInFrame(next)
-        assertEquals(ParticleRecipe.MAX_RATE, runtime.particles.size)
+        assertEquals(spawned, runtime.particles.size)
         assertFailsWith<IllegalArgumentException> { RecipeRuntime(recipe, burst = true) }
     }
 

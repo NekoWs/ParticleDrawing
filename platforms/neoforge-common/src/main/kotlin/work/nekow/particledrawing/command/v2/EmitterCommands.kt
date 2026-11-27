@@ -68,7 +68,7 @@ internal object EmitterCommands {
                             preview.sampling == CommandParticleRecipes.Sampling.GRID) preview.samples(source.level)
                     }
                     val entries = templates[dimension].orEmpty()
-                    requireLocalized(name in entries || entries.size < 256) { translation("error.command.v2.template_limit") }
+                    requireLocalized(name in entries || entries.size < 1024) { translation("error.command.v2.template_limit") }
                     if (!dryrun) templates.getOrPut(dimension) { linkedMapOf() }[name] = Template(declaration, snapshot)
                     success(source, name, if (dryrun) "dryrun" else "template")
                 }

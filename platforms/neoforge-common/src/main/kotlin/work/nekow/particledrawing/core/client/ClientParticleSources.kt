@@ -254,7 +254,7 @@ internal object ClientParticleSources {
 
     fun clear() = sources.clear()
 
-    private const val CHILD_ATTEMPTS_PER_TICK = 256
+    private const val CHILD_ATTEMPTS_PER_TICK = 4096
 
     private fun burst(engine: ClientParticleEngine, e: Entry, p: RecipeRuntime.Particle, member: Member, sub: SubEmit) {
         val pos = member.position.toCore()

@@ -34,9 +34,10 @@ data class RecipeEmission(
     }
 
     companion object {
-        const val MAX_RULES = 4
-        const val MAX_DECAL_RADIUS = 2.0
-        const val MAX_CHILD_SEEDS = 64
-        const val MAX_CHILD_LIFETIME = 1200
+        /** 事件规则数与子配方样本数一起受单个自定义包 1 MiB 限制，不能只按性能放开。 */
+        const val MAX_RULES = 16
+        const val MAX_DECAL_RADIUS = 64.0
+        const val MAX_CHILD_SEEDS = 128
+        const val MAX_CHILD_LIFETIME = ParticleRecipe.MAX_LIFETIME
     }
 }

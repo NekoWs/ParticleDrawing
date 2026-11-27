@@ -46,7 +46,11 @@ data class SurfaceHit(
 
 data class ParticleEntityQuery(val radius: Double = 8.0, val type: ResourceId? = null) {
     init {
-        requireLocalized(radius in 0.0..32.0) { translation("error.recipe.entity_radius") }
+        requireLocalized(radius in 0.0..MAX_RADIUS) { translation("error.recipe.entity_radius") }
+    }
+
+    companion object {
+        const val MAX_RADIUS = 1024.0
     }
 }
 

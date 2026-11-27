@@ -38,7 +38,7 @@ data class SubEmit(
         requireLocalized(count in 1..MAX_COUNT) { translation("error.recipe.subemit_count", MAX_COUNT) }
         requireLocalized(lifetime in 1..ParticleRecipe.MAX_LIFETIME) { translation("error.recipe.subemit_lifetime", ParticleRecipe.MAX_LIFETIME) }
         requireLocalized(speed in 0.0..MAX_SPEED) { translation("error.recipe.subemit_speed", MAX_SPEED) }
-        requireLocalized(scale in 0.05..4.0) { translation("error.recipe.subemit_scale") }
+        requireLocalized(scale in MIN_SCALE..MAX_SCALE) { translation("error.recipe.subemit_scale") }
     }
 
     /** 每次爆发使用稳定的种子，方向在球面上均匀分布。 */
@@ -54,8 +54,10 @@ data class SubEmit(
     }
 
     companion object {
-        const val MAX_COUNT = 64
-        const val MAX_SPEED = 2.0
+        const val MAX_COUNT = 1024
+        const val MAX_SPEED = 64.0
+        const val MIN_SCALE = 0.001
+        const val MAX_SCALE = 64.0
     }
 }
 
@@ -129,12 +131,12 @@ data class ParticleRecipe(
 ) {
     fun validate() {
         requireLocalized(seeds.isNotEmpty() && seeds.size <= MAX_SEEDS) { translation("error.recipe.seed_count", MAX_SEEDS) }
-        requireLocalized(rate in 1..MAX_RATE && interval in 1..72000) { translation("error.recipe.cadence", MAX_RATE) }
+        requireLocalized(rate in 1..MAX_RATE && interval in 1..MAX_EMIT_TICK) { translation("error.recipe.cadence", MAX_RATE) }
         requireLocalized(spacing == 0.0 || spacing in MIN_SPACING..MAX_SPACING) {
             translation("error.recipe.spacing", MIN_SPACING, MAX_SPACING)
         }
         requireLocalized(lifetime == -1 || lifetime in 1..MAX_LIFETIME) { translation("error.recipe.lifetime", MAX_LIFETIME) }
-        requireLocalized(maxAlive in 1..MAX_SEEDS) { translation("error.recipe.max_alive", MAX_SEEDS) }
+        requireLocalized(maxAlive in 1..MAX_ALIVE) { translation("error.recipe.max_alive", MAX_ALIVE) }
         requireLocalized(emitFromTick in 0..MAX_EMIT_TICK) { translation("error.recipe.emit_from", MAX_EMIT_TICK) }
         requireLocalized(emitUntilTick == -1 || emitUntilTick in (emitFromTick + 1)..MAX_EMIT_TICK) {
             translation("error.recipe.emit_window", MAX_EMIT_TICK)
@@ -149,7 +151,7 @@ data class ParticleRecipe(
             translation("error.recipe.sweep_size", MAX_COLLISION_HALF_SIZE)
         }
         requireLocalized(collisionSteps in 1..MAX_COLLISION_STEPS) { translation("error.recipe.collision_iterations", MAX_COLLISION_STEPS) }
-        requireLocalized(neighborRadius in 0.05..16.0) { translation("error.recipe.neighbor_radius") }
+        requireLocalized(neighborRadius in 0.05..MAX_NEIGHBOR_RADIUS) { translation("error.recipe.neighbor_radius") }
         requireLocalized(simulationRange in 0.0..MAX_SIMULATION_RANGE) {
             translation("error.recipe.simulation_range", MAX_SIMULATION_RANGE)
         }
@@ -173,17 +175,23 @@ data class ParticleRecipe(
     }
 
     companion object {
-        const val MAX_PROBES = 4
-    const val MAX_SEEDS = 8192
-        const val MAX_RATE = 1024
-        const val MIN_SPACING = 0.05
-        const val MAX_SPACING = 64.0
-        const val MAX_COLLISION_HALF_SIZE = 1.0
-        const val MAX_COLLISION_STEPS = 4
-        const val MAX_SIMULATION_RANGE = 512.0
-        const val MAX_LIFETIME = 72000
-        const val MAX_EMIT_TICK = 72000
-        const val MAX_FIELDS = 32
+        const val MAX_PROBES = 16
+        /** 出生样本表随声明整体下发，受单个自定义包大小约束，不能无限放大。 */
+        const val MAX_SEEDS = 8192
+        /** 同时存活的粒子数上限；只是安全上界，实际由服务端与客户端配置决定。 */
+        const val MAX_ALIVE = 1_000_000
+        const val MAX_RATE = 65_536
+        /** 单刻出生尝试上限；走里程发射时按 `budget / rate` 折算成位置数。 */
+        const val MAX_BIRTHS_PER_TICK = 65_536
+        const val MIN_SPACING = 0.001
+        const val MAX_SPACING = 4096.0
+        const val MAX_COLLISION_HALF_SIZE = 64.0
+        const val MAX_COLLISION_STEPS = 64
+        const val MAX_SIMULATION_RANGE = 1_000_000.0
+        const val MAX_LIFETIME = 1_000_000
+        const val MAX_EMIT_TICK = 1_000_000
+        const val MAX_FIELDS = 64
+        const val MAX_NEIGHBOR_RADIUS = 1024.0
         const val MAX_EXPRESSION = 2048
     }
 }

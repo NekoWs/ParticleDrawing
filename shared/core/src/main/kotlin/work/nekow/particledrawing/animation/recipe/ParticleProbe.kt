@@ -58,7 +58,7 @@ data class ParticleProbe(
 
     companion object {
         const val MIN_RANGE = 0.01
-        const val MAX_RANGE = 32.0
-        const val MAX_HALF_SIZE = 2.0
+        const val MAX_RANGE = 1024.0
+        const val MAX_HALF_SIZE = 256.0
     }
 }

@@ -26,7 +26,7 @@ internal object CommandParticleGroups {
     )
 
     /** 每维度命名组上限，避免命令无限建组把服务端内存吃满。 */
-    private const val MAX_GROUPS = 256
+    private const val MAX_GROUPS = 1024
 
     private val dimensions = HashMap<UUID, LinkedHashMap<String, Entry>>()
 

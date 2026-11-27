@@ -110,7 +110,7 @@ internal object DrawCommands {
             if (nonnegative && value < 0.0) input.invalid("nonnegative $field", value.toString())
             numbers[field] = value
         }
-        fun integer(field: String, min: Int = 1, max: Int = 4096) {
+        fun integer(field: String, min: Int = 1, max: Int = MAX_MEMBERS) {
             input.expect(field)
             numbers[field] = input.integer(field, min, max).toDouble()
         }
@@ -129,11 +129,11 @@ internal object DrawCommands {
             "disc" -> {
                 number("radius")
                 integer("perimeter")
-                integer("layers", max = 256)
+                integer("layers", max = MAX_MEMBERS)
             }
             "triangle", "hexagram" -> {
                 number("radius")
-                integer("segments", max = 1024)
+                integer("segments", max = MAX_MEMBERS)
             }
             "rect", "cuboid" -> {
                 if (shape == "cuboid" && input.take("size")) {
@@ -147,7 +147,7 @@ internal object DrawCommands {
                     number("height")
                     if (shape == "cuboid") number("depth")
                 }
-                integer("density", 2, 512)
+                integer("density", 2, MAX_MEMBERS)
                 if (numbers.values.take(if (shape == "cuboid") 3 else 2).all { it == 0.0 }) input.invalid("nonzero size")
             }
             "text" -> {

@@ -57,6 +57,8 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
         private val scalarSections = setOf("at", "sample", "filter", "kill", "orbit", "window", "collide", "subemit",
             "sim_range", "strand", "life", "rate", "interval", "max", "spacing", "follow", "select", "probe", "on")
         private val environmentFields = setOf("entity_radius", "entity_type", "neighbor_radius")
+        private const val MIN_TEXT_HEIGHT = 0.001
+        private const val MAX_TEXT_HEIGHT = 1_000_000.0
         private val default get() = Draft(RecipeAnchor(CoreVec3.ZERO))
 
         fun parse(input: CommandInput, names: List<String>): EmitterDeclaration {
@@ -107,7 +109,12 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
                 val samples = input.integer("strand", 0, ParticleRecipe.MAX_SEEDS)
                 add("strand") { recipe = recipe.copy(strandSamples = samples) }
             }
-            for ((field, range) in mapOf("life" to -1..72000, "rate" to 1..1024, "interval" to 1..72000, "max" to 1..8192)) {
+            for ((field, range) in mapOf(
+                "life" to -1..ParticleRecipe.MAX_LIFETIME,
+                "rate" to 1..ParticleRecipe.MAX_RATE,
+                "interval" to 1..ParticleRecipe.MAX_EMIT_TICK,
+                "max" to 1..ParticleRecipe.MAX_ALIVE,
+            )) {
                 if (!input.take(field)) continue
                 val value = input.integer(field, range.first, range.last)
                 add(field) {
@@ -120,8 +127,8 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
                 }
             }
             if (input.take("window")) {
-                val from = input.integer("window", 0, 72000)
-                val until = if (input.take("until")) input.integer("until", from + 1, 72000) else -1
+                val from = input.integer("window", 0, ParticleRecipe.MAX_EMIT_TICK)
+                val until = if (input.take("until")) input.integer("until", from + 1, ParticleRecipe.MAX_EMIT_TICK) else -1
                 add("window") { recipe = recipe.copy(emitFromTick = from, emitUntilTick = until) }
             }
             if (input.take("spacing")) {
@@ -142,7 +149,7 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
                 val bounce = if (input.take("bounce")) input.number("bounce") else 0.35
                 val friction = if (input.take("friction")) input.number("friction") else 0.55
                 val size = if (input.take("half_size")) input.number("half_size") else 0.0
-                val steps = if (input.take("steps")) input.integer("steps", 1, 4) else 1
+                val steps = if (input.take("steps")) input.integer("steps", 1, ParticleRecipe.MAX_COLLISION_STEPS) else 1
                 add("collide") {
                     recipe = recipe.copy(collision = mode, bounce = bounce, friction = friction,
                         collisionHalfSize = size, collisionSteps = steps)
@@ -151,8 +158,8 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
             if (input.take("subemit")) {
                 val value = if (input.take("off")) null else {
                     input.expect("count")
-                    val count = input.integer("count", 1, 64)
-                    val life = if (input.take("life")) input.integer("life", 1, 72000) else 12
+                    val count = input.integer("count", 1, SubEmit.MAX_COUNT)
+                    val life = if (input.take("life")) input.integer("life", 1, ParticleRecipe.MAX_LIFETIME) else 12
                     val speed = if (input.take("speed")) input.number("speed") else SubEmit().speed
                     val scale = if (input.take("scale")) input.number("scale") else SubEmit().scale
                     SubEmit().copy(count = count, lifetime = life, speed = speed, scale = scale)
@@ -206,7 +213,7 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
         private fun sampling(input: CommandInput): Draft.(Binding) -> Unit =
             when (input.choice(listOf("count", "range", "grid", "image", "mesh", "text"))) {
                 "count" -> {
-                    val count = input.integer("count", 1, 8192)
+                    val count = input.integer("count", 1, ParticleRecipe.MAX_SEEDS)
                     sampleChange { range = null; this.count = count; sampling = Sampling.PARAMETER }
                 }
                 "range" -> {
@@ -227,23 +234,23 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
                     val spacing = if (input.take("pixel_spacing")) input.number("pixel_spacing") else 0.05
                     val alpha = if (input.take("alpha")) input.number("alpha") else 0.0
                     if (spacing <= 0 || alpha !in 0.0..1.0) input.invalid("image spacing and alpha")
-                    val stride = if (input.take("stride")) input.integer("stride", 1, 256) else 1
+                    val stride = if (input.take("stride")) input.integer("stride", 1, ParticleRecipe.MAX_SEEDS) else 1
                     val plane = if (input.take("plane")) input.choice(listOf("xy", "xz", "yz")).uppercase() else "XY"
                     val options = ParticleImageSampler.Options(stride, spacing, alpha, ParticleImageSampler.Plane.valueOf(plane))
                     sampleChange { image = source; imageOptions = options; sampling = Sampling.IMAGE }
                 }
                 "mesh" -> {
                     val source = asset(input, "particleMeshes", ".obj")
-                    val count = if (input.take("count")) input.integer("count", 1, 8192) else 256
+                    val count = if (input.take("count")) input.integer("count", 1, ParticleRecipe.MAX_SEEDS) else 256
                     val seed = if (input.take("seed")) input.integer("seed") else 0
                     sampleChange { mesh = source; meshCount = count; meshSeed = seed; sampling = Sampling.MESH }
                 }
                 else -> {
                     val text = input.value("text")
                     if (text.isBlank()) input.invalid("nonempty text")
-                    val count = if (input.take("count")) input.integer("count", 1, 8192) else 1024
+                    val count = if (input.take("count")) input.integer("count", 1, ParticleRecipe.MAX_SEEDS) else 1024
                     val height = if (input.take("height")) input.number("height") else 2.0
-                    if (height !in 0.001..1024.0) input.invalid("height (0.001..1024)", height.toString())
+                    if (height !in MIN_TEXT_HEIGHT..MAX_TEXT_HEIGHT) input.invalid("height ($MIN_TEXT_HEIGHT..$MAX_TEXT_HEIGHT)", height.toString())
                     sampleChange { this.text = text; textCount = count; textHeight = height; sampling = Sampling.TEXT }
                 }
             }

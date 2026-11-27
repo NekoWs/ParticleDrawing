@@ -33,10 +33,10 @@ object ParticleDrawingConfig {
             builder.push("particle_limits")
             maxParticlesPerDimension = builder
                 .comment("The maximum total number of particles alive at once per dimension.")
-                .defineInRange("maxParticlesPerDimension", 100_000, 1, 1_000_000)
+                .defineInRange("maxParticlesPerDimension", 1_000_000, 1, 10_000_000)
             maxParticlesPerPlayer = builder
                 .comment("The maximum number of particles visible to a single player at once.")
-                .defineInRange("maxParticlesPerPlayer", 20_000, 1, 100_000)
+                .defineInRange("maxParticlesPerPlayer", 500_000, 1, 5_000_000)
             builder.pop()
 
             builder.push("visibility")
@@ -87,28 +87,28 @@ object ParticleDrawingConfig {
                 .defineInRange("maxShadowedParticleLights", 0, 0, 16)
             maxDynamicLights = builder
                 .comment("The maximum number of dynamic light sources active at once (global upper bound).")
-                .defineInRange("maxDynamicLights", 512, 0, 4096)
+                .defineInRange("maxDynamicLights", 4096, 0, 65_536)
             maxDynamicLightsPerCell = builder
                 .comment("The maximum number of dynamic light sources computed per 16x16x16 cell. Lights beyond this are dropped for that cell, which can look like a lamp switching off; raise it if that happens.")
-                .defineInRange("maxDynamicLightsPerCell", 32, 1, 128)
+                .defineInRange("maxDynamicLightsPerCell", 256, 1, 4096)
             dynamicLightMaxDistance = builder
                 .comment("Default range of particle lights without an explicit range.")
-                .defineInRange("dynamicLightMaxDistance", 16.0, 1.0, 64.0)
+                .defineInRange("dynamicLightMaxDistance", 64.0, 1.0, 256.0)
             builder.pop()
 
             builder.push("rendering")
             maxRenderParticles = builder
                 .comment("The maximum number of particles the client keeps in its render pipeline.")
-                .defineInRange("maxRenderParticles", 50_000, 1, 200_000)
+                .defineInRange("maxRenderParticles", 1_000_000, 1, 5_000_000)
             maxParticleGeometryQuads = builder
                 .comment("Maximum quads submitted by particle trails and models per frame")
-                .defineInRange("maxParticleGeometryQuads", 200_000, 1_000, 1_000_000)
+                .defineInRange("maxParticleGeometryQuads", 2_000_000, 1_000, 20_000_000)
             particleLodDistance = builder
                 .comment("Distance in blocks for full particle density. Density falls with squared distance, and particles beyond four times this range are hidden. Zero disables LOD.")
                 .defineInRange("particleLodDistance", 0.0, 0.0, 512.0)
             particleBatchSize = builder
                 .comment("The number of particles whose eased state is synchronized to the renderer per frame (fair round-robin batch).")
-                .defineInRange("particleBatchSize", 4096, 64, 65536)
+                .defineInRange("particleBatchSize", 65_536, 64, 1_000_000)
             builder.pop()
 
             builder.push("compatibility")

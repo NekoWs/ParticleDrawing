@@ -6,7 +6,7 @@ import work.nekow.particledrawing.math.Vec3
 
 internal object CollisionMath {
     const val SURFACE_MARGIN = 1e-4
-    const val MAX_STEP = 64.0
+    const val MAX_STEP = 1024.0
     private const val REST_VELOCITY = 0.02
 
     data class Response(val position: Vec3, val velocity: Vec3, val surface: SurfaceHit)

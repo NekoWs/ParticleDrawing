@@ -726,11 +726,11 @@ trail.isActive()
 
 | 键 | 默认 | 作用 |
 | --- | --- | --- |
-| `maxRenderParticles` | 50000 | 客户端渲染管线里的粒子总数上限，先降这个（例如 12000） |
-| `maxDynamicLights` / `maxDynamicLightsPerCell` | 512 / 8 | 动态光源数量，再降这个（例如 128 / 4） |
-| `dynamicLightMaxDistance` | 16 | 光影响半径，调小会明显减少区块重烘焙 |
+| `maxRenderParticles` | 1000000 | 客户端渲染管线里的粒子总数上限，先降这个（例如 12000） |
+| `maxDynamicLights` / `maxDynamicLightsPerCell` | 4096 / 256 | 动态光源数量，再降这个（例如 128 / 4） |
+| `dynamicLightMaxDistance` | 64 | 光影响半径，调小会明显减少区块重烘焙 |
 | `enableDynamicLights` | true | 还卡就整个关掉；没有发光粒子时这一整段本来就会每帧跳过 |
-| `particleBatchSize` | 4096 | 每 tick 同步多少颗粒子的缓动（公平轮转，掉到很小时缓动会变慢，不要先降它） |
+| `particleBatchSize` | 65536 | 每 tick 同步多少颗粒子的缓动（公平轮转，掉到很小时缓动会变慢，不要先降它） |
 
 配合光影包时另有三处可单独关掉的兼容开关（`customAdditivePipeline`、`sceneMaterials`、`terrainDynamicLights`），
 见[光影包](known-issues.md#光影包)。

@@ -46,7 +46,9 @@ class ParticleCollisionTest {
         val to = Vec3(0.0, 0.3, 0.0)
         assertNull(CollisionMath.resolve(RecipeCollision.SOLID, world, from, to, to.subtract(from), 0.5, 1.0))
         assertFailsWith<IllegalArgumentException> {
-            CollisionMath.resolve(RecipeCollision.SOLID, world, from, Vec3(0.0, 65.0, 0.0), to, 0.5, 1.0)
+            CollisionMath.resolve(
+                RecipeCollision.SOLID, world, from, Vec3(0.0, CollisionMath.MAX_STEP + 2.0, 0.0), to, 0.5, 1.0,
+            )
         }
     }
 

@@ -277,6 +277,12 @@ object RuntimeSelfTest {
                     run("pdraw particle emitter v2_gpu at 0 60 0 sample count 64 look style soft_dot additive glow light 0 life 10 burst gpu") == 1 &&
                     run("pdraw particle emitter v2_sync at 0 60 0 sample count 4 life 10 max 64 burst synced") == 1
             }
+            check("发射参数只保留安全上限") {
+                run("pdraw particle template v2_limits sample count 1 look style soft_dot color aqua life 100000 " +
+                    "rate 4096 interval 100 max 10000 spacing 0.001 subemit count 512 life 900 speed 48 scale 32") == 1 &&
+                    run("pdraw particle template v2_limits sample count 1 max 1000001") == 0 &&
+                    run("pdraw particle delete template v2_limits") == 1
+            }
             check("多支投射物独立绑定，首次碰撞结束拖尾") {
                 val block = BlockPos(0, 200, 0)
                 val saved = level.getBlockState(block)

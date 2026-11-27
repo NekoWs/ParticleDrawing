@@ -83,7 +83,8 @@ class SyncedRecipeTest {
     }
 
     @Test fun `同步上限和客户端专用选项在启动前报错`() {
-        for (bad in listOf(recipe.copy(rate = 65), recipe.copy(maxAlive = 65), recipe.copy(simulationRange = 32.0))) {
+        val over = SyncedRecipe.MAX_PARENT + 1
+        for (bad in listOf(recipe.copy(rate = over), recipe.copy(maxAlive = over), recipe.copy(simulationRange = 32.0))) {
             assertFailsWith<IllegalArgumentException> { SyncedRecipe.validate(bad) }.also { assertIs<LocalizedFailure>(it) }
         }
     }

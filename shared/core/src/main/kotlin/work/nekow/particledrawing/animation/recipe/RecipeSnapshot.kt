@@ -119,6 +119,7 @@ internal class SyncedRecipe(recipe: ParticleRecipe, burst: Boolean, world: Parti
     }
 
     companion object {
+        /** 同步模式的逐帧状态行上限。首帧含完整尾迹，单包预算约 192 KB，不能随意放大。 */
         const val MAX_PARENT = 64
         const val MAX_CHILDREN = 64
         const val MAX_DETACHED = 64

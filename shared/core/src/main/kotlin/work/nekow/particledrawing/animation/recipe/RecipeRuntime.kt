@@ -170,7 +170,7 @@ class RecipeRuntime(
     /** 旧粒子先推进，再生成本刻的新粒子；新生粒子保留 age=0 的完整首帧。 */
     fun tick(allowBirth: Boolean = true) = tickInFrame(if (allowBirth) RecipeFrame.IDENTITY else null)
 
-    internal fun tickInFrame(frame: RecipeFrame?, birthBudget: Int = ParticleRecipe.MAX_RATE) {
+    internal fun tickInFrame(frame: RecipeFrame?, birthBudget: Int = ParticleRecipe.MAX_BIRTHS_PER_TICK) {
         this.frame = frame
         triggers.clear()
         neighbors?.let(::snapshotNeighbors)
@@ -594,7 +594,9 @@ class RecipeRuntime(
     }
 
     companion object {
-        private const val MAX_EVENTS_PER_TICK = 64
+        private const val MAX_EVENTS_PER_TICK = 4096
+
+        /** 瞬移保护：单刻位移超过该距离时按传送处理，丢掉这一段的里程发射，避免沿传送路径铺满粒子。 */
         private const val MAX_EMISSION_STEP = 64.0
 
         internal fun requireCadence(recipe: ParticleRecipe, burst: Boolean) {
