@@ -24,7 +24,7 @@ v2 发布时删除 `particle batch`、`particle group`、`particle add`、`parti
 - 表格和代码块中的 `<…>` 是参数，`[…]` 可选，`{…}` 可重复，`|` 表示择一。关键字使用小写。命名对象按大小写区分，名称匹配 `[A-Za-z0-9_.:-]{1,64}`。发射器、模板、组分别在当前维度查找。和命令关键字同名时可加双引号，例如 `advanced emitter "list" inspect`。补全应返回可直接执行的名称。
 - 数字使用有限十进制数。刻数和数量必须是整数，禁止自动取整。非退化尺寸、步长和成员上限按各段校验。角度为度，距离为世界格，速度为格/刻，加速度为格/刻²。
 - `<坐标>` 使用原版 `Vec3Argument` 的绝对、`~` 和 `^` 语义，包括绝对坐标的居中规则。`<向量>` 是三个普通数字，用于偏移、速度和轴。选择器沿用原版单实体参数，在实际命令源上检查权限并解析，支持 `execute as … at …`。
-- `<公式>` 是一个参数。无空白的公式可以裸写，包括括号和逗号。含空白的公式使用双引号，引号内支持 `\"` 和 `\\`。解析后的公式最多 2048 字符。字符串与资源引用同样支持双引号。文字中的 `|` 转成换行。
+- `<公式>` 是一个参数。无空白的公式可以裸写，包括括号和逗号。含空白的公式使用双引号，引号内支持 `\"`、`\\`、`\n` 和 `\t`。解析后的公式最多 2048 字符。字符串与资源引用同样支持双引号。文字中的 `\n` 转成换行，`|` 不再有特殊含义。
 - 除明确可重复的段外，同一段、字段或别名写两次均报错。多值参数按规定个数消费。`look`、形变选项和高级段按各自表中的键消费参数，再交回外层解析器。未知键、缺少参数和尾随字符均返回带具体位置的错误。
 - `dryrun` 只出现在支持它的命令末尾。聊天、命令方块和数据包仍受原版各入口的输入限制。长定义可放进 `.mcfunction`，v2 不另外改变原版限制。
 - 权限沿用现有粒子管理命令。建议由 Brigadier 注册固定入口和权限，共享段解析器负责声明尾部的解析与补全。构造坐标和实体参数时复用原版参数读取与建议，包括选择器内原版支持的引号。
@@ -132,7 +132,7 @@ morph slots <数量> <位置公式> {<形变选项>}
 
 ### 3.4 形变
 
-`then morph slots` 为本次形变提供独立定义，紧跟目标槽位数与位置公式。形变选项可换序，每个键只出现一次。槽位数量、位置、各属性公式和各选项沿用现有 `MorphSlotFormulas` 与 `MorphOptions` 的校验和坐标语义。
+`then morph slots` 为本次形变提供独立定义，紧跟目标槽位数与位置公式。形变选项可换序，每个键只出现一次。槽位数量、位置、各属性公式和各选项沿用现有 `MorphSlotFormulas` 与 `MorphOptions` 的校验和坐标语义。`space` 决定坐标含义：默认 `world` 是绝对世界坐标；`local` 把槽位、控制点都当作相对组锚点的偏移，锚点移动时目标跟着平移，换位置执行命令不需要把 `at` 抄进公式。
 
 ```text
 yaw <公式> | pitch <公式> | size <公式>
@@ -144,9 +144,10 @@ easing <形变缓动>
 wobble none|bell|noise|vortex [strength <数>] [peaks <数>]
 allocation nearest|index|angle
 dynamic true|false | keep_velocity true|false | attributes true|false
+space world|local
 ```
 
-位置、控制点和字段公式从同一份形变定义准备。默认 `ticks 40`、`stagger 0`、`loop 0`、`max_speed 0`、`max_accel 0`、`converge 0.05`、`path straight`、`easing linear`、`wobble none`、`strength 0`、`peaks 1`、`allocation nearest`、`dynamic false`、`keep_velocity false`。未给 `attributes` 时，存在 yaw、pitch 或 size 公式即启用属性写入。`loop -1` 表示无限往返。高级形变草稿在第 7 节说明。
+位置、控制点和字段公式从同一份形变定义准备。默认 `ticks 40`、`stagger 0`、`loop 0`、`max_speed 0`、`max_accel 0`、`converge 0.05`、`path straight`、`easing linear`、`wobble none`、`strength 0`、`peaks 1`、`allocation nearest`、`dynamic false`、`keep_velocity false`、`space world`。未给 `attributes` 时，存在 yaw、pitch 或 size 公式即启用属性写入。`loop -1` 表示无限往返。高级形变草稿在第 7 节说明。
 
 ### 3.5 绘制示例
 

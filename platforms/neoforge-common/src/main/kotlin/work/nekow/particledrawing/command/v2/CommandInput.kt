@@ -120,7 +120,7 @@ internal class CommandInput(
         val from = start()
         if (!reader.canRead()) invalid(label)
         if (reader.peek() == '"') {
-            val value = reader.readQuotedString()
+            val value = readQuoted(label)
             if (reader.canRead() && !reader.peek().isWhitespace()) invalid(label)
             return value
         }
@@ -129,6 +129,29 @@ internal class CommandInput(
             reader.skip()
         }
         return reader.string.substring(from, reader.cursor)
+    }
+
+    /** 引号字符串：除 `\"` 与 `\\` 外也接受 `\n`、`\t`，与脚本文本使用同一套写法。 */
+    private fun readQuoted(label: String): String {
+        reader.skip()
+        val out = StringBuilder()
+        while (reader.canRead()) {
+            when (val c = reader.read()) {
+                '"' -> return out.toString()
+                '\\' -> {
+                    if (!reader.canRead()) invalid(label)
+                    when (val escaped = reader.read()) {
+                        '"' -> out.append('"')
+                        '\\' -> out.append('\\')
+                        'n' -> out.append('\n')
+                        't' -> out.append('\t')
+                        else -> invalid("escape sequence \\$escaped")
+                    }
+                }
+                else -> out.append(c)
+            }
+        }
+        invalid(label)
     }
 
     fun name(choices: Collection<String> = emptyList()): String {
@@ -219,7 +242,8 @@ internal class CommandInput(
         private val BOOLEANS = listOf("true", "false")
         private val RESERVED = setOf("list", "clear_all")
 
-        fun quote(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+        fun quote(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"")
+            .replace("\n", "\\n").replace("\t", "\\t") + "\""
     }
 }
 

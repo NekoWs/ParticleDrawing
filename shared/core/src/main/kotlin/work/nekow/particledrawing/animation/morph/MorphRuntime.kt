@@ -16,11 +16,20 @@ import work.nekow.particledrawing.i18n.translation
  *
  * 平台层（客户端程序求值）每 tick 调 [tick]，再把 [positionOf] 等结果写到粒子上。
  * 这里不碰任何 Minecraft 类型，护栏 G1–G10 里的数值部分都能在纯 JVM 测试里断言。
+ *
+ * [MorphOptions.space] 为 [MorphSpace.LOCAL] 时，槽位与路径控制点都按「相对锚点」解释，
+ * 锚点由 [anchorProvider] 每 tick 提供：[positionOf] 与 [slotPositionOf] 返回世界坐标，
+ * 内部距离、限速与扰动仍在局域坐标系里计算。
  */
 class MorphRuntime(
     particles: List<MorphParticle>,
     slots: List<MorphSlot>,
     options: MorphOptions,
+    /**
+     * 局域坐标系的锚点（世界坐标）。[MorphSpace.LOCAL] 时每 tick 重新读取，返回 null
+     * 表示锚点暂时不可用、保持上一次的值；其它坐标系忽略。
+     */
+    private val anchorProvider: (() -> Vec3?)? = null,
     /** 动态目标：每 tick 用当前形变时间（毫秒）重算槽位；为 null 时不重算。 */
     private val slotProvider: ((Double) -> List<MorphSlot>)? = null,
 ) {
@@ -50,6 +59,16 @@ class MorphRuntime(
     private val byId = HashMap<UUID, Track>(particles.size * 2)
     private var slots: List<MorphSlot> = slots
     private var options: MorphOptions = options
+
+    /** 槽位坐标是否相对锚点。运行方式在开始时定下，之后不随 retune 改变。 */
+    private val local: Boolean = options.space == MorphSpace.LOCAL
+    private var anchor: Vec3 = anchorProvider?.invoke() ?: Vec3.ZERO
+
+    /** 世界坐标 → 形变自己的坐标系。 */
+    private fun localOf(world: Vec3): Vec3 = if (local) world.subtract(anchor) else world
+
+    /** 形变自己的坐标系 → 世界坐标。 */
+    private fun worldOf(point: Vec3): Vec3 = if (local) point.add(anchor) else point
 
     /** 已经推进的形变时间（刻，含错峰与暂停的影响）。 */
     var ticksElapsed: Double = 0.0
@@ -100,7 +119,7 @@ class MorphRuntime(
         val distances = HashMap<UUID, Double>(particles.size * 2)
         for (p in particles) {
             val slot = allocation.slotOfParticle[p.id]?.let { slots[it] }
-            distances[p.id] = if (slot == null) 0.0 else p.position.distanceTo(slot.position)
+            distances[p.id] = if (slot == null) 0.0 else localOf(p.position).distanceTo(slot.position)
         }
         val ranked = particles.sortedByDescending { distances[it.id] ?: 0.0 }
         val rankOf = HashMap<UUID, Int>(ranked.size * 2)
@@ -111,12 +130,13 @@ class MorphRuntime(
             val slotIndex = allocation.slotOfParticle[p.id] ?: -1
             val slot = if (slotIndex >= 0) slots[slotIndex] else null
             val order = if (p.order >= 0) p.order else i
+            val start = localOf(p.position)
             val delay = if (slot == null || options.staggerTicks == 0) 0.0
             else options.staggerTicks.toDouble() * (rankOf[p.id]!!.toDouble() / lastRank)
-            val duration = if (slot == null) 0.0 else durationTicksFor(p.position, slot, order)
+            val duration = if (slot == null) 0.0 else durationTicksFor(start, slot, order)
             val track = Track(
                 p.id, order,
-                p.position.x, p.position.y, p.position.z,
+                start.x, start.y, start.z,
                 p.velocity.x, p.velocity.y, p.velocity.z,
                 slotIndex, delay, duration,
                 slot?.control1, slot?.control2,
@@ -158,6 +178,7 @@ class MorphRuntime(
     /** 推进 [dtTicks] 刻（受暂停与倍率影响）。返回是否本刻有粒子位置变化。 */
     fun tick(dtTicks: Double = 1.0): Boolean {
         if (cancelled) return false
+        anchorProvider?.invoke()?.let { anchor = it }
         if (paused || timeScale <= 0.0) return false
         val dt = dtTicks * timeScale
         ticksElapsed += dt
@@ -442,8 +463,9 @@ class MorphRuntime(
 
     // ── 查询（G5） ────────────────────────────────────────────────────────────
 
-    fun positionOf(id: UUID): Vec3? = byId[id]?.let { Vec3(it.posX, it.posY, it.posZ) }
+    fun positionOf(id: UUID): Vec3? = byId[id]?.let { worldOf(Vec3(it.posX, it.posY, it.posZ)) }
 
+    /** 形变自己的坐标系里的速度；局域形变时不含锚点自身的移动。 */
     fun velocityOf(id: UUID): Vec3? = byId[id]?.let { Vec3(it.velX, it.velY, it.velZ) }
 
     fun yawOf(id: UUID): Double? = byId[id]?.yaw?.takeIf { !it.isNaN() }
@@ -461,7 +483,7 @@ class MorphRuntime(
 
     fun slotOf(id: UUID): Int? = byId[id]?.slotIndex?.takeIf { it >= 0 }
 
-    fun slotPositionOf(id: UUID): Vec3? = byId[id]?.let { targetOf(it) }
+    fun slotPositionOf(id: UUID): Vec3? = byId[id]?.let { worldOf(targetOf(it)) }
 
     fun arrivedOf(id: UUID): Boolean = byId[id]?.arrived ?: false
 

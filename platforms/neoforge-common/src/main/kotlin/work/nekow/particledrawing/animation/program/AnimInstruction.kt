@@ -491,6 +491,7 @@ sealed class AnimInstruction {
             buf.writeBoolean(spec.keepVelocity)
             buf.writeBoolean(spec.writeAttributes)
             buf.writeBoolean(spec.dynamicSlots)
+            buf.writeVarInt(spec.space)
         }
     }
 
@@ -537,6 +538,7 @@ private fun readMorph(startMs: Int, buf: FriendlyByteBuf): AnimInstruction.Morph
         keepVelocity = buf.readBoolean(),
         writeAttributes = buf.readBoolean(),
         dynamicSlots = buf.readBoolean(),
+        space = buf.readVarInt(),
     )
     return AnimInstruction.Morph(startMs, count, position, yaw, pitch, size, control1, control2, spec, slots)
 }

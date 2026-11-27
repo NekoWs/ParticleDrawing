@@ -152,7 +152,7 @@ internal object DrawCommands {
             }
             "text" -> {
                 input.expect("text")
-                text = input.value("text").replace('|', '\n')
+                text = input.value("text")
                 if (input.take("size")) numbers["height"] = input.number("size")
                 if (input.take("count")) numbers["count"] = input.integer("count", 1, MAX_MEMBERS).toDouble()
             }
@@ -418,7 +418,8 @@ internal object DrawCommands {
                     val draft = entry.morphDraft
                     if (draft == null) EmitterCommands.success(source, name, op)
                     else {
-                        source.reply({ translation("command.v2.morph", name, draft.slotCount, draft.ticks).component() })
+                        val space = translation("command.v2.morph.space.${draft.space.name.lowercase()}")
+                        source.reply({ translation("command.v2.morph", name, draft.slotCount, draft.ticks, space).component() })
                         1
                     }
                 }

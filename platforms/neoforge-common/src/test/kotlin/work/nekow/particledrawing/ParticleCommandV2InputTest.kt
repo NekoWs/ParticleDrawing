@@ -3,6 +3,7 @@ package work.nekow.particledrawing
 import com.mojang.brigadier.exceptions.CommandSyntaxException
 import com.mojang.brigadier.suggestion.SuggestionsBuilder
 import com.mojang.brigadier.suggestion.Suggestions
+import work.nekow.particledrawing.animation.morph.MorphSpace
 import work.nekow.particledrawing.api.RecipeAnchor
 import work.nekow.particledrawing.command.CommandParticleRecipes.Draft
 import work.nekow.particledrawing.command.CommandSuggestionCatalog
@@ -10,6 +11,7 @@ import work.nekow.particledrawing.command.v2.CommandInput
 import work.nekow.particledrawing.command.v2.CommandLook
 import work.nekow.particledrawing.command.v2.EmitterDeclaration
 import work.nekow.particledrawing.command.v2.EmitterDeclaration.Companion.prepareRecipe
+import work.nekow.particledrawing.command.v2.ProgramCommands
 import work.nekow.particledrawing.math.Vec3
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -119,5 +121,24 @@ class ParticleCommandV2InputTest {
             SuggestionsBuilder(raw, prefix.length), listOf("test:trail one", "other:field"),
         ).build()
         assertEquals(prefix + "\"test:trail one\"", suggestions.list.single().apply(raw))
+    }
+
+    @Test fun quotedTextDecodesEscapedNewlinesAndKeepsPipes() {
+        val input = CommandInput("\"first\\nsecond\"")
+        assertEquals("first\nsecond", input.value("text"))
+        input.finish()
+        val pipe = CommandInput("\"a|b\"")
+        assertEquals("a|b", pipe.value("text"))
+        pipe.finish()
+        assertEquals("\"a\\nb\"", CommandInput.quote("a\nb"))
+    }
+
+    @Test fun morphAcceptsLocalSpace() {
+        val input = CommandInput("slots 12 \"vec3(cos(u*2*PI)*3, sin(u*2*PI)*3, 0)\" ticks 40 space local")
+        val config = ProgramCommands.morph(input)
+        input.finish()
+        assertEquals(12, config.slotCount)
+        assertEquals(MorphSpace.LOCAL, config.space)
+        assertEquals(MorphSpace.WORLD, ProgramCommands.morph(CommandInput("slots 1 \"vec3(0,0,0)\"")).space)
     }
 }

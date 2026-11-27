@@ -764,15 +764,17 @@ internal object ClientAnimationProgramManager {
         p.activeMorph = ins
 
         try {
+            // 局域形变以组锚点为原点；锚点每 tick 重新解析，组移动时目标跟着平移。
+            val anchor = { resolvePivot(p)?.apply(Vec3.ZERO)?.toCore() }
             val slots = ins.slots
             if (slots != null) {
                 p.morph = MorphRuntime(particles, slots.map {
                     MorphSlot(it.position.toCore(), it.yaw ?: Double.NaN, it.pitch ?: Double.NaN, it.size ?: Double.NaN)
-                }, ins.spec.toOptions())
+                }, ins.spec.toOptions(), anchorProvider = anchor)
             } else {
                 val formulas = MorphSlotFormulas(ins.slotCount, ins.position, ins.yaw, ins.pitch, ins.size, ins.control1, ins.control2)
                 p.morph = MorphRuntime(
-                    particles, formulas.build(0.0), ins.spec.toOptions(),
+                    particles, formulas.build(0.0), ins.spec.toOptions(), anchor,
                     if (ins.spec.dynamicSlots) formulas::build else null,
                 )
             }

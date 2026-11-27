@@ -13,6 +13,7 @@ import work.nekow.particledrawing.i18n.translation
  *
  * 每个槽位按序号求值：变量 `i`（序号）、`n`（总数）、`u`（i/(n-1)）、`t`（形变毫秒）。
  * 位置必须是能取三个分量的向量（`vec3(...)`）；朝向、尺寸、控制点可选。
+ * 坐标含义跟随 [MorphOptions.space]：默认世界坐标，`LOCAL` 时是相对组锚点的偏移。
  * [build] 可以被每 tick 调用（动态目标），也可以只在开始时调一次（静态快照）。
  */
 class MorphSlotFormulas(

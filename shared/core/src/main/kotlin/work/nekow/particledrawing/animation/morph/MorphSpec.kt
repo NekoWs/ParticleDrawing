@@ -26,6 +26,8 @@ data class MorphSpec(
     val writeAttributes: Boolean = false,
     /** true = 槽位每 tick 用公式重算（动态目标），false = 开始时算一次。 */
     val dynamicSlots: Boolean = false,
+    /** [MorphSpace] 序号；缺省世界坐标。 */
+    val space: Int = 0,
 ) {
     fun toOptions(): MorphOptions = MorphOptions(
         ticks = ticks,
@@ -42,6 +44,7 @@ data class MorphSpec(
         allocation = MorphAllocation.entries.getOrNull(allocation) ?: MorphAllocation.NEAREST,
         keepVelocity = keepVelocity,
         writeAttributes = writeAttributes,
+        space = MorphSpace.entries.getOrNull(space) ?: MorphSpace.WORLD,
     )
 
     companion object {
@@ -61,6 +64,7 @@ data class MorphSpec(
             keepVelocity = options.keepVelocity,
             writeAttributes = options.writeAttributes,
             dynamicSlots = dynamicSlots,
+            space = options.space.ordinal,
         )
     }
 }

@@ -74,6 +74,14 @@ fun interface MorphEasing {
     }
 }
 
+/** 槽位坐标所在的坐标系。 */
+enum class MorphSpace {
+    /** 世界坐标：槽位就是最终的绝对位置。 */
+    WORLD,
+    /** 相对组锚点：槽位是相对锚点的偏移，锚点移动时目标跟着平移。 */
+    LOCAL,
+}
+
 /**
  * 一次形变的全部可调项。
  *
@@ -98,6 +106,8 @@ data class MorphOptions(
     val keepVelocity: Boolean = false,
     /** 显式开启后，形变才会同时写朝向与尺寸（否则只动位置）。 */
     val writeAttributes: Boolean = false,
+    /** 槽位与路径控制点按哪个坐标系解释。 */
+    val space: MorphSpace = MorphSpace.WORLD,
 ) {
     init {
         requireLocalized(ticks >= 0) { translation("error.ticks") }

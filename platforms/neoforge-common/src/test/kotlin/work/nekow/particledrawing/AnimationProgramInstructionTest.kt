@@ -6,6 +6,7 @@ import net.minecraft.network.codec.StreamCodec
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.ParticleMorphSlot
 import work.nekow.particledrawing.animation.morph.MorphSpec
+import work.nekow.particledrawing.animation.morph.MorphSpace
 import work.nekow.particledrawing.animation.program.AnimInstruction
 import work.nekow.particledrawing.animation.program.PivotRef
 import work.nekow.particledrawing.animation.program.finiteDurationMs
@@ -135,6 +136,23 @@ class AnimationProgramInstructionTest {
         assertEquals(0, buf.readableBytes())
         assertFailsWith<IllegalArgumentException> { ParticleMorphSlot(Vec3.ZERO, yaw = Double.POSITIVE_INFINITY) }
         assertFailsWith<IllegalArgumentException> { ParticleMorphSlot(Vec3.ZERO, size = -1.0) }
+    }
+
+    @Test
+    fun `形变坐标系随指令往返`() {
+        for (space in MorphSpace.entries) {
+            val morph = AnimInstruction.Morph(0, 8, "vec3(u, 0, 0)", spec = MorphSpec(space = space.ordinal))
+            val buf = FriendlyByteBuf(Unpooled.buffer())
+            try {
+                morph.write(buf)
+                assertEquals(morph, AnimInstruction.read(buf))
+                assertEquals(0, buf.readableBytes())
+            } finally {
+                buf.release()
+            }
+        }
+        assertEquals(MorphSpace.LOCAL, MorphSpec(space = MorphSpace.LOCAL.ordinal).toOptions().space)
+        assertEquals(MorphSpace.WORLD, MorphSpec().toOptions().space)
     }
 
     @Test

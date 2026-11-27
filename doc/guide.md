@@ -300,8 +300,10 @@ group.morph(points)
 
 Java 可调用 `Draw.textPoints("变换形状", center, 602, 2.4)`，也可传入第五个 `Font` 参数。
 
-`ParticleGroup.morph(points, options)` 接收 `List<Vec3>` 世界坐标，可直接使用文字、图片或模型的采样点。
+`ParticleGroup.morph(points, options)` 默认接收 `List<Vec3>` 世界坐标，可直接使用文字、图片或模型的采样点。
 单次可传 1–8192 个目标，粒子与目标等量时，每个目标恰好分到一颗。多余的粒子停在当前点。
+`MorphOptions(space = MorphSpace.LOCAL)` 把槽位改成相对组锚点的偏移：同一份文字或形状可以原地落成，
+组移动时目标跟着平移，不必把锚点坐标写进坐标里。
 给每个落点配置外观时，使用 `morphSlots(List<ParticleMorphSlot>, MorphOptions)`，Java 和 Kotlin 均可调用。
 `yaw` 和 `pitch` 以度为单位，分别绕 Y 轴和 X 轴走最短角差。面向摄像机的粒子相对相机旋转，固定朝向的粒子以世界 +Z 为基准。
 `size` 使用 `ParticleSpawnSpec.scale` 的单位，等比缩放粒子。省略的属性沿用当前值。

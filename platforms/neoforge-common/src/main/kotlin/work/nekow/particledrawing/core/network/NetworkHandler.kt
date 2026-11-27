@@ -17,7 +17,7 @@ object NetworkHandler {
     @JvmStatic
     fun register(event: RegisterPayloadHandlersEvent) {
         // 载荷集合或字段变化时提升版本号，避免新旧端误配
-        val registrar: PayloadRegistrar = event.registrar("45")
+        val registrar: PayloadRegistrar = event.registrar("46")
         registrar.playToClient(ParticleKeyframesPayload.TYPE, ParticleKeyframesPayload.CODEC) { payload, context ->
             context.enqueueWork { work.nekow.particledrawing.core.client.ClientParticleKeyframes.receive(payload) }
         }

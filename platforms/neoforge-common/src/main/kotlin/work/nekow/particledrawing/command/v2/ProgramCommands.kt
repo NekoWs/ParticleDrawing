@@ -6,6 +6,7 @@ import work.nekow.particledrawing.animation.morph.MorphAllocation
 import work.nekow.particledrawing.animation.morph.MorphEasing
 import work.nekow.particledrawing.animation.morph.MorphPath
 import work.nekow.particledrawing.animation.morph.MorphSlotFormulas
+import work.nekow.particledrawing.animation.morph.MorphSpace
 import work.nekow.particledrawing.animation.morph.MorphWobble
 import work.nekow.particledrawing.animation.recipe.GroupExpressionOutputs
 import work.nekow.particledrawing.animation.script.ScriptRuntime
@@ -134,7 +135,7 @@ internal object ProgramCommands {
 
     private val morphFields = setOf(
         "yaw", "pitch", "size", "control1", "control2", "ticks", "stagger", "loop", "max_speed", "max_accel",
-        "converge", "path", "easing", "wobble", "allocation", "dynamic", "keep_velocity", "attributes",
+        "converge", "path", "easing", "wobble", "allocation", "dynamic", "keep_velocity", "attributes", "space",
     )
 
     fun morph(input: CommandInput): MorphConfig {
@@ -172,6 +173,7 @@ internal object ProgramCommands {
                 "dynamic" -> config.dynamic = input.boolean()
                 "keep_velocity" -> config.keepVelocity = input.boolean()
                 "attributes" -> config.attributes = input.boolean()
+                "space" -> config.space = MorphSpace.valueOf(input.choice(listOf("world", "local")).uppercase())
             }
             input.suggest(morphFields - seen)
         }

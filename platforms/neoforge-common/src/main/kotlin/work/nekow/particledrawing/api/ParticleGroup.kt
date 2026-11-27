@@ -585,6 +585,7 @@ class ParticleGroup(
      *
      * 槽位用公式描述（变量 `i`、`n`、`u`，动态目标还能用 `t`），与命令、脚本共用同一套写法；
      * 每颗粒子按 [MorphOptions.allocation] 选槽位，过渡只改位置，不重生也不销毁成员。
+     * [MorphOptions.space] 默认世界坐标；设为 `LOCAL` 时槽位相对组锚点，锚点移动目标跟着平移。
      * [MorphOptions.writeAttributes] 开启时，yaw、pitch（度）和 size（粒子 scale 单位）与位置一起缓动。
      * 过渡进行中再次调用会按当前实际位置、速度和外观重新开始。
      */
@@ -612,7 +613,8 @@ class ParticleGroup(
     }
 
     /**
-     * 把成员过渡到一组静态的世界坐标。适用于字形、图片或模型采样得到的槽位。
+     * 把成员过渡到一组静态槽位。默认按世界坐标处理；[MorphOptions.space] 为 `LOCAL` 时
+     * 每个点都是相对组锚点的偏移。适用于字形、图片或模型采样得到的槽位。
      * 列表会被复制。粒子多于槽位时，多出来的成员留在调用时的位置。
      */
     @JvmOverloads

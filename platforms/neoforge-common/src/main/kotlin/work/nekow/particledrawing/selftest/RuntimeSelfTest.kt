@@ -344,7 +344,7 @@ object RuntimeSelfTest {
                 }
             }
             check("文字采样与图元") {
-                run("pdraw particle emitter v2_text sample text \"SELFTEST|V2\" count 512 height 2") == 1 &&
+                run("pdraw particle emitter v2_text sample text \"SELFTEST\\nV2\" count 512 height 2") == 1 &&
                     CommandParticleRecipes.get(dimension, "v2_text").recipe.seeds.size == 512 &&
                     run("pdraw particle draw text as v2_letters at 0 70 0 text A size 2 count 6000") == 6000 &&
                     run("pdraw particle draw text as v2_letters at 0 70 0 text A count 8193") == 0 &&
@@ -364,7 +364,10 @@ object RuntimeSelfTest {
                     run("pdraw particle advanced group $name program replace then delay 1") == 0 &&
                     run("pdraw particle advanced group $name morph configure slots 12 \"vec3(i, 70, 0)\" ticks 10") == 1 &&
                     run("pdraw particle advanced group $name morph start") == 1 &&
-                    run("pdraw particle advanced group $name morph inspect") == 1
+                    run("pdraw particle advanced group $name morph inspect") == 1 &&
+                    run("pdraw particle advanced group $name morph configure slots 12 " +
+                        "\"vec3(cos(u*2*PI)*2, sin(u*2*PI)*2, 0)\" space local ticks 10") == 1 &&
+                    run("pdraw particle advanced group $name morph start") == 1
             }
             check("错峰覆盖取消旧生成，清理按类型查找") {
                 run("pdraw particle draw line as $name from 0 70 0 to 1 70 0 count 4 stagger 2 then spin 0 1 0 1") == 4 &&

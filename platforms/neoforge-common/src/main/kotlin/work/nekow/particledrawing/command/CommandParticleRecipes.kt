@@ -68,7 +68,7 @@ internal object CommandParticleRecipes {
             }
             Sampling.TEXT -> {
                 val value = requireNotNullLocalized(text) { translation("error.recipe.text_source") }
-                ParticleTextSampler.sample(value.replace('|', '\n'), textCount, textHeight).map(::ParticleSeed)
+                ParticleTextSampler.sample(value, textCount, textHeight).map(::ParticleSeed)
             }
         }
 

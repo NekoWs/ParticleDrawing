@@ -13,7 +13,7 @@ pdraw particle delete group ring
 
 常用形状包括 `dot`、`field`、`line`、`beam`、`helix`、`circle`、`disc`、`triangle`、`hexagram`、`rect`、`sphere`、`cuboid`、`text`、`sin` 和 `expr`。查看[图元参数](command-v2-design.md#31-声明与几何)和[外观字段](command-v2-design.md#32-外观-look)。
 
-`draw text` 和 `sample text` 由服务端 Java 进程按字体轮廓采样。若绘制中文等文字时提示缺少字形，请在服务端安装覆盖该文字的字体，并重启服务端，使 Java 的默认无衬线字体能找到相应字形。
+`draw text` 和 `sample text` 由服务端 Java 进程按字体轮廓采样。多行文字用引号内的 `\n`，例如 `text "第一行\n第二行"`。若绘制中文等文字时提示缺少字形，请在服务端安装覆盖该文字的字体，并重启服务端，使 Java 的默认无衬线字体能找到相应字形。
 
 ### 逐粒子入场
 
@@ -32,6 +32,16 @@ pdraw particle draw circle as ring at ~ ~1 ~ radius 3 count 96 then spin 1 1 0 2
 ```
 
 这条命令围绕倾斜轴旋转粒子组。`then` 中只有 `delay` 推进时间游标。查看[动作表](command-v2-design.md#33-动作与时间轴)、[已有组](command-v2-design.md#72-已有组)。
+
+### 原地形变
+
+`then morph slots` 在时间轴里把成员过渡到新的位置。默认槽位是世界坐标；加 `space local` 后槽位相对组轴心，换位置执行同一条命令时形状仍落在原地。
+
+```mcfunction
+pdraw particle draw text as hello at ~ ~2 ~ text "HELLO" size 2 count 512 look style soft_dot size 0.08 then delay 20 then morph slots 512 "vec3(cos(u*2*PI)*3, sin(u*2*PI)*3, 0)" ticks 40 easing in_out_cubic loop 1 allocation angle space local
+```
+
+任意位置执行都会在文字中心排成圆环；不加 `space local` 时公式按绝对世界坐标解释。全部形变选项见[形变](command-v2-design.md#34-形变)。
 
 ### 复用原版粒子贴图
 

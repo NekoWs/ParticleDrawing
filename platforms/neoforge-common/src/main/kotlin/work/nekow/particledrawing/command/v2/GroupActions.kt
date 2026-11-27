@@ -5,6 +5,7 @@ import work.nekow.particledrawing.animation.morph.MorphAllocation
 import work.nekow.particledrawing.animation.morph.MorphEasing
 import work.nekow.particledrawing.animation.morph.MorphOptions
 import work.nekow.particledrawing.animation.morph.MorphPath
+import work.nekow.particledrawing.animation.morph.MorphSpace
 import work.nekow.particledrawing.animation.morph.MorphWobble
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleGroup
@@ -37,6 +38,7 @@ internal object GroupActions {
         var dynamic: Boolean = false,
         var keepVelocity: Boolean = false,
         var attributes: Boolean? = null,
+        var space: MorphSpace = MorphSpace.WORLD,
     ) {
         fun options(): MorphOptions = MorphOptions(
             ticks = ticks,
@@ -53,6 +55,7 @@ internal object GroupActions {
             allocation = allocation,
             keepVelocity = keepVelocity,
             writeAttributes = attributes ?: (yaw != null || pitch != null || size != null),
+            space = space,
         )
     }
 
