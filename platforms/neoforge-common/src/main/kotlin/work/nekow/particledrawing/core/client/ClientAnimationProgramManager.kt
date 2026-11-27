@@ -6,6 +6,7 @@ import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.morph.MorphRuntime
+import work.nekow.particledrawing.animation.morph.MorphSample
 import work.nekow.particledrawing.animation.morph.MorphSlot
 import work.nekow.particledrawing.animation.morph.MorphSlotFormulas
 import work.nekow.particledrawing.math.Vec3 as CoreVec3
@@ -141,6 +142,8 @@ internal object ClientAnimationProgramManager {
         var expressionStartMs = 0L
 
         var morph: MorphRuntime? = null
+        /** 渲染循环复用：每颗粒子只查一次形变表，避免 position/yaw/pitch 各查一遍。 */
+        val morphSample = MorphSample()
         var activeMorph: AnimInstruction.Morph? = null
 
         /** 表达式自己的有限时长终点（程序相对毫秒）；-1 = 一直求值。 */
@@ -820,17 +823,26 @@ internal object ClientAnimationProgramManager {
             } else { r = st.baseR; g = st.baseG; b = st.baseB; aBase = st.baseA }
 
             val alpha = (aBase * fadeIn * (1f - fadeOut)).coerceIn(0f, 1f)
-            // 倍率可以到 0：0 = 完全收起，不画
-            morph?.sizeOf(uuid)?.let { st.morphSize = it.toFloat() }
+            var position: Vec3? = null
+            var yaw: Double? = null
+            var pitch: Double? = null
+            if (morph != null && morph.sampleOf(uuid, p.morphSample)) {
+                val sample = p.morphSample
+                // 倍率可以到 0：0 = 完全收起，不画
+                if (!sample.size.isNaN()) st.morphSize = sample.size.toFloat()
+                position = sample.position.toMinecraft()
+                yaw = sample.yaw.takeUnless { it.isNaN() }
+                pitch = sample.pitch.takeUnless { it.isNaN() }
+            }
             val scale = st.morphSize ?: (st.baseScale * p.scaleMul * p.pulseMul).coerceAtLeast(0f)
             val local = radialRel(st.rel, p.scaleMul, p.pulseMul)
             // 沿各自偏移方向外移：方向用当前的 rel（跟着旋转一起转），幅度 = 倍率 × 偏移长度
             val shifted = if (driftScale == 0f) local else local.add(st.rel.scale(driftScale.toDouble()))
             engine.applyProgramFrame(
-                uuid, morph?.positionOf(uuid)?.toMinecraft() ?: pivot.apply(p.pathOffset.add(shifted)),
+                uuid, position ?: pivot.apply(p.pathOffset.add(shifted)),
                 r, g, b, alpha, scale, anchorSnap,
                 height = (scale * st.heightRatio).coerceAtMost(Float.MAX_VALUE),
-                yaw = morph?.yawOf(uuid), pitch = morph?.pitchOf(uuid),
+                yaw = yaw, pitch = pitch,
             )
         }
     }

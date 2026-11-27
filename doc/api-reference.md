@@ -84,5 +84,6 @@ KDoc。只在特定包中提供的类型单独注明。代码示例见[使用指
 | `ClientEffects`、`ClientEffectHandle` | 客户端本地播放与控制 |
 | `AnimationLoader`、`ServerAnimationManager` | 在 `animation` 包中按文件名加载、验签和播放 |
 | `ParticleAnimation`、`TrackPr`、`UvData` | `animation` 包中的动画模型、轨道分量和贴图取景规格 |
+| `MorphRuntime`、`MorphAllocator`、`MorphSample` | `animation.morph` 中的形变运行时：最近邻/序号/极角分配、逐 tick 推进与渲染循环批量取数；大组分配走空间网格，避免 O(n²) |
 
 [播放与构建动画](animation.md) · [核心与平台类型转换](multiversion.md#类型与原生服务)

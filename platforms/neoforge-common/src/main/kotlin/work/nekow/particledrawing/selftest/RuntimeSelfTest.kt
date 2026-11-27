@@ -13,6 +13,11 @@ import net.neoforged.fml.common.EventBusSubscriber
 import net.neoforged.neoforge.event.server.ServerStartedEvent
 import net.neoforged.neoforge.event.entity.ProjectileImpactEvent
 import work.nekow.particledrawing.ParticleDrawing
+import work.nekow.particledrawing.animation.morph.MorphOptions
+import work.nekow.particledrawing.animation.morph.MorphParticle
+import work.nekow.particledrawing.animation.morph.MorphRuntime
+import work.nekow.particledrawing.animation.morph.MorphSlot
+import work.nekow.particledrawing.math.Vec3 as CoreVec3
 import work.nekow.particledrawing.api.CurveChannel
 import work.nekow.particledrawing.api.ParticleManager
 import work.nekow.particledrawing.command.CommandParticleGroups
@@ -430,6 +435,31 @@ object RuntimeSelfTest {
             check("程序嵌套深度") {
                 run("pdraw particle program define v2_self then call v2_self") == 1 &&
                     run("pdraw particle draw line as v2_selfg from 0 70 0 to 1 70 0 count 4 then call v2_self") == 0
+            }
+            check("万粒子形变性能预算") {
+                val slots = List(10_000) { index ->
+                    MorphSlot(CoreVec3((index % 100) * 0.2, 0.0, (index / 100) * 0.2))
+                }
+                val particles = List(10_000) { index ->
+                    val base = slots[index].position
+                    MorphParticle(
+                        java.util.UUID(0x5E1F_7E57L, index.toLong() + 1),
+                        CoreVec3(base.x + 0.4, 0.2, base.z), CoreVec3.ZERO, index,
+                    )
+                }
+                val started = System.nanoTime()
+                val runtime = MorphRuntime(particles, slots, MorphOptions(ticks = 10))
+                val setupMs = (System.nanoTime() - started) / 1_000_000.0
+                val activeStarted = System.nanoTime()
+                repeat(10) { runtime.tick(1.0) }
+                val activeMs = (System.nanoTime() - activeStarted) / 1_000_000.0
+                val idleStarted = System.nanoTime()
+                repeat(1_000) { runtime.tick(1.0) }
+                val idleMs = (System.nanoTime() - idleStarted) / 1_000_000.0
+                System.out.println(
+                    "[PD-SELFTEST][PERF] morph 10k setup=${setupMs}ms active10=${activeMs}ms idle1000=${idleMs}ms",
+                )
+                runtime.isDone() && setupMs < 3_000.0 && activeMs < 2_000.0 && idleMs < 200.0
             }
             check("程序模板清理") {
                 run("pdraw particle program delete v2_*") == 2 &&

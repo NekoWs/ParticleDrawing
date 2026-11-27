@@ -122,99 +122,279 @@ data class MorphOptions(
 /** 分配结果：粒子 id → 槽位下标。 */
 data class MorphAllocationResult(val slotOfParticle: Map<UUID, Int>, val unmatchedSlots: List<Int>)
 
-/** 分配策略实现：只依赖位置与序号，保证同输入同输出。 */
+/**
+ * 分配策略实现：只依赖位置与序号，保证同输入同输出。
+ *
+ * 对外仍以「粒子 id → 槽位下标」的 map 呈现，内部走下标数组，避免大组时反复分配
+ * UUID 映射。NEAREST 在小组上做精确贪心 + 2-opt 解交叉；大组（例如上万粒子）改用
+ * 空间网格找最近邻、局部交换改进，把原来 O(n²)（再乘 8 轮解交叉）的开销压到近线性。
+ */
 object MorphAllocator {
 
+    /** 下标版分配结果：[slotOfParticle] 按输入粒子顺序给出槽位下标，-1 表示没分到。 */
+    class IndexedResult(val slotOfParticle: IntArray, val unmatchedSlots: IntArray)
+
     fun allocate(particles: List<MorphParticle>, slots: List<MorphSlot>, mode: MorphAllocation): MorphAllocationResult {
-        if (particles.isEmpty() || slots.isEmpty()) {
-            return MorphAllocationResult(emptyMap(), slots.indices.toList())
+        val indexed = allocateIndexed(particles, slots, mode)
+        val matched = indexed.slotOfParticle.count { it >= 0 }
+        val map = LinkedHashMap<UUID, Int>(matched * 2)
+        for (i in indexed.slotOfParticle.indices) {
+            val slot = indexed.slotOfParticle[i]
+            if (slot >= 0) map[particles[i].id] = slot
         }
-        val map = LinkedHashMap<UUID, Int>(particles.size)
+        return MorphAllocationResult(map, indexed.unmatchedSlots.toList())
+    }
+
+    fun allocateIndexed(
+        particles: List<MorphParticle>,
+        slots: List<MorphSlot>,
+        mode: MorphAllocation,
+    ): IndexedResult {
+        val slotOf = IntArray(particles.size) { -1 }
         val used = BooleanArray(slots.size)
-        when (mode) {
-            MorphAllocation.INDEX -> {
-                for ((i, p) in particles.withIndex()) {
-                    if (i < slots.size) {
-                        map[p.id] = i
+        if (particles.isNotEmpty() && slots.isNotEmpty()) {
+            when (mode) {
+                MorphAllocation.INDEX -> {
+                    val count = minOf(particles.size, slots.size)
+                    for (i in 0 until count) {
+                        slotOf[i] = i
                         used[i] = true
                     }
                 }
-            }
-            MorphAllocation.ANGLE -> {
-                // 两组各自按绕质心的极角排序，再按序配对：星形分布下天然不交叉。
-                val pc = centroid(particles.map { it.position })
-                val sc = centroid(slots.map { it.position })
-                val pOrder = particles.sortedWith(compareBy({ angleOf(it.position, pc) }, { it.order }))
-                val sOrder = slots.indices.sortedWith(compareBy({ angleOf(slots[it].position, sc) }, { it }))
-                for ((i, p) in pOrder.withIndex()) {
-                    if (i < sOrder.size) {
-                        val s = sOrder[i]
-                        map[p.id] = s
-                        used[s] = true
-                    }
-                }
-            }
-            MorphAllocation.NEAREST -> {
-                nearestWithUncrossing(particles, slots, map, used)
+                MorphAllocation.ANGLE -> allocateAngle(particles, slots, slotOf, used)
+                MorphAllocation.NEAREST -> allocateNearest(particles, slots, slotOf, used)
             }
         }
-        val unmatched = ArrayList<Int>()
-        for (i in slots.indices) if (!used[i]) unmatched += i
-        return MorphAllocationResult(map, unmatched)
+        var unmatched = 0
+        for (u in used) if (!u) unmatched++
+        val unmatchedSlots = IntArray(unmatched)
+        var at = 0
+        for (i in used.indices) if (!used[i]) unmatchedSlots[at++] = i
+        return IndexedResult(slotOf, unmatchedSlots)
     }
 
-    /**
-     * 最近邻贪心，再做若干轮 2-opt 解交叉：交换两条边后总长变短就交换，
-     * 让“就近”与“不交叉”同时成立。轮数有上限，保证 N 大时不退化。
-     */
-    private fun nearestWithUncrossing(
+    private fun allocateAngle(
         particles: List<MorphParticle>,
         slots: List<MorphSlot>,
-        map: MutableMap<UUID, Int>,
+        slotOf: IntArray,
         used: BooleanArray,
     ) {
-        val ordered = particles.sortedBy { it.order }
-        val free = ArrayDeque(slots.indices.toList())
-        for (p in ordered) {
-            if (free.isEmpty()) break
+        // 两组各自按绕质心的极角排序，再按序配对：星形分布下天然不交叉。
+        val pc = centroid(particles.map { it.position })
+        val sc = centroid(slots.map { it.position })
+        val particleOrder = (particles.indices).sortedWith(
+            compareBy({ angleOf(particles[it].position, pc) }, { particles[it].order }, { it }),
+        )
+        val slotOrder = (slots.indices).sortedWith(compareBy({ angleOf(slots[it].position, sc) }, { it }))
+        for ((rank, particleIndex) in particleOrder.withIndex()) {
+            if (rank >= slotOrder.size) break
+            val slot = slotOrder[rank]
+            slotOf[particleIndex] = slot
+            used[slot] = true
+        }
+    }
+
+    /** 小组精确处理的上限：粒子数 × 槽位数。超过就切换到空间网格。 */
+    private const val EXACT_NEAREST_LIMIT = 1 shl 16 // 256 × 256
+
+    private fun allocateNearest(
+        particles: List<MorphParticle>,
+        slots: List<MorphSlot>,
+        slotOf: IntArray,
+        used: BooleanArray,
+    ) {
+        val order = (particles.indices).sortedWith(compareBy({ particles[it].order }, { it }))
+        if (particles.size.toLong() * slots.size <= EXACT_NEAREST_LIMIT) {
+            exactGreedy(particles, slots, order, slotOf, used)
+            uncrossExact(particles, slots, order, slotOf)
+        } else {
+            gridGreedy(particles, slots, order, slotOf, used)
+            uncrossWindowed(particles, slots, order, slotOf)
+        }
+    }
+
+    private fun exactGreedy(
+        particles: List<MorphParticle>,
+        slots: List<MorphSlot>,
+        order: List<Int>,
+        slotOf: IntArray,
+        used: BooleanArray,
+    ) {
+        val free = IntArray(slots.size) { it }
+        var freeCount = free.size
+        for (particleIndex in order) {
+            if (freeCount == 0) break
+            val position = particles[particleIndex].position
             var bestPos = 0
             var bestDist = Double.MAX_VALUE
-            for ((i, s) in free.withIndex()) {
-                val d = p.position.distanceToSqr(slots[s].position)
+            for (i in 0 until freeCount) {
+                val d = position.distanceToSqr(slots[free[i]].position)
                 if (d < bestDist) {
                     bestDist = d
                     bestPos = i
                 }
             }
-            val slot = free.removeAt(bestPos)
-            map[p.id] = slot
+            val slot = free[bestPos]
+            free[bestPos] = free[--freeCount]
+            slotOf[particleIndex] = slot
             used[slot] = true
         }
-        uncross(particles, slots, map, MAX_UNCROSS_PASSES)
     }
 
-    private const val MAX_UNCROSS_PASSES = 8
+    /**
+     * 大组：把槽位装进均匀网格，按粒子顺序在邻域里找最近的空闲槽。
+     * 环形搜索一旦确认更远的格子不可能更近就停；极端聚簇时退回全量扫描，结果仍确定。
+     */
+    private fun gridGreedy(
+        particles: List<MorphParticle>,
+        slots: List<MorphSlot>,
+        order: List<Int>,
+        slotOf: IntArray,
+        used: BooleanArray,
+    ) {
+        var minX = Double.MAX_VALUE; var minZ = Double.MAX_VALUE; var minY = Double.MAX_VALUE
+        var maxX = -Double.MAX_VALUE; var maxZ = -Double.MAX_VALUE; var maxY = -Double.MAX_VALUE
+        for (slot in slots) {
+            val p = slot.position
+            if (p.x < minX) minX = p.x
+            if (p.y < minY) minY = p.y
+            if (p.z < minZ) minZ = p.z
+            if (p.x > maxX) maxX = p.x
+            if (p.y > maxY) maxY = p.y
+            if (p.z > maxZ) maxZ = p.z
+        }
+        var cells = Math.cbrt(slots.size.toDouble()).toInt().coerceIn(1, 128)
+        while (cells > 1 && cells.toLong() * cells * cells > slots.size.toLong() * 8) cells--
+        val size = maxOf(maxX - minX, maxOf(maxY - minY, maxZ - minZ), 1e-6) / cells
+        val cellCount = cells * cells * cells
+        val slotCell = IntArray(slots.size)
+        val counts = IntArray(cellCount + 1)
+        for (s in slots.indices) {
+            val cell = cellOf(slots[s].position, minX, minY, minZ, size, cells)
+            slotCell[s] = cell
+            counts[cell + 1]++
+        }
+        for (c in 1..cellCount) counts[c] += counts[c - 1]
+        val startAt = counts.copyOf()
+        val writeAt = counts.copyOf()
+        val sortedSlots = IntArray(slots.size)
+        for (s in slots.indices) sortedSlots[writeAt[slotCell[s]]++] = s
 
-    private fun uncross(particles: List<MorphParticle>, slots: List<MorphSlot>, map: MutableMap<UUID, Int>, passes: Int) {
-        if (map.size < 4) return
-        val ids = map.keys.toList()
-        val byId = HashMap<UUID, MorphParticle>(particles.size)
-        for (p in particles) byId[p.id] = p
-        repeat(passes) {
+        fun scanCell(cell: Int, nearest: DoubleArray) {
+            val end = startAt[cell + 1]
+            for (i in startAt[cell] until end) {
+                val slot = sortedSlots[i]
+                if (used[slot]) continue
+                val p = slots[slot].position
+                val dx = p.x - nearest[1]; val dy = p.y - nearest[2]; val dz = p.z - nearest[3]
+                val d = dx * dx + dy * dy + dz * dz
+                if (d < nearest[0]) {
+                    nearest[0] = d
+                    nearest[4] = slot.toDouble()
+                }
+            }
+        }
+
+        val nearest = DoubleArray(5)
+        for (particleIndex in order) {
+            val p = particles[particleIndex].position
+            val cx = coord(p.x, minX, size, cells)
+            val cy = coord(p.y, minY, size, cells)
+            val cz = coord(p.z, minZ, size, cells)
+            nearest[0] = Double.MAX_VALUE
+            nearest[1] = p.x
+            nearest[2] = p.y
+            nearest[3] = p.z
+            nearest[4] = -1.0
+            // 半径按格子增大；确认更远格子的最近距离也超过当前最优就停。
+            var ring = 0
+            var found = false
+            val maxRing = cells
+            while (ring <= maxRing) {
+                scanShell(cx, cy, cz, ring, cells) { cell -> scanCell(cell, nearest) }
+                // 未扫描的格子至少在 ring+1 圈外，最近距离也大于 ring × 格宽；
+                // 当前最优不超过这个下界时就不必再扩大搜索。
+                if (nearest[4] >= 0.0 && (ring == maxRing || nearest[0] <= sq(ring * size))) {
+                    found = true
+                    break
+                }
+                ring++
+            }
+            if (!found || nearest[4] < 0.0) {
+                // 极端分布兜底：扫一遍全部空闲槽，保证能分到。
+                for (slot in slots.indices) {
+                    if (used[slot]) continue
+                    val q = slots[slot].position
+                    val dx = q.x - p.x; val dy = q.y - p.y; val dz = q.z - p.z
+                    val d = dx * dx + dy * dy + dz * dz
+                    if (d < nearest[0]) {
+                        nearest[0] = d
+                        nearest[4] = slot.toDouble()
+                    }
+                }
+            }
+            val slot = nearest[4].toInt()
+            if (slot < 0) break
+            slotOf[particleIndex] = slot
+            used[slot] = true
+        }
+    }
+
+    private inline fun scanShell(
+        cx: Int, cy: Int, cz: Int, ring: Int, cells: Int, action: (Int) -> Unit,
+    ) {
+        val x0 = cx - ring; val x1 = cx + ring
+        val y0 = cy - ring; val y1 = cy + ring
+        val z0 = cz - ring; val z1 = cz + ring
+        for (x in x0..x1) {
+            if (x < 0 || x >= cells) continue
+            for (y in y0..y1) {
+                if (y < 0 || y >= cells) continue
+                val xEdge = x == x0 || x == x1
+                val yEdge = y == y0 || y == y1
+                for (z in z0..z1) {
+                    if (z < 0 || z >= cells) continue
+                    // 只扫这一圈的壳，内部的格子上一圈已经看过。
+                    if (!xEdge && !yEdge) {
+                        if (z != z0 && z != z1) continue
+                    }
+                    action(x + y * cells + z * cells * cells)
+                }
+            }
+        }
+    }
+
+    private fun cellOf(p: Vec3, minX: Double, minY: Double, minZ: Double, size: Double, cells: Int): Int =
+        coord(p.x, minX, size, cells) + coord(p.y, minY, size, cells) * cells +
+            coord(p.z, minZ, size, cells) * cells * cells
+
+    private fun coord(value: Double, min: Double, size: Double, cells: Int): Int =
+        ((value - min) / size).toInt().coerceIn(0, cells - 1)
+
+    private fun sq(value: Double): Double = value * value
+
+    private fun uncrossExact(
+        particles: List<MorphParticle>,
+        slots: List<MorphSlot>,
+        order: List<Int>,
+        slotOf: IntArray,
+    ) {
+        val ids = order.filter { slotOf[it] >= 0 }
+        if (ids.size < 4) return
+        repeat(MAX_UNCROSS_PASSES) {
             var improved = false
             for (i in ids.indices) {
-                val pa = byId[ids[i]] ?: continue
-                val sa = slots[map[ids[i]]!!].position
+                val pa = particles[ids[i]].position
+                val sa = slots[slotOf[ids[i]]].position
                 for (j in i + 1 until ids.size) {
-                    val pb = byId[ids[j]] ?: continue
-                    val sb = slots[map[ids[j]]!!].position
-                    val current = pa.position.distanceToSqr(sa) + pb.position.distanceToSqr(sb)
-                    val swapped = pa.position.distanceToSqr(sb) + pb.position.distanceToSqr(sa)
-                    if (swapped + 1e-12 < current && crosses(pa.position, sa, pb.position, sb)) {
-                        val ia = map[ids[i]]!!
-                        val ib = map[ids[j]]!!
-                        map[ids[i]] = ib
-                        map[ids[j]] = ia
+                    val pb = particles[ids[j]].position
+                    val sb = slots[slotOf[ids[j]]].position
+                    val current = pa.distanceToSqr(sa) + pb.distanceToSqr(sb)
+                    val swapped = pa.distanceToSqr(sb) + pb.distanceToSqr(sa)
+                    if (swapped + 1e-12 < current && crosses(pa, sa, pb, sb)) {
+                        val ia = slotOf[ids[i]]
+                        slotOf[ids[i]] = slotOf[ids[j]]
+                        slotOf[ids[j]] = ia
                         improved = true
                     }
                 }
@@ -222,6 +402,51 @@ object MorphAllocator {
             if (!improved) return
         }
     }
+
+    /**
+     * 大组只做局部改进：按起点的空间网格顺序排列，每个粒子与邻近窗口里的粒子比较，
+     * 交换后总路程变短就换。工作量 O(n × 窗口)，不再有 O(n²) 的解交叉。
+     */
+    private fun uncrossWindowed(
+        particles: List<MorphParticle>,
+        slots: List<MorphSlot>,
+        order: List<Int>,
+        slotOf: IntArray,
+    ) {
+        val ids = order.filter { slotOf[it] >= 0 }
+        if (ids.size < 4) return
+        val spatial = ids.sortedWith(compareBy(
+            { particles[it].position.x },
+            { particles[it].position.z },
+            { particles[it].position.y },
+        ))
+        val window = 16
+        for (pass in 0 until 2) {
+            var improved = false
+            for (i in spatial.indices step 1) {
+                val a = spatial[i]
+                val pa = particles[a].position
+                val sa = slots[slotOf[a]].position
+                val end = minOf(spatial.size, i + 1 + window)
+                for (j in i + 1 until end) {
+                    val b = spatial[j]
+                    val pb = particles[b].position
+                    val sb = slots[slotOf[b]].position
+                    val current = pa.distanceToSqr(sa) + pb.distanceToSqr(sb)
+                    val swapped = pa.distanceToSqr(sb) + pb.distanceToSqr(sa)
+                    if (swapped + 1e-12 < current) {
+                        val ia = slotOf[a]
+                        slotOf[a] = slotOf[b]
+                        slotOf[b] = ia
+                        improved = true
+                    }
+                }
+            }
+            if (!improved) return
+        }
+    }
+
+    private const val MAX_UNCROSS_PASSES = 8
 
     /** 二维（XZ 平面）线段相交判定；端点相接不算交叉。 */
     private fun crosses(a0: Vec3, a1: Vec3, b0: Vec3, b1: Vec3): Boolean {

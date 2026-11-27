@@ -50,6 +50,8 @@ class MorphRuntime(
     ) {
         var elapsed = 0.0
         var arrived = false
+        /** 往返循环时这一轮的目标；非空时优先于 `slots[slotIndex]`，避免每 tick 查 UUID 表。 */
+        var override: MorphSlot? = null
         var posX = startX; var posY = startY; var posZ = startZ
         var velX = startVX; var velY = startVY; var velZ = startVZ
         var yaw = Double.NaN; var pitch = Double.NaN; var size = Double.NaN
@@ -100,7 +102,7 @@ class MorphRuntime(
     val waiting: List<UUID>
         get() = _waiting
 
-    private var _waiting: List<UUID> = emptyList()
+    private var _waiting: MutableList<UUID> = ArrayList()
 
     init {
         requireLocalized(particles.isNotEmpty()) { translation("error.morph.particles") }
@@ -111,28 +113,36 @@ class MorphRuntime(
     private fun start(particles: List<MorphParticle>, slots: List<MorphSlot>) {
         tracks.clear()
         byId.clear()
-        val allocation = MorphAllocator.allocate(particles, slots, options.allocation)
-        _unmatched = allocation.unmatchedSlots
-        _waiting = particles.filter { it.id !in allocation.slotOfParticle }.map { it.id }
-
-        // 错峰按到目标的距离归一化排序，远者先动。
-        val distances = HashMap<UUID, Double>(particles.size * 2)
-        for (p in particles) {
-            val slot = allocation.slotOfParticle[p.id]?.let { slots[it] }
-            distances[p.id] = if (slot == null) 0.0 else localOf(p.position).distanceTo(slot.position)
+        val allocation = MorphAllocator.allocateIndexed(particles, slots, options.allocation)
+        val slotOf = allocation.slotOfParticle
+        _unmatched = allocation.unmatchedSlots.asList()
+        _waiting = ArrayList<UUID>()
+        val distances = DoubleArray(particles.size)
+        for (i in particles.indices) {
+            val slotIndex = slotOf[i]
+            val slot = if (slotIndex >= 0) slots[slotIndex] else null
+            if (slot == null) {
+                _waiting.add(particles[i].id)
+                distances[i] = 0.0
+            } else {
+                distances[i] = localOf(particles[i].position).distanceTo(slot.position)
+            }
         }
-        val ranked = particles.sortedByDescending { distances[it.id] ?: 0.0 }
-        val rankOf = HashMap<UUID, Int>(ranked.size * 2)
-        for ((i, p) in ranked.withIndex()) rankOf[p.id] = i
+
+        // 错峰按到目标的距离归一化排序，远者先动；同距离按输入顺序保持确定。
+        val rankOf = IntArray(particles.size)
+        val ranked = (particles.indices).sortedWith(compareByDescending<Int> { distances[it] }.thenBy { it })
+        for ((rank, index) in ranked.withIndex()) rankOf[index] = rank
+        doneCount = _waiting.size
 
         val lastRank = max(1, ranked.size - 1)
         for ((i, p) in particles.withIndex()) {
-            val slotIndex = allocation.slotOfParticle[p.id] ?: -1
+            val slotIndex = slotOf[i]
             val slot = if (slotIndex >= 0) slots[slotIndex] else null
             val order = if (p.order >= 0) p.order else i
             val start = localOf(p.position)
             val delay = if (slot == null || options.staggerTicks == 0) 0.0
-            else options.staggerTicks.toDouble() * (rankOf[p.id]!!.toDouble() / lastRank)
+            else options.staggerTicks.toDouble() * (rankOf[i].toDouble() / lastRank)
             val duration = if (slot == null) 0.0 else durationTicksFor(start, slot, order)
             val track = Track(
                 p.id, order,
@@ -150,6 +160,9 @@ class MorphRuntime(
         cancelled = false
         loopsLeft = options.loop
     }
+
+    /** 已到点（或没有目标）的粒子数；到齐即完成，不再每 tick 全表扫描。 */
+    private var doneCount = 0
 
     // ── 时长与限速 ────────────────────────────────────────────────────────────
 
@@ -180,6 +193,8 @@ class MorphRuntime(
         if (cancelled) return false
         anchorProvider?.invoke()?.let { anchor = it }
         if (paused || timeScale <= 0.0) return false
+        // 有限循环走完后所有粒子都停住，不再逐粒子空转。
+        if (completed && loopsLeft == 0 && !options.keepVelocity) return false
         val dt = dtTicks * timeScale
         ticksElapsed += dt
 
@@ -196,7 +211,7 @@ class MorphRuntime(
         for (t in tracks) {
             moved = advance(t, dt) || moved
         }
-        if (!completed && tracks.all { it.arrived || it.slotIndex < 0 }) {
+        if (!completed && doneCount >= tracks.size) {
             completed = true
             if (loopsLeft != 0) {
                 pingPong()
@@ -209,20 +224,47 @@ class MorphRuntime(
     private fun reallocateIfShapeChanged() {
         val maxSlot = tracks.maxOfOrNull { it.slotIndex } ?: -1
         if (maxSlot < slots.size) return
-        val live = tracks.filter { it.slotIndex in slots.indices }
-        if (live.isEmpty()) {
-            _waiting = tracks.map { it.id }
+        val liveIndex = IntArray(tracks.size) { -1 }
+        var liveCount = 0
+        for (i in tracks.indices) {
+            if (tracks[i].slotIndex in slots.indices) liveIndex[i] = liveCount++
+        }
+        if (liveCount == 0) {
+            _waiting = tracks.mapTo(ArrayList(tracks.size)) { it.id }
+            doneCount = tracks.size
             return
         }
-        val particles = live.map { MorphParticle(it.id, Vec3(it.posX, it.posY, it.posZ), Vec3(it.velX, it.velY, it.velZ), it.order) }
-        val allocation = MorphAllocator.allocate(particles, slots, options.allocation)
-        for (t in tracks) {
-            val next = allocation.slotOfParticle[t.id]
-            if (next == null) {
+        val particles = ArrayList<MorphParticle>(liveCount)
+        for (i in tracks.indices) {
+            if (liveIndex[i] < 0) continue
+            val t = tracks[i]
+            particles += MorphParticle(t.id, Vec3(t.posX, t.posY, t.posZ), Vec3(t.velX, t.velY, t.velZ), t.order)
+        }
+        val allocation = MorphAllocator.allocateIndexed(particles, slots, options.allocation)
+        val slotOf = allocation.slotOfParticle
+        _waiting = ArrayList<UUID>()
+        doneCount = 0
+        for (i in tracks.indices) {
+            val t = tracks[i]
+            val liveAt = liveIndex[i]
+            if (liveAt < 0) {
                 t.slotIndex = -1
                 t.arrived = true
+                t.override = null
+                doneCount++
+                _waiting.add(t.id)
+                continue
+            }
+            val next = slotOf[liveAt]
+            if (next < 0) {
+                t.slotIndex = -1
+                t.arrived = true
+                t.override = null
+                doneCount++
+                _waiting.add(t.id)
             } else if (next != t.slotIndex) {
                 t.slotIndex = next
+                t.override = null
                 t.startX = t.posX; t.startY = t.posY; t.startZ = t.posZ
                 t.startVX = t.velX; t.startVY = t.velY; t.startVZ = t.velZ
                 t.elapsed = 0.0
@@ -234,15 +276,16 @@ class MorphRuntime(
 
     private fun advance(t: Track, dt: Double): Boolean {
         if (t.slotIndex < 0) return false
-        val slot = slotFor(t) ?: return false
-        val target = slot.position
-        // 到达后保留速度：不再沿路径求值，直接按当前速度继续飞。
-        if (t.arrived && options.keepVelocity) {
+        // 已到点：不保留速度时彻底跳过，避免大组到位后每 tick 白算。
+        if (t.arrived) {
+            if (!options.keepVelocity) return false
             t.posX += t.velX * dt
             t.posY += t.velY * dt
             t.posZ += t.velZ * dt
             return true
         }
+        val slot = slotFor(t) ?: return false
+        val target = slot.position
         t.elapsed += dt
         val prevX = t.posX; val prevY = t.posY; val prevZ = t.posZ
 
@@ -323,6 +366,7 @@ class MorphRuntime(
             val dist = Vec3(t.posX, t.posY, t.posZ).distanceTo(target)
             if (dist <= options.convergeEps) {
                 t.arrived = true
+                doneCount++
                 if (!options.keepVelocity) {
                     t.velX = 0.0; t.velY = 0.0; t.velZ = 0.0
                 } else {
@@ -357,20 +401,19 @@ class MorphRuntime(
             t.startVX = t.velX; t.startVY = t.velY; t.startVZ = t.velZ
             t.elapsed = 0.0
             t.arrived = false
+            t.override = next
             if (!t.yaw.isNaN()) t.startYaw = t.yaw
             if (!t.pitch.isNaN()) t.startPitch = t.pitch
             if (!t.size.isNaN()) t.startSize = t.size
             t.duration = durationTicksFor(Vec3(t.startX, t.startY, t.startZ), next, t.order)
-            slotOverrides[t.id] = next
         }
+        doneCount = tracks.count { it.slotIndex < 0 }
         ticksElapsed = 0.0
         completed = false
         if (loopsLeft == 0 && options.loop > 0) loopsLeft = 0
     }
 
-    private val slotOverrides = HashMap<UUID, MorphSlot>()
-
-    private fun slotFor(t: Track): MorphSlot? = slotOverrides[t.id] ?: slots.getOrNull(t.slotIndex)
+    private fun slotFor(t: Track): MorphSlot? = t.override ?: slots.getOrNull(t.slotIndex)
 
     private fun targetOf(t: Track): Vec3 = slotFor(t)?.position ?: Vec3(t.posX, t.posY, t.posZ)
 
@@ -443,8 +486,10 @@ class MorphRuntime(
         for (t in tracks) {
             t.slotIndex = -1
             t.arrived = false
+            t.override = null
             t.velX = 0.0; t.velY = 0.0; t.velZ = 0.0
         }
+        doneCount = tracks.size
     }
 
     /** 只改时长/缓动等，不重新分配（进度按当前比例保留）。 */
@@ -464,6 +509,20 @@ class MorphRuntime(
     // ── 查询（G5） ────────────────────────────────────────────────────────────
 
     fun positionOf(id: UUID): Vec3? = byId[id]?.let { worldOf(Vec3(it.posX, it.posY, it.posZ)) }
+
+    /**
+     * 批量渲染循环用的一次取数：只查一次表，把位置、朝向、尺寸写进可复用的 [out]。
+     * 大组每 tick 要给上万颗粒子取数，避免 positionOf / yawOf / sizeOf 各查一遍哈希。
+     */
+    fun sampleOf(id: UUID, out: MorphSample): Boolean {
+        val t = byId[id] ?: return false
+        out.position = worldOf(Vec3(t.posX, t.posY, t.posZ))
+        out.yaw = t.yaw
+        out.pitch = t.pitch
+        out.size = t.size
+        out.arrived = t.arrived
+        return true
+    }
 
     /** 形变自己的坐标系里的速度；局域形变时不含锚点自身的移动。 */
     fun velocityOf(id: UUID): Vec3? = byId[id]?.let { Vec3(it.velX, it.velY, it.velZ) }
@@ -487,7 +546,7 @@ class MorphRuntime(
 
     fun arrivedOf(id: UUID): Boolean = byId[id]?.arrived ?: false
 
-    fun isDone(): Boolean = cancelled || (completed && tracks.all { it.arrived || it.slotIndex < 0 })
+    fun isDone(): Boolean = cancelled || (completed && doneCount >= tracks.size)
 
     fun ids(): List<UUID> = tracks.map { it.id }
 
@@ -529,4 +588,13 @@ class MorphRuntime(
     private companion object {
         const val MIN_DURATION = 1e-6
     }
+}
+
+/** 渲染循环复用的采样缓冲；字段与 `MorphRuntime.sampleOf` 对应，避免每颗粒子分配对象。 */
+class MorphSample {
+    var position: Vec3 = Vec3.ZERO
+    var yaw: Double = Double.NaN
+    var pitch: Double = Double.NaN
+    var size: Double = Double.NaN
+    var arrived: Boolean = false
 }
