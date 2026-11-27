@@ -22,8 +22,10 @@ internal object HelpBook {
 
     fun open(source: CommandSourceStack, page: Int): Int = index(source, page)
 
+    fun pageCount(): Int = maxOf(1, (topics.size + PAGE_SIZE - 1) / PAGE_SIZE)
+
     fun index(source: CommandSourceStack, page: Int): Int {
-        val pages = maxOf(1, (topics.size + PAGE_SIZE - 1) / PAGE_SIZE)
+        val pages = pageCount()
         val current = page.coerceIn(1, pages)
         val slice = topics.drop((current - 1) * PAGE_SIZE).take(PAGE_SIZE)
         val lines = ArrayList<Component>()

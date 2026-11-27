@@ -38,7 +38,7 @@ object TextureCache {
     /** 单张贴图解码上限：16384×1024 之类的极端比例也允许，只要总像素不超 1600 万。 */
     private const val MAX_DIMENSION = 16384
     private const val MAX_PIXELS = 16_777_216L
-    internal const val KEYFRAME_GLOW = "particledrawing:builtin/keyframe_glow"
+    internal const val KEYFRAME_GLOW = BuiltinTextures.KEYFRAME_GLOW
     internal const val KEYFRAME_GLOW_SIZE = 64
     private const val SHEET_CACHE_PIXELS = 110_000_000L
     private const val SHEET_IDLE_NANOS = 8_000_000_000L

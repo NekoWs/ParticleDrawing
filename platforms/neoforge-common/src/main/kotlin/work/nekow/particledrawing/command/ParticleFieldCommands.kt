@@ -66,7 +66,8 @@ internal object ParticleFieldCommands {
     private fun suggestIds(
         ctx: CommandContext<CommandSourceStack>, builder: SuggestionsBuilder,
     ): CompletableFuture<Suggestions> =
-        SharedSuggestionProvider.suggest(ParticleForceFields.ids(ctx.source.level).map { it.toString() }, builder)
+        CommandSuggestionCatalog.suggestBrigadierStrings(builder, ParticleForceFields.ids(ctx.source.level).map { it.toString() })
+            .buildFuture()
 
     private fun configure(ctx: CommandContext<CommandSourceStack>, kind: ForceFieldKind) = safe(ctx) {
         val id = id(ctx)

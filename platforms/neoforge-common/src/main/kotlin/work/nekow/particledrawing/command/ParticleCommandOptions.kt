@@ -289,6 +289,8 @@ internal object ParticleCommandOptionParser {
         return Color.ofInt(r, g, b, a)
     }
 
+    internal val easingNames = EasingType.PRESETS.map { checkNotNull(it.name).lowercase() } + "none"
+
     internal fun easing(raw: String): EasingType = when (raw.lowercase().replace('-', '_')) {
         "none", "step" -> EasingType.NONE
         "linear" -> EasingType.LINEAR

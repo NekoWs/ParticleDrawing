@@ -22,6 +22,7 @@ object ParticleTextureReloadListener {
             ResourceManagerReloadListener {
                 TextureCache.clearParticleResources()
                 ParticleModelRenderer.clear()
+                ClientCommandSuggestions.invalidate()
             },
         )
     }

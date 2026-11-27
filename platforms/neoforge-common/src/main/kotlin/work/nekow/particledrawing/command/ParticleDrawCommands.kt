@@ -69,6 +69,7 @@ object ParticleDrawCommands {
                 .then(Commands.literal("keyframes")
                     .then(Commands.literal("play")
                         .then(Commands.argument("asset", StringArgumentType.greedyString())
+                            .suggests { _, builder -> localSuggestions(builder, CommandSuggestionCatalog.KEYFRAMES) }
                             .executes { ctx ->
                                 val name = StringArgumentType.getString(ctx, "asset")
                                 val asset = Identifier.tryParse(name)
@@ -92,11 +93,16 @@ object ParticleDrawCommands {
                     .executes(::cameraUsage)
                     .then(Commands.literal("stop").executes(::stopCamera))
                     .then(Commands.argument("name", StringArgumentType.string())
-                        .suggests(::suggestCameras)
+                        .suggests { _, builder -> localSuggestions(builder, CommandSuggestionCatalog.CAMERA) }
                         .executes(::switchCamera)))
                 .then(Commands.literal("debug").executes(::debugAnimations))
                 .then(Commands.literal("var")
                     .then(Commands.argument("name", StringArgumentType.string())
+                        .suggests { ctx, builder ->
+                            val dimension = ParticleUtils.dimensionUUID(ctx.source.level)
+                            CommandSuggestionCatalog.suggestBrigadierStrings(builder, ServerAnimationManager.variableNames(dimension))
+                                .buildFuture()
+                        }
                         .then(Commands.argument("value", StringArgumentType.greedyString()).executes(::updateVariable))))
 
         dispatcher.register(
@@ -165,20 +171,18 @@ object ParticleDrawCommands {
     }
 
     private fun suggestHelpArgs(
-        ctx: CommandContext<CommandSourceStack>, builder: SuggestionsBuilder,
+        @Suppress("UNUSED_PARAMETER") ctx: CommandContext<CommandSourceStack>, builder: SuggestionsBuilder,
     ): CompletableFuture<Suggestions> {
-        val raw = try { StringArgumentType.getString(ctx, "args") } catch (_: IllegalArgumentException) { "" }
-        val prefix = raw.substringAfterLast(' ')
-        val before = raw.substring(0, raw.length - prefix.length)
+        val raw = builder.remaining
+        val start = raw.indexOfLast(Char::isWhitespace) + 1
+        val before = raw.substring(0, start).trim()
         val options = when {
             before.isBlank() -> listOf("page", "cmd", "examples") + HelpBook.ids()
-            before.trim() == "cmd" -> HelpCommands.ids()
-            else -> HelpBook.ids()
+            before == "cmd" -> HelpCommands.ids()
+            before == "page" -> (1..HelpBook.pageCount()).map(Int::toString)
+            else -> emptyList()
         }
-        return SharedSuggestionProvider.suggest(
-            options.filter { it.startsWith(prefix, ignoreCase = true) },
-            builder.createOffset(builder.input.lastIndexOf(' ') + 1),
-        )
+        return SharedSuggestionProvider.suggest(options, builder.createOffset(builder.start + start))
     }
 
     /**
@@ -242,7 +246,7 @@ object ParticleDrawCommands {
         ctx: CommandContext<CommandSourceStack>,
         builder: SuggestionsBuilder,
     ): CompletableFuture<Suggestions> =
-        SharedSuggestionProvider.suggest(AnimationLoader.list(), builder)
+        CommandSuggestionCatalog.suggestBrigadierStrings(builder, AnimationLoader.list()).buildFuture()
 
     /**
      * /pdraw animation play <name> [pos]：播放动画（客户端本地播放）。
@@ -355,12 +359,8 @@ object ParticleDrawCommands {
         return 1
     }
 
-    /** /pdraw animation camera <name> 的参数补全：所有播放中动画的摄像机 id/name。 */
-    private fun suggestCameras(
-        ctx: CommandContext<CommandSourceStack>,
-        builder: SuggestionsBuilder,
-    ): CompletableFuture<Suggestions> =
-        SharedSuggestionProvider.suggest(ClientAnimationManager.listCameras(), builder)
+    private fun localSuggestions(builder: SuggestionsBuilder, catalog: CommandSuggestionCatalog): CompletableFuture<Suggestions> =
+        CompletableFuture.completedFuture(Suggestions.create(builder.input, listOf(catalog.marker(builder.input, builder.start))))
 
     /**
      * /pdraw animation debug：显示所有播放中动画的调试信息，含每刻求值用时、帧数、粒子数与时间轴。

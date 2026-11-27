@@ -43,7 +43,6 @@ internal object DrawCommands {
     private val shapes = listOf("dot", "field", "line", "beam", "helix", "circle", "disc", "triangle", "hexagram",
         "rect", "sphere", "cuboid", "text", "sin", "expr")
     private val planes = listOf("xy", "xz", "yz")
-    private val easings = EasingType.PRESETS.map { checkNotNull(it.name).lowercase() } + "none"
     private val planeFigures = setOf("circle", "disc", "triangle", "hexagram", "rect", "sin")
     private val beamLook = setOf("color", "gradient", CommandLook.COLOR_EXPRESSION, "texture", "additive", "glow",
         "alpha_curve", "red_curve", "green_curve", "blue_curve", "size_curve", "light_curve")
@@ -187,7 +186,7 @@ internal object DrawCommands {
         val velocity = if (shape == "field" && input.take("velocity")) input.vector("velocity") else null
         val force = if (shape == "field" && input.take("force")) input.vector("force") else null
         val forceTicks = if (force != null && input.take("force_ticks")) input.integer("force_ticks", -1) else -1
-        val look = if (input.take("look")) CommandLook.parse(input) else emptyMap()
+        val look = if (input.take("look")) CommandLook.parse(input, if (shape == "beam") beamLook else CommandLook.fields) else emptyMap()
         if (shape == "beam" && look.keys.any { it !in beamLook }) input.invalid("beam look", look.keys.first { it !in beamLook })
         val life = if (input.take("life")) input.integer("life", -1) else -1
         val stagger = if (input.take("stagger")) input.integer("stagger", 0, Int.MAX_VALUE - 1) else 0
@@ -200,7 +199,7 @@ internal object DrawCommands {
     private fun entrance(input: CommandInput): ParticleLifeCurve {
         val style = input.choice(listOf("fade", "grow", "fade_grow"))
         val ticks = input.integer("enter ticks", 1)
-        val easing = if (input.take("ease")) ParticleCommandOptionParser.easing(input.value("easing", easings))
+        val easing = if (input.take("ease")) ParticleCommandOptionParser.easing(input.value("easing", ParticleCommandOptionParser.easingNames))
             else EasingType.EASE_OUT_QUAD
         val start = CurveKey.at(0, 0)
         val end = CurveKey.at(ticks, 1, easing)

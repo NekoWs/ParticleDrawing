@@ -37,6 +37,8 @@ pdraw particle draw circle as ring at ~ ~1 ~ radius 3 count 96 then spin 1 1 0 2
 
 用 `look texture particle:minecraft:end_rod` 引用粒子贴图。`#N` 选固定帧，`@FPS` 设循环帧率。资源包只提供外观，运动由本模组控制。
 
+在 `look texture ` 后按 Tab，可以看到内置贴图、服务端已注册的贴图，以及客户端当前启用的资源包提供的 `particle:` 粒子贴图和 `sheet:` 图集。也可以直接输入路径开头，例如 `end` 会提示 `particle:minecraft:end_rod`。在完整粒子名后输入 `#` 可列出有效帧号，输入 `@` 可选择常用帧率。切换资源包或按 F3+T 后会刷新本地候选。联机时，贴图能否显示取决于各玩家是否加载了对应资源。
+
 ### 预排动画图集
 
 `look texture sheet:<命名空间>:<名称>` 从客户端资源包加载预排图集。将描述文件放在
@@ -165,6 +167,8 @@ pdraw particle template arrow_impact sample count 16 spawn set velocity vec3(0.1
 ## 帮助
 
 `/pdraw help` 打开目录，`/pdraw help cmd draw` 或 `/pdraw help cmd emitter` 打开单条命令说明，`/pdraw help examples` 打开可执行示例。使用 Tab 查看当前位置支持的段和已有对象。`/pdraw particle field` 保留原来的程序化粒子场入口。
+
+在参数后留一个空格，按 Tab 即可查看下一段。选择器内可继续补全，例如 `@e[ty`。`without look.` 会列出可清除的外观字段。`sample image file` 和 `sample mesh file` 补全服务端素材路径，`resource` 补全数据包中常用目录下的资源 ID，例如 `particle_images/` 和 `particle_meshes/`。带空格的名字会自动加引号。
 
 ## 自由镜头 /pdraw camera
 

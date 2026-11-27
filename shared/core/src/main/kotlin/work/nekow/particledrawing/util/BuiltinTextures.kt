@@ -11,6 +11,7 @@ import kotlin.math.sqrt
  * 两端生成同一份，内置形状不走网络下发，只传「用了哪个形状」。
  */
 object BuiltinTextures {
+    internal const val KEYFRAME_GLOW = "particledrawing:builtin/keyframe_glow"
 
     /**
      * 内置贴图边长，恒为 16：`BridgeParticle` 的贴图尺寸系数 = 最长边 / 16，

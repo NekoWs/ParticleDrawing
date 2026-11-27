@@ -2,8 +2,10 @@ package work.nekow.particledrawing
 
 import com.mojang.brigadier.exceptions.CommandSyntaxException
 import com.mojang.brigadier.suggestion.SuggestionsBuilder
+import com.mojang.brigadier.suggestion.Suggestions
 import work.nekow.particledrawing.api.RecipeAnchor
 import work.nekow.particledrawing.command.CommandParticleRecipes.Draft
+import work.nekow.particledrawing.command.CommandSuggestionCatalog
 import work.nekow.particledrawing.command.v2.CommandInput
 import work.nekow.particledrawing.command.v2.CommandLook
 import work.nekow.particledrawing.command.v2.EmitterDeclaration
@@ -73,5 +75,49 @@ class ParticleCommandV2InputTest {
         val prefix = "pdraw particle emitter "
         val builder = input.suggestions(SuggestionsBuilder(prefix + "name sam", prefix.length))
         assertEquals(prefix + "name sample", builder.build().list.single().apply(builder.input))
+    }
+
+    @Test fun completedTokensDoNotOfferJoinedKeywords() {
+        val raw = "name sample"
+        val input = CommandInput(raw, suggesting = true)
+        input.name()
+        input.expect("sample")
+        input.take("count")
+        assertTrue(input.suggestions(SuggestionsBuilder(raw, 0)).build().isEmpty)
+    }
+
+    @Test fun clientResourceSuggestionsPreserveTheArgumentRangeAndQuotes() {
+        val head = "/pdraw particle draw dot at ~ ~ ~ look texture "
+        val raw = head + "\"end"
+        val marker = CommandSuggestionCatalog.TEXTURE.marker(raw, head.length)
+        val result = CommandSuggestionCatalog.expand(raw, Suggestions.create(raw, listOf(marker))) { kind, prefix ->
+            assertEquals(CommandSuggestionCatalog.TEXTURE, kind)
+            assertEquals("\"end", prefix)
+            listOf("particle:minecraft:end_rod", "end glow", "sheet:show:smoke")
+        }
+        assertEquals(
+            setOf(head + "\"particle:minecraft:end_rod\"", head + "\"end glow\""),
+            result.list.map { it.apply(raw) }.toSet(),
+        )
+    }
+
+    @Test fun texturePathPrefixCompletesTheWholeReference() {
+        val head = "/pdraw particle draw dot at ~ ~ ~ look texture "
+        val raw = head + "end"
+        val marker = CommandSuggestionCatalog.TEXTURE.marker(raw, head.length)
+        val result = CommandSuggestionCatalog.expand(raw, Suggestions.create(raw, listOf(marker))) { _, prefix ->
+            assertEquals("end", prefix)
+            listOf("particle:minecraft:end_rod", "particle:minecraft:flame", "sheet:show:smoke")
+        }
+        assertEquals(listOf(head + "particle:minecraft:end_rod"), result.list.map { it.apply(raw) })
+    }
+
+    @Test fun nativeStringSuggestionsQuoteIdsAndNamesWithSpaces() {
+        val prefix = "pdraw particle field anchor "
+        val raw = prefix + "\"test:"
+        val suggestions = CommandSuggestionCatalog.suggestBrigadierStrings(
+            SuggestionsBuilder(raw, prefix.length), listOf("test:trail one", "other:field"),
+        ).build()
+        assertEquals(prefix + "\"test:trail one\"", suggestions.list.single().apply(raw))
     }
 }

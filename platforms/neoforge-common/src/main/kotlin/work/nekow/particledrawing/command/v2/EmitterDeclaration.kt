@@ -1,6 +1,7 @@
 package work.nekow.particledrawing.command.v2
 
 import net.minecraft.commands.CommandSourceStack
+import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.ParticleEvent
 import work.nekow.particledrawing.animation.recipe.RecipeCollision
@@ -12,6 +13,7 @@ import work.nekow.particledrawing.api.RecipeAnchor
 import work.nekow.particledrawing.api.RecipeEmission
 import work.nekow.particledrawing.api.SubEmit
 import work.nekow.particledrawing.command.CommandParticleRecipes
+import work.nekow.particledrawing.command.CommandSuggestionCatalog
 import work.nekow.particledrawing.command.CommandParticleRecipes.Draft
 import work.nekow.particledrawing.command.CommandParticleRecipes.Sampling
 import work.nekow.particledrawing.command.ParticleCommandOptionParser
@@ -20,6 +22,9 @@ import work.nekow.particledrawing.i18n.translation
 import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.math.Vec3 as CoreVec3
 import work.nekow.particledrawing.util.ParticleUtils
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.Path
 
 internal data class EmitterDeclaration(private val changes: List<Change>) {
     internal data class Binding(val source: CommandSourceStack?, val name: String?) {
@@ -48,6 +53,10 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
             "both" to RecipeCollision.SOLID_AND_LIQUID, "entity" to RecipeCollision.ENTITY, "all" to RecipeCollision.ALL,
         )
         private val identifier = Regex("[A-Za-z_][A-Za-z0-9_]{0,47}")
+        private val namedSections = setOf("let", "variable", "state", "change")
+        private val scalarSections = setOf("at", "sample", "filter", "kill", "orbit", "window", "collide", "subemit",
+            "sim_range", "strand", "life", "rate", "interval", "max", "spacing", "follow", "select", "probe", "on")
+        private val environmentFields = setOf("entity_radius", "entity_type", "neighbor_radius")
         private val default get() = Draft(RecipeAnchor(CoreVec3.ZERO))
 
         fun parse(input: CommandInput, names: List<String>): EmitterDeclaration {
@@ -86,7 +95,7 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
                 }
             }
             if (input.take("look")) {
-                val look = CommandLook.parse(input)
+                val look = CommandLook.parse(input, CommandLook.fields - "gradient")
                 if ("gradient" in look) input.invalid("emitter look color", "gradient")
                 add("look") {
                     val slots = look.keys.map(CommandLook::slot).toSet()
@@ -214,7 +223,7 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
                     sampleChange { this.min = min; this.max = max; this.step = step; sampling = Sampling.GRID }
                 }
                 "image" -> {
-                    val source = asset(input)
+                    val source = asset(input, "particleImages", ".png")
                     val spacing = if (input.take("pixel_spacing")) input.number("pixel_spacing") else 0.05
                     val alpha = if (input.take("alpha")) input.number("alpha") else 0.0
                     if (spacing <= 0 || alpha !in 0.0..1.0) input.invalid("image spacing and alpha")
@@ -224,7 +233,7 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
                     sampleChange { image = source; imageOptions = options; sampling = Sampling.IMAGE }
                 }
                 "mesh" -> {
-                    val source = asset(input)
+                    val source = asset(input, "particleMeshes", ".obj")
                     val count = if (input.take("count")) input.integer("count", 1, 8192) else 256
                     val seed = if (input.take("seed")) input.integer("seed") else 0
                     sampleChange { mesh = source; meshCount = count; meshSeed = seed; sampling = Sampling.MESH }
@@ -241,12 +250,32 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
 
         private fun sampleChange(change: Draft.(Binding) -> Unit) = change
 
-        private fun asset(input: CommandInput): CommandParticleRecipes.SampleAsset {
+        private fun asset(input: CommandInput, directory: String, suffix: String): CommandParticleRecipes.SampleAsset {
             val resource = input.choice(listOf("file", "resource")) == "resource"
+            input.valueSuggestions {
+                if (resource) {
+                    val directories = if (suffix == ".png") listOf("particle_images", "images", "textures")
+                        else listOf("particle_meshes", "meshes", "models")
+                    input.suggestionSource?.level?.server?.resourceManager?.let {
+                        CommandSuggestionCatalog.resources(it, directories, suffix)
+                    }.orEmpty()
+                } else {
+                    localFiles(Path.of(directory), suffix)
+                }
+            }
             val path = input.value("path")
             if (resource) ResourceId.parse(path)
             return CommandParticleRecipes.SampleAsset(path, resource)
         }
+
+        /** 工作目录下的素材文件；目录读不到或遍历失败时返回空候选。 */
+        private fun localFiles(root: Path, suffix: String): List<String> = runCatching {
+            if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) return@runCatching emptyList()
+            Files.walk(root).use { paths ->
+                paths.filter { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) && it.toString().endsWith(suffix, ignoreCase = true) }
+                    .map { root.relativize(it).joinToString("/") }.sorted().toList()
+            }
+        }.getOrDefault(emptyList())
 
         private fun advanced(input: CommandInput, names: List<String>): Change =
             when (val kind = input.choice(listOf("variable", "state", "select", "change", "environment", "probe", "on"))) {
@@ -273,12 +302,13 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
             }
 
         private fun environment(input: CommandInput): Change =
-            when (val key = input.choice(listOf("entity_radius", "entity_type", "neighbor_radius"))) {
+            when (val key = input.choice(environmentFields)) {
                 "entity_radius" -> {
                     val radius = input.number(key)
                     Change("environment.$key") { recipe = recipe.copy(entityQuery = recipe.entityQuery.copy(radius = radius)) }
                 }
                 "entity_type" -> {
+                    input.valueSuggestions { BuiltInRegistries.ENTITY_TYPE.keySet().map { it.toString() } + "any" }
                     val type = input.value(key).takeUnless { it == "any" }?.let(ResourceId::parse)
                     Change("environment.$key") { recipe = recipe.copy(entityQuery = recipe.entityQuery.copy(type = type)) }
                 }
@@ -300,7 +330,7 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
                 val range = input.number("range")
                 val origin = if (input.take("origin")) input.vector("origin").toCore() else CoreVec3.ZERO
                 val half = if (input.take("halfsize")) input.number("halfsize") else 0.0
-                val material = if (input.take("material")) ResourceId.parse(input.value("material")) else null
+                val material = if (input.take("material")) material(input) else null
                 ParticleProbe(range, mode, direction, material, origin, half)
             }
             return Change("probe") {
@@ -320,7 +350,7 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
             if (action == "clear") return Change("on") { recipe = recipe.copy(emissions = emptyList()) }
             val event = ParticleEvent.valueOf(action.uppercase())
             val name = input.name(names)
-            val material = if (event == ParticleEvent.CONTACT && input.take("material")) ResourceId.parse(input.value("material")) else null
+            val material = if (event == ParticleEvent.CONTACT && input.take("material")) material(input) else null
             val decal = if (event == ParticleEvent.CONTACT && input.take("decal")) {
                 input.number("decal").also {
                     if (it !in 0.01..RecipeEmission.MAX_DECAL_RADIUS) input.invalid("decal radius", it.toString())
@@ -336,23 +366,36 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
             }
         }
 
+        private fun material(input: CommandInput): ResourceId {
+            input.valueSuggestions {
+                (BuiltInRegistries.BLOCK.keySet() + BuiltInRegistries.FLUID.keySet()).map { it.toString() }
+            }
+            return ResourceId.parse(input.value("material"))
+        }
+
         fun without(input: CommandInput): EmitterDeclaration {
             val changes = mutableListOf<Change>()
             val seen = hashSetOf<String>()
             while (input.take("without")) {
+                input.valueSuggestions {
+                    ((scalarSections + namedSections + setOf("look", "spawn", "move", "environment")) +
+                        CommandLook.fields.map { "look.$it" } + environmentFields.map { "environment.$it" } +
+                        outputFields.flatMap { listOf("spawn.$it", "move.$it") }).filterNot {
+                        val section = it.substringBefore('.')
+                        val field = it.substringAfter('.', "")
+                        "$section.${if (section == "look") CommandLook.slot(field) else field}" in seen
+                    }
+                }
                 val path = input.value("path")
                 val section = path.substringBefore('.')
                 val field = path.substringAfter('.', "")
                 val slot = if (section == "look") CommandLook.slot(field) else field
-                val named = setOf("let", "variable", "state", "change")
-                val scalar = setOf("at", "sample", "filter", "kill", "orbit", "window", "collide", "subemit",
-                    "sim_range", "strand", "life", "rate", "interval", "max", "spacing", "follow", "select", "probe", "on")
                 val valid = when (section) {
                     "look" -> field.isEmpty() || CommandLook.key(field) in CommandLook.fields
                     "spawn", "move" -> field.isEmpty() || identifier.matches(field)
-                    "environment" -> field in setOf("", "entity_radius", "entity_type", "neighbor_radius")
-                    in named -> field.isEmpty() || identifier.matches(field)
-                    else -> section in scalar && field.isEmpty()
+                    "environment" -> field.isEmpty() || field in environmentFields
+                    in namedSections -> field.isEmpty() || identifier.matches(field)
+                    else -> section in scalarSections && field.isEmpty()
                 }
                 if (!valid || path.endsWith('.') || !seen.add("$section.$slot")) input.invalid("distinct configuration path", path)
                 changes += Change(path) { binding ->

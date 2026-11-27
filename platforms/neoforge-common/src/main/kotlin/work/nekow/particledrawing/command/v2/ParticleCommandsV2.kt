@@ -32,7 +32,7 @@ internal object ParticleCommandsV2 {
         for (verb in usages.keys) {
             root.then(Commands.literal(verb).then(Commands.argument(INPUT, StringArgumentType.greedyString())
                 .suggests { ctx, builder ->
-                    val input = CommandInput(builder.remaining, suggesting = true)
+                    val input = CommandInput(builder.remaining, suggesting = true, suggestionSource = ctx.source)
                     try {
                         parse(verb, input, ctx.source)
                     } catch (_: CommandSyntaxException) {
@@ -40,7 +40,7 @@ internal object ParticleCommandsV2 {
                     } catch (_: RuntimeException) {
                         // 保留出错位置之前的候选。
                     }
-                    input.suggestions(builder).buildFuture()
+                    input.buildSuggestions(builder, ctx)
                 }
                 .executes { ctx ->
                     try {

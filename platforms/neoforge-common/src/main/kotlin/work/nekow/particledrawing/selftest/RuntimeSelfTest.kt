@@ -377,6 +377,21 @@ object RuntimeSelfTest {
                     suggest("pdraw particle start ").contains(name) &&
                     suggest("pdraw particle delete template ").contains(name)
             }
+            check("外观、资源、模板覆盖与实体选择器补全") {
+                val draw = "pdraw particle draw dot at ~ ~ ~"
+                val emitter = "pdraw particle emitter $name"
+                suggest("$draw look texture particledrawing:builtin/key").contains("particledrawing:builtin/keyframe_glow") &&
+                    suggest("$emitter look texture ").contains("particledrawing:builtin/keyframe_glow") &&
+                    suggest("$draw look color red ").none { it == "color" || it == "gradient" } &&
+                    "model" !in suggest("pdraw particle draw beam from ~ ~ ~ to ~ ~1 ~ look ") &&
+                    "gradient" !in suggest("$emitter look ") &&
+                    suggest("$emitter look light_falloff ").contains("inverse_square") &&
+                    suggest("pdraw particle use $name as preview without look.tex").contains("look.texture") &&
+                    suggest("$draw then follow @e[ty").any { it.endsWith("type=") } &&
+                    suggest("$emitter with environment entity_type minecraft:arr").contains("minecraft:arrow") &&
+                    suggest("$draw then fade_in 10 ease ease_out_qu").contains("ease_out_quad") &&
+                    suggest("pdraw help cmd bi").contains("bind")
+            }
             check("v2 帮助和可运行示例") {
                 run("pdraw help") > 0 && run("pdraw help particle") > 0 && run("pdraw help cmd draw") > 0 &&
                     run("pdraw help page 2") > 0 && HelpCommands.exampleGroups.all { group ->

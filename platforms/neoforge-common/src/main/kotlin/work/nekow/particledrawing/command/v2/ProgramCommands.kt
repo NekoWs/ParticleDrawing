@@ -47,7 +47,7 @@ internal object ProgramCommands {
         val name = input.choice(actions)
         fun ticks(min: Int = 0, label: String = "ticks") = input.integer(label, min, Int.MAX_VALUE / 50)
         fun ease(default: EasingType = EasingType.LINEAR) =
-            if (input.take("ease")) ParticleCommandOptionParser.easing(input.value("easing")) else default
+            if (input.take("ease")) ParticleCommandOptionParser.easing(input.value("easing", ParticleCommandOptionParser.easingNames)) else default
         fun axis(): Vec3 = input.vector("axis").also {
             if (it.lengthSqr() == 0.0 || !it.lengthSqr().isFinite()) input.invalid("nonzero axis", it.toString())
         }
@@ -143,7 +143,7 @@ internal object ProgramCommands {
         val seen = hashSetOf<String>()
         input.suggest(morphFields)
         while (input.peek() in morphFields) {
-            val field = input.choice(morphFields)
+            val field = input.choice(morphFields, candidates = morphFields - seen)
             if (!seen.add(field)) input.invalid("distinct morph field", field)
             when (field) {
                 "yaw" -> config.yaw = input.formula(field)
@@ -159,7 +159,7 @@ internal object ProgramCommands {
                 "converge" -> config.converge = input.number(field)
                 "path" -> config.path = MorphPath.valueOf(input.choice(listOf("straight", "quadratic", "cubic")).uppercase())
                 "easing" -> {
-                    val easing = input.value(field)
+                    val easing = input.value(field, listOf("linear", "in_quad", "out_quad", "in_out_quad", "out_cubic", "in_out_cubic", "out_back"))
                     if (MorphEasing.byName(easing) == null) input.invalid("morph easing", easing)
                     config.easing = easing
                 }

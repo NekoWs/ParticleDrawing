@@ -34,6 +34,7 @@ object ServerAnimationManager {
         val startGameTick: Long,
         val maxMs: Int,
         val loop: Boolean,
+        val variableNames: Set<String>,
     )
 
     private val playbacks = ConcurrentHashMap<UUID, Playback>()
@@ -59,7 +60,8 @@ object ServerAnimationManager {
             PacketDistributor.sendToPlayer(player, payload)
             ids.add(player.uuid)
         }
-        playbacks[id] = Playback(id, dimensionId, ids, origin, data, null, startGameTick, anim?.timelineLength() ?: 0, anim?.loop ?: false)
+        playbacks[id] = Playback(id, dimensionId, ids, origin, data, null, startGameTick, anim?.timelineLength() ?: 0,
+            anim?.loop ?: false, variableNames(anim))
         return id
     }
 
@@ -78,7 +80,8 @@ object ServerAnimationManager {
             PacketDistributor.sendToPlayer(player, payload)
             ids.add(player.uuid)
         }
-        playbacks[id] = Playback(id, dimensionId, ids, origin, null, animation, startGameTick, animation.timelineLength(), animation.loop)
+        playbacks[id] = Playback(id, dimensionId, ids, origin, null, animation, startGameTick, animation.timelineLength(),
+            animation.loop, variableNames(animation))
         return id
     }
 
@@ -185,6 +188,12 @@ object ServerAnimationManager {
     @JvmStatic
     fun activePlaybacks(dimensionId: UUID): List<UUID> =
         playbacks.values.filter { it.dimensionId == dimensionId }.map { it.animationId }
+
+    internal fun variableNames(dimensionId: UUID): Set<String> =
+        playbacks.values.filter { it.dimensionId == dimensionId }.flatMapTo(sortedSetOf()) { it.variableNames }
+
+    private fun variableNames(animation: ParticleAnimation?): Set<String> =
+        animation?.functions.orEmpty().flatMapTo(hashSetOf()) { it.vars.keys }
 
     /** 列出全部维度的活跃播放 ID 快照（无序）。 */
     @JvmStatic

@@ -9,6 +9,7 @@
     "ClientLightOcclusionMixin",
     "TerrainLightMixin",
     "EntityRendererMixin",
+    "ClientSuggestionProviderMixin",
     "SceneParticlePassMixin",
     "BackgroundMouseMixin"
   ],
