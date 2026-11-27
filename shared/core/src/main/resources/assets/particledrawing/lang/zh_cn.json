@@ -730,7 +730,7 @@
   "particledrawing.command.help.examples.morph_text": "文字在原地变成另一段文字，整组一起过渡。",
   "particledrawing.command.help.examples.follow_ring": "绘制有名字的圆环并持续旋转。",
   "particledrawing.command.help.examples.follow_step": "启动一个向上发射粒子的发射器。",
-  "particledrawing.error.command.v2.expected": "需要 %1$s，实际为「%2$s」。",
+  "particledrawing.error.command.v2.expected": "需要 %1$s，实际为 \"%2$s\"。",
   "particledrawing.error.command.v2.failed": "粒子命令参数无效。",
   "particledrawing.error.command.v2.live_sample": "变更采样布局前须停止并清理全部实例。",
   "particledrawing.error.command.v2.look_conflict": "外观与出生公式写入了同一属性。",
