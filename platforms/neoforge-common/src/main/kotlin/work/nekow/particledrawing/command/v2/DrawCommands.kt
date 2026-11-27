@@ -13,6 +13,7 @@ import work.nekow.particledrawing.api.ParticleCurve
 import work.nekow.particledrawing.api.ParticleLifeCurve
 import work.nekow.particledrawing.api.ParticleRecipe
 import work.nekow.particledrawing.api.ParticleSampling
+import work.nekow.particledrawing.api.PointSets
 import work.nekow.particledrawing.command.CommandParticleGroups
 import work.nekow.particledrawing.command.ParticleCommandOptionParser
 import work.nekow.particledrawing.config.ParticleDrawingConfig
@@ -35,13 +36,13 @@ internal object DrawCommands {
         val shape: String, val start: Coordinates?, val end: Coordinates?, val numbers: Map<String, Double>,
         val text: String?, val expression: String?, val look: Map<String, String>, val options: Map<String, String>,
         val life: Int, val stagger: Int, val velocity: Vec3?, val force: Vec3?, val forceTicks: Int,
-        val edgeGap: Int?, val entrance: ParticleLifeCurve?,
+        val edgeGap: Int?, val entrance: ParticleLifeCurve?, val pointSet: String? = null,
     )
 
     private data class Particle(val placement: Draw.Placement, val velocity: Vec3?, val force: Vec3?, val forceTicks: Int)
 
     private val shapes = listOf("dot", "field", "line", "beam", "helix", "circle", "disc", "triangle", "hexagram",
-        "rect", "sphere", "cuboid", "text", "sin", "expr")
+        "rect", "sphere", "cuboid", "text", "sin", "expr", "pointset")
     private val planes = listOf("xy", "xz", "yz")
     private val planeFigures = setOf("circle", "disc", "triangle", "hexagram", "rect", "sin")
     private val beamLook = setOf("color", "gradient", CommandLook.COLOR_EXPRESSION, "texture", "additive", "glow",
@@ -95,6 +96,11 @@ internal object DrawCommands {
 
     private fun figure(input: CommandInput, shape: String): Figure {
         val segment = shape in setOf("line", "beam")
+        // 点集图元先读名字，`at` 决定这套相对坐标落在哪里。
+        val pointSet = if (shape == "pointset") {
+            val dimension = input.suggestionSource?.let { ParticleUtils.dimensionUUID(it.level) }
+            input.name(dimension?.let { PointSets.names(it) }.orEmpty())
+        } else null
         input.expect(if (segment) "from" else "at")
         val start = if (shape == "field" && input.take("anchor")) null else input.coordinates()
         val end = if (segment) {
@@ -193,7 +199,7 @@ internal object DrawCommands {
         if (stagger != 0 && shape in setOf("field", "dot")) input.invalid("stagger 0 for $shape", stagger.toString())
         val entrance = if (input.take("enter")) entrance(input) else null
         return Figure(shape, start, end, numbers, text, formula, look, options, life, stagger, velocity, force, forceTicks,
-            edgeGap, entrance)
+            edgeGap, entrance, pointSet)
     }
 
     private fun entrance(input: CommandInput): ParticleLifeCurve {
@@ -235,6 +241,7 @@ internal object DrawCommands {
             val custom = when (figure.shape) {
                 "sin", "expr" -> customPoints(figure, start)
                 "field" -> List(figure.numbers.getValue("count").toInt()) { start }
+                "pointset" -> pointSetPoints(figure, start, source.level)
                 else -> edges?.map { it.position }
             }
             if (custom != null) {
@@ -264,8 +271,14 @@ internal object DrawCommands {
         return result
     }
 
-    private fun customPoints(figure: Figure, origin: Vec3): List<Vec3> {
-        val count = figure.numbers.getValue("count").toInt()
+    /** 命名点集图元：相对坐标整体平移到 `at`。 */
+    private fun pointSetPoints(figure: Figure, origin: Vec3, level: net.minecraft.server.level.ServerLevel): List<Vec3> {
+        val name = requireNotNullLocalized(figure.pointSet) { translation("error.pointset.not_found", "pointset") }
+        val entry = PointSets.get(level, name)
+        return entry.points.points.map { origin.add(it.x, it.y, it.z) }
+    }
+
+    private fun customPoints(figure: Figure, origin: Vec3): List<Vec3> {        val count = figure.numbers.getValue("count").toInt()
         val vector = figure.expression?.let(::vectorExpression)
         return List(count) { index ->
             val u = progress(index, count)

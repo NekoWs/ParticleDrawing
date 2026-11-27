@@ -57,11 +57,23 @@ pdraw particle draw text as hello at ~ ~2 ~ text "HELLO" size 2 count 512 look s
 
 ```mcfunction
 pdraw particle pointset define word_b text "WORLD" size 2 count 512
-pdraw particle pointset inspect word_b
-pdraw particle draw text as hello at ~ ~2 ~ text "HELLO" size 2 count 512 then morph target pointset word_b ticks 40 space local
+pdraw particle pointset transform word_b scale 1.5 rotate y 20 as word_b_tilt
+pdraw particle pointset combine word_b_tilt merge word_b as word_b_pair
+pdraw particle pointset filter word_b_pair "x > 0" as word_b_right
+pdraw particle pointset inspect word_b_right
 ```
 
-点集存相对坐标，`at` 换到哪里都按形变组的轴心落地；`pointset define` 的写法和形变目标相同，`group` 取该组相对自己轴心的形状。删除用 `pointset delete <名称或模式>`。
+点集存相对坐标，`at` 换到哪里都按消费方的位置落地；`pointset define` 的写法和形变目标相同，`group` 取该组相对自己轴心的形状。变换、合并、筛选与排序都会写成 `as` 指定的新点集，源点集不被修改；写成同名即原地更新。
+
+同一个点集可以被三种消费者复用：
+
+```mcfunction
+pdraw particle draw pointset word_b_right at ~ ~2 ~ look color aqua
+pdraw particle emitter word_ps sample pointset word_b_right life 20 rate 1
+pdraw particle draw text as hello at ~ ~2 ~ text "HELLO" size 2 count 512 then morph target pointset word_b_right ticks 40 space local
+```
+
+删除用 `pointset delete <名称或模式>`。
 
 ### 复用原版粒子贴图
 

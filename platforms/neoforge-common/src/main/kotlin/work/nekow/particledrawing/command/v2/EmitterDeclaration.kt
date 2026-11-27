@@ -7,6 +7,7 @@ import work.nekow.particledrawing.api.ParticleEvent
 import work.nekow.particledrawing.animation.recipe.RecipeCollision
 import work.nekow.particledrawing.animation.recipe.RecipeExpressions
 import work.nekow.particledrawing.api.ParticleImageSampler
+import work.nekow.particledrawing.api.PointSets
 import work.nekow.particledrawing.animation.recipe.ParticleProbe
 import work.nekow.particledrawing.api.ParticleRecipe
 import work.nekow.particledrawing.api.RecipeAnchor
@@ -208,7 +209,7 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
         }
 
         private fun sampling(input: CommandInput): Draft.(Binding) -> Unit =
-            when (input.choice(listOf("count", "range", "grid", "image", "mesh", "text"))) {
+            when (input.choice(listOf("count", "range", "grid", "image", "mesh", "text", "pointset"))) {
                 "count" -> {
                     val count = input.integer("count", 1, ParticleRecipe.MAX_SEEDS)
                     sampleChange { range = null; this.count = count; sampling = Sampling.PARAMETER }
@@ -241,6 +242,11 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
                     val count = if (input.take("count")) input.integer("count", 1, ParticleRecipe.MAX_SEEDS) else 256
                     val seed = if (input.take("seed")) input.integer("seed") else 0
                     sampleChange { mesh = source; meshCount = count; meshSeed = seed; sampling = Sampling.MESH }
+                }
+                "pointset" -> {
+                    val dimension = input.suggestionSource?.let { ParticleUtils.dimensionUUID(it.level) }
+                    val name = input.name(dimension?.let { PointSets.names(it) }.orEmpty())
+                    sampleChange { pointSet = name; sampling = Sampling.POINTSET }
                 }
                 else -> {
                     val text = input.value("text")

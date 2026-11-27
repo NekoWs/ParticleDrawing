@@ -60,6 +60,9 @@ v2 发布时删除 `particle batch`、`particle group`、`particle add`、`parti
 | `text` | `at <坐标> text <文字> [size <字高>] [count <数量>]` | — |
 | `sin` | `at <坐标> width <数> height <数> cycles <数> count <数量>` | `[axis <平面>]` |
 | `expr` | `at <坐标> count <数量> <vec3 公式>` | — |
+| `pointset` | `<名称> at <坐标>` | — |
+
+`pointset` 读取[第 6 节](#6-控制命令与对象生命周期)定义的点集，点序原样保留，`at` 是点集相对坐标的落点。点集为空或超过 8192 点时在准备阶段报错。
 
 - 平面可选 `xy`、`xz`、`yz`。现有平面图元默认 `xz`，`sin` 默认 `xy`。`sin` 在第一个轴上绘制 `(u - 0.5) * width`，第二个轴上绘制 `sin(u * 2 * PI * cycles) * height`，`at` 是波形中心。`expr` 的结果是相对 `at` 的世界轴偏移。
 - `sin`、`expr` 取 `i = 0..n-1`，`u = i/(n-1)`，单点时 `u = 0`。已有图元的点序、采样和默认几何选项沿用 `Draw`。文字采用旧文字点阵，默认字高 2、目标点数 1024，实际成员数以点阵结果为准。
@@ -223,12 +226,13 @@ sample grid from <向量> to <向量> step <数>
 sample image file|resource <路径> [pixel_spacing <数>] [alpha <0..1>] [stride <数量>] [plane xy|xz|yz]
 sample mesh file|resource <路径> [count <数量>] [seed <整数>]
 sample text <文字> [count <数量>] [height <数>]
+sample pointset <名称>
 ```
 
 - `at` 省略时使用命令源的精确位置。显式坐标或选择器在执行定义时解析并绑定。固定锚点偏移使用世界轴。实体锚点绑定 UUID，`local` 使偏移和局部坐标随实体朝向变换，`offset` 省略时为零。
 - `at emitter` 使用同维度目标发射器的锚点绑定，允许链接到只保存配置的对象。名称链接保持到以后解析，目标换锚点时更新依赖者。拒绝未知对象、自引用和环。目标锚点变化若与正在运行的依赖者模式冲突，整次修改失败。被引用的锚点须先解除引用才能删除。
 - 省略 `sample` 使用 `count 1`。各路径最多 8192 个样本。`range` 的 `u` 是采样值，起点包含在内，终点在步长能到达时包含。步长为正，起点不大于终点。`grid` 的坐标是采样空间，各轴的下界不能大于上界，固定正步长作用于三个轴。其他采样的点序和属性沿用现有采样器。
-- 文件从 `particleImages` 或 `particleMeshes` 读取，资源走当前服务端资源管理器。大小、路径、图片帧数和点数走现有读取上限。超限或读取失败会报错。图片默认 `pixel_spacing 0.05`、`alpha 0`、`stride 1`、`plane xy`。模型表面默认 `count 256`、`seed 0`。文字默认 `count 1024`、`height 2`。
+- 文件从 `particleImages` 或 `particleMeshes` 读取，资源走当前服务端资源管理器。大小、路径、图片帧数和点数走现有读取上限。超限或读取失败会报错。图片默认 `pixel_spacing 0.05`、`alpha 0`、`stride 1`、`plane xy`。模型表面默认 `count 256`、`seed 0`。文字默认 `count 1024`、`height 2`。`sample pointset` 原样沿用命名点集的点与顺序，点数上限同样是 8192。
 - `pixel_spacing` 是图像像素间距。外层 `spacing` 只控制按距离发射。资源名、选择器和公式内部的字符不会被解析成段关键字。
 
 ### 4.3 公式与求值阶段
@@ -326,16 +330,26 @@ pdraw particle use colored_dot as blue_dot look color blue burst
 /pdraw particle delete emitter|group|template <名称或模式>
 ```
 
-点集是只存点的命名对象，供形变等消费者引用；它按维度保存在内存里，关卡卸载和停服时丢弃，不写存档。
+点集是只存点的命名对象，供形变、绘制与发射器采样共用；它按维度保存在内存里，关卡卸载和停服时丢弃，不写存档。
 
 ```text
 /pdraw particle pointset define <名称> <点源>
+/pdraw particle pointset copy <源> as <名称>
+/pdraw particle pointset transform <源> <变换>… as <名称>
+/pdraw particle pointset combine <源> merge|sequence <另一个> as <名称>
+/pdraw particle pointset filter <源> <公式> as <名称>
+/pdraw particle pointset sort <源> x|y|z|index as <名称>
+/pdraw particle pointset shuffle <源> [seed <整数>] as <名称>
 /pdraw particle pointset list
 /pdraw particle pointset inspect <名称>
 /pdraw particle pointset delete <名称或模式>
 ```
 
-`define` 的点源写法和形变目标相同（`text` / `image` / `mesh` / `formula` / `group` / `pointset`），其中 `group` 取该组相对自己轴心的形状，`pointset` 复制现有点集。点集存相对坐标，被消费时才落锚点，所以同一份点集可以在不同位置复用。数量省略时，`text` 取 1024 点、`mesh` 取 256 点；公式必须写数量。最多 256 个点集，每个最多 8192 点，超出在定义时报错。
+- `define` 的点源写法和形变目标相同（`text` / `image` / `mesh` / `formula` / `group` / `pointset`），其中 `group` 取该组相对自己轴心的形状，`pointset` 复制现有点集。点集存相对坐标，被消费时才落锚点，所以同一份点集可以在不同位置复用。数量省略时，`text` 取 1024 点、`mesh` 取 256 点；公式必须写数量。
+- `transform` 的变换按顺序应用：`translate <向量>`、`rotate x|y|z <角度>`、`scale <倍率>`、`mirror x|y|z`；旋转与缩放相对原点。
+- `combine` 的 `merge` 与 `sequence` 都按顺序拼接，`sequence` 供光带/路径消费；`filter` 的公式可用 `x` / `y` / `z` / `i` / `n` / `u`，布尔 true 或非 0 保留；`sort` 影响 `allocation index` 的配对顺序，`shuffle` 用固定种子可复现。
+- 写操作一律写到 `as` 指定的点集，源点集不变；写成同名即原地更新。`inspect` 显示来源、点数与 revision。最多 256 个点集，每个最多 8192 点，超出在准备阶段报错。
+- 消费端共用同一份相对坐标与点序：`draw pointset <名称> at <坐标>` 直接铺成粒子，`emitter … sample pointset <名称>` 当出生样本，`then morph target pointset <名称>` 当形变目标。
 
 | 操作 | 行为 |
 | --- | --- |

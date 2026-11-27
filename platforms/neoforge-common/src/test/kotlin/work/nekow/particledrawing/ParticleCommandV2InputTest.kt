@@ -12,9 +12,13 @@ import work.nekow.particledrawing.command.v2.CommandLook
 import work.nekow.particledrawing.command.v2.EmitterDeclaration
 import work.nekow.particledrawing.command.v2.EmitterDeclaration.Companion.prepareRecipe
 import work.nekow.particledrawing.command.v2.GroupActions
+import work.nekow.particledrawing.command.v2.PointSetCommands
 import work.nekow.particledrawing.command.v2.PointTarget
 import work.nekow.particledrawing.command.v2.PointTargets
 import work.nekow.particledrawing.command.v2.ProgramCommands
+import work.nekow.particledrawing.pointset.PointAxis
+import work.nekow.particledrawing.pointset.PointTransform
+import work.nekow.particledrawing.math.Vec3 as CoreVec3
 import work.nekow.particledrawing.math.Vec3
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -192,5 +196,17 @@ class ParticleCommandV2InputTest {
         assertTrue(spec is PointTarget.Text)
         assertEquals("text \"WORLD\"", spec.label())
         assertFailsWith<CommandSyntaxException> { PointTargets.parse(CommandInput("formula all \"vec3(0,0,0)\""), allowAll = false) }
+    }
+
+    @Test fun pointSetTransformsParseInOrder() {
+        val input = CommandInput("translate 1 2 3 scale 2 rotate y 90 mirror x")
+        val transforms = PointSetCommands.parseTransforms(input)
+        input.finish()
+        assertEquals(4, transforms.size)
+        assertEquals(CoreVec3(1.0, 2.0, 3.0), (transforms[0] as PointTransform.Translate).delta)
+        assertEquals(2.0, (transforms[1] as PointTransform.Scale).factor)
+        assertEquals(PointAxis.Y, (transforms[2] as PointTransform.Rotate).axis)
+        assertEquals(PointAxis.X, (transforms[3] as PointTransform.Mirror).axis)
+        assertEquals(emptyList(), PointSetCommands.parseTransforms(CommandInput("as next")))
     }
 }

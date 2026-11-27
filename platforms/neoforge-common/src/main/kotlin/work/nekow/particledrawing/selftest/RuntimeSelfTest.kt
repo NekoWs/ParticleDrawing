@@ -377,7 +377,18 @@ object RuntimeSelfTest {
             check("点集与形变目标源") {
                 run("pdraw particle pointset define v2_word text \"AB\" size 1 count 32") == 1 &&
                     PointSets.find(dimension, "v2_word")?.points?.size == 32 &&
-                    run("pdraw particle pointset inspect v2_word") == 1 &&
+                    run("pdraw particle pointset copy v2_word as v2_word_copy") == 1 &&
+                    run("pdraw particle pointset transform v2_word_copy translate 1 0 0 scale 2 rotate y 90 mirror x as v2_word_t") == 1 &&
+                    PointSets.find(dimension, "v2_word_t")?.points?.size == 32 &&
+                    run("pdraw particle pointset combine v2_word_t merge v2_word as v2_word_all") == 1 &&
+                    PointSets.find(dimension, "v2_word_all")?.points?.size == 64 &&
+                    run("pdraw particle pointset filter v2_word_all \"x > 0\" as v2_word_pos") == 1 &&
+                    run("pdraw particle pointset sort v2_word_pos x as v2_word_sorted") == 1 &&
+                    run("pdraw particle pointset shuffle v2_word_sorted seed 7 as v2_word_shuffled") == 1 &&
+                    run("pdraw particle pointset inspect v2_word_shuffled") == 1 &&
+                    run("pdraw particle draw pointset v2_word at 0 70 0 look color aqua") == 32 &&
+                    run("pdraw particle emitter v2_ps sample pointset v2_word life 20 rate 1") == 1 &&
+                    run("pdraw particle delete emitter v2_ps") == 1 &&
                     run("pdraw particle advanced group $name morph configure target pointset v2_word ticks 5") == 1 &&
                     run("pdraw particle advanced group $name morph start") == 1 &&
                     run("pdraw particle advanced group $name morph inspect") == 1 &&
@@ -388,8 +399,8 @@ object RuntimeSelfTest {
                     run("pdraw particle draw line as v2_target from 0 70 0 to 4 70 0 count 5 " +
                         "then morph target text \"EF\" size 1 ticks 5") == 5 &&
                     run("pdraw particle delete group v2_target") == 1 &&
-                    run("pdraw particle pointset delete v2_word") == 1 &&
-                    PointSets.find(dimension, "v2_word") == null
+                    run("pdraw particle pointset delete v2_word*") == 7 &&
+                    PointSets.names(dimension).none { it.startsWith("v2_word") }
             }
             check("错峰覆盖取消旧生成，清理按类型查找") {
                 run("pdraw particle draw line as $name from 0 70 0 to 1 70 0 count 4 stagger 2 then spin 0 1 0 1") == 4 &&
