@@ -120,7 +120,7 @@ variable ease <变量> <公式> <刻> [ease <缓动>]
 stop_continuous
 destroy_after <刻>
 retire [grace <宽限刻>]
-morph slots <数量> <位置公式> {<形变选项>}
+morph slots <数量|all> <位置公式> {<形变选项>}
 ```
 
 - `then` 按书写顺序记录，时间游标从 0 开始。只有 `delay` 推进游标，持续时长不会推进游标。同刻动作的顺序以声明为准，属性相互覆盖以及持续动作的停止沿用现有编排语义。
@@ -132,7 +132,7 @@ morph slots <数量> <位置公式> {<形变选项>}
 
 ### 3.4 形变
 
-`then morph slots` 为本次形变提供独立定义，紧跟目标槽位数与位置公式。形变选项可换序，每个键只出现一次。槽位数量、位置、各属性公式和各选项沿用现有 `MorphSlotFormulas` 与 `MorphOptions` 的校验和坐标语义。`space` 决定坐标含义：默认 `world` 是绝对世界坐标；`local` 把槽位、控制点都当作相对组锚点的偏移，锚点移动时目标跟着平移，换位置执行命令不需要把 `at` 抄进公式。
+`then morph slots` 为本次形变提供独立定义，紧跟目标槽位数与位置公式。形变选项可换序，每个键只出现一次。槽位数量、位置、各属性公式和各选项沿用现有 `MorphSlotFormulas` 与 `MorphOptions` 的校验和坐标语义。槽位数写数字时，粒子多于槽位的部分留在原地；写 `all` 时按组成员数取槽位，整组一起过渡，换图元数量不用同步改数字。`space` 决定坐标含义：默认 `world` 是绝对世界坐标；`local` 把槽位、控制点都当作相对组锚点的偏移，锚点移动时目标跟着平移，换位置执行命令不需要把 `at` 抄进公式。
 
 ```text
 yaw <公式> | pitch <公式> | size <公式>
@@ -370,7 +370,7 @@ with on clear
 /pdraw particle advanced group <组名> reset at <坐标> [dryrun]
 /pdraw particle advanced group <组名> append <图元> {also <图元>} [dryrun]
 /pdraw particle advanced group <组名> program [append|replace] then <动作> {then <动作>} [dryrun]
-/pdraw particle advanced group <组名> morph configure slots <数量> <位置公式> {<形变选项>} [dryrun]
+/pdraw particle advanced group <组名> morph configure slots <数量|all> <位置公式> {<形变选项>} [dryrun]
 /pdraw particle advanced group <组名> morph start [dryrun]
 /pdraw particle advanced group <组名> morph inspect
 /pdraw particle advanced group <组名> morph reset

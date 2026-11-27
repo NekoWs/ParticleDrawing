@@ -585,6 +585,7 @@ class ParticleGroup(
      *
      * 槽位用公式描述（变量 `i`、`n`、`u`，动态目标还能用 `t`），与命令、脚本共用同一套写法；
      * 每颗粒子按 [MorphOptions.allocation] 选槽位，过渡只改位置，不重生也不销毁成员。
+     * [slotCount] 小于成员数时，多出来的成员留在原地；想覆盖整组就传成员数，或用省略槽位数的重载。
      * [MorphOptions.space] 默认世界坐标；设为 `LOCAL` 时槽位相对组锚点，锚点移动目标跟着平移。
      * [MorphOptions.writeAttributes] 开启时，yaw、pitch（度）和 size（粒子 scale 单位）与位置一起缓动。
      * 过渡进行中再次调用会按当前实际位置、速度和外观重新开始。
@@ -611,6 +612,22 @@ class ParticleGroup(
         )
         return this
     }
+
+    /**
+     * [morph] 的重载：槽位数取当前成员数，整组一起过渡。
+     * 槽位比成员少时多出来的成员会停在原地，这个重载省掉先数一遍成员再填数字的步骤。
+     */
+    @JvmOverloads
+    fun morph(
+        position: String,
+        options: MorphOptions = MorphOptions(),
+        yaw: String? = null,
+        pitch: String? = null,
+        size: String? = null,
+        control1: String? = null,
+        control2: String? = null,
+        dynamicSlots: Boolean = false,
+    ): ParticleGroup = morph(this.size(), position, options, yaw, pitch, size, control1, control2, dynamicSlots)
 
     /**
      * 把成员过渡到一组静态槽位。默认按世界坐标处理；[MorphOptions.space] 为 `LOCAL` 时

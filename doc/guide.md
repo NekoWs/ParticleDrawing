@@ -308,7 +308,8 @@ Java 可调用 `Draw.textPoints("变换形状", center, 602, 2.4)`，也可传�
 `yaw` 和 `pitch` 以度为单位，分别绕 Y 轴和 X 轴走最短角差。面向摄像机的粒子相对相机旋转，固定朝向的粒子以世界 +Z 为基准。
 `size` 使用 `ParticleSpawnSpec.scale` 的单位，等比缩放粒子。省略的属性沿用当前值。
 
-公式重载通过 `MorphOptions(writeAttributes = true)` 配合 `yaw`、`pitch`、`size` 公式使用。
+公式重载通过 `MorphOptions(writeAttributes = true)` 配合 `yaw`、`pitch`、`size` 公式使用；省略槽位数用
+`group.morph(position, options)`（或命令里的 `slots all`），槽位按当前成员数生成，整组一起过渡。
 需要每刻更新目标时，可同时启用 `dynamicSlots`。
 组表达式会接管位置，使用形变的成员应放在专用粒子组里。
 

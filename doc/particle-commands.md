@@ -35,10 +35,10 @@ pdraw particle draw circle as ring at ~ ~1 ~ radius 3 count 96 then spin 1 1 0 2
 
 ### 原地形变
 
-`then morph slots` 在时间轴里把成员过渡到新的位置。默认槽位是世界坐标；加 `space local` 后槽位相对组轴心，换位置执行同一条命令时形状仍落在原地。
+`then morph slots` 在时间轴里把成员过渡到新的位置。槽位数写 `all` 时跟随组成员数，整组一起过渡；`count` 改成多少都不用同步改这里。默认槽位是世界坐标；加 `space local` 后槽位相对组轴心，换位置执行同一条命令时形状仍落在原地。
 
 ```mcfunction
-pdraw particle draw text as hello at ~ ~2 ~ text "HELLO" size 2 count 512 look style soft_dot size 0.08 then delay 20 then morph slots 512 "vec3(cos(u*2*PI)*3, sin(u*2*PI)*3, 0)" ticks 40 easing in_out_cubic loop 1 allocation angle space local
+pdraw particle draw text as hello at ~ ~2 ~ text "HELLO" size 2 count 4096 look style soft_dot size 0.08 then delay 20 then morph slots all "vec3(cos(u*2*PI)*3, sin(u*2*PI)*3, 0)" ticks 40 easing in_out_cubic loop 1 allocation angle space local
 ```
 
 任意位置执行都会在文字中心排成圆环；不加 `space local` 时公式按绝对世界坐标解释。全部形变选项见[形变](command-v2-design.md#34-形变)。

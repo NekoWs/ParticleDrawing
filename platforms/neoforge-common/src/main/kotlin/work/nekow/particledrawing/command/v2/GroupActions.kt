@@ -39,6 +39,8 @@ internal object GroupActions {
         var keepVelocity: Boolean = false,
         var attributes: Boolean? = null,
         var space: MorphSpace = MorphSpace.WORLD,
+        /** 槽位数跟随组成员数；为真时忽略 [slotCount]。 */
+        var autoSlots: Boolean = false,
     ) {
         fun options(): MorphOptions = MorphOptions(
             ticks = ticks,
@@ -132,8 +134,11 @@ internal object GroupActions {
             is Action.Entity -> group.defineEntity(action.handle, action.entity)
             is Action.MorphStart -> {
                 val morph = checkNotNull(config)
+                // 槽位数跟随成员数时以真正开始的这一刻为准，之后加成员也不影响本次指令。
+                val slots = if (morph.autoSlots) group.size() else morph.slotCount
+                if (slots <= 0) return
                 group.morph(
-                    morph.slotCount, morph.position, morph.options(),
+                    slots, morph.position, morph.options(),
                     morph.yaw, morph.pitch, morph.size, morph.control1, morph.control2, morph.dynamic,
                 )
             }

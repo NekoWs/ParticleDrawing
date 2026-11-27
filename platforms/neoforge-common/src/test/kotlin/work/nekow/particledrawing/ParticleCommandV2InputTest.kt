@@ -11,11 +11,13 @@ import work.nekow.particledrawing.command.v2.CommandInput
 import work.nekow.particledrawing.command.v2.CommandLook
 import work.nekow.particledrawing.command.v2.EmitterDeclaration
 import work.nekow.particledrawing.command.v2.EmitterDeclaration.Companion.prepareRecipe
+import work.nekow.particledrawing.command.v2.GroupActions
 import work.nekow.particledrawing.command.v2.ProgramCommands
 import work.nekow.particledrawing.math.Vec3
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ParticleCommandV2InputTest {
@@ -140,5 +142,21 @@ class ParticleCommandV2InputTest {
         assertEquals(12, config.slotCount)
         assertEquals(MorphSpace.LOCAL, config.space)
         assertEquals(MorphSpace.WORLD, ProgramCommands.morph(CommandInput("slots 1 \"vec3(0,0,0)\"")).space)
+    }
+
+    @Test fun morphSlotsAllFollowMemberCount() {
+        val input = CommandInput("slots all \"vec3(cos(u*2*PI), sin(u*2*PI), 0)\" ticks 20")
+        val config = ProgramCommands.morph(input)
+        input.finish()
+        assertTrue(config.autoSlots)
+        val step = ProgramCommands.Step(GroupActions.Action.MorphStart, config)
+        val resolved = checkNotNull(ProgramCommands.resolveSlots(listOf(step), 4096).single().morph)
+        assertEquals(4096, resolved.slotCount)
+        assertFalse(resolved.autoSlots)
+        // 草稿本身不被改写，之后还能换一个成员数再解析。
+        assertTrue(config.autoSlots)
+        assertEquals(12, checkNotNull(ProgramCommands.resolveSlots(listOf(step), 12).single().morph).slotCount)
+        val explicit = ProgramCommands.morph(CommandInput("slots 12 \"vec3(0,0,0)\""))
+        assertFalse(explicit.autoSlots)
     }
 }

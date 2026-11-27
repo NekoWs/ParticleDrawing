@@ -16,6 +16,7 @@ import work.nekow.particledrawing.command.ParticleCommandOptionParser
 import work.nekow.particledrawing.command.v2.GroupActions.Action
 import work.nekow.particledrawing.command.v2.GroupActions.MorphConfig
 import work.nekow.particledrawing.core.easing.EasingType
+import work.nekow.particledrawing.core.network.AnimationProgramCodecs
 import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.translation
 import java.util.UUID
@@ -140,7 +141,10 @@ internal object ProgramCommands {
 
     fun morph(input: CommandInput): MorphConfig {
         input.expect("slots")
-        val config = MorphConfig(slotCount = input.integer("slots", 1, 8192), position = input.formula("position"))
+        val config = MorphConfig()
+        if (input.take("all")) config.autoSlots = true
+        else config.slotCount = input.integer("slots", 1, AnimationProgramCodecs.MAX_PROGRAM_MEMBERS)
+        config.position = input.formula("position")
         val seen = hashSetOf<String>()
         input.suggest(morphFields)
         while (input.peek() in morphFields) {
@@ -181,9 +185,26 @@ internal object ProgramCommands {
     }
 
     fun validateMorph(config: MorphConfig) {
-        MorphSlotFormulas(config.slotCount, config.position, config.yaw, config.pitch, config.size,
+        val slots = if (config.autoSlots) 1 else config.slotCount
+        MorphSlotFormulas(slots, config.position, config.yaw, config.pitch, config.size,
             config.control1, config.control2).build(0.0)
         config.options()
+    }
+
+    /**
+     * 把 `slots all` 的形变按实际成员数落成具体槽位数。
+     *
+     * 命令在知道组成员的时刻调用一次，之后的校验、时长账本与下发都用同一个数字；
+     * [GroupActions.applyAction] 还会按真正开始时的成员数再兜一次底。
+     */
+    fun resolveSlots(steps: List<Step>, members: Int): List<Step> {
+        if (steps.none { it.morph?.autoSlots == true }) return steps
+        val slots = members.coerceIn(1, AnimationProgramCodecs.MAX_PROGRAM_MEMBERS)
+        return steps.map { step ->
+            val morph = step.morph
+            if (morph == null || !morph.autoSlots) step
+            else step.copy(morph = morph.copy(slotCount = slots, autoSlots = false))
+        }
     }
 
     fun validate(steps: List<Step>, current: State? = null): State {

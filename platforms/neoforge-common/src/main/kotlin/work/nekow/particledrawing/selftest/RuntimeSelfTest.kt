@@ -362,12 +362,16 @@ object RuntimeSelfTest {
             check("编排追加、形变草稿与替换边界") {
                 run("pdraw particle advanced group $name program then delay 5 then spin 0 1 0 3") == 2 &&
                     run("pdraw particle advanced group $name program replace then delay 1") == 0 &&
-                    run("pdraw particle advanced group $name morph configure slots 12 \"vec3(i, 70, 0)\" ticks 10") == 1 &&
+                    run("pdraw particle advanced group $name morph configure slots all \"vec3(i, 70, 0)\" ticks 10") == 1 &&
                     run("pdraw particle advanced group $name morph start") == 1 &&
                     run("pdraw particle advanced group $name morph inspect") == 1 &&
-                    run("pdraw particle advanced group $name morph configure slots 12 " +
+                    run("pdraw particle advanced group $name morph configure slots all " +
                         "\"vec3(cos(u*2*PI)*2, sin(u*2*PI)*2, 0)\" space local ticks 10") == 1 &&
-                    run("pdraw particle advanced group $name morph start") == 1
+                    run("pdraw particle advanced group $name morph start") == 1 &&
+                    run("pdraw particle draw line as v2_auto from 0 70 0 to 4 70 0 count 5 " +
+                        "then morph slots all \"vec3(i, 70, 0)\" ticks 5") == 5 &&
+                    CommandParticleGroups.get(dimension, "v2_auto")?.group?.size() == 5 &&
+                    run("pdraw particle delete group v2_auto") == 1
             }
             check("错峰覆盖取消旧生成，清理按类型查找") {
                 run("pdraw particle draw line as $name from 0 70 0 to 1 70 0 count 4 stagger 2 then spin 0 1 0 1") == 4 &&

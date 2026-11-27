@@ -58,12 +58,12 @@ internal object DrawCommands {
         val dryrun = input.end()
         return {
             val pivot = anchor?.getPosition(source) ?: figures.first().start?.getPosition(source) ?: source.position
-            val steps = program.map { it(source) }
-            val state = ProgramCommands.validate(steps)
             if (name != null) CommandParticleGroups.checkCapacity(dimension, name)
             val particles = prepare(figures, source, pivot)
             val maxDelay = particles.maxOf { it.placement.delay }
             val readyDelay = if (maxDelay == 0) 0 else maxDelay + 1
+            val steps = ProgramCommands.resolveSlots(program.map { it(source) }, particles.size)
+            val state = ProgramCommands.validate(steps)
             if (steps.isNotEmpty()) {
                 requireLocalized(particles.all { particle ->
                     val life = particle.placement.lifetime
@@ -402,11 +402,14 @@ internal object DrawCommands {
             "start" -> {
                 val dryrun = input.end()
                 command {
-                    val draft = requireNotNullLocalized(entry(dimension, name).morphDraft) {
+                    val entry = entry(dimension, name)
+                    val draft = requireNotNullLocalized(entry.morphDraft) {
                         translation("error.morph.slots_command")
                     }
-                    val step = ProgramCommands.Step(GroupActions.Action.MorphStart, draft)
-                    program(source, dimension, name, listOf(step), false, dryrun)
+                    val steps = ProgramCommands.resolveSlots(
+                        listOf(ProgramCommands.Step(GroupActions.Action.MorphStart, draft)), readyMembers(entry),
+                    )
+                    program(source, dimension, name, steps, false, dryrun)
                     1
                 }
             }
@@ -418,8 +421,10 @@ internal object DrawCommands {
                     val draft = entry.morphDraft
                     if (draft == null) EmitterCommands.success(source, name, op)
                     else {
+                        val slots = if (draft.autoSlots) translation("command.v2.morph.slots.all")
+                        else translation("command.v2.morph.slots.count", draft.slotCount)
                         val space = translation("command.v2.morph.space.${draft.space.name.lowercase()}")
-                        source.reply({ translation("command.v2.morph", name, draft.slotCount, draft.ticks, space).component() })
+                        source.reply({ translation("command.v2.morph", name, slots, draft.ticks, space).component() })
                         1
                     }
                 }
@@ -435,9 +440,16 @@ internal object DrawCommands {
             translation("error.group.no_members", name)
         }
         requireLocalized(!replace || !entry.group.hasDeliveredProgram()) { translation("error.command.v2.program_delivered", name) }
+        val steps = ProgramCommands.resolveSlots(steps, readyMembers(entry))
         val state = ProgramCommands.validate(steps, if (replace) null else ProgramCommands.state(entry))
         if (!dryrun) ProgramCommands.apply(dimension, entry, steps, state, replace)
         return feedback(source, name, "program", steps.size, dryrun)
+    }
+
+    /** 组成员最终数量：已经出生的加上还在等待出生的。 */
+    private fun readyMembers(entry: CommandParticleGroups.Entry): Int {
+        val pending = ServerParticleEngine.get(entry.group.manager.dimensionId)?.pendingDrawCount(entry.group.id) ?: 0
+        return entry.group.size() + pending
     }
 
     fun control(source: CommandSourceStack, op: String, input: CommandInput): () -> Int {
