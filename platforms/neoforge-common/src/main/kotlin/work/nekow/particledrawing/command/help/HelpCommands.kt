@@ -76,6 +76,12 @@ internal object HelpCommands {
             HelpParam("emitter", "command.help.cmd.advanced.p1"),
             HelpParam("group", "command.help.cmd.advanced.p2"),
         )),
+        "pointset" to ("particle" to listOf(
+            HelpParam("define", "command.help.cmd.pointset.p1"),
+            HelpParam("list", "command.help.cmd.pointset.p2"),
+            HelpParam("inspect", "command.help.cmd.pointset.p3"),
+            HelpParam("delete", "command.help.cmd.pointset.p4"),
+        )),
     )
 
     private val entries = ParticleCommandsV2.usages.map { (id, usage) ->
@@ -152,6 +158,14 @@ internal object HelpCommands {
                     "pdraw particle draw circle as ex_ring at ~ ~1 ~ radius 3 count 64 then spin 1 1 0 2"),
                 HelpExample("command.help.examples.follow_step",
                     "pdraw particle emitter ex_emitter at ~ ~1 ~ move vec3(0,0.04,0) life 20 rate 1 start"),
+            ),
+        ),
+        HelpExampleGroup(
+            "command.help.examples.section.morph",
+            listOf(
+                HelpExample("command.help.examples.morph_text",
+                    "pdraw particle draw text as ex_word at ~ ~2 ~ text \"HI\" size 2 count 64 look color gold " +
+                        "then delay 10 then morph target text \"OK\" size 2 ticks 20 space local"),
             ),
         ),
         HelpExampleGroup(

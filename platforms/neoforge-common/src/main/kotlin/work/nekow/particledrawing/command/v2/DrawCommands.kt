@@ -62,7 +62,7 @@ internal object DrawCommands {
             val particles = prepare(figures, source, pivot)
             val maxDelay = particles.maxOf { it.placement.delay }
             val readyDelay = if (maxDelay == 0) 0 else maxDelay + 1
-            val steps = ProgramCommands.resolveSlots(program.map { it(source) }, particles.size)
+            val steps = ProgramCommands.prepareMorphs(program.map { it(source) }, particles.size, source, pivot)
             val state = ProgramCommands.validate(steps)
             if (steps.isNotEmpty()) {
                 requireLocalized(particles.all { particle ->
@@ -406,9 +406,12 @@ internal object DrawCommands {
                     val draft = requireNotNullLocalized(entry.morphDraft) {
                         translation("error.morph.slots_command")
                     }
-                    val steps = ProgramCommands.resolveSlots(
-                        listOf(ProgramCommands.Step(GroupActions.Action.MorphStart, draft)), readyMembers(entry),
+                    val steps = ProgramCommands.prepareMorphs(
+                        listOf(ProgramCommands.Step(GroupActions.Action.MorphStart, draft)),
+                        readyMembers(entry), source, entry.group.pivot,
                     )
+                    // 记下这次求出的点数与采样点，inspect 能看到实际值；start 之间也不会重复采样。
+                    if (!dryrun) entry.morphDraft = steps.single().morph
                     program(source, dimension, name, steps, false, dryrun)
                     1
                 }
@@ -421,7 +424,10 @@ internal object DrawCommands {
                     val draft = entry.morphDraft
                     if (draft == null) EmitterCommands.success(source, name, op)
                     else {
-                        val slots = if (draft.autoSlots) translation("command.v2.morph.slots.all")
+                        val slots = draft.target?.let { spec ->
+                            if (draft.slotCount <= 0) translation("command.v2.morph.target.pending", PointSources.label(spec))
+                            else translation("command.v2.morph.target", PointSources.label(spec), draft.slotCount)
+                        } ?: if (draft.autoSlots) translation("command.v2.morph.slots.all")
                         else translation("command.v2.morph.slots.count", draft.slotCount)
                         val space = translation("command.v2.morph.space.${draft.space.name.lowercase()}")
                         source.reply({ translation("command.v2.morph", name, slots, draft.ticks, space).component() })
@@ -440,7 +446,7 @@ internal object DrawCommands {
             translation("error.group.no_members", name)
         }
         requireLocalized(!replace || !entry.group.hasDeliveredProgram()) { translation("error.command.v2.program_delivered", name) }
-        val steps = ProgramCommands.resolveSlots(steps, readyMembers(entry))
+        val steps = ProgramCommands.prepareMorphs(steps, readyMembers(entry), source, entry.group.pivot)
         val state = ProgramCommands.validate(steps, if (replace) null else ProgramCommands.state(entry))
         if (!dryrun) ProgramCommands.apply(dimension, entry, steps, state, replace)
         return feedback(source, name, "program", steps.size, dryrun)

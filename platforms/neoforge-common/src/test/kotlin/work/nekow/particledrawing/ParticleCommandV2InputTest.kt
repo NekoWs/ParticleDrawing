@@ -12,6 +12,8 @@ import work.nekow.particledrawing.command.v2.CommandLook
 import work.nekow.particledrawing.command.v2.EmitterDeclaration
 import work.nekow.particledrawing.command.v2.EmitterDeclaration.Companion.prepareRecipe
 import work.nekow.particledrawing.command.v2.GroupActions
+import work.nekow.particledrawing.command.v2.PointSource
+import work.nekow.particledrawing.command.v2.PointSources
 import work.nekow.particledrawing.command.v2.ProgramCommands
 import work.nekow.particledrawing.math.Vec3
 import kotlin.test.Test
@@ -150,13 +152,45 @@ class ParticleCommandV2InputTest {
         input.finish()
         assertTrue(config.autoSlots)
         val step = ProgramCommands.Step(GroupActions.Action.MorphStart, config)
-        val resolved = checkNotNull(ProgramCommands.resolveSlots(listOf(step), 4096).single().morph)
+        val resolved = checkNotNull(ProgramCommands.resolveAutoSlots(listOf(step), 4096).single().morph)
         assertEquals(4096, resolved.slotCount)
         assertFalse(resolved.autoSlots)
         // 草稿本身不被改写，之后还能换一个成员数再解析。
         assertTrue(config.autoSlots)
-        assertEquals(12, checkNotNull(ProgramCommands.resolveSlots(listOf(step), 12).single().morph).slotCount)
+        assertEquals(12, checkNotNull(ProgramCommands.resolveAutoSlots(listOf(step), 12).single().morph).slotCount)
         val explicit = ProgramCommands.morph(CommandInput("slots 12 \"vec3(0,0,0)\""))
         assertFalse(explicit.autoSlots)
+    }
+
+    @Test fun morphTargetSourcesParse() {
+        val text = ProgramCommands.morph(CommandInput("target text \"WORLD\" size 2 count 64 space local"))
+        assertTrue(text.target is PointSource.Text)
+        assertEquals(64, text.target!!.count)
+        assertEquals(MorphSpace.LOCAL, text.space)
+        // 公式目标与旧 slots 等价：数量 all 走成员数，写数字则固定槽位数。
+        val all = ProgramCommands.morph(CommandInput("target formula all \"vec3(u, 0, 0)\""))
+        assertTrue(all.target == null && all.autoSlots)
+        val fixed = ProgramCommands.morph(CommandInput("target formula 8 \"vec3(i, 0, 0)\""))
+        assertTrue(fixed.target == null)
+        assertEquals(8, fixed.slotCount)
+        assertEquals("vec3(i, 0, 0)", fixed.position)
+        val group = ProgramCommands.morph(CommandInput("target group v2_auto"))
+        assertTrue(group.target is PointSource.GroupRef)
+        val pointSet = ProgramCommands.morph(CommandInput("target pointset word_b"))
+        assertTrue(pointSet.target is PointSource.PointSetRef)
+        assertEquals("pointset word_b", PointSources.label(pointSet.target!!))
+    }
+
+    @Test fun pointSetCommandsParse() {
+        val define = CommandInput("define word_b text \"WORLD\" size 2 count 64")
+        // 只验证语法层能消费；真正的采样在服务端执行。
+        define.expect("define")
+        val name = define.name()
+        val spec = PointSources.parse(define, allowAll = false)
+        define.finish()
+        assertEquals("word_b", name)
+        assertTrue(spec is PointSource.Text)
+        assertEquals("text \"WORLD\"", PointSources.label(spec))
+        assertFailsWith<CommandSyntaxException> { PointSources.parse(CommandInput("formula all \"vec3(0,0,0)\""), allowAll = false) }
     }
 }

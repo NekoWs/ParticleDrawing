@@ -43,6 +43,26 @@ pdraw particle draw text as hello at ~ ~2 ~ text "HELLO" size 2 count 4096 look 
 
 任意位置执行都会在文字中心排成圆环；不加 `space local` 时公式按绝对世界坐标解释。全部形变选项见[形变](command-v2-design.md#34-形变)。
 
+### 文字变文字
+
+`then morph target` 直接接一处点源：文字、图片、模型、已有组或命名点集。目标在形变开始时求值，不需要把目标坐标写成公式。
+
+```mcfunction
+pdraw particle draw text as hello at ~ ~2 ~ text "HELLO" size 2 count 512 look style soft_dot size 0.08 then delay 20 then morph target text "WORLD" size 2 ticks 40 easing in_out_cubic loop 1 space local
+```
+
+`space local` 让目标贴着当前组轴心，换位置执行同一条命令也能原地变形；`target group <组名>` 取另一组当前的位置快照。文字、图片与模型只改位置，需要逐槽位外观或 `dynamic` 时仍用 `slots`。
+
+点集把采样结果存起来，多处复用：
+
+```mcfunction
+pdraw particle pointset define word_b text "WORLD" size 2 count 512
+pdraw particle pointset inspect word_b
+pdraw particle draw text as hello at ~ ~2 ~ text "HELLO" size 2 count 512 then morph target pointset word_b ticks 40 space local
+```
+
+点集存相对坐标，`at` 换到哪里都按形变组的轴心落地；`pointset define` 的写法和形变目标相同，`group` 取该组相对自己轴心的形状。删除用 `pointset delete <名称或模式>`。
+
 ### 复用原版粒子贴图
 
 用 `look texture particle:minecraft:end_rod` 引用粒子贴图。`#N` 选固定帧，`@FPS` 设循环帧率。资源包只提供外观，运动由本模组控制。

@@ -14,6 +14,7 @@
 | `particle start` / `particle burst` / `particle stop` | 控制已有发射器 |
 | `particle clear` / `particle delete` | 分别清理实例与删除命名对象 |
 | `particle advanced` | 配方热更新、复杂世界输入、已有组的追加与编排 |
+| `particle pointset` | 把采样结果存成命名点集，供形变等消费者复用 |
 
 命令均位于 `/pdraw` 下。`particle field`、`camera`、`animation`、`texture`、`light` 继续使用现有入口。`/pdraw help` 保留，粒子帮助改用 v2 语法。
 
@@ -148,6 +149,30 @@ space world|local
 ```
 
 位置、控制点和字段公式从同一份形变定义准备。默认 `ticks 40`、`stagger 0`、`loop 0`、`max_speed 0`、`max_accel 0`、`converge 0.05`、`path straight`、`easing linear`、`wobble none`、`strength 0`、`peaks 1`、`allocation nearest`、`dynamic false`、`keep_velocity false`、`space world`。未给 `attributes` 时，存在 yaw、pitch 或 size 公式即启用属性写入。`loop -1` 表示无限往返。高级形变草稿在第 7 节说明。
+
+形变目标也可以是现成的点源，而不是公式：
+
+```text
+then morph target <点源> {<形变选项>}
+```
+
+```text
+<点源> =
+    text <文字> [size <高度>] [count <数量>]
+  | formula <数量|all> <vec3 公式>
+  | image file|resource <路径> [pixel_spacing <数>] [alpha <数>] [stride <数>] [plane xy|xz|yz]
+  | mesh file|resource <路径> [count <数量>] [seed <数>]
+  | group <组名>
+  | pointset <点集名>
+```
+
+`target formula` 与 `morph slots` 完全等价，`slots` 写法保留。其余点源：
+
+- `text` 在服务端按字形采样，`size` 是文字高度（默认 2），`count` 省略时取组成员数；`image` 的点数由采样器决定；`mesh` 的 `count` 省略时取组成员数。
+- `group` 快照目标组成员当前的世界坐标，不要求它同时可见；`pointset` 取[第 6 节](#6-控制命令与对象生命周期)定义的点集，用它自己的相对坐标。
+- `space world`（默认）把文字、图片、模型与点集放到当前组锚点上；`space local` 保持相对锚点，锚点移动时目标跟着平移。`group` 相反：世界坐标直接使用，`local` 换算成相对锚点的偏移。
+- 点源目标只改位置，不能写 `yaw`、`pitch`、`size` 或 `attributes`，也不支持 `dynamic`；需要逐槽位外观或动态公式时改用 `slots`。
+- 目标点数少于成员时，多出的成员留在原地；多于成员时，多余目标不参与配对。`slots` 与点源目标共用同一套时长账本。
 
 ### 3.5 绘制示例
 
@@ -301,6 +326,17 @@ pdraw particle use colored_dot as blue_dot look color blue burst
 /pdraw particle delete emitter|group|template <名称或模式>
 ```
 
+点集是只存点的命名对象，供形变等消费者引用；它按维度保存在内存里，关卡卸载和停服时丢弃，不写存档。
+
+```text
+/pdraw particle pointset define <名称> <点源>
+/pdraw particle pointset list
+/pdraw particle pointset inspect <名称>
+/pdraw particle pointset delete <名称或模式>
+```
+
+`define` 的点源写法和形变目标相同（`text` / `image` / `mesh` / `formula` / `group` / `pointset`），其中 `group` 取该组相对自己轴心的形状，`pointset` 复制现有点集。点集存相对坐标，被消费时才落锚点，所以同一份点集可以在不同位置复用。数量省略时，`text` 取 1024 点、`mesh` 取 256 点；公式必须写数量。最多 256 个点集，每个最多 8192 点，超出在定义时报错。
+
 | 操作 | 行为 |
 | --- | --- |
 | `start` | 从已有配置启动一个持续实例。已有持续实例仍在发射时显式失败。允许旧实例扫尾，同时追踪其句柄 |
@@ -371,6 +407,7 @@ with on clear
 /pdraw particle advanced group <组名> append <图元> {also <图元>} [dryrun]
 /pdraw particle advanced group <组名> program [append|replace] then <动作> {then <动作>} [dryrun]
 /pdraw particle advanced group <组名> morph configure slots <数量|all> <位置公式> {<形变选项>} [dryrun]
+/pdraw particle advanced group <组名> morph configure target <点源> {<形变选项>} [dryrun]
 /pdraw particle advanced group <组名> morph start [dryrun]
 /pdraw particle advanced group <组名> morph inspect
 /pdraw particle advanced group <组名> morph reset
@@ -378,7 +415,7 @@ with on clear
 
 - `create` 仅创建空组，同名时报错。`reset` 覆盖成指定轴心的空组。`append` 仅允许尚未录制程序的组，保留轴心、已有成员及形变草稿。已有组可通过第 6 节清理。`clear_all` 删除当前维度由命令创建的组及其状态。
 - `program` 默认 `append`，要求已有成员或正在等待已登记的成员。首个下发前，连续编排共用预备游标。已有程序下发后，追加链从当前播放时刻开始，`delay` 为相对此次追加的偏移。`replace` 只允许替换尚未下发的编排，重置游标和未下发绑定。已下发的组要重做整段表演，使用同名 `draw` 重建。
-- `morph configure` 保存完整形变草稿，`start` 以 `program append` 的时钟开始形变。`inspect` 查询草稿，`reset` 删除草稿。草稿和已经下发的形变各自独立。`then morph slots` 直接携带定义，可在同一条时间线中写多次。
+- `morph configure` 保存完整形变草稿，`start` 以 `program append` 的时钟开始形变。`inspect` 查询草稿，`reset` 删除草稿。草稿和已经下发的形变各自独立。`then morph slots` 直接携带定义，可在同一条时间线中写多次。`target` 草稿里的文字、图片与模型在 `start` 时重新采样，`group` 与 `pointset` 也在这时才取快照；`inspect` 显示目标类型、点数与坐标系。
 
 ## 8. 校验、提交与可观测结果
 

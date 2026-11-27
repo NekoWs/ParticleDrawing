@@ -13,7 +13,6 @@ import work.nekow.particledrawing.api.RecipeAnchor
 import work.nekow.particledrawing.api.RecipeEmission
 import work.nekow.particledrawing.api.SubEmit
 import work.nekow.particledrawing.command.CommandParticleRecipes
-import work.nekow.particledrawing.command.CommandSuggestionCatalog
 import work.nekow.particledrawing.command.CommandParticleRecipes.Draft
 import work.nekow.particledrawing.command.CommandParticleRecipes.Sampling
 import work.nekow.particledrawing.command.ParticleCommandOptionParser
@@ -22,9 +21,6 @@ import work.nekow.particledrawing.i18n.translation
 import work.nekow.particledrawing.math.ResourceId
 import work.nekow.particledrawing.math.Vec3 as CoreVec3
 import work.nekow.particledrawing.util.ParticleUtils
-import java.nio.file.Files
-import java.nio.file.LinkOption
-import java.nio.file.Path
 
 internal data class EmitterDeclaration(private val changes: List<Change>) {
     internal data class Binding(val source: CommandSourceStack?, val name: String?) {
@@ -257,32 +253,8 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
 
         private fun sampleChange(change: Draft.(Binding) -> Unit) = change
 
-        private fun asset(input: CommandInput, directory: String, suffix: String): CommandParticleRecipes.SampleAsset {
-            val resource = input.choice(listOf("file", "resource")) == "resource"
-            input.valueSuggestions {
-                if (resource) {
-                    val directories = if (suffix == ".png") listOf("particle_images", "images", "textures")
-                        else listOf("particle_meshes", "meshes", "models")
-                    input.suggestionSource?.level?.server?.resourceManager?.let {
-                        CommandSuggestionCatalog.resources(it, directories, suffix)
-                    }.orEmpty()
-                } else {
-                    localFiles(Path.of(directory), suffix)
-                }
-            }
-            val path = input.value("path")
-            if (resource) ResourceId.parse(path)
-            return CommandParticleRecipes.SampleAsset(path, resource)
-        }
-
-        /** 工作目录下的素材文件；目录读不到或遍历失败时返回空候选。 */
-        private fun localFiles(root: Path, suffix: String): List<String> = runCatching {
-            if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) return@runCatching emptyList()
-            Files.walk(root).use { paths ->
-                paths.filter { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) && it.toString().endsWith(suffix, ignoreCase = true) }
-                    .map { root.relativize(it).joinToString("/") }.sorted().toList()
-            }
-        }.getOrDefault(emptyList())
+        private fun asset(input: CommandInput, directory: String, suffix: String): CommandParticleRecipes.SampleAsset =
+            PointSources.asset(input, directory, suffix)
 
         private fun advanced(input: CommandInput, names: List<String>): Change =
             when (val kind = input.choice(listOf("variable", "state", "select", "change", "environment", "probe", "on"))) {

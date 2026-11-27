@@ -140,11 +140,27 @@ internal object ProgramCommands {
     )
 
     fun morph(input: CommandInput): MorphConfig {
-        input.expect("slots")
         val config = MorphConfig()
-        if (input.take("all")) config.autoSlots = true
-        else config.slotCount = input.integer("slots", 1, AnimationProgramCodecs.MAX_PROGRAM_MEMBERS)
-        config.position = input.formula("position")
+        input.suggest(listOf("slots", "target"))
+        if (input.take("target")) {
+            when (val spec = PointSources.parse(input, allowAll = true)) {
+                // 公式目标与旧 slots 是同一个东西：保留公式校验、动态槽位与 t 语义。
+                is PointSource.Formula -> {
+                    if (spec.count == null) config.autoSlots = true else config.slotCount = spec.count
+                    config.position = spec.position
+                }
+                else -> {
+                    config.target = spec
+                    // 点数要等真正知道成员数或取到快照时才算，草稿先标未知。
+                    config.slotCount = 0
+                }
+            }
+        } else {
+            input.expect("slots")
+            if (input.take("all")) config.autoSlots = true
+            else config.slotCount = input.integer("slots", 1, AnimationProgramCodecs.MAX_PROGRAM_MEMBERS)
+            config.position = input.formula("position")
+        }
         val seen = hashSetOf<String>()
         input.suggest(morphFields)
         while (input.peek() in morphFields) {
@@ -185,25 +201,52 @@ internal object ProgramCommands {
     }
 
     fun validateMorph(config: MorphConfig) {
-        val slots = if (config.autoSlots) 1 else config.slotCount
-        MorphSlotFormulas(slots, config.position, config.yaw, config.pitch, config.size,
-            config.control1, config.control2).build(0.0)
+        if (config.target != null) {
+            // 点源目标只负责落点；朝向与尺寸要逐槽位公式才能表达，改用 slots。
+            requireLocalized(config.yaw == null && config.pitch == null && config.size == null && config.attributes != true) {
+                translation("error.morph.target_position_only")
+            }
+            requireLocalized(!config.dynamic) { translation("error.morph.target_static") }
+        } else {
+            val slots = if (config.autoSlots) 1 else config.slotCount
+            MorphSlotFormulas(slots, config.position, config.yaw, config.pitch, config.size,
+                config.control1, config.control2).build(0.0)
+        }
         config.options()
     }
 
-    /**
-     * 把 `slots all` 的形变按实际成员数落成具体槽位数。
-     *
-     * 命令在知道组成员的时刻调用一次，之后的校验、时长账本与下发都用同一个数字；
-     * [GroupActions.applyAction] 还会按真正开始时的成员数再兜一次底。
-     */
-    fun resolveSlots(steps: List<Step>, members: Int): List<Step> {
+    /** 只处理 `slots all`：按成员数落成具体槽位数，其它字段原样保留。 */
+    fun resolveAutoSlots(steps: List<Step>, members: Int): List<Step> {
         if (steps.none { it.morph?.autoSlots == true }) return steps
         val slots = members.coerceIn(1, AnimationProgramCodecs.MAX_PROGRAM_MEMBERS)
         return steps.map { step ->
             val morph = step.morph
             if (morph == null || !morph.autoSlots) step
             else step.copy(morph = morph.copy(slotCount = slots, autoSlots = false))
+        }
+    }
+
+    /**
+     * 在命令知道组成员数与锚点的时刻把形变落成具体槽位：`slots all` 取成员数，
+     * 点源目标求出点数并缓存采样点。之后的校验、时长账本与下发都用同一份结果；
+     * [GroupActions.applyAction] 还会在真正开始时按成员数再兜一次底。
+     */
+    fun prepareMorphs(steps: List<Step>, members: Int, source: CommandSourceStack, anchor: Vec3): List<Step> {
+        val resolved = resolveAutoSlots(steps, members)
+        if (resolved.none { it.morph?.target != null }) return resolved
+        return resolved.map { step ->
+            val morph = step.morph ?: return@map step
+            val target = morph.target ?: return@map step
+            // 已经求过值的采样点在重复 start 时直接复用，不必重新采样。
+            if (morph.targetPoints != null) return@map step
+            val prepared = PointSources.prepareTarget(source, target, members)
+            requireLocalized(prepared.count > 0) { translation("error.morph.target_empty") }
+            step.copy(
+                morph = morph.copy(
+                    slotCount = prepared.count.coerceIn(1, AnimationProgramCodecs.MAX_PROGRAM_MEMBERS),
+                    targetPoints = prepared.points,
+                ),
+            )
         }
     }
 

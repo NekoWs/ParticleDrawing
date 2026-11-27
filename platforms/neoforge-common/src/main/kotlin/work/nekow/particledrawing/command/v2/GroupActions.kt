@@ -41,6 +41,10 @@ internal object GroupActions {
         var space: MorphSpace = MorphSpace.WORLD,
         /** 槽位数跟随组成员数；为真时忽略 [slotCount]。 */
         var autoSlots: Boolean = false,
+        /** 目标点源；非空时槽位来自它，而不是 [position] 公式。 */
+        var target: PointSource? = null,
+        /** 采样类目标在准备阶段求出的点，之后只按坐标系落锚点。 */
+        var targetPoints: List<Vec3>? = null,
     ) {
         fun options(): MorphOptions = MorphOptions(
             ticks = ticks,
@@ -134,6 +138,18 @@ internal object GroupActions {
             is Action.Entity -> group.defineEntity(action.handle, action.entity)
             is Action.MorphStart -> {
                 val morph = checkNotNull(config)
+                val target = morph.target
+                if (target != null) {
+                    // 引用型源在真正开始时才取快照；采样类源在准备阶段已经求值。
+                    val source = morph.targetPoints ?: PointSources.resolveReference(group.manager.dimensionId, target)
+                    requireLocalized(source.isNotEmpty()) { translation("error.morph.target_empty") }
+                    val options = morph.options()
+                    group.morph(
+                        PointSources.toMorphPoints(source, target, options.space == MorphSpace.LOCAL, group.pivot),
+                        options,
+                    )
+                    return
+                }
                 // 槽位数跟随成员数时以真正开始的这一刻为准，之后加成员也不影响本次指令。
                 val slots = if (morph.autoSlots) group.size() else morph.slotCount
                 if (slots <= 0) return

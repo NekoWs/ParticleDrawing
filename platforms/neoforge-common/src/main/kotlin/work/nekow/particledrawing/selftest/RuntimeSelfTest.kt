@@ -16,6 +16,7 @@ import work.nekow.particledrawing.ParticleDrawing
 import work.nekow.particledrawing.api.CurveChannel
 import work.nekow.particledrawing.api.ParticleManager
 import work.nekow.particledrawing.command.CommandParticleGroups
+import work.nekow.particledrawing.command.v2.CommandPointSets
 import work.nekow.particledrawing.command.CommandParticleRecipes
 import work.nekow.particledrawing.command.help.HelpCommands
 import work.nekow.particledrawing.core.easing.EasingType
@@ -373,6 +374,23 @@ object RuntimeSelfTest {
                     CommandParticleGroups.get(dimension, "v2_auto")?.group?.size() == 5 &&
                     run("pdraw particle delete group v2_auto") == 1
             }
+            check("点集与形变目标源") {
+                run("pdraw particle pointset define v2_word text \"AB\" size 1 count 32") == 1 &&
+                    CommandPointSets.find(dimension, "v2_word")?.points?.size == 32 &&
+                    run("pdraw particle pointset inspect v2_word") == 1 &&
+                    run("pdraw particle advanced group $name morph configure target pointset v2_word ticks 5") == 1 &&
+                    run("pdraw particle advanced group $name morph start") == 1 &&
+                    run("pdraw particle advanced group $name morph inspect") == 1 &&
+                    run("pdraw particle advanced group $name morph configure target text \"CD\" size 1 ticks 5") == 1 &&
+                    run("pdraw particle advanced group $name morph start") == 1 &&
+                    run("pdraw particle advanced group $name morph configure target group v2_letters ticks 5") == 1 &&
+                    run("pdraw particle advanced group $name morph start") == 1 &&
+                    run("pdraw particle draw line as v2_target from 0 70 0 to 4 70 0 count 5 " +
+                        "then morph target text \"EF\" size 1 ticks 5") == 5 &&
+                    run("pdraw particle delete group v2_target") == 1 &&
+                    run("pdraw particle pointset delete v2_word") == 1 &&
+                    CommandPointSets.find(dimension, "v2_word") == null
+            }
             check("错峰覆盖取消旧生成，清理按类型查找") {
                 run("pdraw particle draw line as $name from 0 70 0 to 1 70 0 count 4 stagger 2 then spin 0 1 0 1") == 4 &&
                     run("pdraw particle draw dot as $name at 0 70 0") == 1 &&
@@ -471,6 +489,7 @@ object RuntimeSelfTest {
             CommandParticleGroups.clearPrepared(dimension)
             CommandParticleRecipes.discard(dimension)
             ServerParticleSources.discard(dimension)
+            CommandPointSets.discard(dimension)
             work.nekow.particledrawing.command.v2.EmitterCommands.discard(dimension)
         } catch (error: Exception) {
             failures += "自检启动失败: ${error.javaClass.simpleName}: ${error.message}"
