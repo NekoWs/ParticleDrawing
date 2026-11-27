@@ -9,6 +9,8 @@ import work.nekow.particledrawing.animation.morph.MorphSpace
 import work.nekow.particledrawing.animation.morph.MorphWobble
 import work.nekow.particledrawing.api.Color
 import work.nekow.particledrawing.api.ParticleGroup
+import work.nekow.particledrawing.api.PointSourceContext
+import work.nekow.particledrawing.api.PreparedPointSource
 import work.nekow.particledrawing.core.easing.EasingType
 import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.translation
@@ -41,10 +43,10 @@ internal object GroupActions {
         var space: MorphSpace = MorphSpace.WORLD,
         /** 槽位数跟随组成员数；为真时忽略 [slotCount]。 */
         var autoSlots: Boolean = false,
-        /** 目标点源；非空时槽位来自它，而不是 [position] 公式。 */
-        var target: PointSource? = null,
-        /** 采样类目标在准备阶段求出的点，之后只按坐标系落锚点。 */
-        var targetPoints: List<Vec3>? = null,
+        /** 目标点源的命令语法；非空时槽位来自它，而不是 [position] 公式。 */
+        var target: PointTarget? = null,
+        /** 准备阶段绑定好的 API 点源结果；真正开始时只做坐标系换算。 */
+        var preparedTarget: PreparedPointSource? = null,
     ) {
         fun options(): MorphOptions = MorphOptions(
             ticks = ticks,
@@ -138,16 +140,14 @@ internal object GroupActions {
             is Action.Entity -> group.defineEntity(action.handle, action.entity)
             is Action.MorphStart -> {
                 val morph = checkNotNull(config)
-                val target = morph.target
-                if (target != null) {
-                    // 引用型源在真正开始时才取快照；采样类源在准备阶段已经求值。
-                    val source = morph.targetPoints ?: PointSources.resolveReference(group.manager.dimensionId, target)
-                    requireLocalized(source.isNotEmpty()) { translation("error.morph.target_empty") }
+                val prepared = morph.preparedTarget
+                if (prepared != null) {
                     val options = morph.options()
-                    group.morph(
-                        PointSources.toMorphPoints(source, target, options.space == MorphSpace.LOCAL, group.pivot),
-                        options,
+                    val points = prepared.morphPoints(
+                        PointSourceContext(group.manager.level), group.pivot,
+                        options.space == MorphSpace.LOCAL,
                     )
+                    group.morph(points, options)
                     return
                 }
                 // 槽位数跟随成员数时以真正开始的这一刻为准，之后加成员也不影响本次指令。

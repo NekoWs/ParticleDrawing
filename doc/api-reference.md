@@ -50,6 +50,20 @@ KDoc。只在特定包中提供的类型单独注明。代码示例见[使用指
 | `ParticleRecipe.strandSamples` | 普通爆发每条光带的样本数。相邻样本共享柔边截面，颜色和尺寸沿段插值 |
 | `ParticleSources.startInstanced(level, recipe, anchor, burst)` / `burstGpu(level, recipe, anchor)` | 使用客户端配方和常驻实例数据绘制四边形、透明粒子与网格，或在 GPU 上推进四边形弹道 |
 
+## 点源与点集
+
+| 类型 | 用途 |
+| --- | --- |
+| `PointSource` | 可被形变等消费者使用的点来源：`Formula` / `Text` / `Image` / `Mesh` / `GroupRef` / `NamedSet` / `Points`，也可自定义实现 |
+| `PointSource.prepare(context, members)`、`PreparedPointSource.morphPoints(context, anchor, local)` | 准备阶段缓存采样点；真正使用时才取组/点集快照，并按 `world` / `local` 落锚点 |
+| `PointSet` | `work.nekow.particledrawing.pointset` 中的不可变点集：`transformed` / `concatenated` / `filteredByFormula` / `sortedBy` / `shuffled`，所有操作返回新对象 |
+| `PointAxis`、`PointTransform` | 平移、绕轴旋转、缩放、镜像；旋转与缩放相对原点，按顺序应用 |
+| `ParticleGroup.morph(source)` / `morph(pointSet)` | 直接以点源或核心点集为目标，槽位数按点集长度生成 |
+| `PointSets` | 维度内命名点集库：`define` / `find` / `get` / `names` / `remove` / `discard`，只存相对坐标 |
+| `SampleAsset` | 工作目录文件或资源包素材，图片/模型采样共用 |
+
+[命令写法](command-v2-design.md#34-形变) · [点集用法](particle-commands.md#文字变文字)
+
 ## 单位、表达式与退场
 
 | 类型 | 用途 |

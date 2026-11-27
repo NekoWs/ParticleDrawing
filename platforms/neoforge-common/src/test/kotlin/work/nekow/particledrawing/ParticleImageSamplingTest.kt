@@ -4,7 +4,7 @@ import work.nekow.particledrawing.animation.recipe.RecipeRuntime
 import work.nekow.particledrawing.api.ParticleRecipe
 import work.nekow.particledrawing.api.ParticleImageSampler
 import work.nekow.particledrawing.api.ParticleSampling
-import work.nekow.particledrawing.command.CommandParticleRecipes
+import work.nekow.particledrawing.api.SampleAsset
 import work.nekow.particledrawing.math.Vec3
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
@@ -67,9 +67,9 @@ class ParticleImageSamplingTest {
     @Test fun `路径不会越过图片根目录`() {
         val root = Files.createTempDirectory("pd-image-path")
         try {
-            assertEquals(root.resolve("a.png"), CommandParticleRecipes.safeAssetPath(root, "a.png"))
-            assertFailsWith<IllegalArgumentException> { CommandParticleRecipes.safeAssetPath(root, "../outside.png") }
-            assertFailsWith<IllegalArgumentException> { CommandParticleRecipes.safeAssetPath(root, root.resolve("a.png").toString()) }
+            assertEquals(root.resolve("a.png"), SampleAsset.safePath(root, "a.png"))
+            assertFailsWith<IllegalArgumentException> { SampleAsset.safePath(root, "../outside.png") }
+            assertFailsWith<IllegalArgumentException> { SampleAsset.safePath(root, root.resolve("a.png").toString()) }
         } finally { Files.delete(root) }
     }
 

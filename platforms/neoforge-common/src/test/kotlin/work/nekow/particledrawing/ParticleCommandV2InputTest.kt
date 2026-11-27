@@ -12,8 +12,8 @@ import work.nekow.particledrawing.command.v2.CommandLook
 import work.nekow.particledrawing.command.v2.EmitterDeclaration
 import work.nekow.particledrawing.command.v2.EmitterDeclaration.Companion.prepareRecipe
 import work.nekow.particledrawing.command.v2.GroupActions
-import work.nekow.particledrawing.command.v2.PointSource
-import work.nekow.particledrawing.command.v2.PointSources
+import work.nekow.particledrawing.command.v2.PointTarget
+import work.nekow.particledrawing.command.v2.PointTargets
 import work.nekow.particledrawing.command.v2.ProgramCommands
 import work.nekow.particledrawing.math.Vec3
 import kotlin.test.Test
@@ -164,7 +164,7 @@ class ParticleCommandV2InputTest {
 
     @Test fun morphTargetSourcesParse() {
         val text = ProgramCommands.morph(CommandInput("target text \"WORLD\" size 2 count 64 space local"))
-        assertTrue(text.target is PointSource.Text)
+        assertTrue(text.target is PointTarget.Text)
         assertEquals(64, text.target!!.count)
         assertEquals(MorphSpace.LOCAL, text.space)
         // 公式目标与旧 slots 等价：数量 all 走成员数，写数字则固定槽位数。
@@ -175,22 +175,22 @@ class ParticleCommandV2InputTest {
         assertEquals(8, fixed.slotCount)
         assertEquals("vec3(i, 0, 0)", fixed.position)
         val group = ProgramCommands.morph(CommandInput("target group v2_auto"))
-        assertTrue(group.target is PointSource.GroupRef)
+        assertTrue(group.target is PointTarget.Group)
         val pointSet = ProgramCommands.morph(CommandInput("target pointset word_b"))
-        assertTrue(pointSet.target is PointSource.PointSetRef)
-        assertEquals("pointset word_b", PointSources.label(pointSet.target!!))
+        assertTrue(pointSet.target is PointTarget.NamedSet)
+        assertEquals("pointset word_b", pointSet.target!!.label())
     }
 
     @Test fun pointSetCommandsParse() {
         val define = CommandInput("define word_b text \"WORLD\" size 2 count 64")
-        // 只验证语法层能消费；真正的采样在服务端执行。
+        // 只验证语法层能消费；真正的采样由 API 在服务端执行。
         define.expect("define")
         val name = define.name()
-        val spec = PointSources.parse(define, allowAll = false)
+        val spec = PointTargets.parse(define, allowAll = false)
         define.finish()
         assertEquals("word_b", name)
-        assertTrue(spec is PointSource.Text)
-        assertEquals("text \"WORLD\"", PointSources.label(spec))
-        assertFailsWith<CommandSyntaxException> { PointSources.parse(CommandInput("formula all \"vec3(0,0,0)\""), allowAll = false) }
+        assertTrue(spec is PointTarget.Text)
+        assertEquals("text \"WORLD\"", spec.label())
+        assertFailsWith<CommandSyntaxException> { PointTargets.parse(CommandInput("formula all \"vec3(0,0,0)\""), allowAll = false) }
     }
 }

@@ -425,8 +425,9 @@ internal object DrawCommands {
                     if (draft == null) EmitterCommands.success(source, name, op)
                     else {
                         val slots = draft.target?.let { spec ->
-                            if (draft.slotCount <= 0) translation("command.v2.morph.target.pending", PointSources.label(spec))
-                            else translation("command.v2.morph.target", PointSources.label(spec), draft.slotCount)
+                            val count = draft.preparedTarget?.count ?: 0
+                            if (count <= 0) translation("command.v2.morph.target.pending", spec.label())
+                            else translation("command.v2.morph.target", spec.label(), count)
                         } ?: if (draft.autoSlots) translation("command.v2.morph.slots.all")
                         else translation("command.v2.morph.slots.count", draft.slotCount)
                         val space = translation("command.v2.morph.space.${draft.space.name.lowercase()}")

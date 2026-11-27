@@ -1,12 +1,8 @@
 package work.nekow.particledrawing.command
 
-import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.api.*
-import java.io.InputStream
-import java.nio.file.Files
-import java.nio.file.Path
 import java.util.UUID
 import work.nekow.particledrawing.i18n.LocalizedArgumentException
 import work.nekow.particledrawing.i18n.requireLocalized
@@ -17,18 +13,6 @@ import work.nekow.particledrawing.i18n.translation
 internal object CommandParticleRecipes {
     enum class Sampling { PARAMETER, GRID, IMAGE, MESH, TEXT }
 
-    data class SampleAsset(val name: String, val resource: Boolean) {
-        fun open(level: ServerLevel, directory: String, missing: String): InputStream {
-            if (resource) {
-                return level.server.resourceManager.getResource(Identifier.parse(name))
-                    .orElseThrow { LocalizedArgumentException(translation(missing, name)) }.open()
-            }
-            val root = Path.of(directory).toAbsolutePath().normalize()
-            val target = safeAssetPath(root, name)
-            requireLocalized(Files.isRegularFile(target)) { translation(missing, target) }
-            return Files.newInputStream(target)
-        }
-    }
     data class Draft(
         var anchor: RecipeAnchor,
         var anchorLink: String? = null,
@@ -132,12 +116,4 @@ internal object CommandParticleRecipes {
 
     fun discard(dimension: UUID) { dimensions.remove(dimension) }
     fun clear() = dimensions.clear()
-    internal fun safeAssetPath(root: Path, name: String): Path {
-        requireLocalized(!Path.of(name).isAbsolute) { translation("error.asset.relative_path", root.fileName) }
-        val base = root.toAbsolutePath().normalize()
-        val target = base.resolve(name).normalize()
-        requireLocalized(target.startsWith(base) && target != base) { translation("error.asset.outside_directory", root.fileName) }
-        if (Files.exists(target)) requireLocalized(target.toRealPath().startsWith(base.toRealPath())) { translation("error.asset.outside_directory", root.fileName) }
-        return target
-    }
 }

@@ -4,6 +4,7 @@ import net.minecraft.world.phys.Vec3
 import work.nekow.particledrawing.animation.morph.MorphOptions
 import work.nekow.particledrawing.animation.morph.MorphSpec
 import work.nekow.particledrawing.animation.morph.MorphSlotFormulas
+import work.nekow.particledrawing.animation.morph.MorphSpace
 import work.nekow.particledrawing.animation.program.AnimInstruction
 import work.nekow.particledrawing.animation.script.GetterRewriter
 import work.nekow.particledrawing.animation.program.EntityBinding
@@ -23,6 +24,8 @@ import java.util.UUID
 import work.nekow.particledrawing.i18n.LocalizedArgumentException
 import work.nekow.particledrawing.i18n.requireLocalized
 import work.nekow.particledrawing.i18n.translation
+import work.nekow.particledrawing.platform.toMinecraft
+import work.nekow.particledrawing.pointset.PointSet
 
 /**
  * 编排式动画的粒子组：一组可同时变换的粒子（由 Draw 工具或 [ParticleManager.createGroup] 创建）。
@@ -639,6 +642,29 @@ class ParticleGroup(
         requireLocalized(!expressionMode) { translation("error.group.morph_position") }
         requireLocalized(!options.writeAttributes) { translation("error.morph.position_only") }
         return morphSlotsInternal(points.map(::ParticleMorphSlot), options)
+    }
+
+    /**
+     * 把成员过渡到一处点源（公式、文字、图片、模型、已有组或命名点集）。
+     *
+     * 点在此刻求值；采样源直接采样，组与点集取当前快照。需要“形变开始时再取目标”的命令写法
+     * 由程序草稿在开始时调用同一套 [PointSource.prepare] / [PreparedPointSource.morphPoints]。
+     */
+    @JvmOverloads
+    fun morph(source: PointSource, options: MorphOptions = MorphOptions()): ParticleGroup {
+        requireLocalized(!expressionMode) { translation("error.group.morph_position") }
+        requireLocalized(!options.writeAttributes) { translation("error.morph.position_only") }
+        val context = PointSourceContext(manager.level)
+        val prepared = source.prepare(context, size())
+        return morph(prepared.morphPoints(context, pivot, options.space == MorphSpace.LOCAL), options)
+    }
+
+    /** [morph] 的点集重载：核心点集直接当目标。 */
+    @JvmOverloads
+    fun morph(points: PointSet, options: MorphOptions = MorphOptions()): ParticleGroup {
+        requireLocalized(!expressionMode) { translation("error.group.morph_position") }
+        requireLocalized(!options.writeAttributes) { translation("error.morph.position_only") }
+        return morph(points.toMinecraft(), options)
     }
 
     /** 把成员过渡到带可选朝向与尺寸的静态槽位，自动启用槽位属性。 */

@@ -310,8 +310,9 @@ Java 可调用 `Draw.textPoints("变换形状", center, 602, 2.4)`，也可传�
 
 公式重载通过 `MorphOptions(writeAttributes = true)` 配合 `yaw`、`pitch`、`size` 公式使用；省略槽位数用
 `group.morph(position, options)`（或命令里的 `slots all`），槽位按当前成员数生成，整组一起过渡。
-命令层还可以直接用现成点源作目标（`then morph target text|image|mesh|group|pointset`），
-文字采样、组快照与命名点集都走同一套相对坐标，见[命令参考](command-v2-design.md#34-形变)。
+需要更复杂的点来源时，把采样结果包成 `PointSource`（`Text` / `Image` / `Mesh` / `GroupRef` / `NamedSet`）
+或用 `PointSet` 先做变换、拼接、筛选，再交给 `group.morph(source)` / `group.morph(pointSet)`；
+命名点集可用 `PointSets.define` 登记后重复消费。命令层写法见[命令参考](command-v2-design.md#34-形变)。
 需要每刻更新目标时，可同时启用 `dynamicSlots`。
 组表达式会接管位置，使用形变的成员应放在专用粒子组里。
 

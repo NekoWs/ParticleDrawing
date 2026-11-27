@@ -11,6 +11,7 @@ import work.nekow.particledrawing.animation.morph.MorphWobble
 import work.nekow.particledrawing.animation.recipe.GroupExpressionOutputs
 import work.nekow.particledrawing.animation.script.ScriptRuntime
 import work.nekow.particledrawing.api.ParticleGroup
+import work.nekow.particledrawing.api.PointSourceContext
 import work.nekow.particledrawing.command.CommandParticleGroups
 import work.nekow.particledrawing.command.ParticleCommandOptionParser
 import work.nekow.particledrawing.command.v2.GroupActions.Action
@@ -143,9 +144,9 @@ internal object ProgramCommands {
         val config = MorphConfig()
         input.suggest(listOf("slots", "target"))
         if (input.take("target")) {
-            when (val spec = PointSources.parse(input, allowAll = true)) {
+            when (val spec = PointTargets.parse(input, allowAll = true)) {
                 // 公式目标与旧 slots 是同一个东西：保留公式校验、动态槽位与 t 语义。
-                is PointSource.Formula -> {
+                is PointTarget.Formula -> {
                     if (spec.count == null) config.autoSlots = true else config.slotCount = spec.count
                     config.position = spec.position
                 }
@@ -238,13 +239,14 @@ internal object ProgramCommands {
             val morph = step.morph ?: return@map step
             val target = morph.target ?: return@map step
             // 已经求过值的采样点在重复 start 时直接复用，不必重新采样。
-            if (morph.targetPoints != null) return@map step
-            val prepared = PointSources.prepareTarget(source, target, members)
+            if (morph.preparedTarget != null) return@map step
+            val context = PointSourceContext(source.level)
+            val prepared = target.toSource(source).prepare(context, members)
             requireLocalized(prepared.count > 0) { translation("error.morph.target_empty") }
             step.copy(
                 morph = morph.copy(
                     slotCount = prepared.count.coerceIn(1, AnimationProgramCodecs.MAX_PROGRAM_MEMBERS),
-                    targetPoints = prepared.points,
+                    preparedTarget = prepared,
                 ),
             )
         }

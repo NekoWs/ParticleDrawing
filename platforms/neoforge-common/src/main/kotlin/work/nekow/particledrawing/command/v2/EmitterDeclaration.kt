@@ -11,6 +11,7 @@ import work.nekow.particledrawing.animation.recipe.ParticleProbe
 import work.nekow.particledrawing.api.ParticleRecipe
 import work.nekow.particledrawing.api.RecipeAnchor
 import work.nekow.particledrawing.api.RecipeEmission
+import work.nekow.particledrawing.api.SampleAsset
 import work.nekow.particledrawing.api.SubEmit
 import work.nekow.particledrawing.command.CommandParticleRecipes
 import work.nekow.particledrawing.command.CommandParticleRecipes.Draft
@@ -253,8 +254,8 @@ internal data class EmitterDeclaration(private val changes: List<Change>) {
 
         private fun sampleChange(change: Draft.(Binding) -> Unit) = change
 
-        private fun asset(input: CommandInput, directory: String, suffix: String): CommandParticleRecipes.SampleAsset =
-            PointSources.asset(input, directory, suffix)
+        private fun asset(input: CommandInput, directory: String, suffix: String): SampleAsset =
+            PointTargets.asset(input, directory, suffix)
 
         private fun advanced(input: CommandInput, names: List<String>): Change =
             when (val kind = input.choice(listOf("variable", "state", "select", "change", "environment", "probe", "on"))) {
